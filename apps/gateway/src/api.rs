@@ -805,7 +805,9 @@ mod tests {
         body::{to_bytes, Body},
         http::{Request, StatusCode},
     };
+    use http_body_util::BodyExt;
     use serde_json::json;
+    use tokio::time::{timeout, Duration};
     use tower::ServiceExt;
 
     use crate::{app_server::tests::RecordingAppServer, config::Config};
@@ -842,6 +844,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn shell_routes_report_readiness_capabilities_docs_and_openapi_paths() {
+        let (state, app_server) = test_state().await;
+        app_server.ready.store(false, Ordering::SeqCst);
+        let app = build_router(state);
+
+        let ready = app
+            .clone()
+            .oneshot(Request::get("/readyz").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(ready.status(), StatusCode::OK);
+        let ready_body = response_json(ready).await;
+        assert_eq!(ready_body["ready"], false);
+
+        let capabilities = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/capabilities")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(capabilities.status(), StatusCode::OK);
+        let capabilities_body = response_json(capabilities).await;
+        assert_eq!(capabilities_body["gateway"]["sse"], true);
+        assert_eq!(capabilities_body["appServer"]["ready"], false);
+
+        let docs = app
+            .clone()
+            .oneshot(Request::get("/docs").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert!(docs.status().is_success() || docs.status().is_redirection());
+
+        let openapi = app
+            .oneshot(Request::get("/openapi.json").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let openapi = response_json(openapi).await;
+        for path in [
+            "/healthz",
+            "/readyz",
+            "/v1/capabilities",
+            "/v1/events",
+            "/v1/projects",
+            "/v1/projects/{projectId}",
+            "/v1/threads",
+            "/v1/threads/{threadId}",
+            "/v1/threads/{threadId}/resume",
+            "/v1/threads/{threadId}/fork",
+            "/v1/threads/{threadId}/archive",
+        ] {
+            assert!(openapi["paths"].get(path).is_some(), "missing {path}");
+        }
+    }
+
+    #[tokio::test]
     async fn project_create_rejects_relative_cwd() {
         let (state, _) = test_state().await;
         let app = build_router(state);
@@ -856,6 +916,58 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn project_routes_create_list_get_and_reject_missing_cwd() {
+        let (state, _) = test_state().await;
+        let cwd = std::env::current_dir().unwrap().display().to_string();
+        let app = build_router(state);
+
+        let missing = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/projects")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(!missing.status().is_success());
+
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/projects")
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"name": "Kodex", "cwd": cwd}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let project = response_json(created).await;
+        let project_id = project["id"].as_str().unwrap();
+
+        let listed = app
+            .clone()
+            .oneshot(Request::get("/v1/projects").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let listed = response_json(listed).await;
+        assert_eq!(listed["projects"][0]["id"], project_id);
+
+        let fetched = app
+            .oneshot(
+                Request::get(format!("/v1/projects/{project_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let fetched = response_json(fetched).await;
+        assert_eq!(fetched["id"], project_id);
     }
 
     #[tokio::test]
@@ -915,6 +1027,84 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn thread_routes_map_read_resume_fork_and_archive() {
+        let (state, app_server) = test_state().await;
+        let app = build_router(state);
+
+        assert_ok(
+            app.clone()
+                .oneshot(
+                    Request::get("/v1/threads/thread-1")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+        assert_ok(
+            app.clone()
+                .oneshot(
+                    Request::post("/v1/threads/thread-1/resume")
+                        .header("content-type", "application/json")
+                        .body(Body::from(r#"{"target":"latest"}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+        assert_ok(
+            app.clone()
+                .oneshot(
+                    Request::post("/v1/threads/thread-1/fork")
+                        .header("content-type", "application/json")
+                        .body(Body::from(r#"{"fromItemId":"item-1"}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+        assert_ok(
+            app.oneshot(
+                Request::post("/v1/threads/thread-1/archive")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+        );
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[0].1["threadId"], "thread-1");
+        assert_eq!(requests[1].0, "thread/resume");
+        assert_eq!(requests[1].1["threadId"], "thread-1");
+        assert_eq!(requests[2].0, "thread/fork");
+        assert_eq!(requests[2].1["threadId"], "thread-1");
+        assert_eq!(requests[3].0, "thread/archive");
+        assert_eq!(requests[3].1["threadId"], "thread-1");
+    }
+
+    #[tokio::test]
+    async fn thread_start_requires_stored_project_before_app_server_call() {
+        let (state, app_server) = test_state().await;
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"projectId":"missing","payload":{"prompt":"hi"}}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert!(app_server.requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn event_replay_returns_persisted_events() {
         let (state, _) = test_state().await;
         state
@@ -944,5 +1134,78 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let body: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["events"].as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn sse_replays_persisted_events_before_live_events() {
+        let (state, _) = test_state().await;
+        let replay = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("t1".to_string()),
+                turn_id: None,
+                item_id: None,
+                kind: "codex.notification".to_string(),
+                codex_method: Some("turn/completed".to_string()),
+                payload: json!({"threadId": "t1", "phase": "replay"}),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?threadId=t1")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let mut body = response.into_body();
+        let first = next_sse_chunk(&mut body).await;
+        assert!(first.contains(&format!("id: {}", replay.seq)));
+        assert!(first.contains("\"phase\":\"replay\""));
+
+        let live = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("t1".to_string()),
+                turn_id: None,
+                item_id: None,
+                kind: "codex.notification".to_string(),
+                codex_method: Some("item/agentMessage/delta".to_string()),
+                payload: json!({"threadId": "t1", "phase": "live"}),
+            })
+            .await
+            .unwrap();
+        state.events.send(live.clone()).unwrap();
+
+        let second = next_sse_chunk(&mut body).await;
+        assert!(second.contains(&format!("id: {}", live.seq)));
+        assert!(second.contains("\"phase\":\"live\""));
+    }
+
+    async fn response_json(response: axum::response::Response) -> Value {
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    fn assert_ok(response: axum::response::Response) {
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    async fn next_sse_chunk(body: &mut Body) -> String {
+        let frame = timeout(Duration::from_secs(2), body.frame())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let data = frame.into_data().unwrap();
+        String::from_utf8(data.to_vec()).unwrap()
     }
 }

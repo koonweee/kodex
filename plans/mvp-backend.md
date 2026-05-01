@@ -174,7 +174,7 @@ Exit conditions:
 
 ## Milestone 3: HTTP and SSE API Shell
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -220,7 +220,7 @@ Exit conditions:
 
 ## Milestone 4: Projects and Threads
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 

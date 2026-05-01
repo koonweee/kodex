@@ -1013,6 +1013,7 @@ dependencies = [
  "axum",
  "chrono",
  "futures-core",
+ "http-body-util",
  "jsonschema",
  "serde",
  "serde_json",
