@@ -7,8 +7,36 @@ This repository is planning the Kodex monorepo: a Rust Codex gateway plus a Reac
 - Start every implementation change with a failing test. The test can be unit, integration, contract, or Playwright depending on the feature.
 - Keep code DRY. Add shared helpers only when they remove real duplication or clarify a repeated contract.
 - Follow YAGNI. Do not build features outside the active plan milestone unless the current change requires them.
+- Treat generated OpenAPI as the public API contract. Public request/response DTOs live in Rust code and must generate `/openapi.json`.
+- Do not create separate handwritten API contract docs unless a specific implementation issue requires explanatory prose.
+- Frontend API types must come from generated OpenAPI artifacts, not ad hoc duplicate TypeScript interfaces.
 - Prefer small, milestone-scoped changes that keep the repo runnable.
 - Keep local/VPN-only deployment assumptions explicit. Do not imply the gateway is safe to expose publicly.
+
+## Coding Workflow
+
+- Work in small, reviewable chunks tied to the active milestone.
+- Commit frequently at coherent boundaries, after tests pass and relevant docs are updated.
+- Keep each commit focused on one sensible unit of work.
+- Do not mix unrelated changes in a commit.
+- Do not commit generated output, user-owned changes, or unrelated workspace changes unless they are part of the current task.
+- Do not mark a milestone complete until its exit conditions are met.
+
+## Parallel Work
+
+- Use subagents for independent, parallelizable work when the active environment and instructions permit it.
+- Give subagents bounded ownership of files, modules, or questions.
+- Do not delegate work that blocks the immediate next local step.
+- Avoid duplicating work between the main agent and subagents.
+- Integrate and review subagent output before considering the milestone complete.
+
+## Review Gate
+
+- Every implementation chunk requires an independent review pass before completion.
+- Prefer a review subagent when available and permitted.
+- If no review subagent is available, perform a self-review and document what was checked.
+- Iterate until tests pass, docs are updated, and the active milestone exit conditions are satisfied.
+- Do not mark work complete while tests, docs, generated OpenAPI artifacts, generated frontend API types, or exit conditions are failing.
 
 ## Documentation Discipline
 
@@ -28,10 +56,10 @@ This repository is planning the Kodex monorepo: a Rust Codex gateway plus a Reac
 - Monorepo from scratch.
 - Backend stack: Rust, `axum`, `tokio`, `sqlx`, SQLite WAL.
 - Frontend stack: React, Vite, TypeScript.
+- API contract stack: Rust DTOs plus generated OpenAPI, with frontend-generated TypeScript types/client.
 - Gateway talks to a configured external `codex` binary over stdio.
 - Gateway serves the built frontend in production.
 - SSE is the first event transport.
 - WebSocket is deferred until a feature requires bidirectional browser transport.
 - MVP gateway auth is omitted because deployment is localhost or trusted VPN only.
 - ChatGPT/Codex auth is handled through app-server account APIs.
-

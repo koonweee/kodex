@@ -19,6 +19,7 @@ Build the first Kodex web client in React. The client consumes the Rust gateway 
 - Fetch-based API client.
 - Browser `EventSource` for SSE.
 - React Query or a small local query layer for request caching. Add a larger state library only after reducer/query state becomes hard to manage.
+- Generated TypeScript API types/client from gateway `/openapi.json` using `openapi-typescript` or an equivalent generator.
 
 ## Milestone 0: Frontend Scaffold
 
@@ -28,13 +29,15 @@ Failing tests first:
 
 - App shell test fails before implementation.
 - Mocked `GET /v1/capabilities` renders gateway status.
+- API type generation command fails before OpenAPI input or generated output is wired.
 
 Implementation:
 
 - Create `apps/web`.
 - Add Vite React TypeScript setup.
 - Add test setup.
-- Add API client module.
+- Add generated API types/client directory.
+- Add API client module that wraps generated types instead of handwritten duplicate DTOs.
 - Add app layout:
   - left sidebar
   - main thread panel
@@ -45,6 +48,15 @@ Documentation:
 
 - Add frontend commands to `README.md`.
 - Add frontend test conventions to `AGENTS.md`.
+- Document how to regenerate frontend API types from gateway OpenAPI.
+
+Exit conditions:
+
+- Frontend test command passes.
+- App shell renders against mocked capabilities data.
+- API type generation command exists and is documented.
+- The generated API directory is ignored or committed according to the documented convention.
+- `README.md` and `AGENTS.md` include the frontend commands needed by the next milestone.
 
 ## Milestone 1: Project and Thread Navigation
 
@@ -84,6 +96,15 @@ YAGNI boundaries:
 - No project settings page.
 - No repo clone flow.
 - No multi-user workspace switcher.
+- No handwritten TypeScript DTO duplicates for gateway API responses.
+
+Exit conditions:
+
+- Project and thread navigation tests pass with mocked generated-client responses.
+- Users can create/select a project and see its threads.
+- Users can create, resume, fork, and archive a thread from the UI shell.
+- Loading, empty, and error states are present for project/thread lists.
+- No handwritten gateway response DTOs are introduced.
 
 ## Milestone 2: Event Stream and Timeline Reducer
 
@@ -118,12 +139,21 @@ Implementation:
 API dependencies:
 
 - `GET /v1/events?cursor=&threadId=`
+- Generated event envelope type from OpenAPI for the initial event shape. Codex raw payloads may remain `unknown` until normalized by specific renderers.
 
 DRY boundaries:
 
 - One event reducer.
 - One delta aggregation path.
 - One renderer registry.
+
+Exit conditions:
+
+- Event reducer tests pass for replay, deltas, item start, item completion, and turn completion.
+- SSE client reconnects from the last seen sequence in tests or controlled mocks.
+- Timeline renders MVP item types without crashing on unknown raw payloads.
+- Warning and error events are visible in the timeline or global banner.
+- Event rendering uses the shared renderer registry.
 
 ## Milestone 3: Composer and Turn Controls
 
@@ -157,6 +187,14 @@ YAGNI boundaries:
 - No image upload in MVP unless needed to validate app-server input support.
 - No slash-command framework.
 - No prompt template library.
+
+Exit conditions:
+
+- Composer tests pass for submit, disabled state, stop, and steer when active.
+- Composer sends generated-client-compatible payloads.
+- Model picker is populated from mocked model data.
+- Active turn state is visible and stop action is reachable.
+- No image upload, slash-command, or template framework is added.
 
 ## Milestone 4: Approval UI
 
@@ -200,6 +238,14 @@ YAGNI boundaries:
 - No audit log page beyond event history.
 - No notification integrations.
 
+Exit conditions:
+
+- Approval UI tests pass for pending, accept, decline, and resolved states.
+- Command, file-change, permission, MCP elicitation, and tool user-input approval shapes have renderers.
+- Approval drawer and inline approval cards both use the same approval state.
+- Decision submissions use generated-client-compatible payloads.
+- Resolved approvals leave the pending view without requiring a full page reload.
+
 ## Milestone 5: Account and Models
 
 Status: Proposed
@@ -238,6 +284,14 @@ Documentation:
 - Document that gateway access is trusted-network-only.
 - Document that ChatGPT login is only for Codex/OpenAI account state.
 
+Exit conditions:
+
+- Account/model tests pass for unauthenticated, login URL, authenticated, rate-limit, and model-picker states.
+- Login, cancel, logout, account refresh, and model list actions are wired to the API client.
+- Rate-limit indicator handles missing optional fields.
+- Documentation includes the trusted-network and ChatGPT-auth distinction.
+- Model picker remains usable if hidden models are excluded.
+
 ## Milestone 6: MVP Polish and E2E
 
 Status: Proposed
@@ -263,4 +317,12 @@ Documentation:
 - Update root `README.md` with full-stack dev and build commands.
 - Update `apps/web/README.md` if created.
 - Update [plans/index.md](index.md) status.
+- Ensure frontend API generation is included in documented dev and CI commands.
 
+Exit conditions:
+
+- Playwright MVP flows pass against mocked or local gateway endpoints.
+- Full frontend build succeeds.
+- Built assets can be served by the gateway static-serving milestone.
+- SSE reconnect and loading/error states are visibly handled.
+- README documents full-stack run, frontend test, E2E test, and API type generation commands.

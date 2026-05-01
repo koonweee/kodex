@@ -18,12 +18,14 @@ Planning only. See [plans/index.md](plans/index.md) for the plan directory and s
 - OpenAI/Codex auth: handled through Codex app-server account APIs.
 - Streaming: SSE first, with WebSocket deferred until terminal or realtime requirements need it.
 - Production packaging: gateway serves built React assets from the same binary or static directory.
+- API contract: generated OpenAPI from Rust DTOs, served by the gateway, consumed by the frontend.
 
 ## Development Rules
 
 - Write a failing test before implementation.
 - Keep implementation DRY.
 - Apply YAGNI: do not add multi-user auth, Redis, Postgres, plugin UI, automations, or public SaaS concerns until required.
+- Keep API contracts source-of-truth in backend code. Do not maintain separate handwritten request/response docs.
 - Update `AGENTS.md`, `README.md`, and `plans/index.md` whenever behavior, commands, plan status, or project conventions change.
 
 ## Planned Documents
@@ -31,4 +33,3 @@ Planning only. See [plans/index.md](plans/index.md) for the plan directory and s
 - [MVP backend implementation plan](plans/mvp-backend.md)
 - [MVP frontend implementation plan](plans/mvp-frontend.md)
 - [Future extensions overview](plans/future-extensions.md)
-

@@ -15,7 +15,7 @@ This file is the directory of record for Kodex plans. Keep the status column cur
 | Plan | Status | Scope | Notes |
 | --- | --- | --- | --- |
 | [MVP backend implementation plan](mvp-backend.md) | Proposed | Rust gateway, app-server supervisor, event store, API, approvals, account/models | Start here before backend implementation. |
-| [MVP frontend implementation plan](mvp-frontend.md) | Proposed | React web client for projects, threads, timeline, composer, approvals, account/models | Depends on stable gateway API contracts or mocks. |
+| [MVP frontend implementation plan](mvp-frontend.md) | Proposed | React web client for projects, threads, timeline, composer, approvals, account/models | Depends on generated OpenAPI types or gateway mocks generated from the same contract. |
 | [Future extensions overview](future-extensions.md) | Proposed | Non-MVP feature map linked to app-server APIs | Overview only, not an implementation plan. |
 
 ## Maintenance Rules
@@ -23,5 +23,5 @@ This file is the directory of record for Kodex plans. Keep the status column cur
 - Every plan status change must update this table.
 - Every implemented milestone must update `README.md` if commands, behavior, or setup changed.
 - Every workflow or convention change must update `AGENTS.md`.
+- Public API contract changes must be reflected in backend DTOs and regenerated OpenAPI artifacts.
 - New plans must be added here before implementation starts.
-

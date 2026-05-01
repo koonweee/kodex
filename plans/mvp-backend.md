@@ -17,6 +17,8 @@ Build the first Kodex backend as a Rust gateway for a local-first or VPN-only si
 - `axum` for HTTP routes and SSE.
 - `tokio` for process supervision, async IO, channels, timers, and graceful shutdown.
 - `serde` and `serde_json` for JSON-RPC and API DTOs.
+- `utoipa` for generated OpenAPI from public Rust DTOs.
+- `utoipa-swagger-ui` or Scalar static docs for a local API explorer.
 - `sqlx` with SQLite WAL for projects, events, approvals, and snapshots.
 - `tower-http` for tracing, compression, CORS, and static asset serving.
 - `tracing` and `tracing-subscriber` for structured logs.
@@ -32,6 +34,7 @@ Failing tests first:
 - Default bind address is `127.0.0.1:8787`.
 - SQLite path default resolves under `~/.kodex` or configured data dir.
 - Test command fails before the crate exists.
+- Minimal OpenAPI document generation test fails before public DTOs/routes exist.
 
 Implementation:
 
@@ -44,12 +47,24 @@ Implementation:
   - `database.path = "~/.kodex/gateway.db"`
 - Add application state wiring with dependency injection for tests.
 - Add minimal router with `GET /healthz`.
+- Add OpenAPI generation plumbing for public gateway routes.
+- Serve OpenAPI at `GET /openapi.json`.
+- Serve local API docs at `GET /docs`.
 
 Documentation:
 
 - Update root `README.md` with backend run and test commands once they exist.
 - Update `AGENTS.md` with backend-specific command conventions.
 - Update [plans/index.md](index.md) status when work starts or completes.
+- Document that generated OpenAPI is the source of truth for public request/response contracts.
+
+Exit conditions:
+
+- `cargo test` passes for the scaffold crate.
+- `cargo run` starts the gateway and serves `GET /healthz` on the configured localhost bind address.
+- `GET /openapi.json` and `GET /docs` are reachable.
+- Default config is documented in `README.md`.
+- [plans/index.md](index.md) status is updated if this milestone is active or complete.
 
 ## Milestone 1: App-Server Supervisor and JSON-RPC Client
 
@@ -84,6 +99,14 @@ YAGNI boundaries:
 - Do not embed `codex-rs`.
 - Do not support multiple app-server processes until project isolation requires it.
 - Do not expose raw app-server websocket.
+
+Exit conditions:
+
+- Integration tests pass against a fake app-server process.
+- The gateway performs `initialize` and `initialized` exactly once per app-server process start.
+- JSON-RPC responses, notifications, and server requests are routed through separate internal paths.
+- App-server process exit is observable through readiness state and logs.
+- No real `codex` binary is required for the milestone test suite.
 
 ## Milestone 2: SQLite Store and Migrations
 
@@ -141,6 +164,14 @@ DRY boundaries:
 - One store API for event append and replay.
 - One status transition function for approvals.
 
+Exit conditions:
+
+- Database migrations run from an empty database.
+- SQLite WAL mode is enabled and covered by a test or startup assertion.
+- Event append/replay tests pass with deterministic ordering.
+- Approval insert/resolve tests cover valid and invalid transitions.
+- Schema setup and store usage are documented enough for the next milestone to depend on them.
+
 ## Milestone 3: HTTP and SSE API Shell
 
 Status: Proposed
@@ -152,6 +183,8 @@ Failing tests first:
 - `GET /v1/capabilities` returns gateway and app-server status.
 - `GET /v1/events?cursor=` replays persisted events.
 - SSE sends replay before live events.
+- `/openapi.json` includes every public route added in this milestone.
+- A stale generated OpenAPI artifact check fails when DTOs/routes change without regeneration, if generated artifacts are committed.
 
 Implementation:
 
@@ -161,6 +194,7 @@ Implementation:
 - Add local-dev CORS only.
 - Add SSE endpoint using event replay plus broadcast channel.
 - Add static asset serving hook for future built frontend.
+- Annotate public DTOs and routes for OpenAPI.
 
 API:
 
@@ -168,11 +202,21 @@ API:
 - `GET /readyz`
 - `GET /v1/capabilities`
 - `GET /v1/events?cursor=&projectId=&threadId=`
+- `GET /openapi.json`
+- `GET /docs`
 
 YAGNI boundaries:
 
 - No WebSocket until terminal or realtime requires bidirectional browser transport.
 - No gateway auth in MVP. Document localhost/VPN-only assumption clearly.
+
+Exit conditions:
+
+- Route tests pass for health, readiness, capabilities, OpenAPI, docs, and event replay.
+- SSE endpoint replays stored events before streaming live events.
+- Public routes added in this milestone appear in `/openapi.json`.
+- The trusted-network-only warning is present in `README.md`.
+- API error responses use the shared structured error shape.
 
 ## Milestone 4: Projects and Threads
 
@@ -211,6 +255,14 @@ Documentation:
 
 - Document project cwd trust model in `README.md`.
 
+Exit conditions:
+
+- Project route tests pass, including invalid cwd rejection.
+- Thread route tests pass against the fake app-server client.
+- Project-root validation is enforced before thread start uses a cwd.
+- Thread request mapping is covered for start, list, read, resume, fork, and archive.
+- OpenAPI includes project and thread route schemas.
+
 ## Milestone 5: Turns and Event Timeline
 
 Status: Proposed
@@ -246,6 +298,15 @@ DRY boundaries:
 
 - One notification classifier.
 - One JSON-RPC request execution wrapper.
+- One public DTO per API shape, reused for handler input/output and OpenAPI generation.
+
+Exit conditions:
+
+- Turn route tests pass for start, steer, and interrupt.
+- Notification classification extracts thread, turn, and item IDs for core turn/item events.
+- Turn and item notifications persist before broadcast.
+- App-server overload maps to the shared retryable gateway error.
+- OpenAPI includes turn route schemas.
 
 ## Milestone 6: Approval Broker
 
@@ -289,6 +350,14 @@ YAGNI boundaries:
 - No approval delegation.
 - No persistent "always allow" UI beyond app-server-provided decision variants.
 
+Exit conditions:
+
+- Approval broker tests pass for all MVP server request methods.
+- Resolving an approval sends exactly one JSON-RPC response upstream.
+- Duplicate, unknown, and already-resolved approval decisions fail safely.
+- Approval created/resolved events are persisted and streamed.
+- OpenAPI includes approval route schemas.
+
 ## Milestone 7: Account and Models
 
 Status: Proposed
@@ -321,6 +390,14 @@ Documentation:
 
 - Clarify that ChatGPT auth is Codex/OpenAI auth, not public gateway auth.
 
+Exit conditions:
+
+- Account and model route tests pass against the fake app-server client.
+- ChatGPT login, cancel, logout, account read, rate limits, and model list are mapped.
+- Account and rate-limit notifications flow through the existing event stream.
+- README explicitly distinguishes Codex/OpenAI auth from gateway auth.
+- OpenAPI includes account and model route schemas.
+
 ## Milestone 8: Frontend Static Serving and Release Readiness
 
 Status: Proposed
@@ -343,3 +420,10 @@ Documentation:
 - Update `README.md` with full-stack run and build instructions.
 - Update [plans/index.md](index.md) milestone status.
 
+Exit conditions:
+
+- Static-serving tests pass for built frontend assets.
+- API routes take precedence over SPA fallback.
+- API-only development still works when frontend assets are missing.
+- README includes full-stack development and production build commands.
+- Repository is ready for a first end-to-end smoke test with the web app.
