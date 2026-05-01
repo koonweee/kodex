@@ -8,7 +8,7 @@ This plan generalizes across Codex app-server item types. It must not special-ca
 
 ## Status
 
-Proposed.
+Complete.
 
 ## Principles
 
