@@ -481,6 +481,38 @@ describe("MVP frontend flows", () => {
     });
   });
 
+  it("renders command approvals with a human title and command block", async () => {
+    const approval = {
+      id: "approval-command-display",
+      requestId: "request-command-display",
+      threadId: thread.id,
+      turnId: "turn-1",
+      itemId: "item-1",
+      method: "item/commandExecution/requestApproval",
+      status: "pending",
+      payload: {
+        command: "npm run build -- --mode production && npm run test:e2e",
+        cwd: "/home/example/kodex/apps/web",
+        reason: "Verify production UI",
+      },
+      response: null,
+      createdAt: "2026-04-30T00:00:00Z",
+      resolvedAt: null,
+    };
+    mockGateway(
+      baseRoutes({
+        "GET /v1/approvals": { approvals: [approval] },
+      }),
+    );
+
+    render(<App />);
+
+    const approvals = await screen.findByRole("complementary", { name: /approvals/i });
+    expect(await within(approvals).findByText(/command approval/i)).toBeInTheDocument();
+    const command = within(approvals).getByText(/npm run build -- --mode production/i);
+    expect(command.closest("code")).toHaveClass("kodex-approval-command");
+  });
+
   it("does not resurrect a locally resolved approval from a stale created event", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const approval = {

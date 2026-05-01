@@ -84,10 +84,34 @@ const theme = createTheme({
 const UI_TEXT = {
   appName: "Kodex",
   approvals: {
+    commandTitle: "Command approval",
     emptyText: "Command, file, and permission requests will appear here.",
     emptyTitle: "No pending approvals",
+    fallbackTitle: "Approval request",
+    fileTitle: "File change approval",
     label: "Approvals",
+    mcpTitle: "MCP approval",
+    permissionsTitle: "Permission approval",
     pending: "pending",
+    toolInputTitle: "Input requested",
+    actions: {
+      accept: "Accept",
+      acceptAria: "Accept approval",
+      acceptSession: "Session",
+      acceptSessionAria: "Accept for session",
+      applyExecPolicy: "Apply exec policy",
+      applyExecPolicyAria: "Apply exec policy approval",
+      cancel: "Cancel",
+      cancelAria: "Cancel approval",
+      decline: "Decline",
+      declineAria: "Decline approval",
+      grant: "Grant",
+      grantAria: "Grant approval",
+      grantSession: "Session",
+      grantSessionAria: "Grant for session",
+      submit: "Submit",
+      submitAria: "Submit answers",
+    },
   },
   auth: {
     cancel: "Cancel login",
@@ -1008,12 +1032,23 @@ function ApprovalCard({
 }) {
   const actions = approvalActions(approval);
   const parsedActions = approvalParsedActions(approval);
+  const subject = approvalSubject(approval);
+  const isCommandApproval = normalizedApprovalMethod(approval.method) === "command";
 
   return (
     <Box className="kodex-approval-card">
       <Text fw={700} size="sm">
         {approvalTitle(approval)}
       </Text>
+      {subject ? (
+        isCommandApproval ? (
+          <Box className="kodex-approval-command" component="code">
+            {subject}
+          </Box>
+        ) : (
+          <Text size="sm">{subject}</Text>
+        )
+      ) : null}
       <Text size="xs" c="dimmed">
         {approvalDetail(approval)}
       </Text>
@@ -1070,14 +1105,25 @@ function EmptyPanel({
 }
 
 function approvalTitle(approval: Approval): string {
+  switch (normalizedApprovalMethod(approval.method)) {
+    case "command":
+      return UI_TEXT.approvals.commandTitle;
+    case "file":
+      return UI_TEXT.approvals.fileTitle;
+    case "permissions":
+      return UI_TEXT.approvals.permissionsTitle;
+    case "mcp_elicitation":
+      return UI_TEXT.approvals.mcpTitle;
+    case "tool_user_input":
+      return UI_TEXT.approvals.toolInputTitle;
+    default:
+      return UI_TEXT.approvals.fallbackTitle;
+  }
+}
+
+function approvalSubject(approval: Approval): string | null {
   const payload = asRecord(approval.payload);
-  return (
-    stringValue(payload.command) ??
-    stringValue(payload.path) ??
-    stringValue(payload.message) ??
-    firstQuestionText(payload) ??
-    approval.method
-  );
+  return stringValue(payload.command) ?? stringValue(payload.path) ?? stringValue(payload.message) ?? firstQuestionText(payload);
 }
 
 function approvalDetail(approval: Approval): string {
@@ -1096,20 +1142,21 @@ type ApprovalAction = {
 
 function approvalActions(approval: Approval): ApprovalAction[] {
   const method = normalizedApprovalMethod(approval.method);
+  const copy = UI_TEXT.approvals.actions;
 
   if (method === "permissions") {
     const permissions = approvalPermissions(approval);
     return [
       {
-        ariaLabel: "Grant approval",
+        ariaLabel: copy.grantAria,
         icon: <Check size={14} />,
-        label: "Grant",
+        label: copy.grant,
         response: { permissions, scope: "turn" },
       },
       {
-        ariaLabel: "Grant for session",
+        ariaLabel: copy.grantSessionAria,
         icon: <Check size={14} />,
-        label: "Session",
+        label: copy.grantSession,
         response: { permissions, scope: "session" },
         variant: "light",
       },
@@ -1119,24 +1166,24 @@ function approvalActions(approval: Approval): ApprovalAction[] {
   if (method === "mcp_elicitation") {
     return [
       {
-        ariaLabel: "Accept approval",
+        ariaLabel: copy.acceptAria,
         icon: <Check size={14} />,
-        label: "Accept",
+        label: copy.accept,
         response: { action: "accept" },
       },
       {
-        ariaLabel: "Decline approval",
+        ariaLabel: copy.declineAria,
         color: "red",
         icon: <X size={14} />,
-        label: "Decline",
+        label: copy.decline,
         response: { action: "decline" },
         variant: "light",
       },
       {
-        ariaLabel: "Cancel approval",
+        ariaLabel: copy.cancelAria,
         color: "gray",
         icon: <X size={14} />,
-        label: "Cancel",
+        label: copy.cancel,
         response: { action: "cancel" },
         variant: "subtle",
       },
@@ -1146,9 +1193,9 @@ function approvalActions(approval: Approval): ApprovalAction[] {
   if (method === "tool_user_input") {
     return [
       {
-        ariaLabel: "Submit answers",
+        ariaLabel: copy.submitAria,
         icon: <Check size={14} />,
-        label: "Submit",
+        label: copy.submit,
         response: { answers: defaultToolAnswers(approval.payload) },
       },
     ];
@@ -1166,33 +1213,34 @@ function approvalActions(approval: Approval): ApprovalAction[] {
 }
 
 function basicCommandOrFileActions(): ApprovalAction[] {
+  const copy = UI_TEXT.approvals.actions;
   return [
       {
-        ariaLabel: "Accept approval",
+        ariaLabel: copy.acceptAria,
         icon: <Check size={14} />,
-        label: "Accept",
+        label: copy.accept,
         response: { decision: "accept" },
       },
       {
-        ariaLabel: "Accept for session",
+        ariaLabel: copy.acceptSessionAria,
         icon: <Check size={14} />,
-        label: "Session",
+        label: copy.acceptSession,
         response: { decision: "acceptForSession" },
         variant: "light",
       },
       {
-        ariaLabel: "Decline approval",
+        ariaLabel: copy.declineAria,
         color: "red",
         icon: <X size={14} />,
-        label: "Decline",
+        label: copy.decline,
         response: { decision: "decline" },
         variant: "light",
       },
       {
-        ariaLabel: "Cancel approval",
+        ariaLabel: copy.cancelAria,
         color: "gray",
         icon: <X size={14} />,
-        label: "Cancel",
+        label: copy.cancel,
         response: { decision: "cancel" },
         variant: "subtle",
       },
@@ -1206,9 +1254,9 @@ function commandAmendmentActions(approval: Approval): ApprovalAction[] {
 
   if (execpolicyAmendment.length > 0) {
     actions.push({
-      ariaLabel: "Apply exec policy approval",
+      ariaLabel: UI_TEXT.approvals.actions.applyExecPolicyAria,
       icon: <Check size={14} />,
-      label: "Apply exec policy",
+      label: UI_TEXT.approvals.actions.applyExecPolicy,
       response: {
         decision: {
           acceptWithExecpolicyAmendment: {

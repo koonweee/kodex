@@ -173,6 +173,21 @@ body {
   overflow-wrap: anywhere;
 }
 
+.kodex-approval-command {
+  display: block;
+  max-height: 132px;
+  overflow: auto;
+  border: 1px solid #3d3d3d;
+  border-radius: 8px;
+  padding: 10px;
+  background: #151515;
+  color: #f1f1f1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 900px) {
   .kodex-header {
     height: 56px;
