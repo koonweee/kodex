@@ -116,6 +116,46 @@ Local routes:
 
 The gateway has no MVP auth and is intended only for localhost or a trusted VPN. Do not expose it directly to the public internet. ChatGPT/Codex login routes broker Codex/OpenAI auth through app-server APIs; they are not gateway access control.
 
+## Full-Stack Local Startup
+
+For everyday local development, run the gateway and Vite dev server side by side. `tmux` is useful here because both servers keep running while you move between panes, inspect logs, or detach from the terminal.
+
+```bash
+tmux new -s kodex
+```
+
+Pane 1:
+
+```bash
+cargo run -p kodex-gateway
+```
+
+Split to a second pane with `Ctrl-b %`, then run:
+
+```bash
+cd apps/web
+npm run dev
+```
+
+Open `http://127.0.0.1:5173`. Vite serves the React app and proxies `/v1` plus `/openapi.json` to the gateway at `http://127.0.0.1:8787`.
+
+Useful tmux controls:
+
+- Detach: `Ctrl-b d`
+- Reattach: `tmux attach -t kodex`
+- Stop both servers: reattach and press `Ctrl-c` in each pane
+
+For production-style static serving from the gateway:
+
+```bash
+cd apps/web
+npm run build
+cd ../..
+KODEX_FRONTEND_DIST=apps/web/dist cargo run -p kodex-gateway
+```
+
+Then open `http://127.0.0.1:8787`. Keep either setup local or trusted-VPN only; the MVP gateway has no access-control layer.
+
 ## Frontend Development
 
 Prerequisites:
