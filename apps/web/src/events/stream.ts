@@ -1,6 +1,7 @@
 import type { EventEnvelope } from "../api/client";
 
 type EventSourceLike = {
+  addEventListener?: (type: string, listener: (event: MessageEvent<string>) => void) => void;
   close: () => void;
   onerror: (() => void) | null;
   onmessage: ((event: MessageEvent<string>) => void) | null;
@@ -16,6 +17,14 @@ type EventStreamClientOptions = {
   onEvent: (event: EventEnvelope) => void;
   onStatusChange?: (status: "connected" | "reconnecting" | "closed") => void;
 };
+
+const GATEWAY_SSE_EVENT_TYPES = [
+  "approval.created",
+  "approval.resolved",
+  "codex.notification",
+  "codex.server_request",
+  "gateway.warning",
+];
 
 export function createEventStreamClient({
   EventSourceCtor = globalThis.EventSource as EventSourceCtor | undefined,
@@ -38,11 +47,16 @@ export function createEventStreamClient({
     eventSource = new EventSourceCtor(eventStreamUrl(lastSeq, threadId));
     onStatusChange?.("connected");
 
-    eventSource.onmessage = (message) => {
+    const handleMessage = (message: MessageEvent<string>) => {
       const event = JSON.parse(message.data) as EventEnvelope;
       lastSeq = Math.max(lastSeq, event.seq);
       onEvent(event);
     };
+
+    eventSource.onmessage = handleMessage;
+    for (const type of GATEWAY_SSE_EVENT_TYPES) {
+      eventSource.addEventListener?.(type, handleMessage);
+    }
 
     eventSource.onerror = () => {
       if (closed) {

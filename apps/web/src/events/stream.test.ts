@@ -5,6 +5,7 @@ import { createEventStreamClient } from "./stream";
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
 
+  private listeners = new Map<string, Array<(event: MessageEvent<string>) => void>>();
   onerror: (() => void) | null = null;
   onmessage: ((event: MessageEvent<string>) => void) | null = null;
   closed = false;
@@ -17,8 +18,18 @@ class FakeEventSource {
     this.closed = true;
   }
 
+  addEventListener(type: string, listener: (event: MessageEvent<string>) => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+
   emit(payload: unknown) {
     this.onmessage?.({ data: JSON.stringify(payload) } as MessageEvent<string>);
+  }
+
+  emitNamed(type: string, payload: unknown) {
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener({ data: JSON.stringify(payload) } as MessageEvent<string>);
+    }
   }
 
   fail() {
@@ -67,5 +78,31 @@ describe("event stream client", () => {
 
     client.close();
     expect(FakeEventSource.instances[1].closed).toBe(true);
+  });
+
+  it("receives named SSE events emitted by the gateway", () => {
+    const received: string[] = [];
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      threadId: "thread-1",
+      onEvent: (event) => received.push(event.codexMethod ?? event.kind),
+    });
+
+    client.connect();
+    FakeEventSource.instances[0].emitNamed("codex.notification", {
+      id: "event-7",
+      seq: 7,
+      kind: "codex.notification",
+      codexMethod: "item/agentMessage/delta",
+      itemId: "item-1",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      projectId: "project-1",
+      payload: { delta: "Hi" },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(received).toEqual(["item/agentMessage/delta"]);
+    client.close();
   });
 });

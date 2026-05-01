@@ -89,7 +89,7 @@ async function mockGateway(page: Page) {
         body: sse({
           id: "event-2",
           seq: Number(url.searchParams.get("cursor") ?? "1") + 1,
-          kind: "codex",
+          kind: "codex.notification",
           codexMethod: "item/agentMessage/delta",
           projectId: project.id,
           threadId: thread.id,
@@ -198,6 +198,6 @@ async function responseFor(key: string, route: Route): Promise<{ status?: number
   return { status: 404, body: { code: "not_found", message: key, retryable: false } };
 }
 
-function sse(event: unknown): string {
-  return `data: ${JSON.stringify(event)}\n\n`;
+function sse(event: { kind: string }) {
+  return `event: ${event.kind}\ndata: ${JSON.stringify(event)}\n\n`;
 }
