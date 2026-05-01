@@ -231,7 +231,7 @@ test("resolves a pending approval", async ({ page }) => {
 
   const thread = page.getByRole("main", { name: /thread/i });
   await expect(thread.getByText(/cargo test/i)).toBeVisible();
-  await thread.getByRole("button", { name: /accept approval/i }).first().click();
+  await thread.getByRole("button", { name: /yes, proceed/i }).first().click();
   await expect(thread.getByText(/cargo test/i)).toBeHidden();
   await expect(threadCard.getByText(/needs approval/i)).toBeHidden();
 });

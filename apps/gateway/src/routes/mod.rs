@@ -287,6 +287,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn thread_start_forwards_initial_composer_settings() {
+        let (state, app_server) = test_state().await;
+        let project = state
+            .store
+            .create_project(
+                "Kodex".to_string(),
+                std::env::current_dir().unwrap().display().to_string(),
+            )
+            .await
+            .unwrap();
+        let app = build_router(state);
+
+        let body = json!({
+            "projectId": project.id,
+            "model": "gpt-5.4",
+            "serviceTier": "fast",
+            "approvalPolicy": "on-request",
+            "approvalsReviewer": "auto_review",
+            "sandbox": "workspace-write"
+        })
+        .to_string();
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/start");
+        assert_eq!(requests[0].1["model"], "gpt-5.4");
+        assert_eq!(requests[0].1["serviceTier"], "fast");
+        assert_eq!(requests[0].1["approvalPolicy"], "on-request");
+        assert_eq!(requests[0].1["approvalsReviewer"], "auto_review");
+        assert_eq!(requests[0].1["sandbox"], "workspace-write");
+    }
+
+    #[tokio::test]
     async fn thread_list_project_filter_maps_to_cwd() {
         let (state, app_server) = test_state().await;
         let cwd = std::env::current_dir().unwrap().display().to_string();
@@ -448,6 +490,65 @@ mod tests {
         assert_eq!(
             requests[2].1,
             json!({"threadId": "thread-1", "turnId": "turn-1"})
+        );
+    }
+
+    #[tokio::test]
+    async fn turn_start_forwards_only_present_composer_settings() {
+        let (state, app_server) = test_state().await;
+        let app = build_router(state);
+
+        assert_ok(
+            app.clone()
+                .oneshot(
+                    Request::post("/v1/threads/thread-1/turns")
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            r#"{
+                                "input":[{"type":"text","text":"hi"}],
+                                "model":"gpt-5.4",
+                                "effort":"high",
+                                "serviceTier":"fast",
+                                "approvalPolicy":"never",
+                                "approvalsReviewer":"user",
+                                "sandboxPolicy":{"type":"dangerFullAccess"}
+                            }"#,
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+        assert_ok(
+            app.oneshot(
+                Request::post("/v1/threads/thread-1/turns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"default"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+        );
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(
+            requests[0].1,
+            json!({
+                "threadId": "thread-1",
+                "input": [{"type": "text", "text": "hi"}],
+                "model": "gpt-5.4",
+                "effort": "high",
+                "serviceTier": "fast",
+                "approvalPolicy": "never",
+                "approvalsReviewer": "user",
+                "sandboxPolicy": {"type": "dangerFullAccess"}
+            })
+        );
+        assert_eq!(
+            requests[1].1,
+            json!({"threadId": "thread-1", "input": [{"type": "text", "text": "default"}]})
         );
     }
 

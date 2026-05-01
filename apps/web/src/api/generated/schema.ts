@@ -451,8 +451,13 @@ export interface components {
             name?: string | null;
         };
         CreateThreadRequest: {
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            model?: string | null;
             payload?: unknown;
             projectId: string;
+            sandbox?: string | null;
+            serviceTier?: string | null;
         };
         CreditsSnapshot: {
             balance?: string | null;
@@ -620,7 +625,15 @@ export interface components {
             /** Format: int64 */
             updatedAt: number;
         };
-        TurnStartRequest: {
+        TurnStartOptions: {
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            effort?: string | null;
+            model?: string | null;
+            sandboxPolicy?: unknown;
+            serviceTier?: string | null;
+        };
+        TurnStartRequest: components["schemas"]["TurnStartOptions"] & {
             input: components["schemas"]["UserInput"][];
         };
         TurnSteerRequest: {

@@ -14,6 +14,8 @@ export type RateLimitsResponse = components["schemas"]["RateLimitsResponse"];
 export type ThreadSummary = components["schemas"]["ThreadSummary"];
 export type UserInput = components["schemas"]["UserInput"];
 export type ImageUpload = components["schemas"]["ImageUpload"];
+export type CreateThreadOptions = Omit<components["schemas"]["CreateThreadRequest"], "payload" | "projectId">;
+export type TurnStartOptions = Omit<components["schemas"]["TurnStartRequest"], "input">;
 
 type GatewayErrorBody = {
   message?: unknown;
@@ -56,8 +58,8 @@ export async function listThreads(projectId: string): Promise<ThreadSummary[]> {
   return response.threads;
 }
 
-export async function createThread(projectId: string): Promise<ThreadSummary> {
-  const response = await unwrap(api.POST("/v1/threads", { body: { projectId } }));
+export async function createThread(projectId: string, options: CreateThreadOptions = {}): Promise<ThreadSummary> {
+  const response = await unwrap(api.POST("/v1/threads", { body: { projectId, ...options } }));
   return response.thread;
 }
 
@@ -84,11 +86,11 @@ export async function listEvents(threadId: string): Promise<EventEnvelope[]> {
   return response.events;
 }
 
-export async function startTurn(threadId: string, input: UserInput[]): Promise<void> {
+export async function startTurn(threadId: string, input: UserInput[], options: TurnStartOptions = {}): Promise<void> {
   await unwrap(
     api.POST("/v1/threads/{threadId}/turns", {
       params: { path: { threadId } },
-      body: { input },
+      body: { input, ...options },
     }),
   );
 }

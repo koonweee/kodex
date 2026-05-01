@@ -98,12 +98,11 @@ impl CodexClient {
         &self,
         thread_id: String,
         input: Vec<UserInput>,
+        options: TurnStartOptions,
     ) -> ApiResult<RawAppServerResponse> {
-        self.raw_request(
-            "turn/start",
-            json!({ "threadId": thread_id, "input": input }),
-        )
-        .await
+        let mut payload = json!({ "threadId": thread_id, "input": input });
+        options.apply_to_payload(&mut payload);
+        self.raw_request("turn/start", payload).await
     }
 
     pub async fn turn_steer(
@@ -188,6 +187,46 @@ impl CodexClient {
 
 pub fn client(app_server: &DynAppServer) -> CodexClient {
     CodexClient::new(Arc::clone(app_server))
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnStartOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_tier: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval_policy: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approvals_reviewer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox_policy: Option<Value>,
+}
+
+impl TurnStartOptions {
+    fn apply_to_payload(self, payload: &mut Value) {
+        if let Some(model) = self.model {
+            payload["model"] = Value::String(model);
+        }
+        if let Some(effort) = self.effort {
+            payload["effort"] = Value::String(effort);
+        }
+        if let Some(service_tier) = self.service_tier {
+            payload["serviceTier"] = Value::String(service_tier);
+        }
+        if let Some(approval_policy) = self.approval_policy {
+            payload["approvalPolicy"] = Value::String(approval_policy);
+        }
+        if let Some(approvals_reviewer) = self.approvals_reviewer {
+            payload["approvalsReviewer"] = Value::String(approvals_reviewer);
+        }
+        if let Some(sandbox_policy) = self.sandbox_policy {
+            payload["sandboxPolicy"] = sandbox_policy;
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -805,6 +844,7 @@ mod tests {
                     text: "hi".to_string(),
                     text_elements: Vec::new(),
                 }],
+                TurnStartOptions::default(),
             )
             .await
             .unwrap();

@@ -324,11 +324,62 @@ body {
 .kodex-composer-toolbar {
   min-height: 30px;
   margin-top: 6px;
+  gap: 8px;
+}
+
+.kodex-composer-toolbar-left,
+.kodex-composer-footer-controls {
+  min-width: 0;
 }
 
 .kodex-composer-action,
 .kodex-composer-secondary-action {
   border-radius: 999px;
+}
+
+.kodex-composer-control {
+  max-width: 176px;
+  min-width: 0;
+  padding-inline: 9px;
+  color: #dadada;
+}
+
+.kodex-composer-control .mantine-Button-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kodex-composer-menu {
+  min-width: 248px;
+}
+
+.kodex-composer-menu-item {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kodex-context-usage {
+  border-radius: 999px;
+}
+
+.kodex-context-usage span {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at center, #242424 0 42%, transparent 43%),
+    conic-gradient(#6ee7d8 var(--context-used), #545454 0);
+}
+
+.kodex-context-usage[data-known="false"] span {
+  background:
+    radial-gradient(circle at center, #242424 0 42%, transparent 43%),
+    conic-gradient(#777777 0 25%, #444444 0);
+  opacity: 0.65;
 }
 
 .kodex-queued-steer {

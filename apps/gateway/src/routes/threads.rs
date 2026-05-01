@@ -36,6 +36,16 @@ pub struct ThreadListQuery {
 #[serde(rename_all = "camelCase")]
 pub struct CreateThreadRequest {
     pub project_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_tier: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval_policy: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approvals_reviewer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<String>,
     #[serde(default)]
     pub payload: Value,
 }
@@ -63,11 +73,32 @@ pub async fn create_thread(
     Json(request): Json<CreateThreadRequest>,
 ) -> ApiResult<Json<ThreadCommandResponse>> {
     let project = state.store.get_project(&request.project_id).await?;
+    let payload = create_thread_payload(request);
     Ok(Json(
         app_server_api::client(&state.app_server)
-            .thread_start(project.id, project.cwd, request.payload)
+            .thread_start(project.id, project.cwd, payload)
             .await?,
     ))
+}
+
+fn create_thread_payload(request: CreateThreadRequest) -> Value {
+    let mut payload = request.payload;
+    if let Some(model) = request.model {
+        payload["model"] = Value::String(model);
+    }
+    if let Some(service_tier) = request.service_tier {
+        payload["serviceTier"] = Value::String(service_tier);
+    }
+    if let Some(approval_policy) = request.approval_policy {
+        payload["approvalPolicy"] = Value::String(approval_policy);
+    }
+    if let Some(approvals_reviewer) = request.approvals_reviewer {
+        payload["approvalsReviewer"] = Value::String(approvals_reviewer);
+    }
+    if let Some(sandbox) = request.sandbox {
+        payload["sandbox"] = Value::String(sandbox);
+    }
+    payload
 }
 
 #[utoipa::path(get, path = "/v1/threads/{threadId}", responses((status = 200, body = ThreadDetailResponse)))]

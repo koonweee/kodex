@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 
 use crate::{
     api::AppState,
-    app_server_api::{self, RawAppServerResponse, UserInput},
+    app_server_api::{self, RawAppServerResponse, TurnStartOptions, UserInput},
     error::ApiResult,
 };
 
@@ -29,6 +29,8 @@ pub fn router() -> Router<AppState> {
 #[serde(rename_all = "camelCase")]
 pub struct TurnStartRequest {
     pub input: Vec<UserInput>,
+    #[serde(flatten)]
+    pub options: TurnStartOptions,
 }
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
@@ -45,7 +47,7 @@ pub async fn start_turn(
 ) -> ApiResult<Json<RawAppServerResponse>> {
     Ok(Json(
         app_server_api::client(&state.app_server)
-            .turn_start(thread_id, request.input)
+            .turn_start(thread_id, request.input, request.options)
             .await?,
     ))
 }

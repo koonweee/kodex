@@ -23,6 +23,7 @@ This file is the directory of record for Kodex plans. Keep the status column cur
 | [Image attachments plan](image-attachments.md) | Complete | End-to-end image attachments from web composer through gateway to app-server | Implemented typed image inputs, local image uploads, composer attachment UX, drag/drop, and timeline thumbnails. |
 | [App-server thread item coverage plan](app-server-thread-items.md) | Complete | Web timeline support for all pinned Codex app-server ThreadItem variants | Implemented hidden fallback for unknown items plus first-class rendering for collaboration, review, plan, compaction, and image-related items. |
 | [Optimistic user messages plan](optimistic-user-messages.md) | Complete | Immediate user-message rendering with app-server reconciliation | Implemented optimistic text, image, draft-thread, and queued-steer sends with reconciliation and retry-safe failure handling. |
+| [Composer footer controls plan](composer-footer-controls.md) | Complete | Codex-style composer controls for model, reasoning effort, fast mode, permissions presets, and context usage | Implemented composer controls, request forwarding, generated OpenAPI/frontend types, and context usage display. |
 | [Future extensions overview](future-extensions.md) | Proposed | Non-MVP feature map linked to app-server APIs | Overview only, not an implementation plan. |
 
 ## Maintenance Rules

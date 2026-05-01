@@ -61,6 +61,14 @@ const model = {
   upgrade: null,
 };
 
+const highReasoningModel = {
+  ...model,
+  supportedReasoningEfforts: [
+    { reasoningEffort: "medium", description: "Balanced" },
+    { reasoningEffort: "high", description: "Deeper reasoning" },
+  ],
+};
+
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
 
@@ -114,6 +122,16 @@ function timelineElement(container: HTMLElement) {
   const element = container.querySelector<HTMLElement>(".kodex-timeline-scroll");
   expect(element).not.toBeNull();
   return element!;
+}
+
+async function clickMenuItem(name: RegExp) {
+  let item: HTMLElement | undefined;
+  await waitFor(() => {
+    item = screen.queryAllByRole("menuitem", { hidden: true }).find((element) => name.test(element.textContent ?? ""));
+    expect(item).toBeInTheDocument();
+  });
+  expect(item).toBeInTheDocument();
+  fireEvent.click(item!);
 }
 
 describe("MVP frontend flows", () => {
@@ -216,6 +234,113 @@ describe("MVP frontend flows", () => {
 
     const titledThread = await screen.findByRole("button", { name: /implement the next milestone/i });
     expect(within(titledThread).getByText("Implement the next milestone")).not.toHaveAttribute("data-placeholder-title");
+  });
+
+  it("sends composer footer model, speed, permissions, and context settings", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads/thread-1/turns": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    const modelButton = await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
+    await waitFor(() => {
+      expect(FakeEventSource.instances.some((instance) => instance.url.includes("threadId=thread-1"))).toBe(true);
+    });
+
+    const threadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    act(() => {
+      threadStream?.emit({
+        id: "usage-1",
+        seq: 3,
+        kind: "codex.notification",
+        codexMethod: "thread/tokenUsage/updated",
+        projectId: project.id,
+        threadId: thread.id,
+        payload: {
+          tokenUsage: {
+            total: { totalTokens: 4000 },
+            modelContextWindow: 8000,
+          },
+        },
+        receivedAt: "2026-04-30T00:00:02Z",
+      });
+    });
+    expect(await screen.findByLabelText(/50% context left/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
+    await clickMenuItem(/high.*deeper reasoning/i);
+    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, high/i }));
+    await clickMenuItem(/^fast$/i);
+    await userEvent.click(screen.getByRole("button", { name: /permissions: default permissions/i }));
+    await clickMenuItem(/full access/i);
+    expect(screen.getByRole("button", { name: /permissions: default permissions/i })).toBeInTheDocument();
+    await clickMenuItem(/confirm full access/i);
+
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Use the selected controls");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+    });
+
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/turns")[0])).resolves.toMatchObject({
+      model: "gpt-5.4",
+      effort: "high",
+      serviceTier: "fast",
+      approvalPolicy: "never",
+      approvalsReviewer: "user",
+      sandboxPolicy: { type: "dangerFullAccess" },
+    });
+  });
+
+  it("forwards draft thread composer settings to thread start and first turn", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
+        "POST /v1/threads": { thread: { ...thread, id: "thread-2", name: "New thread", preview: null }, rawPayload: {} },
+        "POST /v1/threads/thread-2/turns": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
+    await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
+    await clickMenuItem(/high.*deeper reasoning/i);
+    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, high/i }));
+    await clickMenuItem(/^fast$/i);
+    await userEvent.click(screen.getByRole("button", { name: /permissions: default permissions/i }));
+    await clickMenuItem(/auto review/i);
+
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Start with toolbar settings");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(1);
+    });
+
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads")[0])).resolves.toMatchObject({
+      projectId: project.id,
+      model: "gpt-5.4",
+      serviceTier: "fast",
+      approvalPolicy: "on-request",
+      approvalsReviewer: "auto_review",
+      sandbox: "workspace-write",
+    });
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-2/turns")[0])).resolves.toMatchObject({
+      effort: "high",
+      serviceTier: "fast",
+      approvalPolicy: "on-request",
+      approvalsReviewer: "auto_review",
+      sandboxPolicy: { type: "workspaceWrite", networkAccess: false, writableRoots: [] },
+    });
   });
 
   it("uses preview text as the display title for unnamed threads", async () => {
@@ -2204,7 +2329,8 @@ describe("MVP frontend flows", () => {
 
     render(<App />);
 
-    expect(screen.queryByLabelText(/model/i)).not.toBeInTheDocument();
+    const sidebar = screen.getByRole("navigation", { name: /workspace/i });
+    expect(within(sidebar).queryByLabelText(/model/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /status/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /debug options/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /account settings/i })).toBeInTheDocument();

@@ -61,6 +61,7 @@ import {
   getAccount,
   interruptTurn,
   listEvents,
+  listModels,
   listPendingApprovals,
   listProjects,
   listThreads,
@@ -75,10 +76,19 @@ import {
   type ApprovalResponse,
   type EventEnvelope,
   type ImageUpload,
+  type ModelSummary,
   type Project,
   type ThreadSummary,
+  type CreateThreadOptions,
+  type TurnStartOptions,
   type UserInput,
 } from "./api/client";
+import {
+  ComposerFooterControls,
+  type ComposerSettings,
+  type ContextUsage,
+  type PermissionPresetId,
+} from "./ComposerFooterControls";
 import { createEventStreamClient } from "./events/stream";
 import { applyTimelineEventBatch } from "./timeline/batch";
 import {
@@ -232,6 +242,7 @@ const SIDEBAR_MIN_WIDTH = 292;
 const SIDEBAR_MAX_WIDTH = 520;
 const SIDEBAR_RESIZE_STEP = 24;
 const EMPTY_APPROVALS: Approval[] = [];
+const DEFAULT_COMPOSER_SETTINGS: ComposerSettings = { fast: false };
 const INITIAL_BOTTOM_STABLE_FRAMES = 2;
 // Covers virtual row measurement for long messages before the first visible reveal.
 const INITIAL_BOTTOM_MAX_SETTLE_FRAMES = 90;
@@ -277,6 +288,9 @@ function KodexShell() {
   const [timelineEntry, setTimelineEntry] = useState<TimelineEntry>(idleTimelineEntry);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [account, setAccount] = useState<AccountResponse | null>(null);
+  const [models, setModels] = useState<ModelSummary[]>([]);
+  const [composerSettings, setComposerSettings] = useState<ComposerSettings>(DEFAULT_COMPOSER_SETTINGS);
+  const [contextUsageByThreadId, setContextUsageByThreadId] = useState<Record<string, ContextUsage>>({});
   const [loginState, setLoginState] = useState<LoginState>({});
   const [projectFormOpen, setProjectFormOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
@@ -324,6 +338,7 @@ function KodexShell() {
   const canSubmitComposer =
     canCompose && !isComposerSubmitting && (Boolean(composerText.trim()) || pendingAttachments.length > 0);
   const shouldShowStopAction = hasActiveSelectedTurn && !canSubmitComposer;
+  const selectedContextUsage = selectedThreadId ? contextUsageByThreadId[selectedThreadId] : null;
   const selectedThreadTitle = selectedThread
     ? pendingTitleThreadIds.has(selectedThread.id)
       ? UI_TEXT.thread.new
@@ -468,6 +483,10 @@ function KodexShell() {
 
     void getAccount()
       .then(setAccount)
+      .catch(reportError);
+
+    void listModels()
+      .then(setModels)
       .catch(reportError);
   }
 
@@ -660,7 +679,7 @@ function KodexShell() {
             error: undefined,
           });
         }
-        await startTurn(selectedThreadId, input);
+        await startTurn(selectedThreadId, input, composerTurnOptions(composerSettings));
         updateOptimisticMessage(optimisticClientRequestId, { confirmationState: "sent", error: undefined });
         clearPendingAttachments();
         setIsComposerSubmitting(false);
@@ -672,7 +691,7 @@ function KodexShell() {
         return;
       }
 
-      const thread = await createThread(selectedProjectId);
+      const thread = await createThread(selectedProjectId, createThreadOptions(composerSettings));
       setThreadsByProjectId((current) => prependThreadForProject(current, selectedProjectId, thread));
       setPendingTitleThreadIds((current) => markThreadTitlePending(current, thread));
       setDraftThreadProjectId(null);
@@ -697,7 +716,7 @@ function KodexShell() {
           error: undefined,
         });
       }
-      await startTurn(thread.id, input);
+      await startTurn(thread.id, input, composerTurnOptions(composerSettings));
       updateOptimisticMessage(optimisticClientRequestId, { confirmationState: "sent", error: undefined });
       clearPendingAttachments();
       setIsComposerSubmitting(false);
@@ -1037,6 +1056,11 @@ function KodexShell() {
   }
 
   function applyThreadMetadataEvent(event: EventEnvelope) {
+    const tokenUsage = contextUsageFromEvent(event);
+    if (tokenUsage && event.threadId) {
+      setContextUsageByThreadId((current) => ({ ...current, [event.threadId as string]: tokenUsage }));
+    }
+
     const update = threadNameUpdateFromEvent(event);
     if (!update) {
       return;
@@ -1384,30 +1408,39 @@ function KodexShell() {
                   {UI_TEXT.composer.dropImages}
                 </Box>
               ) : null}
-              <Group className="kodex-composer-toolbar" justify="space-between" wrap="nowrap">
-                <Menu position="top-start" withinPortal>
-                  <Menu.Target>
-                    <ActionIcon
-                      aria-label={UI_TEXT.composer.openAttachments}
-                      className="kodex-composer-secondary-action"
-                      size="md"
-                      type="button"
-                      variant="subtle"
-                      disabled={!canCompose || isComposerSubmitting}
-                    >
-                      <Plus size={16} />
-                    </ActionIcon>
-                  </Menu.Target>
-                  <Menu.Dropdown aria-label={UI_TEXT.composer.attachments}>
-                    <Menu.Item
-                      disabled={!canCompose || isComposerSubmitting}
-                      leftSection={<Paperclip size={14} />}
-                      onClick={() => attachmentInputRef.current?.click()}
-                    >
-                      {UI_TEXT.composer.addAttachment}
-                    </Menu.Item>
-                  </Menu.Dropdown>
-                </Menu>
+              <Group className="kodex-composer-toolbar" justify="space-between" wrap="wrap">
+                <Group className="kodex-composer-toolbar-left" gap={6} wrap="nowrap">
+                  <Menu position="top-start" withinPortal>
+                    <Menu.Target>
+                      <ActionIcon
+                        aria-label={UI_TEXT.composer.openAttachments}
+                        className="kodex-composer-secondary-action"
+                        size="md"
+                        type="button"
+                        variant="subtle"
+                        disabled={!canCompose || isComposerSubmitting}
+                      >
+                        <Plus size={16} />
+                      </ActionIcon>
+                    </Menu.Target>
+                    <Menu.Dropdown aria-label={UI_TEXT.composer.attachments}>
+                      <Menu.Item
+                        disabled={!canCompose || isComposerSubmitting}
+                        leftSection={<Paperclip size={14} />}
+                        onClick={() => attachmentInputRef.current?.click()}
+                      >
+                        {UI_TEXT.composer.addAttachment}
+                      </Menu.Item>
+                    </Menu.Dropdown>
+                  </Menu>
+                  <ComposerFooterControls
+                    contextUsage={selectedContextUsage}
+                    disabled={!canCompose || isComposerSubmitting}
+                    models={models}
+                    settings={composerSettings}
+                    onSettingsChange={setComposerSettings}
+                  />
+                </Group>
                 <Tooltip label={shouldShowStopAction ? UI_TEXT.composer.stop : UI_TEXT.composer.send}>
                   {shouldShowStopAction ? (
                     <ActionIcon
@@ -2991,6 +3024,81 @@ function threadStatusNeedsApproval(thread: ThreadSummary): boolean {
   return typeof thread.status === "string" && thread.status.toLowerCase().includes("approval");
 }
 
+function createThreadOptions(settings: ComposerSettings): CreateThreadOptions {
+  const options: CreateThreadOptions = {};
+  if (settings.model) {
+    options.model = settings.model;
+  }
+  if (settings.fast) {
+    options.serviceTier = "fast";
+  }
+  const permissions = permissionSettings(settings.permissionPreset);
+  if (permissions) {
+    options.approvalPolicy = permissions.approvalPolicy;
+    options.approvalsReviewer = permissions.approvalsReviewer;
+    options.sandbox = permissions.threadSandbox;
+  }
+  return options;
+}
+
+function composerTurnOptions(settings: ComposerSettings): TurnStartOptions {
+  const options: TurnStartOptions = {};
+  if (settings.model) {
+    options.model = settings.model;
+  }
+  if (settings.effort) {
+    options.effort = settings.effort;
+  }
+  if (settings.fast) {
+    options.serviceTier = "fast";
+  }
+  const permissions = permissionSettings(settings.permissionPreset);
+  if (permissions) {
+    options.approvalPolicy = permissions.approvalPolicy;
+    options.approvalsReviewer = permissions.approvalsReviewer;
+    options.sandboxPolicy = permissions.turnSandboxPolicy;
+  }
+  return options;
+}
+
+function permissionSettings(preset: PermissionPresetId | undefined) {
+  if (!preset) {
+    return null;
+  }
+
+  if (preset === "fullAccess") {
+    return {
+      approvalPolicy: "never",
+      approvalsReviewer: "user",
+      threadSandbox: "danger-full-access",
+      turnSandboxPolicy: { type: "dangerFullAccess" },
+    };
+  }
+
+  return {
+    approvalPolicy: "on-request",
+    approvalsReviewer: preset === "autoReview" ? "auto_review" : "user",
+    threadSandbox: "workspace-write",
+    turnSandboxPolicy: { type: "workspaceWrite", networkAccess: false, writableRoots: [] },
+  };
+}
+
+function contextUsageFromEvent(event: EventEnvelope): ContextUsage | null {
+  if ((event.codexMethod ?? "").toLowerCase() !== "thread/tokenusage/updated") {
+    return null;
+  }
+
+  const payload = asRecord(event.payload);
+  const tokenUsage = asRecord(payload.tokenUsage ?? payload.token_usage ?? event.payload);
+  const total = asRecord(tokenUsage.total);
+  const totalTokens = numberValue(total.totalTokens ?? total.total_tokens ?? tokenUsage.totalTokens ?? tokenUsage.total_tokens);
+  const modelContextWindow = numberValue(tokenUsage.modelContextWindow ?? tokenUsage.model_context_window);
+  if (totalTokens === null && modelContextWindow === null) {
+    return null;
+  }
+  return { totalTokens, modelContextWindow };
+}
+
 function sameComposerContext(left: ComposerContext | null, right: ComposerContext): boolean {
   return (
     left?.activeSelectedTurnId === right.activeSelectedTurnId &&
@@ -3032,6 +3140,10 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function capitalize(value: string): string {
