@@ -610,6 +610,9 @@ describe("MVP frontend flows", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /open attachment menu/i }));
     await userEvent.click(await screen.findByRole("menuitem", { name: /add attachment/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole("menuitem", { name: /add attachment/i })).not.toBeInTheDocument();
+    });
 
     await userEvent.type(screen.getByLabelText(/message composer/i), "Ship it");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));

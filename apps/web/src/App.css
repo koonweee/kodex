@@ -16,14 +16,24 @@ body {
 .mantine-Menu-dropdown {
   border-radius: 18px;
   overflow: hidden;
-}
-
-.mantine-Menu-dropdown [data-menu-item] {
-  border-radius: 12px;
-}
-
-.mantine-Menu-dropdown [data-mantine-stop-propagation] {
   padding: 4px;
+}
+
+.mantine-Menu-dropdown [data-menu-item],
+.kodex-debug-toggle {
+  width: 100%;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.mantine-Menu-dropdown [data-menu-item]:hover,
+.mantine-Menu-dropdown [data-menu-item][data-hovered],
+.kodex-debug-toggle:hover {
+  background: #2a2a2a;
 }
 
 .kodex-shell {
@@ -749,20 +759,9 @@ body {
 }
 
 .kodex-debug-toggle {
-  width: 100%;
   border: 0;
-  border-radius: 6px;
-  padding: 8px 10px;
-  background: transparent;
-  color: inherit;
   font: inherit;
-  font-size: 13px;
-  text-align: left;
   cursor: pointer;
-}
-
-.kodex-debug-toggle:hover {
-  background: #2a2a2a;
 }
 
 .kodex-debug-toggle[aria-checked="true"]::before {
