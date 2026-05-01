@@ -945,6 +945,12 @@ mod tests {
             "/v1/threads/{threadId}/resume",
             "/v1/threads/{threadId}/fork",
             "/v1/threads/{threadId}/archive",
+            "/v1/account",
+            "/v1/account/login",
+            "/v1/account/login/{loginId}/cancel",
+            "/v1/account/logout",
+            "/v1/account/rate-limits",
+            "/v1/models",
         ] {
             assert!(openapi["paths"].get(path).is_some(), "missing {path}");
         }
@@ -1446,6 +1452,124 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert!(app_server.responses.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn account_and_model_routes_map_to_app_server_methods() {
+        let (state, app_server) = test_state().await;
+        let app = build_router(state);
+
+        assert_ok(
+            app.clone()
+                .oneshot(
+                    Request::get("/v1/account?refreshToken=true")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+        assert_ok(
+            app.clone()
+                .oneshot(
+                    Request::post("/v1/account/login")
+                        .header("content-type", "application/json")
+                        .body(Body::from(r#"{"payload":{"provider":"chatgpt"}}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+        assert_ok(
+            app.clone()
+                .oneshot(
+                    Request::post("/v1/account/login/login-1/cancel")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+        assert_ok(
+            app.clone()
+                .oneshot(
+                    Request::post("/v1/account/logout")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+        assert_ok(
+            app.clone()
+                .oneshot(
+                    Request::get("/v1/account/rate-limits")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+        assert_ok(
+            app.oneshot(
+                Request::get("/v1/models?includeHidden=true")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+        );
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "account/read");
+        assert_eq!(requests[0].1, json!({"refreshToken": true}));
+        assert_eq!(requests[1].0, "account/login/start");
+        assert_eq!(requests[1].1, json!({"provider": "chatgpt"}));
+        assert_eq!(requests[2].0, "account/login/cancel");
+        assert_eq!(requests[2].1, json!({"loginId": "login-1"}));
+        assert_eq!(requests[3].0, "account/logout");
+        assert_eq!(requests[3].1, Value::Null);
+        assert_eq!(requests[4].0, "account/rateLimits/read");
+        assert_eq!(requests[4].1, Value::Null);
+        assert_eq!(requests[5].0, "model/list");
+        assert_eq!(requests[5].1, json!({"includeHidden": true}));
+    }
+
+    #[tokio::test]
+    async fn account_notifications_flow_through_event_stream() {
+        let (state, _) = test_state().await;
+        for method in [
+            "account/login/completed",
+            "account/updated",
+            "account/rateLimits/updated",
+        ] {
+            ingest_inbound(
+                InboundMessage::Notification {
+                    method: method.to_string(),
+                    params: json!({"accountId": "acct-1"}),
+                },
+                &state,
+            )
+            .await
+            .unwrap();
+        }
+
+        let methods = state
+            .store
+            .replay_events(None, None, None)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|event| event.codex_method.unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            methods,
+            vec![
+                "account/login/completed",
+                "account/updated",
+                "account/rateLimits/updated"
+            ]
+        );
     }
 
     #[tokio::test]

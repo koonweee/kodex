@@ -360,7 +360,7 @@ Exit conditions:
 
 ## Milestone 7: Account and Models
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
