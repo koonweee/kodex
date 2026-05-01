@@ -188,7 +188,7 @@ body {
 .kodex-composer {
   display: grid;
   grid-template-rows: minmax(63px, 1fr) auto;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
   border: 0;
   border-radius: 24px;
@@ -219,7 +219,7 @@ body {
 }
 
 .kodex-composer-toolbar {
-  min-height: 36px;
+  min-height: 30px;
 }
 
 .kodex-composer-action[data-action-state="idle"] {

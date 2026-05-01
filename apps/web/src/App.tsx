@@ -28,7 +28,7 @@ import {
   Paperclip,
   PanelRightOpen,
   Plus,
-  Send,
+  ArrowUp,
   Settings,
   Square,
   SquarePen,
@@ -969,11 +969,11 @@ function KodexShell() {
                     <ActionIcon
                       aria-label={UI_TEXT.composer.openAttachments}
                       className="kodex-composer-secondary-action"
-                      size="lg"
+                      size="md"
                       type="button"
                       variant="subtle"
                     >
-                      <Plus size={18} />
+                      <Plus size={16} />
                     </ActionIcon>
                   </Menu.Target>
                   <Menu.Dropdown aria-label={UI_TEXT.composer.attachments}>
@@ -986,24 +986,24 @@ function KodexShell() {
                       className="kodex-composer-action"
                       data-action-state="active"
                       aria-label={UI_TEXT.composer.stop}
-                      size="lg"
+                      size="md"
                       variant="filled"
                       type="button"
                       disabled={!selectedThread}
                       onClick={handleStopTurn}
                     >
-                      <Square size={15} fill="currentColor" strokeWidth={0} />
+                      <Square size={13} fill="currentColor" strokeWidth={0} />
                     </ActionIcon>
                   ) : (
                     <ActionIcon
                       className="kodex-composer-action"
                       data-action-state="idle"
                       aria-label={UI_TEXT.composer.send}
-                      size="lg"
+                      size="md"
                       type="submit"
                       disabled={!canCompose || !composerText.trim()}
                     >
-                      <Send size={17} />
+                      <ArrowUp size={16} />
                     </ActionIcon>
                   )}
                 </Tooltip>
