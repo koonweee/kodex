@@ -1,0 +1,130 @@
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #f4f7f7;
+}
+
+.kodex-shell {
+  min-height: 100vh;
+  color: #172121;
+}
+
+.kodex-header {
+  border-bottom: 1px solid #dce5e4;
+  background: #fbfdfc;
+}
+
+.kodex-mark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid #b7c9c5;
+  border-radius: 8px;
+  background: #e7f4ef;
+  color: #0f5c55;
+  font-weight: 800;
+}
+
+.kodex-sidebar,
+.kodex-approvals {
+  border-color: #dce5e4;
+  background: #f8fbfa;
+}
+
+.kodex-main {
+  background: #f4f7f7;
+}
+
+.kodex-thread-panel {
+  min-height: 0;
+  flex: 1;
+  border: 1px solid #dce5e4;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.kodex-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  border: 1px solid #dce5e4;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.kodex-steer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  border: 1px solid #dce5e4;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fbfdfc;
+}
+
+.kodex-project-form {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+  border: 1px solid #dce5e4;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.kodex-list-button {
+  width: 100%;
+  border: 1px solid #dce5e4;
+  border-radius: 8px;
+  padding: 10px;
+  background: #ffffff;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.kodex-list-button[data-active="true"] {
+  border-color: #7ab9b0;
+  background: #eaf6f3;
+}
+
+.kodex-timeline-item,
+.kodex-approval-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #dce5e4;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.kodex-empty {
+  display: grid;
+  gap: 6px;
+  min-height: 112px;
+  align-content: center;
+  justify-items: start;
+  border: 1px dashed #c8d6d3;
+  border-radius: 8px;
+  padding: 16px;
+  background: #ffffff;
+}
+
+.kodex-empty-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 8px;
+  background: #edf5f3;
+  color: #31756e;
+}

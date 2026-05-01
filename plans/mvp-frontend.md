@@ -4,6 +4,8 @@
 
 Build the first Kodex web client in React. The client consumes the Rust gateway HTTP and SSE APIs. It is not the source of truth for sessions or events; it renders gateway state and sends user actions. The design must keep future desktop, mobile, CLI, or extension clients possible.
 
+Current implementation note: `apps/web` now contains the Vite/Mantine React client, generated OpenAPI TypeScript types, typed gateway client wrappers, SSE reconnect support, timeline renderer registry, project/thread navigation, composer and steering controls, approvals, account/model controls, and Vitest plus Playwright coverage for the MVP flows.
+
 ## Principles
 
 - Red first: each UI feature starts with a failing component test, reducer test, API-client test, or Playwright flow.
@@ -33,7 +35,7 @@ Build the first Kodex web client in React. The client consumes the Rust gateway 
 
 ## Milestone 0: Frontend Scaffold
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -72,7 +74,7 @@ Exit conditions:
 
 ## Milestone 1: Project and Thread Navigation
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -117,7 +119,7 @@ Exit conditions:
 
 ## Milestone 2: Event Stream and Timeline Reducer
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -166,7 +168,7 @@ Exit conditions:
 
 ## Milestone 3: Composer and Turn Controls
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -207,7 +209,7 @@ Exit conditions:
 
 ## Milestone 4: Approval UI
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -257,7 +259,7 @@ Exit conditions:
 
 ## Milestone 5: Account and Models
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -305,7 +307,7 @@ Exit conditions:
 
 ## Milestone 6: MVP Polish and E2E
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 

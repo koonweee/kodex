@@ -8,6 +8,8 @@ The MVP target is a Rust gateway that supervises an external `codex app-server` 
 
 The first Rust gateway implementation exists under `apps/gateway`. It includes the backend scaffold, SQLite event/project/approval storage, a stdio JSON-RPC app-server supervisor, HTTP/SSE API routes, approval brokering, OpenAPI generation, an app-server adapter layer, product-shaped frontend response DTOs, and optional static frontend serving.
 
+The first React web client exists under `apps/web`. It includes the Vite/Mantine scaffold, generated OpenAPI TypeScript types, a typed fetch client, project/thread navigation, timeline event replay, composer controls, pending approval decisions, and account/model surfaces.
+
 See [plans/index.md](plans/index.md) for the plan directory and status table.
 
 ## MVP Assumptions
@@ -63,6 +65,8 @@ Commands:
 ```bash
 cargo fmt
 cargo test
+cd apps/web && npm test
+cd apps/web && npm run build
 cargo run -p kodex-gateway
 apps/gateway/scripts/generate-app-server-schema.sh
 ```
@@ -111,6 +115,48 @@ Local routes:
 - Frontend-critical Codex routes such as `GET /v1/threads`, `GET /v1/models`, `GET /v1/account`, `GET /v1/account/rate-limits`, and `POST /v1/account/login` expose typed gateway DTOs with `rawPayload` retained only as an escape hatch for volatile app-server fields.
 
 The gateway has no MVP auth and is intended only for localhost or a trusted VPN. Do not expose it directly to the public internet. ChatGPT/Codex login routes broker Codex/OpenAI auth through app-server APIs; they are not gateway access control.
+
+## Frontend Development
+
+Prerequisites:
+
+- Node.js and npm.
+- A running gateway for live API calls and API type generation.
+
+Commands:
+
+```bash
+cd apps/web
+npm install
+npm run dev
+npm test
+npm run test:e2e
+npm run build
+npm run generate:api
+```
+
+The Vite dev server runs on `127.0.0.1:5173` and proxies `/v1` plus `/openapi.json` to the default gateway at `127.0.0.1:8787`. To target another gateway, set `VITE_KODEX_API_BASE_URL`.
+
+Playwright E2E tests run against mocked gateway responses and start their own Vite server on `127.0.0.1:5174`.
+
+Frontend API types are generated from the gateway OpenAPI contract and committed at `apps/web/src/api/generated/schema.ts` so the client remains buildable from a fresh checkout. Regenerate them after backend DTO or route contract changes:
+
+```bash
+cargo run -p kodex-gateway
+cd apps/web
+npm run generate:api
+```
+
+Full-stack static serving uses the gateway's frontend dist hook:
+
+```bash
+cd apps/web
+npm run build
+cd ../..
+KODEX_FRONTEND_DIST=apps/web/dist cargo run -p kodex-gateway
+```
+
+Gateway access remains localhost or trusted VPN only. The ChatGPT login UI only manages Codex/OpenAI account state through the app-server account APIs; it is not gateway access control.
 
 ## App-Server Schema
 

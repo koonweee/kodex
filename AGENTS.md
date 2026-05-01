@@ -32,6 +32,16 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - Keep the configured `codex` binary version matched to the checked-in `apps/gateway/app-server-schema/<version>/VERSION` schema version.
 - Regenerate the checked-in Codex app-server JSON Schema with `apps/gateway/scripts/generate-app-server-schema.sh` after changing the Codex binary version.
 
+## Frontend Commands
+
+- Install frontend dependencies with `cd apps/web && npm install`.
+- Start the Vite dev server with `cd apps/web && npm run dev`; it proxies `/v1` and `/openapi.json` to `127.0.0.1:8787` unless `VITE_KODEX_API_BASE_URL` is set.
+- Run frontend unit/component tests with `cd apps/web && npm test`.
+- Run frontend Playwright flows with `cd apps/web && npm run test:e2e`.
+- Build frontend assets with `cd apps/web && npm run build`.
+- Regenerate frontend OpenAPI types with a gateway running, then `cd apps/web && npm run generate:api`.
+- The generated OpenAPI TypeScript output is committed at `apps/web/src/api/generated/schema.ts`; do not hand-write duplicate gateway DTO interfaces.
+
 ## Parallel Work
 
 - Use subagents for independent, parallelizable work when the active environment and instructions permit it.
