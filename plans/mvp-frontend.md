@@ -96,11 +96,8 @@ API dependencies:
 
 - `GET /v1/projects`
 - `POST /v1/projects`
-- `GET /v1/threads?projectId=`
-- `POST /v1/threads`
-- `GET /v1/threads/:threadId`
-- `POST /v1/threads/:threadId/resume`
-- `POST /v1/threads/:threadId/fork`
+- `GET /v1/threads?projectId=` returns typed `threads`, cursor fields, and `rawPayload` for diagnostics only.
+- `POST /v1/threads`, `GET /v1/threads/:threadId`, `POST /v1/threads/:threadId/resume`, and `POST /v1/threads/:threadId/fork` return typed thread metadata needed by the UI.
 - `POST /v1/threads/:threadId/archive`
 
 YAGNI boundaries:
@@ -290,6 +287,8 @@ API dependencies:
 - `POST /v1/account/logout`
 - `GET /v1/account/rate-limits`
 - `GET /v1/models`
+
+The frontend should consume the generated gateway DTOs for account, login start, rate limits, and model list directly. Stable MVP fields are first-class backend fields; do not add frontend normalizers that parse them out of opaque app-server payloads.
 
 Documentation:
 

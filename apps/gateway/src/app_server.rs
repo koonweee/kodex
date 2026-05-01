@@ -350,6 +350,7 @@ pub mod tests {
         pub ready: AtomicBool,
         pub requests: StdMutex<Vec<(String, Value)>>,
         pub responses: StdMutex<Vec<(String, Value)>>,
+        pub next_response: StdMutex<Option<Value>>,
     }
 
     #[test]
@@ -485,7 +486,12 @@ done
                 .lock()
                 .unwrap()
                 .push((method.to_string(), params));
-            Ok(json!({"ok": true, "method": method}))
+            Ok(self
+                .next_response
+                .lock()
+                .unwrap()
+                .take()
+                .unwrap_or_else(|| default_test_response(method)))
         }
 
         async fn respond(&self, request_id: &str, result: Value) -> ApiResult<()> {
@@ -495,5 +501,46 @@ done
                 .push((request_id.to_string(), result));
             Ok(())
         }
+    }
+
+    fn default_test_response(method: &str) -> Value {
+        match method {
+            "thread/list" => json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
+            "thread/read" => json!({"thread": test_thread("thread-1")}),
+            "thread/start" | "thread/resume" | "thread/fork" => json!({
+                "thread": test_thread("thread-1"),
+                "cwd": "/workspace",
+                "model": "gpt-5.4",
+                "modelProvider": "openai"
+            }),
+            "account/read" => json!({"requiresOpenaiAuth": true, "account": null}),
+            "account/login/start" => json!({
+                "type": "chatgpt",
+                "loginId": "login-1",
+                "authUrl": "https://example.test/login"
+            }),
+            "account/rateLimits/read" => json!({
+                "rateLimits": null,
+                "rateLimitsByLimitId": null
+            }),
+            "model/list" => json!({"data": [], "nextCursor": null}),
+            _ => json!({"ok": true, "method": method}),
+        }
+    }
+
+    fn test_thread(id: &str) -> Value {
+        json!({
+            "id": id,
+            "cliVersion": "0.128.0",
+            "cwd": "/workspace",
+            "ephemeral": false,
+            "modelProvider": "openai",
+            "preview": "hello",
+            "source": "cli",
+            "status": {"type": "idle"},
+            "turns": [],
+            "createdAt": 1_767_225_600_i64,
+            "updatedAt": 1_767_225_600_i64
+        })
     }
 }

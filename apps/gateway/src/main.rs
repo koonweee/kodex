@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use kodex_gateway::{
-    api::run_inbound_ingest,
     app_server::{DynAppServer, JsonRpcAppServer, UnavailableAppServer},
     build_router,
     config::Config,
+    events::run_inbound_ingest,
     store::Store,
     AppState,
 };

@@ -19,6 +19,8 @@ pub enum ApiError {
     AppServerUnavailable,
     #[error("retryable app-server error: {0}")]
     Retryable(String),
+    #[error("bad gateway: {0}")]
+    BadGateway(String),
     #[error(transparent)]
     Store(#[from] sqlx::Error),
     #[error(transparent)]
@@ -42,6 +44,7 @@ impl ApiError {
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::AppServerUnavailable => StatusCode::SERVICE_UNAVAILABLE,
             Self::Retryable(_) => StatusCode::TOO_MANY_REQUESTS,
+            Self::BadGateway(_) => StatusCode::BAD_GATEWAY,
             Self::Store(_) | Self::Io(_) | Self::Other(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -65,6 +68,11 @@ impl ApiError {
             },
             Self::Retryable(message) => ApiErrorBody {
                 code: "app_server_retryable".to_string(),
+                message: message.clone(),
+                retryable: true,
+            },
+            Self::BadGateway(message) => ApiErrorBody {
+                code: "bad_gateway".to_string(),
                 message: message.clone(),
                 retryable: true,
             },

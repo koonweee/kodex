@@ -52,7 +52,7 @@ This revision should keep existing behavior working while making the backend own
 
 ## Milestone 0: Safety Net and Module Map
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -74,7 +74,7 @@ Exit conditions:
 
 ## Milestone 1: App-Server Adapter Layer
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -98,7 +98,7 @@ Exit conditions:
 
 ## Milestone 2: Product-Shaped Frontend DTOs
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -130,7 +130,7 @@ Exit conditions:
 
 ## Milestone 3: Event and Approval Workflow Split
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -154,7 +154,7 @@ Exit conditions:
 
 ## Milestone 4: Route Module Split
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -186,7 +186,7 @@ Exit conditions:
 
 ## Milestone 5: Documentation and Frontend Plan Alignment
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 

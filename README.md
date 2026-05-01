@@ -6,7 +6,7 @@ The MVP target is a Rust gateway that supervises an external `codex app-server` 
 
 ## Current Status
 
-The first Rust gateway implementation exists under `apps/gateway`. It includes the backend scaffold, SQLite event/project/approval storage, a stdio JSON-RPC app-server supervisor, HTTP/SSE API routes, approval brokering, OpenAPI generation, and optional static frontend serving.
+The first Rust gateway implementation exists under `apps/gateway`. It includes the backend scaffold, SQLite event/project/approval storage, a stdio JSON-RPC app-server supervisor, HTTP/SSE API routes, approval brokering, OpenAPI generation, an app-server adapter layer, product-shaped frontend response DTOs, and optional static frontend serving.
 
 See [plans/index.md](plans/index.md) for the plan directory and status table.
 
@@ -108,6 +108,7 @@ Local routes:
 - `GET /openapi.json`
 - `GET /docs`
 - `GET /v1/events` for JSON replay, or SSE when `Accept: text/event-stream`
+- Frontend-critical Codex routes such as `GET /v1/threads`, `GET /v1/models`, `GET /v1/account`, `GET /v1/account/rate-limits`, and `POST /v1/account/login` expose typed gateway DTOs with `rawPayload` retained only as an escape hatch for volatile app-server fields.
 
 The gateway has no MVP auth and is intended only for localhost or a trusted VPN. Do not expose it directly to the public internet. ChatGPT/Codex login routes broker Codex/OpenAI auth through app-server APIs; they are not gateway access control.
 
@@ -119,7 +120,7 @@ The checked-in app-server JSON Schema is generated from the exact Codex binary v
 apps/gateway/scripts/generate-app-server-schema.sh
 ```
 
-The gateway currently validates outbound JSON-RPC client requests and the `initialized` notification against `apps/gateway/app-server-schema/0.128.0/json`.
+The gateway validates outbound JSON-RPC client requests through the app-server adapter and validates the `initialized` notification against `apps/gateway/app-server-schema/0.128.0/json`.
 
 ## Development Rules
 
