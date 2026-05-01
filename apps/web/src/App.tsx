@@ -46,6 +46,8 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ChangeEvent as ReactChangeEvent,
+  type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -67,12 +69,15 @@ import {
   startLogin,
   startTurn,
   steerTurn,
+  uploadImages,
   type AccountResponse,
   type Approval,
   type ApprovalResponse,
   type EventEnvelope,
+  type ImageUpload,
   type Project,
   type ThreadSummary,
+  type UserInput,
 } from "./api/client";
 import { createEventStreamClient } from "./events/stream";
 import { applyTimelineEventBatch } from "./timeline/batch";
@@ -100,34 +105,16 @@ const theme = createTheme({
 const UI_TEXT = {
   appName: "Kodex",
   approvals: {
-    commandTitle: "Command approval",
+    commandTitle: "Would you like to run the following command?",
     emptyText: "Command, file, and permission requests will appear here.",
     emptyTitle: "No pending approvals",
     fallbackTitle: "Approval request",
-    fileTitle: "File change approval",
+    fileTitle: "Would you like to make the following edits?",
     label: "Approvals",
     mcpTitle: "MCP approval",
-    permissionsTitle: "Permission approval",
+    permissionsTitle: "Would you like to grant these permissions?",
     pending: "pending",
     toolInputTitle: "Input requested",
-    actions: {
-      accept: "Accept",
-      acceptAria: "Accept approval",
-      acceptSession: "Session",
-      acceptSessionAria: "Accept for session",
-      applyExecPolicy: "Apply exec policy",
-      applyExecPolicyAria: "Apply exec policy approval",
-      cancel: "Cancel",
-      cancelAria: "Cancel approval",
-      decline: "Decline",
-      declineAria: "Decline approval",
-      grant: "Grant",
-      grantAria: "Grant approval",
-      grantSession: "Session",
-      grantSessionAria: "Grant for session",
-      submit: "Submit",
-      submitAria: "Submit answers",
-    },
   },
   auth: {
     cancel: "Cancel login",
@@ -140,6 +127,7 @@ const UI_TEXT = {
     addAttachment: "Add attachment",
     attachments: "Attachment options",
     disabledPlaceholder: "Select a thread to start composing",
+    dropImages: "Drop images to attach",
     openAttachments: "Open attachment menu",
     placeholder: "type clever thing here",
     send: "Send message",
@@ -186,6 +174,7 @@ const UI_TEXT = {
     untitled: "Untitled thread",
   },
   turn: {
+    abortButton: "Abort queued message",
     queueLabel: "Queued steer messages",
     queueRow: "Queued steer message",
     steerButton: "Steer",
@@ -213,6 +202,15 @@ type TimelineEntry =
 type QueuedSteerRow = {
   id: string;
   text: string;
+  attachments: PendingAttachment[];
+};
+type PendingAttachment = {
+  id: string;
+  file: File;
+  objectUrl: string;
+  status: "pending" | "uploading" | "uploaded" | "error";
+  uploaded?: ImageUpload;
+  error?: string;
 };
 
 const SIDEBAR_MIN_WIDTH = 292;
@@ -269,6 +267,9 @@ function KodexShell() {
   const [projectName, setProjectName] = useState("");
   const [projectCwd, setProjectCwd] = useState("");
   const [composerText, setComposerText] = useState("");
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [isComposerDragActive, setIsComposerDragActive] = useState(false);
+  const [imagePreviewUrlsByPath, setImagePreviewUrlsByPath] = useState<Record<string, string>>({});
   const [queuedSteerRows, setQueuedSteerRows] = useState<QueuedSteerRow[]>([]);
   const [showDebugEvents, setShowDebugEvents] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -282,6 +283,9 @@ function KodexShell() {
   const threadRequestIds = useRef<Map<string, number>>(new Map());
   const nextThreadRequestId = useRef(0);
   const nextQueuedSteerId = useRef(0);
+  const nextAttachmentId = useRef(0);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const imagePreviewUrlsByPathRef = useRef<Record<string, string>>({});
 
   const selectedProjectThreads = selectedProjectId ? threadsByProjectId[selectedProjectId] ?? [] : [];
   const selectedThread = selectedProjectThreads.find((thread) => thread.id === selectedThreadId) ?? null;
@@ -298,6 +302,8 @@ function KodexShell() {
   const hasActiveSelectedTurn = activeSelectedTurnId !== null;
   const isDraftThreadSelected = draftThreadProjectId !== null && draftThreadProjectId === selectedProjectId;
   const canCompose = selectedThread !== null || isDraftThreadSelected;
+  const canSubmitComposer = canCompose && (Boolean(composerText.trim()) || pendingAttachments.length > 0);
+  const shouldShowStopAction = hasActiveSelectedTurn && !canSubmitComposer;
   const selectedThreadTitle = selectedThread
     ? pendingTitleThreadIds.has(selectedThread.id)
       ? UI_TEXT.thread.new
@@ -309,7 +315,15 @@ function KodexShell() {
   }, []);
 
   useEffect(() => {
-    setQueuedSteerRows([]);
+    setQueuedSteerRows((current) => {
+      for (const row of current) {
+        for (const attachment of row.attachments) {
+          releaseAttachmentObjectUrl(attachment);
+        }
+      }
+      return [];
+    });
+    clearPendingAttachments();
   }, [selectedThreadId, activeSelectedTurnId]);
 
   useEffect(() => {
@@ -541,7 +555,7 @@ function KodexShell() {
 
   async function handleSubmitTurn(event: FormEvent) {
     event.preventDefault();
-    if (!composerText.trim()) {
+    if (!canSubmitComposer) {
       return;
     }
 
@@ -549,29 +563,39 @@ function KodexShell() {
     if (selectedThreadId && activeSelectedTurnId) {
       const id = `queued-steer-${nextQueuedSteerId.current + 1}`;
       nextQueuedSteerId.current += 1;
-      setQueuedSteerRows((current) => [...current, { id, text }]);
+      const attachments = pendingAttachments;
+      setQueuedSteerRows((current) => [...current, { id, text, attachments }]);
       setComposerText("");
+      setPendingAttachments([]);
       return;
     }
 
-    if (selectedThreadId) {
-      await startTurn(selectedThreadId, text);
+    try {
+      if (selectedThreadId) {
+        const input = await buildTurnInput(text, pendingAttachments);
+        await startTurn(selectedThreadId, input);
+        setComposerText("");
+        clearPendingAttachments();
+        return;
+      }
+
+      if (!isDraftThreadSelected || !selectedProjectId) {
+        return;
+      }
+
+      const input = await buildTurnInput(text, pendingAttachments);
+      const thread = await createThread(selectedProjectId);
+      setThreadsByProjectId((current) => prependThreadForProject(current, selectedProjectId, thread));
+      setPendingTitleThreadIds((current) => markThreadTitlePending(current, thread));
+      setDraftThreadProjectId(null);
+      beginTimelineEntry(thread.id);
+      setSelectedThreadId(thread.id);
+      await startTurn(thread.id, input);
       setComposerText("");
-      return;
+      clearPendingAttachments();
+    } catch (error) {
+      reportError(error);
     }
-
-    if (!isDraftThreadSelected || !selectedProjectId) {
-      return;
-    }
-
-    const thread = await createThread(selectedProjectId);
-    setThreadsByProjectId((current) => prependThreadForProject(current, selectedProjectId, thread));
-    setPendingTitleThreadIds((current) => markThreadTitlePending(current, thread));
-    setDraftThreadProjectId(null);
-    beginTimelineEntry(thread.id);
-    setSelectedThreadId(thread.id);
-    await startTurn(thread.id, text);
-    setComposerText("");
   }
 
   async function handleStopTurn() {
@@ -588,11 +612,189 @@ function KodexShell() {
     }
 
     try {
-      await steerTurn(selectedThreadId, activeSelectedTurnId, row.text);
+      const input = await buildTurnInput(row.text, row.attachments);
+      await steerTurn(selectedThreadId, activeSelectedTurnId, input);
+      for (const attachment of row.attachments) {
+        releaseAttachmentObjectUrl(attachment);
+      }
       setQueuedSteerRows((current) => current.filter((item) => item.id !== row.id));
     } catch (error) {
       reportError(error);
     }
+  }
+
+  function handleAbortQueuedSteer(row: QueuedSteerRow) {
+    for (const attachment of row.attachments) {
+      releaseAttachmentObjectUrl(attachment);
+    }
+    setQueuedSteerRows((current) => current.filter((item) => item.id !== row.id));
+  }
+
+  async function buildTurnInput(text: string, attachments: PendingAttachment[]): Promise<UserInput[]> {
+    const input: UserInput[] = [];
+    if (text) {
+      input.push({ type: "text", text });
+    }
+    if (attachments.length > 0) {
+      const attachmentsToUpload = attachments.filter((attachment) => !attachment.uploaded);
+      updateAttachments(
+        new Map(
+          attachmentsToUpload.map((attachment) => [
+            attachment.id,
+            { status: "uploading" as const, error: undefined },
+          ]),
+        ),
+      );
+      let uploads: ImageUpload[] = [];
+      try {
+        uploads =
+          attachmentsToUpload.length > 0
+            ? await uploadImages(attachmentsToUpload.map((attachment) => attachment.file))
+            : [];
+        if (uploads.length !== attachmentsToUpload.length) {
+          throw new Error("Gateway upload response did not match selected attachments");
+        }
+      } catch (error) {
+        const message = errorMessageFrom(error);
+        updateAttachments(
+          new Map(
+            attachmentsToUpload.map((attachment) => [
+              attachment.id,
+              { status: "error" as const, error: message },
+            ]),
+          ),
+        );
+        throw error;
+      }
+
+      const previewUrls: Record<string, string> = {};
+      const uploadedByAttachmentId = new Map<string, ImageUpload>();
+      for (const [index, upload] of uploads.entries()) {
+        const attachment = attachmentsToUpload[index];
+        if (attachment) {
+          uploadedByAttachmentId.set(attachment.id, upload);
+          previewUrls[upload.path] = attachment.objectUrl;
+        }
+      }
+      updateAttachments(
+        new Map(
+          attachmentsToUpload.map((attachment) => [
+            attachment.id,
+            { status: "uploaded" as const, uploaded: uploadedByAttachmentId.get(attachment.id), error: undefined },
+          ]),
+        ),
+      );
+      for (const attachment of attachments) {
+        const upload = attachment.uploaded ?? uploadedByAttachmentId.get(attachment.id);
+        if (!upload) {
+          continue;
+        }
+        input.push({ type: "localImage", path: upload.path });
+      }
+      if (Object.keys(previewUrls).length > 0) {
+        rememberImagePreviewUrls(previewUrls);
+      }
+    }
+    return input;
+  }
+
+  function updateAttachments(updates: Map<string, Partial<PendingAttachment>>) {
+    if (updates.size === 0) {
+      return;
+    }
+
+    const applyUpdates = (attachment: PendingAttachment) => {
+      const update = updates.get(attachment.id);
+      return update ? { ...attachment, ...update } : attachment;
+    };
+    setPendingAttachments((current) => current.map(applyUpdates));
+    setQueuedSteerRows((current) =>
+      current.map((row) => ({
+        ...row,
+        attachments: row.attachments.map(applyUpdates),
+      })),
+    );
+  }
+
+  function rememberImagePreviewUrls(previewUrls: Record<string, string>) {
+    imagePreviewUrlsByPathRef.current = { ...imagePreviewUrlsByPathRef.current, ...previewUrls };
+    setImagePreviewUrlsByPath(imagePreviewUrlsByPathRef.current);
+  }
+
+  function releaseAttachmentObjectUrl(attachment: PendingAttachment) {
+    if (Object.values(imagePreviewUrlsByPathRef.current).includes(attachment.objectUrl)) {
+      return;
+    }
+    revokeObjectUrl(attachment.objectUrl);
+  }
+
+  function handleAttachmentInputChange(event: ReactChangeEvent<HTMLInputElement>) {
+    appendImageFiles(event.currentTarget.files);
+    event.currentTarget.value = "";
+  }
+
+  function appendImageFiles(fileList: FileList | File[] | null) {
+    if (!fileList) {
+      return;
+    }
+    const files = Array.from(fileList).filter((file) => file.type.startsWith("image/"));
+    if (files.length === 0) {
+      return;
+    }
+    setPendingAttachments((current) => [
+      ...current,
+      ...files.map((file) => {
+        nextAttachmentId.current += 1;
+        return {
+          id: `attachment-${nextAttachmentId.current}`,
+          file,
+          objectUrl: createObjectUrl(file),
+          status: "pending" as const,
+        };
+      }),
+    ]);
+  }
+
+  function removePendingAttachment(id: string) {
+    setPendingAttachments((current) => {
+      const removed = current.find((attachment) => attachment.id === id);
+      if (removed) {
+        releaseAttachmentObjectUrl(removed);
+      }
+      return current.filter((attachment) => attachment.id !== id);
+    });
+  }
+
+  function clearPendingAttachments() {
+    setPendingAttachments((current) => {
+      for (const attachment of current) {
+        releaseAttachmentObjectUrl(attachment);
+      }
+      return [];
+    });
+  }
+
+  function handleComposerDragOver(event: ReactDragEvent<HTMLElement>) {
+    if (!canCompose || !hasImageFiles(event.dataTransfer)) {
+      return;
+    }
+    event.preventDefault();
+    setIsComposerDragActive(true);
+  }
+
+  function handleComposerDragLeave(event: ReactDragEvent<HTMLElement>) {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setIsComposerDragActive(false);
+    }
+  }
+
+  function handleComposerDrop(event: ReactDragEvent<HTMLElement>) {
+    if (!canCompose || !hasImageFiles(event.dataTransfer)) {
+      return;
+    }
+    event.preventDefault();
+    setIsComposerDragActive(false);
+    appendImageFiles(event.dataTransfer.files);
   }
 
   function handleComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
@@ -920,6 +1122,7 @@ function KodexShell() {
                       approvals={selectedThreadApprovals}
                       onReady={() => handleTimelineReady(selectedThread.id)}
                       onApprovalDecision={handleApprovalDecision}
+                      imagePreviewUrlsByPath={imagePreviewUrlsByPath}
                       scrollParentElement={timelineScrollElement}
                       showDebug={showDebugEvents}
                       timeline={timeline}
@@ -945,11 +1148,31 @@ function KodexShell() {
           <Box
             className="kodex-composer-shell kodex-main-column"
             data-entry-ready={selectedThread !== null && !isSelectedTimelineReady ? "false" : "true"}
+            data-drag-active={isComposerDragActive ? "true" : "false"}
+            onDragLeave={handleComposerDragLeave}
+            onDragOver={handleComposerDragOver}
+            onDrop={handleComposerDrop}
           >
             {queuedSteerRows.length > 0 ? (
-              <QueuedSteerCard rows={queuedSteerRows} onSubmitRow={handleSubmitQueuedSteer} />
+              <QueuedSteerCard
+                rows={queuedSteerRows}
+                onAbortRow={handleAbortQueuedSteer}
+                onSubmitRow={handleSubmitQueuedSteer}
+              />
             ) : null}
             <Box component="form" className="kodex-composer" onSubmit={handleSubmitTurn}>
+              <input
+                ref={attachmentInputRef}
+                aria-label={UI_TEXT.composer.addAttachment}
+                className="kodex-attachment-input"
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleAttachmentInputChange}
+              />
+              {pendingAttachments.length > 0 ? (
+                <AttachmentTray attachments={pendingAttachments} onRemove={removePendingAttachment} />
+              ) : null}
               <Textarea
                 aria-label="Message composer"
                 className="kodex-composer-textarea"
@@ -963,6 +1186,11 @@ function KodexShell() {
                 disabled={!canCompose}
                 variant="unstyled"
               />
+              {isComposerDragActive ? (
+                <Box className="kodex-composer-drop-hint" aria-hidden="true">
+                  {UI_TEXT.composer.dropImages}
+                </Box>
+              ) : null}
               <Group className="kodex-composer-toolbar" justify="space-between" wrap="nowrap">
                 <Menu position="top-start" withinPortal>
                   <Menu.Target>
@@ -977,11 +1205,13 @@ function KodexShell() {
                     </ActionIcon>
                   </Menu.Target>
                   <Menu.Dropdown aria-label={UI_TEXT.composer.attachments}>
-                    <Menu.Item leftSection={<Paperclip size={14} />}>{UI_TEXT.composer.addAttachment}</Menu.Item>
+                    <Menu.Item leftSection={<Paperclip size={14} />} onClick={() => attachmentInputRef.current?.click()}>
+                      {UI_TEXT.composer.addAttachment}
+                    </Menu.Item>
                   </Menu.Dropdown>
                 </Menu>
-                <Tooltip label={hasActiveSelectedTurn ? UI_TEXT.composer.stop : UI_TEXT.composer.send}>
-                  {hasActiveSelectedTurn ? (
+                <Tooltip label={shouldShowStopAction ? UI_TEXT.composer.stop : UI_TEXT.composer.send}>
+                  {shouldShowStopAction ? (
                     <ActionIcon
                       className="kodex-composer-action"
                       data-action-state="active"
@@ -1001,7 +1231,7 @@ function KodexShell() {
                       aria-label={UI_TEXT.composer.send}
                       size="md"
                       type="submit"
-                      disabled={!canCompose || !composerText.trim()}
+                      disabled={!canSubmitComposer}
                     >
                       <ArrowUp size={16} />
                     </ActionIcon>
@@ -1205,9 +1435,11 @@ function MobilePanelSwitcher({
 }
 
 function QueuedSteerCard({
+  onAbortRow,
   onSubmitRow,
   rows,
 }: {
+  onAbortRow: (row: QueuedSteerRow) => void;
   onSubmitRow: (row: QueuedSteerRow) => void;
   rows: QueuedSteerRow[];
 }) {
@@ -1221,13 +1453,66 @@ function QueuedSteerCard({
           key={row.id}
           role="group"
         >
-          <Text className="kodex-queued-steer-text" size="sm">
-            {row.text}
-          </Text>
+          <Box className="kodex-queued-steer-content">
+            {row.attachments.length > 0 ? (
+              <AttachmentTray attachments={row.attachments} compact onRemove={() => undefined} />
+            ) : null}
+            <Text className="kodex-queued-steer-text" size="sm">
+              {row.text || `${row.attachments.length} image${row.attachments.length === 1 ? "" : "s"}`}
+            </Text>
+          </Box>
           <Button className="kodex-queued-steer-button" size="xs" onClick={() => onSubmitRow(row)}>
             {UI_TEXT.turn.steerButton}
           </Button>
+          <Tooltip label={UI_TEXT.turn.abortButton}>
+            <ActionIcon
+              aria-label={UI_TEXT.turn.abortButton}
+              className="kodex-queued-steer-abort"
+              size="sm"
+              type="button"
+              variant="subtle"
+              onClick={() => onAbortRow(row)}
+            >
+              <X size={14} />
+            </ActionIcon>
+          </Tooltip>
         </Box>
+      ))}
+    </Box>
+  );
+}
+
+function AttachmentTray({
+  attachments,
+  compact = false,
+  onRemove,
+}: {
+  attachments: PendingAttachment[];
+  compact?: boolean;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <Box className="kodex-attachment-tray" data-compact={compact ? "true" : "false"}>
+      {attachments.map((attachment) => (
+        <Tooltip label={attachment.file.name} key={attachment.id}>
+          <Box className="kodex-attachment-thumb">
+            <img src={attachment.objectUrl} alt="" />
+            {attachment.status === "uploading" ? <Box className="kodex-attachment-status">Uploading</Box> : null}
+            {attachment.status === "error" ? <Box className="kodex-attachment-status">Failed</Box> : null}
+            {!compact ? (
+              <ActionIcon
+                aria-label={`Remove ${attachment.file.name}`}
+                className="kodex-attachment-remove"
+                size="xs"
+                type="button"
+                variant="filled"
+                onClick={() => onRemove(attachment.id)}
+              >
+                <X size={12} />
+              </ActionIcon>
+            ) : null}
+          </Box>
+        </Tooltip>
       ))}
     </Box>
   );
@@ -1509,6 +1794,7 @@ function useBottomPinnedVirtualTimeline({
 
 function TimelineView({
   approvals,
+  imagePreviewUrlsByPath,
   onApprovalDecision,
   onReady,
   scrollParentElement,
@@ -1516,6 +1802,7 @@ function TimelineView({
   timeline,
 }: {
   approvals: Approval[];
+  imagePreviewUrlsByPath: Record<string, string>;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
   onReady: () => void;
   scrollParentElement: HTMLDivElement | null;
@@ -1585,6 +1872,7 @@ function TimelineView({
             >
               <TimelineRowView
                 approvals={approvalsByRowKey.get(row.key) ?? EMPTY_APPROVALS}
+                imagePreviewUrlsByPath={imagePreviewUrlsByPath}
                 onApprovalDecision={onApprovalDecision}
                 row={row}
                 showDebug={showDebug}
@@ -1614,11 +1902,13 @@ function TimelineView({
 
 const TimelineRowView = memo(function TimelineRowView({
   approvals,
+  imagePreviewUrlsByPath,
   onApprovalDecision,
   row,
   showDebug,
 }: {
   approvals: Approval[];
+  imagePreviewUrlsByPath: Record<string, string>;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
   row: TimelineRow;
   showDebug: boolean;
@@ -1629,7 +1919,7 @@ const TimelineRowView = memo(function TimelineRowView({
       {row.type === "activity" ? (
         <TimelineActivityGroupRenderer items={row.items} showDebug={showDebug} />
       ) : (
-        <TimelineItemRenderer item={row.item} showDebug={showDebug} />
+        <TimelineItemRenderer item={row.item} imagePreviewUrlsByPath={imagePreviewUrlsByPath} showDebug={showDebug} />
       )}
       {approvals.length > 0 ? (
         <Stack gap="xs" mt="xs">
@@ -1650,6 +1940,24 @@ function fallbackVirtualItems(rows: TimelineRow[], preferBottom: boolean) {
     key: row.key,
     start: (startIndex + offset) * 112,
   }));
+}
+
+function hasImageFiles(dataTransfer: DataTransfer) {
+  const items = Array.from(dataTransfer.items);
+  if (items.length > 0) {
+    return items.some((item) => item.kind === "file" && item.type.startsWith("image/"));
+  }
+  return Array.from(dataTransfer.files).some((file) => file.type.startsWith("image/"));
+}
+
+function createObjectUrl(file: File) {
+  return typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : "";
+}
+
+function revokeObjectUrl(objectUrl: string) {
+  if (objectUrl && typeof URL.revokeObjectURL === "function") {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 function buildTimelineRowApprovalMap(rows: TimelineRow[], approvalIndex: ReturnType<typeof buildApprovalIndex>) {
@@ -1689,6 +1997,9 @@ function ApprovalCard({
   const actions = approvalActions(approval);
   const parsedActions = approvalParsedActions(approval);
   const subject = approvalSubject(approval);
+  const reason = approvalReason(approval);
+  const permissionRule = approvalPermissionRule(approval);
+  const serverName = approvalServerName(approval);
   const isCommandApproval = normalizedApprovalMethod(approval.method) === "command";
 
   return (
@@ -1696,10 +2007,25 @@ function ApprovalCard({
       <Text fw={700} size="sm">
         {approvalTitle(approval)}
       </Text>
+      {serverName ? (
+        <Text size="sm">
+          Server: <strong>{serverName}</strong>
+        </Text>
+      ) : null}
+      {reason ? (
+        <Text c="dimmed" size="xs">
+          Reason: {reason}
+        </Text>
+      ) : null}
+      {permissionRule ? (
+        <Text c="dimmed" size="xs">
+          Permission rule: {permissionRule}
+        </Text>
+      ) : null}
       {subject ? (
         isCommandApproval ? (
           <Box className="kodex-approval-command" component="code">
-            {subject}
+            $ {subject}
           </Box>
         ) : (
           <Text size="sm">{subject}</Text>
@@ -1719,7 +2045,7 @@ function ApprovalCard({
           <Button
             aria-label={action.ariaLabel}
             color={action.color}
-            key={action.ariaLabel}
+            key={action.label}
             leftSection={action.icon}
             size="xs"
             variant={action.variant}
@@ -1758,15 +2084,21 @@ function EmptyPanel({
 }
 
 function approvalTitle(approval: Approval): string {
+  const payload = asRecord(approval.payload);
   switch (normalizedApprovalMethod(approval.method)) {
-    case "command":
+    case "command": {
+      const host = approvalNetworkHost(payload);
+      if (host) {
+        return `Do you want to approve network access to "${host}"?`;
+      }
       return UI_TEXT.approvals.commandTitle;
+    }
     case "file":
       return UI_TEXT.approvals.fileTitle;
     case "permissions":
       return UI_TEXT.approvals.permissionsTitle;
     case "mcp_elicitation":
-      return UI_TEXT.approvals.mcpTitle;
+      return `${approvalServerName(approval) ?? "MCP server"} needs your approval.`;
     case "tool_user_input":
       return UI_TEXT.approvals.toolInputTitle;
     default:
@@ -1776,13 +2108,35 @@ function approvalTitle(approval: Approval): string {
 
 function approvalSubject(approval: Approval): string | null {
   const payload = asRecord(approval.payload);
+  if (normalizedApprovalMethod(approval.method) === "command" && approvalNetworkHost(payload)) {
+    return null;
+  }
   return (
     stringValue(payload.command) ??
     stringValue(payload.path) ??
     stringValue(payload.message) ??
-    firstQuestionText(payload) ??
-    stringValue(payload.reason)
+    firstQuestionText(payload)
   );
+}
+
+function approvalReason(approval: Approval): string | null {
+  return stringValue(asRecord(approval.payload).reason);
+}
+
+function approvalServerName(approval: Approval): string | null {
+  const payload = asRecord(approval.payload);
+  return stringValue(payload.serverName) ?? stringValue(payload.server_name);
+}
+
+function approvalPermissionRule(approval: Approval): string | null {
+  const payload = asRecord(approval.payload);
+  if (normalizedApprovalMethod(approval.method) === "permissions") {
+    return permissionRuleText(asRecord(payload.permissions));
+  }
+  if (normalizedApprovalMethod(approval.method) === "command") {
+    return permissionRuleText(asRecord(payload.additionalPermissions));
+  }
+  return null;
 }
 
 type ApprovalAction = {
@@ -1796,151 +2150,218 @@ type ApprovalAction = {
 
 function approvalActions(approval: Approval): ApprovalAction[] {
   const method = normalizedApprovalMethod(approval.method);
-  const copy = UI_TEXT.approvals.actions;
 
   if (method === "permissions") {
-    const permissions = approvalPermissions(approval);
-    return [
-      {
-        ariaLabel: copy.grantAria,
-        icon: <Check size={14} />,
-        label: copy.grant,
-        response: { permissions, scope: "turn" },
-      },
-      {
-        ariaLabel: copy.grantSessionAria,
-        icon: <Check size={14} />,
-        label: copy.grantSession,
-        response: { permissions, scope: "session" },
-        variant: "light",
-      },
-    ];
+    return permissionsApprovalActions(approval);
   }
 
   if (method === "mcp_elicitation") {
-    return [
-      {
-        ariaLabel: copy.acceptAria,
-        icon: <Check size={14} />,
-        label: copy.accept,
-        response: { action: "accept" },
-      },
-      {
-        ariaLabel: copy.declineAria,
-        color: "red",
-        icon: <X size={14} />,
-        label: copy.decline,
-        response: { action: "decline" },
-        variant: "light",
-      },
-      {
-        ariaLabel: copy.cancelAria,
-        color: "gray",
-        icon: <X size={14} />,
-        label: copy.cancel,
-        response: { action: "cancel" },
-        variant: "subtle",
-      },
-    ];
+    return mcpElicitationApprovalActions();
   }
 
   if (method === "tool_user_input") {
     return [
       {
-        ariaLabel: copy.submitAria,
+        ariaLabel: "Submit answers",
         icon: <Check size={14} />,
-        label: copy.submit,
+        label: "Submit",
         response: { answers: defaultToolAnswers(approval.payload) },
       },
     ];
   }
 
   if (method === "command") {
-    return [...basicCommandOrFileActions(), ...commandAmendmentActions(approval)];
+    return commandApprovalActions(approval);
   }
 
   if (method === "file") {
-    return basicCommandOrFileActions();
+    return fileChangeApprovalActions();
   }
 
   return [];
 }
 
-function basicCommandOrFileActions(): ApprovalAction[] {
-  const copy = UI_TEXT.approvals.actions;
-  return [
-      {
-        ariaLabel: copy.acceptAria,
-        icon: <Check size={14} />,
-        label: copy.accept,
-        response: { decision: "accept" },
-      },
-      {
-        ariaLabel: copy.acceptSessionAria,
-        icon: <Check size={14} />,
-        label: copy.acceptSession,
-        response: { decision: "acceptForSession" },
-        variant: "light",
-      },
-      {
-        ariaLabel: copy.declineAria,
-        color: "red",
-        icon: <X size={14} />,
-        label: copy.decline,
-        response: { decision: "decline" },
-        variant: "light",
-      },
-      {
-        ariaLabel: copy.cancelAria,
-        color: "gray",
-        icon: <X size={14} />,
-        label: copy.cancel,
-        response: { decision: "cancel" },
-        variant: "subtle",
-      },
-  ];
+function commandApprovalActions(approval: Approval): ApprovalAction[] {
+  const payload = asRecord(approval.payload);
+  return commandDecisions(approval).map((decision) => commandApprovalAction(decision, payload));
 }
 
-function commandAmendmentActions(approval: Approval): ApprovalAction[] {
-  const payload = asRecord(approval.payload);
-  const actions: ApprovalAction[] = [];
-  const execpolicyAmendment = stringArray(payload.proposedExecpolicyAmendment);
-
-  if (execpolicyAmendment.length > 0) {
-    actions.push({
-      ariaLabel: UI_TEXT.approvals.actions.applyExecPolicyAria,
+function commandApprovalAction(decision: Record<string, unknown>, payload: Record<string, unknown>): ApprovalAction {
+  const kind = stringValue(decision.kind);
+  const networkContext = asRecord(payload.networkApprovalContext);
+  const hasNetworkContext = Boolean(approvalNetworkHost(payload));
+  const hasAdditionalPermissions = Object.keys(asRecord(payload.additionalPermissions)).length > 0;
+  if (kind === "accept") {
+    return {
+      ariaLabel: hasNetworkContext ? "Yes, just this once" : "Yes, proceed",
       icon: <Check size={14} />,
-      label: UI_TEXT.approvals.actions.applyExecPolicy,
+      label: hasNetworkContext ? "Yes, just this once" : "Yes, proceed",
+      response: { decision: "accept" },
+    };
+  }
+  if (kind === "acceptForSession") {
+    const label = hasNetworkContext
+      ? "Yes, and allow this host for this conversation"
+      : hasAdditionalPermissions
+        ? "Yes, and allow these permissions for this session"
+        : "Yes, and don't ask again for this command in this session";
+    return {
+      ariaLabel: label,
+      icon: <Check size={14} />,
+      label,
+      response: { decision: "acceptForSession" },
+      variant: "light",
+    };
+  }
+  if (kind === "acceptWithExecpolicyAmendment") {
+    const amendment = decision.execpolicy_amendment;
+    const renderedPrefix = execPolicyAmendmentLabel(amendment);
+    const label = `Yes, and don't ask again for commands that start with \`${renderedPrefix}\``;
+    return {
+      ariaLabel: label,
+      icon: <Check size={14} />,
+      label,
       response: {
         decision: {
           acceptWithExecpolicyAmendment: {
-            execpolicy_amendment: execpolicyAmendment,
+            execpolicy_amendment: amendment,
           },
         },
       },
       variant: "light",
-    });
+    };
   }
-
-  for (const amendment of networkPolicyAmendments(payload.proposedNetworkPolicyAmendments)) {
-    const action = stringValue(amendment.action) ?? "apply";
-    const host = stringValue(amendment.host) ?? "host";
-    actions.push({
-      ariaLabel: `Apply ${action} policy for ${host}`,
-      icon: <Check size={14} />,
-      label: `${capitalize(action)} ${host}`,
+  if (kind === "applyNetworkPolicyAmendment") {
+    const amendment = asRecord(decision.network_policy_amendment);
+    const fallbackAmendment: Record<string, unknown> =
+      Object.keys(networkContext).length > 0 ? { action: "allow", ...networkContext } : {};
+    const policyAmendment: Record<string, unknown> =
+      Object.keys(amendment).length > 0 ? amendment : fallbackAmendment;
+    const action = stringValue(policyAmendment.action);
+    const label =
+      action === "deny"
+        ? "No, and block this host in the future"
+        : "Yes, and allow this host in the future";
+    return {
+      ariaLabel: label,
+      color: action === "deny" ? "red" : undefined,
+      icon: action === "deny" ? <X size={14} /> : <Check size={14} />,
+      label,
       response: {
         decision: {
           applyNetworkPolicyAmendment: {
-            network_policy_amendment: amendment,
+            network_policy_amendment: policyAmendment,
           },
         },
       },
       variant: "light",
-    });
+    };
   }
+  if (kind === "decline") {
+    return {
+      ariaLabel: "No, continue without running it",
+      color: "red",
+      icon: <X size={14} />,
+      label: "No, continue without running it",
+      response: { decision: "decline" },
+      variant: "light",
+    };
+  }
+  return {
+    ariaLabel: "No, and tell Codex what to do differently",
+    color: "gray",
+    icon: <X size={14} />,
+    label: "No, and tell Codex what to do differently",
+    response: { decision: "cancel" },
+    variant: "subtle",
+  };
+}
 
-  return actions;
+function fileChangeApprovalActions(): ApprovalAction[] {
+  return [
+    {
+      ariaLabel: "Yes, proceed",
+      icon: <Check size={14} />,
+      label: "Yes, proceed",
+      response: { decision: "accept" },
+    },
+    {
+      ariaLabel: "Yes, and don't ask again for these files",
+      icon: <Check size={14} />,
+      label: "Yes, and don't ask again for these files",
+      response: { decision: "acceptForSession" },
+      variant: "light",
+    },
+    {
+      ariaLabel: "No, and tell Codex what to do differently",
+      color: "gray",
+      icon: <X size={14} />,
+      label: "No, and tell Codex what to do differently",
+      response: { decision: "cancel" },
+      variant: "subtle",
+    },
+  ];
+}
+
+function permissionsApprovalActions(approval: Approval): ApprovalAction[] {
+  const permissions = approvalPermissions(approval);
+  return [
+    {
+      ariaLabel: "Yes, grant these permissions for this turn",
+      icon: <Check size={14} />,
+      label: "Yes, grant these permissions for this turn",
+      response: { permissions, scope: "turn" },
+    },
+    {
+      ariaLabel: "Yes, grant for this turn with strict auto review",
+      icon: <Check size={14} />,
+      label: "Yes, grant for this turn with strict auto review",
+      response: { permissions, scope: "turn", strictAutoReview: true },
+      variant: "light",
+    },
+    {
+      ariaLabel: "Yes, grant these permissions for this session",
+      icon: <Check size={14} />,
+      label: "Yes, grant these permissions for this session",
+      response: { permissions, scope: "session" },
+      variant: "light",
+    },
+    {
+      ariaLabel: "No, continue without permissions",
+      color: "red",
+      icon: <X size={14} />,
+      label: "No, continue without permissions",
+      response: { permissions: {}, scope: "turn" },
+      variant: "light",
+    },
+  ];
+}
+
+function mcpElicitationApprovalActions(): ApprovalAction[] {
+  return [
+    {
+      ariaLabel: "Yes, provide the requested info",
+      icon: <Check size={14} />,
+      label: "Yes, provide the requested info",
+      response: { action: "accept" },
+    },
+    {
+      ariaLabel: "No, but continue without it",
+      color: "red",
+      icon: <X size={14} />,
+      label: "No, but continue without it",
+      response: { action: "decline" },
+      variant: "light",
+    },
+    {
+      ariaLabel: "Cancel this request",
+      color: "gray",
+      icon: <X size={14} />,
+      label: "Cancel this request",
+      response: { action: "cancel" },
+      variant: "subtle",
+    },
+  ];
 }
 
 function normalizedApprovalMethod(method: string): "command" | "file" | "permissions" | "mcp_elicitation" | "tool_user_input" | "unknown" {
@@ -1965,6 +2386,69 @@ function normalizedApprovalMethod(method: string): "command" | "file" | "permiss
     default:
       return "unknown";
   }
+}
+
+function commandDecisions(approval: Approval): Record<string, unknown>[] {
+  const payload = asRecord(approval.payload);
+  const availableDecisions = commandAvailableDecisions(payload.availableDecisions);
+  if (availableDecisions.length > 0) {
+    return availableDecisions;
+  }
+
+  if (approvalNetworkHost(payload)) {
+    const decisions: Record<string, unknown>[] = [{ kind: "accept" }, { kind: "acceptForSession" }];
+    const allowAmendment = networkPolicyAmendments(payload.proposedNetworkPolicyAmendments).find(
+      (amendment) => stringValue(amendment.action) === "allow",
+    );
+    if (allowAmendment) {
+      decisions.push({ kind: "applyNetworkPolicyAmendment", network_policy_amendment: allowAmendment });
+    }
+    decisions.push({ kind: "cancel" });
+    return decisions;
+  }
+
+  if (Object.keys(asRecord(payload.additionalPermissions)).length > 0) {
+    return [{ kind: "accept" }, { kind: "cancel" }];
+  }
+
+  const decisions: Record<string, unknown>[] = [{ kind: "accept" }];
+  const execpolicyAmendment = execPolicyAmendmentValue(payload.proposedExecpolicyAmendment);
+  if (execpolicyAmendment) {
+    decisions.push({ kind: "acceptWithExecpolicyAmendment", execpolicy_amendment: execpolicyAmendment });
+  }
+  decisions.push({ kind: "cancel" });
+  return decisions;
+}
+
+function commandAvailableDecisions(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.reduce<Record<string, unknown>[]>((decisions, item) => {
+    if (typeof item === "string") {
+      decisions.push({ kind: item });
+      return decisions;
+    }
+
+    const record = asRecord(item);
+    if (record.acceptWithExecpolicyAmendment) {
+      const amendment = asRecord(record.acceptWithExecpolicyAmendment);
+      decisions.push({
+        kind: "acceptWithExecpolicyAmendment",
+        execpolicy_amendment: amendment.execpolicy_amendment ?? amendment.proposed_execpolicy_amendment,
+      });
+      return decisions;
+    }
+
+    if (record.applyNetworkPolicyAmendment) {
+      const amendment = asRecord(record.applyNetworkPolicyAmendment);
+      decisions.push({
+        kind: "applyNetworkPolicyAmendment",
+        network_policy_amendment: amendment.network_policy_amendment,
+      });
+    }
+    return decisions;
+  }, []);
 }
 
 function approvalPermissions(approval: Approval): Record<string, unknown> {
@@ -2030,8 +2514,89 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function execPolicyAmendmentValue(value: unknown): string[] | null {
+  const array = stringArray(value);
+  return array.length > 0 ? array : null;
+}
+
+function execPolicyAmendmentLabel(value: unknown): string {
+  const array = stringArray(value);
+  if (array.length > 0) {
+    return array.join(" ");
+  }
+  const record = asRecord(value);
+  const command = stringValue(record.command);
+  return command ?? "this prefix";
+}
+
 function networkPolicyAmendments(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.map(asRecord).filter((item) => stringValue(item.action) && stringValue(item.host)) : [];
+}
+
+function approvalNetworkHost(payload: Record<string, unknown>): string | null {
+  return stringValue(asRecord(payload.networkApprovalContext).host);
+}
+
+function permissionRuleText(permissions: Record<string, unknown>): string | null {
+  const parts: string[] = [];
+  if (asRecord(permissions.network).enabled === true) {
+    parts.push("network");
+  }
+  const fileSystem = asRecord(permissions.fileSystem ?? permissions.file_system);
+  const readPaths = permissionPaths(fileSystem.read);
+  const writePaths = permissionPaths(fileSystem.write);
+  if (readPaths.length > 0) {
+    parts.push(`read ${readPaths.join(", ")}`);
+  }
+  if (writePaths.length > 0) {
+    parts.push(`write ${writePaths.join(", ")}`);
+  }
+  const entries = Array.isArray(fileSystem.entries) ? fileSystem.entries.map(asRecord) : [];
+  const entryReads = permissionEntryPaths(entries, "read");
+  const entryWrites = permissionEntryPaths(entries, "write");
+  const entryDeniedReads = permissionEntryPaths(entries, "none");
+  if (entryReads.length > 0) {
+    parts.push(`read ${entryReads.join(", ")}`);
+  }
+  if (entryWrites.length > 0) {
+    parts.push(`write ${entryWrites.join(", ")}`);
+  }
+  if (entryDeniedReads.length > 0) {
+    parts.push(`deny read ${entryDeniedReads.join(", ")}`);
+  }
+  return parts.length > 0 ? parts.join("; ") : null;
+}
+
+function permissionPaths(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => stringValue(item)).filter((item): item is string => Boolean(item)).map(formatPathToken) : [];
+}
+
+function permissionEntryPaths(entries: Record<string, unknown>[], access: string): string[] {
+  return entries
+    .filter((entry) => stringValue(entry.access) === access)
+    .map((entry) => permissionEntryPathLabel(asRecord(entry.path)))
+    .filter((item): item is string => Boolean(item));
+}
+
+function permissionEntryPathLabel(path: Record<string, unknown>): string | null {
+  const directPath = stringValue(path.path);
+  if (directPath) {
+    return formatPathToken(directPath);
+  }
+  const pattern = stringValue(path.pattern);
+  if (pattern) {
+    return `glob \`${pattern}\``;
+  }
+  const value = asRecord(path.value);
+  const kind = stringValue(value.kind);
+  if (kind) {
+    return formatPathToken(`:${kind}`);
+  }
+  return null;
+}
+
+function formatPathToken(path: string): string {
+  return `\`${path}\``;
 }
 
 function firstQuestionText(payload: Record<string, unknown>): string | null {

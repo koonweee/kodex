@@ -8,12 +8,15 @@ import remarkGfm from "remark-gfm";
 
 import type { TimelineItem, WebSearchAction } from "./reducer";
 
-type TimelineRenderer = (item: TimelineItem) => ReactNode;
+type TimelineRendererOptions = {
+  imagePreviewUrlsByPath: Record<string, string>;
+};
+type TimelineRenderer = (item: TimelineItem, options: TimelineRendererOptions) => ReactNode;
 
 const rendererRegistry: Record<string, TimelineRenderer> = {
   agent_message: (item) => <AssistantMessageMarkdown itemId={item.id} text={item.text || "No assistant content yet"} />,
   assistant_message: (item) => <AssistantMessageMarkdown itemId={item.id} text={item.text || "No assistant content yet"} />,
-  user_message: (item) => <UserMessageBubble text={item.text} />,
+  user_message: (item, options) => <UserMessageBubble item={item} imagePreviewUrlsByPath={options.imagePreviewUrlsByPath} />,
   reasoning_summary: (item) => <ReasoningBlock item={item} />,
   reasoning: (item) => <ReasoningBlock item={item} />,
   command_execution: (item) => <CommandBlock item={item} />,
@@ -78,10 +81,11 @@ const assistantMarkdownComponents: Components = {
 
 type TimelineItemRendererProps = {
   item: TimelineItem;
+  imagePreviewUrlsByPath?: Record<string, string>;
   showDebug?: boolean;
 };
 
-function TimelineItemRendererImpl({ item, showDebug = false }: TimelineItemRendererProps) {
+function TimelineItemRendererImpl({ item, imagePreviewUrlsByPath = {}, showDebug = false }: TimelineItemRendererProps) {
   const render = rendererRegistry[item.kind] ?? unknownRenderer;
   const label = labels[item.kind] ?? "Unsupported item";
   const showStatus = item.status !== "completed";
@@ -105,7 +109,7 @@ function TimelineItemRendererImpl({ item, showDebug = false }: TimelineItemRende
           ) : null}
         </Group>
       ) : null}
-      {render(item)}
+      {render(item, { imagePreviewUrlsByPath })}
       {showDebug ? <DebugDisclosure item={item} /> : null}
     </Box>
   );
@@ -158,12 +162,31 @@ function MessageText({ text }: { text: string }) {
   );
 }
 
-function UserMessageBubble({ text }: { text: string }) {
+function UserMessageBubble({
+  imagePreviewUrlsByPath,
+  item,
+}: {
+  imagePreviewUrlsByPath: Record<string, string>;
+  item: TimelineItem;
+}) {
+  const images = item.images ?? [];
   return (
     <Box className="kodex-user-message-row">
-      <Text size="sm" className="kodex-user-message-bubble">
-        {text}
-      </Text>
+      <Box className="kodex-user-message-stack">
+        {images.length > 0 ? (
+          <Box className="kodex-user-image-grid">
+            {images.map((image, index) => {
+              const src = image.url ?? (image.path ? imagePreviewUrlsByPath[image.path] : undefined);
+              return src ? <img alt="" key={`${src}-${index}`} src={src} /> : null;
+            })}
+          </Box>
+        ) : null}
+        {item.text ? (
+          <Text size="sm" className="kodex-user-message-bubble">
+            {item.text}
+          </Text>
+        ) : null}
+      </Box>
     </Box>
   );
 }
@@ -237,7 +260,7 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({ item, showDebu
         </Group>
         <ChevronRight size={16} className="kodex-activity-caret" aria-hidden="true" />
       </summary>
-      <Box className="kodex-activity-body">{render(item)}</Box>
+      <Box className="kodex-activity-body">{render(item, { imagePreviewUrlsByPath: {} })}</Box>
       {showDebug ? <DebugDisclosure item={item} /> : null}
     </details>
   );

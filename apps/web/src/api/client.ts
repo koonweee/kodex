@@ -12,6 +12,8 @@ export type ModelSummary = components["schemas"]["ModelSummary"];
 export type Project = components["schemas"]["Project"];
 export type RateLimitsResponse = components["schemas"]["RateLimitsResponse"];
 export type ThreadSummary = components["schemas"]["ThreadSummary"];
+export type UserInput = components["schemas"]["UserInput"];
+export type ImageUpload = components["schemas"]["ImageUpload"];
 
 const api = createClient<paths>({
   baseUrl: getApiBaseUrl(),
@@ -78,11 +80,11 @@ export async function listEvents(threadId: string): Promise<EventEnvelope[]> {
   return response.events;
 }
 
-export async function startTurn(threadId: string, text: string): Promise<void> {
+export async function startTurn(threadId: string, input: UserInput[]): Promise<void> {
   await unwrap(
     api.POST("/v1/threads/{threadId}/turns", {
       params: { path: { threadId } },
-      body: { input: [{ type: "text", text }] },
+      body: { input },
     }),
   );
 }
@@ -95,13 +97,29 @@ export async function interruptTurn(threadId: string, turnId: string): Promise<v
   );
 }
 
-export async function steerTurn(threadId: string, turnId: string, text: string): Promise<void> {
+export async function steerTurn(threadId: string, turnId: string, input: UserInput[]): Promise<void> {
   await unwrap(
     api.POST("/v1/threads/{threadId}/turns/{turnId}/steer", {
       params: { path: { threadId, turnId } },
-      body: { input: [{ type: "text", text }] },
+      body: { input },
     }),
   );
+}
+
+export async function uploadImages(files: File[]): Promise<ImageUpload[]> {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append("images", file);
+  }
+  const response = await fetch(`${getApiBaseUrl()}/v1/uploads/images`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) {
+    throw new Error("Gateway request failed");
+  }
+  const body = (await response.json()) as components["schemas"]["ImageUploadResponse"];
+  return body.images;
 }
 
 export async function listPendingApprovals(): Promise<Approval[]> {

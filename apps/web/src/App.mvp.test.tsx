@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -326,7 +326,7 @@ describe("MVP frontend flows", () => {
 
     const threadView = await screen.findByRole("main", { name: /thread/i });
     expect(await within(threadView).findByText(/cargo test/i)).toBeInTheDocument();
-    expect(within(threadView).queryByText(/verify changes/i)).not.toBeInTheDocument();
+    expect(within(threadView).getByText(/reason: verify changes/i)).toBeInTheDocument();
   });
 
   it("shows compact thread actions without fork or path subtitle", async () => {
@@ -622,6 +622,178 @@ describe("MVP frontend flows", () => {
     });
   });
 
+  it("attaches image files, uploads them on send, and posts local image inputs", async () => {
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/uploads/images": { images: [{ id: "upload-1", fileName: "diagram.png", mimeType: "image/png", sizeBytes: 4, path: "/tmp/diagram.png" }] },
+        "POST /v1/threads/thread-1/turns": { payload: {} },
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+
+    const file = new File(["fake"], "diagram.png", { type: "image/png" });
+    await userEvent.upload(input!, file);
+
+    expect(screen.getByRole("button", { name: /remove diagram.png/i })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+    });
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/turns")[0])).resolves.toEqual({
+      input: [
+        { type: "text", text: "Inspect this" },
+        { type: "localImage", path: "/tmp/diagram.png" },
+      ],
+    });
+  });
+
+  it("keeps failed uploads visible and retryable", async () => {
+    let uploadAttempts = 0;
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/uploads/images": () => {
+          uploadAttempts += 1;
+          if (uploadAttempts === 1) {
+            throw new Error("Upload unavailable");
+          }
+          return {
+            images: [
+              { id: "upload-1", fileName: "diagram.png", mimeType: "image/png", sizeBytes: 4, path: "/tmp/diagram.png" },
+            ],
+          };
+        },
+        "POST /v1/threads/thread-1/turns": { payload: {} },
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+
+    const file = new File(["fake"], "diagram.png", { type: "image/png" });
+    await userEvent.upload(input!, file);
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    expect(await screen.findByText("Failed")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /remove diagram.png/i })).toBeInTheDocument();
+    expect(screen.getByText("Upload unavailable")).toBeInTheDocument();
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(0);
+
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(2);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+    });
+    expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps sent image previews renderable after pending attachments are cleared", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:diagram-preview");
+    const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL");
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/uploads/images": {
+          images: [{ id: "upload-1", fileName: "diagram.png", mimeType: "image/png", sizeBytes: 4, path: "/tmp/diagram.png" }],
+        },
+        "POST /v1/threads/thread-1/turns": { payload: {} },
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    await userEvent.upload(input!, new File(["fake"], "diagram.png", { type: "image/png" }));
+    expect(createObjectUrl).toHaveBeenCalled();
+
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+      expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
+    });
+    expect(revokeObjectUrl).not.toHaveBeenCalledWith("blob:diagram-preview");
+
+    let selectedThreadStream: FakeEventSource | undefined;
+    await waitFor(() => {
+      selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+      expect(selectedThreadStream).toBeDefined();
+    });
+    act(() => {
+      selectedThreadStream?.emit({
+        id: "event-user-image",
+        seq: 2,
+        kind: "codex",
+        codexMethod: "item/completed",
+        projectId: project.id,
+        threadId: thread.id,
+        turnId: "turn-1",
+        itemId: "user-image-1",
+        payload: {
+          item: {
+            id: "user-image-1",
+            type: "userMessage",
+            content: [
+              { type: "localImage", path: "/tmp/diagram.png" },
+              { type: "text", text: "Inspect this" },
+            ],
+          },
+        },
+        receivedAt: "2026-04-30T00:00:01Z",
+      });
+    });
+
+    expect(await screen.findByText("Inspect this")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(container.querySelector(".kodex-user-image-grid img")).toHaveAttribute("src", "blob:diagram-preview");
+    });
+  });
+
+  it("shows a composer drop hint and attaches dropped image files", async () => {
+    mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const composerShell = screen.getByLabelText(/message composer/i).closest(".kodex-composer-shell");
+    expect(composerShell).not.toBeNull();
+    const file = new File(["fake"], "dropped.png", { type: "image/png" });
+    const dataTransfer = {
+      files: [file],
+      items: [{ kind: "file", type: "image/png" }],
+    };
+
+    fireEvent.dragOver(composerShell!, { dataTransfer });
+    expect(screen.getByText(/drop images to attach/i)).toBeInTheDocument();
+    fireEvent.drop(composerShell!, { dataTransfer });
+
+    expect(screen.getByRole("button", { name: /remove dropped.png/i })).toBeInTheDocument();
+    expect(screen.queryByText(/drop images to attach/i)).not.toBeInTheDocument();
+  });
+
   it("queues active-turn composer text, steers selected rows, and removes only successful rows", async () => {
     const gateway = mockGateway(
       baseRoutes({
@@ -638,7 +810,11 @@ describe("MVP frontend flows", () => {
 
     expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
     const composer = screen.getByLabelText(/message composer/i);
-    await userEvent.type(composer, "Add tests{Enter}");
+    expect(screen.getByRole("button", { name: /stop turn/i })).toBeInTheDocument();
+    await userEvent.type(composer, "Add tests");
+    expect(screen.queryByRole("button", { name: /stop turn/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /send message/i })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
     await userEvent.type(composer, "Keep scope tight{Enter}");
 
     const queuedCard = screen.getByRole("region", { name: /queued steer messages/i });
@@ -648,6 +824,7 @@ describe("MVP frontend flows", () => {
     expect(rows[1]).toHaveTextContent("Keep scope tight");
     expect(rows[0].getAttribute("data-steer-row-id")).not.toEqual(rows[1].getAttribute("data-steer-row-id"));
     expect(composer).toHaveValue("");
+    expect(screen.getAllByRole("button", { name: /abort queued message/i })).toHaveLength(2);
 
     await userEvent.click(within(rows[0]).getByRole("button", { name: /steer/i }));
     await waitFor(() => {
@@ -659,6 +836,19 @@ describe("MVP frontend flows", () => {
     await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/steer")[0])).resolves.toEqual({
       input: [{ type: "text", text: "Add tests" }],
     });
+
+    await userEvent.click(
+      within(screen.getByRole("region", { name: /queued steer messages/i })).getByRole("button", {
+        name: /abort queued message/i,
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole("region", { name: /queued steer messages/i })).not.toBeInTheDocument();
+    });
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/steer")).toHaveLength(1);
+
+    await userEvent.type(composer, "Switch clear{Enter}");
+    expect(screen.getByText("Switch clear")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
     await waitFor(() => {
@@ -863,19 +1053,19 @@ describe("MVP frontend flows", () => {
 
     await screen.findByRole("heading", { name: /implement frontend/i });
     const timeline = await screen.findByRole("main", { name: /thread/i });
-    expect(within(timeline).getByText(/cargo test/i)).toBeInTheDocument();
+    expect(within(timeline).getByText(/would you like to run the following command/i)).toBeInTheDocument();
+    expect(within(timeline).getByText(/\$ cargo test/i)).toBeInTheDocument();
     expect(within(timeline).getByText(/src\/app\.tsx/i)).toBeInTheDocument();
     expect(within(timeline).getByText(/needs network access/i)).toBeInTheDocument();
     expect(within(timeline).getByText(/share workspace metadata/i)).toBeInTheDocument();
     const permissionCard = within(timeline)
       .getByText(/needs network access/i)
       .closest(".kodex-approval-card") as HTMLElement;
-    expect(within(permissionCard).queryByRole("button", { name: /decline approval/i })).not.toBeInTheDocument();
-    expect(within(permissionCard).queryByRole("button", { name: /cancel approval/i })).not.toBeInTheDocument();
-    await userEvent.click(within(timeline).getAllByRole("button", { name: /accept approval/i })[0]);
-    await userEvent.click(within(timeline).getAllByRole("button", { name: /accept for session/i })[0]);
-    await userEvent.click(within(timeline).getByRole("button", { name: /grant approval/i }));
-    await userEvent.click(within(timeline).getAllByRole("button", { name: /decline approval/i })[0]);
+    expect(within(permissionCard).getByRole("button", { name: /no, continue without permissions/i })).toBeInTheDocument();
+    await userEvent.click(within(timeline).getAllByRole("button", { name: /yes, proceed/i })[0]);
+    await userEvent.click(within(timeline).getByRole("button", { name: /yes, and don't ask again for these files/i }));
+    await userEvent.click(within(timeline).getByRole("button", { name: /yes, grant these permissions for this turn/i }));
+    await userEvent.click(within(timeline).getByRole("button", { name: /no, but continue without it/i }));
     await userEvent.click(within(timeline).getByRole("button", { name: /submit answers/i }));
 
     await waitFor(() => {
@@ -901,6 +1091,58 @@ describe("MVP frontend flows", () => {
     });
     await expect(requestJson(gateway.callsFor("POST", "/v1/approvals/approval-5/decision")[0])).resolves.toEqual({
       decision: { answers: { choice: { answers: [] } } },
+    });
+  });
+
+  it("posts strict auto review for turn-scoped permission approval", async () => {
+    const approval = {
+      id: "approval-strict-permissions",
+      requestId: "request-strict-permissions",
+      threadId: thread.id,
+      turnId: "turn-1",
+      itemId: "item-1",
+      method: "item/permissions/requestApproval",
+      status: "pending",
+      payload: {
+        reason: "Needs network access",
+        permissions: { network: { enabled: true }, fileSystem: null },
+      },
+      response: null,
+      createdAt: "2026-04-30T00:00:00Z",
+      resolvedAt: null,
+    };
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/approvals": { approvals: [approval] },
+        "POST /v1/approvals/approval-strict-permissions/decision": {
+          ...approval,
+          status: "resolved",
+          response: {
+            permissions: { network: { enabled: true }, fileSystem: null },
+            scope: "turn",
+            strictAutoReview: true,
+          },
+        },
+      }),
+    );
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: /implement frontend/i });
+    const timeline = await screen.findByRole("main", { name: /thread/i });
+    await userEvent.click(
+      within(timeline).getByRole("button", { name: /yes, grant for this turn with strict auto review/i }),
+    );
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/approvals/approval-strict-permissions/decision")).toHaveLength(1);
+    });
+    await expect(requestJson(gateway.callsFor("POST", "/v1/approvals/approval-strict-permissions/decision")[0])).resolves.toEqual({
+      decision: {
+        permissions: { network: { enabled: true }, fileSystem: null },
+        scope: "turn",
+        strictAutoReview: true,
+      },
     });
   });
 
@@ -932,8 +1174,9 @@ describe("MVP frontend flows", () => {
 
     await screen.findByRole("heading", { name: /implement frontend/i });
     const timeline = await screen.findByRole("main", { name: /thread/i });
-    expect(await within(timeline).findByText(/command approval/i)).toBeInTheDocument();
-    const command = within(timeline).getByText(/npm run build -- --mode production/i);
+    expect(await within(timeline).findByText(/would you like to run the following command/i)).toBeInTheDocument();
+    expect(within(timeline).getByText(/reason: verify production ui/i)).toBeInTheDocument();
+    const command = within(timeline).getByText(/\$ npm run build -- --mode production/i);
     expect(command.closest("code")).toHaveClass("kodex-approval-command");
   });
 
@@ -973,7 +1216,7 @@ describe("MVP frontend flows", () => {
     const globalApprovalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
     expect(globalApprovalStream).toBeDefined();
 
-    await userEvent.click(within(timeline).getAllByRole("button", { name: /accept approval/i })[0]);
+    await userEvent.click(within(timeline).getByRole("button", { name: /yes, proceed/i }));
     await waitFor(() => {
       expect(within(timeline).queryByText(/cargo test/i)).not.toBeInTheDocument();
     });
@@ -1024,6 +1267,7 @@ describe("MVP frontend flows", () => {
         command: "curl https://api.example.com",
         commandActions: [{ type: "unknown", command: "curl https://api.example.com" }],
         cwd: "/home/example/kodex",
+        networkApprovalContext: { host: "api.example.com" },
         proposedNetworkPolicyAmendments: [{ action: "allow", host: "api.example.com" }],
         reason: "Fetch API data",
       },
@@ -1057,8 +1301,12 @@ describe("MVP frontend flows", () => {
     expect(await within(timeline).findByText(/search todo in apps\/web/i)).toBeInTheDocument();
     expect(within(timeline).getAllByText(/curl https:\/\/api\.example\.com/i).length).toBeGreaterThan(0);
 
-    await userEvent.click(within(timeline).getByRole("button", { name: /apply exec policy approval/i }));
-    await userEvent.click(within(timeline).getByRole("button", { name: /apply allow policy for api\.example\.com/i }));
+    await userEvent.click(
+      within(timeline).getByRole("button", {
+        name: /yes, and don't ask again for commands that start with `allow rg todo apps\/web`/i,
+      }),
+    );
+    await userEvent.click(within(timeline).getByRole("button", { name: /yes, and allow this host in the future/i }));
 
     await expect(requestJson(gateway.callsFor("POST", "/v1/approvals/approval-policy/decision")[0])).resolves.toEqual({
       decision: { decision: { acceptWithExecpolicyAmendment: { execpolicy_amendment: ["allow rg TODO apps/web"] } } },

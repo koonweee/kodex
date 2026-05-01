@@ -27,6 +27,12 @@ export type TimelineItem = {
   resultSummary?: string;
   summary?: string;
   toolName?: string;
+  images?: TimelineImage[];
+};
+
+export type TimelineImage = {
+  url?: string;
+  path?: string;
 };
 
 export type TimelineTurn = {
@@ -289,12 +295,14 @@ function createPresentationItem(event: EventEnvelope): { item: TimelineItem; hid
   }
 
   if (itemType === "user_message") {
+    const images = payloadImages(event.payload);
     return {
       item: {
         ...base,
+        images,
         text,
       },
-      hidden: !text,
+      hidden: !text && images.length === 0,
       text: "Empty user message",
     };
   }
@@ -439,6 +447,7 @@ function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event
     output,
     path: incoming.path || existing.path,
     messagePhase: incoming.messagePhase || existing.messagePhase,
+    images: mergeImages(existing.images, incoming.images),
     payload: event.payload,
     resultSummary: incoming.resultSummary || existing.resultSummary,
     seq: Math.min(existing.seq, incoming.seq),
@@ -743,6 +752,55 @@ function contentArrayText(value: unknown): string {
     })
     .filter(Boolean)
     .join("\n");
+}
+
+function payloadImages(payload: unknown): TimelineImage[] {
+  const images: TimelineImage[] = [];
+  for (const value of candidateImageContainers(payload)) {
+    collectImages(value, images);
+  }
+  return dedupeImages(images);
+}
+
+function candidateImageContainers(payload: unknown): unknown[] {
+  const record = payloadRecord(payload);
+  const item = payloadRecord(record?.item);
+  return [payload, record?.content, record?.input, item, item?.content, item?.input].filter(Boolean);
+}
+
+function collectImages(value: unknown, images: TimelineImage[]) {
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      collectImages(entry, images);
+    }
+    return;
+  }
+  const record = payloadRecord(value);
+  if (!record) {
+    return;
+  }
+  const type = stringValue(record.type);
+  const url = stringValue(record.url) || stringValue(record.imageUrl) || stringValue(record.image_url);
+  const path = stringValue(record.path);
+  if ((type === "image" || type === "inputImage" || type === "input_image" || url || path) && (url || path)) {
+    images.push({ url: url || undefined, path: path || undefined });
+  }
+}
+
+function dedupeImages(images: TimelineImage[]): TimelineImage[] {
+  const seen = new Set<string>();
+  return images.filter((image) => {
+    const key = image.url || image.path;
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function mergeImages(existing?: TimelineImage[], incoming?: TimelineImage[]) {
+  return dedupeImages([...(existing ?? []), ...(incoming ?? [])]);
 }
 
 function textValue(value: unknown): string {

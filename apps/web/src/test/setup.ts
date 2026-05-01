@@ -19,3 +19,11 @@ globalThis.ResizeObserver = class ResizeObserver {
   unobserve() {}
   disconnect() {}
 };
+
+if (typeof URL.createObjectURL !== "function") {
+  URL.createObjectURL = () => "blob:kodex-test";
+}
+
+if (typeof URL.revokeObjectURL !== "function") {
+  URL.revokeObjectURL = () => undefined;
+}

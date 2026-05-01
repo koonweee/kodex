@@ -20,6 +20,7 @@ This file is the directory of record for Kodex plans. Keep the status column cur
 | [Timeline UI polish plan](timeline-ui-polish.md) | Complete | Codex app-server timeline rendering, event filtering, turn grouping, rich tool renderers, debug mode | Implemented chat-first timeline presentation, debug mode, fixed thread header, and compact tool renderers. |
 | [Timeline performance plan](timeline-performance.md) | Complete | Timeline derivation, memoization, streaming batching, reducer storage, and dynamic-height virtualization | Implemented timeline derivation, approval indexing, memoized rows and markdown, batched streaming updates, optimized reducer storage, and dynamic-height virtualization. |
 | [Composer cleanup plan](composer-cleanup.md) | Complete | Unified composer send/stop behavior and queued steer rows | Implemented unified send/stop composer behavior, queued steer rows, keyboard submit handling, and responsive card styling. |
+| [Image attachments plan](image-attachments.md) | Complete | End-to-end image attachments from web composer through gateway to app-server | Implemented typed image inputs, local image uploads, composer attachment UX, drag/drop, and timeline thumbnails. |
 | [Future extensions overview](future-extensions.md) | Proposed | Non-MVP feature map linked to app-server APIs | Overview only, not an implementation plan. |
 
 ## Maintenance Rules

@@ -372,6 +372,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/uploads/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["upload_images"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -420,6 +436,12 @@ export interface components {
         ApprovalListResponse: {
             approvals: components["schemas"]["Approval"][];
         };
+        ByteRange: {
+            /** Format: int32 */
+            end: number;
+            /** Format: int32 */
+            start: number;
+        };
         CapabilitiesResponse: {
             appServer: components["schemas"]["AppServerCapabilities"];
             gateway: components["schemas"]["GatewayCapabilities"];
@@ -463,6 +485,20 @@ export interface components {
         };
         HealthResponse: {
             status: string;
+        };
+        ImageUpload: {
+            fileName: string;
+            id: string;
+            mimeType: string;
+            path: string;
+            /** Format: int64 */
+            sizeBytes: number;
+        };
+        ImageUploadRequest: {
+            images: string[];
+        };
+        ImageUploadResponse: {
+            images: components["schemas"]["ImageUpload"][];
         };
         LoginRequest: {
             codexStreamlinedLogin?: boolean | null;
@@ -542,6 +578,10 @@ export interface components {
             description: string;
             reasoningEffort: string;
         };
+        TextElement: {
+            byteRange: components["schemas"]["ByteRange"];
+            placeholder?: string | null;
+        };
         ThreadCommandResponse: {
             cwd?: string | null;
             model?: string | null;
@@ -581,10 +621,34 @@ export interface components {
             updatedAt: number;
         };
         TurnStartRequest: {
-            input: unknown[];
+            input: components["schemas"]["UserInput"][];
         };
         TurnSteerRequest: {
-            input: unknown[];
+            input: components["schemas"]["UserInput"][];
+        };
+        UserInput: {
+            text: string;
+            text_elements?: components["schemas"]["TextElement"][];
+            /** @enum {string} */
+            type: "text";
+        } | {
+            /** @enum {string} */
+            type: "image";
+            url: string;
+        } | {
+            path: string;
+            /** @enum {string} */
+            type: "localImage";
+        } | {
+            name: string;
+            path: string;
+            /** @enum {string} */
+            type: "skill";
+        } | {
+            name: string;
+            path: string;
+            /** @enum {string} */
+            type: "mention";
         };
     };
     responses: never;
@@ -1137,6 +1201,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RawAppServerResponse"];
+                };
+            };
+        };
+    };
+    upload_images: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["ImageUploadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageUploadResponse"];
                 };
             };
         };

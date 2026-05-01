@@ -7,6 +7,7 @@ pub mod models;
 pub mod projects;
 pub mod threads;
 pub mod turns;
+pub mod uploads;
 #[cfg(test)]
 mod tests {
     use std::sync::{atomic::Ordering, Arc, Mutex as StdMutex};
@@ -142,6 +143,7 @@ mod tests {
             "/v1/threads/{threadId}/turns",
             "/v1/threads/{threadId}/turns/{turnId}/steer",
             "/v1/threads/{threadId}/turns/{turnId}/interrupt",
+            "/v1/uploads/images",
             "/v1/approvals",
             "/v1/approvals/{approvalId}",
             "/v1/approvals/{approvalId}/decision",
@@ -154,6 +156,32 @@ mod tests {
         ] {
             assert!(openapi["paths"].get(path).is_some(), "missing {path}");
         }
+
+        let upload_request_schema = &openapi["paths"]["/v1/uploads/images"]["post"]["requestBody"]
+            ["content"]["multipart/form-data"]["schema"];
+        let upload_request_schema = if let Some(reference) = upload_request_schema["$ref"].as_str()
+        {
+            let schema_name = reference.trim_start_matches("#/components/schemas/");
+            &openapi["components"]["schemas"][schema_name]
+        } else {
+            upload_request_schema
+        };
+        assert_eq!(upload_request_schema["type"], "object");
+        assert_eq!(
+            upload_request_schema["properties"]["images"]["type"],
+            "array"
+        );
+        assert_eq!(
+            upload_request_schema["properties"]["images"]["items"]["type"],
+            "string"
+        );
+        assert_eq!(
+            upload_request_schema["properties"]["images"]["items"]["format"],
+            "binary"
+        );
+        assert!(upload_request_schema["required"]
+            .as_array()
+            .is_some_and(|required| required.iter().any(|value| value == "images")));
     }
 
     #[tokio::test]
@@ -421,6 +449,149 @@ mod tests {
             requests[2].1,
             json!({"threadId": "thread-1", "turnId": "turn-1"})
         );
+    }
+
+    #[tokio::test]
+    async fn turn_routes_forward_typed_image_inputs_and_reject_invalid_input() {
+        let (state, app_server) = test_state().await;
+        let app = build_router(state);
+
+        assert_ok(
+            app.clone()
+                .oneshot(
+                    Request::post("/v1/threads/thread-1/turns")
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            r#"{"input":[{"type":"text","text":"inspect this"},{"type":"localImage","path":"/tmp/kodex-upload.png"}]}"#,
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+        assert_ok(
+            app.clone()
+                .oneshot(
+                    Request::post("/v1/threads/thread-1/turns/turn-1/steer")
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            r#"{"input":[{"type":"image","url":"https://example.test/image.png"}]}"#,
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+
+        let invalid = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/turns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":[{"type":"video","url":"bad"}]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(!invalid.status().is_success());
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(
+            requests[0].1,
+            json!({
+                "threadId": "thread-1",
+                "input": [
+                    {"type": "text", "text": "inspect this"},
+                    {"type": "localImage", "path": "/tmp/kodex-upload.png"}
+                ],
+            })
+        );
+        assert_eq!(
+            requests[1].1,
+            json!({
+                "threadId": "thread-1",
+                "expectedTurnId": "turn-1",
+                "input": [{"type": "image", "url": "https://example.test/image.png"}],
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn image_upload_accepts_images_and_rejects_non_images() {
+        let (mut state, _) = test_state().await;
+        let dir = tempdir().unwrap();
+        Arc::make_mut(&mut state.config).uploads.dir = dir.path().join("uploads");
+        let app = build_router(state);
+
+        let accepted = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/uploads/images")
+                    .header(
+                        "content-type",
+                        "multipart/form-data; boundary=kodexboundary",
+                    )
+                    .body(Body::from(multipart_body(
+                        "image.png",
+                        "image/png",
+                        b"not really png",
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(accepted.status(), StatusCode::OK);
+        let accepted = response_json(accepted).await;
+        assert_eq!(accepted["images"].as_array().unwrap().len(), 1);
+        let image_path = accepted["images"][0]["path"].as_str().unwrap();
+        assert!(image_path.ends_with(".png"));
+        assert!(std::path::Path::new(image_path).exists());
+
+        let rejected = app
+            .oneshot(
+                Request::post("/v1/uploads/images")
+                    .header(
+                        "content-type",
+                        "multipart/form-data; boundary=kodexboundary",
+                    )
+                    .body(Body::from(multipart_body(
+                        "note.txt",
+                        "text/plain",
+                        b"hello",
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn image_upload_rejects_oversized_images() {
+        let (mut state, _) = test_state().await;
+        let dir = tempdir().unwrap();
+        Arc::make_mut(&mut state.config).uploads.dir = dir.path().join("uploads");
+        let app = build_router(state);
+        let oversized = vec![b'x'; 10 * 1024 * 1024 + 1];
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/uploads/images")
+                    .header(
+                        "content-type",
+                        "multipart/form-data; boundary=kodexboundary",
+                    )
+                    .body(Body::from(multipart_body(
+                        "large.png",
+                        "image/png",
+                        &oversized,
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -1250,6 +1421,21 @@ mod tests {
     async fn response_json(response: axum::response::Response) -> Value {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         serde_json::from_slice(&body).unwrap()
+    }
+
+    fn multipart_body(file_name: &str, content_type: &str, bytes: &[u8]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(b"--kodexboundary\r\n");
+        body.extend_from_slice(
+            format!(
+                "Content-Disposition: form-data; name=\"images\"; filename=\"{file_name}\"\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(format!("Content-Type: {content_type}\r\n\r\n").as_bytes());
+        body.extend_from_slice(bytes);
+        body.extend_from_slice(b"\r\n--kodexboundary--\r\n");
+        body
     }
 
     async fn response_text(response: axum::response::Response) -> String {

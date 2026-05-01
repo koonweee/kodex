@@ -91,6 +91,24 @@ describe("timeline renderer registry", () => {
     expect(screen.queryByText(/item\/completed/i)).not.toBeInTheDocument();
   });
 
+  it("renders user image thumbnails above the message bubble", () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          imagePreviewUrlsByPath={{ "/tmp/diagram.png": "blob:kodex-test" }}
+          item={item({
+            kind: "user_message",
+            text: "Inspect this",
+            images: [{ path: "/tmp/diagram.png" }],
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("Inspect this")).toBeInTheDocument();
+    expect(document.querySelector(".kodex-user-image-grid img")).toHaveAttribute("src", "blob:kodex-test");
+  });
+
   it("renders user messages as a right-aligned bubble and preserves newlines", () => {
     const { container } = render(
       <MantineProvider>

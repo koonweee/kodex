@@ -11,6 +11,7 @@ use crate::{
     app_server_api::{
         AccountResponse, LoginStartResponse, ModelListResponse, RateLimitsResponse,
         RawAppServerResponse, ThreadCommandResponse, ThreadDetailResponse, ThreadListResponse,
+        UserInput,
     },
     config::Config,
     error::ApiErrorBody,
@@ -25,6 +26,7 @@ use crate::{
         projects::{CreateProjectRequest, ProjectListResponse},
         threads::{CreateThreadRequest, ThreadListQuery},
         turns::{TurnStartRequest, TurnSteerRequest},
+        uploads::{ImageUpload, ImageUploadRequest, ImageUploadResponse},
     },
     static_assets,
     store::{Approval, EventEnvelope, Project, Store},
@@ -69,6 +71,7 @@ impl AppState {
         crate::routes::turns::start_turn,
         crate::routes::turns::steer_turn,
         crate::routes::turns::interrupt_turn,
+        crate::routes::uploads::upload_images,
         crate::routes::approvals::list_approvals,
         crate::routes::approvals::get_approval,
         crate::routes::approvals::decide_approval,
@@ -97,8 +100,12 @@ impl AppState {
         ThreadCommandResponse,
         ThreadListQuery,
         CreateThreadRequest,
+        UserInput,
         TurnStartRequest,
         TurnSteerRequest,
+        ImageUpload,
+        ImageUploadRequest,
+        ImageUploadResponse,
         Approval,
         ApprovalListResponse,
         ApprovalDecisionRequest,
@@ -121,6 +128,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::projects::router())
         .merge(routes::threads::router())
         .merge(routes::turns::router())
+        .merge(routes::uploads::router())
         .merge(routes::approvals::router())
         .merge(routes::account::router())
         .merge(routes::models::router())

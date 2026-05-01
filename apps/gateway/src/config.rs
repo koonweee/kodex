@@ -11,6 +11,7 @@ pub struct Config {
     pub server: ServerConfig,
     pub codex: CodexConfig,
     pub database: DatabaseConfig,
+    pub uploads: UploadsConfig,
     pub frontend: FrontendConfig,
 }
 
@@ -29,6 +30,11 @@ pub struct CodexConfig {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DatabaseConfig {
     pub path: PathBuf,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct UploadsConfig {
+    pub dir: PathBuf,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -56,6 +62,9 @@ impl Default for Config {
             database: DatabaseConfig {
                 path: default_data_dir().join("gateway.db"),
             },
+            uploads: UploadsConfig {
+                dir: default_data_dir().join("uploads"),
+            },
             frontend: FrontendConfig { dist_dir: None },
         }
     }
@@ -73,6 +82,10 @@ impl Config {
 
         if let Ok(path) = env::var("KODEX_DATABASE_PATH") {
             config.database.path = expand_home(path);
+        }
+
+        if let Ok(path) = env::var("KODEX_UPLOADS_DIR") {
+            config.uploads.dir = expand_home(path);
         }
 
         if let Ok(binary) = env::var("KODEX_CODEX_BINARY") {
@@ -140,5 +153,11 @@ mod tests {
     fn default_database_lives_under_kodex_home() {
         let path = Config::default().database.path;
         assert!(path.ends_with(".kodex/gateway.db"));
+    }
+
+    #[test]
+    fn default_uploads_live_under_kodex_home() {
+        let path = Config::default().uploads.dir;
+        assert!(path.ends_with(".kodex/uploads"));
     }
 }

@@ -4,12 +4,11 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use utoipa::ToSchema;
 
 use crate::{
     api::AppState,
-    app_server_api::{self, RawAppServerResponse},
+    app_server_api::{self, RawAppServerResponse, UserInput},
     error::ApiResult,
 };
 
@@ -29,13 +28,13 @@ pub fn router() -> Router<AppState> {
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnStartRequest {
-    pub input: Vec<Value>,
+    pub input: Vec<UserInput>,
 }
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnSteerRequest {
-    pub input: Vec<Value>,
+    pub input: Vec<UserInput>,
 }
 
 #[utoipa::path(post, path = "/v1/threads/{threadId}/turns", request_body = TurnStartRequest, responses((status = 200, body = RawAppServerResponse)))]

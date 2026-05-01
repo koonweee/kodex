@@ -97,7 +97,7 @@ impl CodexClient {
     pub async fn turn_start(
         &self,
         thread_id: String,
-        input: Vec<Value>,
+        input: Vec<UserInput>,
     ) -> ApiResult<RawAppServerResponse> {
         self.raw_request(
             "turn/start",
@@ -110,7 +110,7 @@ impl CodexClient {
         &self,
         thread_id: String,
         expected_turn_id: String,
-        input: Vec<Value>,
+        input: Vec<UserInput>,
     ) -> ApiResult<RawAppServerResponse> {
         self.raw_request(
             "turn/steer",
@@ -194,6 +194,49 @@ pub fn client(app_server: &DynAppServer) -> CodexClient {
 #[serde(rename_all = "camelCase")]
 pub struct RawAppServerResponse {
     pub payload: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum UserInput {
+    Text {
+        text: String,
+        #[serde(
+            default,
+            rename = "text_elements",
+            skip_serializing_if = "Vec::is_empty"
+        )]
+        text_elements: Vec<TextElement>,
+    },
+    Image {
+        url: String,
+    },
+    LocalImage {
+        path: String,
+    },
+    Skill {
+        name: String,
+        path: String,
+    },
+    Mention {
+        name: String,
+        path: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TextElement {
+    #[serde(rename = "byteRange")]
+    pub byte_range: ByteRange,
+    pub placeholder: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ByteRange {
+    pub start: u32,
+    pub end: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -716,7 +759,10 @@ mod tests {
             .turn_steer(
                 "thread-1".to_string(),
                 "turn-1".to_string(),
-                vec![json!({"type": "text", "text": "continue"})],
+                vec![UserInput::Text {
+                    text: "continue".to_string(),
+                    text_elements: Vec::new(),
+                }],
             )
             .await
             .unwrap();
@@ -755,7 +801,10 @@ mod tests {
         client
             .turn_start(
                 "thread-1".to_string(),
-                vec![json!({"type": "text", "text": "hi"})],
+                vec![UserInput::Text {
+                    text: "hi".to_string(),
+                    text_elements: Vec::new(),
+                }],
             )
             .await
             .unwrap();
