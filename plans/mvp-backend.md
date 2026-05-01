@@ -182,7 +182,7 @@ Failing tests first:
 - `GET /readyz` reflects app-server readiness.
 - `GET /v1/capabilities` returns gateway and app-server status.
 - `GET /v1/events?cursor=` replays persisted events.
-- SSE sends replay before live events.
+- SSE subscribes before replay and de-duplicates by sequence so replay/live handoff is gap-free.
 - `/openapi.json` includes every public route added in this milestone.
 - A stale generated OpenAPI artifact check fails when DTOs/routes change without regeneration, if generated artifacts are committed.
 
@@ -191,7 +191,7 @@ Implementation:
 - Add axum router.
 - Add structured API error type.
 - Add request tracing.
-- Add local-dev CORS only.
+- Keep permissive CORS disabled by default; only add scoped local-dev CORS when a concrete frontend origin is configured.
 - Add SSE endpoint using event replay plus broadcast channel.
 - Add static asset serving hook for future built frontend.
 - Annotate public DTOs and routes for OpenAPI.
@@ -213,7 +213,7 @@ YAGNI boundaries:
 Exit conditions:
 
 - Route tests pass for health, readiness, capabilities, OpenAPI, docs, and event replay.
-- SSE endpoint replays stored events before streaming live events.
+- SSE endpoint replays stored events before streaming live events without a replay/live subscription gap.
 - Public routes added in this milestone appear in `/openapi.json`.
 - The trusted-network-only warning is present in `README.md`.
 - API error responses use the shared structured error shape.

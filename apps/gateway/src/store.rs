@@ -9,6 +9,8 @@ use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
 
+const EVENT_REPLAY_LIMIT: i64 = 500;
+
 #[derive(Debug, Clone)]
 pub struct Store {
     pool: Pool<Sqlite>,
@@ -223,6 +225,22 @@ impl Store {
         project_id: Option<String>,
         thread_id: Option<String>,
     ) -> ApiResult<Vec<EventEnvelope>> {
+        self.replay_events_page(
+            cursor,
+            project_id.as_deref(),
+            thread_id.as_deref(),
+            EVENT_REPLAY_LIMIT,
+        )
+        .await
+    }
+
+    pub async fn replay_events_page(
+        &self,
+        cursor: Option<i64>,
+        project_id: Option<&str>,
+        thread_id: Option<&str>,
+        limit: i64,
+    ) -> ApiResult<Vec<EventEnvelope>> {
         let mut builder = QueryBuilder::<Sqlite>::new(
             "select seq, id, received_at, project_id, thread_id, turn_id, item_id, kind, codex_method, payload_json from events where seq > ",
         );
@@ -236,7 +254,8 @@ impl Store {
             builder.push(" and thread_id = ");
             builder.push_bind(thread_id);
         }
-        builder.push(" order by seq asc limit 500");
+        builder.push(" order by seq asc limit ");
+        builder.push_bind(limit);
 
         let rows = builder.build().fetch_all(&self.pool).await?;
         rows.into_iter().map(row_to_event).collect()
@@ -356,10 +375,19 @@ impl Store {
     }
 
     pub async fn resolve_approval(&self, id: &str, response: Value) -> ApiResult<Approval> {
+        self.claim_approval_resolution(id, response).await?;
+        self.finish_approval_resolution(id).await
+    }
+
+    pub async fn claim_approval_resolution(
+        &self,
+        id: &str,
+        response: Value,
+    ) -> ApiResult<Approval> {
         let response_json = serde_json::to_string(&response)?;
         let resolved_at = Utc::now();
         let result = sqlx::query(
-            "update approvals set status = 'resolved', response_json = ?, resolved_at = ? where id = ? and status = 'pending'",
+            "update approvals set status = 'resolving', response_json = ?, resolved_at = ? where id = ? and status = 'pending'",
         )
         .bind(response_json)
         .bind(resolved_at)
@@ -376,6 +404,35 @@ impl Store {
         }
 
         self.get_approval(id).await
+    }
+
+    pub async fn finish_approval_resolution(&self, id: &str) -> ApiResult<Approval> {
+        let result = sqlx::query(
+            "update approvals set status = 'resolved' where id = ? and status = 'resolving'",
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            let existing = self.get_approval(id).await?;
+            return Err(ApiError::BadRequest(format!(
+                "approval {id} is not resolving; current status is {}",
+                existing.status
+            )));
+        }
+
+        self.get_approval(id).await
+    }
+
+    pub async fn reset_approval_resolution(&self, id: &str) -> ApiResult<()> {
+        sqlx::query(
+            "update approvals set status = 'pending', response_json = null, resolved_at = null where id = ? and status = 'resolving'",
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 }
 

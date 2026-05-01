@@ -69,6 +69,11 @@ pub fn validate_client_request(message: &Value) -> ApiResult<()> {
     validate("client request", &CLIENT_REQUEST_SCHEMA, message)
 }
 
+pub fn validate_client_request_params(method: &str, params: Value) -> ApiResult<()> {
+    let message = client_request_message(0, method, params);
+    validate_client_request(&message)
+}
+
 pub fn validate_client_notification(message: &Value) -> ApiResult<()> {
     validate("client notification", &CLIENT_NOTIFICATION_SCHEMA, message)
 }

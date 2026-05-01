@@ -1,4 +1,8 @@
-use std::{convert::Infallible, path::PathBuf, sync::Arc};
+use std::{
+    convert::Infallible,
+    path::{Path as FsPath, PathBuf},
+    sync::Arc,
+};
 
 use async_stream::stream;
 use axum::{
@@ -16,7 +20,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::{broadcast, mpsc};
 use tower_http::{
-    cors::CorsLayer,
     services::{ServeDir, ServeFile},
     trace::TraceLayer,
 };
@@ -27,9 +30,13 @@ use crate::{
     app_server::{DynAppServer, InboundMessage},
     config::Config,
     error::{ApiError, ApiErrorBody, ApiResult},
-    schema::{is_supported_approval_method, validate_approval_response},
+    schema::{
+        is_supported_approval_method, validate_approval_response, validate_client_request_params,
+    },
     store::{Approval, EventEnvelope, NewApproval, NewEvent, Project, Store},
 };
+
+const SSE_REPLAY_PAGE_SIZE: i64 = 500;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -143,7 +150,6 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/models", get(list_models))
         .merge(SwaggerUi::new("/docs").url("/openapi.json", ApiDoc::openapi()))
         .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive())
         .with_state(state.clone());
 
     if let Some(dist_dir) = state.config.frontend.dist_dir.clone() {
@@ -383,15 +389,13 @@ pub struct CreateThreadRequest {
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnStartRequest {
-    #[serde(default)]
-    pub payload: Value,
+    pub input: Vec<Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnSteerRequest {
-    #[serde(default)]
-    pub payload: Value,
+    pub input: Vec<Value>,
 }
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
@@ -424,7 +428,7 @@ pub struct AccountQuery {
 #[serde(rename_all = "camelCase")]
 pub struct LoginRequest {
     #[serde(default)]
-    pub payload: Value,
+    pub codex_streamlined_login: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
@@ -496,18 +500,36 @@ async fn event_stream(
     state: AppState,
     query: EventsQuery,
 ) -> ApiResult<impl Stream<Item = Result<Event, Infallible>>> {
-    let replay = state
-        .store
-        .replay_events(
-            query.cursor,
-            query.project_id.clone(),
-            query.thread_id.clone(),
-        )
-        .await?;
     let mut receiver = state.events.subscribe();
+    let mut replay = Vec::new();
+    let mut replay_high_water = query.cursor.unwrap_or(0);
+
+    loop {
+        let page = state
+            .store
+            .replay_events_page(
+                Some(replay_high_water),
+                query.project_id.as_deref(),
+                query.thread_id.as_deref(),
+                SSE_REPLAY_PAGE_SIZE,
+            )
+            .await?;
+        let page_len = page.len();
+        let Some(last) = page.last() else {
+            break;
+        };
+        replay_high_water = last.seq;
+        replay.extend(page);
+        if page_len < SSE_REPLAY_PAGE_SIZE as usize {
+            break;
+        }
+    }
 
     Ok(stream! {
+        let mut high_water = replay_high_water;
+
         for event in replay {
+            high_water = high_water.max(event.seq);
             if let Ok(sse_event) = event_to_sse(event) {
                 yield Ok(sse_event);
             }
@@ -515,7 +537,8 @@ async fn event_stream(
 
         loop {
             match receiver.recv().await {
-                Ok(event) if event_matches(&event, &query) => {
+                Ok(event) if event.seq > high_water && event_matches(&event, &query) => {
+                    high_water = event.seq;
                     if let Ok(sse_event) = event_to_sse(event) {
                         yield Ok(sse_event);
                     }
@@ -557,11 +580,18 @@ async fn create_project(
     State(state): State<AppState>,
     Json(request): Json<CreateProjectRequest>,
 ) -> ApiResult<(StatusCode, Json<Project>)> {
-    if request.cwd.trim().is_empty() {
+    let cwd_text = request.cwd.trim();
+    if cwd_text.is_empty() {
         return Err(ApiError::BadRequest("cwd is required".to_string()));
     }
 
-    let cwd = std::fs::canonicalize(&request.cwd)
+    if !FsPath::new(cwd_text).is_absolute() {
+        return Err(ApiError::BadRequest(
+            "cwd must be an absolute directory".to_string(),
+        ));
+    }
+
+    let cwd = std::fs::canonicalize(cwd_text)
         .map_err(|_| ApiError::BadRequest("cwd must exist".to_string()))?;
     if !cwd.is_absolute() || !cwd.is_dir() {
         return Err(ApiError::BadRequest(
@@ -676,7 +706,10 @@ async fn start_turn(
     app_request(
         &state,
         "turn/start",
-        merge_path_payload("threadId", thread_id, request.payload),
+        json!({
+            "threadId": thread_id,
+            "input": request.input,
+        }),
     )
     .await
 }
@@ -687,11 +720,14 @@ async fn steer_turn(
     Path((thread_id, turn_id)): Path<(String, String)>,
     Json(request): Json<TurnSteerRequest>,
 ) -> ApiResult<Json<RawAppServerResponse>> {
-    let payload = merge_path_payload("threadId", thread_id, request.payload);
     app_request(
         &state,
         "turn/steer",
-        merge_path_payload("turnId", turn_id, payload),
+        json!({
+            "threadId": thread_id,
+            "expectedTurnId": turn_id,
+            "input": request.input,
+        }),
     )
     .await
 }
@@ -743,14 +779,20 @@ async fn decide_approval(
     }
     validate_approval_response(&approval.method, &request.decision)?;
 
-    state
-        .app_server
-        .respond(&approval.request_id, request.decision.clone())
-        .await?;
-    let resolved = state
+    let claimed = state
         .store
-        .resolve_approval(&approval_id, request.decision)
+        .claim_approval_resolution(&approval_id, request.decision)
         .await?;
+    let decision = claimed.response.clone().unwrap_or(Value::Null);
+    if let Err(error) = state
+        .app_server
+        .respond(&claimed.request_id, decision)
+        .await
+    {
+        let _ = state.store.reset_approval_resolution(&approval_id).await;
+        return Err(error);
+    }
+    let resolved = state.store.finish_approval_resolution(&approval_id).await?;
     let event = state
         .store
         .append_event(NewEvent {
@@ -785,7 +827,11 @@ async fn start_login(
     State(state): State<AppState>,
     Json(request): Json<LoginRequest>,
 ) -> ApiResult<Json<RawAppServerResponse>> {
-    app_request(&state, "account/login/start", request.payload).await
+    let mut payload = json!({ "type": "chatgpt" });
+    if let Some(codex_streamlined_login) = request.codex_streamlined_login {
+        payload["codexStreamlinedLogin"] = Value::Bool(codex_streamlined_login);
+    }
+    app_request(&state, "account/login/start", payload).await
 }
 
 #[utoipa::path(post, path = "/v1/account/login/{loginId}/cancel", responses((status = 200, body = RawAppServerResponse)))]
@@ -829,6 +875,7 @@ async fn app_request(
     method: &str,
     params: Value,
 ) -> ApiResult<Json<RawAppServerResponse>> {
+    validate_client_request_params(method, params.clone())?;
     let payload = state.app_server.request(method, params).await?;
     Ok(Json(RawAppServerResponse { payload }))
 }
@@ -844,7 +891,7 @@ fn merge_path_payload(field: &str, value: String, payload: Value) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{atomic::Ordering, Arc};
+    use std::sync::{atomic::Ordering, Arc, Mutex as StdMutex};
 
     use async_trait::async_trait;
     use axum::{
@@ -854,6 +901,7 @@ mod tests {
     use http_body_util::BodyExt;
     use serde_json::json;
     use tempfile::tempdir;
+    use tokio::sync::Notify;
     use tokio::time::{timeout, Duration};
     use tower::ServiceExt;
 
@@ -891,6 +939,31 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(openapi.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn default_routes_do_not_emit_wildcard_cors() {
+        let (state, _) = test_state().await;
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/healthz")
+                    .header("origin", "https://example.test")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_ne!(
+            response
+                .headers()
+                .get("access-control-allow-origin")
+                .and_then(|value| value.to_str().ok()),
+            Some("*")
+        );
     }
 
     #[tokio::test]
@@ -962,16 +1035,19 @@ mod tests {
         let (state, _) = test_state().await;
         let app = build_router(state);
 
-        let response = app
-            .oneshot(
-                Request::post("/v1/projects")
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"cwd":"relative"}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        for cwd in ["relative", "."] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::post("/v1/projects")
+                        .header("content-type", "application/json")
+                        .body(Body::from(json!({"cwd": cwd}).to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        }
     }
 
     #[tokio::test]
@@ -1170,7 +1246,7 @@ mod tests {
                 .oneshot(
                     Request::post("/v1/threads/thread-1/turns")
                         .header("content-type", "application/json")
-                        .body(Body::from(r#"{"payload":{"prompt":"hi"}}"#))
+                        .body(Body::from(r#"{"input":[{"type":"text","text":"hi"}]}"#))
                         .unwrap(),
                 )
                 .await
@@ -1181,7 +1257,9 @@ mod tests {
                 .oneshot(
                     Request::post("/v1/threads/thread-1/turns/turn-1/steer")
                         .header("content-type", "application/json")
-                        .body(Body::from(r#"{"payload":{"message":"continue"}}"#))
+                        .body(Body::from(
+                            r#"{"input":[{"type":"text","text":"continue"}]}"#,
+                        ))
                         .unwrap(),
                 )
                 .await
@@ -1199,10 +1277,19 @@ mod tests {
 
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "turn/start");
-        assert_eq!(requests[0].1["threadId"], "thread-1");
+        assert_eq!(
+            requests[0].1,
+            json!({"threadId": "thread-1", "input": [{"type": "text", "text": "hi"}]})
+        );
         assert_eq!(requests[1].0, "turn/steer");
-        assert_eq!(requests[1].1["threadId"], "thread-1");
-        assert_eq!(requests[1].1["turnId"], "turn-1");
+        assert_eq!(
+            requests[1].1,
+            json!({
+                "threadId": "thread-1",
+                "expectedTurnId": "turn-1",
+                "input": [{"type": "text", "text": "continue"}],
+            })
+        );
         assert_eq!(requests[2].0, "turn/interrupt");
         assert_eq!(
             requests[2].1,
@@ -1272,7 +1359,7 @@ mod tests {
             .oneshot(
                 Request::post("/v1/threads/thread-1/turns")
                     .header("content-type", "application/json")
-                    .body(Body::from(r#"{"payload":{"prompt":"hi"}}"#))
+                    .body(Body::from(r#"{"input":[{"type":"text","text":"hi"}]}"#))
                     .unwrap(),
             )
             .await
@@ -1425,6 +1512,67 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn concurrent_approval_decisions_only_send_one_upstream_response() {
+        let store = Store::in_memory().await.unwrap();
+        let app_server = Arc::new(BlockingRespondAppServer::default());
+        app_server.ready.store(true, Ordering::SeqCst);
+        let state = AppState::new(Config::default(), store, app_server.clone());
+        let approval = state
+            .store
+            .insert_approval(NewApproval {
+                request_id: "\"approval-1\"".to_string(),
+                thread_id: Some("thread-1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                item_id: Some("item-1".to_string()),
+                method: "item/commandExecution/requestApproval".to_string(),
+                payload: json!({"threadId": "thread-1"}),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state);
+        let path = format!("/v1/approvals/{}/decision", approval.id);
+
+        let first = tokio::spawn({
+            let app = app.clone();
+            let path = path.clone();
+            async move {
+                app.oneshot(
+                    Request::post(path)
+                        .header("content-type", "application/json")
+                        .body(Body::from(r#"{"decision":{"decision":"accept"}}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+            }
+        });
+
+        timeout(
+            Duration::from_secs(2),
+            app_server.respond_started.notified(),
+        )
+        .await
+        .unwrap();
+
+        let duplicate = app
+            .oneshot(
+                Request::post(path)
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"decision":{"decision":"accept"}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(duplicate.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(app_server.responses.lock().unwrap().len(), 1);
+
+        app_server.release_response.notify_one();
+        let first = first.await.unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+        assert_eq!(app_server.responses.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
     async fn approval_decision_validates_payload_before_responding() {
         let (state, app_server) = test_state().await;
         let approval = state
@@ -1475,7 +1623,7 @@ mod tests {
                 .oneshot(
                     Request::post("/v1/account/login")
                         .header("content-type", "application/json")
-                        .body(Body::from(r#"{"payload":{"provider":"chatgpt"}}"#))
+                        .body(Body::from(r#"{}"#))
                         .unwrap(),
                 )
                 .await
@@ -1525,7 +1673,7 @@ mod tests {
         assert_eq!(requests[0].0, "account/read");
         assert_eq!(requests[0].1, json!({"refreshToken": true}));
         assert_eq!(requests[1].0, "account/login/start");
-        assert_eq!(requests[1].1, json!({"provider": "chatgpt"}));
+        assert_eq!(requests[1].1, json!({"type": "chatgpt"}));
         assert_eq!(requests[2].0, "account/login/cancel");
         assert_eq!(requests[2].1, json!({"loginId": "login-1"}));
         assert_eq!(requests[3].0, "account/logout");
@@ -1677,6 +1825,94 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sse_replays_all_persisted_pages_before_live_events() {
+        let (state, _) = test_state().await;
+        for index in 0..501 {
+            state
+                .store
+                .append_event(NewEvent {
+                    project_id: Some("p1".to_string()),
+                    thread_id: Some("t1".to_string()),
+                    turn_id: None,
+                    item_id: None,
+                    kind: "codex.notification".to_string(),
+                    codex_method: Some("item/agentMessage/delta".to_string()),
+                    payload: json!({
+                        "threadId": "t1",
+                        "phase": "replay",
+                        "index": index,
+                    }),
+                })
+                .await
+                .unwrap();
+            if index == 250 {
+                state
+                    .store
+                    .append_event(NewEvent {
+                        project_id: Some("p2".to_string()),
+                        thread_id: Some("t1".to_string()),
+                        turn_id: None,
+                        item_id: None,
+                        kind: "codex.notification".to_string(),
+                        codex_method: Some("item/agentMessage/delta".to_string()),
+                        payload: json!({
+                            "threadId": "t1",
+                            "phase": "filtered",
+                            "index": index,
+                        }),
+                    })
+                    .await
+                    .unwrap();
+            }
+        }
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?projectId=p1&threadId=t1")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let live = state
+            .store
+            .append_event(NewEvent {
+                project_id: Some("p1".to_string()),
+                thread_id: Some("t1".to_string()),
+                turn_id: None,
+                item_id: None,
+                kind: "codex.notification".to_string(),
+                codex_method: Some("item/agentMessage/delta".to_string()),
+                payload: json!({"threadId": "t1", "phase": "live"}),
+            })
+            .await
+            .unwrap();
+        state.events.send(live.clone()).unwrap();
+
+        let mut body = response.into_body();
+        for index in 0..500 {
+            let chunk = next_sse_chunk(&mut body).await;
+            assert!(chunk.contains("\"phase\":\"replay\""));
+            assert!(chunk.contains(&format!("\"index\":{index}")));
+            assert!(!chunk.contains("\"phase\":\"filtered\""));
+            assert!(!chunk.contains("\"phase\":\"live\""));
+        }
+
+        let beyond_first_page = next_sse_chunk(&mut body).await;
+        assert!(beyond_first_page.contains("\"phase\":\"replay\""));
+        assert!(beyond_first_page.contains("\"index\":500"));
+        assert!(!beyond_first_page.contains("\"phase\":\"live\""));
+
+        let live_chunk = next_sse_chunk(&mut body).await;
+        assert!(live_chunk.contains(&format!("id: {}", live.seq)));
+        assert!(live_chunk.contains("\"phase\":\"live\""));
+    }
+
+    #[tokio::test]
     async fn sse_replays_persisted_events_before_live_events() {
         let (state, _) = test_state().await;
         let replay = state
@@ -1723,6 +1959,7 @@ mod tests {
             })
             .await
             .unwrap();
+        state.events.send(replay.clone()).unwrap();
         state.events.send(live.clone()).unwrap();
 
         let second = next_sse_chunk(&mut body).await;
@@ -1756,6 +1993,14 @@ mod tests {
 
     struct RetryableAppServer;
 
+    #[derive(Default)]
+    struct BlockingRespondAppServer {
+        ready: std::sync::atomic::AtomicBool,
+        responses: StdMutex<Vec<(String, Value)>>,
+        respond_started: Notify,
+        release_response: Notify,
+    }
+
     #[async_trait]
     impl AppServer for RetryableAppServer {
         fn is_ready(&self) -> bool {
@@ -1767,6 +2012,27 @@ mod tests {
         }
 
         async fn respond(&self, _request_id: &str, _result: Value) -> ApiResult<()> {
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl AppServer for BlockingRespondAppServer {
+        fn is_ready(&self) -> bool {
+            self.ready.load(Ordering::SeqCst)
+        }
+
+        async fn request(&self, method: &str, _params: Value) -> ApiResult<Value> {
+            Ok(json!({"ok": true, "method": method}))
+        }
+
+        async fn respond(&self, request_id: &str, result: Value) -> ApiResult<()> {
+            self.responses
+                .lock()
+                .unwrap()
+                .push((request_id.to_string(), result));
+            self.respond_started.notify_one();
+            self.release_response.notified().await;
             Ok(())
         }
     }
