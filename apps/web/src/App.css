@@ -22,7 +22,7 @@ body {
 .mantine-Menu-dropdown [data-menu-item],
 .kodex-debug-toggle {
   width: 100%;
-  border-radius: 6px;
+  border-radius: 10px;
   padding: 8px 10px;
   background: transparent;
   color: inherit;
@@ -761,6 +761,7 @@ body {
 .kodex-debug-toggle {
   border: 0;
   font: inherit;
+  font-size: 13px;
   cursor: pointer;
 }
 
