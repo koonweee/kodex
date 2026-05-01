@@ -26,7 +26,7 @@ Build the first Kodex backend as a Rust gateway for a local-first or VPN-only si
 
 ## Milestone 0: Backend Scaffold
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 

@@ -1,6 +1,6 @@
 # Agent Instructions
 
-This repository is planning the Kodex monorepo: a Rust Codex gateway plus a React web frontend.
+This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned React web frontend.
 
 ## Required Workflow
 
@@ -21,6 +21,15 @@ This repository is planning the Kodex monorepo: a Rust Codex gateway plus a Reac
 - Do not mix unrelated changes in a commit.
 - Do not commit generated output, user-owned changes, or unrelated workspace changes unless they are part of the current task.
 - Do not mark a milestone complete until its exit conditions are met.
+
+## Backend Commands
+
+- Format Rust code with `cargo fmt`.
+- Run backend tests with `cargo test`.
+- Start the gateway with `cargo run -p kodex-gateway`.
+- Inspect generated API contract at `GET /openapi.json`; local API docs are served at `GET /docs`.
+- The default database is `~/.kodex/gateway.db`; use `KODEX_DATABASE_PATH` or `KODEX_DATA_DIR` for local overrides.
+- Regenerate the checked-in Codex app-server JSON Schema with `apps/gateway/scripts/generate-app-server-schema.sh` after changing the Codex binary version.
 
 ## Parallel Work
 

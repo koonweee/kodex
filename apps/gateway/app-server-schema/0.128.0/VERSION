@@ -1,0 +1,3 @@
+codex-cli 0.128.0
+release rust-v0.128.0
+generated with: codex app-server generate-json-schema --out apps/gateway/app-server-schema/0.128.0/json
