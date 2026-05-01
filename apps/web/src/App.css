@@ -18,6 +18,14 @@ body {
   overflow: hidden;
 }
 
+.mantine-Menu-dropdown [data-menu-item] {
+  border-radius: 12px;
+}
+
+.mantine-Menu-dropdown [data-mantine-stop-propagation] {
+  padding: 4px;
+}
+
 .kodex-shell {
   min-height: 100vh;
   color: #f2f2f2;
