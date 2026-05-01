@@ -428,8 +428,25 @@ fn row_to_approval(row: sqlx::sqlite::SqliteRow) -> ApiResult<Approval> {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+    use tempfile::tempdir;
 
     use super::*;
+
+    #[tokio::test]
+    async fn file_database_migration_creates_tables_and_enables_wal() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("gateway.db");
+        let store = Store::connect(&path).await.unwrap();
+
+        store.assert_wal().await.unwrap();
+        let tables: Vec<String> = sqlx::query_scalar(
+            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'approvals') order by name",
+        )
+        .fetch_all(store.pool())
+        .await
+        .unwrap();
+        assert_eq!(tables, vec!["approvals", "events", "projects"]);
+    }
 
     #[tokio::test]
     async fn appending_events_assigns_monotonic_seq() {
@@ -494,5 +511,10 @@ mod tests {
             .resolve_approval(&approval.id, json!({"decision": "approved"}))
             .await;
         assert!(matches!(duplicate, Err(ApiError::BadRequest(_))));
+
+        let unknown = store
+            .resolve_approval("missing", json!({"decision": "approved"}))
+            .await;
+        assert!(matches!(unknown, Err(ApiError::NotFound(_))));
     }
 }

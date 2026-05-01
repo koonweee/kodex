@@ -68,7 +68,7 @@ Exit conditions:
 
 ## Milestone 1: App-Server Supervisor and JSON-RPC Client
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -110,7 +110,7 @@ Exit conditions:
 
 ## Milestone 2: SQLite Store and Migrations
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 

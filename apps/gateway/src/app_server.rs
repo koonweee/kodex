@@ -14,6 +14,7 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::{Child, ChildStdin, Command},
     sync::{mpsc, oneshot, Mutex},
+    time::{sleep, Duration},
 };
 
 use crate::{
@@ -137,6 +138,18 @@ impl JsonRpcAppServer {
         line.push(b'\n');
         stdin.write_all(&line).await?;
         stdin.flush().await?;
+        Ok(())
+    }
+
+    pub async fn shutdown(&self) -> ApiResult<()> {
+        self.ready.store(false, Ordering::SeqCst);
+        fail_pending(self).await;
+
+        let mut child = self.child.lock().await;
+        if child.try_wait()?.is_none() {
+            child.start_kill()?;
+        }
+        let _ = child.wait().await;
         Ok(())
     }
 }
@@ -302,19 +315,35 @@ async fn fail_pending(server: &JsonRpcAppServer) {
 }
 
 async fn watch_child(server: Arc<JsonRpcAppServer>) {
-    let status = server.child.lock().await.wait().await;
-    server.ready.store(false, Ordering::SeqCst);
-    match status {
-        Ok(status) => tracing::warn!(%status, "codex app-server exited"),
-        Err(error) => tracing::warn!(%error, "failed waiting for codex app-server"),
+    loop {
+        let status = {
+            let mut child = server.child.lock().await;
+            child.try_wait()
+        };
+
+        match status {
+            Ok(Some(status)) => {
+                server.ready.store(false, Ordering::SeqCst);
+                tracing::warn!(%status, "codex app-server exited");
+                return;
+            }
+            Ok(None) => sleep(Duration::from_millis(100)).await,
+            Err(error) => {
+                server.ready.store(false, Ordering::SeqCst);
+                tracing::warn!(%error, "failed checking codex app-server status");
+                return;
+            }
+        }
     }
 }
 
 #[cfg(test)]
 pub mod tests {
-    use std::sync::Mutex as StdMutex;
+    use std::{path::Path, sync::Mutex as StdMutex};
 
     use super::*;
+    use tempfile::tempdir;
+    use tokio::time::timeout;
 
     #[derive(Default)]
     pub struct RecordingAppServer {
@@ -337,6 +366,112 @@ pub mod tests {
         let notification = initialized_notification_message();
         assert_eq!(notification["method"], "initialized");
         assert!(notification.get("params").is_none());
+    }
+
+    #[tokio::test]
+    async fn supervisor_initializes_and_routes_process_messages() {
+        let dir = tempdir().unwrap();
+        let script = dir.path().join("fake-app-server.sh");
+        let log = dir.path().join("messages.log");
+        write_fake_app_server(&script, false);
+
+        let config = CodexConfig {
+            binary: "/bin/bash".to_string(),
+            args: vec![script.display().to_string(), log.display().to_string()],
+        };
+        let (inbound_tx, mut inbound_rx) = mpsc::channel(8);
+        let server = JsonRpcAppServer::start(&config, inbound_tx).await.unwrap();
+
+        assert!(server.is_ready());
+        let response = timeout(
+            Duration::from_secs(2),
+            server.request("thread/list", json!({"cwd": null})),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(response, json!({"ok": true}));
+
+        let notification = timeout(Duration::from_secs(2), inbound_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            notification,
+            InboundMessage::Notification { method, .. } if method == "turn/completed"
+        ));
+
+        let server_request = timeout(Duration::from_secs(2), inbound_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            server_request,
+            InboundMessage::ServerRequest { method, request_id, .. }
+                if method == "item/permissions/requestApproval" && request_id == "\"approval-1\""
+        ));
+
+        server.shutdown().await.unwrap();
+        assert!(!server.is_ready());
+
+        let messages = std::fs::read_to_string(log).unwrap();
+        let mut lines = messages
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap());
+        assert_eq!(lines.next().unwrap()["method"], "initialize");
+        assert_eq!(lines.next().unwrap()["method"], "initialized");
+        assert_eq!(lines.next().unwrap()["method"], "thread/list");
+    }
+
+    #[tokio::test]
+    async fn child_process_exit_changes_readiness() {
+        let dir = tempdir().unwrap();
+        let script = dir.path().join("fake-app-server.sh");
+        let log = dir.path().join("messages.log");
+        write_fake_app_server(&script, true);
+
+        let config = CodexConfig {
+            binary: "/bin/bash".to_string(),
+            args: vec![script.display().to_string(), log.display().to_string()],
+        };
+        let (inbound_tx, _inbound_rx) = mpsc::channel(8);
+        let server = JsonRpcAppServer::start(&config, inbound_tx).await.unwrap();
+
+        timeout(Duration::from_secs(2), async {
+            while server.is_ready() {
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!server.is_ready());
+    }
+
+    fn write_fake_app_server(path: &Path, exit_after_initialized: bool) {
+        let exit_line = if exit_after_initialized { "exit 0" } else { "" };
+        std::fs::write(
+            path,
+            format!(
+                r#"set -euo pipefail
+log="$1"
+IFS= read -r line
+printf '%s\n' "$line" >> "$log"
+printf '%s\n' '{{"jsonrpc":"2.0","id":1,"result":{{"initialized":true}}}}'
+IFS= read -r line
+printf '%s\n' "$line" >> "$log"
+{exit_line}
+printf '%s\n' '{{"jsonrpc":"2.0","method":"turn/completed","params":{{"threadId":"thread-1","turnId":"turn-1","itemId":"item-1"}}}}'
+printf '%s\n' '{{"jsonrpc":"2.0","id":"approval-1","method":"item/permissions/requestApproval","params":{{"threadId":"thread-1","turnId":"turn-1","itemId":"item-1"}}}}'
+IFS= read -r line
+printf '%s\n' "$line" >> "$log"
+printf '%s\n' '{{"jsonrpc":"2.0","id":2,"result":{{"ok":true}}}}'
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$log"
+done
+"#
+            ),
+        )
+        .unwrap();
     }
 
     #[async_trait]

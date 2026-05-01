@@ -28,12 +28,16 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| format!("opening sqlite database {}", config.database.path.display()))?;
 
     let (inbound_tx, inbound_rx) = mpsc::channel(1024);
-    let app_server: DynAppServer = match JsonRpcAppServer::start(&config.codex, inbound_tx).await {
-        Ok(server) => server,
+    let supervisor = match JsonRpcAppServer::start(&config.codex, inbound_tx).await {
+        Ok(server) => Some(server),
         Err(error) => {
             tracing::warn!(%error, "starting without a ready Codex app-server");
-            Arc::new(UnavailableAppServer)
+            None
         }
+    };
+    let app_server: DynAppServer = match supervisor.clone() {
+        Some(server) => server,
+        None => Arc::new(UnavailableAppServer),
     };
 
     let state = AppState::new(config.clone(), store, app_server);
@@ -46,6 +50,9 @@ async fn main() -> anyhow::Result<()> {
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
+    if let Some(supervisor) = supervisor {
+        supervisor.shutdown().await?;
+    }
     Ok(())
 }
 
