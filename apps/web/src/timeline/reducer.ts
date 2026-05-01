@@ -257,17 +257,31 @@ function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event
   const text = event.codexMethod?.endsWith("/delta")
     ? existing.text + incoming.text
     : incoming.text || existing.text;
+  const output = isCommandOutputDelta(event)
+    ? (existing.output ?? "") + incoming.text
+    : incoming.output || existing.output;
   return {
     ...existing,
     ...incoming,
     actions: mergeActions(existing.actions, incoming.actions),
+    argsSummary: incoming.argsSummary || existing.argsSummary,
+    command: incoming.command || existing.command,
+    cwd: incoming.cwd || existing.cwd,
     debugEvents: [...existing.debugEvents, event],
     kind: incoming.kind === "debug_event" && existing.kind !== "debug_event" ? existing.kind : incoming.kind,
+    output,
+    path: incoming.path || existing.path,
     payload: event.payload,
+    resultSummary: incoming.resultSummary || existing.resultSummary,
     seq: Math.min(existing.seq, incoming.seq),
     status: incoming.status,
+    toolName: incoming.toolName || existing.toolName,
     text,
   };
+}
+
+function isCommandOutputDelta(event: EventEnvelope): boolean {
+  return event.codexMethod === "item/commandExecution/outputDelta";
 }
 
 function mergeActions(existing: WebSearchAction[] | undefined, incoming: WebSearchAction[] | undefined): WebSearchAction[] | undefined {

@@ -450,4 +450,50 @@ describe("timeline reducer", () => {
     });
     expect(state.hiddenItems.map((item) => item.id)).toEqual(["debug-web-other", "debug-web-empty-open"]);
   });
+
+  it("preserves command metadata while streaming command output deltas", () => {
+    let state = createTimelineState();
+
+    state = applyTimelineEvent(state, {
+      id: "command-start",
+      seq: 1,
+      kind: "codex.notification",
+      codexMethod: "item/started",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "cmd-1",
+      projectId: "project-1",
+      payload: {
+        item: {
+          id: "cmd-1",
+          type: "commandExecution",
+          command: "cargo test",
+          cwd: "/home/example/kodex",
+          status: "inProgress",
+        },
+      },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+    state = applyTimelineEvent(state, {
+      id: "command-output-1",
+      seq: 2,
+      kind: "codex.notification",
+      codexMethod: "item/commandExecution/outputDelta",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "cmd-1",
+      projectId: "project-1",
+      payload: { delta: "running 1 test\n" },
+      receivedAt: "2026-04-30T00:00:01Z",
+    });
+
+    expect(state.items).toHaveLength(1);
+    expect(state.items[0]).toMatchObject({
+      id: "cmd-1",
+      kind: "command_execution",
+      command: "cargo test",
+      cwd: "/home/example/kodex",
+      output: "running 1 test\n",
+    });
+  });
 });
