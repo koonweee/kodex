@@ -350,18 +350,74 @@ describe("timeline renderer registry", () => {
               kind: "web_search_group",
               actions: [{ kind: "search", query: "Codex app server" }],
             }),
+            item({
+              id: "collab-1",
+              kind: "collab_agent_tool_call",
+              text: "Finished waiting",
+              toolName: "wait",
+              resultSummary: "No major issues remain.",
+            }),
+            item({
+              id: "image-1",
+              kind: "image_generation",
+              text: "Generated image",
+              output: "completed",
+              path: "/tmp/generated.png",
+              resultSummary: "A diagram",
+            }),
           ]}
         />
       </MantineProvider>,
     );
 
     expect(container.querySelector(".kodex-activity-group")).not.toHaveAttribute("open");
-    expect(screen.getByText("Searched web, ran 2 commands")).toBeInTheDocument();
+    expect(screen.getByText("Searched web, used 1 agent, generated 1 image, ran 2 commands")).toBeInTheDocument();
     expect(screen.getByText("Ran pwd")).toBeInTheDocument();
     expect(screen.getByText("Listed files")).toBeInTheDocument();
+    expect(screen.getAllByText("Finished waiting").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Generated image").length).toBeGreaterThan(0);
+    expect(screen.getByText(/no major issues remain/i)).toBeInTheDocument();
+    expect(screen.getByText(/\/tmp\/generated\.png/i)).toBeInTheDocument();
+    expect(screen.getByText(/Result: completed/i)).toBeInTheDocument();
     expect(screen.getByText("$ pwd")).toBeInTheDocument();
     expect(screen.getByText("/home/example/kodex")).toBeInTheDocument();
     expect(screen.getAllByText("Shell")).not.toHaveLength(0);
+  });
+
+  it("renders plan, review mode, and context compaction timeline markers", () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer item={item({ id: "plan-1", kind: "plan", text: "1. Inspect\n2. Patch" })} />
+        <TimelineItemRenderer
+          item={item({
+            id: "review-start",
+            kind: "review_mode_started",
+            text: "Code review started: Review image support",
+          })}
+        />
+        <TimelineItemRenderer
+          item={item({
+            id: "review-end",
+            kind: "review_mode_finished",
+            text: "Code review finished",
+          })}
+        />
+        <TimelineItemRenderer
+          item={item({
+            id: "compact-1",
+            kind: "context_compaction",
+            text: "Context compacted",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("Plan")).toBeInTheDocument();
+    expect(screen.getByText(/1\. Inspect\s+2\. Patch/)).toBeInTheDocument();
+    expect(screen.getByText("Code review started: Review image support")).toBeInTheDocument();
+    expect(screen.getByText("Code review finished")).toBeInTheDocument();
+    expect(screen.getByText("Context compacted")).toBeInTheDocument();
+    expect(screen.queryByText(/Unsupported item/i)).not.toBeInTheDocument();
   });
 
   it("keeps long command summaries truncatable while showing the full command in the shell block", () => {

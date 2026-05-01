@@ -246,7 +246,8 @@ export function applyTimelineEvent(state: TimelineState, event: EventEnvelope): 
     return createTimelineStateFromDraft(next);
   }
 
-  const presentation = createPresentationItem(event);
+  const existingItem = event.itemId ? timelineItemById(next.indexes, event.itemId) : undefined;
+  const presentation = createPresentationItem(event, existingItem);
   if (!presentation) {
     addHiddenDebugItem(next, event);
     return createTimelineStateFromDraft(next);
@@ -395,13 +396,16 @@ function eventCanMarkTurnActive(event: EventEnvelope) {
   return Boolean(event.itemId) || method.startsWith("turn/");
 }
 
-function createPresentationItem(event: EventEnvelope): { item: TimelineItem; hidden?: boolean; text?: string } | null {
+function createPresentationItem(
+  event: EventEnvelope,
+  existingItem?: TimelineItem,
+): { item: TimelineItem; hidden?: boolean; text?: string } | null {
   const item = eventItem(event);
   const itemType = normalizedItemType(event);
   const text = payloadText(event.payload);
   const status = eventStatus(event);
   const id = presentationItemId(event, itemType);
-  const base = createBaseItem(event, id, itemType, status);
+  const base = createBaseItem(event, id, itemType || existingItem?.kind || "", status);
 
   if (itemType === "assistant_message") {
     const messagePhase = stringValue(item.phase) || stringValue(payloadRecord(event.payload)?.phase);
@@ -477,12 +481,18 @@ function createPresentationItem(event: EventEnvelope): { item: TimelineItem; hid
   }
 
   if (itemType === "file_change") {
-    const path = stringValue(item.path) || stringValue(payloadRecord(event.payload)?.path);
-    const action = stringValue(item.action) || stringValue(item.change) || stringValue(payloadRecord(event.payload)?.action);
+    const changeSummary = fileChangeSummary(item.changes);
+    const path = stringValue(item.path) || stringValue(payloadRecord(event.payload)?.path) || changeSummary.path;
+    const action =
+      stringValue(item.action) ||
+      stringValue(item.change) ||
+      stringValue(payloadRecord(event.payload)?.action) ||
+      changeSummary.action;
     return {
       item: {
         ...base,
         action,
+        output: changeSummary.diff,
         path,
         text: [action, path].filter(Boolean).join(" "),
       },
@@ -513,17 +523,114 @@ function createPresentationItem(event: EventEnvelope): { item: TimelineItem; hid
     };
   }
 
+  if (itemType === "collab_agent_tool_call") {
+    const tool = stringValue(item.tool);
+    return {
+      item: {
+        ...base,
+        argsSummary: collabAgentArgsSummary(item),
+        resultSummary: collabAgentResultSummary(item),
+        text: collabAgentToolCallLabel(item, status),
+        toolName: tool,
+      },
+      hidden: !tool,
+      text: "Empty collaboration activity",
+    };
+  }
+
+  if (itemType === "plan") {
+    return {
+      item: {
+        ...base,
+        text,
+      },
+      hidden: !text,
+      text: "Empty plan",
+    };
+  }
+
+  if (itemType === "image_view") {
+    const path = stringValue(item.path);
+    return {
+      item: {
+        ...base,
+        path,
+        text: "Viewed image",
+      },
+      hidden: !path,
+      text: "Empty image view",
+    };
+  }
+
+  if (itemType === "image_generation") {
+    const path = stringValue(item.savedPath) || stringValue(item.saved_path);
+    const revisedPrompt = stringValue(item.revisedPrompt) || stringValue(item.revised_prompt);
+    return {
+      item: {
+        ...base,
+        output: stringValue(item.result),
+        path,
+        resultSummary: revisedPrompt,
+        text: "Generated image",
+      },
+    };
+  }
+
+  if (itemType === "review_mode_started") {
+    const review = stringValue(item.review);
+    return {
+      item: {
+        ...base,
+        text: review ? `Code review started: ${review}` : "Code review started",
+      },
+    };
+  }
+
+  if (itemType === "review_mode_finished") {
+    return {
+      item: {
+        ...base,
+        text: "Code review finished",
+      },
+    };
+  }
+
+  if (itemType === "context_compaction") {
+    return {
+      item: {
+        ...base,
+        text: "Context compacted",
+      },
+    };
+  }
+
+  if (itemType === "hook_prompt") {
+    return {
+      item: base,
+      hidden: true,
+      text: "Hook prompt",
+    };
+  }
+
   if (itemType === "warning" || itemType === "error") {
     return { item: createDiagnosticItem(event) };
   }
 
   if (event.itemId) {
+    if (existingItem) {
+      return {
+        item: {
+          ...base,
+          text,
+        },
+        hidden: !text,
+        text: text ? undefined : "Empty item update",
+      };
+    }
     return {
-      item: {
-        ...base,
-        kind: "debug_event",
-        text: text || "Unsupported item",
-      },
+      item: base,
+      hidden: true,
+      text: text || "Unsupported item",
     };
   }
 
@@ -714,6 +821,41 @@ function normalizedItemType(event: EventEnvelope): string {
   const method = event.codexMethod ?? "";
   const payload = payloadRecord(event.payload);
   const item = eventItem(event);
+  const exactItemType = stringValue(item.type).toLowerCase();
+  switch (exactItemType) {
+    case "agentmessage":
+      return "assistant_message";
+    case "collabagenttoolcall":
+      return "collab_agent_tool_call";
+    case "commandexecution":
+      return "command_execution";
+    case "contextcompaction":
+      return "context_compaction";
+    case "dynamictoolcall":
+      return "dynamic_tool_call";
+    case "enteredreviewmode":
+      return "review_mode_started";
+    case "exitedreviewmode":
+      return "review_mode_finished";
+    case "filechange":
+      return "file_change";
+    case "hookprompt":
+      return "hook_prompt";
+    case "imagegeneration":
+      return "image_generation";
+    case "imageview":
+      return "image_view";
+    case "mcptoolcall":
+      return "mcp_tool_call";
+    case "plan":
+      return "plan";
+    case "reasoning":
+      return "reasoning_summary";
+    case "usermessage":
+      return "user_message";
+    case "websearch":
+      return "web_search_group";
+  }
   const source = [
     method,
     stringValue(payload?.type),
@@ -755,6 +897,74 @@ function normalizedItemType(event: EventEnvelope): string {
     return "dynamic_tool_call";
   }
   return "";
+}
+
+function collabAgentToolCallLabel(item: Record<string, unknown>, status: TimelineStatus): string {
+  const tool = stringValue(item.tool);
+  if (tool === "spawnAgent") {
+    if (status === "running") {
+      return "Spawning agent";
+    }
+    return status === "failed" || !hasCollabReceiver(item) ? "Agent spawn failed" : "Spawned agent";
+  }
+  if (tool === "sendInput") {
+    return status === "running" ? "Sending input to agent" : "Sent input to agent";
+  }
+  if (tool === "wait") {
+    return status === "running" ? "Waiting for agent" : "Finished waiting";
+  }
+  if (tool === "resumeAgent") {
+    return status === "running" ? "Resuming agent" : "Resumed agent";
+  }
+  if (tool === "closeAgent") {
+    return status === "running" ? "Closing agent" : "Closed agent";
+  }
+  return tool || "Agent activity";
+}
+
+function hasCollabReceiver(item: Record<string, unknown>): boolean {
+  return Array.isArray(item.receiverThreadIds) && item.receiverThreadIds.length > 0;
+}
+
+function collabAgentArgsSummary(item: Record<string, unknown>): string {
+  const parts = [
+    stringValue(item.model) ? `model: ${stringValue(item.model)}` : "",
+    stringValue(item.reasoningEffort) ? `reasoning: ${stringValue(item.reasoningEffort)}` : "",
+    collabReceiverSummary(item.receiverThreadIds),
+    stringValue(item.prompt) ? `prompt: ${truncateSummary(stringValue(item.prompt), 160)}` : "",
+  ].filter(Boolean);
+  return parts.join("; ");
+}
+
+function collabReceiverSummary(value: unknown): string {
+  if (!Array.isArray(value) || value.length === 0) {
+    return "";
+  }
+  const ids = value.map((item) => stringValue(item)).filter(Boolean);
+  if (ids.length === 0) {
+    return "";
+  }
+  return ids.length === 1 ? `receiver: ${ids[0]}` : `receivers: ${ids.join(", ")}`;
+}
+
+function collabAgentResultSummary(item: Record<string, unknown>): string {
+  const agentsStates = payloadRecord(item.agentsStates);
+  if (!agentsStates) {
+    return "";
+  }
+  return Object.entries(agentsStates)
+    .map(([threadId, value]) => {
+      const state = payloadRecord(value);
+      const status = stringValue(state?.status);
+      const message = stringValue(state?.message);
+      return [threadId, status, message].filter(Boolean).join(": ");
+    })
+    .filter(Boolean)
+    .join("; ");
+}
+
+function truncateSummary(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
 }
 
 function eventStatus(event: EventEnvelope): TimelineStatus {
@@ -862,15 +1072,57 @@ function reasoningSummary(payload: unknown): string {
   return "";
 }
 
+function fileChangeSummary(value: unknown): { action: string; diff: string; path: string } {
+  if (!Array.isArray(value)) {
+    return { action: "", diff: "", path: "" };
+  }
+  const actions: string[] = [];
+  const diffs: string[] = [];
+  const paths: string[] = [];
+  for (const valueItem of value) {
+    const change = payloadRecord(valueItem);
+    if (!change) {
+      continue;
+    }
+    const action = fileChangeKind(change.kind);
+    const diff = stringValue(change.diff);
+    const path = stringValue(change.path);
+    if (action) {
+      actions.push(action);
+    }
+    if (diff) {
+      diffs.push(diff);
+    }
+    if (path) {
+      paths.push(path);
+    }
+  }
+  return {
+    action: uniqueValues(actions).join(", "),
+    diff: diffs.join("\n"),
+    path: uniqueValues(paths).join(", "),
+  };
+}
+
+function fileChangeKind(value: unknown): string {
+  const record = payloadRecord(value);
+  return stringValue(record?.type) || stringValue(value);
+}
+
+function uniqueValues(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
 function webSearchAction(payload: unknown): WebSearchAction | null {
   const item = eventPayloadItem(payload);
   const action = payloadRecord(item.action) ?? payloadRecord(payloadRecord(payload)?.action);
   if (!action) {
-    return null;
+    const query = stringValue(item.query) || stringValue(payloadRecord(payload)?.query);
+    return query ? { kind: "search", query } : null;
   }
   const kind = (stringValue(action.type) || stringValue(action.kind) || stringValue(action.action)).toLowerCase();
   if (kind.includes("search")) {
-    const query = stringValue(action.query) || stringValue(action.q);
+    const query = stringValue(action.query) || stringValue(action.q) || stringValue(item.query) || stringValue(payloadRecord(payload)?.query);
     return query ? { kind: "search", query } : null;
   }
   if (kind.includes("open")) {

@@ -33,9 +33,12 @@ export type TimelineApprovalIndex = {
 };
 
 const timelineActivityKinds = new Set([
+  "collab_agent_tool_call",
   "command_execution",
   "dynamic_tool_call",
   "file_change",
+  "image_generation",
+  "image_view",
   "mcp_tool_call",
   "web_search_group",
 ]);

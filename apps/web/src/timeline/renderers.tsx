@@ -1,5 +1,5 @@
 import { Badge, Box, Code, Group, Stack, Text } from "@mantine/core";
-import { AlertTriangle, Check, ChevronRight, Code2, FileDiff, Globe, Terminal, Wrench } from "lucide-react";
+import { AlertTriangle, Bot, Check, ChevronRight, ClipboardList, Code2, FileDiff, Globe, ImageIcon, Info, Terminal, Wrench } from "lucide-react";
 import { memo } from "react";
 import type { ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -23,7 +23,14 @@ const rendererRegistry: Record<string, TimelineRenderer> = {
   file_change: (item) => <FileChangeBlock item={item} />,
   mcp_tool_call: (item) => <ToolCallBlock item={item} />,
   dynamic_tool_call: (item) => <ToolCallBlock item={item} />,
+  collab_agent_tool_call: (item) => <CollabAgentBlock item={item} />,
   web_search_group: (item) => <WebSearchBlock actions={item.actions ?? []} />,
+  plan: (item) => <PlanBlock item={item} />,
+  image_view: (item) => <ImageActivityBlock item={item} />,
+  image_generation: (item) => <ImageActivityBlock item={item} />,
+  review_mode_started: (item) => <StatusMarker item={item} />,
+  review_mode_finished: (item) => <StatusMarker item={item} />,
+  context_compaction: (item) => <StatusMarker item={item} />,
   warning: (item) => (
     <Text size="sm" c="yellow.4">
       {item.text || "Warning"}
@@ -48,6 +55,13 @@ const labels: Record<string, string> = {
   file_change: "File change",
   mcp_tool_call: "MCP tool",
   dynamic_tool_call: "Tool",
+  collab_agent_tool_call: "Agent",
+  plan: "Plan",
+  image_view: "Image",
+  image_generation: "Image",
+  review_mode_started: "Review",
+  review_mode_finished: "Review",
+  context_compaction: "Context",
   warning: "Warning",
   error: "Error",
   debug_event: "Debug event",
@@ -343,6 +357,59 @@ function ToolCallBlock({ item }: { item: TimelineItem }) {
   );
 }
 
+function CollabAgentBlock({ item }: { item: TimelineItem }) {
+  return (
+    <Stack gap={4}>
+      <Text size="sm">{item.text || "Agent activity"}</Text>
+      {item.argsSummary ? (
+        <Text size="xs" c="dimmed" className="kodex-timeline-inline-row">
+          Details: {item.argsSummary}
+        </Text>
+      ) : null}
+      {item.resultSummary ? (
+        <Text size="xs" c="dimmed" className="kodex-timeline-inline-row">
+          Result: {item.resultSummary}
+        </Text>
+      ) : null}
+    </Stack>
+  );
+}
+
+function PlanBlock({ item }: { item: TimelineItem }) {
+  return <Text size="sm">{item.text || "Plan updated"}</Text>;
+}
+
+function ImageActivityBlock({ item }: { item: TimelineItem }) {
+  return (
+    <Stack gap={4}>
+      <Text size="sm">{item.text || "Image activity"}</Text>
+      {item.path ? (
+        <Text size="xs" c="dimmed" className="kodex-timeline-inline-row">
+          Path: {item.path}
+        </Text>
+      ) : null}
+      {item.resultSummary ? (
+        <Text size="xs" c="dimmed" className="kodex-timeline-inline-row">
+          Prompt: {item.resultSummary}
+        </Text>
+      ) : null}
+      {item.output ? (
+        <Text size="xs" c="dimmed" className="kodex-timeline-inline-row">
+          Result: {item.output}
+        </Text>
+      ) : null}
+    </Stack>
+  );
+}
+
+function StatusMarker({ item }: { item: TimelineItem }) {
+  return (
+    <Text size="sm" c="dimmed" className="kodex-timeline-inline-row">
+      {item.text}
+    </Text>
+  );
+}
+
 function DebugDisclosure({ item }: { item: TimelineItem }) {
   return (
     <details className="kodex-timeline-debug">
@@ -374,6 +441,18 @@ function TimelineIcon({ kind }: { kind: string }) {
   }
   if (kind === "mcp_tool_call" || kind === "dynamic_tool_call") {
     return <Wrench size={size} />;
+  }
+  if (kind === "collab_agent_tool_call") {
+    return <Bot size={size} />;
+  }
+  if (kind === "image_view" || kind === "image_generation") {
+    return <ImageIcon size={size} />;
+  }
+  if (kind === "plan") {
+    return <ClipboardList size={size} />;
+  }
+  if (kind === "review_mode_started" || kind === "review_mode_finished" || kind === "context_compaction") {
+    return <Info size={size} />;
   }
   if (kind === "warning" || kind === "error") {
     return <AlertTriangle size={size} />;
@@ -407,10 +486,16 @@ function activityGroupSummary(items: TimelineItem[]): string {
   const fileCount = items.filter((item) => item.kind === "file_change").length;
   const webCount = items.filter((item) => item.kind === "web_search_group").length;
   const toolCount = items.filter((item) => item.kind === "mcp_tool_call" || item.kind === "dynamic_tool_call").length;
+  const agentCount = items.filter((item) => item.kind === "collab_agent_tool_call").length;
+  const generatedImageCount = items.filter((item) => item.kind === "image_generation").length;
+  const viewedImageCount = items.filter((item) => item.kind === "image_view").length;
   const parts = [
     webCount ? "Searched web" : "",
     fileCount ? fileCount === 1 ? "changed 1 file" : `changed ${fileCount} files` : "",
     toolCount ? toolCount === 1 ? "used 1 tool" : `used ${toolCount} tools` : "",
+    agentCount ? agentCount === 1 ? "used 1 agent" : `used ${agentCount} agents` : "",
+    generatedImageCount ? generatedImageCount === 1 ? "generated 1 image" : `generated ${generatedImageCount} images` : "",
+    viewedImageCount ? viewedImageCount === 1 ? "viewed 1 image" : `viewed ${viewedImageCount} images` : "",
     commandCount ? commandCount === 1 ? "ran 1 command" : `ran ${commandCount} commands` : "",
   ].filter(Boolean);
   return parts.length ? sentenceCase(parts.join(", ")) : "Worked";
@@ -438,6 +523,12 @@ function activityItemSummary(item: TimelineItem): string {
   }
   if (item.kind === "mcp_tool_call" || item.kind === "dynamic_tool_call") {
     return item.toolName ? `Used ${item.toolName}` : "Used tool";
+  }
+  if (item.kind === "collab_agent_tool_call") {
+    return item.text || "Agent activity";
+  }
+  if (item.kind === "image_view" || item.kind === "image_generation") {
+    return item.text || "Image activity";
   }
   return labels[item.kind] ?? "Activity";
 }
