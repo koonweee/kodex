@@ -11,7 +11,10 @@ function item(overrides: Partial<TimelineItem>): TimelineItem {
     kind: "agent_message",
     status: "completed",
     text: "",
+    turnId: "turn-1",
+    seq: 1,
     payload: {},
+    debugEvents: [],
     ...overrides,
   };
 }
@@ -33,5 +36,154 @@ describe("timeline renderer registry", () => {
     expect(screen.getByText(/low trust/i)).toBeInTheDocument();
     expect(screen.getByText(/boom/i)).toBeInTheDocument();
     expect(screen.getByText(/future_item/i)).toBeInTheDocument();
+  });
+
+  it("renders human labels, hides normal completed status, and keeps raw payloads out of the default view", () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "assistant_message",
+            text: "Done.",
+            payload: { item: { type: "agentMessage", text: "Done." } },
+            debugEvents: [
+              {
+                id: "event-1",
+                seq: 1,
+                kind: "codex.notification",
+                codexMethod: "item/completed",
+                threadId: "thread-1",
+                turnId: "turn-1",
+                itemId: "item-1",
+                projectId: "project-1",
+                payload: { item: { type: "agentMessage", text: "Done." } },
+                receivedAt: "2026-04-30T00:00:00Z",
+              },
+            ],
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("Assistant")).toBeInTheDocument();
+    expect(screen.getByText("Done.")).toBeInTheDocument();
+    expect(screen.queryByText(/assistant_message/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/completed/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/agentMessage/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/item\/completed/i)).not.toBeInTheDocument();
+  });
+
+  it("renders assistant messages as safe markdown", () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "assistant_message",
+            text:
+              "For ZIP `94123`:\n\n- `52.8°F`, feels like `50.2°F`\n- Fog\n\nSource: [Open-Meteo](https://open-meteo.com/en/docs)\n\n<script>alert('x')</script>",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("94123").tagName.toLowerCase()).toBe("code");
+    expect(screen.getByRole("list")).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getByRole("link", { name: /open-meteo/i })).toHaveAttribute(
+      "href",
+      "https://open-meteo.com/en/docs",
+    );
+    expect(screen.getByRole("link", { name: /open-meteo/i })).toHaveAttribute("rel", "noreferrer");
+    expect(screen.queryByText(/alert/i)).not.toBeInTheDocument();
+  });
+
+  it("preserves assistant markdown soft line breaks during streaming", () => {
+    const { container } = render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "assistant_message",
+            status: "running",
+            text: "Checking current conditions...\nSearching source results...",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(container.querySelector(".kodex-assistant-markdown br")).toBeInTheDocument();
+  });
+
+  it("renders reasoning and web search as compact structured blocks", async () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            id: "reasoning-1",
+            kind: "reasoning_summary",
+            summary: "Need current sources.",
+            payload: { item: { type: "reasoning", summary: "Need current sources." } },
+          })}
+        />
+        <TimelineItemRenderer
+          item={item({
+            id: "web-search-turn-1",
+            kind: "web_search_group",
+            actions: [
+              { kind: "search", query: "Codex app server" },
+              { kind: "open", title: "Example", url: "https://example.com" },
+            ],
+            payload: {},
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("Reasoning")).toBeInTheDocument();
+    expect(screen.getByText("Web search")).toBeInTheDocument();
+    expect(screen.getByText(/searched web for/i)).toBeInTheDocument();
+    expect(screen.getByText(/codex app server/i)).toBeInTheDocument();
+    expect(screen.getByText(/opened page/i)).toBeInTheDocument();
+    expect(screen.getByText(/example/i)).toBeInTheDocument();
+    expect(screen.queryByText(/"query"/i)).not.toBeInTheDocument();
+  });
+
+  it("shows debug event metadata and raw payload only when debug mode is enabled", () => {
+    const debugItem = item({
+      kind: "debug_event",
+      text: "Unsupported item",
+      payload: { item: { type: "futureThing", value: true } },
+      debugEvents: [
+        {
+          id: "event-1",
+          seq: 1,
+          kind: "codex.notification",
+          codexMethod: "item/started",
+          threadId: "thread-1",
+          turnId: "turn-1",
+          itemId: "item-1",
+          projectId: "project-1",
+          payload: { item: { type: "futureThing", value: true } },
+          receivedAt: "2026-04-30T00:00:00Z",
+        },
+      ],
+    });
+
+    const { rerender } = render(
+      <MantineProvider>
+        <TimelineItemRenderer item={debugItem} />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("Unsupported item")).toBeInTheDocument();
+    expect(screen.queryByText(/futureThing/i)).not.toBeInTheDocument();
+
+    rerender(
+      <MantineProvider>
+        <TimelineItemRenderer item={debugItem} showDebug />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText(/item\/started/i)).toBeInTheDocument();
+    expect(screen.getByText(/futureThing/i)).toBeInTheDocument();
   });
 });

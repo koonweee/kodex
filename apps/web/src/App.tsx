@@ -166,6 +166,7 @@ const UI_TEXT = {
   },
   streamStatus: "Event stream",
   status: {
+    debugEvents: "Show debug events",
     label: "Status",
     rateLimitUnavailable: "Rate limits unavailable",
   },
@@ -223,6 +224,7 @@ function KodexShell() {
   const [composerText, setComposerText] = useState("");
   const [steerText, setSteerText] = useState("");
   const [streamStatus, setStreamStatus] = useState<"connected" | "reconnecting" | "closed">("closed");
+  const [showDebugEvents, setShowDebugEvents] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("chat");
   const resolvedApprovalIds = useRef<Set<string>>(new Set());
@@ -561,7 +563,12 @@ function KodexShell() {
               onLogin={handleLogin}
               onLogout={handleLogout}
             />
-            <HeaderStatusMenu capabilitiesState={capabilitiesState} rateLimits={rateLimits} />
+            <HeaderStatusMenu
+              capabilitiesState={capabilitiesState}
+              onShowDebugEventsChange={setShowDebugEvents}
+              rateLimits={rateLimits}
+              showDebugEvents={showDebugEvents}
+            />
           </Group>
         </Group>
       </AppShell.Header>
@@ -679,9 +686,9 @@ function KodexShell() {
           ) : null}
           <Box className="kodex-thread-panel">
             {selectedThread ? (
-              <Stack gap="md">
-                <Group justify="space-between" wrap="nowrap">
-                  <Box>
+              <Stack gap="md" h="100%" className="kodex-thread-layout">
+                <Group justify="space-between" wrap="nowrap" className="kodex-thread-header">
+                  <Box className="kodex-thread-heading">
                     <Title order={2} size="h4">
                       {threadDisplayTitle(selectedThread)}
                     </Title>
@@ -707,11 +714,14 @@ function KodexShell() {
                     </Tooltip>
                   </Group>
                 </Group>
-                <TimelineView
-                  approvals={approvals.filter((approval) => approval.threadId === selectedThread.id)}
-                  onApprovalDecision={handleApprovalDecision}
-                  timeline={timeline}
-                />
+                <Box className="kodex-timeline-scroll">
+                  <TimelineView
+                    approvals={approvals.filter((approval) => approval.threadId === selectedThread.id)}
+                    onApprovalDecision={handleApprovalDecision}
+                    showDebug={showDebugEvents}
+                    timeline={timeline}
+                  />
+                </Box>
               </Stack>
             ) : (
               <EmptyPanel
@@ -836,10 +846,14 @@ function RateLimitSummary({ rateLimits }: { rateLimits: RateLimitsResponse | nul
 
 function HeaderStatusMenu({
   capabilitiesState,
+  onShowDebugEventsChange,
   rateLimits,
+  showDebugEvents,
 }: {
   capabilitiesState: LoadState;
+  onShowDebugEventsChange: (value: boolean) => void;
   rateLimits: RateLimitsResponse | null;
+  showDebugEvents: boolean;
 }) {
   return (
     <Menu position="bottom-end" width={260} withinPortal>
@@ -859,6 +873,16 @@ function HeaderStatusMenu({
           <CapabilitySummary state={capabilitiesState} />
           <RateLimitSummary rateLimits={rateLimits} />
         </Stack>
+        <Menu.Divider />
+        <button
+          className="kodex-debug-toggle"
+          type="button"
+          role="menuitemcheckbox"
+          aria-checked={showDebugEvents}
+          onClick={() => onShowDebugEventsChange(!showDebugEvents)}
+        >
+          {UI_TEXT.status.debugEvents}
+        </button>
       </Menu.Dropdown>
     </Menu>
   );
@@ -954,13 +978,19 @@ function AccountControls({
 function TimelineView({
   approvals,
   onApprovalDecision,
+  showDebug,
   timeline,
 }: {
   approvals: Approval[];
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
+  showDebug: boolean;
   timeline: TimelineState;
 }) {
-  if (timeline.items.length === 0) {
+  const items = (showDebug ? [...timeline.items, ...timeline.hiddenItems] : timeline.items).sort(
+    (left, right) => left.seq - right.seq,
+  );
+
+  if (items.length === 0) {
     return (
       <EmptyPanel
         icon={<PanelRightOpen size={22} />}
@@ -972,23 +1002,43 @@ function TimelineView({
 
   return (
     <Stack gap="xs">
-      {timeline.items.map((item) => {
-        const itemApprovals = approvals.filter((approval) => approval.itemId === item.id);
-        return (
-          <Box key={item.id}>
-            <TimelineItemRenderer item={item} />
-            {itemApprovals.length > 0 ? (
-              <Stack gap="xs" mt="xs">
-                {itemApprovals.map((approval) => (
-                  <ApprovalCard approval={approval} key={approval.id} onDecision={onApprovalDecision} />
-                ))}
-              </Stack>
-            ) : null}
-          </Box>
-        );
-      })}
+      {groupTimelineItems(items).map((group) => (
+        <Box className="kodex-turn-group" key={group.key}>
+          <Stack gap="xs">
+            {group.items.map((item) => {
+              const itemApprovals = approvals.filter((approval) => approval.itemId === item.id);
+              return (
+                <Box key={item.id}>
+                  <TimelineItemRenderer item={item} showDebug={showDebug} />
+                  {itemApprovals.length > 0 ? (
+                    <Stack gap="xs" mt="xs">
+                      {itemApprovals.map((approval) => (
+                        <ApprovalCard approval={approval} key={approval.id} onDecision={onApprovalDecision} />
+                      ))}
+                    </Stack>
+                  ) : null}
+                </Box>
+              );
+            })}
+          </Stack>
+        </Box>
+      ))}
     </Stack>
   );
+}
+
+function groupTimelineItems(items: TimelineState["items"]): Array<{ key: string; items: TimelineState["items"] }> {
+  const groups: Array<{ key: string; items: TimelineState["items"] }> = [];
+  for (const item of items) {
+    const key = item.turnId ?? `item-${item.id}`;
+    const current = groups[groups.length - 1];
+    if (current?.key === key) {
+      current.items.push(item);
+    } else {
+      groups.push({ key, items: [item] });
+    }
+  }
+  return groups;
 }
 
 function ApprovalPanel({

@@ -42,13 +42,40 @@ body {
 }
 
 .kodex-thread-panel {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   flex: 1;
-  overflow: auto;
+  overflow: hidden;
   border: 1px solid #383838;
   border-radius: 8px;
   padding: 16px;
   background: #202020;
+}
+
+.kodex-thread-layout {
+  min-height: 0;
+}
+
+.kodex-thread-header {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.kodex-thread-heading {
+  min-width: 0;
+}
+
+.kodex-thread-heading h2,
+.kodex-thread-heading p {
+  overflow-wrap: anywhere;
+}
+
+.kodex-timeline-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .kodex-composer {
@@ -110,7 +137,6 @@ body {
   max-width: none;
 }
 
-.kodex-timeline-item,
 .kodex-approval-card {
   display: grid;
   gap: 8px;
@@ -119,6 +145,114 @@ body {
   border-radius: 8px;
   padding: 12px;
   background: #202020;
+}
+
+.kodex-turn-group {
+  display: grid;
+  gap: 8px;
+  border-left: 1px solid #373737;
+  padding-left: 10px;
+}
+
+.kodex-timeline-item {
+  display: grid;
+  gap: 8px;
+  overflow: hidden;
+  border: 1px solid #343434;
+  border-radius: 8px;
+  padding: 10px;
+  background: #1d1d1d;
+}
+
+.kodex-timeline-item-assistant_message,
+.kodex-timeline-item-user_message,
+.kodex-timeline-item-agent_message {
+  border-color: #3f4745;
+  background: #222625;
+}
+
+.kodex-timeline-item-header {
+  min-width: 0;
+}
+
+.kodex-timeline-label,
+.kodex-timeline-message,
+.kodex-timeline-inline-row,
+.kodex-assistant-markdown {
+  overflow-wrap: anywhere;
+}
+
+.kodex-assistant-markdown {
+  min-width: 0;
+  color: #f1f1f1;
+}
+
+.kodex-assistant-markdown-paragraph {
+  margin: 0;
+}
+
+.kodex-assistant-markdown-paragraph + .kodex-assistant-markdown-paragraph,
+.kodex-assistant-markdown ul + .kodex-assistant-markdown-paragraph,
+.kodex-assistant-markdown ol + .kodex-assistant-markdown-paragraph {
+  margin-top: 8px;
+}
+
+.kodex-assistant-markdown ul,
+.kodex-assistant-markdown ol {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+
+.kodex-assistant-markdown li {
+  margin: 2px 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.kodex-assistant-markdown a {
+  color: #8ee4d3;
+  text-decoration: none;
+}
+
+.kodex-assistant-markdown a:hover {
+  text-decoration: underline;
+}
+
+.kodex-assistant-inline-code {
+  border: 1px solid #3f4b48;
+  background: #1a2a27;
+  color: #d8fff7;
+  font-size: 12px;
+}
+
+.kodex-timeline-disclosure,
+.kodex-timeline-debug {
+  min-width: 0;
+}
+
+.kodex-timeline-disclosure summary,
+.kodex-timeline-debug summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #b8b8b8;
+  font-size: 12px;
+}
+
+.kodex-timeline-code,
+.kodex-timeline-output,
+.kodex-timeline-debug-payload {
+  max-width: 100%;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.kodex-timeline-output {
+  max-height: 180px;
+}
+
+.kodex-timeline-debug-payload {
+  max-height: 220px;
 }
 
 .kodex-empty {
@@ -167,6 +301,27 @@ body {
 
 .kodex-status-button {
   color: #c9c9c9;
+}
+
+.kodex-debug-toggle {
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.kodex-debug-toggle:hover {
+  background: #2a2a2a;
+}
+
+.kodex-debug-toggle[aria-checked="true"]::before {
+  content: "✓ ";
 }
 
 .kodex-approval-card {
