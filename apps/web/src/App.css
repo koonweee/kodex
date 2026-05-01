@@ -13,6 +13,11 @@ body {
   transform: none;
 }
 
+.mantine-Menu-dropdown {
+  border-radius: 18px;
+  overflow: hidden;
+}
+
 .kodex-shell {
   min-height: 100vh;
   color: #f2f2f2;
