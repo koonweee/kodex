@@ -690,7 +690,6 @@ body {
 
 .kodex-timeline-label,
 .kodex-timeline-message,
-.kodex-user-message-bubble,
 .kodex-timeline-inline-row,
 .kodex-assistant-markdown {
   overflow-wrap: anywhere;
@@ -742,13 +741,15 @@ body {
 .kodex-user-message-bubble {
   position: relative;
   box-sizing: border-box;
-  max-width: min(78%, 680px);
+  max-width: 100%;
   margin: 0;
   border-radius: 14px 14px 4px 14px;
   padding: 9px 12px;
   background: #2f746b;
   color: #f6fffd;
   white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 @media (max-width: 640px) {
