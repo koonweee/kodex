@@ -79,6 +79,75 @@ const theme = createTheme({
   },
 });
 
+const UI_TEXT = {
+  appName: "Kodex",
+  approvals: {
+    emptyText: "Command, file, and permission requests will appear here.",
+    emptyTitle: "No pending approvals",
+    label: "Approvals",
+    pending: "pending",
+  },
+  auth: {
+    cancel: "Cancel login",
+    connect: "Connect ChatGPT",
+    logout: "Logout",
+    open: "Open ChatGPT auth",
+  },
+  capability: {
+    appServer: "App-server",
+    checking: "Checking gateway",
+    gateway: "Gateway",
+    offline: "offline",
+    ready: "ready",
+    trustedNetwork: "Trusted network",
+    unavailable: "Gateway unavailable",
+  },
+  composer: {
+    disabledPlaceholder: "Select a thread to start composing",
+    placeholder: "Message Kodex",
+    send: "Send message",
+    stop: "Stop turn",
+  },
+  empty: {
+    noEventsText: "Thread activity will stream into this timeline.",
+    noEventsTitle: "No events",
+    noPreview: "No preview",
+    noProjectsText: "Create a project to begin.",
+    noProjectsTitle: "No projects",
+    noThreadsText: "Start a thread for this project.",
+    noThreadsTitle: "No threads",
+    threadTimelineText: "Select or create a thread to view events, messages, tool calls, and warnings.",
+    threadTimelineTitle: "Thread timeline",
+  },
+  model: "Model",
+  project: {
+    cwd: "Working directory",
+    name: "Project name",
+    new: "New project",
+    submit: "Create project",
+    title: "Projects",
+  },
+  shell: {
+    headerLabel: "Kodex",
+    mainLabel: "Thread",
+    workspaceLabel: "Workspace",
+  },
+  streamStatus: "Event stream",
+  thread: {
+    archive: "Archive thread",
+    fork: "Fork thread",
+    new: "New thread",
+    resume: "Resume thread",
+    title: "Threads",
+    untitled: "Untitled thread",
+  },
+  turn: {
+    steer: "Steer active turn",
+    steerPlaceholder: "Steer the active turn",
+    steerSubmit: "Steer turn",
+  },
+};
+
 type LoadState =
   | { status: "loading" }
   | { status: "ready"; capabilities: Capabilities }
@@ -425,14 +494,14 @@ function KodexShell() {
       padding="md"
       className="kodex-shell"
     >
-      <AppShell.Header aria-label="Kodex" className="kodex-header">
+      <AppShell.Header aria-label={UI_TEXT.shell.headerLabel} className="kodex-header">
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
           <Group gap="sm" wrap="nowrap">
             <Box className="kodex-mark" aria-hidden="true">
               K
             </Box>
             <Title order={1} size="h3">
-              Kodex
+              {UI_TEXT.appName}
             </Title>
           </Group>
           <Group gap="sm" wrap="nowrap">
@@ -442,7 +511,7 @@ function KodexShell() {
               </Badge>
             ) : null}
             <Select
-              aria-label="Model"
+              aria-label={UI_TEXT.model}
               data={modelOptions}
               value={selectedModel}
               onChange={setSelectedModel}
@@ -462,17 +531,17 @@ function KodexShell() {
         </Group>
       </AppShell.Header>
 
-      <AppShell.Navbar aria-label="Workspace" p="md" className="kodex-sidebar">
+      <AppShell.Navbar aria-label={UI_TEXT.shell.workspaceLabel} p="md" className="kodex-sidebar">
         <Stack gap="lg" h="100%">
           <Box>
             <Group justify="space-between" align="center" mb="sm">
               <Text fw={700} size="sm">
-                Projects
+                {UI_TEXT.project.title}
               </Text>
-              <Tooltip label="New project">
+              <Tooltip label={UI_TEXT.project.new}>
                 <ActionIcon
                   variant="subtle"
-                  aria-label="New project"
+                  aria-label={UI_TEXT.project.new}
                   onClick={() => setProjectFormOpen((open) => !open)}
                 >
                   <GitBranch size={18} />
@@ -482,24 +551,24 @@ function KodexShell() {
             {projectFormOpen ? (
               <Box component="form" className="kodex-project-form" onSubmit={handleCreateProject}>
                 <TextInput
-                  label="Project name"
+                  label={UI_TEXT.project.name}
                   value={projectName}
                   onChange={(event) => setProjectName(event.currentTarget.value)}
                 />
                 <TextInput
-                  label="Working directory"
+                  label={UI_TEXT.project.cwd}
                   required
                   value={projectCwd}
                   onChange={(event) => setProjectCwd(event.currentTarget.value)}
                 />
                 <Button type="submit" size="xs" disabled={!projectCwd.trim()}>
-                  Create project
+                  {UI_TEXT.project.submit}
                 </Button>
               </Box>
             ) : null}
             <Stack gap="xs">
               {projects.length === 0 ? (
-                <EmptyPanel icon={<Inbox size={20} />} title="No projects" text="Create a project to begin." />
+                <EmptyPanel icon={<Inbox size={20} />} title={UI_TEXT.empty.noProjectsTitle} text={UI_TEXT.empty.noProjectsText} />
               ) : (
                 projects.map((project) => (
                   <button
@@ -523,15 +592,15 @@ function KodexShell() {
           <Box>
             <Group justify="space-between" align="center" mb="sm">
               <Text fw={700} size="sm">
-                Threads
+                {UI_TEXT.thread.title}
               </Text>
               <Button size="xs" variant="light" onClick={handleCreateThread} disabled={!selectedProject}>
-                New thread
+                {UI_TEXT.thread.new}
               </Button>
             </Group>
             <Stack gap="xs">
               {threads.length === 0 ? (
-                <EmptyPanel icon={<Inbox size={20} />} title="No threads" text="Start a thread for this project." />
+                <EmptyPanel icon={<Inbox size={20} />} title={UI_TEXT.empty.noThreadsTitle} text={UI_TEXT.empty.noThreadsText} />
               ) : (
                 threads.map((thread) => (
                   <button
@@ -543,10 +612,10 @@ function KodexShell() {
                   >
                     <Group justify="space-between" wrap="nowrap">
                       <Text fw={700} size="sm">
-                        {thread.name ?? thread.id}
+                        {threadDisplayTitle(thread)}
                       </Text>
                       <Badge size="xs" variant="light">
-                        {thread.status}
+                        {threadStatusLabel(thread.status)}
                       </Badge>
                     </Group>
                     <Text size="xs" c="dimmed" lineClamp={1}>
@@ -560,7 +629,7 @@ function KodexShell() {
         </Stack>
       </AppShell.Navbar>
 
-      <AppShell.Main aria-label="Thread" className="kodex-main">
+      <AppShell.Main aria-label={UI_TEXT.shell.mainLabel} className="kodex-main">
         <Stack h="calc(100vh - 88px)" gap="md">
           {errorMessage ? (
             <Badge color="red" variant="light" leftSection={<AlertCircle size={12} />}>
@@ -569,7 +638,7 @@ function KodexShell() {
           ) : null}
           {selectedThread ? (
             <Badge color={streamStatus === "reconnecting" ? "yellow" : "gray"} variant="light">
-              Event stream {streamStatus}
+              {UI_TEXT.streamStatus} {streamStatus}
             </Badge>
           ) : null}
           <Box className="kodex-thread-panel">
@@ -578,25 +647,25 @@ function KodexShell() {
                 <Group justify="space-between" wrap="nowrap">
                   <Box>
                     <Title order={2} size="h4">
-                      {selectedThread.name ?? selectedThread.id}
+                      {threadDisplayTitle(selectedThread)}
                     </Title>
                     <Text size="sm" c="dimmed">
                       {selectedProject?.cwd ?? selectedThread.cwd}
                     </Text>
                   </Box>
                   <Group gap="xs" wrap="nowrap">
-                    <Tooltip label="Resume thread">
-                      <ActionIcon aria-label="Resume thread" variant="subtle" onClick={handleResumeThread}>
+                    <Tooltip label={UI_TEXT.thread.resume}>
+                      <ActionIcon aria-label={UI_TEXT.thread.resume} variant="subtle" onClick={handleResumeThread}>
                         <Play size={17} />
                       </ActionIcon>
                     </Tooltip>
-                    <Tooltip label="Fork thread">
-                      <ActionIcon aria-label="Fork thread" variant="subtle" onClick={handleForkThread}>
+                    <Tooltip label={UI_TEXT.thread.fork}>
+                      <ActionIcon aria-label={UI_TEXT.thread.fork} variant="subtle" onClick={handleForkThread}>
                         <GitFork size={17} />
                       </ActionIcon>
                     </Tooltip>
-                    <Tooltip label="Archive thread">
-                      <ActionIcon aria-label="Archive thread" variant="subtle" onClick={handleArchiveThread}>
+                    <Tooltip label={UI_TEXT.thread.archive}>
+                      <ActionIcon aria-label={UI_TEXT.thread.archive} variant="subtle" onClick={handleArchiveThread}>
                         <Archive size={17} />
                       </ActionIcon>
                     </Tooltip>
@@ -611,15 +680,15 @@ function KodexShell() {
             ) : (
               <EmptyPanel
                 icon={<PanelRightOpen size={22} />}
-                title="Thread timeline"
-                text="Select or create a thread to view events, messages, tool calls, and warnings."
+                title={UI_TEXT.empty.threadTimelineTitle}
+                text={UI_TEXT.empty.threadTimelineText}
               />
             )}
           </Box>
           <Box component="form" className="kodex-composer" onSubmit={handleSubmitTurn}>
             <Textarea
               aria-label="Message composer"
-              placeholder={selectedThread ? "Message Kodex" : "Select a thread to start composing"}
+              placeholder={selectedThread ? UI_TEXT.composer.placeholder : UI_TEXT.composer.disabledPlaceholder}
               minRows={2}
               autosize
               value={composerText}
@@ -627,9 +696,9 @@ function KodexShell() {
               disabled={!selectedThread}
             />
             <Group gap="xs" wrap="nowrap">
-              <Tooltip label="Stop turn">
+              <Tooltip label={UI_TEXT.composer.stop}>
                 <ActionIcon
-                  aria-label="Stop turn"
+                  aria-label={UI_TEXT.composer.stop}
                   size="lg"
                   variant="light"
                   disabled={!selectedThread || !timeline.activeTurnId}
@@ -638,9 +707,9 @@ function KodexShell() {
                   <Square size={16} />
                 </ActionIcon>
               </Tooltip>
-              <Tooltip label="Send message">
+              <Tooltip label={UI_TEXT.composer.send}>
                 <ActionIcon
-                  aria-label="Send message"
+                  aria-label={UI_TEXT.composer.send}
                   size="lg"
                   type="submit"
                   disabled={!selectedThread || !composerText.trim()}
@@ -653,20 +722,20 @@ function KodexShell() {
           {selectedThread && timeline.activeTurnId ? (
             <Box component="form" className="kodex-steer" onSubmit={handleSteerTurn}>
               <TextInput
-                aria-label="Steer active turn"
-                placeholder="Steer the active turn"
+                aria-label={UI_TEXT.turn.steer}
+                placeholder={UI_TEXT.turn.steerPlaceholder}
                 value={steerText}
                 onChange={(event) => setSteerText(event.currentTarget.value)}
               />
               <Button type="submit" size="xs" disabled={!steerText.trim()}>
-                Steer turn
+                {UI_TEXT.turn.steerSubmit}
               </Button>
             </Box>
           ) : null}
         </Stack>
       </AppShell.Main>
 
-      <AppShell.Aside aria-label="Approvals" p="md" className="kodex-approvals">
+      <AppShell.Aside aria-label={UI_TEXT.approvals.label} p="md" className="kodex-approvals">
         <ApprovalPanel approvals={approvals} onDecision={handleApprovalDecision} />
       </AppShell.Aside>
     </AppShell>
@@ -679,7 +748,7 @@ function CapabilitySummary({ state }: { state: LoadState }) {
       <Group gap="xs" wrap="nowrap">
         <Loader size="xs" />
         <Text size="sm" c="dimmed">
-          Checking gateway
+          {UI_TEXT.capability.checking}
         </Text>
       </Group>
     );
@@ -688,7 +757,7 @@ function CapabilitySummary({ state }: { state: LoadState }) {
   if (state.status === "error") {
     return (
       <Badge color="red" leftSection={<AlertCircle size={12} />} variant="light">
-        Gateway unavailable
+        {UI_TEXT.capability.unavailable}
       </Badge>
     );
   }
@@ -698,14 +767,14 @@ function CapabilitySummary({ state }: { state: LoadState }) {
   return (
     <Group gap="xs" wrap="nowrap">
       <Badge variant="light" color="teal">
-        Gateway {gateway.version}
+        {UI_TEXT.capability.gateway} {gateway.version}
       </Badge>
       <Badge variant="light" color={appServer.ready ? "green" : "yellow"}>
-        App-server {appServer.ready ? "ready" : "offline"}
+        {UI_TEXT.capability.appServer} {appServer.ready ? UI_TEXT.capability.ready : UI_TEXT.capability.offline}
       </Badge>
       {gateway.trustedNetworkOnly ? (
         <Badge variant="light" color="blue">
-          Trusted network
+          {UI_TEXT.capability.trustedNetwork}
         </Badge>
       ) : null}
     </Group>
@@ -732,7 +801,7 @@ function AccountControls({
           {account.account.email ?? account.account.accountType}
         </Badge>
         <Button size="xs" variant="subtle" onClick={onLogout}>
-          Logout
+          {UI_TEXT.auth.logout}
         </Button>
       </Group>
     );
@@ -741,16 +810,16 @@ function AccountControls({
   return (
     <Group gap="xs" wrap="nowrap">
       <Button leftSection={<LogIn size={14} />} size="xs" variant="light" onClick={onLogin}>
-        Connect ChatGPT
+        {UI_TEXT.auth.connect}
       </Button>
       {loginState.authUrl ? (
         <Button component="a" href={loginState.authUrl} target="_blank" rel="noreferrer" size="xs" variant="subtle">
-          Open ChatGPT auth
+          {UI_TEXT.auth.open}
         </Button>
       ) : null}
       {loginState.loginId ? (
         <Button size="xs" variant="subtle" color="gray" onClick={onCancelLogin}>
-          Cancel login
+          {UI_TEXT.auth.cancel}
         </Button>
       ) : null}
     </Group>
@@ -770,8 +839,8 @@ function TimelineView({
     return (
       <EmptyPanel
         icon={<PanelRightOpen size={22} />}
-        title="No events"
-        text="Thread activity will stream into this timeline."
+        title={UI_TEXT.empty.noEventsTitle}
+        text={UI_TEXT.empty.noEventsText}
       />
     );
   }
@@ -808,17 +877,17 @@ function ApprovalPanel({
     <Stack gap="sm">
       <Group justify="space-between">
         <Text fw={700} size="sm">
-          Approvals
+          {UI_TEXT.approvals.label}
         </Text>
         <Badge variant="light" color={approvals.length > 0 ? "orange" : "gray"}>
-          {approvals.length} pending
+          {approvals.length} {UI_TEXT.approvals.pending}
         </Badge>
       </Group>
       {approvals.length === 0 ? (
         <EmptyPanel
           icon={<CheckCircle2 size={20} />}
-          title="No pending approvals"
-          text="Command, file, and permission requests will appear here."
+          title={UI_TEXT.approvals.emptyTitle}
+          text={UI_TEXT.approvals.emptyText}
         />
       ) : (
         approvals.map((approval) => (
@@ -1225,7 +1294,41 @@ function previewText(preview: unknown): string {
   if (preview && typeof preview === "object") {
     return JSON.stringify(preview);
   }
-  return "No preview";
+  return UI_TEXT.empty.noPreview;
+}
+
+function threadDisplayTitle(thread: ThreadSummary): string {
+  return (
+    truncateTitle(thread.name) ??
+    truncateTitle(previewTitle(thread.preview)) ??
+    `${UI_TEXT.thread.untitled} ${thread.id.slice(0, 8)}`
+  );
+}
+
+function previewTitle(preview: unknown): string | null {
+  if (typeof preview === "string") {
+    return preview;
+  }
+  if (preview && typeof preview === "object") {
+    const payload = asRecord(preview);
+    return stringValue(payload.text) ?? stringValue(payload.summary) ?? stringValue(payload.title);
+  }
+  return null;
+}
+
+function truncateTitle(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return null;
+  }
+  return normalized.length > 72 ? `${normalized.slice(0, 69)}...` : normalized;
+}
+
+function threadStatusLabel(status: string): string {
+  return status.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (letter) => letter.toUpperCase());
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

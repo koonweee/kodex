@@ -151,6 +151,31 @@ describe("MVP frontend flows", () => {
     });
   });
 
+  it("uses preview text as the display title for unnamed threads", async () => {
+    const unnamedThread = {
+      ...thread,
+      id: "019de25f-9ac3-72b1-adf6-a108f82d1fb6",
+      name: null,
+      preview: "reference the Codex desktop app UI and identify improvements",
+    };
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [unnamedThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: /reference the codex desktop app ui/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /reference the codex desktop app ui/i })).toBeInTheDocument();
+    expect(screen.queryByText("019de25f-9ac3-72b1-adf6-a108f82d1fb6")).not.toBeInTheDocument();
+  });
+
   it("clears the old active thread immediately after creating a project", async () => {
     let resolveNewProjectThreads: (value: unknown) => void = () => undefined;
     const newProjectThreads = new Promise((resolve) => {
