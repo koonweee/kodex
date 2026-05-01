@@ -265,7 +265,7 @@ Exit conditions:
 
 ## Milestone 5: Turns and Event Timeline
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -310,7 +310,7 @@ Exit conditions:
 
 ## Milestone 6: Approval Broker
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 

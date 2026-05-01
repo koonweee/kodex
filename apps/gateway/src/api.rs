@@ -27,6 +27,7 @@ use crate::{
     app_server::{DynAppServer, InboundMessage},
     config::Config,
     error::{ApiError, ApiErrorBody, ApiResult},
+    schema::{is_supported_approval_method, validate_approval_response},
     store::{Approval, EventEnvelope, NewApproval, NewEvent, Project, Store},
 };
 
@@ -197,6 +198,41 @@ async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiResult<
             params,
         } => {
             let metadata = EventMetadata::from_payload(&params);
+            let server_request_event = state
+                .store
+                .append_event(NewEvent {
+                    project_id: metadata.project_id.clone(),
+                    thread_id: metadata.thread_id.clone(),
+                    turn_id: metadata.turn_id.clone(),
+                    item_id: metadata.item_id.clone(),
+                    kind: "codex.server_request".to_string(),
+                    codex_method: Some(method.clone()),
+                    payload: json!({
+                        "requestId": request_id,
+                        "method": method,
+                        "params": params,
+                    }),
+                })
+                .await?;
+            let _ = state.events.send(server_request_event);
+
+            if !is_supported_approval_method(&method) {
+                let warning = state
+                    .store
+                    .append_event(NewEvent {
+                        project_id: metadata.project_id,
+                        thread_id: metadata.thread_id,
+                        turn_id: metadata.turn_id,
+                        item_id: metadata.item_id,
+                        kind: "gateway.warning".to_string(),
+                        codex_method: Some(method),
+                        payload: json!({"message": "unsupported app-server server request"}),
+                    })
+                    .await?;
+                let _ = state.events.send(warning);
+                return Ok(());
+            }
+
             let approval = state
                 .store
                 .insert_approval(NewApproval {
@@ -239,8 +275,10 @@ impl EventMetadata {
         Self {
             project_id: string_field(payload, &["projectId", "project_id"]),
             thread_id: string_field(payload, &["threadId", "thread_id"]),
-            turn_id: string_field(payload, &["turnId", "turn_id"]),
-            item_id: string_field(payload, &["itemId", "item_id"]),
+            turn_id: string_field(payload, &["turnId", "turn_id"])
+                .or_else(|| nested_string_field(payload, "turn", &["id", "turnId", "turn_id"])),
+            item_id: string_field(payload, &["itemId", "item_id"])
+                .or_else(|| nested_string_field(payload, "item", &["id", "itemId", "item_id"])),
         }
     }
 }
@@ -250,6 +288,12 @@ fn string_field(payload: &Value, names: &[&str]) -> Option<String> {
         .iter()
         .find_map(|name| payload.get(*name).and_then(Value::as_str))
         .map(str::to_string)
+}
+
+fn nested_string_field(payload: &Value, parent: &str, names: &[&str]) -> Option<String> {
+    payload
+        .get(parent)
+        .and_then(|value| string_field(value, names))
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -697,6 +741,7 @@ async fn decide_approval(
             "approval {approval_id} is not pending"
         )));
     }
+    validate_approval_response(&approval.method, &request.decision)?;
 
     state
         .app_server
@@ -801,6 +846,7 @@ fn merge_path_payload(field: &str, value: String, payload: Value) -> Value {
 mod tests {
     use std::sync::{atomic::Ordering, Arc};
 
+    use async_trait::async_trait;
     use axum::{
         body::{to_bytes, Body},
         http::{Request, StatusCode},
@@ -810,7 +856,10 @@ mod tests {
     use tokio::time::{timeout, Duration};
     use tower::ServiceExt;
 
-    use crate::{app_server::tests::RecordingAppServer, config::Config};
+    use crate::{
+        app_server::{tests::RecordingAppServer, AppServer},
+        config::Config,
+    };
 
     use super::*;
 
@@ -1105,6 +1154,301 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn turn_routes_map_start_steer_and_interrupt() {
+        let (state, app_server) = test_state().await;
+        let app = build_router(state);
+
+        assert_ok(
+            app.clone()
+                .oneshot(
+                    Request::post("/v1/threads/thread-1/turns")
+                        .header("content-type", "application/json")
+                        .body(Body::from(r#"{"payload":{"prompt":"hi"}}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+        assert_ok(
+            app.clone()
+                .oneshot(
+                    Request::post("/v1/threads/thread-1/turns/turn-1/steer")
+                        .header("content-type", "application/json")
+                        .body(Body::from(r#"{"payload":{"message":"continue"}}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+        assert_ok(
+            app.oneshot(
+                Request::post("/v1/threads/thread-1/turns/turn-1/interrupt")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+        );
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "turn/start");
+        assert_eq!(requests[0].1["threadId"], "thread-1");
+        assert_eq!(requests[1].0, "turn/steer");
+        assert_eq!(requests[1].1["threadId"], "thread-1");
+        assert_eq!(requests[1].1["turnId"], "turn-1");
+        assert_eq!(requests[2].0, "turn/interrupt");
+        assert_eq!(
+            requests[2].1,
+            json!({"threadId": "thread-1", "turnId": "turn-1"})
+        );
+    }
+
+    #[tokio::test]
+    async fn turn_and_item_notifications_extract_metadata_and_persist_before_broadcast() {
+        let (state, _) = test_state().await;
+        let mut receiver = state.events.subscribe();
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "item/agentMessage/delta".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "item-1",
+                    "delta": "hello"
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "turn/completed".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turn": {"id": "turn-2"}
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let first_broadcast = receiver.recv().await.unwrap();
+        let persisted = state
+            .store
+            .replay_events(Some(first_broadcast.seq - 1), None, None)
+            .await
+            .unwrap();
+        assert_eq!(persisted[0].id, first_broadcast.id);
+        assert_eq!(persisted[0].thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(persisted[0].turn_id.as_deref(), Some("turn-1"));
+        assert_eq!(persisted[0].item_id.as_deref(), Some("item-1"));
+
+        let second_broadcast = receiver.recv().await.unwrap();
+        assert_eq!(
+            second_broadcast.codex_method.as_deref(),
+            Some("turn/completed")
+        );
+        assert_eq!(second_broadcast.turn_id.as_deref(), Some("turn-2"));
+    }
+
+    #[tokio::test]
+    async fn app_server_overload_maps_to_retryable_error_response() {
+        let store = Store::in_memory().await.unwrap();
+        let app_server = Arc::new(RetryableAppServer);
+        let state = AppState::new(Config::default(), store, app_server);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/turns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"payload":{"prompt":"hi"}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        let body = response_json(response).await;
+        assert_eq!(body["code"], "app_server_retryable");
+        assert_eq!(body["retryable"], true);
+    }
+
+    #[tokio::test]
+    async fn approval_broker_creates_pending_approvals_for_supported_methods() {
+        let (state, _) = test_state().await;
+        for method in [
+            "item/commandExecution/requestApproval",
+            "item/fileChange/requestApproval",
+            "item/permissions/requestApproval",
+            "mcpServer/elicitation/request",
+            "item/tool/requestUserInput",
+        ] {
+            ingest_inbound(
+                InboundMessage::ServerRequest {
+                    request_id: format!("\"{method}\""),
+                    method: method.to_string(),
+                    params: json!({
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
+                        "itemId": "item-1"
+                    }),
+                },
+                &state,
+            )
+            .await
+            .unwrap();
+        }
+
+        let approvals = state
+            .store
+            .list_approvals(Some("pending".to_string()), Some("thread-1".to_string()))
+            .await
+            .unwrap();
+        assert_eq!(approvals.len(), 5);
+
+        let events = state.store.replay_events(None, None, None).await.unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.kind == "codex.server_request")
+                .count(),
+            5
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.kind == "approval.created")
+                .count(),
+            5
+        );
+    }
+
+    #[tokio::test]
+    async fn unsupported_server_request_emits_warning_without_approval() {
+        let (state, _) = test_state().await;
+        ingest_inbound(
+            InboundMessage::ServerRequest {
+                request_id: "\"unsupported\"".to_string(),
+                method: "unknown/request".to_string(),
+                params: json!({"threadId": "thread-1"}),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        assert!(state
+            .store
+            .list_approvals(None, None)
+            .await
+            .unwrap()
+            .is_empty());
+        let events = state.store.replay_events(None, None, None).await.unwrap();
+        assert_eq!(events[0].kind, "codex.server_request");
+        assert_eq!(events[1].kind, "gateway.warning");
+    }
+
+    #[tokio::test]
+    async fn approval_decision_sends_one_response_and_emits_resolved_event() {
+        let (state, app_server) = test_state().await;
+        let approval = state
+            .store
+            .insert_approval(NewApproval {
+                request_id: "\"approval-1\"".to_string(),
+                thread_id: Some("thread-1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                item_id: Some("item-1".to_string()),
+                method: "item/commandExecution/requestApproval".to_string(),
+                payload: json!({"threadId": "thread-1"}),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/approvals/{}/decision", approval.id))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"decision":{"decision":"accept"}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(app_server.responses.lock().unwrap().len(), 1);
+
+        let duplicate = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/approvals/{}/decision", approval.id))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"decision":{"decision":"accept"}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(duplicate.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(app_server.responses.lock().unwrap().len(), 1);
+
+        let unknown = app
+            .oneshot(
+                Request::post("/v1/approvals/missing/decision")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"decision":{"decision":"accept"}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unknown.status(), StatusCode::NOT_FOUND);
+
+        let resolved_events = state
+            .store
+            .replay_events(None, None, Some("thread-1".to_string()))
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|event| event.kind == "approval.resolved")
+            .collect::<Vec<_>>();
+        assert_eq!(resolved_events.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn approval_decision_validates_payload_before_responding() {
+        let (state, app_server) = test_state().await;
+        let approval = state
+            .store
+            .insert_approval(NewApproval {
+                request_id: "\"approval-1\"".to_string(),
+                thread_id: Some("thread-1".to_string()),
+                turn_id: None,
+                item_id: None,
+                method: "item/commandExecution/requestApproval".to_string(),
+                payload: json!({"threadId": "thread-1"}),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post(format!("/v1/approvals/{}/decision", approval.id))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"decision":{"decision":"bogus"}}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(app_server.responses.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn event_replay_returns_persisted_events() {
         let (state, _) = test_state().await;
         state
@@ -1207,5 +1551,22 @@ mod tests {
             .unwrap();
         let data = frame.into_data().unwrap();
         String::from_utf8(data.to_vec()).unwrap()
+    }
+
+    struct RetryableAppServer;
+
+    #[async_trait]
+    impl AppServer for RetryableAppServer {
+        fn is_ready(&self) -> bool {
+            true
+        }
+
+        async fn request(&self, _method: &str, _params: Value) -> ApiResult<Value> {
+            Err(ApiError::Retryable("server overloaded".to_string()))
+        }
+
+        async fn respond(&self, _request_id: &str, _result: Value) -> ApiResult<()> {
+            Ok(())
+        }
     }
 }
