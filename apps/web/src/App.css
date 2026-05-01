@@ -6,17 +6,17 @@ body,
 
 body {
   margin: 0;
-  background: #f4f7f7;
+  background: #111111;
 }
 
 .kodex-shell {
   min-height: 100vh;
-  color: #172121;
+  color: #f2f2f2;
 }
 
 .kodex-header {
-  border-bottom: 1px solid #dce5e4;
-  background: #fbfdfc;
+  border-bottom: 1px solid #2b2b2b;
+  background: #151515;
 }
 
 .kodex-mark {
@@ -24,29 +24,31 @@ body {
   width: 32px;
   height: 32px;
   place-items: center;
-  border: 1px solid #b7c9c5;
+  border: 1px solid #434343;
   border-radius: 8px;
-  background: #e7f4ef;
-  color: #0f5c55;
+  background: #202020;
+  color: #cdeee6;
   font-weight: 800;
 }
 
 .kodex-sidebar,
 .kodex-approvals {
-  border-color: #dce5e4;
-  background: #f8fbfa;
+  border-color: #2b2b2b;
+  background: #171717;
 }
 
 .kodex-main {
-  background: #f4f7f7;
+  background: #1f1f1f;
 }
 
 .kodex-thread-panel {
   min-height: 0;
   flex: 1;
-  border: 1px solid #dce5e4;
+  overflow: auto;
+  border: 1px solid #383838;
   border-radius: 8px;
-  background: #ffffff;
+  padding: 16px;
+  background: #202020;
 }
 
 .kodex-composer {
@@ -54,10 +56,11 @@ body {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: end;
-  border: 1px solid #dce5e4;
+  border: 1px solid #444444;
   border-radius: 8px;
   padding: 12px;
-  background: #ffffff;
+  background: #242424;
+  box-shadow: 0 18px 60px rgb(0 0 0 / 28%);
 }
 
 .kodex-steer {
@@ -65,46 +68,57 @@ body {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: end;
-  border: 1px solid #dce5e4;
+  border: 1px solid #3b3b3b;
   border-radius: 8px;
   padding: 10px 12px;
-  background: #fbfdfc;
+  background: #202020;
 }
 
 .kodex-project-form {
   display: grid;
   gap: 10px;
   margin-bottom: 12px;
-  border: 1px solid #dce5e4;
+  border: 1px solid #393939;
   border-radius: 8px;
   padding: 12px;
-  background: #ffffff;
+  background: #202020;
 }
 
 .kodex-list-button {
   width: 100%;
-  border: 1px solid #dce5e4;
+  border: 1px solid #363636;
   border-radius: 8px;
   padding: 10px;
-  background: #ffffff;
+  background: #1f1f1f;
   color: inherit;
   text-align: left;
   cursor: pointer;
 }
 
+.kodex-list-button:hover {
+  border-color: #4b4b4b;
+  background: #252525;
+}
+
 .kodex-list-button[data-active="true"] {
-  border-color: #7ab9b0;
-  background: #eaf6f3;
+  border-color: #5cc8b6;
+  background: #203330;
+}
+
+.kodex-thread-status {
+  flex: 0 0 auto;
+  max-width: none;
 }
 
 .kodex-timeline-item,
 .kodex-approval-card {
   display: grid;
   gap: 8px;
-  border: 1px solid #dce5e4;
+  overflow: hidden;
+  border: 1px solid #383838;
   border-radius: 8px;
   padding: 12px;
-  background: #ffffff;
+  background: #202020;
 }
 
 .kodex-empty {
@@ -112,11 +126,12 @@ body {
   gap: 6px;
   min-height: 112px;
   align-content: center;
-  justify-items: start;
-  border: 1px dashed #c8d6d3;
+  justify-items: center;
+  border: 1px dashed #434343;
   border-radius: 8px;
   padding: 16px;
-  background: #ffffff;
+  background: #202020;
+  text-align: center;
 }
 
 .kodex-empty-icon {
@@ -125,6 +140,124 @@ body {
   height: 32px;
   place-items: center;
   border-radius: 8px;
-  background: #edf5f3;
-  color: #31756e;
+  background: #2a2a2a;
+  color: #9fe8dc;
+}
+
+.kodex-mobile-switcher {
+  display: none;
+}
+
+.kodex-mobile-tab {
+  min-width: 0;
+  border: 0;
+  border-radius: 7px;
+  padding: 8px 10px;
+  background: transparent;
+  color: #9a9a9a;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.kodex-mobile-tab[data-active="true"] {
+  background: #2b2b2b;
+  color: #f4f4f4;
+}
+
+.kodex-status-button {
+  color: #c9c9c9;
+}
+
+.kodex-approval-card {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .kodex-header {
+    height: 56px;
+  }
+
+  .kodex-header .mantine-Title-root {
+    font-size: 20px;
+  }
+
+  .kodex-header-controls {
+    min-width: 0;
+    flex: 1;
+    justify-content: flex-end;
+  }
+
+  .kodex-header-controls .mantine-Select-root {
+    width: 72px !important;
+  }
+
+  .kodex-header-controls .mantine-Badge-root,
+  .kodex-header-controls .mantine-Button-label {
+    max-width: 72px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kodex-account-secondary {
+    display: none;
+  }
+
+  .kodex-status-button .mantine-Button-label {
+    display: none;
+  }
+
+  .kodex-mobile-switcher {
+    position: fixed;
+    z-index: 99;
+    top: 56px;
+    right: 0;
+    left: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 8px;
+    border-bottom: 1px solid #2b2b2b;
+    background: #151515;
+  }
+
+  .kodex-sidebar,
+  .kodex-main,
+  .kodex-approvals {
+    position: fixed !important;
+    inset: 105px 0 0 0 !important;
+    display: none !important;
+    width: auto !important;
+    height: auto !important;
+    padding: 12px !important;
+    overflow: auto;
+    transform: none !important;
+  }
+
+  .kodex-shell[data-mobile-panel="threads"] .kodex-sidebar,
+  .kodex-shell[data-mobile-panel="chat"] .kodex-main,
+  .kodex-shell[data-mobile-panel="approvals"] .kodex-approvals {
+    display: block !important;
+  }
+
+  .kodex-main > .mantine-Stack-root {
+    height: calc(100dvh - 129px) !important;
+  }
+
+  .kodex-thread-panel {
+    padding: 12px;
+  }
+
+  .kodex-composer,
+  .kodex-steer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 901px) {
+  .kodex-main > .mantine-Stack-root {
+    max-width: 900px;
+    margin: 0 auto;
+  }
 }

@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -41,11 +42,10 @@ describe("App shell", () => {
     expect(screen.getByRole("complementary", { name: /approvals/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toBeDisabled();
 
-    await waitFor(() => {
-      expect(screen.getByText(/gateway 0\.1\.0/i)).toBeInTheDocument();
-      expect(screen.getByText(/app-server ready/i)).toBeInTheDocument();
-      expect(screen.getByText(/trusted network/i)).toBeInTheDocument();
-    });
+    await userEvent.click(screen.getByRole("button", { name: /status/i }));
+    expect(await screen.findByText(/gateway 0\.1\.0/i)).toBeInTheDocument();
+    expect(screen.getByText(/app-server ready/i)).toBeInTheDocument();
+    expect(screen.getByText(/trusted network/i)).toBeInTheDocument();
   });
 
   it("keeps gateway status visible when optional app-server-backed calls fail", async () => {
@@ -59,6 +59,7 @@ describe("App shell", () => {
 
     render(<App />);
 
+    await userEvent.click(await screen.findByRole("button", { name: /status/i }));
     expect(await screen.findByText(/gateway 0\.1\.0/i)).toBeInTheDocument();
     expect(screen.getByText(/app-server offline/i)).toBeInTheDocument();
   });

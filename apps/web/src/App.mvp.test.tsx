@@ -176,6 +176,20 @@ describe("MVP frontend flows", () => {
     expect(screen.queryByText("019de25f-9ac3-72b1-adf6-a108f82d1fb6")).not.toBeInTheDocument();
   });
 
+  it("provides a compact panel switcher for narrow viewports", async () => {
+    mockGateway(baseRoutes());
+
+    render(<App />);
+
+    const panelSwitcher = await screen.findByRole("tablist", { name: /mobile panels/i });
+    expect(within(panelSwitcher).getByRole("tab", { name: /threads/i })).toHaveAttribute("aria-selected", "false");
+    expect(within(panelSwitcher).getByRole("tab", { name: /chat/i })).toHaveAttribute("aria-selected", "true");
+    expect(within(panelSwitcher).getByRole("tab", { name: /approvals/i })).toHaveAttribute("aria-selected", "false");
+
+    await userEvent.click(within(panelSwitcher).getByRole("tab", { name: /threads/i }));
+    expect(within(panelSwitcher).getByRole("tab", { name: /threads/i })).toHaveAttribute("aria-selected", "true");
+  });
+
   it("clears the old active thread immediately after creating a project", async () => {
     let resolveNewProjectThreads: (value: unknown) => void = () => undefined;
     const newProjectThreads = new Promise((resolve) => {
@@ -988,6 +1002,7 @@ describe("MVP frontend flows", () => {
 
     const modelInputs = await screen.findAllByLabelText(/model/i);
     expect(modelInputs.find((element) => element.tagName === "INPUT")).toHaveValue("GPT-5.4");
+    await userEvent.click(screen.getByRole("button", { name: /status/i }));
     expect(await screen.findByText(/42% used/i)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /connect chatgpt/i }));
 

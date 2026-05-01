@@ -6,6 +6,7 @@ import {
   Button,
   Group,
   Loader,
+  Menu,
   MantineProvider,
   Select,
   Stack,
@@ -25,6 +26,7 @@ import {
   GitFork,
   Inbox,
   LogIn,
+  MoreHorizontal,
   PanelRightOpen,
   Play,
   Send,
@@ -120,6 +122,12 @@ const UI_TEXT = {
     threadTimelineTitle: "Thread timeline",
   },
   model: "Model",
+  mobile: {
+    approvals: "Approvals",
+    chat: "Chat",
+    label: "Mobile panels",
+    threads: "Threads",
+  },
   project: {
     cwd: "Working directory",
     name: "Project name",
@@ -133,6 +141,10 @@ const UI_TEXT = {
     workspaceLabel: "Workspace",
   },
   streamStatus: "Event stream",
+  status: {
+    label: "Status",
+    rateLimitUnavailable: "Rate limits unavailable",
+  },
   thread: {
     archive: "Archive thread",
     fork: "Fork thread",
@@ -160,11 +172,13 @@ type LoginState = {
 
 export function App() {
   return (
-    <MantineProvider theme={theme} defaultColorScheme="light">
+    <MantineProvider theme={theme} defaultColorScheme="dark">
       <KodexShell />
     </MantineProvider>
   );
 }
+
+type MobilePanel = "threads" | "chat" | "approvals";
 
 function KodexShell() {
   const [capabilitiesState, setCapabilitiesState] = useState<LoadState>({ status: "loading" });
@@ -186,6 +200,7 @@ function KodexShell() {
   const [steerText, setSteerText] = useState("");
   const [streamStatus, setStreamStatus] = useState<"connected" | "reconnecting" | "closed">("closed");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>("chat");
   const resolvedApprovalIds = useRef<Set<string>>(new Set());
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
@@ -493,6 +508,7 @@ function KodexShell() {
       aside={{ width: 340, breakpoint: "md" }}
       padding="md"
       className="kodex-shell"
+      data-mobile-panel={mobilePanel}
     >
       <AppShell.Header aria-label={UI_TEXT.shell.headerLabel} className="kodex-header">
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
@@ -504,12 +520,7 @@ function KodexShell() {
               {UI_TEXT.appName}
             </Title>
           </Group>
-          <Group gap="sm" wrap="nowrap">
-            {rateLimits?.rateLimits?.primary ? (
-              <Badge variant="light" color="violet">
-                {rateLimits.rateLimits.primary.usedPercent}% used
-              </Badge>
-            ) : null}
+          <Group gap="sm" wrap="nowrap" className="kodex-header-controls">
             <Select
               aria-label={UI_TEXT.model}
               data={modelOptions}
@@ -526,10 +537,11 @@ function KodexShell() {
               onLogin={handleLogin}
               onLogout={handleLogout}
             />
-            <CapabilitySummary state={capabilitiesState} />
+            <HeaderStatusMenu capabilitiesState={capabilitiesState} rateLimits={rateLimits} />
           </Group>
         </Group>
       </AppShell.Header>
+      <MobilePanelSwitcher activePanel={mobilePanel} approvalsCount={approvals.length} onChange={setMobilePanel} />
 
       <AppShell.Navbar aria-label={UI_TEXT.shell.workspaceLabel} p="md" className="kodex-sidebar">
         <Stack gap="lg" h="100%">
@@ -611,10 +623,10 @@ function KodexShell() {
                     type="button"
                   >
                     <Group justify="space-between" wrap="nowrap">
-                      <Text fw={700} size="sm">
+                      <Text fw={700} size="sm" lineClamp={2}>
                         {threadDisplayTitle(thread)}
                       </Text>
-                      <Badge size="xs" variant="light">
+                      <Badge className="kodex-thread-status" size="xs" variant="light">
                         {threadStatusLabel(thread.status)}
                       </Badge>
                     </Group>
@@ -781,6 +793,87 @@ function CapabilitySummary({ state }: { state: LoadState }) {
   );
 }
 
+function RateLimitSummary({ rateLimits }: { rateLimits: RateLimitsResponse | null }) {
+  const primary = rateLimits?.rateLimits?.primary;
+  if (!primary) {
+    return (
+      <Text size="xs" c="dimmed">
+        {UI_TEXT.status.rateLimitUnavailable}
+      </Text>
+    );
+  }
+
+  return (
+    <Badge variant="light" color="violet">
+      {primary.usedPercent}% used
+    </Badge>
+  );
+}
+
+function HeaderStatusMenu({
+  capabilitiesState,
+  rateLimits,
+}: {
+  capabilitiesState: LoadState;
+  rateLimits: RateLimitsResponse | null;
+}) {
+  return (
+    <Menu position="bottom-end" width={260} withinPortal>
+      <Menu.Target>
+        <Button
+          aria-label={UI_TEXT.status.label}
+          className="kodex-status-button"
+          leftSection={<MoreHorizontal size={14} />}
+          size="xs"
+          variant="subtle"
+        >
+          {UI_TEXT.status.label}
+        </Button>
+      </Menu.Target>
+      <Menu.Dropdown>
+        <Stack gap="xs" p="xs">
+          <CapabilitySummary state={capabilitiesState} />
+          <RateLimitSummary rateLimits={rateLimits} />
+        </Stack>
+      </Menu.Dropdown>
+    </Menu>
+  );
+}
+
+function MobilePanelSwitcher({
+  activePanel,
+  approvalsCount,
+  onChange,
+}: {
+  activePanel: MobilePanel;
+  approvalsCount: number;
+  onChange: (panel: MobilePanel) => void;
+}) {
+  const tabs: Array<{ label: string; panel: MobilePanel }> = [
+    { label: UI_TEXT.mobile.threads, panel: "threads" },
+    { label: UI_TEXT.mobile.chat, panel: "chat" },
+    { label: `${UI_TEXT.mobile.approvals}${approvalsCount > 0 ? ` ${approvalsCount}` : ""}`, panel: "approvals" },
+  ];
+
+  return (
+    <Box aria-label={UI_TEXT.mobile.label} className="kodex-mobile-switcher" role="tablist">
+      {tabs.map((tab) => (
+        <button
+          aria-selected={activePanel === tab.panel}
+          className="kodex-mobile-tab"
+          data-active={activePanel === tab.panel}
+          key={tab.panel}
+          onClick={() => onChange(tab.panel)}
+          role="tab"
+          type="button"
+        >
+          {tab.label}
+        </button>
+      ))}
+    </Box>
+  );
+}
+
 function AccountControls({
   account,
   loginState,
@@ -796,11 +889,11 @@ function AccountControls({
 }) {
   if (account?.account) {
     return (
-      <Group gap="xs" wrap="nowrap">
+      <Group className="kodex-account-controls" gap="xs" wrap="nowrap">
         <Badge variant="light" color="green">
           {account.account.email ?? account.account.accountType}
         </Badge>
-        <Button size="xs" variant="subtle" onClick={onLogout}>
+        <Button className="kodex-account-secondary" size="xs" variant="subtle" onClick={onLogout}>
           {UI_TEXT.auth.logout}
         </Button>
       </Group>
@@ -808,17 +901,25 @@ function AccountControls({
   }
 
   return (
-    <Group gap="xs" wrap="nowrap">
-      <Button leftSection={<LogIn size={14} />} size="xs" variant="light" onClick={onLogin}>
+    <Group className="kodex-account-controls" gap="xs" wrap="nowrap">
+      <Button className="kodex-account-primary" leftSection={<LogIn size={14} />} size="xs" variant="light" onClick={onLogin}>
         {UI_TEXT.auth.connect}
       </Button>
       {loginState.authUrl ? (
-        <Button component="a" href={loginState.authUrl} target="_blank" rel="noreferrer" size="xs" variant="subtle">
+        <Button
+          className="kodex-account-secondary"
+          component="a"
+          href={loginState.authUrl}
+          target="_blank"
+          rel="noreferrer"
+          size="xs"
+          variant="subtle"
+        >
           {UI_TEXT.auth.open}
         </Button>
       ) : null}
       {loginState.loginId ? (
-        <Button size="xs" variant="subtle" color="gray" onClick={onCancelLogin}>
+        <Button className="kodex-account-secondary" size="xs" variant="subtle" color="gray" onClick={onCancelLogin}>
           {UI_TEXT.auth.cancel}
         </Button>
       ) : null}
@@ -1299,7 +1400,7 @@ function previewText(preview: unknown): string {
 
 function threadDisplayTitle(thread: ThreadSummary): string {
   return (
-    truncateTitle(thread.name) ??
+    truncateTitle(thread.name ?? null) ??
     truncateTitle(previewTitle(thread.preview)) ??
     `${UI_TEXT.thread.untitled} ${thread.id.slice(0, 8)}`
   );
