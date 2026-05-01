@@ -25,7 +25,9 @@ import {
   Inbox,
   LogIn,
   MoreHorizontal,
+  Paperclip,
   PanelRightOpen,
+  Plus,
   Send,
   Settings,
   Square,
@@ -135,8 +137,11 @@ const UI_TEXT = {
     settings: "Account settings",
   },
   composer: {
+    addAttachment: "Add attachment",
+    attachments: "Attachment options",
     disabledPlaceholder: "Select a thread to start composing",
-    placeholder: "Message Kodex",
+    openAttachments: "Open attachment menu",
+    placeholder: "type clever thing here",
     send: "Send message",
     stop: "Stop turn",
   },
@@ -947,41 +952,62 @@ function KodexShell() {
             <Box component="form" className="kodex-composer" onSubmit={handleSubmitTurn}>
               <Textarea
                 aria-label="Message composer"
+                className="kodex-composer-textarea"
                 placeholder={canCompose ? UI_TEXT.composer.placeholder : UI_TEXT.composer.disabledPlaceholder}
                 minRows={2}
+                maxRows={10}
                 autosize
                 value={composerText}
                 onChange={(event) => setComposerText(event.currentTarget.value)}
                 onKeyDown={handleComposerKeyDown}
                 disabled={!canCompose}
+                variant="unstyled"
               />
-              <Tooltip label={hasActiveSelectedTurn ? UI_TEXT.composer.stop : UI_TEXT.composer.send}>
-                {hasActiveSelectedTurn ? (
-                  <ActionIcon
-                    className="kodex-composer-action"
-                    data-action-state="active"
-                    aria-label={UI_TEXT.composer.stop}
-                    size="lg"
-                    variant="filled"
-                    type="button"
-                    disabled={!selectedThread}
-                    onClick={handleStopTurn}
-                  >
-                    <Square size={15} fill="currentColor" strokeWidth={0} />
-                  </ActionIcon>
-                ) : (
-                  <ActionIcon
-                    className="kodex-composer-action"
-                    data-action-state="idle"
-                    aria-label={UI_TEXT.composer.send}
-                    size="lg"
-                    type="submit"
-                    disabled={!canCompose || !composerText.trim()}
-                  >
-                    <Send size={17} />
-                  </ActionIcon>
-                )}
-              </Tooltip>
+              <Group className="kodex-composer-toolbar" justify="space-between" wrap="nowrap">
+                <Menu position="top-start" withinPortal>
+                  <Menu.Target>
+                    <ActionIcon
+                      aria-label={UI_TEXT.composer.openAttachments}
+                      className="kodex-composer-secondary-action"
+                      size="lg"
+                      type="button"
+                      variant="subtle"
+                    >
+                      <Plus size={18} />
+                    </ActionIcon>
+                  </Menu.Target>
+                  <Menu.Dropdown aria-label={UI_TEXT.composer.attachments}>
+                    <Menu.Item leftSection={<Paperclip size={14} />}>{UI_TEXT.composer.addAttachment}</Menu.Item>
+                  </Menu.Dropdown>
+                </Menu>
+                <Tooltip label={hasActiveSelectedTurn ? UI_TEXT.composer.stop : UI_TEXT.composer.send}>
+                  {hasActiveSelectedTurn ? (
+                    <ActionIcon
+                      className="kodex-composer-action"
+                      data-action-state="active"
+                      aria-label={UI_TEXT.composer.stop}
+                      size="lg"
+                      variant="filled"
+                      type="button"
+                      disabled={!selectedThread}
+                      onClick={handleStopTurn}
+                    >
+                      <Square size={15} fill="currentColor" strokeWidth={0} />
+                    </ActionIcon>
+                  ) : (
+                    <ActionIcon
+                      className="kodex-composer-action"
+                      data-action-state="idle"
+                      aria-label={UI_TEXT.composer.send}
+                      size="lg"
+                      type="submit"
+                      disabled={!canCompose || !composerText.trim()}
+                    >
+                      <Send size={17} />
+                    </ActionIcon>
+                  )}
+                </Tooltip>
+              </Group>
             </Box>
           </Box>
         </Stack>

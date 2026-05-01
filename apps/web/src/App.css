@@ -9,6 +9,10 @@ body {
   background: #111111;
 }
 
+.mantine-active:active {
+  transform: none;
+}
+
 .kodex-shell {
   min-height: 100vh;
   color: #f2f2f2;
@@ -174,7 +178,6 @@ body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
-  box-shadow: 0 18px 60px rgb(0 0 0 / 28%);
 }
 
 .kodex-composer-shell[data-entry-ready="false"] {
@@ -184,19 +187,39 @@ body {
 
 .kodex-composer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: end;
+  grid-template-rows: minmax(63px, 1fr) auto;
+  gap: 8px;
   min-width: 0;
-  border: 1px solid #444444;
-  border-radius: 8px;
-  padding: 12px;
+  border: 0;
+  border-radius: 24px;
+  padding: 14px 14px 10px;
   background: #242424;
+  box-shadow: 0 16px 48px rgb(0 0 0 / 30%);
 }
 
 .kodex-queued-steer + .kodex-composer {
   border-top-left-radius: 0;
   border-top-right-radius: 0;
+}
+
+.kodex-composer-textarea {
+  min-width: 0;
+}
+
+.kodex-composer-textarea textarea {
+  min-height: 63px;
+  max-height: min(32vh, 260px);
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  line-height: 1.5;
+  overflow-y: auto;
+  resize: none;
+}
+
+.kodex-composer-toolbar {
+  min-height: 36px;
 }
 
 .kodex-composer-action[data-action-state="idle"] {
@@ -207,6 +230,10 @@ body {
   border-radius: 8px;
 }
 
+.kodex-composer-secondary-action {
+  border-radius: 999px;
+}
+
 .kodex-queued-steer {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -215,7 +242,7 @@ body {
   overflow: hidden;
   border: 1px solid #444444;
   border-bottom: 0;
-  border-radius: 8px 8px 0 0;
+  border-radius: 24px 24px 0 0;
   background: #202020;
 }
 
@@ -788,12 +815,10 @@ body {
     height: calc(100dvh - 73px) !important;
   }
 
-  .kodex-composer,
   .kodex-queued-steer-row {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .kodex-composer-action,
   .kodex-queued-steer-button {
     justify-self: end;
   }

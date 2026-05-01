@@ -606,6 +606,10 @@ describe("MVP frontend flows", () => {
     expect(sendButton).toHaveClass("kodex-composer-action");
     expect(sendButton).toHaveAttribute("data-action-state", "idle");
     expect(container.querySelector(".kodex-composer-action svg")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open attachment menu/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /open attachment menu/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /add attachment/i }));
 
     await userEvent.type(screen.getByLabelText(/message composer/i), "Ship it");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
