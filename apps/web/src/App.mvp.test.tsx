@@ -365,6 +365,27 @@ describe("MVP frontend flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
+        "GET /v1/events": (request: Request) => {
+          const url = new URL(request.url);
+          return url.searchParams.get("threadId") === "thread-2"
+            ? {
+                events: [
+                  {
+                    id: "event-2",
+                    seq: 1,
+                    kind: "codex",
+                    codexMethod: "item/agentMessage/delta",
+                    projectId: project.id,
+                    threadId: "thread-2",
+                    turnId: "turn-2",
+                    itemId: "item-2",
+                    payload: { delta: "Replay after resume" },
+                    receivedAt: "2026-04-30T00:00:01Z",
+                  },
+                ],
+              }
+            : baseRoutes()["GET /v1/events"];
+        },
         "POST /v1/threads/thread-2/resume": {
           thread: { ...notLoadedThread, status: "idle" },
           rawPayload: {},
@@ -384,6 +405,7 @@ describe("MVP frontend flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-2/resume")).toHaveLength(1);
     });
+    expect(await screen.findByText(/replay after resume/i)).toBeInTheDocument();
   });
 
   it("provides a compact panel switcher for narrow viewports", async () => {
@@ -561,7 +583,7 @@ describe("MVP frontend flows", () => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
     });
 
-    await userEvent.type(screen.getByLabelText(/steer active turn/i), "Add tests");
+    await userEvent.type(await screen.findByLabelText(/steer active turn/i), "Add tests");
     await userEvent.click(screen.getByRole("button", { name: /steer turn/i }));
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/steer")).toHaveLength(1);
@@ -1302,6 +1324,84 @@ describe("MVP frontend flows", () => {
     const threadStreams = FakeEventSource.instances.filter((instance) => instance.url.includes("threadId="));
     expect(threadStreams).toHaveLength(1);
     expect(threadStreams[0].url).toContain("threadId=thread-2");
+  });
+
+  it("ignores late events from a closed previous thread stream", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, secondThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "GET /v1/events": (request: Request) => {
+          const url = new URL(request.url);
+          return url.searchParams.get("threadId") === "thread-2"
+            ? {
+                events: [
+                  {
+                    id: "event-second",
+                    seq: 1,
+                    kind: "codex",
+                    codexMethod: "item/agentMessage/delta",
+                    projectId: project.id,
+                    threadId: "thread-2",
+                    turnId: "turn-2",
+                    itemId: "item-2",
+                    payload: { delta: "Second thread replay" },
+                    receivedAt: "2026-04-30T00:00:01Z",
+                  },
+                ],
+              }
+            : {
+                events: [
+                  {
+                    id: "event-first",
+                    seq: 1,
+                    kind: "codex",
+                    codexMethod: "item/agentMessage/delta",
+                    projectId: project.id,
+                    threadId: "thread-1",
+                    turnId: "turn-1",
+                    itemId: "item-1",
+                    payload: { delta: "First thread replay" },
+                    receivedAt: "2026-04-30T00:00:00Z",
+                  },
+                ],
+              };
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/first thread replay/i)).toBeInTheDocument();
+    const firstThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    expect(firstThreadStream).toBeDefined();
+
+    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    expect(await screen.findByText(/second thread replay/i)).toBeInTheDocument();
+
+    act(() => {
+      firstThreadStream?.emit({
+        id: "event-stale-closed-stream",
+        seq: 2,
+        kind: "codex",
+        codexMethod: "item/agentMessage/delta",
+        projectId: project.id,
+        threadId: "thread-1",
+        turnId: "turn-1",
+        itemId: "item-1",
+        payload: { delta: "Stale closed stream delta" },
+        receivedAt: "2026-04-30T00:00:02Z",
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText(/stale closed stream delta/i)).not.toBeInTheDocument();
+    });
   });
 
   it("shows sidebar login without model or status summaries", async () => {

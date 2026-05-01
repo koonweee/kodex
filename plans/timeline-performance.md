@@ -8,7 +8,7 @@ This is a frontend-only performance plan unless implementation discovers a gatew
 
 ## Status
 
-Proposed.
+Complete.
 
 ## Principles
 
@@ -32,7 +32,7 @@ The timeline currently derives and renders all visible rows on every relevant `A
 
 ## Milestone 1: Baseline Coverage and Fixtures
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -54,7 +54,7 @@ Exit conditions:
 
 ## Milestone 2: Fix Sort Mutation
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -73,7 +73,7 @@ Exit conditions:
 
 ## Milestone 3: Memoized Timeline Derivation
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -95,7 +95,7 @@ Exit conditions:
 
 ## Milestone 4: Pre-Indexed Approvals
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -115,7 +115,7 @@ Exit conditions:
 
 ## Milestone 5: Split and Memoize Timeline Components
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -137,7 +137,7 @@ Exit conditions:
 
 ## Milestone 6: Memoized Markdown Rows
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -158,7 +158,7 @@ Exit conditions:
 
 ## Milestone 7: Batched Streaming Updates
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -180,7 +180,7 @@ Exit conditions:
 
 ## Milestone 8: Optimized Reducer Storage
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -201,7 +201,7 @@ Exit conditions:
 
 ## Milestone 9: Dynamic-Height Virtualization
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -135,5 +135,203 @@ describe("App shell", () => {
 
     expect(await within(thread).findAllByText(/turn\/started/i)).not.toHaveLength(0);
     expect(within(thread).getByText(/"status": "running"/i)).toBeInTheDocument();
+  });
+
+  it("mounts a bounded row window for large timelines", async () => {
+    const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
+    const scrollTo = vi.fn(function (this: HTMLElement, _options?: ScrollToOptions) {
+      return undefined;
+    });
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: scrollTo,
+    });
+
+    try {
+      mockGateway({
+        "GET /v1/projects": {
+          projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
+        },
+        "GET /v1/threads": {
+          threads: [
+            {
+              id: "thread-1",
+              name: "Large thread",
+              cwd: "/home/example/kodex",
+              status: "idle",
+              source: "local",
+              preview: "",
+              rawPayload: {},
+              createdAt: 1777500000,
+              updatedAt: 1777501200,
+            },
+          ],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "GET /v1/events": {
+          events: Array.from({ length: 30 }, (_, index) => ({
+            id: `event-${index}`,
+            seq: index + 1,
+            kind: "codex.notification",
+            codexMethod: "item/completed",
+            projectId: "project-1",
+            threadId: "thread-1",
+            turnId: "turn-1",
+            itemId: `answer-${index}`,
+            payload: { item: { id: `answer-${index}`, type: "agentMessage", text: `Large answer ${index}` } },
+            receivedAt: "2026-04-30T00:00:00Z",
+          })),
+        },
+        "GET /v1/approvals": { approvals: [] },
+        "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
+      });
+
+      render(<App />);
+
+      expect(await screen.findByText("Large answer 29")).toBeInTheDocument();
+      expect(screen.queryByText("Large answer 1")).not.toBeInTheDocument();
+      expect(screen.getAllByText(/Large answer/)).toHaveLength(12);
+      await waitFor(() => {
+        const timelineScrollToCalls = scrollTo.mock.calls.filter((_, index) =>
+          scrollTo.mock.contexts[index].classList.contains("kodex-timeline-scroll"),
+        );
+        expect(
+          timelineScrollToCalls.some(([options]) => {
+            if (typeof options !== "object" || options === null || !("top" in options)) {
+              return false;
+            }
+            return Number(options.top) > 0;
+          }),
+        ).toBe(false);
+      });
+    } finally {
+      if (originalScrollTo) {
+        Object.defineProperty(HTMLElement.prototype, "scrollTo", originalScrollTo);
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "scrollTo");
+      }
+    }
+  });
+
+  it("shows and hides the scroll-to-bottom button when the user leaves and returns to bottom", async () => {
+    mockGateway({
+      "GET /v1/projects": {
+        projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
+      },
+      "GET /v1/threads": {
+        threads: [
+          {
+            id: "thread-1",
+            name: "Large thread",
+            cwd: "/home/example/kodex",
+            status: "idle",
+            source: "local",
+            preview: "",
+            rawPayload: {},
+            createdAt: 1777500000,
+            updatedAt: 1777501200,
+          },
+        ],
+        nextCursor: null,
+        backwardsCursor: null,
+        rawPayload: {},
+      },
+      "GET /v1/events": {
+        events: Array.from({ length: 30 }, (_, index) => ({
+          id: `event-${index}`,
+          seq: index + 1,
+          kind: "codex.notification",
+          codexMethod: "item/completed",
+          projectId: "project-1",
+          threadId: "thread-1",
+          turnId: "turn-1",
+          itemId: `answer-${index}`,
+          payload: { item: { id: `answer-${index}`, type: "agentMessage", text: `Large answer ${index}` } },
+          receivedAt: "2026-04-30T00:00:00Z",
+        })),
+      },
+      "GET /v1/approvals": { approvals: [] },
+      "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Large answer 29")).toBeInTheDocument();
+    const scrollRegion = document.querySelector(".kodex-timeline-scroll") as HTMLElement;
+    Object.defineProperties(scrollRegion, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 3600 },
+      scrollTop: { configurable: true, writable: true, value: 3200 },
+    });
+    fireEvent.scroll(scrollRegion);
+    expect(screen.queryByRole("button", { name: /scroll to bottom/i })).not.toBeInTheDocument();
+
+    scrollRegion.scrollTop = 600;
+    fireEvent.scroll(scrollRegion);
+    const scrollButton = await screen.findByRole("button", { name: /scroll to bottom/i });
+    expect(scrollButton).toBeInTheDocument();
+
+    await userEvent.click(scrollButton);
+    expect(scrollRegion.scrollTop).toBe(3200);
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: /scroll to bottom/i })).not.toBeInTheDocument();
+    });
+  });
+
+  it("bounds mounted nested activity items in activity-heavy timelines", async () => {
+    mockGateway({
+      "GET /v1/projects": {
+        projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
+      },
+      "GET /v1/threads": {
+        threads: [
+          {
+            id: "thread-1",
+            name: "Activity thread",
+            cwd: "/home/example/kodex",
+            status: "idle",
+            source: "local",
+            preview: "",
+            rawPayload: {},
+            createdAt: 1777500000,
+            updatedAt: 1777501200,
+          },
+        ],
+        nextCursor: null,
+        backwardsCursor: null,
+        rawPayload: {},
+      },
+      "GET /v1/events": {
+        events: Array.from({ length: 300 }, (_, index) => ({
+          id: `event-${index}`,
+          seq: index + 1,
+          kind: "codex.notification",
+          codexMethod: "item/completed",
+          projectId: "project-1",
+          threadId: "thread-1",
+          turnId: "turn-1",
+          itemId: `cmd-${index}`,
+          payload: {
+            item: {
+              id: `cmd-${index}`,
+              type: "commandExecution",
+              command: `echo command-${index}`,
+              output: "ok",
+            },
+          },
+          receivedAt: "2026-04-30T00:00:00Z",
+        })),
+      },
+      "GET /v1/approvals": { approvals: [] },
+      "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Ran echo command-299")).toBeInTheDocument();
+    expect(screen.queryByText("Ran echo command-0")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Shell").length).toBeLessThanOrEqual(144);
   });
 });

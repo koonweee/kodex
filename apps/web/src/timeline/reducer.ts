@@ -23,6 +23,7 @@ export type TimelineItem = {
   cwd?: string;
   output?: string;
   path?: string;
+  messagePhase?: string;
   resultSummary?: string;
   summary?: string;
   toolName?: string;
@@ -41,29 +42,172 @@ export type TimelineState = {
   lastSeq: number;
 };
 
+type TimelineIndexes = {
+  itemIds: string[];
+  itemById: Map<string, TimelineItem>;
+  itemUpdatesById: Map<string, TimelineItem>;
+  pendingItemById: Map<string, TimelineItem>;
+  hiddenItems: TimelineItem[];
+  turnIds: string[];
+  turnById: Map<string, TimelineTurn>;
+  turnUpdatesById: Map<string, TimelineTurn>;
+};
+
+type TimelineDraft = {
+  activeTurnId: string | null;
+  indexes: TimelineIndexes;
+  lastSeq: number;
+};
+
+const stateIndexes = new WeakMap<TimelineState, TimelineIndexes>();
+const STORE_COMPACT_THRESHOLD = 256;
+
 export function createTimelineState(): TimelineState {
-  return {
+  return createTimelineStateFromDraft({
     activeTurnId: null,
-    items: [],
-    hiddenItems: [],
-    turns: [],
+    indexes: createEmptyTimelineIndexes(),
     lastSeq: 0,
+  });
+}
+
+function createTimelineStateFromDraft(draft: TimelineDraft): TimelineState {
+  const state = {
+    activeTurnId: draft.activeTurnId,
+    lastSeq: draft.lastSeq,
+  } as TimelineState;
+  let itemsCache: TimelineItem[] | null = null;
+  let hiddenItemsCache: TimelineItem[] | null = null;
+  let turnsCache: TimelineTurn[] | null = null;
+  Object.defineProperties(state, {
+    items: {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        itemsCache ??= orderedItems(draft.indexes.itemIds, draft.indexes);
+        return itemsCache;
+      },
+    },
+    hiddenItems: {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        hiddenItemsCache ??= [...draft.indexes.hiddenItems];
+        return hiddenItemsCache;
+      },
+    },
+    turns: {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        turnsCache ??= orderedTurns(draft.indexes.turnIds, draft.indexes);
+        return turnsCache;
+      },
+    },
+  });
+  stateIndexes.set(state, draft.indexes);
+  return state;
+}
+
+function createEmptyTimelineIndexes(): TimelineIndexes {
+  return {
+    itemIds: [],
+    itemById: new Map(),
+    itemUpdatesById: new Map(),
+    pendingItemById: new Map(),
+    hiddenItems: [],
+    turnIds: [],
+    turnById: new Map(),
+    turnUpdatesById: new Map(),
   };
 }
 
+function indexesForState(state: TimelineState): TimelineIndexes {
+  return stateIndexes.get(state) ?? buildTimelineIndexes(state);
+}
+
+function buildTimelineIndexes(state: TimelineState): TimelineIndexes {
+  const indexes = createEmptyTimelineIndexes();
+  for (const item of state.items) {
+    indexes.itemIds.push(item.id);
+    indexes.itemById.set(item.id, item);
+  }
+  indexes.hiddenItems.push(...state.hiddenItems);
+  for (const turn of state.turns) {
+    indexes.turnIds.push(turn.turnId);
+    indexes.turnById.set(turn.turnId, {
+      turnId: turn.turnId,
+      itemIds: [...turn.itemIds],
+    });
+  }
+  stateIndexes.set(state, indexes);
+  return indexes;
+}
+
+function prepareTimelineIndexesForUpdate(indexes: TimelineIndexes): TimelineIndexes {
+  return {
+    ...indexes,
+    itemUpdatesById: new Map(indexes.itemUpdatesById),
+    pendingItemById: new Map(indexes.pendingItemById),
+    turnUpdatesById: new Map(indexes.turnUpdatesById),
+  };
+}
+
+function compactTimelineStores(indexes: TimelineIndexes) {
+  if (indexes.itemUpdatesById.size > STORE_COMPACT_THRESHOLD) {
+    indexes.itemById = new Map([...indexes.itemById, ...indexes.itemUpdatesById]);
+    indexes.itemUpdatesById = new Map();
+  }
+  if (indexes.turnUpdatesById.size > STORE_COMPACT_THRESHOLD) {
+    indexes.turnById = new Map([...indexes.turnById, ...indexes.turnUpdatesById]);
+    indexes.turnUpdatesById = new Map();
+  }
+}
+
+function timelineItemById(indexes: TimelineIndexes, itemId: string): TimelineItem | undefined {
+  return indexes.itemUpdatesById.get(itemId) ?? indexes.itemById.get(itemId);
+}
+
+function pendingTimelineItemById(indexes: TimelineIndexes, itemId: string): TimelineItem | undefined {
+  return indexes.pendingItemById.get(itemId);
+}
+
+function timelineTurnById(indexes: TimelineIndexes, turnId: string): TimelineTurn | undefined {
+  return indexes.turnUpdatesById.get(turnId) ?? indexes.turnById.get(turnId);
+}
+
+function orderedItems(itemIds: string[], indexes: TimelineIndexes): TimelineItem[] {
+  const items: TimelineItem[] = [];
+  for (const itemId of itemIds) {
+    const item = timelineItemById(indexes, itemId);
+    if (item) {
+      items.push(item);
+    }
+  }
+  return items;
+}
+
+function orderedTurns(turnIds: string[], indexes: TimelineIndexes): TimelineTurn[] {
+  const turns: TimelineTurn[] = [];
+  for (const turnId of turnIds) {
+    const turn = timelineTurnById(indexes, turnId);
+    if (turn) {
+      turns.push({ turnId: turn.turnId, itemIds: [...turn.itemIds] });
+    }
+  }
+  return turns;
+}
+
 export function applyTimelineEvent(state: TimelineState, event: EventEnvelope): TimelineState {
-  const next: TimelineState = {
-    activeTurnId: event.turnId ?? state.activeTurnId,
-    items: [...state.items],
-    hiddenItems: [...state.hiddenItems],
-    turns: state.turns.map((turn) => ({ ...turn, itemIds: [...turn.itemIds] })),
+  const next: TimelineDraft = {
+    activeTurnId: nextActiveTurnId(state.activeTurnId, event),
+    indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
     lastSeq: Math.max(state.lastSeq, event.seq),
   };
 
   if (event.codexMethod === "turn/completed") {
     next.activeTurnId = null;
     addHiddenDebugItem(next, event);
-    return next;
+    return createTimelineStateFromDraft(next);
   }
 
   if (isLifecycleEvent(event)) {
@@ -72,34 +216,55 @@ export function applyTimelineEvent(state: TimelineState, event: EventEnvelope): 
     } else {
       addHiddenDebugItem(next, event);
     }
-    return next;
+    return createTimelineStateFromDraft(next);
   }
 
   const presentation = createPresentationItem(event);
   if (!presentation) {
     addHiddenDebugItem(next, event);
-    return next;
+    return createTimelineStateFromDraft(next);
   }
 
   if (presentation.hidden) {
+    if (shouldRetainPendingTimelineItem(presentation.item)) {
+      retainPendingTimelineItem(next, presentation.item);
+    }
     addHiddenDebugItem(next, event, presentation.text);
-    return next;
+    return createTimelineStateFromDraft(next);
   }
 
-  const existingIndex = next.items.findIndex((item) => item.id === presentation.item.id);
-  if (existingIndex >= 0) {
-    const existing = next.items[existingIndex];
-    next.items[existingIndex] = mergeTimelineItem(existing, presentation.item, event);
+  const existing = timelineItemById(next.indexes, presentation.item.id);
+  if (existing) {
+    next.indexes.itemUpdatesById.set(presentation.item.id, mergeTimelineItem(existing, presentation.item, event));
   } else {
-    next.items.push(presentation.item);
-    addToTurn(next, presentation.item);
+    const pendingItem = pendingTimelineItemById(next.indexes, presentation.item.id);
+    const item = pendingItem ? mergeTimelineItem(pendingItem, presentation.item, event) : presentation.item;
+    next.indexes.pendingItemById.delete(presentation.item.id);
+    addItem(next, item);
+    addToTurn(next, item);
   }
+  compactTimelineStores(next.indexes);
 
-  return next;
+  return createTimelineStateFromDraft(next);
 }
 
 export function replayTimeline(events: EventEnvelope[]): TimelineState {
   return events.reduce(applyTimelineEvent, createTimelineState());
+}
+
+function nextActiveTurnId(currentTurnId: string | null, event: EventEnvelope) {
+  if (event.codexMethod === "turn/completed") {
+    return null;
+  }
+  if (!event.turnId || !eventCanMarkTurnActive(event)) {
+    return currentTurnId;
+  }
+  return event.turnId;
+}
+
+function eventCanMarkTurnActive(event: EventEnvelope) {
+  const method = event.codexMethod ?? "";
+  return Boolean(event.itemId) || method.startsWith("turn/");
 }
 
 function createPresentationItem(event: EventEnvelope): { item: TimelineItem; hidden?: boolean; text?: string } | null {
@@ -111,9 +276,11 @@ function createPresentationItem(event: EventEnvelope): { item: TimelineItem; hid
   const base = createBaseItem(event, id, itemType, status);
 
   if (itemType === "assistant_message") {
+    const messagePhase = stringValue(item.phase) || stringValue(payloadRecord(event.payload)?.phase);
     return {
       item: {
         ...base,
+        messagePhase,
         text,
       },
       hidden: !text,
@@ -271,6 +438,7 @@ function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event
     kind: incoming.kind === "debug_event" && existing.kind !== "debug_event" ? existing.kind : incoming.kind,
     output,
     path: incoming.path || existing.path,
+    messagePhase: incoming.messagePhase || existing.messagePhase,
     payload: event.payload,
     resultSummary: incoming.resultSummary || existing.resultSummary,
     seq: Math.min(existing.seq, incoming.seq),
@@ -291,35 +459,57 @@ function mergeActions(existing: WebSearchAction[] | undefined, incoming: WebSear
   return [...(existing ?? []), ...(incoming ?? [])];
 }
 
-function addOrReplaceItem(state: TimelineState, item: TimelineItem) {
-  const index = state.items.findIndex((existing) => existing.id === item.id);
-  if (index >= 0) {
-    state.items[index] = mergeTimelineItem(state.items[index], item, item.debugEvents[item.debugEvents.length - 1]);
+function addOrReplaceItem(state: TimelineDraft, item: TimelineItem) {
+  const existing = timelineItemById(state.indexes, item.id);
+  if (existing) {
+    state.indexes.itemUpdatesById.set(item.id, mergeTimelineItem(existing, item, item.debugEvents[item.debugEvents.length - 1]));
   } else {
-    state.items.push(item);
+    addItem(state, item);
     addToTurn(state, item);
   }
+  compactTimelineStores(state.indexes);
 }
 
-function addHiddenDebugItem(state: TimelineState, event: EventEnvelope, text?: string) {
-  state.hiddenItems.push({
-    ...createBaseItem(event, `debug-${event.itemId ?? event.id}`, "debug_event", eventStatus(event)),
-    text: text || event.codexMethod || event.kind,
-  });
+function addItem(state: TimelineDraft, item: TimelineItem) {
+  state.indexes.itemIds = [...state.indexes.itemIds, item.id];
+  state.indexes.itemUpdatesById.set(item.id, item);
 }
 
-function addToTurn(state: TimelineState, item: TimelineItem) {
+function retainPendingTimelineItem(state: TimelineDraft, item: TimelineItem) {
+  state.indexes.pendingItemById.set(item.id, item);
+}
+
+function shouldRetainPendingTimelineItem(item: TimelineItem): boolean {
+  return item.kind === "assistant_message";
+}
+
+function addHiddenDebugItem(state: TimelineDraft, event: EventEnvelope, text?: string) {
+  state.indexes.hiddenItems = [
+    ...state.indexes.hiddenItems,
+    {
+      ...createBaseItem(event, `debug-${event.itemId ?? event.id}`, "debug_event", eventStatus(event)),
+      text: text || event.codexMethod || event.kind,
+    },
+  ];
+}
+
+function addToTurn(state: TimelineDraft, item: TimelineItem) {
   if (!item.turnId) {
     return;
   }
-  const existing = state.turns.find((turn) => turn.turnId === item.turnId);
+  const existing = timelineTurnById(state.indexes, item.turnId);
   if (existing) {
-    if (!existing.itemIds.includes(item.id)) {
-      existing.itemIds.push(item.id);
-    }
+    state.indexes.turnUpdatesById.set(item.turnId, {
+      turnId: existing.turnId,
+      itemIds: [...existing.itemIds, item.id],
+    });
     return;
   }
-  state.turns.push({ turnId: item.turnId, itemIds: [item.id] });
+  state.indexes.turnIds = [...state.indexes.turnIds, item.turnId];
+  state.indexes.turnUpdatesById.set(item.turnId, {
+    turnId: item.turnId,
+    itemIds: [item.id],
+  });
 }
 
 function presentationItemId(event: EventEnvelope, itemType: string): string {

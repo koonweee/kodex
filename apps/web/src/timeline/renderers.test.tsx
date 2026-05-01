@@ -1,6 +1,20 @@
 import { render, screen } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const reactMarkdownRenderSpy = vi.hoisted(() => vi.fn());
+
+vi.mock("react-markdown", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-markdown")>();
+  const React = await import("react");
+  return {
+    ...actual,
+    default: (props: Parameters<typeof actual.default>[0]) => {
+      reactMarkdownRenderSpy(props.children);
+      return React.createElement(actual.default, props);
+    },
+  };
+});
 
 import { TimelineActivityGroupRenderer, TimelineItemRenderer } from "./renderers";
 import type { TimelineItem } from "./reducer";
@@ -20,6 +34,10 @@ function item(overrides: Partial<TimelineItem>): TimelineItem {
 }
 
 describe("timeline renderer registry", () => {
+  beforeEach(() => {
+    reactMarkdownRenderSpy.mockClear();
+  });
+
   it("renders command, file change, warning, error, and unknown items through one registry", () => {
     render(
       <MantineProvider>
@@ -38,7 +56,7 @@ describe("timeline renderer registry", () => {
     expect(screen.getByText(/future_item/i)).toBeInTheDocument();
   });
 
-  it("renders human labels, hides normal completed status, and keeps raw payloads out of the default view", () => {
+  it("hides message headings, hides normal completed status, and keeps raw payloads out of the default view", () => {
     render(
       <MantineProvider>
         <TimelineItemRenderer
@@ -65,12 +83,34 @@ describe("timeline renderer registry", () => {
       </MantineProvider>,
     );
 
-    expect(screen.getByText("Assistant")).toBeInTheDocument();
+    expect(screen.queryByText("Assistant")).not.toBeInTheDocument();
     expect(screen.getByText("Done.")).toBeInTheDocument();
     expect(screen.queryByText(/assistant_message/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/completed/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/agentMessage/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/item\/completed/i)).not.toBeInTheDocument();
+  });
+
+  it("renders user messages as a right-aligned bubble and preserves newlines", () => {
+    const { container } = render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "user_message",
+            text: "First line\nSecond line",
+            payload: { item: { type: "userMessage", text: "First line\nSecond line" } },
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    const bubble = container.querySelector<HTMLElement>(".kodex-user-message-bubble");
+    const row = container.querySelector<HTMLElement>(".kodex-user-message-row");
+    expect(screen.queryByText("You")).not.toBeInTheDocument();
+    expect(bubble).toBeInTheDocument();
+    expect(bubble?.textContent).toBe("First line\nSecond line");
+    expect(row).toContainElement(bubble);
+    expect(container.querySelector(".kodex-timeline-item-header")).not.toBeInTheDocument();
   });
 
   it("renders assistant messages as safe markdown", () => {
@@ -95,6 +135,110 @@ describe("timeline renderer registry", () => {
     );
     expect(screen.getByRole("link", { name: /open-meteo/i })).toHaveAttribute("rel", "noreferrer");
     expect(screen.queryByText(/alert/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps assistant markdown output stable for links, code, lists, breaks, and skipped HTML", () => {
+    const { container, rerender } = render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "assistant_message",
+            text:
+              "Use [docs](https://example.com/docs).\nNext line\n\n- one\n- `two`\n\n```ts\nconst value = 1;\n```\n\n<strong>hidden</strong>",
+          })}
+        />
+      </MantineProvider>,
+    );
+    const initialMarkup = container.querySelector(".kodex-assistant-markdown")?.innerHTML;
+
+    expect(screen.getByRole("link", { name: "docs" })).toHaveAttribute("target", "_blank");
+    expect(screen.getByRole("link", { name: "docs" })).toHaveAttribute("rel", "noreferrer");
+    expect(screen.getByRole("list")).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getByText("two").tagName.toLowerCase()).toBe("code");
+    expect(container.querySelector(".kodex-timeline-code")).toHaveTextContent("const value = 1;");
+    expect(container.querySelector(".kodex-assistant-markdown br")).toBeInTheDocument();
+    expect(container.querySelector(".kodex-assistant-markdown strong")).not.toBeInTheDocument();
+
+    rerender(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "assistant_message",
+            text:
+              "Use [docs](https://example.com/docs).\nNext line\n\n- one\n- `two`\n\n```ts\nconst value = 1;\n```\n\n<strong>hidden</strong>",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(container.querySelector(".kodex-assistant-markdown")?.innerHTML).toBe(initialMarkup);
+  });
+
+  it("renders unlabeled fenced code blocks as block code", () => {
+    const { container } = render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "assistant_message",
+            text: "Run this:\n\n```\nnpm test\n```",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    const codeBlock = container.querySelector(".kodex-timeline-code");
+    expect(codeBlock).toHaveTextContent("npm test");
+    expect(container.querySelector(".kodex-assistant-inline-code")).not.toBeInTheDocument();
+  });
+
+  it("does not reparse completed assistant markdown on unrelated parent rerenders", () => {
+    const completedItem = item({
+      kind: "assistant_message",
+      status: "completed",
+      text: "Done with [docs](https://example.com).",
+    });
+    const CompletedHarness = ({ tick }: { tick: number }) => (
+      <MantineProvider>
+        <div data-testid="tick">{tick}</div>
+        <TimelineItemRenderer item={{ ...completedItem }} />
+      </MantineProvider>
+    );
+
+    const { rerender } = render(<CompletedHarness tick={0} />);
+    expect(reactMarkdownRenderSpy).toHaveBeenCalledTimes(1);
+    reactMarkdownRenderSpy.mockClear();
+
+    rerender(<CompletedHarness tick={1} />);
+
+    expect(screen.getByTestId("tick")).toHaveTextContent("1");
+    expect(screen.getByRole("link", { name: "docs" })).toBeInTheDocument();
+    expect(reactMarkdownRenderSpy).not.toHaveBeenCalled();
+  });
+
+  it("updates streaming assistant markdown when message text changes", () => {
+    const StreamingHarness = ({ text }: { text: string }) => (
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "assistant_message",
+            status: "running",
+            text,
+          })}
+        />
+      </MantineProvider>
+    );
+
+    const { container, rerender } = render(<StreamingHarness text="Checking..." />);
+    expect(screen.getByText("Checking...")).toBeInTheDocument();
+    reactMarkdownRenderSpy.mockClear();
+
+    rerender(<StreamingHarness text={"Checking...\nFound source."} />);
+
+    expect(container.querySelector(".kodex-assistant-markdown")).toHaveTextContent("Checking...");
+    expect(container.querySelector(".kodex-assistant-markdown")).toHaveTextContent("Found source.");
+    expect(container.querySelector(".kodex-assistant-markdown br")).toBeInTheDocument();
+    expect(reactMarkdownRenderSpy).toHaveBeenCalledTimes(1);
   });
 
   it("preserves assistant markdown soft line breaks during streaming", () => {

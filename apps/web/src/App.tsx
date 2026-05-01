@@ -16,6 +16,7 @@ import {
   createTheme,
 } from "@mantine/core";
 import {
+  ArrowDownToLine,
   AlertCircle,
   Archive,
   Check,
@@ -32,13 +33,20 @@ import {
   X,
 } from "lucide-react";
 import {
+  type Dispatch,
   FormEvent,
+  memo,
+  type SetStateAction,
+  useCallback,
   useEffect,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 import {
   archiveThread,
@@ -65,8 +73,16 @@ import {
   type ThreadSummary,
 } from "./api/client";
 import { createEventStreamClient } from "./events/stream";
+import { applyTimelineEventBatch } from "./timeline/batch";
+import {
+  buildApprovalIndex,
+  deriveTimelineRows,
+  getTimelineRowApprovals,
+  getUnanchoredApprovals,
+  type TimelineRow,
+} from "./timeline/derive";
 import { TimelineActivityGroupRenderer, TimelineItemRenderer } from "./timeline/renderers";
-import { applyTimelineEvent, createTimelineState, replayTimeline, type TimelineState } from "./timeline/reducer";
+import { createTimelineState, replayTimeline, type TimelineState } from "./timeline/reducer";
 import "./App.css";
 
 const theme = createTheme({
@@ -154,6 +170,9 @@ const UI_TEXT = {
   status: {
     debugEvents: "Show debug events",
   },
+  timeline: {
+    scrollToBottom: "Scroll to bottom",
+  },
   thread: {
     archive: "Archive thread",
     actions: "Thread actions",
@@ -183,13 +202,46 @@ export function App() {
 
 type MobilePanel = "threads" | "chat";
 type ThreadsByProjectId = Record<string, ThreadSummary[]>;
+type TimelineEntry =
+  | { phase: "idle"; threadId: null }
+  | { phase: "loading" | "aligning" | "ready"; threadId: string };
 
 const SIDEBAR_MIN_WIDTH = 292;
 const SIDEBAR_MAX_WIDTH = 520;
 const SIDEBAR_RESIZE_STEP = 24;
+const EMPTY_APPROVALS: Approval[] = [];
+const INITIAL_BOTTOM_STABLE_FRAMES = 2;
+// Covers virtual row measurement for long messages before the first visible reveal.
+const INITIAL_BOTTOM_MAX_SETTLE_FRAMES = 90;
+const BOTTOM_DISTANCE_EPSILON = 2;
+const disableTimelineScrollAdjustment = () => false;
+
+const idleTimelineEntry: TimelineEntry = { phase: "idle", threadId: null };
 
 function clampSidebarWidth(width: number) {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
+}
+
+function getDistanceFromBottom(scrollElement: HTMLElement) {
+  return scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight;
+}
+
+function isSettledAtBottom(scrollElement: HTMLElement | null, previousScrollHeight: number, rowCount: number) {
+  if (!scrollElement) {
+    return true;
+  }
+  return (
+    scrollElement.scrollHeight === previousScrollHeight &&
+    hasRenderedTimelineBottom(scrollElement, rowCount) &&
+    Math.abs(getDistanceFromBottom(scrollElement)) < BOTTOM_DISTANCE_EPSILON
+  );
+}
+
+function hasRenderedTimelineBottom(scrollElement: HTMLElement, rowCount: number) {
+  if (rowCount === 0) {
+    return true;
+  }
+  return scrollElement.querySelector(`[data-index="${rowCount - 1}"]`) !== null;
 }
 
 function KodexShell() {
@@ -200,6 +252,7 @@ function KodexShell() {
   const [draftThreadProjectId, setDraftThreadProjectId] = useState<string | null>(null);
   const [pendingTitleThreadIds, setPendingTitleThreadIds] = useState<Set<string>>(new Set());
   const [timeline, setTimeline] = useState<TimelineState>(createTimelineState());
+  const [timelineEntry, setTimelineEntry] = useState<TimelineEntry>(idleTimelineEntry);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [account, setAccount] = useState<AccountResponse | null>(null);
   const [loginState, setLoginState] = useState<LoginState>({});
@@ -214,6 +267,7 @@ function KodexShell() {
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_MIN_WIDTH);
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const sidebarResizeStart = useRef<{ x: number; width: number } | null>(null);
+  const [timelineScrollElement, setTimelineScrollElement] = useState<HTMLDivElement | null>(null);
   const resolvedApprovalIds = useRef<Set<string>>(new Set());
   const selectedProjectIdRef = useRef<string | null>(null);
   const threadRequestIds = useRef<Map<string, number>>(new Map());
@@ -221,8 +275,26 @@ function KodexShell() {
 
   const selectedProjectThreads = selectedProjectId ? threadsByProjectId[selectedProjectId] ?? [] : [];
   const selectedThread = selectedProjectThreads.find((thread) => thread.id === selectedThreadId) ?? null;
+  const selectedThreadApprovals = useMemo(
+    () => (selectedThreadId ? approvals.filter((approval) => approval.threadId === selectedThreadId) : []),
+    [approvals, selectedThreadId],
+  );
+  const selectedTimelineEntry =
+    selectedThread !== null && timelineEntry.threadId === selectedThread.id ? timelineEntry : idleTimelineEntry;
+  const isSelectedThreadNotLoaded = selectedThread?.status === "notLoaded";
+  const isSelectedTimelineLoading = selectedTimelineEntry.phase === "loading";
+  const isSelectedTimelineReady = selectedTimelineEntry.phase === "ready";
+  const expectsSteerComposer =
+    selectedThread !== null && (timeline.activeTurnId !== null || threadStatusMayHaveActiveTurn(selectedThread));
+  const shouldShowSteerComposer = selectedThread !== null && isSelectedTimelineReady && timeline.activeTurnId !== null;
+  const shouldReserveSteerComposer = selectedThread !== null && !isSelectedTimelineReady && expectsSteerComposer;
   const isDraftThreadSelected = draftThreadProjectId !== null && draftThreadProjectId === selectedProjectId;
   const canCompose = selectedThread !== null || isDraftThreadSelected;
+  const selectedThreadTitle = selectedThread
+    ? pendingTitleThreadIds.has(selectedThread.id)
+      ? UI_TEXT.thread.new
+      : threadDisplayTitle(selectedThread)
+    : UI_TEXT.thread.new;
 
   useEffect(() => {
     loadInitialState();
@@ -270,55 +342,18 @@ function KodexShell() {
     return client.close;
   }, []);
 
-  useEffect(() => {
-    if (!selectedThreadId) {
-      setTimeline(createTimelineState());
-      return;
-    }
-
-    let cancelled = false;
-    let closeStream: (() => void) | null = null;
-    const threadId = selectedThreadId;
-
-    listEvents(threadId)
-      .then((events) => {
-        if (cancelled) {
-          return;
-        }
-
-        setApprovals((current) => applyApprovalEventsWithTombstone(current, events));
-        applyThreadMetadataEvents(events);
-        const replayedTimeline = replayTimeline(events.filter((event) => !isApprovalEvent(event)));
-        setTimeline(replayedTimeline);
-        const client = createEventStreamClient({
-          cursor: replayedTimeline.lastSeq,
-          threadId,
-          onEvent: (event) => {
-            if (event.threadId && event.threadId !== threadId) {
-              return;
-            }
-            applyThreadMetadataEvent(event);
-            if (isApprovalEvent(event)) {
-              setApprovals((current) => applyApprovalEventWithTombstone(current, event));
-              return;
-            }
-            setTimeline((current) => applyTimelineEvent(current, event));
-          },
-        });
-        client.connect();
-        closeStream = client.close;
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          reportError(error);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-      closeStream?.();
-    };
-  }, [selectedThreadId]);
+  useSelectedThreadTimeline({
+    isSelectedThreadNotLoaded,
+    onApprovalEvent: applyApprovalEventWithTombstone,
+    onApprovalEvents: applyApprovalEventsWithTombstone,
+    onError: reportError,
+    onThreadMetadataEvent: applyThreadMetadataEvent,
+    onThreadMetadataEvents: applyThreadMetadataEvents,
+    selectedThreadId,
+    setApprovals,
+    setTimeline,
+    setTimelineEntry,
+  });
 
   useEffect(() => {
     if (!selectedThread || selectedThread.status !== "notLoaded") {
@@ -388,15 +423,40 @@ function KodexShell() {
       setPendingTitleThreadIds((current) => clearAvailableThreadTitles(current, nextThreads));
 
       if (options.selectWhenLoaded && selectedProjectIdRef.current === projectId) {
-        setSelectedThreadId((current) =>
-          current && nextThreads.some((thread) => thread.id === current) ? current : nextThreads[0]?.id ?? null,
-        );
+        const nextThreadId =
+          selectedThreadId && nextThreads.some((thread) => thread.id === selectedThreadId)
+            ? selectedThreadId
+            : nextThreads[0]?.id ?? null;
+        if (nextThreadId) {
+          beginTimelineEntry(nextThreadId);
+        } else {
+          clearTimelineEntry();
+        }
+        setSelectedThreadId(nextThreadId);
       }
     } catch (error) {
       if (threadRequestIds.current.get(projectId) === requestId) {
         reportError(error);
       }
     }
+  }
+
+  function clearTimelineEntry() {
+    setTimelineEntry(idleTimelineEntry);
+    setTimeline(createTimelineState());
+  }
+
+  function clearTimelineEntryForThread(threadId: string) {
+    setTimelineEntry((current) => (current.threadId === threadId ? idleTimelineEntry : current));
+  }
+
+  function beginTimelineEntry(threadId: string) {
+    setTimeline(createTimelineState());
+    setTimelineEntry({ phase: "loading", threadId });
+  }
+
+  function markTimelineEntryAligning(threadId: string) {
+    setTimelineEntry((current) => (current.threadId === threadId ? { phase: "aligning", threadId } : current));
   }
 
   async function handleCreateProject(event: FormEvent) {
@@ -422,12 +482,18 @@ function KodexShell() {
     setSelectedProjectId(projectId);
     setSelectedThreadId(null);
     setDraftThreadProjectId(null);
-    setTimeline(createTimelineState());
     const nextThreads = threadsByProjectId[projectId];
     if (nextThreads) {
-      setSelectedThreadId(nextThreads[0]?.id ?? null);
+      const nextThreadId = nextThreads[0]?.id ?? null;
+      if (nextThreadId) {
+        beginTimelineEntry(nextThreadId);
+      } else {
+        clearTimelineEntry();
+      }
+      setSelectedThreadId(nextThreadId);
       return;
     }
+    clearTimelineEntry();
     void loadProjectThreads(projectId, { selectWhenLoaded: true });
   }
 
@@ -436,14 +502,18 @@ function KodexShell() {
     setSelectedProjectId(projectId);
     setDraftThreadProjectId(projectId);
     setSelectedThreadId(null);
-    setTimeline(createTimelineState());
+    clearTimelineEntry();
     setComposerText("");
   }
 
   function handleSelectThread(projectId: string, threadId: string) {
+    if (projectId === selectedProjectId && threadId === selectedThreadId) {
+      return;
+    }
     selectedProjectIdRef.current = projectId;
     setSelectedProjectId(projectId);
     setDraftThreadProjectId(null);
+    beginTimelineEntry(threadId);
     setSelectedThreadId(threadId);
   }
 
@@ -453,6 +523,7 @@ function KodexShell() {
     }
     await archiveThread(selectedThreadId);
     setThreadsByProjectId((current) => removeThreadFromProjects(current, selectedThreadId));
+    clearTimelineEntry();
     setSelectedThreadId(null);
   }
 
@@ -477,6 +548,7 @@ function KodexShell() {
     setThreadsByProjectId((current) => prependThreadForProject(current, selectedProjectId, thread));
     setPendingTitleThreadIds((current) => markThreadTitlePending(current, thread));
     setDraftThreadProjectId(null);
+    beginTimelineEntry(thread.id);
     setSelectedThreadId(thread.id);
     await startTurn(thread.id, text);
     setComposerText("");
@@ -500,11 +572,15 @@ function KodexShell() {
     setSteerText("");
   }
 
-  async function handleApprovalDecision(approval: Approval, decision: ApprovalResponse) {
+  const handleApprovalDecision = useCallback(async (approval: Approval, decision: ApprovalResponse) => {
     const resolved = await decideApproval(approval.id, decision);
     resolvedApprovalIds.current.add(resolved.id);
     setApprovals((current) => current.filter((item) => item.id !== approval.id));
-  }
+  }, []);
+
+  const handleTimelineReady = useCallback((threadId: string) => {
+    setTimelineEntry((current) => (current.threadId === threadId ? { phase: "ready", threadId } : current));
+  }, []);
 
   async function handleLogin() {
     const login = await startLogin();
@@ -771,19 +847,17 @@ function KodexShell() {
           ) : null}
           {selectedThread || isDraftThreadSelected ? (
             <>
-              <Group justify="space-between" wrap="nowrap" className="kodex-thread-header kodex-main-column">
+              <Group justify="space-between" wrap="nowrap" className="kodex-thread-header">
                 <Box className="kodex-thread-heading">
                   <Title
+                    className="kodex-thread-title"
                     c={selectedThread && pendingTitleThreadIds.has(selectedThread.id) ? "dimmed" : undefined}
                     data-placeholder-title={selectedThread && pendingTitleThreadIds.has(selectedThread.id) ? "true" : undefined}
                     order={3}
                     size="h5"
+                    title={selectedThreadTitle}
                   >
-                    {selectedThread
-                      ? pendingTitleThreadIds.has(selectedThread.id)
-                        ? UI_TEXT.thread.new
-                        : threadDisplayTitle(selectedThread)
-                      : UI_TEXT.thread.new}
+                    {selectedThreadTitle}
                   </Title>
                 </Box>
                 {selectedThread ? (
@@ -801,12 +875,20 @@ function KodexShell() {
                   </Menu>
                 ) : null}
               </Group>
-              <Box className="kodex-timeline-scroll">
-                <Box className="kodex-timeline-content">
-                  {selectedThread ? (
+              <Box
+                className="kodex-timeline-scroll"
+                data-entry-phase={selectedTimelineEntry.phase}
+                ref={setTimelineScrollElement}
+              >
+                  {selectedThread && isSelectedTimelineLoading ? (
+                    <Box aria-busy="true" className="kodex-timeline-loading" />
+                  ) : selectedThread ? (
                     <TimelineView
-                      approvals={approvals.filter((approval) => approval.threadId === selectedThread.id)}
+                      key={selectedThread.id}
+                      approvals={selectedThreadApprovals}
+                      onReady={() => handleTimelineReady(selectedThread.id)}
                       onApprovalDecision={handleApprovalDecision}
+                      scrollParentElement={timelineScrollElement}
                       showDebug={showDebugEvents}
                       timeline={timeline}
                     />
@@ -817,7 +899,6 @@ function KodexShell() {
                       text={UI_TEXT.empty.noEventsText}
                     />
                   )}
-                </Box>
               </Box>
             </>
           ) : (
@@ -829,7 +910,12 @@ function KodexShell() {
               />
             </Box>
           )}
-          <Box component="form" className="kodex-composer kodex-main-column" onSubmit={handleSubmitTurn}>
+          <Box
+            component="form"
+            className="kodex-composer kodex-main-column"
+            data-entry-ready={selectedThread !== null && !isSelectedTimelineReady ? "false" : "true"}
+            onSubmit={handleSubmitTurn}
+          >
             <Textarea
               aria-label="Message composer"
               placeholder={canCompose ? UI_TEXT.composer.placeholder : UI_TEXT.composer.disabledPlaceholder}
@@ -845,7 +931,7 @@ function KodexShell() {
                   aria-label={UI_TEXT.composer.stop}
                   size="lg"
                   variant="light"
-                  disabled={!selectedThread || !timeline.activeTurnId}
+                  disabled={!selectedThread || !isSelectedTimelineReady || !timeline.activeTurnId}
                   onClick={handleStopTurn}
                 >
                   <Square size={16} />
@@ -863,23 +949,175 @@ function KodexShell() {
               </Tooltip>
             </Group>
           </Box>
-          {selectedThread && timeline.activeTurnId ? (
-            <Box component="form" className="kodex-steer" onSubmit={handleSteerTurn}>
-              <TextInput
-                aria-label={UI_TEXT.turn.steer}
-                placeholder={UI_TEXT.turn.steerPlaceholder}
-                value={steerText}
-                onChange={(event) => setSteerText(event.currentTarget.value)}
-              />
-              <Button type="submit" size="xs" disabled={!steerText.trim()}>
-                {UI_TEXT.turn.steerSubmit}
-              </Button>
-            </Box>
+          {shouldShowSteerComposer || shouldReserveSteerComposer ? (
+            <SteerComposer
+              hidden={shouldReserveSteerComposer}
+              onSteerTextChange={setSteerText}
+              onSubmit={handleSteerTurn}
+              steerText={steerText}
+            />
           ) : null}
         </Stack>
       </AppShell.Main>
     </AppShell>
   );
+}
+
+function useSelectedThreadTimeline({
+  isSelectedThreadNotLoaded,
+  onApprovalEvent,
+  onApprovalEvents,
+  onError,
+  onThreadMetadataEvent,
+  onThreadMetadataEvents,
+  selectedThreadId,
+  setApprovals,
+  setTimeline,
+  setTimelineEntry,
+}: {
+  isSelectedThreadNotLoaded: boolean;
+  onApprovalEvent: (current: Approval[], event: EventEnvelope) => Approval[];
+  onApprovalEvents: (current: Approval[], events: EventEnvelope[]) => Approval[];
+  onError: (error: unknown) => void;
+  onThreadMetadataEvent: (event: EventEnvelope) => void;
+  onThreadMetadataEvents: (events: EventEnvelope[]) => void;
+  selectedThreadId: string | null;
+  setApprovals: Dispatch<SetStateAction<Approval[]>>;
+  setTimeline: Dispatch<SetStateAction<TimelineState>>;
+  setTimelineEntry: Dispatch<SetStateAction<TimelineEntry>>;
+}) {
+  const queuedTimelineEvents = useRef<EventEnvelope[]>([]);
+  const timelineFlushFrame = useRef<number | null>(null);
+  const timelineFlushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectedThreadStreamToken = useRef(0);
+  const latestCallbacks = useRef({ onApprovalEvent, onApprovalEvents, onError, onThreadMetadataEvent, onThreadMetadataEvents });
+  latestCallbacks.current = { onApprovalEvent, onApprovalEvents, onError, onThreadMetadataEvent, onThreadMetadataEvents };
+
+  function clearEntry() {
+    setTimelineEntry(idleTimelineEntry);
+    setTimeline(createTimelineState());
+  }
+
+  function beginEntry(threadId: string) {
+    setTimeline(createTimelineState());
+    setTimelineEntry({ phase: "loading", threadId });
+  }
+
+  function markEntryAligning(threadId: string) {
+    setTimelineEntry((current) => (current.threadId === threadId ? { phase: "aligning", threadId } : current));
+  }
+
+  function clearEntryForThread(threadId: string) {
+    setTimelineEntry((current) => (current.threadId === threadId ? idleTimelineEntry : current));
+  }
+
+  function scheduleQueuedTimelineFlush() {
+    if (timelineFlushFrame.current !== null || timelineFlushTimer.current !== null) {
+      return;
+    }
+
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      timelineFlushFrame.current = window.requestAnimationFrame(flushQueuedTimelineEvents);
+      return;
+    }
+
+    timelineFlushTimer.current = setTimeout(flushQueuedTimelineEvents, 16);
+  }
+
+  function flushQueuedTimelineEvents() {
+    if (timelineFlushFrame.current !== null) {
+      timelineFlushFrame.current = null;
+    }
+    if (timelineFlushTimer.current !== null) {
+      timelineFlushTimer.current = null;
+    }
+    const events = queuedTimelineEvents.current;
+    queuedTimelineEvents.current = [];
+    if (events.length === 0) {
+      return;
+    }
+    setTimeline((current) => applyTimelineEventBatch(current, events));
+  }
+
+  function cancelQueuedTimelineEvents() {
+    if (timelineFlushFrame.current !== null) {
+      window.cancelAnimationFrame(timelineFlushFrame.current);
+      timelineFlushFrame.current = null;
+    }
+    if (timelineFlushTimer.current !== null) {
+      clearTimeout(timelineFlushTimer.current);
+      timelineFlushTimer.current = null;
+    }
+    queuedTimelineEvents.current = [];
+  }
+
+  useEffect(() => {
+    if (!selectedThreadId) {
+      selectedThreadStreamToken.current += 1;
+      cancelQueuedTimelineEvents();
+      clearEntry();
+      return;
+    }
+
+    const threadId = selectedThreadId;
+    if (isSelectedThreadNotLoaded) {
+      beginEntry(threadId);
+      return;
+    }
+
+    let cancelled = false;
+    let closeStream: (() => void) | null = null;
+    const streamToken = selectedThreadStreamToken.current + 1;
+    selectedThreadStreamToken.current = streamToken;
+    beginEntry(threadId);
+
+    listEvents(threadId)
+      .then((events) => {
+        if (cancelled) {
+          return;
+        }
+
+        setApprovals((current) => latestCallbacks.current.onApprovalEvents(current, events));
+        latestCallbacks.current.onThreadMetadataEvents(events);
+        const replayedTimeline = replayTimeline(events.filter((event) => !isApprovalEvent(event)));
+        setTimeline(replayedTimeline);
+        markEntryAligning(threadId);
+        const client = createEventStreamClient({
+          cursor: replayedTimeline.lastSeq,
+          threadId,
+          onEvent: (event) => {
+            if (selectedThreadStreamToken.current !== streamToken) {
+              return;
+            }
+            if (event.threadId && event.threadId !== threadId) {
+              return;
+            }
+            latestCallbacks.current.onThreadMetadataEvent(event);
+            if (isApprovalEvent(event)) {
+              setApprovals((current) => latestCallbacks.current.onApprovalEvent(current, event));
+              return;
+            }
+            queuedTimelineEvents.current.push(event);
+            scheduleQueuedTimelineFlush();
+          },
+        });
+        client.connect();
+        closeStream = client.close;
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          clearEntryForThread(threadId);
+          latestCallbacks.current.onError(error);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      selectedThreadStreamToken.current += 1;
+      closeStream?.();
+      cancelQueuedTimelineEvents();
+    };
+  }, [isSelectedThreadNotLoaded, selectedThreadId, setApprovals, setTimeline, setTimelineEntry]);
 }
 
 function MobilePanelSwitcher({
@@ -909,6 +1147,39 @@ function MobilePanelSwitcher({
           {tab.label}
         </button>
       ))}
+    </Box>
+  );
+}
+
+function SteerComposer({
+  hidden = false,
+  onSteerTextChange,
+  onSubmit,
+  steerText,
+}: {
+  hidden?: boolean;
+  onSteerTextChange: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  steerText: string;
+}) {
+  return (
+    <Box
+      aria-hidden={hidden || undefined}
+      className={hidden ? "kodex-steer kodex-steer-placeholder" : "kodex-steer"}
+      component="form"
+      onSubmit={hidden ? (event) => event.preventDefault() : onSubmit}
+    >
+      <TextInput
+        aria-label={hidden ? undefined : UI_TEXT.turn.steer}
+        disabled={hidden}
+        placeholder={UI_TEXT.turn.steerPlaceholder}
+        tabIndex={hidden ? -1 : undefined}
+        value={hidden ? "" : steerText}
+        onChange={(event) => onSteerTextChange(event.currentTarget.value)}
+      />
+      <Button type="submit" size="xs" disabled={hidden || !steerText.trim()} tabIndex={hidden ? -1 : undefined}>
+        {UI_TEXT.turn.steerSubmit}
+      </Button>
     </Box>
   );
 }
@@ -1013,24 +1284,217 @@ function SettingsMenu({
   );
 }
 
+function useBottomPinnedVirtualTimeline({
+  onReady,
+  rows,
+  scrollParentElement,
+  timelineLastSeq,
+}: {
+  onReady: () => void;
+  rows: TimelineRow[];
+  scrollParentElement: HTMLDivElement | null;
+  timelineLastSeq: number;
+}) {
+  const rowCount = rows.length;
+  const lastRowKey = rows[rowCount - 1]?.key ?? "";
+  const nearBottomRef = useRef(true);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [initialBottomAligned, setInitialBottomAligned] = useState(false);
+  const rowVirtualizer = useVirtualizer({
+    count: rowCount,
+    estimateSize: () => 112,
+    getItemKey: (index) => rows[index]?.key ?? index,
+    getScrollElement: () => scrollParentElement,
+    initialRect: { width: 900, height: 720 },
+    overscan: 8,
+  });
+  rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = disableTimelineScrollAdjustment;
+
+  const updateNearBottom = useCallback(() => {
+    const scrollElement = scrollParentElement;
+    if (!scrollElement) {
+      nearBottomRef.current = true;
+      setShowScrollToBottom(false);
+      return true;
+    }
+    const distanceFromBottom = getDistanceFromBottom(scrollElement);
+    const isNearBottom = distanceFromBottom < 96;
+    nearBottomRef.current = isNearBottom;
+    setShowScrollToBottom(!isNearBottom && rowCount > 0 && distanceFromBottom > 0);
+    return isNearBottom;
+  }, [rowCount, scrollParentElement]);
+
+  const scrollToTimelineBottom = useCallback(() => {
+    const scrollElement = scrollParentElement;
+    if (!scrollElement) {
+      return;
+    }
+    rowVirtualizer.scrollToIndex(Math.max(0, rowCount - 1), { align: "end" });
+    scrollElement.scrollTop = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
+  }, [rowCount, rowVirtualizer, scrollParentElement]);
+
+  const markTimelineReady = useCallback(() => {
+    setInitialBottomAligned(true);
+    onReady();
+  }, [onReady]);
+
+  const finishInitialBottomReveal = useCallback(() => {
+    scrollToTimelineBottom();
+    updateNearBottom();
+    markTimelineReady();
+  }, [markTimelineReady, scrollToTimelineBottom, updateNearBottom]);
+
+  const scrollToBottom = useCallback(() => {
+    nearBottomRef.current = true;
+    setShowScrollToBottom(false);
+
+    scrollToTimelineBottom();
+    requestAnimationFrame(() => {
+      if (nearBottomRef.current) {
+        scrollToTimelineBottom();
+      }
+      updateNearBottom();
+    });
+  }, [scrollToTimelineBottom, updateNearBottom]);
+
+  useEffect(() => {
+    const scrollElement = scrollParentElement;
+    if (!scrollElement) {
+      return;
+    }
+
+    updateNearBottom();
+    scrollElement.addEventListener("scroll", updateNearBottom, { passive: true });
+    return () => scrollElement.removeEventListener("scroll", updateNearBottom);
+  }, [scrollParentElement, updateNearBottom]);
+
+  useLayoutEffect(() => {
+    if (initialBottomAligned) {
+      return;
+    }
+
+    if (rowCount === 0) {
+      setShowScrollToBottom(false);
+      markTimelineReady();
+      return;
+    }
+
+    if (!nearBottomRef.current) {
+      setShowScrollToBottom(true);
+      markTimelineReady();
+      return;
+    }
+
+    const frameIds: number[] = [];
+    const settleBottom = (attempt: number, stableFrames: number, previousScrollHeight: number) => {
+      if (!nearBottomRef.current) {
+        markTimelineReady();
+        return;
+      }
+
+      scrollToTimelineBottom();
+      const frameId = requestAnimationFrame(() => {
+        const scrollElement = scrollParentElement;
+        const scrollHeight = scrollElement?.scrollHeight ?? 0;
+        const nextStableFrames = isSettledAtBottom(scrollElement, previousScrollHeight, rowCount) ? stableFrames + 1 : 0;
+
+        if (nextStableFrames >= INITIAL_BOTTOM_STABLE_FRAMES || attempt >= INITIAL_BOTTOM_MAX_SETTLE_FRAMES) {
+          finishInitialBottomReveal();
+          return;
+        }
+
+        settleBottom(attempt + 1, nextStableFrames, scrollHeight);
+      });
+      frameIds.push(frameId);
+    };
+
+    settleBottom(0, 0, -1);
+    return () => {
+      for (const frameId of frameIds) {
+        cancelAnimationFrame(frameId);
+      }
+    };
+  }, [
+    finishInitialBottomReveal,
+    initialBottomAligned,
+    markTimelineReady,
+    rowCount,
+    scrollParentElement,
+    scrollToTimelineBottom,
+  ]);
+
+  useLayoutEffect(() => {
+    if (!initialBottomAligned || rowCount === 0) {
+      return;
+    }
+
+    if (nearBottomRef.current) {
+      scrollToTimelineBottom();
+      const frameId = requestAnimationFrame(() => {
+        if (nearBottomRef.current) {
+          scrollToTimelineBottom();
+        }
+        updateNearBottom();
+      });
+      return () => cancelAnimationFrame(frameId);
+    }
+
+    setShowScrollToBottom(true);
+  }, [
+    initialBottomAligned,
+    lastRowKey,
+    rowCount,
+    scrollToTimelineBottom,
+    timelineLastSeq,
+    updateNearBottom,
+  ]);
+
+  return {
+    initialBottomAligned,
+    isNearBottom: nearBottomRef.current,
+    rowVirtualizer,
+    scrollToBottom,
+    showScrollToBottom,
+  };
+}
+
 function TimelineView({
   approvals,
   onApprovalDecision,
+  onReady,
+  scrollParentElement,
   showDebug,
   timeline,
 }: {
   approvals: Approval[];
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
+  onReady: () => void;
+  scrollParentElement: HTMLDivElement | null;
   showDebug: boolean;
   timeline: TimelineState;
 }) {
-  const items = (showDebug ? [...timeline.items, ...timeline.hiddenItems] : timeline.items).sort(
-    (left, right) => left.seq - right.seq,
+  const rows = useMemo(() => deriveTimelineRows(timeline, { showDebug }), [showDebug, timeline]);
+  const approvalIndex = useMemo(() => buildApprovalIndex(approvals), [approvals]);
+  const unanchoredApprovals = useMemo(
+    () => getUnanchoredApprovals(rows, approvalIndex),
+    [approvalIndex, rows],
   );
-  const renderedItemIds = new Set(items.map((item) => item.id));
-  const unanchoredApprovals = approvals.filter((approval) => !approval.itemId || !renderedItemIds.has(approval.itemId));
+  const approvalsByRowKey = useMemo(() => buildTimelineRowApprovalMap(rows, approvalIndex), [approvalIndex, rows]);
+  const rowCount = rows.length;
+  const {
+    initialBottomAligned,
+    isNearBottom,
+    rowVirtualizer,
+    scrollToBottom,
+    showScrollToBottom,
+  } = useBottomPinnedVirtualTimeline({
+    onReady,
+    rows,
+    scrollParentElement,
+    timelineLastSeq: timeline.lastSeq,
+  });
 
-  if (items.length === 0) {
+  if (rowCount === 0) {
     return approvals.length > 0 ? (
       <ThreadApprovalStack approvals={approvals} onDecision={onApprovalDecision} />
     ) : (
@@ -1042,108 +1506,112 @@ function TimelineView({
     );
   }
 
+  const virtualItems = rowVirtualizer.getVirtualItems();
+  const renderedVirtualItems =
+    virtualItems.length > 0 ? virtualItems : fallbackVirtualItems(rows, isNearBottom);
+
   return (
-    <Stack gap="xs">
+    <Box className="kodex-timeline-virtual-root" data-initial-bottom-aligned={initialBottomAligned ? "true" : "false"}>
       {unanchoredApprovals.length > 0 ? (
         <ThreadApprovalStack approvals={unanchoredApprovals} onDecision={onApprovalDecision} />
       ) : null}
-      {groupTimelineItems(items).map((group) => (
-        <Box className="kodex-turn-group" key={group.key}>
-          <Stack gap="xs">
-            {timelineRenderSegments(group.items).map((segment) => {
-              if (segment.type === "activity") {
-                const itemIds = new Set(segment.items.map((item) => item.id));
-                const activityApprovals = approvals.filter(
-                  (approval) =>
-                    approval.itemId !== undefined && approval.itemId !== null && itemIds.has(approval.itemId),
-                );
-                return (
-                  <Box key={segment.key}>
-                    <TimelineActivityGroupRenderer items={segment.items} showDebug={showDebug} />
-                    {activityApprovals.length > 0 ? (
-                      <Stack gap="xs" mt="xs">
-                        {activityApprovals.map((approval) => (
-                          <ApprovalCard approval={approval} key={approval.id} onDecision={onApprovalDecision} />
-                        ))}
-                      </Stack>
-                    ) : null}
-                  </Box>
-                );
-              }
-              const itemApprovals = approvals.filter((approval) => approval.itemId === segment.item.id);
-              return (
-                <Box key={segment.key}>
-                  <TimelineItemRenderer item={segment.item} showDebug={showDebug} />
-                  {itemApprovals.length > 0 ? (
-                    <Stack gap="xs" mt="xs">
-                      {itemApprovals.map((approval) => (
-                        <ApprovalCard approval={approval} key={approval.id} onDecision={onApprovalDecision} />
-                      ))}
-                    </Stack>
-                  ) : null}
-                </Box>
-              );
-            })}
-          </Stack>
-        </Box>
-      ))}
-    </Stack>
+      <Box className="kodex-timeline-virtual-spacer" style={{ height: rowVirtualizer.getTotalSize() }}>
+        {renderedVirtualItems.map((virtualItem) => {
+          const row = rows[virtualItem.index];
+          if (!row) {
+            return null;
+          }
+          return (
+            <Box
+              className="kodex-timeline-virtual-row kodex-main-column"
+              data-index={virtualItem.index}
+              key={virtualItem.key}
+              ref={rowVirtualizer.measureElement}
+              style={{ transform: `translateY(${virtualItem.start}px)` }}
+              onToggle={(event) => {
+                if (event.target instanceof HTMLDetailsElement) {
+                  rowVirtualizer.measureElement(event.currentTarget);
+                }
+              }}
+            >
+              <TimelineRowView
+                approvals={approvalsByRowKey.get(row.key) ?? EMPTY_APPROVALS}
+                onApprovalDecision={onApprovalDecision}
+                row={row}
+                showDebug={showDebug}
+              />
+            </Box>
+          );
+        })}
+      </Box>
+      {showScrollToBottom ? (
+        <Tooltip label={UI_TEXT.timeline.scrollToBottom}>
+          <ActionIcon
+            aria-label={UI_TEXT.timeline.scrollToBottom}
+            className="kodex-scroll-to-bottom"
+            color="gray"
+            onClick={scrollToBottom}
+            radius="xl"
+            size="md"
+            variant="light"
+          >
+            <ArrowDownToLine size={16} />
+          </ActionIcon>
+        </Tooltip>
+      ) : null}
+    </Box>
   );
 }
 
-function groupTimelineItems(items: TimelineState["items"]): Array<{ key: string; items: TimelineState["items"] }> {
-  const groups: Array<{ key: string; items: TimelineState["items"] }> = [];
-  for (const item of items) {
-    const key = item.turnId ?? `item-${item.id}`;
-    const current = groups[groups.length - 1];
-    if (current?.key === key) {
-      current.items.push(item);
-    } else {
-      groups.push({ key, items: [item] });
-    }
-  }
-  return groups;
+const TimelineRowView = memo(function TimelineRowView({
+  approvals,
+  onApprovalDecision,
+  row,
+  showDebug,
+}: {
+  approvals: Approval[];
+  onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
+  row: TimelineRow;
+  showDebug: boolean;
+}) {
+  return (
+    <Box className="kodex-turn-group">
+      {row.dividerBefore === "final_response" ? <Box aria-hidden="true" className="kodex-timeline-final-response-divider" /> : null}
+      {row.type === "activity" ? (
+        <TimelineActivityGroupRenderer items={row.items} showDebug={showDebug} />
+      ) : (
+        <TimelineItemRenderer item={row.item} showDebug={showDebug} />
+      )}
+      {approvals.length > 0 ? (
+        <Stack gap="xs" mt="xs">
+          {approvals.map((approval) => (
+            <ApprovalCard approval={approval} key={approval.id} onDecision={onApprovalDecision} />
+          ))}
+        </Stack>
+      ) : null}
+    </Box>
+  );
+});
+
+function fallbackVirtualItems(rows: TimelineRow[], preferBottom: boolean) {
+  const fallbackCount = Math.min(rows.length, 12);
+  const startIndex = preferBottom ? Math.max(0, rows.length - fallbackCount) : 0;
+  return rows.slice(startIndex, startIndex + fallbackCount).map((row, offset) => ({
+    index: startIndex + offset,
+    key: row.key,
+    start: (startIndex + offset) * 112,
+  }));
 }
 
-type TimelineRenderSegment =
-  | { type: "activity"; key: string; items: TimelineState["items"] }
-  | { type: "item"; key: string; item: TimelineState["items"][number] };
-
-const timelineActivityKinds = new Set([
-  "command_execution",
-  "dynamic_tool_call",
-  "file_change",
-  "mcp_tool_call",
-  "web_search_group",
-]);
-
-function timelineRenderSegments(items: TimelineState["items"]): TimelineRenderSegment[] {
-  const segments: TimelineRenderSegment[] = [];
-  let activityItems: TimelineState["items"] = [];
-
-  function flushActivityItems() {
-    if (activityItems.length === 0) {
-      return;
+function buildTimelineRowApprovalMap(rows: TimelineRow[], approvalIndex: ReturnType<typeof buildApprovalIndex>) {
+  const approvalsByRowKey = new Map<string, Approval[]>();
+  for (const row of rows) {
+    const rowApprovals = getTimelineRowApprovals(row, approvalIndex);
+    if (rowApprovals.length > 0) {
+      approvalsByRowKey.set(row.key, rowApprovals);
     }
-    segments.push({
-      type: "activity",
-      key: `activity-${activityItems.map((item) => item.id).join("-")}`,
-      items: activityItems,
-    });
-    activityItems = [];
   }
-
-  for (const item of items) {
-    if (timelineActivityKinds.has(item.kind)) {
-      activityItems.push(item);
-      continue;
-    }
-    flushActivityItems();
-    segments.push({ type: "item", key: item.id, item });
-  }
-
-  flushActivityItems();
-  return segments;
+  return approvalsByRowKey;
 }
 
 function ThreadApprovalStack({
@@ -1154,7 +1622,7 @@ function ThreadApprovalStack({
   onDecision: (approval: Approval, decision: ApprovalResponse) => void;
 }) {
   return (
-    <Stack gap="xs" className="kodex-thread-approvals">
+    <Stack gap="xs" className="kodex-thread-approvals kodex-main-column">
       {approvals.map((approval) => (
         <ApprovalCard approval={approval} key={approval.id} onDecision={onDecision} />
       ))}
@@ -1705,6 +2173,14 @@ function threadNeedsApproval(thread: ThreadSummary, approvals: Approval[]): bool
 
 function threadStatusNeedsApproval(thread: ThreadSummary): boolean {
   return typeof thread.status === "string" && thread.status.toLowerCase().includes("approval");
+}
+
+function threadStatusMayHaveActiveTurn(thread: ThreadSummary): boolean {
+  if (typeof thread.status !== "string") {
+    return false;
+  }
+  const status = thread.status.toLowerCase();
+  return status.includes("running") || status.includes("active");
 }
 
 function accountInitial(label: string): string {

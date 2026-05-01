@@ -1,7 +1,8 @@
 import { Badge, Box, Code, Group, Stack, Text } from "@mantine/core";
-import { AlertTriangle, Bot, Check, ChevronRight, Code2, FileDiff, Globe, Terminal, User, Wrench } from "lucide-react";
+import { AlertTriangle, Check, ChevronRight, Code2, FileDiff, Globe, Terminal, Wrench } from "lucide-react";
+import { memo } from "react";
 import type { ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
@@ -10,9 +11,9 @@ import type { TimelineItem, WebSearchAction } from "./reducer";
 type TimelineRenderer = (item: TimelineItem) => ReactNode;
 
 const rendererRegistry: Record<string, TimelineRenderer> = {
-  agent_message: (item) => <AssistantMessageMarkdown text={item.text || "No assistant content yet"} />,
-  assistant_message: (item) => <AssistantMessageMarkdown text={item.text || "No assistant content yet"} />,
-  user_message: (item) => <MessageText text={item.text} />,
+  agent_message: (item) => <AssistantMessageMarkdown itemId={item.id} text={item.text || "No assistant content yet"} />,
+  assistant_message: (item) => <AssistantMessageMarkdown itemId={item.id} text={item.text || "No assistant content yet"} />,
+  user_message: (item) => <UserMessageBubble text={item.text} />,
   reasoning_summary: (item) => <ReasoningBlock item={item} />,
   reasoning: (item) => <ReasoningBlock item={item} />,
   command_execution: (item) => <CommandBlock item={item} />,
@@ -49,36 +50,79 @@ const labels: Record<string, string> = {
   debug_event: "Debug event",
 };
 
-export function TimelineItemRenderer({ item, showDebug = false }: { item: TimelineItem; showDebug?: boolean }) {
+const assistantMarkdownRemarkPlugins = [remarkGfm, remarkBreaks];
+
+const assistantMarkdownComponents: Components = {
+  a: ({ children, href }) => (
+    <a href={href} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  ),
+  code: ({ children, className }) => {
+    const isBlock = Boolean(className) || String(children).includes("\n");
+    return isBlock ? (
+      <Code block className="kodex-timeline-code">
+        {children}
+      </Code>
+    ) : (
+      <Code className="kodex-assistant-inline-code">{children}</Code>
+    );
+  },
+  p: ({ children }) => (
+    <Text component="p" size="sm" className="kodex-assistant-markdown-paragraph">
+      {children}
+    </Text>
+  ),
+  pre: ({ children }) => <>{children}</>,
+};
+
+type TimelineItemRendererProps = {
+  item: TimelineItem;
+  showDebug?: boolean;
+};
+
+function TimelineItemRendererImpl({ item, showDebug = false }: TimelineItemRendererProps) {
   const render = rendererRegistry[item.kind] ?? unknownRenderer;
   const label = labels[item.kind] ?? "Unsupported item";
   const showStatus = item.status !== "completed";
+  const isMessage = isTimelineMessage(item.kind);
   return (
     <Box className={`kodex-timeline-item kodex-timeline-item-${item.kind}`}>
-      <Group gap="xs" wrap="nowrap" className="kodex-timeline-item-header">
-        <TimelineIcon kind={item.kind} />
-        <Text size="xs" fw={700} className="kodex-timeline-label">
-          {label}
-        </Text>
-        {showStatus ? (
-          <Badge size="xs" variant="light" color={statusColor(item.status)}>
-            {statusLabel(item.status)}
-          </Badge>
-        ) : null}
-      </Group>
+      {!isMessage || showStatus ? (
+        <Group gap="xs" wrap="nowrap" className="kodex-timeline-item-header" data-message-status={isMessage ? "true" : undefined}>
+          {!isMessage ? (
+            <>
+              <TimelineIcon kind={item.kind} />
+              <Text size="xs" fw={700} className="kodex-timeline-label">
+                {label}
+              </Text>
+            </>
+          ) : null}
+          {showStatus ? (
+            <Badge size="xs" variant="light" color={statusColor(item.status)}>
+              {statusLabel(item.status)}
+            </Badge>
+          ) : null}
+        </Group>
+      ) : null}
       {render(item)}
       {showDebug ? <DebugDisclosure item={item} /> : null}
     </Box>
   );
 }
 
-export function TimelineActivityGroupRenderer({
-  items,
-  showDebug = false,
-}: {
+export const TimelineItemRenderer = memo(TimelineItemRendererImpl);
+TimelineItemRenderer.displayName = "TimelineItemRenderer";
+
+type TimelineActivityGroupRendererProps = {
   items: TimelineItem[];
   showDebug?: boolean;
-}) {
+};
+
+function TimelineActivityGroupRendererImpl({
+  items,
+  showDebug = false,
+}: TimelineActivityGroupRendererProps) {
   return (
     <details className="kodex-activity-group">
       <summary>
@@ -99,6 +143,9 @@ export function TimelineActivityGroupRenderer({
   );
 }
 
+export const TimelineActivityGroupRenderer = memo(TimelineActivityGroupRendererImpl);
+TimelineActivityGroupRenderer.displayName = "TimelineActivityGroupRenderer";
+
 function unknownRenderer(item: TimelineItem) {
   return <Text size="sm">{item.text || item.kind || "Unsupported item"}</Text>;
 }
@@ -111,41 +158,29 @@ function MessageText({ text }: { text: string }) {
   );
 }
 
-function AssistantMessageMarkdown({ text }: { text: string }) {
+function UserMessageBubble({ text }: { text: string }) {
   return (
-    <Box className="kodex-assistant-markdown">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkBreaks]}
-        skipHtml
-        components={{
-          a: ({ children, href }) => (
-            <a href={href} target="_blank" rel="noreferrer">
-              {children}
-            </a>
-          ),
-          code: ({ children, className }) => {
-            const isBlock = Boolean(className);
-            return isBlock ? (
-              <Code block className="kodex-timeline-code">
-                {children}
-              </Code>
-            ) : (
-              <Code className="kodex-assistant-inline-code">{children}</Code>
-            );
-          },
-          p: ({ children }) => (
-            <Text component="p" size="sm" className="kodex-assistant-markdown-paragraph">
-              {children}
-            </Text>
-          ),
-          pre: ({ children }) => <>{children}</>,
-        }}
-      >
+    <Box className="kodex-user-message-row">
+      <Text size="sm" className="kodex-user-message-bubble">
         {text}
-      </ReactMarkdown>
+      </Text>
     </Box>
   );
 }
+
+const AssistantMessageMarkdown = memo(
+  function AssistantMessageMarkdown({ text }: { itemId: string; text: string }) {
+    return (
+      <Box className="kodex-assistant-markdown">
+        <ReactMarkdown remarkPlugins={assistantMarkdownRemarkPlugins} skipHtml components={assistantMarkdownComponents}>
+          {text}
+        </ReactMarkdown>
+      </Box>
+    );
+  },
+  (prev, next) => prev.itemId === next.itemId && prev.text === next.text,
+);
+AssistantMessageMarkdown.displayName = "AssistantMessageMarkdown";
 
 function ReasoningBlock({ item }: { item: TimelineItem }) {
   const summary = item.summary || item.text;
@@ -172,7 +207,7 @@ function WebSearchBlock({ actions }: { actions: WebSearchAction[] }) {
   );
 }
 
-function ActivityItemRenderer({ item, showDebug }: { item: TimelineItem; showDebug: boolean }) {
+const ActivityItemRenderer = memo(function ActivityItemRenderer({ item, showDebug }: { item: TimelineItem; showDebug: boolean }) {
   const render = rendererRegistry[item.kind] ?? unknownRenderer;
   if (item.kind === "command_execution") {
     return (
@@ -206,7 +241,8 @@ function ActivityItemRenderer({ item, showDebug }: { item: TimelineItem; showDeb
       {showDebug ? <DebugDisclosure item={item} /> : null}
     </details>
   );
-}
+});
+ActivityItemRenderer.displayName = "ActivityItemRenderer";
 
 function CommandBlock({ item }: { item: TimelineItem }) {
   const command = item.command || payloadValue(item.payload, "command");
@@ -307,10 +343,11 @@ function TimelineIcon({ kind }: { kind: string }) {
   if (kind === "web_search_group") {
     return <Globe size={size} />;
   }
-  if (kind === "user_message") {
-    return <User size={size} />;
-  }
-  return <Bot size={size} />;
+  return <Code2 size={size} />;
+}
+
+function isTimelineMessage(kind: string) {
+  return kind === "agent_message" || kind === "assistant_message" || kind === "user_message";
 }
 
 function webSearchActionText(action: WebSearchAction): string {

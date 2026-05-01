@@ -18,7 +18,8 @@ This file is the directory of record for Kodex plans. Keep the status column cur
 | [MVP backend revision 1 plan](mvp-backend-rev-1.md) | Complete | Backend ownership cleanup before frontend implementation | Added app-server adapter ownership, typed frontend-critical response DTOs, event/static modules, and contract tests. |
 | [MVP frontend implementation plan](mvp-frontend.md) | Complete | React web client for projects, threads, timeline, composer, approvals, account/models | MVP frontend milestones are implemented with Vitest and Playwright coverage. |
 | [Timeline UI polish plan](timeline-ui-polish.md) | Complete | Codex app-server timeline rendering, event filtering, turn grouping, rich tool renderers, debug mode | Implemented chat-first timeline presentation, debug mode, fixed thread header, and compact tool renderers. |
-| [Timeline performance plan](timeline-performance.md) | Proposed | Timeline derivation, memoization, streaming batching, reducer storage, and dynamic-height virtualization | Proposed optimization plan for event-heavy threads; frontend-only unless implementation finds a gateway contract issue. |
+| [Timeline performance plan](timeline-performance.md) | Complete | Timeline derivation, memoization, streaming batching, reducer storage, and dynamic-height virtualization | Implemented timeline derivation, approval indexing, memoized rows and markdown, batched streaming updates, optimized reducer storage, and dynamic-height virtualization. |
+| [Composer cleanup plan](composer-cleanup.md) | Proposed | Unified composer send/stop behavior and queued steer rows | Frontend-only interaction cleanup for active-turn composer controls. |
 | [Future extensions overview](future-extensions.md) | Proposed | Non-MVP feature map linked to app-server APIs | Overview only, not an implementation plan. |
 
 ## Maintenance Rules
