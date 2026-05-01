@@ -28,6 +28,35 @@ Prerequisites:
 
 - Rust stable toolchain with `cargo` and `rustfmt`.
 - A `codex` binary on `PATH` for a ready app-server. The gateway still starts API-only if the app-server cannot be spawned, with `/readyz` reporting `ready: false`.
+- Build and smoke-test helpers: a C toolchain/linker, `bash`, `curl`, `jq`, and optionally `sqlite3` for inspecting local test databases.
+
+Backend Smoke Test Tooling:
+
+```bash
+# User-local Rust stable toolchain, including cargo and rustfmt.
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source "$HOME/.cargo/env"
+rustup component add rustfmt
+```
+
+System packages require root or `sudo` access. On WSL/Linux, install the build and smoke-test helpers with:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential pkg-config libsqlite3-dev curl jq sqlite3
+```
+
+Then verify the expected local tools are available:
+
+```bash
+cargo --version
+rustc --version
+rustfmt --version
+codex --version
+curl --version
+jq --version
+sqlite3 --version
+```
 
 Commands:
 

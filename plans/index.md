@@ -15,6 +15,7 @@ This file is the directory of record for Kodex plans. Keep the status column cur
 | Plan | Status | Scope | Notes |
 | --- | --- | --- | --- |
 | [MVP backend implementation plan](mvp-backend.md) | Complete | Rust gateway, app-server supervisor, event store, API, approvals, account/models | MVP backend milestones are implemented, covered by gateway tests, and pushed. |
+| [MVP backend revision 1 plan](mvp-backend-rev-1.md) | Proposed | Backend ownership cleanup before frontend implementation | Tightens separation of concerns and moves frontend-critical response shaping into the gateway contract. |
 | [MVP frontend implementation plan](mvp-frontend.md) | Proposed | React web client for projects, threads, timeline, composer, approvals, account/models | Depends on generated OpenAPI types or gateway mocks generated from the same contract. |
 | [Future extensions overview](future-extensions.md) | Proposed | Non-MVP feature map linked to app-server APIs | Overview only, not an implementation plan. |
 
