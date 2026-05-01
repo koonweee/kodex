@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import { describe, expect, it } from "vitest";
 
-import { TimelineItemRenderer } from "./renderers";
+import { TimelineActivityGroupRenderer, TimelineItemRenderer } from "./renderers";
 import type { TimelineItem } from "./reducer";
 
 function item(overrides: Partial<TimelineItem>): TimelineItem {
@@ -145,6 +145,68 @@ describe("timeline renderer registry", () => {
     expect(screen.getByText(/opened page/i)).toBeInTheDocument();
     expect(screen.getByText(/example/i)).toBeInTheDocument();
     expect(screen.queryByText(/"query"/i)).not.toBeInTheDocument();
+  });
+
+  it("renders supporting timeline activity as a nested collapsible group", () => {
+    render(
+      <MantineProvider>
+        <TimelineActivityGroupRenderer
+          items={[
+            item({
+              id: "cmd-1",
+              kind: "command_execution",
+              command: "pwd",
+              cwd: "/home/example/kodex",
+              output: "/home/example/kodex\n",
+            }),
+            item({
+              id: "cmd-2",
+              kind: "command_execution",
+              command: "rg --files",
+              output: "apps/web/src/App.tsx\napps/web/src/timeline/renderers.tsx\n",
+            }),
+            item({
+              id: "web-1",
+              kind: "web_search_group",
+              actions: [{ kind: "search", query: "Codex app server" }],
+            }),
+          ]}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("Searched web, ran 2 commands")).toBeInTheDocument();
+    expect(screen.getByText("Ran pwd")).toBeInTheDocument();
+    expect(screen.getByText("Listed files")).toBeInTheDocument();
+    expect(screen.getByText("$ pwd")).toBeInTheDocument();
+    expect(screen.getByText("/home/example/kodex")).toBeInTheDocument();
+    expect(screen.getAllByText("Shell")).not.toHaveLength(0);
+  });
+
+  it("keeps long command summaries truncatable while showing the full command in the shell block", () => {
+    const command = "/usr/bin/zsh -lc \"sed -n '960,1140p' apps/web/src/App.tsx\"";
+    render(
+      <MantineProvider>
+        <TimelineActivityGroupRenderer
+          items={[
+            item({
+              id: "cmd-long",
+              kind: "command_execution",
+              command,
+              cwd: "/home/example/kodex",
+              output: "function TimelineView() {}\n",
+            }),
+          ]}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("Ran sed -n '960,1140p' apps/web/src/App.tsx")).toHaveAttribute(
+      "title",
+      "Ran sed -n '960,1140p' apps/web/src/App.tsx",
+    );
+    expect(screen.getByText("$ sed -n '960,1140p' apps/web/src/App.tsx")).toBeInTheDocument();
+    expect(screen.queryByText("/home/example/kodex")).not.toBeInTheDocument();
   });
 
   it("shows debug event metadata and raw payload only when debug mode is enabled", () => {

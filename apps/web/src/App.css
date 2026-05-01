@@ -42,9 +42,13 @@ body {
 }
 
 .kodex-thread-panel {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  width: 100%;
+  max-width: 100%;
   min-height: 0;
+  min-width: 0;
   flex: 1;
   overflow: hidden;
   border: 1px solid #383838;
@@ -54,7 +58,10 @@ body {
 }
 
 .kodex-thread-layout {
+  width: 100%;
+  max-width: 100%;
   min-height: 0;
+  min-width: 0;
 }
 
 .kodex-thread-header {
@@ -72,7 +79,10 @@ body {
 }
 
 .kodex-timeline-scroll {
+  width: 100%;
+  max-width: 100%;
   min-height: 0;
+  min-width: 0;
   flex: 1;
   overflow: auto;
   padding-right: 2px;
@@ -143,20 +153,143 @@ body {
 }
 
 .kodex-turn-group {
+  box-sizing: border-box;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   border-left: 1px solid #373737;
   padding-left: 10px;
 }
 
 .kodex-timeline-item {
+  box-sizing: border-box;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   border: 1px solid #343434;
   border-radius: 8px;
   padding: 10px;
   background: #1d1d1d;
+}
+
+.kodex-activity-group {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid #343434;
+  border-radius: 8px;
+  padding: 10px;
+  background: #1d1d1d;
+}
+
+.kodex-activity-group > summary,
+.kodex-activity-item > summary {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  cursor: pointer;
+  color: #b9b9b9;
+  list-style: none;
+}
+
+.kodex-activity-group > summary::-webkit-details-marker,
+.kodex-activity-item > summary::-webkit-details-marker {
+  display: none;
+}
+
+.kodex-activity-group > summary::after,
+.kodex-activity-item > summary::after {
+  flex: 0 0 auto;
+  content: "⌄";
+  margin-left: 8px;
+  color: #9a9a9a;
+}
+
+.kodex-activity-group:not([open]) > summary::after,
+.kodex-activity-item:not([open]) > summary::after {
+  content: "›";
+}
+
+.kodex-activity-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.kodex-activity-body {
+  min-width: 0;
+  padding-left: 23px;
+}
+
+.kodex-activity-heading {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.kodex-activity-group-title,
+.kodex-activity-title,
+.kodex-activity-status {
+  overflow-wrap: anywhere;
+}
+
+.kodex-activity-group-title,
+.kodex-activity-title {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kodex-activity-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.kodex-command-panel {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #2b2d38;
+}
+
+.kodex-command-shell {
+  color: #d0d0d0;
+}
+
+.kodex-command-panel .kodex-timeline-code,
+.kodex-command-panel .kodex-timeline-output {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #f2f2f2;
+  white-space: pre;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overflow-wrap: normal;
 }
 
 .kodex-timeline-item-assistant_message,
@@ -175,15 +308,21 @@ body {
 .kodex-timeline-inline-row,
 .kodex-assistant-markdown {
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .kodex-assistant-markdown {
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
   color: #f1f1f1;
 }
 
 .kodex-assistant-markdown-paragraph {
+  max-width: 100%;
   margin: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .kodex-assistant-markdown-paragraph + .kodex-assistant-markdown-paragraph,

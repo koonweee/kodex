@@ -67,6 +67,83 @@ test("renders streamed assistant output", async ({ page }) => {
   await expect(page.getByText(/streamed assistant output/i)).toBeVisible();
 });
 
+test("keeps long timeline content inside the thread viewer", async ({ page }) => {
+  const longWord = "supercalifragilistic".repeat(24);
+  const longCommand = `node -e "console.log('${"wide-output".repeat(20)}')"`;
+  const longOutput = "0123456789abcdef".repeat(80);
+  await page.route("**/v1/events**", async (route) => {
+    const request = route.request();
+    if (request.headers().accept?.includes("text/event-stream")) {
+      await route.fulfill({ status: 200, headers: { "Content-Type": "text/event-stream" }, body: "" });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        events: [
+          {
+            id: "event-assistant-long",
+            seq: 1,
+            kind: "codex.notification",
+            codexMethod: "item/completed",
+            projectId: project.id,
+            threadId: thread.id,
+            turnId: "turn-1",
+            itemId: "assistant-long",
+            payload: { item: { id: "assistant-long", type: "agentMessage", text: longWord } },
+            receivedAt: "2026-04-30T00:00:00Z",
+          },
+          {
+            id: "event-command-long",
+            seq: 2,
+            kind: "codex.notification",
+            codexMethod: "item/completed",
+            projectId: project.id,
+            threadId: thread.id,
+            turnId: "turn-1",
+            itemId: "command-long",
+            payload: {
+              item: {
+                id: "command-long",
+                type: "commandExecution",
+                command: longCommand,
+                output: `${longOutput}\n`,
+              },
+            },
+            receivedAt: "2026-04-30T00:00:01Z",
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.setViewportSize({ width: 720, height: 760 });
+  await page.goto("/");
+  await expect(page.getByText(longWord)).toBeVisible();
+
+  const viewer = page.locator(".kodex-timeline-scroll");
+  const cards = page.locator(".kodex-turn-group, .kodex-timeline-item, .kodex-activity-group");
+  const viewerBox = await viewer.boundingBox();
+  expect(viewerBox).not.toBeNull();
+  const cardBoxes = await cards.evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().width));
+  expect(Math.max(...cardBoxes)).toBeLessThanOrEqual(Math.ceil(viewerBox!.width));
+
+  const commandSummary = page.locator(".kodex-activity-title").filter({ hasText: /^Ran / }).first();
+  await expect(commandSummary).toHaveCSS("text-overflow", "ellipsis");
+  await commandSummary.locator("xpath=ancestor::summary").click();
+
+  const commandOutput = page.locator(".kodex-command-panel .kodex-timeline-output").first();
+  await expect(commandOutput).toBeVisible();
+  const outputMetrics = await commandOutput.evaluate((node) => ({
+    clientWidth: node.clientWidth,
+    scrollWidth: node.scrollWidth,
+    whiteSpace: getComputedStyle(node).whiteSpace,
+  }));
+  expect(outputMetrics.whiteSpace).toBe("pre");
+  expect(outputMetrics.scrollWidth).toBeGreaterThan(outputMetrics.clientWidth);
+});
+
 test("resolves a pending approval", async ({ page }) => {
   await page.goto("/");
 

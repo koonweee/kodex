@@ -66,7 +66,7 @@ import {
   type ThreadSummary,
 } from "./api/client";
 import { createEventStreamClient } from "./events/stream";
-import { TimelineItemRenderer } from "./timeline/renderers";
+import { TimelineActivityGroupRenderer, TimelineItemRenderer } from "./timeline/renderers";
 import { applyTimelineEvent, createTimelineState, replayTimeline, type TimelineState } from "./timeline/reducer";
 import "./App.css";
 
@@ -163,7 +163,6 @@ const UI_TEXT = {
     mainLabel: "Thread",
     workspaceLabel: "Workspace",
   },
-  streamStatus: "Event stream",
   status: {
     debugEvents: "Show debug events",
     label: "Status",
@@ -209,6 +208,8 @@ function KodexShell() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [draftThreadProjectId, setDraftThreadProjectId] = useState<string | null>(null);
+  const [pendingTitleThreadIds, setPendingTitleThreadIds] = useState<Set<string>>(new Set());
   const [timeline, setTimeline] = useState<TimelineState>(createTimelineState());
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [account, setAccount] = useState<AccountResponse | null>(null);
@@ -221,7 +222,6 @@ function KodexShell() {
   const [projectCwd, setProjectCwd] = useState("");
   const [composerText, setComposerText] = useState("");
   const [steerText, setSteerText] = useState("");
-  const [streamStatus, setStreamStatus] = useState<"connected" | "reconnecting" | "closed">("closed");
   const [showDebugEvents, setShowDebugEvents] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("chat");
@@ -229,6 +229,8 @@ function KodexShell() {
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedThread = threads.find((thread) => thread.id === selectedThreadId) ?? null;
+  const isDraftThreadSelected = draftThreadProjectId !== null && draftThreadProjectId === selectedProjectId;
+  const canCompose = selectedThread !== null || isDraftThreadSelected;
 
   useEffect(() => {
     loadInitialState();
@@ -237,6 +239,7 @@ function KodexShell() {
   useEffect(() => {
     const client = createEventStreamClient({
       onEvent: (event) => {
+        applyThreadMetadataEvent(event);
         if (isApprovalEvent(event)) {
           setApprovals((current) => applyApprovalEventWithTombstone(current, event));
         }
@@ -250,6 +253,7 @@ function KodexShell() {
     if (!selectedProjectId) {
       setThreads([]);
       setSelectedThreadId(null);
+      setDraftThreadProjectId(null);
       return;
     }
 
@@ -263,6 +267,7 @@ function KodexShell() {
           return;
         }
         setThreads(nextThreads);
+        setPendingTitleThreadIds((current) => clearAvailableThreadTitles(current, nextThreads));
         setSelectedThreadId((current) =>
           current && nextThreads.some((thread) => thread.id === current) ? current : nextThreads[0]?.id ?? null,
         );
@@ -295,6 +300,7 @@ function KodexShell() {
         }
 
         setApprovals((current) => applyApprovalEventsWithTombstone(current, events));
+        applyThreadMetadataEvents(events);
         const replayedTimeline = replayTimeline(events.filter((event) => !isApprovalEvent(event)));
         setTimeline(replayedTimeline);
         const client = createEventStreamClient({
@@ -304,13 +310,13 @@ function KodexShell() {
             if (event.threadId && event.threadId !== threadId) {
               return;
             }
+            applyThreadMetadataEvent(event);
             if (isApprovalEvent(event)) {
               setApprovals((current) => applyApprovalEventWithTombstone(current, event));
               return;
             }
             setTimeline((current) => applyTimelineEvent(current, event));
           },
-          onStatusChange: setStreamStatus,
         });
         client.connect();
         closeStream = client.close;
@@ -423,18 +429,24 @@ function KodexShell() {
     setSelectedProjectId(projectId);
     setThreads([]);
     setSelectedThreadId(null);
+    setDraftThreadProjectId(null);
     setTimeline(createTimelineState());
-    setStreamStatus("closed");
   }
 
-  async function handleCreateThread() {
+  function handleCreateThread() {
     if (!selectedProjectId) {
       return;
     }
 
-    const thread = await createThread(selectedProjectId);
-    setThreads((current) => [thread, ...current]);
-    setSelectedThreadId(thread.id);
+    setDraftThreadProjectId(selectedProjectId);
+    setSelectedThreadId(null);
+    setTimeline(createTimelineState());
+    setComposerText("");
+  }
+
+  function handleSelectThread(threadId: string) {
+    setDraftThreadProjectId(null);
+    setSelectedThreadId(threadId);
   }
 
   async function handleForkThread() {
@@ -457,12 +469,27 @@ function KodexShell() {
 
   async function handleSubmitTurn(event: FormEvent) {
     event.preventDefault();
-    if (!selectedThreadId || !composerText.trim()) {
+    if (!composerText.trim()) {
       return;
     }
 
     const text = composerText.trim();
-    await startTurn(selectedThreadId, text);
+    if (selectedThreadId) {
+      await startTurn(selectedThreadId, text);
+      setComposerText("");
+      return;
+    }
+
+    if (!isDraftThreadSelected || !selectedProjectId) {
+      return;
+    }
+
+    const thread = await createThread(selectedProjectId);
+    setThreads((current) => [thread, ...current]);
+    setPendingTitleThreadIds((current) => markThreadTitlePending(current, thread));
+    setDraftThreadProjectId(null);
+    setSelectedThreadId(thread.id);
+    await startTurn(thread.id, text);
     setComposerText("");
   }
 
@@ -510,6 +537,43 @@ function KodexShell() {
 
   function replaceThread(thread: ThreadSummary) {
     setThreads((current) => current.map((item) => (item.id === thread.id ? thread : item)));
+    if (isThreadTitleAvailable(thread)) {
+      setPendingTitleThreadIds((current) => {
+        if (!current.has(thread.id)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.delete(thread.id);
+        return next;
+      });
+    }
+  }
+
+  function applyThreadMetadataEvent(event: EventEnvelope) {
+    const update = threadNameUpdateFromEvent(event);
+    if (!update) {
+      return;
+    }
+
+    if (update.name?.trim()) {
+      setThreads((current) =>
+        current.map((thread) => (thread.id === update.threadId ? { ...thread, name: update.name } : thread)),
+      );
+      setPendingTitleThreadIds((current) => {
+        if (!current.has(update.threadId)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.delete(update.threadId);
+        return next;
+      });
+    }
+  }
+
+  function applyThreadMetadataEvents(events: EventEnvelope[]) {
+    for (const event of events) {
+      applyThreadMetadataEvent(event);
+    }
   }
 
   function reportError(error: unknown) {
@@ -655,11 +719,17 @@ function KodexShell() {
                     className="kodex-list-button"
                     data-active={thread.id === selectedThreadId}
                     key={thread.id}
-                    onClick={() => setSelectedThreadId(thread.id)}
+                    onClick={() => handleSelectThread(thread.id)}
                     type="button"
                   >
-                    <Text fw={700} size="sm" lineClamp={2}>
-                      {threadDisplayTitle(thread)}
+                    <Text
+                      c={pendingTitleThreadIds.has(thread.id) ? "dimmed" : undefined}
+                      data-placeholder-title={pendingTitleThreadIds.has(thread.id) ? "true" : undefined}
+                      fw={700}
+                      size="sm"
+                      lineClamp={2}
+                    >
+                      {pendingTitleThreadIds.has(thread.id) ? UI_TEXT.thread.new : threadDisplayTitle(thread)}
                     </Text>
                     <Text size="xs" c="dimmed" lineClamp={1}>
                       {previewText(thread.preview)}
@@ -679,43 +749,59 @@ function KodexShell() {
               {errorMessage}
             </Badge>
           ) : null}
-          {selectedThread ? (
-            <Badge color={streamStatus === "reconnecting" ? "yellow" : "gray"} variant="light">
-              {UI_TEXT.streamStatus} {streamStatus}
-            </Badge>
-          ) : null}
           <Box className="kodex-thread-panel">
-            {selectedThread ? (
+            {selectedThread || isDraftThreadSelected ? (
               <Stack gap="md" h="100%" className="kodex-thread-layout">
                 <Group justify="space-between" wrap="nowrap" className="kodex-thread-header">
                   <Box className="kodex-thread-heading">
-                    <Title order={2} size="h4">
-                      {threadDisplayTitle(selectedThread)}
+                    <Title
+                      c={selectedThread && pendingTitleThreadIds.has(selectedThread.id) ? "dimmed" : undefined}
+                      data-placeholder-title={
+                        selectedThread && pendingTitleThreadIds.has(selectedThread.id) ? "true" : undefined
+                      }
+                      order={2}
+                      size="h4"
+                    >
+                      {selectedThread
+                        ? pendingTitleThreadIds.has(selectedThread.id)
+                          ? UI_TEXT.thread.new
+                          : threadDisplayTitle(selectedThread)
+                        : UI_TEXT.thread.new}
                     </Title>
                     <Text size="sm" c="dimmed">
-                      {selectedProject?.cwd ?? selectedThread.cwd}
+                      {selectedProject?.cwd ?? selectedThread?.cwd}
                     </Text>
                   </Box>
-                  <Group gap="xs" wrap="nowrap">
-                    <Tooltip label={UI_TEXT.thread.fork}>
-                      <ActionIcon aria-label={UI_TEXT.thread.fork} variant="subtle" onClick={handleForkThread}>
-                        <GitFork size={17} />
-                      </ActionIcon>
-                    </Tooltip>
-                    <Tooltip label={UI_TEXT.thread.archive}>
-                      <ActionIcon aria-label={UI_TEXT.thread.archive} variant="subtle" onClick={handleArchiveThread}>
-                        <Archive size={17} />
-                      </ActionIcon>
-                    </Tooltip>
-                  </Group>
+                  {selectedThread ? (
+                    <Group gap="xs" wrap="nowrap">
+                      <Tooltip label={UI_TEXT.thread.fork}>
+                        <ActionIcon aria-label={UI_TEXT.thread.fork} variant="subtle" onClick={handleForkThread}>
+                          <GitFork size={17} />
+                        </ActionIcon>
+                      </Tooltip>
+                      <Tooltip label={UI_TEXT.thread.archive}>
+                        <ActionIcon aria-label={UI_TEXT.thread.archive} variant="subtle" onClick={handleArchiveThread}>
+                          <Archive size={17} />
+                        </ActionIcon>
+                      </Tooltip>
+                    </Group>
+                  ) : null}
                 </Group>
                 <Box className="kodex-timeline-scroll">
-                  <TimelineView
-                    approvals={approvals.filter((approval) => approval.threadId === selectedThread.id)}
-                    onApprovalDecision={handleApprovalDecision}
-                    showDebug={showDebugEvents}
-                    timeline={timeline}
-                  />
+                  {selectedThread ? (
+                    <TimelineView
+                      approvals={approvals.filter((approval) => approval.threadId === selectedThread.id)}
+                      onApprovalDecision={handleApprovalDecision}
+                      showDebug={showDebugEvents}
+                      timeline={timeline}
+                    />
+                  ) : (
+                    <EmptyPanel
+                      icon={<Inbox size={20} />}
+                      title={UI_TEXT.empty.noEventsTitle}
+                      text={UI_TEXT.empty.noEventsText}
+                    />
+                  )}
                 </Box>
               </Stack>
             ) : (
@@ -729,12 +815,12 @@ function KodexShell() {
           <Box component="form" className="kodex-composer" onSubmit={handleSubmitTurn}>
             <Textarea
               aria-label="Message composer"
-              placeholder={selectedThread ? UI_TEXT.composer.placeholder : UI_TEXT.composer.disabledPlaceholder}
+              placeholder={canCompose ? UI_TEXT.composer.placeholder : UI_TEXT.composer.disabledPlaceholder}
               minRows={2}
               autosize
               value={composerText}
               onChange={(event) => setComposerText(event.currentTarget.value)}
-              disabled={!selectedThread}
+              disabled={!canCompose}
             />
             <Group gap="xs" wrap="nowrap">
               <Tooltip label={UI_TEXT.composer.stop}>
@@ -753,7 +839,7 @@ function KodexShell() {
                   aria-label={UI_TEXT.composer.send}
                   size="lg"
                   type="submit"
-                  disabled={!selectedThread || !composerText.trim()}
+                  disabled={!canCompose || !composerText.trim()}
                 >
                   <Send size={18} />
                 </ActionIcon>
@@ -1000,11 +1086,30 @@ function TimelineView({
       {groupTimelineItems(items).map((group) => (
         <Box className="kodex-turn-group" key={group.key}>
           <Stack gap="xs">
-            {group.items.map((item) => {
-              const itemApprovals = approvals.filter((approval) => approval.itemId === item.id);
+            {timelineRenderSegments(group.items).map((segment) => {
+              if (segment.type === "activity") {
+                const itemIds = new Set(segment.items.map((item) => item.id));
+                const activityApprovals = approvals.filter(
+                  (approval) =>
+                    approval.itemId !== undefined && approval.itemId !== null && itemIds.has(approval.itemId),
+                );
+                return (
+                  <Box key={segment.key}>
+                    <TimelineActivityGroupRenderer items={segment.items} showDebug={showDebug} />
+                    {activityApprovals.length > 0 ? (
+                      <Stack gap="xs" mt="xs">
+                        {activityApprovals.map((approval) => (
+                          <ApprovalCard approval={approval} key={approval.id} onDecision={onApprovalDecision} />
+                        ))}
+                      </Stack>
+                    ) : null}
+                  </Box>
+                );
+              }
+              const itemApprovals = approvals.filter((approval) => approval.itemId === segment.item.id);
               return (
-                <Box key={item.id}>
-                  <TimelineItemRenderer item={item} showDebug={showDebug} />
+                <Box key={segment.key}>
+                  <TimelineItemRenderer item={segment.item} showDebug={showDebug} />
                   {itemApprovals.length > 0 ? (
                     <Stack gap="xs" mt="xs">
                       {itemApprovals.map((approval) => (
@@ -1034,6 +1139,47 @@ function groupTimelineItems(items: TimelineState["items"]): Array<{ key: string;
     }
   }
   return groups;
+}
+
+type TimelineRenderSegment =
+  | { type: "activity"; key: string; items: TimelineState["items"] }
+  | { type: "item"; key: string; item: TimelineState["items"][number] };
+
+const timelineActivityKinds = new Set([
+  "command_execution",
+  "dynamic_tool_call",
+  "file_change",
+  "mcp_tool_call",
+  "web_search_group",
+]);
+
+function timelineRenderSegments(items: TimelineState["items"]): TimelineRenderSegment[] {
+  const segments: TimelineRenderSegment[] = [];
+  let activityItems: TimelineState["items"] = [];
+
+  function flushActivityItems() {
+    if (activityItems.length === 0) {
+      return;
+    }
+    segments.push({
+      type: "activity",
+      key: `activity-${activityItems.map((item) => item.id).join("-")}`,
+      items: activityItems,
+    });
+    activityItems = [];
+  }
+
+  for (const item of items) {
+    if (timelineActivityKinds.has(item.kind)) {
+      activityItems.push(item);
+      continue;
+    }
+    flushActivityItems();
+    segments.push({ type: "item", key: item.id, item });
+  }
+
+  flushActivityItems();
+  return segments;
 }
 
 function ApprovalPanel({
@@ -1436,6 +1582,50 @@ function firstQuestionText(payload: Record<string, unknown>): string | null {
 
 function isApprovalEvent(event: EventEnvelope): boolean {
   return event.kind === "approval.created" || event.kind === "approval.resolved";
+}
+
+function threadNameUpdateFromEvent(event: EventEnvelope): { threadId: string; name: string | null } | null {
+  const method = (event.codexMethod ?? "").toLowerCase();
+  if (method !== "thread/nameupdated" && method !== "thread/name_updated") {
+    return null;
+  }
+
+  const payload = asRecord(event.payload);
+  const threadId = event.threadId ?? stringValue(payload.threadId) ?? stringValue(payload.thread_id);
+  if (!threadId) {
+    return null;
+  }
+
+  return {
+    threadId,
+    name: stringValue(payload.threadName) ?? stringValue(payload.thread_name),
+  };
+}
+
+function markThreadTitlePending(current: Set<string>, thread: ThreadSummary): Set<string> {
+  if (isThreadTitleAvailable(thread)) {
+    return current;
+  }
+  const next = new Set(current);
+  next.add(thread.id);
+  return next;
+}
+
+function clearAvailableThreadTitles(current: Set<string>, threads: ThreadSummary[]): Set<string> {
+  let next: Set<string> | null = null;
+  for (const thread of threads) {
+    if (!current.has(thread.id) || !isThreadTitleAvailable(thread)) {
+      continue;
+    }
+    next ??= new Set(current);
+    next.delete(thread.id);
+  }
+  return next ?? current;
+}
+
+function isThreadTitleAvailable(thread: ThreadSummary): boolean {
+  const name = thread.name?.replace(/\s+/g, " ").trim();
+  return Boolean(name && name !== UI_TEXT.thread.new);
 }
 
 function applyApprovalEvents(current: Approval[], events: EventEnvelope[]): Approval[] {

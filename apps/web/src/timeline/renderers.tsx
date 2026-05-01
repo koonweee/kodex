@@ -1,5 +1,5 @@
 import { Badge, Box, Code, Group, Stack, Text } from "@mantine/core";
-import { AlertTriangle, Bot, Code2, FileDiff, Globe, Terminal, User, Wrench } from "lucide-react";
+import { AlertTriangle, Bot, Check, Code2, FileDiff, Globe, Terminal, User, Wrench } from "lucide-react";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -69,6 +69,32 @@ export function TimelineItemRenderer({ item, showDebug = false }: { item: Timeli
       {render(item)}
       {showDebug ? <DebugDisclosure item={item} /> : null}
     </Box>
+  );
+}
+
+export function TimelineActivityGroupRenderer({
+  items,
+  showDebug = false,
+}: {
+  items: TimelineItem[];
+  showDebug?: boolean;
+}) {
+  return (
+    <details className="kodex-activity-group" open>
+      <summary>
+        <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
+          <Terminal size={15} />
+          <Text size="sm" fw={700} className="kodex-activity-group-title" title={activityGroupSummary(items)}>
+            {activityGroupSummary(items)}
+          </Text>
+        </Group>
+      </summary>
+      <Stack gap={8} mt={8}>
+        {items.map((item) => (
+          <ActivityItemRenderer item={item} key={item.id} showDebug={showDebug} />
+        ))}
+      </Stack>
+    </details>
   );
 }
 
@@ -145,28 +171,64 @@ function WebSearchBlock({ actions }: { actions: WebSearchAction[] }) {
   );
 }
 
+function ActivityItemRenderer({ item, showDebug }: { item: TimelineItem; showDebug: boolean }) {
+  const render = rendererRegistry[item.kind] ?? unknownRenderer;
+  if (item.kind === "command_execution") {
+    return (
+      <details className="kodex-activity-item">
+        <summary>
+          <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
+            <Text size="sm" className="kodex-activity-title" title={commandSummary(item)}>
+              {commandSummary(item)}
+            </Text>
+          </Group>
+        </summary>
+        <CommandBlock item={item} />
+        {showDebug ? <DebugDisclosure item={item} /> : null}
+      </details>
+    );
+  }
+
+  return (
+    <details className="kodex-activity-item">
+      <summary>
+        <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
+          <TimelineIcon kind={item.kind} />
+          <Text size="sm" className="kodex-activity-title" title={activityItemSummary(item)}>
+            {activityItemSummary(item)}
+          </Text>
+        </Group>
+      </summary>
+      <Box className="kodex-activity-body">{render(item)}</Box>
+      {showDebug ? <DebugDisclosure item={item} /> : null}
+    </details>
+  );
+}
+
 function CommandBlock({ item }: { item: TimelineItem }) {
   const command = item.command || payloadValue(item.payload, "command");
-  const cwd = item.cwd || payloadValue(item.payload, "cwd");
   const output = item.output || payloadValue(item.payload, "output") || payloadValue(item.payload, "stdout") || payloadValue(item.payload, "stderr");
   return (
-    <Stack gap={6}>
+    <Stack gap={6} className="kodex-command-panel">
+      <Text size="xs" className="kodex-command-shell">
+        Shell
+      </Text>
       {command ? (
         <Code block className="kodex-timeline-code">
-          {command}
+          $ {displayCommand(command)}
         </Code>
       ) : (
         <MessageText text={item.text || "Command"} />
       )}
-      {cwd ? (
-        <Text size="xs" c="dimmed">
-          {cwd}
-        </Text>
-      ) : null}
       {output ? (
         <Code block className="kodex-timeline-output">
           {output}
         </Code>
+      ) : null}
+      {item.status === "completed" ? (
+        <Text size="xs" c="dimmed" className="kodex-activity-status">
+          <Check size={13} /> Success
+        </Text>
       ) : null}
     </Stack>
   );
@@ -257,6 +319,56 @@ function webSearchActionText(action: WebSearchAction): string {
     return target ? `Opened page ${target}` : "Opened page";
   }
   return action.label;
+}
+
+function activityGroupSummary(items: TimelineItem[]): string {
+  const commandCount = items.filter((item) => item.kind === "command_execution").length;
+  const fileCount = items.filter((item) => item.kind === "file_change").length;
+  const webCount = items.filter((item) => item.kind === "web_search_group").length;
+  const toolCount = items.filter((item) => item.kind === "mcp_tool_call" || item.kind === "dynamic_tool_call").length;
+  const parts = [
+    webCount ? "Searched web" : "",
+    fileCount ? fileCount === 1 ? "changed 1 file" : `changed ${fileCount} files` : "",
+    toolCount ? toolCount === 1 ? "used 1 tool" : `used ${toolCount} tools` : "",
+    commandCount ? commandCount === 1 ? "ran 1 command" : `ran ${commandCount} commands` : "",
+  ].filter(Boolean);
+  return parts.length ? sentenceCase(parts.join(", ")) : "Worked";
+}
+
+function commandSummary(item: TimelineItem): string {
+  const command = displayCommand(item.command || payloadValue(item.payload, "command"));
+  if (!command) {
+    return "Ran command";
+  }
+  if (command === "rg --files" || command === "find . -maxdepth 1 -type f" || command === "ls") {
+    return "Listed files";
+  }
+  return `Ran ${command}`;
+}
+
+function activityItemSummary(item: TimelineItem): string {
+  if (item.kind === "file_change") {
+    const path = item.path || payloadValue(item.payload, "path");
+    return path ? `Changed ${path}` : "Changed files";
+  }
+  if (item.kind === "web_search_group") {
+    const count = item.actions?.length ?? 0;
+    return count === 1 ? "Searched web" : `Searched web, ${count} actions`;
+  }
+  if (item.kind === "mcp_tool_call" || item.kind === "dynamic_tool_call") {
+    return item.toolName ? `Used ${item.toolName}` : "Used tool";
+  }
+  return labels[item.kind] ?? "Activity";
+}
+
+function displayCommand(command: string): string {
+  const trimmed = command.trim();
+  const shellMatch = trimmed.match(/^\/usr\/bin\/(?:zsh|bash|sh)\s+-lc\s+(["'])([\s\S]*)\1$/);
+  return shellMatch?.[2] ?? trimmed;
+}
+
+function sentenceCase(value: string): string {
+  return value ? `${value[0].toUpperCase()}${value.slice(1)}` : value;
 }
 
 function payloadValue(payload: unknown, key: string): string {

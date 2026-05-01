@@ -117,7 +117,12 @@ describe("MVP frontend flows", () => {
     FakeEventSource.instances = [];
   });
 
-  it("renders projects and threads, creates a project, and starts a thread", async () => {
+  it("renders projects and threads, creates a project, and starts a draft thread after the first message", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let resolveCreatedThreadEvents: (value: unknown) => void = () => {};
+    const createdThreadEvents = new Promise<unknown>((resolve) => {
+      resolveCreatedThreadEvents = resolve;
+    });
     const gateway = mockGateway(
       baseRoutes({
         "POST /v1/projects": async (request: Request) => ({
@@ -127,7 +132,29 @@ describe("MVP frontend flows", () => {
           createdAt: "2026-04-30T00:00:00Z",
           updatedAt: "2026-04-30T00:00:00Z",
         }),
-        "POST /v1/threads": { thread: { ...thread, id: "thread-2", name: "New thread" }, rawPayload: {} },
+        "GET /v1/events": (request: Request) => {
+          const url = new URL(request.url);
+          return url.searchParams.get("threadId") === "thread-2"
+            ? createdThreadEvents
+            : {
+                events: [
+                  {
+                    id: "event-1",
+                    seq: 1,
+                    kind: "codex",
+                    codexMethod: "item/agentMessage/delta",
+                    projectId: project.id,
+                    threadId: thread.id,
+                    turnId: "turn-1",
+                    itemId: "item-1",
+                    payload: { delta: "Hello from Codex" },
+                    receivedAt: "2026-04-30T00:00:00Z",
+                  },
+                ],
+              };
+        },
+        "POST /v1/threads": { thread: { ...thread, id: "thread-2", name: "New thread", preview: null }, rawPayload: {} },
+        "POST /v1/threads/thread-2/turns": { payload: {} },
       }),
     );
 
@@ -146,9 +173,43 @@ describe("MVP frontend flows", () => {
     });
 
     await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+    expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(0);
+    expect(screen.getAllByRole("button", { name: /new thread/i })).toHaveLength(1);
+    expect(screen.getByRole("heading", { name: /new thread/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
+
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Implement the next milestone");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
     });
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(1);
+    });
+    const draftThreadButtons = await screen.findAllByRole("button", { name: /new thread/i });
+    expect(draftThreadButtons).toHaveLength(2);
+    const draftTitle = within(draftThreadButtons[1]).getByText("New thread");
+    expect(draftTitle).toHaveAttribute("data-placeholder-title", "true");
+
+    act(() => {
+      resolveCreatedThreadEvents({
+        events: [
+          {
+            id: "event-title",
+            seq: 2,
+            kind: "codex.notification",
+            codexMethod: "thread/nameUpdated",
+            projectId: project.id,
+            threadId: "thread-2",
+            payload: { threadId: "thread-2", threadName: "Implement the next milestone" },
+            receivedAt: "2026-04-30T00:00:01Z",
+          },
+        ],
+      });
+    });
+
+    const titledThread = await screen.findByRole("button", { name: /implement the next milestone/i });
+    expect(within(titledThread).getByText("Implement the next milestone")).not.toHaveAttribute("data-placeholder-title");
   });
 
   it("uses preview text as the display title for unnamed threads", async () => {
@@ -395,6 +456,63 @@ describe("MVP frontend flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/interrupt")).toHaveLength(1);
     });
+  });
+
+  it("groups command and search activity into nested timeline collapsibles", async () => {
+    mockGateway(
+      baseRoutes({
+        "GET /v1/events": {
+          events: [
+            {
+              id: "event-command",
+              seq: 1,
+              kind: "codex.notification",
+              codexMethod: "item/completed",
+              projectId: project.id,
+              threadId: thread.id,
+              turnId: "turn-1",
+              itemId: "cmd-1",
+              payload: {
+                item: {
+                  id: "cmd-1",
+                  type: "commandExecution",
+                  command: "pwd",
+                  cwd: "/home/example/kodex",
+                  output: "/home/example/kodex\n",
+                },
+              },
+              receivedAt: "2026-04-30T00:00:00Z",
+            },
+            {
+              id: "event-search",
+              seq: 2,
+              kind: "codex.notification",
+              codexMethod: "item/completed",
+              projectId: project.id,
+              threadId: thread.id,
+              turnId: "turn-1",
+              itemId: "web-1",
+              payload: {
+                item: {
+                  id: "web-1",
+                  type: "webSearch",
+                  action: { type: "search", query: "Codex renderer nested collapsibles" },
+                },
+              },
+              receivedAt: "2026-04-30T00:00:01Z",
+            },
+          ],
+        },
+      }),
+    );
+
+    render(<App />);
+
+    const timeline = await screen.findByRole("main", { name: /thread/i });
+    expect(await within(timeline).findByText("Searched web, ran 1 command")).toBeInTheDocument();
+    expect(within(timeline).getByText("Ran pwd")).toBeInTheDocument();
+    expect(within(timeline).getByText("$ pwd")).toBeInTheDocument();
+    expect(within(timeline).getByText("Searched web")).toBeInTheDocument();
   });
 
   it("posts schema-shaped command, file, permission, MCP, and tool-user-input approval responses", async () => {

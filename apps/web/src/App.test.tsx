@@ -129,6 +129,7 @@ describe("App shell", () => {
     expect(thread.querySelector(".kodex-thread-header")).toBeInTheDocument();
     expect(thread.querySelector(".kodex-timeline-scroll")).toBeInTheDocument();
     expect(thread.querySelector(".kodex-composer")).toBeInTheDocument();
+    expect(within(thread).queryByText(/event stream/i)).not.toBeInTheDocument();
     expect(within(thread).queryByText(/turn\/started/i)).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /status/i }));
