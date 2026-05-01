@@ -65,6 +65,7 @@ function reduceItem(item: TimelineItem, event: EventEnvelope): TimelineItem {
   if (event.codexMethod?.endsWith("/delta")) {
     return {
       ...item,
+      kind: inferItemKind(event, item.kind),
       text: item.text + payloadText(event.payload),
       payload: event.payload,
     };
@@ -73,6 +74,7 @@ function reduceItem(item: TimelineItem, event: EventEnvelope): TimelineItem {
   if (event.codexMethod === "item/completed") {
     return {
       ...item,
+      kind: inferItemKind(event, item.kind),
       status: "completed",
       text: payloadText(event.payload) || item.text,
       payload: event.payload,
@@ -81,7 +83,8 @@ function reduceItem(item: TimelineItem, event: EventEnvelope): TimelineItem {
 
   return {
     ...item,
-    kind: inferItemKind(event),
+    kind: inferItemKind(event, item.kind),
+    text: payloadText(event.payload) || item.text,
     payload: event.payload,
   };
 }
@@ -91,11 +94,11 @@ export function replayTimeline(events: EventEnvelope[]): TimelineState {
 }
 
 function payloadText(payload: unknown): string {
-  if (!payload || typeof payload !== "object") {
+  const record = payloadRecord(payload);
+  if (!record) {
     return "";
   }
 
-  const record = payload as Record<string, unknown>;
   for (const key of ["delta", "text", "message", "content"]) {
     const value = record[key];
     if (typeof value === "string") {
@@ -103,14 +106,27 @@ function payloadText(payload: unknown): string {
     }
   }
 
+  const item = payloadRecord(record.item);
+  if (item) {
+    for (const key of ["text", "message", "content"]) {
+      const value = item[key];
+      if (typeof value === "string") {
+        return value;
+      }
+    }
+  }
+
   return "";
 }
 
-function inferItemKind(event: EventEnvelope): string {
+function inferItemKind(event: EventEnvelope, fallback?: string): string {
   const method = event.codexMethod ?? "";
   const payloadType = payloadString(event.payload, "type");
   const payloadKind = payloadString(event.payload, "kind");
-  const source = `${method} ${payloadType} ${payloadKind}`.toLowerCase();
+  const item = payloadRecord(payloadRecord(event.payload)?.item);
+  const itemType = payloadString(item, "type");
+  const itemKind = payloadString(item, "kind");
+  const source = `${method} ${payloadType} ${payloadKind} ${itemType} ${itemKind}`.toLowerCase();
 
   if (event.kind.toLowerCase().includes("warning") || source.includes("warning")) {
     return "warning";
@@ -142,13 +158,20 @@ function inferItemKind(event: EventEnvelope): string {
   if (source.includes("dynamic")) {
     return "dynamic_tool_call";
   }
-  return method || event.kind;
+  return fallback ?? (method || event.kind);
 }
 
 function payloadString(payload: unknown, key: string): string {
-  if (!payload || typeof payload !== "object") {
+  const record = payloadRecord(payload);
+  if (!record) {
     return "";
   }
-  const value = (payload as Record<string, unknown>)[key];
+  const value = record[key];
   return typeof value === "string" ? value : "";
+}
+
+function payloadRecord(payload: unknown): Record<string, unknown> | null {
+  return payload && typeof payload === "object" && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>)
+    : null;
 }
