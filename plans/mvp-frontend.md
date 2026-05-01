@@ -16,10 +16,20 @@ Build the first Kodex web client in React. The client consumes the Rust gateway 
 - React with Vite and TypeScript under `apps/web`.
 - Vitest and Testing Library for unit/component tests.
 - Playwright for end-to-end flows.
+- Mantine for maintained UI primitives and layout components.
+- `lucide-react` for icons.
 - Fetch-based API client.
 - Browser `EventSource` for SSE.
 - React Query or a small local query layer for request caching. Add a larger state library only after reducer/query state becomes hard to manage.
 - Generated TypeScript API types/client from gateway `/openapi.json` using `openapi-typescript` or an equivalent generator.
+
+## Component Ownership
+
+- Use Mantine components for generic UI primitives such as buttons, forms, drawers, modals, popovers, tooltips, menus, tabs, badges, loaders, alerts, layout helpers, and empty/error states.
+- Use `lucide-react` icons inside icon buttons and status affordances instead of maintaining custom icon SVGs.
+- Own only Kodex-specific components: app shell composition, project/thread navigation, timeline renderer registry and renderers, composer behavior, approval flows, account/model surfaces, and gateway-specific state wiring.
+- Prefer theming and composition over copying third-party component implementations into the repo.
+- Add custom primitives only when the component library cannot reasonably express the required interaction or when repeated Kodex-specific behavior justifies it.
 
 ## Milestone 0: Frontend Scaffold
 
@@ -36,6 +46,8 @@ Implementation:
 - Create `apps/web`.
 - Add Vite React TypeScript setup.
 - Add test setup.
+- Add Mantine and `lucide-react`.
+- Add a minimal app theme and provider setup.
 - Add generated API types/client directory.
 - Add API client module that wraps generated types instead of handwritten duplicate DTOs.
 - Add app layout:
