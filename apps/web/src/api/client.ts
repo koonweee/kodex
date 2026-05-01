@@ -15,6 +15,10 @@ export type ThreadSummary = components["schemas"]["ThreadSummary"];
 export type UserInput = components["schemas"]["UserInput"];
 export type ImageUpload = components["schemas"]["ImageUpload"];
 
+type GatewayErrorBody = {
+  message?: unknown;
+};
+
 const api = createClient<paths>({
   baseUrl: getApiBaseUrl(),
   fetch: (request) => globalThis.fetch(request),
@@ -116,7 +120,7 @@ export async function uploadImages(files: File[]): Promise<ImageUpload[]> {
     body: formData,
   });
   if (!response.ok) {
-    throw new Error("Gateway request failed");
+    throw new Error(await responseErrorMessage(response));
   }
   const body = (await response.json()) as components["schemas"]["ImageUploadResponse"];
   return body.images;
@@ -164,7 +168,26 @@ export async function listModels(): Promise<ModelSummary[]> {
 async function unwrap<T>(request: Promise<{ data?: T; error?: unknown }>): Promise<T> {
   const { data, error } = await request;
   if (error || data === undefined) {
-    throw new Error("Gateway request failed");
+    throw new Error(gatewayErrorMessage(error));
   }
   return data;
+}
+
+function gatewayErrorMessage(error: unknown): string {
+  if (isGatewayErrorBody(error) && typeof error.message === "string") {
+    return error.message;
+  }
+  return "Gateway request failed";
+}
+
+async function responseErrorMessage(response: Response): Promise<string> {
+  try {
+    return gatewayErrorMessage((await response.clone().json()) as unknown);
+  } catch {
+    return "Gateway request failed";
+  }
+}
+
+function isGatewayErrorBody(error: unknown): error is GatewayErrorBody {
+  return typeof error === "object" && error !== null && "message" in error;
 }

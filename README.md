@@ -93,7 +93,7 @@ Default gateway config:
 
 - Bind address: `127.0.0.1:8787`
 - Database path: `~/.kodex/gateway.db`
-- Image upload path: `~/.kodex/uploads/images`
+- Image upload path: `${TMPDIR:-/tmp}/kodex/uploads/images`
 - Codex command: `codex app-server --listen stdio://`
 - Frontend static directory: disabled unless `KODEX_FRONTEND_DIST` points at a built frontend directory
 
@@ -118,6 +118,8 @@ Local routes:
 - Frontend-critical Codex routes such as `GET /v1/threads`, `GET /v1/models`, `GET /v1/account`, `GET /v1/account/rate-limits`, and `POST /v1/account/login` expose typed gateway DTOs with `rawPayload` retained only as an escape hatch for volatile app-server fields.
 
 The gateway has no MVP auth and is intended only for localhost or a trusted VPN. Do not expose it directly to the public internet. ChatGPT/Codex login routes broker Codex/OpenAI auth through app-server APIs; they are not gateway access control. Uploaded image files are local helper assets for app-server input and inherit the same local/trusted-network assumption.
+
+Image uploads default to the system temp directory so Codex app-server can read `localImage` paths from its sandbox. If you override `KODEX_UPLOADS_DIR`, choose a path that app-server can read from the active sandbox profile, such as a project root or `/tmp`.
 
 ## Full-Stack Local Startup
 

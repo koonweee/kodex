@@ -193,10 +193,9 @@ impl AppServer for JsonRpcAppServer {
         match receiver.await {
             Ok(Ok(value)) => Ok(value),
             Ok(Err(error)) if error.code == -32001 => Err(ApiError::Retryable(error.message)),
-            Ok(Err(error)) => Err(ApiError::Other(anyhow::anyhow!(
+            Ok(Err(error)) => Err(ApiError::BadGateway(format!(
                 "app-server error {}: {}",
-                error.code,
-                error.message
+                error.code, error.message
             ))),
             Err(_) => Err(ApiError::AppServerUnavailable),
         }

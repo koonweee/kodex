@@ -63,7 +63,7 @@ impl Default for Config {
                 path: default_data_dir().join("gateway.db"),
             },
             uploads: UploadsConfig {
-                dir: default_data_dir().join("uploads"),
+                dir: default_uploads_dir(),
             },
             frontend: FrontendConfig { dist_dir: None },
         }
@@ -111,6 +111,10 @@ fn default_data_dir() -> PathBuf {
         .unwrap_or_else(|| home_dir().join(".kodex"))
 }
 
+fn default_uploads_dir() -> PathBuf {
+    env::temp_dir().join("kodex").join("uploads")
+}
+
 pub fn expand_home(path: impl AsRef<Path>) -> PathBuf {
     expand_home_path(path.as_ref().to_path_buf())
 }
@@ -156,8 +160,8 @@ mod tests {
     }
 
     #[test]
-    fn default_uploads_live_under_kodex_home() {
+    fn default_uploads_live_under_temp_dir() {
         let path = Config::default().uploads.dir;
-        assert!(path.ends_with(".kodex/uploads"));
+        assert_eq!(path, std::env::temp_dir().join("kodex").join("uploads"));
     }
 }

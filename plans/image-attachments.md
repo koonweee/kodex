@@ -64,13 +64,13 @@ Implementation:
 - Accept multipart form uploads under the `images` field.
 - Validate content type starts with `image/`.
 - Enforce a conservative max file size.
-- Store files under a gateway-owned directory derived from `KODEX_DATA_DIR`, for example `uploads/images`.
+- Store files under a gateway-owned directory that Codex app-server can read from its sandbox. The default is `/tmp/kodex/uploads/images`; `KODEX_UPLOADS_DIR` can override this when the chosen path is app-server-readable.
 - Generate stable random filenames and preserve only a safe extension derived from MIME type.
 - Return `ImageUploadResponse` with id, original file name, MIME type, size, and absolute local path.
 
 Exit conditions:
 
-- Uploaded files are written only under the gateway data directory.
+- Uploaded files are written only under the configured gateway uploads directory.
 - Non-image and oversized uploads fail with `400 Bad Request`.
 - The route is documented through generated OpenAPI.
 
