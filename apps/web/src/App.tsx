@@ -28,7 +28,6 @@ import {
   LogIn,
   MoreHorizontal,
   PanelRightOpen,
-  Play,
   Send,
   Square,
   X,
@@ -174,7 +173,6 @@ const UI_TEXT = {
     archive: "Archive thread",
     fork: "Fork thread",
     new: "New thread",
-    resume: "Resume thread",
     title: "Threads",
     untitled: "Untitled thread",
   },
@@ -329,6 +327,29 @@ function KodexShell() {
     };
   }, [selectedThreadId]);
 
+  useEffect(() => {
+    if (!selectedThread || selectedThread.status !== "notLoaded") {
+      return;
+    }
+
+    let cancelled = false;
+    resumeThread(selectedThread.id)
+      .then((thread) => {
+        if (!cancelled) {
+          replaceThread(thread);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          reportError(error);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedThread?.id, selectedThread?.status]);
+
   const modelOptions = useMemo(
     () => models.map((model) => ({ value: model.id, label: model.displayName })),
     [models],
@@ -416,14 +437,6 @@ function KodexShell() {
     setSelectedThreadId(thread.id);
   }
 
-  async function handleResumeThread() {
-    if (!selectedThreadId) {
-      return;
-    }
-    const thread = await resumeThread(selectedThreadId);
-    upsertThread(thread);
-  }
-
   async function handleForkThread() {
     if (!selectedThreadId) {
       return;
@@ -495,16 +508,8 @@ function KodexShell() {
     setAccount({ requiresOpenaiAuth: true, account: null, rawPayload: {} });
   }
 
-  function upsertThread(thread: ThreadSummary) {
-    setThreads((current) => {
-      const existing = current.findIndex((item) => item.id === thread.id);
-      if (existing < 0) {
-        return [thread, ...current];
-      }
-      const copy = [...current];
-      copy[existing] = thread;
-      return copy;
-    });
+  function replaceThread(thread: ThreadSummary) {
+    setThreads((current) => current.map((item) => (item.id === thread.id ? thread : item)));
   }
 
   function reportError(error: unknown) {
@@ -653,14 +658,9 @@ function KodexShell() {
                     onClick={() => setSelectedThreadId(thread.id)}
                     type="button"
                   >
-                    <Group justify="space-between" wrap="nowrap">
-                      <Text fw={700} size="sm" lineClamp={2}>
-                        {threadDisplayTitle(thread)}
-                      </Text>
-                      <Badge className="kodex-thread-status" size="xs" variant="light">
-                        {threadStatusLabel(thread.status)}
-                      </Badge>
-                    </Group>
+                    <Text fw={700} size="sm" lineClamp={2}>
+                      {threadDisplayTitle(thread)}
+                    </Text>
                     <Text size="xs" c="dimmed" lineClamp={1}>
                       {previewText(thread.preview)}
                     </Text>
@@ -697,11 +697,6 @@ function KodexShell() {
                     </Text>
                   </Box>
                   <Group gap="xs" wrap="nowrap">
-                    <Tooltip label={UI_TEXT.thread.resume}>
-                      <ActionIcon aria-label={UI_TEXT.thread.resume} variant="subtle" onClick={handleResumeThread}>
-                        <Play size={17} />
-                      </ActionIcon>
-                    </Tooltip>
                     <Tooltip label={UI_TEXT.thread.fork}>
                       <ActionIcon aria-label={UI_TEXT.thread.fork} variant="subtle" onClick={handleForkThread}>
                         <GitFork size={17} />
@@ -1524,10 +1519,6 @@ function truncateTitle(value: string | null): string | null {
     return null;
   }
   return normalized.length > 72 ? `${normalized.slice(0, 69)}...` : normalized;
-}
-
-function threadStatusLabel(status: string): string {
-  return status.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (letter) => letter.toUpperCase());
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

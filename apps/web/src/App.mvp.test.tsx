@@ -176,6 +176,40 @@ describe("MVP frontend flows", () => {
     expect(screen.queryByText("019de25f-9ac3-72b1-adf6-a108f82d1fb6")).not.toBeInTheDocument();
   });
 
+  it("hides thread loading state and resumes not-loaded threads on selection", async () => {
+    const notLoadedThread = {
+      ...secondThread,
+      status: "notLoaded",
+    };
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, notLoadedThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "POST /v1/threads/thread-2/resume": {
+          thread: { ...notLoadedThread, status: "idle" },
+          rawPayload: {},
+        },
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /resume thread/i })).not.toBeInTheDocument();
+    expect(container.querySelector(".kodex-thread-status")).not.toBeInTheDocument();
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/resume")).toHaveLength(0);
+
+    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/resume")).toHaveLength(1);
+    });
+  });
+
   it("provides a compact panel switcher for narrow viewports", async () => {
     mockGateway(baseRoutes());
 

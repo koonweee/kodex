@@ -132,11 +132,6 @@ body {
   background: #203330;
 }
 
-.kodex-thread-status {
-  flex: 0 0 auto;
-  max-width: none;
-}
-
 .kodex-approval-card {
   display: grid;
   gap: 8px;
