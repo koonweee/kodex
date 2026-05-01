@@ -38,6 +38,24 @@ cargo run -p kodex-gateway
 apps/gateway/scripts/generate-app-server-schema.sh
 ```
 
+API-only development:
+
+```bash
+cargo run -p kodex-gateway
+```
+
+Full-stack serving uses the gateway's static frontend hook. After a frontend build exists, point the gateway at the build directory:
+
+```bash
+KODEX_FRONTEND_DIST=apps/web/dist cargo run -p kodex-gateway
+```
+
+Production-style configuration can start from `apps/gateway/config/production.env.example`. With a gateway already running, run the smoke check with:
+
+```bash
+apps/gateway/scripts/smoke.sh http://127.0.0.1:8787
+```
+
 Default gateway config:
 
 - Bind address: `127.0.0.1:8787`

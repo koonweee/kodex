@@ -853,6 +853,7 @@ mod tests {
     };
     use http_body_util::BodyExt;
     use serde_json::json;
+    use tempfile::tempdir;
     use tokio::time::{timeout, Duration};
     use tower::ServiceExt;
 
@@ -1573,6 +1574,77 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn frontend_static_serving_returns_index_and_api_routes_win() {
+        let (mut state, _) = test_state().await;
+        let dist = tempdir().unwrap();
+        std::fs::write(
+            dist.path().join("index.html"),
+            "<!doctype html><title>Kodex UI</title><main>Kodex UI</main>",
+        )
+        .unwrap();
+        state.config = Arc::new(Config {
+            frontend: crate::config::FrontendConfig {
+                dist_dir: Some(dist.path().to_path_buf()),
+            },
+            ..Config::default()
+        });
+        let app = build_router(state);
+
+        let root = app
+            .clone()
+            .oneshot(Request::get("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(root.status(), StatusCode::OK);
+        assert!(response_text(root).await.contains("Kodex UI"));
+
+        let fallback = app
+            .clone()
+            .oneshot(
+                Request::get("/threads/thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(fallback.status(), StatusCode::OK);
+        assert!(response_text(fallback).await.contains("Kodex UI"));
+
+        let health = app
+            .oneshot(Request::get("/healthz").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(health.status(), StatusCode::OK);
+        assert_eq!(response_json(health).await["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn missing_frontend_build_keeps_api_only_development_working() {
+        let (mut state, _) = test_state().await;
+        let dist = tempdir().unwrap();
+        state.config = Arc::new(Config {
+            frontend: crate::config::FrontendConfig {
+                dist_dir: Some(dist.path().join("missing")),
+            },
+            ..Config::default()
+        });
+        let app = build_router(state);
+
+        let health = app
+            .clone()
+            .oneshot(Request::get("/healthz").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(health.status(), StatusCode::OK);
+
+        let fallback = app
+            .oneshot(Request::get("/not-an-api").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(fallback.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
     async fn event_replay_returns_persisted_events() {
         let (state, _) = test_state().await;
         state
@@ -1661,6 +1733,11 @@ mod tests {
     async fn response_json(response: axum::response::Response) -> Value {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         serde_json::from_slice(&body).unwrap()
+    }
+
+    async fn response_text(response: axum::response::Response) -> String {
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        String::from_utf8(body.to_vec()).unwrap()
     }
 
     fn assert_ok(response: axum::response::Response) {

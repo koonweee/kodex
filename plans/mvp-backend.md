@@ -400,7 +400,7 @@ Exit conditions:
 
 ## Milestone 8: Frontend Static Serving and Release Readiness
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
