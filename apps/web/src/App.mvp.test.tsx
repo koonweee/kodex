@@ -110,6 +110,12 @@ function baseRoutes(overrides = {}) {
   };
 }
 
+function timelineElement(container: HTMLElement) {
+  const element = container.querySelector<HTMLElement>(".kodex-timeline-scroll");
+  expect(element).not.toBeNull();
+  return element!;
+}
+
 describe("MVP frontend flows", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -622,6 +628,141 @@ describe("MVP frontend flows", () => {
     });
   });
 
+  it("optimistically renders text sends before the turn request resolves", async () => {
+    let resolveTurn: (value: unknown) => void = () => undefined;
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads/thread-1/turns": () =>
+          new Promise((resolve) => {
+            resolveTurn = resolve;
+          }),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Ship it");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    expect(await screen.findByText("Ship it")).toBeInTheDocument();
+    expect(screen.getByText("Sending")).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+
+    act(() => resolveTurn({ payload: {} }));
+    await waitFor(() => {
+      expect(screen.queryByText("Sending")).not.toBeInTheDocument();
+    });
+  });
+
+  it("removes failed optimistic text sends before retrying from the restored composer", async () => {
+    let turnAttempts = 0;
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads/thread-1/turns": () => {
+          turnAttempts += 1;
+          if (turnAttempts === 1) {
+            throw new Error("start turn failed");
+          }
+          return { payload: {} };
+        },
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Retry text");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+    });
+    expect(await screen.findByText(/gateway request failed|start turn failed/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toHaveValue("Retry text");
+    expect(within(timelineElement(container)).queryByText("Retry text")).not.toBeInTheDocument();
+    expect(within(timelineElement(container)).queryByText("Failed")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(2);
+      expect(screen.queryByText("Sending")).not.toBeInTheDocument();
+    });
+    expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
+    expect(within(timelineElement(container)).getAllByText("Retry text")).toHaveLength(1);
+    expect(within(timelineElement(container)).queryByText("Failed")).not.toBeInTheDocument();
+  });
+
+  it("keeps composer editing disabled during a pending text send and restores retry text on failure", async () => {
+    let rejectTurn: (reason?: unknown) => void = () => undefined;
+    mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads/thread-1/turns": () =>
+          new Promise((_resolve, reject) => {
+            rejectTurn = reject;
+          }),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "Retry text");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    expect(await screen.findByText("Retry text")).toBeInTheDocument();
+    expect(composer).toBeDisabled();
+    await userEvent.type(composer, "New draft");
+    expect(composer).toHaveValue("");
+
+    await act(async () => {
+      rejectTurn(new Error("start turn failed"));
+    });
+
+    expect(await screen.findByText(/gateway request failed|start turn failed/i)).toBeInTheDocument();
+    expect(composer).toBeEnabled();
+    expect(composer).toHaveValue("Retry text");
+  });
+
+  it("does not restore failed text send retry state after switching threads", async () => {
+    let rejectTurn: (reason?: unknown) => void = () => undefined;
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads/thread-1/turns": () =>
+          new Promise((_resolve, reject) => {
+            rejectTurn = reject;
+          }),
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Retry in first thread");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    expect(await screen.findByText("Retry in first thread")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+
+    await act(async () => {
+      rejectTurn(new Error("start turn failed"));
+    });
+
+    expect(await screen.findByText(/gateway request failed|start turn failed/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
+    expect(within(timelineElement(container)).queryByText("Retry in first thread")).not.toBeInTheDocument();
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(0);
+  });
+
   it("attaches image files, uploads them on send, and posts local image inputs", async () => {
     const gateway = mockGateway(
       baseRoutes({
@@ -654,6 +795,168 @@ describe("MVP frontend flows", () => {
         { type: "localImage", path: "/tmp/diagram.png" },
       ],
     });
+  });
+
+  it("optimistically renders image sends while upload is pending", async () => {
+    let resolveUpload: (value: unknown) => void = () => undefined;
+    const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:pending-diagram");
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/uploads/images": () =>
+          new Promise((resolve) => {
+            resolveUpload = resolve;
+          }),
+        "POST /v1/threads/thread-1/turns": { payload: {} },
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    await userEvent.upload(input!, new File(["fake"], "diagram.png", { type: "image/png" }));
+    expect(createObjectUrl).toHaveBeenCalled();
+    expect(createObjectUrl).toHaveBeenCalledTimes(1);
+
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    expect(await screen.findByText("Inspect this")).toBeInTheDocument();
+    expect(screen.getByText("Uploading")).toBeInTheDocument();
+    expect(input).toBeDisabled();
+    fireEvent.change(input!, {
+      target: { files: [new File(["fake"], "second-diagram.png", { type: "image/png" })] },
+    });
+    expect(createObjectUrl).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: /remove second-diagram.png/i })).not.toBeInTheDocument();
+    expect(container.querySelector(".kodex-user-image-grid img")).toHaveAttribute("src", "blob:pending-diagram");
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(0);
+
+    act(() =>
+      resolveUpload({
+        images: [{ id: "upload-1", fileName: "diagram.png", mimeType: "image/png", sizeBytes: 4, path: "/tmp/diagram.png" }],
+      }),
+    );
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+      expect(screen.queryByText("Uploading")).not.toBeInTheDocument();
+    });
+  });
+
+  it("optimistically renders draft thread image sends before upload resolves", async () => {
+    let resolveUpload: (value: unknown) => void = () => undefined;
+    const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:draft-diagram");
+    const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL");
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads": { thread: { ...thread, id: "thread-2", name: "New thread", preview: null }, rawPayload: {} },
+        "POST /v1/uploads/images": () =>
+          new Promise((resolve) => {
+            resolveUpload = resolve;
+          }),
+        "POST /v1/threads/thread-2/turns": { payload: {} },
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+    expect(screen.getByRole("heading", { name: /new thread/i })).toBeInTheDocument();
+
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    await userEvent.upload(input!, new File(["fake"], "diagram.png", { type: "image/png" }));
+    expect(createObjectUrl).toHaveBeenCalled();
+
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    expect(await screen.findByText("Inspect this")).toBeInTheDocument();
+    expect(screen.getByText("Uploading")).toBeInTheDocument();
+    expect(container.querySelector(".kodex-user-image-grid img")).toHaveAttribute("src", "blob:draft-diagram");
+    expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(0);
+    expect(revokeObjectUrl).not.toHaveBeenCalledWith("blob:draft-diagram");
+
+    act(() =>
+      resolveUpload({
+        images: [{ id: "upload-1", fileName: "diagram.png", mimeType: "image/png", sizeBytes: 4, path: "/tmp/diagram.png" }],
+      }),
+    );
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(1);
+      expect(screen.queryByText("Uploading")).not.toBeInTheDocument();
+    });
+  });
+
+  it("keeps failed draft thread image uploads visible and retryable", async () => {
+    let rejectUpload: (reason?: unknown) => void = () => undefined;
+    let uploadAttempts = 0;
+    const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:draft-retry-diagram");
+    const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL");
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads": { thread: { ...thread, id: "thread-2", name: "New thread", preview: null }, rawPayload: {} },
+        "POST /v1/uploads/images": () => {
+          uploadAttempts += 1;
+          if (uploadAttempts === 1) {
+            return new Promise((_resolve, reject) => {
+              rejectUpload = reject;
+            });
+          }
+          return {
+            images: [
+              { id: "upload-1", fileName: "diagram.png", mimeType: "image/png", sizeBytes: 4, path: "/tmp/diagram.png" },
+            ],
+          };
+        },
+        "POST /v1/threads/thread-2/turns": { payload: {} },
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    await userEvent.upload(input!, new File(["fake"], "diagram.png", { type: "image/png" }));
+    expect(createObjectUrl).toHaveBeenCalled();
+
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    expect(await screen.findByText("Inspect this")).toBeInTheDocument();
+    expect(screen.getByText("Uploading")).toBeInTheDocument();
+    expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(0);
+    expect(revokeObjectUrl).not.toHaveBeenCalledWith("blob:draft-retry-diagram");
+
+    await act(async () => {
+      rejectUpload(new Error("Upload unavailable"));
+    });
+
+    expect(await screen.findByText("Failed")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /remove diagram.png/i })).toBeInTheDocument();
+    expect(screen.getByText("Upload unavailable")).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toHaveValue("Inspect this");
+    expect(within(timelineElement(container)).queryByText("Inspect this")).not.toBeInTheDocument();
+    expect(revokeObjectUrl).not.toHaveBeenCalledWith("blob:draft-retry-diagram");
+
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(2);
+      expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(1);
+    });
+    expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
+    expect(within(timelineElement(container)).getAllByText("Inspect this")).toHaveLength(1);
   });
 
   it("keeps failed uploads visible and retryable", async () => {
@@ -690,6 +993,8 @@ describe("MVP frontend flows", () => {
     expect(await screen.findByText("Failed")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /remove diagram.png/i })).toBeInTheDocument();
     expect(screen.getByText("Upload unavailable")).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toHaveValue("Inspect this");
+    expect(within(timelineElement(container)).queryByText("Inspect this")).not.toBeInTheDocument();
     expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(0);
 
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
@@ -699,6 +1004,101 @@ describe("MVP frontend flows", () => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
     });
     expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
+    expect(within(timelineElement(container)).getAllByText("Inspect this")).toHaveLength(1);
+  });
+
+  it("does not restore failed image upload retry state after switching threads", async () => {
+    let rejectUpload: (reason?: unknown) => void = () => undefined;
+    const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:switched-diagram");
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/events": { events: [] },
+        "POST /v1/uploads/images": () =>
+          new Promise((_resolve, reject) => {
+            rejectUpload = reject;
+          }),
+        "POST /v1/threads/thread-1/turns": { payload: {} },
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    await userEvent.upload(input!, new File(["fake"], "diagram.png", { type: "image/png" }));
+    expect(createObjectUrl).toHaveBeenCalled();
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    expect(await screen.findByText("Inspect this")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+
+    await act(async () => {
+      rejectUpload(new Error("Upload unavailable"));
+    });
+
+    expect(await screen.findByText("Upload unavailable")).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
+    expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
+    expect(within(timelineElement(container)).queryByText("Inspect this")).not.toBeInTheDocument();
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(0);
+  });
+
+  it("removes failed optimistic image sends after upload before retrying the turn start", async () => {
+    let turnAttempts = 0;
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/uploads/images": {
+          images: [{ id: "upload-1", fileName: "diagram.png", mimeType: "image/png", sizeBytes: 4, path: "/tmp/diagram.png" }],
+        },
+        "POST /v1/threads/thread-1/turns": () => {
+          turnAttempts += 1;
+          if (turnAttempts === 1) {
+            throw new Error("start turn failed");
+          }
+          return { payload: {} };
+        },
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    await userEvent.upload(input!, new File(["fake"], "diagram.png", { type: "image/png" }));
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+    });
+    expect(await screen.findByText(/gateway request failed|start turn failed/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toHaveValue("Inspect this");
+    expect(screen.getByRole("button", { name: /remove diagram.png/i })).toBeInTheDocument();
+    expect(within(timelineElement(container)).queryByText("Inspect this")).not.toBeInTheDocument();
+    expect(within(timelineElement(container)).queryByText("Failed")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(2);
+      expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
+    });
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/turns")[1])).resolves.toEqual({
+      input: [
+        { type: "text", text: "Inspect this" },
+        { type: "localImage", path: "/tmp/diagram.png" },
+      ],
+    });
+    expect(within(timelineElement(container)).getAllByText("Inspect this")).toHaveLength(1);
+    expect(within(timelineElement(container)).queryByText("Failed")).not.toBeInTheDocument();
   });
 
   it("keeps sent image previews renderable after pending attachments are cleared", async () => {
@@ -829,7 +1229,7 @@ describe("MVP frontend flows", () => {
     await userEvent.click(within(rows[0]).getByRole("button", { name: /steer/i }));
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/steer")).toHaveLength(1);
-      expect(screen.queryByText("Add tests")).not.toBeInTheDocument();
+      expect(within(screen.getByRole("region", { name: /queued steer messages/i })).queryByText("Add tests")).not.toBeInTheDocument();
     });
     expect(screen.getByText("Keep scope tight")).toBeInTheDocument();
 
@@ -890,7 +1290,7 @@ describe("MVP frontend flows", () => {
     await userEvent.click(within(screen.getByRole("region", { name: /queued steer messages/i })).getByRole("button", { name: /steer/i }));
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/steer")).toHaveLength(2);
-      expect(screen.queryByText("Retry this")).not.toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: /queued steer messages/i })).not.toBeInTheDocument();
     });
   });
 

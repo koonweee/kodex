@@ -1,6 +1,8 @@
 import type { EventEnvelope } from "../api/client";
 
 export type TimelineStatus = "running" | "completed" | "failed" | "waiting" | "cancelled" | "approval_required";
+export type TimelineItemSource = "app_server" | "optimistic";
+export type TimelineConfirmationState = "uploading" | "sending" | "sent" | "failed";
 
 export type WebSearchAction =
   | { kind: "search"; query: string }
@@ -9,6 +11,7 @@ export type WebSearchAction =
 
 export type TimelineItem = {
   id: string;
+  serverItemId?: string;
   kind: string;
   status: TimelineStatus;
   text: string;
@@ -28,12 +31,26 @@ export type TimelineItem = {
   summary?: string;
   toolName?: string;
   images?: TimelineImage[];
+  source?: TimelineItemSource;
+  clientRequestId?: string;
+  confirmationState?: TimelineConfirmationState;
+  error?: string;
 };
 
 export type TimelineImage = {
   url?: string;
   path?: string;
 };
+
+export type OptimisticUserMessageInput = {
+  clientRequestId: string;
+  text: string;
+  images: TimelineImage[];
+  turnId: string | null;
+  confirmationState: TimelineConfirmationState;
+};
+
+export type OptimisticUserMessageUpdate = Partial<Pick<TimelineItem, "confirmationState" | "error" | "images" | "turnId">>;
 
 export type TimelineTurn = {
   turnId: string;
@@ -192,6 +209,10 @@ function orderedItems(itemIds: string[], indexes: TimelineIndexes): TimelineItem
   return items;
 }
 
+function timelineItems(indexes: TimelineIndexes): TimelineItem[] {
+  return orderedItems(indexes.itemIds, indexes);
+}
+
 function orderedTurns(turnIds: string[], indexes: TimelineIndexes): TimelineTurn[] {
   const turns: TimelineTurn[] = [];
   for (const turnId of turnIds) {
@@ -243,13 +264,114 @@ export function applyTimelineEvent(state: TimelineState, event: EventEnvelope): 
   if (existing) {
     next.indexes.itemUpdatesById.set(presentation.item.id, mergeTimelineItem(existing, presentation.item, event));
   } else {
+    const confirmedItem =
+      presentation.item.kind === "user_message" ? matchingConfirmedUserMessage(next.indexes, presentation.item) : undefined;
+    const optimisticItem = confirmedItem
+      ? undefined
+      : presentation.item.kind === "user_message"
+        ? matchingOptimisticUserMessage(next.indexes, presentation.item)
+        : undefined;
     const pendingItem = pendingTimelineItemById(next.indexes, presentation.item.id);
-    const item = pendingItem ? mergeTimelineItem(pendingItem, presentation.item, event) : presentation.item;
+    const item = confirmedItem
+      ? confirmAppServerUserMessage(confirmedItem, presentation.item, event)
+      : optimisticItem
+        ? confirmOptimisticUserMessage(optimisticItem, presentation.item, event)
+        : pendingItem
+          ? mergeTimelineItem(pendingItem, presentation.item, event)
+          : presentation.item;
+    if (confirmedItem) {
+      next.indexes.itemUpdatesById.set(confirmedItem.id, item);
+      return createTimelineStateFromDraft(next);
+    }
+    if (optimisticItem) {
+      next.indexes.itemUpdatesById.set(optimisticItem.id, item);
+      return createTimelineStateFromDraft(next);
+    }
     next.indexes.pendingItemById.delete(presentation.item.id);
     addItem(next, item);
     addToTurn(next, item);
   }
   compactTimelineStores(next.indexes);
+
+  return createTimelineStateFromDraft(next);
+}
+
+export function addOptimisticUserMessage(state: TimelineState, input: OptimisticUserMessageInput): TimelineState {
+  const next: TimelineDraft = {
+    activeTurnId: state.activeTurnId,
+    indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    lastSeq: state.lastSeq,
+  };
+  const item: TimelineItem = {
+    id: `optimistic-${input.clientRequestId}`,
+    kind: "user_message",
+    status: input.confirmationState === "failed" ? "failed" : "completed",
+    text: input.text,
+    turnId: input.turnId,
+    seq: nextOptimisticSeq(state, next.indexes),
+    payload: { optimistic: true },
+    debugEvents: [],
+    images: input.images,
+    source: "optimistic",
+    clientRequestId: input.clientRequestId,
+    confirmationState: input.confirmationState,
+  };
+  addItem(next, item);
+  addToTurn(next, item);
+  return createTimelineStateFromDraft(next);
+}
+
+export function updateOptimisticUserMessage(
+  state: TimelineState,
+  clientRequestId: string,
+  update: OptimisticUserMessageUpdate,
+): TimelineState {
+  const next: TimelineDraft = {
+    activeTurnId: state.activeTurnId,
+    indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    lastSeq: state.lastSeq,
+  };
+  const item = timelineItems(next.indexes).find((candidate) => candidate.clientRequestId === clientRequestId);
+  if (!item) {
+    return state;
+  }
+  const confirmationState = update.confirmationState ?? item.confirmationState;
+  next.indexes.itemUpdatesById.set(item.id, {
+    ...item,
+    ...update,
+    status: confirmationState === "failed" ? "failed" : "completed",
+  });
+  return createTimelineStateFromDraft(next);
+}
+
+export function removeOptimisticUserMessage(state: TimelineState, clientRequestId: string): TimelineState {
+  const next: TimelineDraft = {
+    activeTurnId: state.activeTurnId,
+    indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    lastSeq: state.lastSeq,
+  };
+  const item = timelineItems(next.indexes).find(
+    (candidate) => candidate.source === "optimistic" && candidate.clientRequestId === clientRequestId,
+  );
+  if (!item) {
+    return state;
+  }
+
+  next.indexes.itemIds = next.indexes.itemIds.filter((itemId) => itemId !== item.id);
+  next.indexes.itemUpdatesById.delete(item.id);
+  next.indexes.pendingItemById.delete(item.id);
+  if (item.turnId) {
+    const turn = timelineTurnById(next.indexes, item.turnId);
+    if (turn) {
+      const itemIds = turn.itemIds.filter((itemId) => itemId !== item.id);
+      if (itemIds.length > 0) {
+        next.indexes.turnUpdatesById.set(item.turnId, { ...turn, itemIds });
+      } else {
+        next.indexes.turnIds = next.indexes.turnIds.filter((turnId) => turnId !== item.turnId);
+        next.indexes.turnUpdatesById.delete(item.turnId);
+      }
+    }
+  }
 
   return createTimelineStateFromDraft(next);
 }
@@ -455,6 +577,66 @@ function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event
     toolName: incoming.toolName || existing.toolName,
     text,
   };
+}
+
+function matchingOptimisticUserMessage(indexes: TimelineIndexes, incoming: TimelineItem): TimelineItem | undefined {
+  return timelineItems(indexes).find(
+    (item) =>
+      item.source === "optimistic" &&
+      item.kind === "user_message" &&
+      item.confirmationState !== "failed" &&
+      (!item.turnId || !incoming.turnId || item.turnId === incoming.turnId) &&
+      item.text === incoming.text &&
+      imagesMatch(item.images ?? [], incoming.images ?? []),
+  );
+}
+
+function matchingConfirmedUserMessage(indexes: TimelineIndexes, incoming: TimelineItem): TimelineItem | undefined {
+  return timelineItems(indexes).find(
+    (item) =>
+      item.source === "app_server" &&
+      item.kind === "user_message" &&
+      item.serverItemId === incoming.id &&
+      (!item.turnId || !incoming.turnId || item.turnId === incoming.turnId),
+  );
+}
+
+function confirmOptimisticUserMessage(existing: TimelineItem, incoming: TimelineItem, event: EventEnvelope): TimelineItem {
+  return confirmAppServerUserMessage(existing, incoming, event);
+}
+
+function confirmAppServerUserMessage(existing: TimelineItem, incoming: TimelineItem, event: EventEnvelope): TimelineItem {
+  return {
+    ...mergeTimelineItem(existing, incoming, event),
+    id: existing.id,
+    serverItemId: existing.serverItemId ?? incoming.id,
+    source: "app_server",
+    confirmationState: "sent",
+    error: undefined,
+    status: incoming.status,
+    turnId: incoming.turnId || existing.turnId,
+  };
+}
+
+function imagesMatch(existing: TimelineImage[], incoming: TimelineImage[]): boolean {
+  if (incoming.length === 0) {
+    return existing.length === 0;
+  }
+  if (existing.length !== incoming.length) {
+    return false;
+  }
+  const existingKeys = existing.map(imageKey).sort();
+  const incomingKeys = incoming.map(imageKey).sort();
+  return existingKeys.every((key, index) => key === incomingKeys[index]);
+}
+
+function imageKey(image: TimelineImage): string {
+  return image.path || image.url || "";
+}
+
+function nextOptimisticSeq(state: TimelineState, indexes: TimelineIndexes): number {
+  const maxItemSeq = timelineItems(indexes).reduce((max, item) => Math.max(max, item.seq), state.lastSeq);
+  return maxItemSeq + 0.1;
 }
 
 function isCommandOutputDelta(event: EventEnvelope): boolean {

@@ -712,6 +712,16 @@ body {
   max-width: min(78%, 680px);
 }
 
+.kodex-user-message-status {
+  max-width: 100%;
+  color: #a7bdb9;
+  text-align: right;
+}
+
+.kodex-user-message-status[data-state="failed"] {
+  color: #ffb4a8;
+}
+
 .kodex-user-image-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(72px, 96px));

@@ -109,6 +109,24 @@ describe("timeline renderer registry", () => {
     expect(document.querySelector(".kodex-user-image-grid img")).toHaveAttribute("src", "blob:kodex-test");
   });
 
+  it("renders subtle optimistic user message status", () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "user_message",
+            text: "Ship it",
+            source: "optimistic",
+            confirmationState: "sending",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("Ship it")).toBeInTheDocument();
+    expect(screen.getByText("Sending")).toBeInTheDocument();
+  });
+
   it("renders user messages as a right-aligned bubble and preserves newlines", () => {
     const { container } = render(
       <MantineProvider>

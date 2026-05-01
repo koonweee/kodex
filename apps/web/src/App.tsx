@@ -89,7 +89,15 @@ import {
   type TimelineRow,
 } from "./timeline/derive";
 import { TimelineActivityGroupRenderer, TimelineItemRenderer } from "./timeline/renderers";
-import { createTimelineState, replayTimeline, type TimelineState } from "./timeline/reducer";
+import {
+  addOptimisticUserMessage,
+  createTimelineState,
+  removeOptimisticUserMessage,
+  replayTimeline,
+  updateOptimisticUserMessage,
+  type TimelineImage,
+  type TimelineState,
+} from "./timeline/reducer";
 import "./App.css";
 
 const theme = createTheme({
@@ -203,6 +211,13 @@ type QueuedSteerRow = {
   id: string;
   text: string;
   attachments: PendingAttachment[];
+  isSubmitting?: boolean;
+};
+type ComposerContext = {
+  activeSelectedTurnId: string | null;
+  draftThreadProjectId: string | null;
+  selectedProjectId: string | null;
+  selectedThreadId: string | null;
 };
 type PendingAttachment = {
   id: string;
@@ -268,6 +283,7 @@ function KodexShell() {
   const [projectCwd, setProjectCwd] = useState("");
   const [composerText, setComposerText] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [isComposerSubmitting, setIsComposerSubmitting] = useState(false);
   const [isComposerDragActive, setIsComposerDragActive] = useState(false);
   const [imagePreviewUrlsByPath, setImagePreviewUrlsByPath] = useState<Record<string, string>>({});
   const [queuedSteerRows, setQueuedSteerRows] = useState<QueuedSteerRow[]>([]);
@@ -284,7 +300,10 @@ function KodexShell() {
   const nextThreadRequestId = useRef(0);
   const nextQueuedSteerId = useRef(0);
   const nextAttachmentId = useRef(0);
+  const nextOptimisticMessageId = useRef(0);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const composerContextRef = useRef<ComposerContext | null>(null);
+  const latestComposerContextRef = useRef<ComposerContext | null>(null);
   const imagePreviewUrlsByPathRef = useRef<Record<string, string>>({});
 
   const selectedProjectThreads = selectedProjectId ? threadsByProjectId[selectedProjectId] ?? [] : [];
@@ -302,7 +321,8 @@ function KodexShell() {
   const hasActiveSelectedTurn = activeSelectedTurnId !== null;
   const isDraftThreadSelected = draftThreadProjectId !== null && draftThreadProjectId === selectedProjectId;
   const canCompose = selectedThread !== null || isDraftThreadSelected;
-  const canSubmitComposer = canCompose && (Boolean(composerText.trim()) || pendingAttachments.length > 0);
+  const canSubmitComposer =
+    canCompose && !isComposerSubmitting && (Boolean(composerText.trim()) || pendingAttachments.length > 0);
   const shouldShowStopAction = hasActiveSelectedTurn && !canSubmitComposer;
   const selectedThreadTitle = selectedThread
     ? pendingTitleThreadIds.has(selectedThread.id)
@@ -315,6 +335,23 @@ function KodexShell() {
   }, []);
 
   useEffect(() => {
+    const nextContext = { activeSelectedTurnId, draftThreadProjectId, selectedProjectId, selectedThreadId };
+    const previousContext = composerContextRef.current;
+    composerContextRef.current = nextContext;
+    latestComposerContextRef.current = nextContext;
+    if (
+      previousContext &&
+      previousContext.activeSelectedTurnId === activeSelectedTurnId &&
+      previousContext.draftThreadProjectId === draftThreadProjectId &&
+      previousContext.selectedProjectId === selectedProjectId &&
+      previousContext.selectedThreadId === selectedThreadId
+    ) {
+      return;
+    }
+    if (isComposerSubmitting) {
+      return;
+    }
+
     setQueuedSteerRows((current) => {
       for (const row of current) {
         for (const attachment of row.attachments) {
@@ -324,7 +361,7 @@ function KodexShell() {
       return [];
     });
     clearPendingAttachments();
-  }, [selectedThreadId, activeSelectedTurnId]);
+  }, [selectedProjectId, selectedThreadId, draftThreadProjectId, activeSelectedTurnId, isComposerSubmitting]);
 
   useEffect(() => {
     if (!isSidebarResizing) {
@@ -453,6 +490,12 @@ function KodexShell() {
           selectedThreadId && nextThreads.some((thread) => thread.id === selectedThreadId)
             ? selectedThreadId
             : nextThreads[0]?.id ?? null;
+        latestComposerContextRef.current = {
+          activeSelectedTurnId: null,
+          draftThreadProjectId: null,
+          selectedProjectId: projectId,
+          selectedThreadId: nextThreadId,
+        };
         if (nextThreadId) {
           beginTimelineEntry(nextThreadId);
         } else {
@@ -511,6 +554,12 @@ function KodexShell() {
     const nextThreads = threadsByProjectId[projectId];
     if (nextThreads) {
       const nextThreadId = nextThreads[0]?.id ?? null;
+      latestComposerContextRef.current = {
+        activeSelectedTurnId: null,
+        draftThreadProjectId: null,
+        selectedProjectId: projectId,
+        selectedThreadId: nextThreadId,
+      };
       if (nextThreadId) {
         beginTimelineEntry(nextThreadId);
       } else {
@@ -519,12 +568,24 @@ function KodexShell() {
       setSelectedThreadId(nextThreadId);
       return;
     }
+    latestComposerContextRef.current = {
+      activeSelectedTurnId: null,
+      draftThreadProjectId: null,
+      selectedProjectId: projectId,
+      selectedThreadId: null,
+    };
     clearTimelineEntry();
     void loadProjectThreads(projectId, { selectWhenLoaded: true });
   }
 
   function handleCreateThread(projectId: string) {
     selectedProjectIdRef.current = projectId;
+    latestComposerContextRef.current = {
+      activeSelectedTurnId: null,
+      draftThreadProjectId: projectId,
+      selectedProjectId: projectId,
+      selectedThreadId: null,
+    };
     setSelectedProjectId(projectId);
     setDraftThreadProjectId(projectId);
     setSelectedThreadId(null);
@@ -537,6 +598,12 @@ function KodexShell() {
       return;
     }
     selectedProjectIdRef.current = projectId;
+    latestComposerContextRef.current = {
+      activeSelectedTurnId: null,
+      draftThreadProjectId: null,
+      selectedProjectId: projectId,
+      selectedThreadId: threadId,
+    };
     setSelectedProjectId(projectId);
     setDraftThreadProjectId(null);
     beginTimelineEntry(threadId);
@@ -560,40 +627,91 @@ function KodexShell() {
     }
 
     const text = composerText.trim();
+    const attachments = pendingAttachments;
     if (selectedThreadId && activeSelectedTurnId) {
       const id = `queued-steer-${nextQueuedSteerId.current + 1}`;
       nextQueuedSteerId.current += 1;
-      const attachments = pendingAttachments;
       setQueuedSteerRows((current) => [...current, { id, text, attachments }]);
       setComposerText("");
       setPendingAttachments([]);
       return;
     }
 
+    const optimisticImages = attachmentPreviewImages(attachments);
+    const initialConfirmationState = attachments.length > 0 ? "uploading" : "sending";
+    let optimisticClientRequestId: string | null = null;
+    let retryRestoreContext: ComposerContext = {
+      activeSelectedTurnId,
+      draftThreadProjectId,
+      selectedProjectId,
+      selectedThreadId,
+    };
+    setIsComposerSubmitting(true);
     try {
       if (selectedThreadId) {
-        const input = await buildTurnInput(text, pendingAttachments);
-        await startTurn(selectedThreadId, input);
+        optimisticClientRequestId = addOptimisticMessage(text, optimisticImages, null, initialConfirmationState);
         setComposerText("");
+        const input = await buildTurnInput(text, attachments);
+        const uploadedImages = userInputImages(input);
+        if (uploadedImages.length > 0) {
+          updateOptimisticMessage(optimisticClientRequestId, {
+            images: uploadedImages,
+            confirmationState: "sending",
+            error: undefined,
+          });
+        }
+        await startTurn(selectedThreadId, input);
+        updateOptimisticMessage(optimisticClientRequestId, { confirmationState: "sent", error: undefined });
         clearPendingAttachments();
+        setIsComposerSubmitting(false);
         return;
       }
 
       if (!isDraftThreadSelected || !selectedProjectId) {
+        setIsComposerSubmitting(false);
         return;
       }
 
-      const input = await buildTurnInput(text, pendingAttachments);
       const thread = await createThread(selectedProjectId);
       setThreadsByProjectId((current) => prependThreadForProject(current, selectedProjectId, thread));
       setPendingTitleThreadIds((current) => markThreadTitlePending(current, thread));
       setDraftThreadProjectId(null);
       beginTimelineEntry(thread.id);
       setSelectedThreadId(thread.id);
-      await startTurn(thread.id, input);
+      retryRestoreContext = {
+        activeSelectedTurnId: null,
+        draftThreadProjectId: null,
+        selectedProjectId,
+        selectedThreadId: thread.id,
+      };
+      latestComposerContextRef.current = retryRestoreContext;
+      composerContextRef.current = retryRestoreContext;
+      optimisticClientRequestId = addOptimisticMessage(text, optimisticImages, null, initialConfirmationState);
       setComposerText("");
+      const input = await buildTurnInput(text, attachments);
+      const uploadedImages = userInputImages(input);
+      if (uploadedImages.length > 0) {
+        updateOptimisticMessage(optimisticClientRequestId, {
+          images: uploadedImages,
+          confirmationState: "sending",
+          error: undefined,
+        });
+      }
+      await startTurn(thread.id, input);
+      updateOptimisticMessage(optimisticClientRequestId, { confirmationState: "sent", error: undefined });
       clearPendingAttachments();
+      setIsComposerSubmitting(false);
     } catch (error) {
+      if (optimisticClientRequestId) {
+        const clientRequestId = optimisticClientRequestId;
+        setTimeline((current) => removeOptimisticUserMessage(current, clientRequestId));
+      }
+      if (sameComposerContext(latestComposerContextRef.current, retryRestoreContext)) {
+        setComposerText(text);
+      } else {
+        clearPendingAttachments();
+      }
+      setIsComposerSubmitting(false);
       reportError(error);
     }
   }
@@ -611,14 +729,36 @@ function KodexShell() {
       return;
     }
 
+    const optimisticClientRequestId = addOptimisticMessage(
+      row.text,
+      attachmentPreviewImages(row.attachments),
+      activeSelectedTurnId,
+      row.attachments.length > 0 ? "uploading" : "sending",
+    );
+    setQueuedSteerRows((current) =>
+      current.map((item) => (item.id === row.id ? { ...item, isSubmitting: true } : item)),
+    );
     try {
       const input = await buildTurnInput(row.text, row.attachments);
+      const uploadedImages = userInputImages(input);
+      if (uploadedImages.length > 0) {
+        updateOptimisticMessage(optimisticClientRequestId, {
+          images: uploadedImages,
+          confirmationState: "sending",
+          error: undefined,
+        });
+      }
       await steerTurn(selectedThreadId, activeSelectedTurnId, input);
+      updateOptimisticMessage(optimisticClientRequestId, { confirmationState: "sent", error: undefined });
       for (const attachment of row.attachments) {
         releaseAttachmentObjectUrl(attachment);
       }
       setQueuedSteerRows((current) => current.filter((item) => item.id !== row.id));
     } catch (error) {
+      setTimeline((current) => removeOptimisticUserMessage(current, optimisticClientRequestId));
+      setQueuedSteerRows((current) =>
+        current.map((item) => (item.id === row.id ? { ...item, isSubmitting: false } : item)),
+      );
       reportError(error);
     }
   }
@@ -728,13 +868,58 @@ function KodexShell() {
     revokeObjectUrl(attachment.objectUrl);
   }
 
+  function addOptimisticMessage(
+    text: string,
+    images: TimelineImage[],
+    turnId: string | null,
+    confirmationState: "uploading" | "sending" | "sent" | "failed",
+  ) {
+    nextOptimisticMessageId.current += 1;
+    const clientRequestId = `client-message-${nextOptimisticMessageId.current}`;
+    setTimeline((current) =>
+      addOptimisticUserMessage(current, {
+        clientRequestId,
+        text,
+        images,
+        turnId,
+        confirmationState,
+      }),
+    );
+    return clientRequestId;
+  }
+
+  function updateOptimisticMessage(clientRequestId: string, update: Parameters<typeof updateOptimisticUserMessage>[2]) {
+    setTimeline((current) => updateOptimisticUserMessage(current, clientRequestId, update));
+  }
+
+  function attachmentPreviewImages(attachments: PendingAttachment[]): TimelineImage[] {
+    return attachments.map((attachment) => ({ url: attachment.objectUrl }));
+  }
+
+  function userInputImages(input: UserInput[]): TimelineImage[] {
+    const images: TimelineImage[] = [];
+    for (const item of input) {
+      if (item.type === "localImage") {
+        images.push({ path: item.path });
+      }
+      if (item.type === "image") {
+        images.push({ url: item.url });
+      }
+    }
+    return images;
+  }
+
   function handleAttachmentInputChange(event: ReactChangeEvent<HTMLInputElement>) {
+    if (!canCompose || isComposerSubmitting) {
+      event.currentTarget.value = "";
+      return;
+    }
     appendImageFiles(event.currentTarget.files);
     event.currentTarget.value = "";
   }
 
   function appendImageFiles(fileList: FileList | File[] | null) {
-    if (!fileList) {
+    if (!fileList || isComposerSubmitting) {
       return;
     }
     const files = Array.from(fileList).filter((file) => file.type.startsWith("image/"));
@@ -756,6 +941,9 @@ function KodexShell() {
   }
 
   function removePendingAttachment(id: string) {
+    if (isComposerSubmitting) {
+      return;
+    }
     setPendingAttachments((current) => {
       const removed = current.find((attachment) => attachment.id === id);
       if (removed) {
@@ -775,7 +963,7 @@ function KodexShell() {
   }
 
   function handleComposerDragOver(event: ReactDragEvent<HTMLElement>) {
-    if (!canCompose || !hasImageFiles(event.dataTransfer)) {
+    if (!canCompose || isComposerSubmitting || !hasImageFiles(event.dataTransfer)) {
       return;
     }
     event.preventDefault();
@@ -789,7 +977,7 @@ function KodexShell() {
   }
 
   function handleComposerDrop(event: ReactDragEvent<HTMLElement>) {
-    if (!canCompose || !hasImageFiles(event.dataTransfer)) {
+    if (!canCompose || isComposerSubmitting || !hasImageFiles(event.dataTransfer)) {
       return;
     }
     event.preventDefault();
@@ -1168,9 +1356,10 @@ function KodexShell() {
                 type="file"
                 accept="image/*"
                 multiple
+                disabled={!canCompose || isComposerSubmitting}
                 onChange={handleAttachmentInputChange}
               />
-              {pendingAttachments.length > 0 ? (
+              {pendingAttachments.length > 0 && !isComposerSubmitting ? (
                 <AttachmentTray attachments={pendingAttachments} onRemove={removePendingAttachment} />
               ) : null}
               <Textarea
@@ -1181,9 +1370,13 @@ function KodexShell() {
                 maxRows={10}
                 autosize
                 value={composerText}
-                onChange={(event) => setComposerText(event.currentTarget.value)}
+                onChange={(event) => {
+                  if (!isComposerSubmitting) {
+                    setComposerText(event.currentTarget.value);
+                  }
+                }}
                 onKeyDown={handleComposerKeyDown}
-                disabled={!canCompose}
+                disabled={!canCompose || isComposerSubmitting}
                 variant="unstyled"
               />
               {isComposerDragActive ? (
@@ -1200,12 +1393,17 @@ function KodexShell() {
                       size="md"
                       type="button"
                       variant="subtle"
+                      disabled={!canCompose || isComposerSubmitting}
                     >
                       <Plus size={16} />
                     </ActionIcon>
                   </Menu.Target>
                   <Menu.Dropdown aria-label={UI_TEXT.composer.attachments}>
-                    <Menu.Item leftSection={<Paperclip size={14} />} onClick={() => attachmentInputRef.current?.click()}>
+                    <Menu.Item
+                      disabled={!canCompose || isComposerSubmitting}
+                      leftSection={<Paperclip size={14} />}
+                      onClick={() => attachmentInputRef.current?.click()}
+                    >
                       {UI_TEXT.composer.addAttachment}
                     </Menu.Item>
                   </Menu.Dropdown>
@@ -1352,8 +1550,6 @@ function useSelectedThreadTimeline({
     let closeStream: (() => void) | null = null;
     const streamToken = selectedThreadStreamToken.current + 1;
     selectedThreadStreamToken.current = streamToken;
-    beginEntry(threadId);
-
     listEvents(threadId)
       .then((events) => {
         if (cancelled) {
@@ -1362,8 +1558,9 @@ function useSelectedThreadTimeline({
 
         setApprovals((current) => latestCallbacks.current.onApprovalEvents(current, events));
         latestCallbacks.current.onThreadMetadataEvents(events);
-        const replayedTimeline = replayTimeline(events.filter((event) => !isApprovalEvent(event)));
-        setTimeline(replayedTimeline);
+        const timelineEvents = events.filter((event) => !isApprovalEvent(event));
+        const replayedTimeline = replayTimeline(timelineEvents);
+        setTimeline((current) => applyTimelineEventBatch(current, timelineEvents));
         markEntryAligning(threadId);
         const client = createEventStreamClient({
           cursor: replayedTimeline.lastSeq,
@@ -1443,9 +1640,14 @@ function QueuedSteerCard({
   onSubmitRow: (row: QueuedSteerRow) => void;
   rows: QueuedSteerRow[];
 }) {
+  const visibleRows = rows.filter((row) => !row.isSubmitting);
+  if (visibleRows.length === 0) {
+    return null;
+  }
+
   return (
     <Box aria-label={UI_TEXT.turn.queueLabel} className="kodex-queued-steer" role="region">
-      {rows.map((row) => (
+      {visibleRows.map((row) => (
         <Box
           aria-label={UI_TEXT.turn.queueRow}
           className="kodex-queued-steer-row"
@@ -2787,6 +2989,15 @@ function threadNeedsApproval(thread: ThreadSummary, approvals: Approval[]): bool
 
 function threadStatusNeedsApproval(thread: ThreadSummary): boolean {
   return typeof thread.status === "string" && thread.status.toLowerCase().includes("approval");
+}
+
+function sameComposerContext(left: ComposerContext | null, right: ComposerContext): boolean {
+  return (
+    left?.activeSelectedTurnId === right.activeSelectedTurnId &&
+    left.draftThreadProjectId === right.draftThreadProjectId &&
+    left.selectedProjectId === right.selectedProjectId &&
+    left.selectedThreadId === right.selectedThreadId
+  );
 }
 
 function accountInitial(label: string): string {

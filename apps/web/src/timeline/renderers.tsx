@@ -186,9 +186,27 @@ function UserMessageBubble({
             {item.text}
           </Text>
         ) : null}
+        {item.confirmationState && item.confirmationState !== "sent" ? (
+          <Text size="xs" className="kodex-user-message-status" data-state={item.confirmationState}>
+            {optimisticStatusText(item)}
+          </Text>
+        ) : null}
       </Box>
     </Box>
   );
+}
+
+function optimisticStatusText(item: TimelineItem): string {
+  if (item.confirmationState === "uploading") {
+    return "Uploading";
+  }
+  if (item.confirmationState === "sending") {
+    return "Sending";
+  }
+  if (item.confirmationState === "failed") {
+    return item.error ? `Failed: ${item.error}` : "Failed";
+  }
+  return "";
 }
 
 const AssistantMessageMarkdown = memo(
