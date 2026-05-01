@@ -56,7 +56,7 @@ Implementation:
   - left sidebar
   - main thread panel
   - bottom composer placeholder
-  - right approval drawer placeholder
+  - thread-owned approval indicators
 
 Documentation:
 
@@ -213,16 +213,17 @@ Status: Complete
 
 Failing tests first:
 
-- Pending approvals render in the drawer.
-- Command approval shows command, cwd, reason, and parsed actions when present.
+- Pending approvals render inside their owning thread.
+- Command approval shows command and parsed actions when present.
 - Accept posts the correct decision.
 - Decline posts the correct decision.
 - Resolved approval disappears from pending list.
 
 Implementation:
 
-- Approval drawer.
+- Thread cards show a `Needs approval` badge when the thread is blocked by pending approvals.
 - Inline approval cards in timeline when `threadId` and `itemId` match.
+- Thread-level approval cards render pending approvals whose timeline anchor is missing or not loaded.
 - Renderers for:
   - command execution approval
   - file change approval
@@ -234,7 +235,7 @@ Implementation:
   - accept for session when available
   - decline
   - cancel when available
-- Pending approval badge in sidebar.
+- Pending approval badge in the thread selector.
 
 API dependencies:
 
@@ -253,7 +254,7 @@ Exit conditions:
 
 - Approval UI tests pass for pending, accept, decline, and resolved states.
 - Command, file-change, permission, MCP elicitation, and tool user-input approval shapes have renderers.
-- Approval drawer and inline approval cards both use the same approval state.
+- Thread selector badges and in-thread approval cards both use the same approval state.
 - Decision submissions use generated-client-compatible payloads.
 - Resolved approvals leave the pending view without requiring a full page reload.
 

@@ -148,7 +148,7 @@ describe("timeline renderer registry", () => {
   });
 
   it("renders supporting timeline activity as a nested collapsible group", () => {
-    render(
+    const { container } = render(
       <MantineProvider>
         <TimelineActivityGroupRenderer
           items={[
@@ -175,6 +175,7 @@ describe("timeline renderer registry", () => {
       </MantineProvider>,
     );
 
+    expect(container.querySelector(".kodex-activity-group")).not.toHaveAttribute("open");
     expect(screen.getByText("Searched web, ran 2 commands")).toBeInTheDocument();
     expect(screen.getByText("Ran pwd")).toBeInTheDocument();
     expect(screen.getByText("Listed files")).toBeInTheDocument();

@@ -14,50 +14,57 @@ body {
   color: #f2f2f2;
 }
 
-.kodex-header {
-  border-bottom: 1px solid #2b2b2b;
-  background: #151515;
-}
-
-.kodex-mark {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  border: 1px solid #434343;
-  border-radius: 8px;
-  background: #202020;
-  color: #cdeee6;
-  font-weight: 800;
-}
-
-.kodex-sidebar,
-.kodex-approvals {
+.kodex-sidebar {
   border-color: #2b2b2b;
   background: #171717;
+}
+
+.kodex-sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -5px;
+  bottom: 0;
+  z-index: 3;
+  width: 10px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.kodex-sidebar-resize-handle::after {
+  position: absolute;
+  top: 0;
+  right: 4px;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+  content: "";
+}
+
+.kodex-sidebar-resize-handle:hover::after,
+.kodex-sidebar-resize-handle:focus-visible::after,
+.kodex-shell[data-sidebar-resizing="true"] .kodex-sidebar-resize-handle::after {
+  background: #5cc8b6;
+}
+
+.kodex-sidebar-resize-handle:focus-visible {
+  outline: 2px solid #5cc8b6;
+  outline-offset: -2px;
+}
+
+.kodex-shell[data-sidebar-resizing="true"],
+.kodex-shell[data-sidebar-resizing="true"] * {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .kodex-main {
   background: #1f1f1f;
 }
 
-.kodex-thread-panel {
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  max-width: 100%;
-  min-height: 0;
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  border: 1px solid #383838;
-  border-radius: 8px;
-  padding: 16px;
-  background: #202020;
-}
-
-.kodex-thread-layout {
+.kodex-main-stack {
   width: 100%;
   max-width: 100%;
   min-height: 0;
@@ -67,6 +74,7 @@ body {
 .kodex-thread-header {
   flex: 0 0 auto;
   min-width: 0;
+  margin-top: 4px;
 }
 
 .kodex-thread-heading {
@@ -85,7 +93,19 @@ body {
   min-width: 0;
   flex: 1;
   overflow: auto;
-  padding-right: 2px;
+}
+
+.kodex-timeline-content {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding-top: 4px;
+}
+
+.kodex-thread-empty {
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
 }
 
 .kodex-composer {
@@ -142,6 +162,124 @@ body {
   background: #203330;
 }
 
+.kodex-project-group {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.kodex-project-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+
+.kodex-project-select-button {
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.kodex-project-select-button:hover {
+  background: #242424;
+}
+
+.kodex-project-select-button[data-active="true"] {
+  color: #d9f5ef;
+}
+
+.kodex-project-select-button svg {
+  color: #9a9a9a;
+}
+
+.kodex-project-thread-list {
+  padding-left: 21px;
+}
+
+.kodex-thread-list-button {
+  border-color: transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: transparent;
+}
+
+.kodex-thread-list-button:hover {
+  border-color: transparent;
+  background: #242424;
+}
+
+.kodex-thread-list-button[data-active="true"] {
+  border-color: transparent;
+  background: #203330;
+}
+
+.kodex-thread-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  width: 100%;
+  min-width: 0;
+}
+
+.kodex-thread-list-row[data-has-approval="true"] {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--mantine-spacing-xs);
+}
+
+.kodex-thread-list-title {
+  width: 100%;
+  min-width: 0;
+}
+
+.kodex-sidebar-scroll {
+  min-height: 0;
+}
+
+.kodex-sidebar-footer {
+  margin-top: auto;
+  border-top: 1px solid #303030;
+  padding-top: 12px;
+}
+
+.kodex-account-summary {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.kodex-account-avatar {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  color: #cdeee6;
+  font-weight: 800;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.kodex-settings-button {
+  flex: 0 0 auto;
+  color: #c9c9c9;
+}
+
+.kodex-thread-approval-badge {
+  flex: 0 0 auto;
+  max-width: 112px;
+}
+
 .kodex-approval-card {
   display: grid;
   gap: 8px;
@@ -160,8 +298,6 @@ body {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  border-left: 1px solid #373737;
-  padding-left: 10px;
 }
 
 .kodex-timeline-item {
@@ -173,10 +309,7 @@ body {
   max-width: 100%;
   min-width: 0;
   overflow: hidden;
-  border: 1px solid #343434;
-  border-radius: 8px;
-  padding: 10px;
-  background: #1d1d1d;
+  padding: 8px 0;
 }
 
 .kodex-activity-group {
@@ -187,16 +320,15 @@ body {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  border: 1px solid #343434;
-  border-radius: 8px;
-  padding: 10px;
-  background: #1d1d1d;
+  padding: 8px 0;
 }
 
 .kodex-activity-group > summary,
 .kodex-activity-item > summary {
-  display: inline-flex;
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr) 16px;
   align-items: center;
+  gap: 6px;
   width: fit-content;
   max-width: 100%;
   cursor: pointer;
@@ -209,17 +341,18 @@ body {
   display: none;
 }
 
-.kodex-activity-group > summary::after,
-.kodex-activity-item > summary::after {
-  flex: 0 0 auto;
-  content: "⌄";
-  margin-left: 8px;
+.kodex-activity-caret {
+  width: 16px;
+  height: 16px;
   color: #9a9a9a;
+  flex: 0 0 auto;
+  transform-origin: center;
+  transition: transform 120ms ease;
 }
 
-.kodex-activity-group:not([open]) > summary::after,
-.kodex-activity-item:not([open]) > summary::after {
-  content: "›";
+.kodex-activity-group[open] > summary .kodex-activity-caret,
+.kodex-activity-item[open] > summary .kodex-activity-caret {
+  transform: rotate(90deg);
 }
 
 .kodex-activity-item {
@@ -295,8 +428,7 @@ body {
 .kodex-timeline-item-assistant_message,
 .kodex-timeline-item-user_message,
 .kodex-timeline-item-agent_message {
-  border-color: #3f4745;
-  background: #222625;
+  background: transparent;
 }
 
 .kodex-timeline-item-header {
@@ -433,10 +565,6 @@ body {
   color: #f4f4f4;
 }
 
-.kodex-status-button {
-  color: #c9c9c9;
-}
-
 .kodex-debug-toggle {
   width: 100%;
   border: 0;
@@ -478,48 +606,14 @@ body {
 }
 
 @media (max-width: 900px) {
-  .kodex-header {
-    height: 56px;
-  }
-
-  .kodex-header .mantine-Title-root {
-    font-size: 20px;
-  }
-
-  .kodex-header-controls {
-    min-width: 0;
-    flex: 1;
-    justify-content: flex-end;
-  }
-
-  .kodex-header-controls .mantine-Select-root {
-    width: 72px !important;
-  }
-
-  .kodex-header-controls .mantine-Badge-root,
-  .kodex-header-controls .mantine-Button-label {
-    max-width: 72px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .kodex-account-secondary {
-    display: none;
-  }
-
-  .kodex-status-button .mantine-Button-label {
-    display: none;
-  }
-
   .kodex-mobile-switcher {
     position: fixed;
     z-index: 99;
-    top: 56px;
+    top: 0;
     right: 0;
     left: 0;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 4px;
     padding: 8px;
     border-bottom: 1px solid #2b2b2b;
@@ -527,10 +621,9 @@ body {
   }
 
   .kodex-sidebar,
-  .kodex-main,
-  .kodex-approvals {
+  .kodex-main {
     position: fixed !important;
-    inset: 105px 0 0 0 !important;
+    inset: 49px 0 0 0 !important;
     display: none !important;
     width: auto !important;
     height: auto !important;
@@ -539,18 +632,17 @@ body {
     transform: none !important;
   }
 
+  .kodex-sidebar-resize-handle {
+    display: none;
+  }
+
   .kodex-shell[data-mobile-panel="threads"] .kodex-sidebar,
-  .kodex-shell[data-mobile-panel="chat"] .kodex-main,
-  .kodex-shell[data-mobile-panel="approvals"] .kodex-approvals {
+  .kodex-shell[data-mobile-panel="chat"] .kodex-main {
     display: block !important;
   }
 
-  .kodex-main > .mantine-Stack-root {
-    height: calc(100dvh - 129px) !important;
-  }
-
-  .kodex-thread-panel {
-    padding: 12px;
+  .kodex-main-stack {
+    height: calc(100dvh - 73px) !important;
   }
 
   .kodex-composer,
@@ -560,8 +652,11 @@ body {
 }
 
 @media (min-width: 901px) {
-  .kodex-main > .mantine-Stack-root {
+  .kodex-main-column,
+  .kodex-timeline-content {
+    width: 100%;
     max-width: 900px;
-    margin: 0 auto;
+    margin-right: auto;
+    margin-left: auto;
   }
 }

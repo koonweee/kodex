@@ -237,6 +237,121 @@ describe("MVP frontend flows", () => {
     expect(screen.queryByText("019de25f-9ac3-72b1-adf6-a108f82d1fb6")).not.toBeInTheDocument();
   });
 
+  it("groups threads under their projects in the sidebar", async () => {
+    const otherProject = {
+      ...project,
+      id: "project-2",
+      name: "Scratch",
+      cwd: "/tmp/scratch",
+    };
+    mockGateway(
+      baseRoutes({
+        "GET /v1/projects": { projects: [project, otherProject] },
+        "GET /v1/threads": (request: Request) => {
+          const url = new URL(request.url);
+          return url.searchParams.get("projectId") === "project-2"
+            ? {
+                threads: [{ ...secondThread, projectId: "project-2" }],
+                nextCursor: null,
+                backwardsCursor: null,
+                rawPayload: {},
+              }
+            : { threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} };
+        },
+      }),
+    );
+
+    render(<App />);
+
+    const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
+    expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+
+    const scratchGroup = await screen.findByRole("group", { name: /scratch/i });
+    expect(within(scratchGroup).getByRole("button", { name: /second thread/i })).toBeInTheDocument();
+  });
+
+  it("marks threads that need approval and renders their approvals inside the thread", async () => {
+    const blockedThread = {
+      ...secondThread,
+      status: "waitingOnApproval",
+    };
+    const unanchoredApproval = {
+      id: "approval-thread-owned",
+      requestId: "request-thread-owned",
+      threadId: blockedThread.id,
+      turnId: "turn-2",
+      itemId: "missing-item",
+      method: "item/commandExecution/requestApproval",
+      status: "pending",
+      payload: { command: "cargo test", cwd: "/home/example/kodex", reason: "Verify changes" },
+      response: null,
+      createdAt: "2026-04-30T00:00:00Z",
+      resolvedAt: null,
+    };
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, blockedThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "GET /v1/approvals": { approvals: [unanchoredApproval] },
+        "GET /v1/events": {
+          events: [
+            {
+              id: "event-second-thread-message",
+              seq: 1,
+              kind: "codex",
+              codexMethod: "item/agentMessage/delta",
+              projectId: project.id,
+              threadId: blockedThread.id,
+              turnId: "turn-2",
+              itemId: "item-visible",
+              payload: { delta: "Waiting for approval" },
+              receivedAt: "2026-04-30T00:00:00Z",
+            },
+          ],
+        },
+      }),
+    );
+
+    render(<App />);
+
+    const blockedThreadButton = await screen.findByRole("button", { name: /second thread/i });
+    expect(within(blockedThreadButton).getByText(/needs approval/i)).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: /approvals/i })).not.toBeInTheDocument();
+
+    await userEvent.click(blockedThreadButton);
+
+    const threadView = await screen.findByRole("main", { name: /thread/i });
+    expect(await within(threadView).findByText(/cargo test/i)).toBeInTheDocument();
+    expect(within(threadView).queryByText(/verify changes/i)).not.toBeInTheDocument();
+  });
+
+  it("shows compact thread actions without fork or path subtitle", async () => {
+    const gateway = mockGateway(
+      baseRoutes({
+        "POST /v1/threads/thread-1/archive": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const main = await screen.findByRole("main", { name: /thread/i });
+    expect(within(main).queryByText(project.cwd)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /fork thread/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /archive thread/i })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /thread actions/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /archive thread/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/archive")).toHaveLength(1);
+    });
+  });
+
   it("hides thread loading state and resumes not-loaded threads on selection", async () => {
     const notLoadedThread = {
       ...secondThread,
@@ -279,7 +394,7 @@ describe("MVP frontend flows", () => {
     const panelSwitcher = await screen.findByRole("tablist", { name: /mobile panels/i });
     expect(within(panelSwitcher).getByRole("tab", { name: /threads/i })).toHaveAttribute("aria-selected", "false");
     expect(within(panelSwitcher).getByRole("tab", { name: /chat/i })).toHaveAttribute("aria-selected", "true");
-    expect(within(panelSwitcher).getByRole("tab", { name: /approvals/i })).toHaveAttribute("aria-selected", "false");
+    expect(within(panelSwitcher).queryByRole("tab", { name: /approvals/i })).not.toBeInTheDocument();
 
     await userEvent.click(within(panelSwitcher).getByRole("tab", { name: /threads/i }));
     expect(within(panelSwitcher).getByRole("tab", { name: /threads/i })).toHaveAttribute("aria-selected", "true");
@@ -508,6 +623,7 @@ describe("MVP frontend flows", () => {
 
     render(<App />);
 
+    await screen.findByRole("heading", { name: /implement frontend/i });
     const timeline = await screen.findByRole("main", { name: /thread/i });
     expect(await within(timeline).findByText("Searched web, ran 1 command")).toBeInTheDocument();
     expect(within(timeline).getByText("Ran pwd")).toBeInTheDocument();
@@ -589,23 +705,22 @@ describe("MVP frontend flows", () => {
 
     render(<App />);
 
-    const approvals = await screen.findByRole("complementary", { name: /approvals/i });
+    await screen.findByRole("heading", { name: /implement frontend/i });
     const timeline = await screen.findByRole("main", { name: /thread/i });
-    expect(within(approvals).getByText(/cargo test/i)).toBeInTheDocument();
     expect(within(timeline).getByText(/cargo test/i)).toBeInTheDocument();
-    expect(within(approvals).getByText(/src\/app\.tsx/i)).toBeInTheDocument();
-    expect(within(approvals).getByText(/needs network access/i)).toBeInTheDocument();
-    expect(within(approvals).getByText(/share workspace metadata/i)).toBeInTheDocument();
-    const permissionCard = within(approvals)
+    expect(within(timeline).getByText(/src\/app\.tsx/i)).toBeInTheDocument();
+    expect(within(timeline).getByText(/needs network access/i)).toBeInTheDocument();
+    expect(within(timeline).getByText(/share workspace metadata/i)).toBeInTheDocument();
+    const permissionCard = within(timeline)
       .getByText(/needs network access/i)
       .closest(".kodex-approval-card") as HTMLElement;
     expect(within(permissionCard).queryByRole("button", { name: /decline approval/i })).not.toBeInTheDocument();
     expect(within(permissionCard).queryByRole("button", { name: /cancel approval/i })).not.toBeInTheDocument();
-    await userEvent.click(within(approvals).getAllByRole("button", { name: /accept approval/i })[0]);
-    await userEvent.click(within(approvals).getAllByRole("button", { name: /accept for session/i })[0]);
-    await userEvent.click(within(approvals).getByRole("button", { name: /grant approval/i }));
-    await userEvent.click(within(approvals).getAllByRole("button", { name: /decline approval/i })[0]);
-    await userEvent.click(within(approvals).getByRole("button", { name: /submit answers/i }));
+    await userEvent.click(within(timeline).getAllByRole("button", { name: /accept approval/i })[0]);
+    await userEvent.click(within(timeline).getAllByRole("button", { name: /accept for session/i })[0]);
+    await userEvent.click(within(timeline).getByRole("button", { name: /grant approval/i }));
+    await userEvent.click(within(timeline).getAllByRole("button", { name: /decline approval/i })[0]);
+    await userEvent.click(within(timeline).getByRole("button", { name: /submit answers/i }));
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/approvals/approval-1/decision")).toHaveLength(1);
@@ -613,7 +728,7 @@ describe("MVP frontend flows", () => {
       expect(gateway.callsFor("POST", "/v1/approvals/approval-3/decision")).toHaveLength(1);
       expect(gateway.callsFor("POST", "/v1/approvals/approval-4/decision")).toHaveLength(1);
       expect(gateway.callsFor("POST", "/v1/approvals/approval-5/decision")).toHaveLength(1);
-      expect(within(approvals).queryByText(/cargo test/i)).not.toBeInTheDocument();
+      expect(within(timeline).queryByText(/cargo test/i)).not.toBeInTheDocument();
     });
 
     await expect(requestJson(gateway.callsFor("POST", "/v1/approvals/approval-1/decision")[0])).resolves.toEqual({
@@ -659,9 +774,10 @@ describe("MVP frontend flows", () => {
 
     render(<App />);
 
-    const approvals = await screen.findByRole("complementary", { name: /approvals/i });
-    expect(await within(approvals).findByText(/command approval/i)).toBeInTheDocument();
-    const command = within(approvals).getByText(/npm run build -- --mode production/i);
+    await screen.findByRole("heading", { name: /implement frontend/i });
+    const timeline = await screen.findByRole("main", { name: /thread/i });
+    expect(await within(timeline).findByText(/command approval/i)).toBeInTheDocument();
+    const command = within(timeline).getByText(/npm run build -- --mode production/i);
     expect(command.closest("code")).toHaveClass("kodex-approval-command");
   });
 
@@ -694,15 +810,16 @@ describe("MVP frontend flows", () => {
 
     render(<App />);
 
-    const approvals = await screen.findByRole("complementary", { name: /approvals/i });
-    expect(await within(approvals).findByText(/cargo test/i)).toBeInTheDocument();
+    await screen.findByRole("heading", { name: /implement frontend/i });
+    const timeline = await screen.findByRole("main", { name: /thread/i });
+    expect(await within(timeline).findByText(/cargo test/i)).toBeInTheDocument();
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
     const globalApprovalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
     expect(globalApprovalStream).toBeDefined();
 
-    await userEvent.click(within(approvals).getAllByRole("button", { name: /accept approval/i })[0]);
+    await userEvent.click(within(timeline).getAllByRole("button", { name: /accept approval/i })[0]);
     await waitFor(() => {
-      expect(within(approvals).queryByText(/cargo test/i)).not.toBeInTheDocument();
+      expect(within(timeline).queryByText(/cargo test/i)).not.toBeInTheDocument();
     });
 
     act(() => {
@@ -720,7 +837,7 @@ describe("MVP frontend flows", () => {
       });
     });
 
-    expect(within(approvals).queryByText(/cargo test/i)).not.toBeInTheDocument();
+    expect(within(timeline).queryByText(/cargo test/i)).not.toBeInTheDocument();
   });
 
   it("renders command approval actions and posts amendment approval responses", async () => {
@@ -779,12 +896,13 @@ describe("MVP frontend flows", () => {
 
     render(<App />);
 
-    const approvals = await screen.findByRole("complementary", { name: /approvals/i });
-    expect(await within(approvals).findByText(/search todo in apps\/web/i)).toBeInTheDocument();
-    expect(within(approvals).getAllByText(/curl https:\/\/api\.example\.com/i).length).toBeGreaterThan(0);
+    await screen.findByRole("heading", { name: /implement frontend/i });
+    const timeline = await screen.findByRole("main", { name: /thread/i });
+    expect(await within(timeline).findByText(/search todo in apps\/web/i)).toBeInTheDocument();
+    expect(within(timeline).getAllByText(/curl https:\/\/api\.example\.com/i).length).toBeGreaterThan(0);
 
-    await userEvent.click(within(approvals).getByRole("button", { name: /apply exec policy approval/i }));
-    await userEvent.click(within(approvals).getByRole("button", { name: /apply allow policy for api\.example\.com/i }));
+    await userEvent.click(within(timeline).getByRole("button", { name: /apply exec policy approval/i }));
+    await userEvent.click(within(timeline).getByRole("button", { name: /apply allow policy for api\.example\.com/i }));
 
     await expect(requestJson(gateway.callsFor("POST", "/v1/approvals/approval-policy/decision")[0])).resolves.toEqual({
       decision: { decision: { acceptWithExecpolicyAmendment: { execpolicy_amendment: ["allow rg TODO apps/web"] } } },
@@ -817,10 +935,13 @@ describe("MVP frontend flows", () => {
 
     render(<App />);
 
-    const approvals = await screen.findByRole("complementary", { name: /approvals/i });
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
-    expect(selectedThreadStream).toBeDefined();
+    await screen.findByRole("heading", { name: /implement frontend/i });
+    const timeline = await screen.findByRole("main", { name: /thread/i });
+    let selectedThreadStream: FakeEventSource | undefined;
+    await waitFor(() => {
+      selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+      expect(selectedThreadStream).toBeDefined();
+    });
     act(() => {
       selectedThreadStream?.emit({
         id: "event-approval-created",
@@ -836,7 +957,7 @@ describe("MVP frontend flows", () => {
       });
     });
 
-    expect(await within(approvals).findByText(/npm test/i)).toBeInTheDocument();
+    expect(await within(timeline).findByText(/npm test/i)).toBeInTheDocument();
 
     act(() => {
       selectedThreadStream?.emit({
@@ -854,14 +975,23 @@ describe("MVP frontend flows", () => {
     });
 
     await waitFor(() => {
-      expect(within(approvals).queryByText(/npm test/i)).not.toBeInTheDocument();
+      expect(within(timeline).queryByText(/npm test/i)).not.toBeInTheDocument();
     });
     expect(gateway.callsFor("GET", "/v1/events")).toHaveLength(1);
   });
 
-  it("keeps the approval drawer in sync for non-selected threads", async () => {
+  it("keeps non-selected thread approval badges in sync", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    mockGateway(baseRoutes());
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, secondThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+      }),
+    );
     const streamedApproval = {
       id: "approval-other-thread",
       requestId: "request-other-thread",
@@ -878,7 +1008,7 @@ describe("MVP frontend flows", () => {
 
     render(<App />);
 
-    const approvals = await screen.findByRole("complementary", { name: /approvals/i });
+    const secondThreadButton = await screen.findByRole("button", { name: /second thread/i });
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
     const globalApprovalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
     expect(globalApprovalStream).toBeDefined();
@@ -897,7 +1027,11 @@ describe("MVP frontend flows", () => {
         receivedAt: "2026-04-30T00:00:01Z",
       });
     });
-    expect(await within(approvals).findByText(/cargo fmt/i)).toBeInTheDocument();
+    expect(await within(secondThreadButton).findByText(/needs approval/i)).toBeInTheDocument();
+
+    await userEvent.click(secondThreadButton);
+    const timeline = await screen.findByRole("main", { name: /thread/i });
+    expect(await within(timeline).findByText(/cargo fmt/i)).toBeInTheDocument();
 
     act(() => {
       globalApprovalStream?.emit({
@@ -914,7 +1048,8 @@ describe("MVP frontend flows", () => {
       });
     });
     await waitFor(() => {
-      expect(within(approvals).queryByText(/cargo fmt/i)).not.toBeInTheDocument();
+      expect(within(timeline).queryByText(/cargo fmt/i)).not.toBeInTheDocument();
+      expect(within(secondThreadButton).queryByText(/needs approval/i)).not.toBeInTheDocument();
     });
   });
 
@@ -926,6 +1061,12 @@ describe("MVP frontend flows", () => {
     });
     mockGateway(
       baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, secondThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
         "GET /v1/approvals": () => delayedApprovals,
       }),
     );
@@ -945,7 +1086,7 @@ describe("MVP frontend flows", () => {
 
     render(<App />);
 
-    const approvals = await screen.findByRole("complementary", { name: /approvals/i });
+    const secondThreadButton = await screen.findByRole("button", { name: /second thread/i });
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
     const globalApprovalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
     expect(globalApprovalStream).toBeDefined();
@@ -964,13 +1105,17 @@ describe("MVP frontend flows", () => {
         receivedAt: "2026-04-30T00:00:01Z",
       });
     });
-    expect(await within(approvals).findByText(/npm run build/i)).toBeInTheDocument();
+    expect(await within(secondThreadButton).findByText(/needs approval/i)).toBeInTheDocument();
+
+    await userEvent.click(secondThreadButton);
+    const timeline = await screen.findByRole("main", { name: /thread/i });
+    expect(await within(timeline).findByText(/npm run build/i)).toBeInTheDocument();
 
     await act(async () => {
       resolveApprovals({ approvals: [] });
       await Promise.resolve();
     });
-    expect(within(approvals).getByText(/npm run build/i)).toBeInTheDocument();
+    expect(within(timeline).getByText(/npm run build/i)).toBeInTheDocument();
   });
 
   it("does not resurrect a resolved approval from a late stale pending approval response", async () => {
@@ -981,6 +1126,12 @@ describe("MVP frontend flows", () => {
     });
     mockGateway(
       baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, secondThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
         "GET /v1/approvals": () => delayedApprovals,
       }),
     );
@@ -1000,7 +1151,7 @@ describe("MVP frontend flows", () => {
 
     render(<App />);
 
-    const approvals = await screen.findByRole("complementary", { name: /approvals/i });
+    const secondThreadButton = await screen.findByRole("button", { name: /second thread/i });
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
     const globalApprovalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
     expect(globalApprovalStream).toBeDefined();
@@ -1024,7 +1175,7 @@ describe("MVP frontend flows", () => {
       resolveApprovals({ approvals: [staleApproval] });
       await Promise.resolve();
     });
-    expect(within(approvals).queryByText(/npm test/i)).not.toBeInTheDocument();
+    expect(within(secondThreadButton).queryByText(/needs approval/i)).not.toBeInTheDocument();
   });
 
   it("does not resurrect a resolved approval from a later stale created event", async () => {
@@ -1046,7 +1197,7 @@ describe("MVP frontend flows", () => {
 
     render(<App />);
 
-    const approvals = await screen.findByRole("complementary", { name: /approvals/i });
+    const timeline = await screen.findByRole("main", { name: /thread/i });
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
     const globalApprovalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
     expect(globalApprovalStream).toBeDefined();
@@ -1078,7 +1229,7 @@ describe("MVP frontend flows", () => {
       });
     });
 
-    expect(within(approvals).queryByText(/cargo clippy/i)).not.toBeInTheDocument();
+    expect(within(timeline).queryByText(/cargo clippy/i)).not.toBeInTheDocument();
   });
 
   it("ignores stale event replay and streams after switching threads", async () => {
@@ -1153,22 +1304,9 @@ describe("MVP frontend flows", () => {
     expect(threadStreams[0].url).toContain("threadId=thread-2");
   });
 
-  it("shows account login, rate limits, and model selection", async () => {
+  it("shows sidebar login without model or status summaries", async () => {
     const gateway = mockGateway(
       baseRoutes({
-        "GET /v1/account/rate-limits": {
-          rateLimits: {
-            primary: { usedPercent: 42, resetsAt: null, windowDurationMins: 300 },
-            secondary: null,
-            credits: null,
-            limitId: "primary",
-            limitName: "Primary",
-            planType: "pro",
-            rateLimitReachedType: null,
-          },
-          rateLimitsByLimitId: null,
-          rawPayload: {},
-        },
         "POST /v1/account/login": {
           loginType: "chatgpt",
           loginId: "login-1",
@@ -1184,10 +1322,11 @@ describe("MVP frontend flows", () => {
 
     render(<App />);
 
-    const modelInputs = await screen.findAllByLabelText(/model/i);
-    expect(modelInputs.find((element) => element.tagName === "INPUT")).toHaveValue("GPT-5.4");
-    await userEvent.click(screen.getByRole("button", { name: /status/i }));
-    expect(await screen.findByText(/42% used/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/model/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /status/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /debug options/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /account settings/i })).toBeInTheDocument();
+    expect(screen.queryByText(/used/i)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /connect chatgpt/i }));
 
     expect(await screen.findByRole("link", { name: /open chatgpt auth/i })).toHaveAttribute(
@@ -1219,8 +1358,10 @@ describe("MVP frontend flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByText(/dev@example\.com/i)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /logout/i }));
+    const avatar = await screen.findByRole("img", { name: /dev@example\.com/i });
+    expect(avatar).toHaveTextContent("D");
+    await userEvent.click(screen.getByRole("button", { name: /account settings/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /logout/i }));
     expect(gateway.callsFor("POST", "/v1/account/logout")).toHaveLength(1);
     expect(await screen.findByRole("button", { name: /connect chatgpt/i })).toBeInTheDocument();
   });

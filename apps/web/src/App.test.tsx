@@ -1,72 +1,72 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 import { mockGateway } from "./test/gatewayMock";
 
-const capabilitiesResponse = {
-  gateway: {
-    version: "0.1.0",
-    sse: true,
-    approvals: true,
-    gatewayAuth: false,
-    trustedNetworkOnly: true,
-  },
-  appServer: {
-    ready: true,
-    experimentalApi: true,
-  },
-};
-
 describe("App shell", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("renders the MVP shell with gateway capabilities", async () => {
+  it("renders the MVP shell with debug menu in the sidebar footer", async () => {
     mockGateway({
-      "GET /v1/capabilities": capabilitiesResponse,
       "GET /v1/projects": { projects: [] },
       "GET /v1/approvals": { approvals: [] },
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
-      "GET /v1/account/rate-limits": { rateLimits: null, rateLimitsByLimitId: null, rawPayload: {} },
-      "GET /v1/models": { models: [], nextCursor: null, rawPayload: {} },
     });
 
     render(<App />);
 
-    expect(screen.getByRole("banner", { name: /kodex/i })).toBeInTheDocument();
+    expect(screen.queryByRole("banner", { name: /kodex/i })).not.toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: /workspace/i })).toBeInTheDocument();
     expect(screen.getByRole("main", { name: /thread/i })).toBeInTheDocument();
-    expect(screen.getByRole("complementary", { name: /approvals/i })).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: /approvals/i })).not.toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toBeDisabled();
 
-    await userEvent.click(screen.getByRole("button", { name: /status/i }));
-    expect(await screen.findByText(/gateway 0\.1\.0/i)).toBeInTheDocument();
-    expect(screen.getByText(/app-server ready/i)).toBeInTheDocument();
-    expect(screen.getByText(/trusted network/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /status/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /debug options/i })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /account settings/i }));
+    expect(await screen.findByRole("menuitemcheckbox", { name: /show debug events/i })).toBeInTheDocument();
+    expect(screen.queryByText(/gateway/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/app-server/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/trusted network/i)).not.toBeInTheDocument();
   });
 
-  it("keeps gateway status visible when optional app-server-backed calls fail", async () => {
+  it("keeps the shell visible when optional app-server-backed calls fail", async () => {
     mockGateway({
-      "GET /v1/capabilities": {
-        ...capabilitiesResponse,
-        appServer: { ready: false, experimentalApi: true },
-      },
       "GET /v1/projects": { projects: [] },
     });
 
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /status/i }));
-    expect(await screen.findByText(/gateway 0\.1\.0/i)).toBeInTheDocument();
-    expect(screen.getByText(/app-server offline/i)).toBeInTheDocument();
+    expect(await screen.findByRole("navigation", { name: /workspace/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /account settings/i })).toBeInTheDocument();
+  });
+
+  it("lets the workspace sidebar grow wider from its minimum width", async () => {
+    mockGateway({
+      "GET /v1/projects": { projects: [] },
+      "GET /v1/approvals": { approvals: [] },
+      "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
+    });
+
+    render(<App />);
+
+    const resizeHandle = screen.getByRole("separator", { name: /resize workspace sidebar/i });
+    expect(resizeHandle).toHaveAttribute("aria-valuenow", "292");
+
+    fireEvent.pointerDown(resizeHandle, { clientX: 292, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 420, pointerId: 1 });
+    fireEvent.pointerUp(window, { pointerId: 1 });
+
+    expect(resizeHandle).toHaveAttribute("aria-valuenow", "420");
+    expect(screen.getByRole("navigation", { name: /workspace/i })).toHaveStyle({ width: "420px" });
   });
 
   it("keeps the thread header and composer outside the timeline scroll region and toggles debug events locally", async () => {
     mockGateway({
-      "GET /v1/capabilities": capabilitiesResponse,
       "GET /v1/projects": {
         projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
       },
@@ -118,8 +118,6 @@ describe("App shell", () => {
       },
       "GET /v1/approvals": { approvals: [] },
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
-      "GET /v1/account/rate-limits": { rateLimits: null, rateLimitsByLimitId: null, rawPayload: {} },
-      "GET /v1/models": { models: [], nextCursor: null, rawPayload: {} },
     });
 
     render(<App />);
@@ -132,7 +130,7 @@ describe("App shell", () => {
     expect(within(thread).queryByText(/event stream/i)).not.toBeInTheDocument();
     expect(within(thread).queryByText(/turn\/started/i)).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /status/i }));
+    await userEvent.click(screen.getByRole("button", { name: /account settings/i }));
     await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /show debug events/i }));
 
     expect(await within(thread).findAllByText(/turn\/started/i)).not.toHaveLength(0);

@@ -1,5 +1,5 @@
 import { Badge, Box, Code, Group, Stack, Text } from "@mantine/core";
-import { AlertTriangle, Bot, Check, Code2, FileDiff, Globe, Terminal, User, Wrench } from "lucide-react";
+import { AlertTriangle, Bot, Check, ChevronRight, Code2, FileDiff, Globe, Terminal, User, Wrench } from "lucide-react";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -80,7 +80,7 @@ export function TimelineActivityGroupRenderer({
   showDebug?: boolean;
 }) {
   return (
-    <details className="kodex-activity-group" open>
+    <details className="kodex-activity-group">
       <summary>
         <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
           <Terminal size={15} />
@@ -88,6 +88,7 @@ export function TimelineActivityGroupRenderer({
             {activityGroupSummary(items)}
           </Text>
         </Group>
+        <ChevronRight size={16} className="kodex-activity-caret" aria-hidden="true" />
       </summary>
       <Stack gap={8} mt={8}>
         {items.map((item) => (
@@ -182,6 +183,7 @@ function ActivityItemRenderer({ item, showDebug }: { item: TimelineItem; showDeb
               {commandSummary(item)}
             </Text>
           </Group>
+          <ChevronRight size={16} className="kodex-activity-caret" aria-hidden="true" />
         </summary>
         <CommandBlock item={item} />
         {showDebug ? <DebugDisclosure item={item} /> : null}
@@ -198,6 +200,7 @@ function ActivityItemRenderer({ item, showDebug }: { item: TimelineItem; showDeb
             {activityItemSummary(item)}
           </Text>
         </Group>
+        <ChevronRight size={16} className="kodex-activity-caret" aria-hidden="true" />
       </summary>
       <Box className="kodex-activity-body">{render(item)}</Box>
       {showDebug ? <DebugDisclosure item={item} /> : null}

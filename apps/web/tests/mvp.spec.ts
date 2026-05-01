@@ -71,6 +71,13 @@ test("keeps long timeline content inside the thread viewer", async ({ page }) =>
   const longWord = "supercalifragilistic".repeat(24);
   const longCommand = `node -e "console.log('${"wide-output".repeat(20)}')"`;
   const longOutput = "0123456789abcdef".repeat(80);
+  await page.route("**/v1/approvals**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approvals: [] }),
+    });
+  });
   await page.route("**/v1/events**", async (route) => {
     const request = route.request();
     if (request.headers().accept?.includes("text/event-stream")) {
@@ -129,7 +136,13 @@ test("keeps long timeline content inside the thread viewer", async ({ page }) =>
   const cardBoxes = await cards.evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().width));
   expect(Math.max(...cardBoxes)).toBeLessThanOrEqual(Math.ceil(viewerBox!.width));
 
+  const commandGroup = page.locator(".kodex-activity-group-title").filter({ hasText: /^Ran / }).first();
+  await expect(commandGroup).toHaveCSS("text-overflow", "ellipsis");
+  await commandGroup.locator("xpath=ancestor::summary").click();
+
   const commandSummary = page.locator(".kodex-activity-title").filter({ hasText: /^Ran / }).first();
+  await commandSummary.scrollIntoViewIfNeeded();
+  await expect(commandSummary).toBeVisible();
   await expect(commandSummary).toHaveCSS("text-overflow", "ellipsis");
   await commandSummary.locator("xpath=ancestor::summary").click();
 
@@ -144,13 +157,83 @@ test("keeps long timeline content inside the thread viewer", async ({ page }) =>
   expect(outputMetrics.scrollWidth).toBeGreaterThan(outputMetrics.clientWidth);
 });
 
+test("lets thread titles use the expanded sidebar width before truncating", async ({ page }) => {
+  const longTitle = "Investigate sidebar title truncation with enough words to fill the expanded workspace panel";
+  await page.unroute("**/v1/**");
+  await page.route("**/v1/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const key = `${request.method()} ${url.pathname}`;
+
+    if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
+      await route.fulfill({ status: 200, headers: { "Content-Type": "text/event-stream" }, body: "" });
+      return;
+    }
+
+    const response =
+      key === "GET /v1/threads"
+        ? {
+            body: {
+              threads: [{ ...thread, name: longTitle, status: "idle" }],
+              nextCursor: null,
+              backwardsCursor: null,
+              rawPayload: {},
+            },
+          }
+        : key === "GET /v1/approvals"
+          ? { body: { approvals: [] } }
+        : await responseFor(key, route);
+
+    await route.fulfill({
+      status: response.status ?? 200,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(response.body),
+    });
+  });
+
+  await page.goto("/");
+
+  const resizeHandle = page.getByRole("separator", { name: /resize workspace sidebar/i });
+  const handleBox = await resizeHandle.boundingBox();
+  expect(handleBox).not.toBeNull();
+  await resizeHandle.dragTo(resizeHandle, {
+    force: true,
+    sourcePosition: { x: 0, y: handleBox!.height / 2 },
+    targetPosition: { x: 260, y: handleBox!.height / 2 },
+  });
+
+  const threadButton = page.locator(".kodex-thread-list-button").first();
+  await expect(threadButton).toBeVisible();
+
+  const metrics = await threadButton.evaluate((button) => {
+    const titleNode = button.querySelector(".mantine-Text-root");
+    if (!titleNode) {
+      throw new Error("Missing thread title node");
+    }
+    const buttonRect = button.getBoundingClientRect();
+    const titleRect = titleNode.getBoundingClientRect();
+    return {
+      buttonRight: buttonRect.right,
+      text: titleNode.textContent,
+      titleRight: titleRect.right,
+    };
+  });
+
+  expect(metrics.text).toBe(longTitle);
+  expect(metrics.buttonRight - metrics.titleRight).toBeLessThanOrEqual(18);
+});
+
 test("resolves a pending approval", async ({ page }) => {
   await page.goto("/");
 
-  const approvals = page.getByRole("complementary", { name: /approvals/i });
-  await expect(approvals.getByText(/cargo test/i)).toBeVisible();
-  await approvals.getByRole("button", { name: /accept approval/i }).first().click();
-  await expect(approvals.getByText(/cargo test/i)).toBeHidden();
+  const threadCard = page.getByRole("button", { name: /frontend mvp/i });
+  await expect(threadCard.getByText(/needs approval/i)).toBeVisible();
+
+  const thread = page.getByRole("main", { name: /thread/i });
+  await expect(thread.getByText(/cargo test/i)).toBeVisible();
+  await thread.getByRole("button", { name: /accept approval/i }).first().click();
+  await expect(thread.getByText(/cargo test/i)).toBeHidden();
+  await expect(threadCard.getByText(/needs approval/i)).toBeHidden();
 });
 
 async function mockGateway(page: Page) {
