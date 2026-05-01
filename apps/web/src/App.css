@@ -170,37 +170,76 @@ body {
   flex: 1;
 }
 
+.kodex-composer-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  box-shadow: 0 18px 60px rgb(0 0 0 / 28%);
+}
+
+.kodex-composer-shell[data-entry-ready="false"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .kodex-composer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: end;
+  min-width: 0;
   border: 1px solid #444444;
   border-radius: 8px;
   padding: 12px;
   background: #242424;
-  box-shadow: 0 18px 60px rgb(0 0 0 / 28%);
 }
 
-.kodex-composer[data-entry-ready="false"] {
-  visibility: hidden;
-  pointer-events: none;
+.kodex-queued-steer + .kodex-composer {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
-.kodex-steer {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: end;
-  border: 1px solid #3b3b3b;
+.kodex-composer-action[data-action-state="idle"] {
+  border-radius: 999px;
+}
+
+.kodex-composer-action[data-action-state="active"] {
   border-radius: 8px;
-  padding: 10px 12px;
+}
+
+.kodex-queued-steer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #444444;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
   background: #202020;
 }
 
-.kodex-steer-placeholder {
-  visibility: hidden;
-  pointer-events: none;
+.kodex-queued-steer-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.kodex-queued-steer-row + .kodex-queued-steer-row {
+  border-top: 1px solid #363636;
+}
+
+.kodex-queued-steer-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.kodex-queued-steer-button {
+  justify-self: end;
 }
 
 .kodex-project-form {
@@ -750,8 +789,13 @@ body {
   }
 
   .kodex-composer,
-  .kodex-steer {
+  .kodex-queued-steer-row {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .kodex-composer-action,
+  .kodex-queued-steer-button {
+    justify-self: end;
   }
 }
 

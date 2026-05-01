@@ -563,7 +563,7 @@ describe("MVP frontend flows", () => {
     expect(await screen.findByRole("button", { name: /second thread/i })).toBeInTheDocument();
   });
 
-  it("replays timeline events and submits turn controls", async () => {
+  it("replays timeline events and uses one composer for idle send, active stop, and queued steering", async () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [activeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
@@ -576,22 +576,149 @@ describe("MVP frontend flows", () => {
     render(<App />);
 
     expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
+    expect(screen.queryByLabelText(/steer active turn/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /send message/i })).not.toBeInTheDocument();
+    const stopButtons = screen.getAllByRole("button", { name: /stop turn/i });
+    expect(stopButtons).toHaveLength(1);
+    expect(stopButtons[0]).toBeEnabled();
+    expect(stopButtons[0].querySelector("svg rect, svg path")).toBeInTheDocument();
+
+    await userEvent.click(stopButtons[0]);
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/interrupt")).toHaveLength(1);
+    });
+  });
+
+  it("starts idle turns with the main composer action", async () => {
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads/thread-1/turns": { payload: {} },
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const sendButton = screen.getByRole("button", { name: /send message/i });
+    expect(sendButton).toBeDisabled();
+    expect(sendButton).toHaveClass("kodex-composer-action");
+    expect(sendButton).toHaveAttribute("data-action-state", "idle");
+    expect(container.querySelector(".kodex-composer-action svg")).toBeInTheDocument();
+
     await userEvent.type(screen.getByLabelText(/message composer/i), "Ship it");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
     });
+  });
 
-    await userEvent.type(await screen.findByLabelText(/steer active turn/i), "Add tests");
-    await userEvent.click(screen.getByRole("button", { name: /steer turn/i }));
+  it("queues active-turn composer text, steers selected rows, and removes only successful rows", async () => {
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": { threads: [activeThread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/events": (request: Request) => {
+          const url = new URL(request.url);
+          return url.searchParams.get("threadId") === "thread-2" ? { events: [] } : baseRoutes()["GET /v1/events"];
+        },
+        "POST /v1/threads/thread-1/turns/turn-1/steer": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "Add tests{Enter}");
+    await userEvent.type(composer, "Keep scope tight{Enter}");
+
+    const queuedCard = screen.getByRole("region", { name: /queued steer messages/i });
+    const rows = within(queuedCard).getAllByRole("group");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent("Add tests");
+    expect(rows[1]).toHaveTextContent("Keep scope tight");
+    expect(rows[0].getAttribute("data-steer-row-id")).not.toEqual(rows[1].getAttribute("data-steer-row-id"));
+    expect(composer).toHaveValue("");
+
+    await userEvent.click(within(rows[0]).getByRole("button", { name: /steer/i }));
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/steer")).toHaveLength(1);
+      expect(screen.queryByText("Add tests")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Keep scope tight")).toBeInTheDocument();
+
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/steer")[0])).resolves.toEqual({
+      input: [{ type: "text", text: "Add tests" }],
     });
 
-    await userEvent.click(screen.getByRole("button", { name: /stop turn/i }));
+    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/interrupt")).toHaveLength(1);
+      expect(screen.queryByRole("region", { name: /queued steer messages/i })).not.toBeInTheDocument();
+    });
+  });
+
+  it("keeps failed queued steer rows retryable and reports the existing error", async () => {
+    let failNextSteer = true;
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": { threads: [activeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "POST /v1/threads/thread-1/turns/turn-1/steer": () => {
+          if (failNextSteer) {
+            failNextSteer = false;
+            throw new Error("steer failed");
+          }
+          return { payload: {} };
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Retry this{Enter}");
+    const queuedCard = screen.getByRole("region", { name: /queued steer messages/i });
+    const row = within(queuedCard).getByRole("group");
+    const rowId = row.getAttribute("data-steer-row-id");
+
+    await userEvent.click(within(row).getByRole("button", { name: /steer/i }));
+    expect(await screen.findByText(/gateway request failed|steer failed/i)).toBeInTheDocument();
+    expect(screen.getByText("Retry this")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: /queued steer messages/i })).getByRole("group")).toHaveAttribute(
+      "data-steer-row-id",
+      rowId,
+    );
+
+    await userEvent.click(within(screen.getByRole("region", { name: /queued steer messages/i })).getByRole("button", { name: /steer/i }));
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/steer")).toHaveLength(2);
+      expect(screen.queryByText("Retry this")).not.toBeInTheDocument();
+    });
+  });
+
+  it("submits on Enter and keeps Shift+Enter as a newline in the main composer", async () => {
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads/thread-1/turns": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "Line one");
+    await userEvent.keyboard("{Shift>}{Enter}{/Shift}");
+    await userEvent.type(composer, "Line two");
+
+    expect(composer).toHaveValue("Line one\nLine two");
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(0);
+
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
     });
   });
 

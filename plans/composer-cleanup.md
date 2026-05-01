@@ -8,7 +8,7 @@ This is a frontend-only interaction cleanup unless implementation discovers a ga
 
 ## Status
 
-Proposed.
+Complete.
 
 ## Principles
 
@@ -32,7 +32,7 @@ This creates extra visual weight at the bottom of the thread and makes steering 
 
 ## Milestone 1: Composer State and Tests
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -64,7 +64,7 @@ Exit conditions:
 
 ## Milestone 2: Unified Composer Controls
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -90,7 +90,7 @@ Exit conditions:
 
 ## Milestone 3: Queued Steer Card
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -116,7 +116,7 @@ Exit conditions:
 
 ## Milestone 4: Styling and Regression Pass
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 

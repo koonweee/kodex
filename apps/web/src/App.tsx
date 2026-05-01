@@ -181,9 +181,9 @@ const UI_TEXT = {
     untitled: "Untitled thread",
   },
   turn: {
-    steer: "Steer active turn",
-    steerPlaceholder: "Steer the active turn",
-    steerSubmit: "Steer turn",
+    queueLabel: "Queued steer messages",
+    queueRow: "Queued steer message",
+    steerButton: "Steer",
   },
 };
 
@@ -205,6 +205,10 @@ type ThreadsByProjectId = Record<string, ThreadSummary[]>;
 type TimelineEntry =
   | { phase: "idle"; threadId: null }
   | { phase: "loading" | "aligning" | "ready"; threadId: string };
+type QueuedSteerRow = {
+  id: string;
+  text: string;
+};
 
 const SIDEBAR_MIN_WIDTH = 292;
 const SIDEBAR_MAX_WIDTH = 520;
@@ -260,7 +264,7 @@ function KodexShell() {
   const [projectName, setProjectName] = useState("");
   const [projectCwd, setProjectCwd] = useState("");
   const [composerText, setComposerText] = useState("");
-  const [steerText, setSteerText] = useState("");
+  const [queuedSteerRows, setQueuedSteerRows] = useState<QueuedSteerRow[]>([]);
   const [showDebugEvents, setShowDebugEvents] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("chat");
@@ -272,6 +276,7 @@ function KodexShell() {
   const selectedProjectIdRef = useRef<string | null>(null);
   const threadRequestIds = useRef<Map<string, number>>(new Map());
   const nextThreadRequestId = useRef(0);
+  const nextQueuedSteerId = useRef(0);
 
   const selectedProjectThreads = selectedProjectId ? threadsByProjectId[selectedProjectId] ?? [] : [];
   const selectedThread = selectedProjectThreads.find((thread) => thread.id === selectedThreadId) ?? null;
@@ -284,10 +289,8 @@ function KodexShell() {
   const isSelectedThreadNotLoaded = selectedThread?.status === "notLoaded";
   const isSelectedTimelineLoading = selectedTimelineEntry.phase === "loading";
   const isSelectedTimelineReady = selectedTimelineEntry.phase === "ready";
-  const expectsSteerComposer =
-    selectedThread !== null && (timeline.activeTurnId !== null || threadStatusMayHaveActiveTurn(selectedThread));
-  const shouldShowSteerComposer = selectedThread !== null && isSelectedTimelineReady && timeline.activeTurnId !== null;
-  const shouldReserveSteerComposer = selectedThread !== null && !isSelectedTimelineReady && expectsSteerComposer;
+  const activeSelectedTurnId = selectedThread !== null ? timeline.activeTurnId : null;
+  const hasActiveSelectedTurn = activeSelectedTurnId !== null;
   const isDraftThreadSelected = draftThreadProjectId !== null && draftThreadProjectId === selectedProjectId;
   const canCompose = selectedThread !== null || isDraftThreadSelected;
   const selectedThreadTitle = selectedThread
@@ -299,6 +302,10 @@ function KodexShell() {
   useEffect(() => {
     loadInitialState();
   }, []);
+
+  useEffect(() => {
+    setQueuedSteerRows([]);
+  }, [selectedThreadId, activeSelectedTurnId]);
 
   useEffect(() => {
     if (!isSidebarResizing) {
@@ -534,6 +541,14 @@ function KodexShell() {
     }
 
     const text = composerText.trim();
+    if (selectedThreadId && activeSelectedTurnId) {
+      const id = `queued-steer-${nextQueuedSteerId.current + 1}`;
+      nextQueuedSteerId.current += 1;
+      setQueuedSteerRows((current) => [...current, { id, text }]);
+      setComposerText("");
+      return;
+    }
+
     if (selectedThreadId) {
       await startTurn(selectedThreadId, text);
       setComposerText("");
@@ -555,21 +570,33 @@ function KodexShell() {
   }
 
   async function handleStopTurn() {
-    if (!selectedThreadId || !timeline.activeTurnId) {
+    if (!selectedThreadId || !activeSelectedTurnId) {
       return;
     }
 
-    await interruptTurn(selectedThreadId, timeline.activeTurnId);
+    await interruptTurn(selectedThreadId, activeSelectedTurnId);
   }
 
-  async function handleSteerTurn(event: FormEvent) {
-    event.preventDefault();
-    if (!selectedThreadId || !timeline.activeTurnId || !steerText.trim()) {
+  async function handleSubmitQueuedSteer(row: QueuedSteerRow) {
+    if (!selectedThreadId || !activeSelectedTurnId) {
       return;
     }
 
-    await steerTurn(selectedThreadId, timeline.activeTurnId, steerText.trim());
-    setSteerText("");
+    try {
+      await steerTurn(selectedThreadId, activeSelectedTurnId, row.text);
+      setQueuedSteerRows((current) => current.filter((item) => item.id !== row.id));
+    } catch (error) {
+      reportError(error);
+    }
+  }
+
+  function handleComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
+      return;
+    }
+
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
   }
 
   const handleApprovalDecision = useCallback(async (approval: Approval, decision: ApprovalResponse) => {
@@ -911,52 +938,52 @@ function KodexShell() {
             </Box>
           )}
           <Box
-            component="form"
-            className="kodex-composer kodex-main-column"
+            className="kodex-composer-shell kodex-main-column"
             data-entry-ready={selectedThread !== null && !isSelectedTimelineReady ? "false" : "true"}
-            onSubmit={handleSubmitTurn}
           >
-            <Textarea
-              aria-label="Message composer"
-              placeholder={canCompose ? UI_TEXT.composer.placeholder : UI_TEXT.composer.disabledPlaceholder}
-              minRows={2}
-              autosize
-              value={composerText}
-              onChange={(event) => setComposerText(event.currentTarget.value)}
-              disabled={!canCompose}
-            />
-            <Group gap="xs" wrap="nowrap">
-              <Tooltip label={UI_TEXT.composer.stop}>
-                <ActionIcon
-                  aria-label={UI_TEXT.composer.stop}
-                  size="lg"
-                  variant="light"
-                  disabled={!selectedThread || !isSelectedTimelineReady || !timeline.activeTurnId}
-                  onClick={handleStopTurn}
-                >
-                  <Square size={16} />
-                </ActionIcon>
+            {queuedSteerRows.length > 0 ? (
+              <QueuedSteerCard rows={queuedSteerRows} onSubmitRow={handleSubmitQueuedSteer} />
+            ) : null}
+            <Box component="form" className="kodex-composer" onSubmit={handleSubmitTurn}>
+              <Textarea
+                aria-label="Message composer"
+                placeholder={canCompose ? UI_TEXT.composer.placeholder : UI_TEXT.composer.disabledPlaceholder}
+                minRows={2}
+                autosize
+                value={composerText}
+                onChange={(event) => setComposerText(event.currentTarget.value)}
+                onKeyDown={handleComposerKeyDown}
+                disabled={!canCompose}
+              />
+              <Tooltip label={hasActiveSelectedTurn ? UI_TEXT.composer.stop : UI_TEXT.composer.send}>
+                {hasActiveSelectedTurn ? (
+                  <ActionIcon
+                    className="kodex-composer-action"
+                    data-action-state="active"
+                    aria-label={UI_TEXT.composer.stop}
+                    size="lg"
+                    variant="filled"
+                    type="button"
+                    disabled={!selectedThread}
+                    onClick={handleStopTurn}
+                  >
+                    <Square size={15} fill="currentColor" strokeWidth={0} />
+                  </ActionIcon>
+                ) : (
+                  <ActionIcon
+                    className="kodex-composer-action"
+                    data-action-state="idle"
+                    aria-label={UI_TEXT.composer.send}
+                    size="lg"
+                    type="submit"
+                    disabled={!canCompose || !composerText.trim()}
+                  >
+                    <Send size={17} />
+                  </ActionIcon>
+                )}
               </Tooltip>
-              <Tooltip label={UI_TEXT.composer.send}>
-                <ActionIcon
-                  aria-label={UI_TEXT.composer.send}
-                  size="lg"
-                  type="submit"
-                  disabled={!canCompose || !composerText.trim()}
-                >
-                  <Send size={18} />
-                </ActionIcon>
-              </Tooltip>
-            </Group>
+            </Box>
           </Box>
-          {shouldShowSteerComposer || shouldReserveSteerComposer ? (
-            <SteerComposer
-              hidden={shouldReserveSteerComposer}
-              onSteerTextChange={setSteerText}
-              onSubmit={handleSteerTurn}
-              steerText={steerText}
-            />
-          ) : null}
         </Stack>
       </AppShell.Main>
     </AppShell>
@@ -1151,35 +1178,31 @@ function MobilePanelSwitcher({
   );
 }
 
-function SteerComposer({
-  hidden = false,
-  onSteerTextChange,
-  onSubmit,
-  steerText,
+function QueuedSteerCard({
+  onSubmitRow,
+  rows,
 }: {
-  hidden?: boolean;
-  onSteerTextChange: (value: string) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  steerText: string;
+  onSubmitRow: (row: QueuedSteerRow) => void;
+  rows: QueuedSteerRow[];
 }) {
   return (
-    <Box
-      aria-hidden={hidden || undefined}
-      className={hidden ? "kodex-steer kodex-steer-placeholder" : "kodex-steer"}
-      component="form"
-      onSubmit={hidden ? (event) => event.preventDefault() : onSubmit}
-    >
-      <TextInput
-        aria-label={hidden ? undefined : UI_TEXT.turn.steer}
-        disabled={hidden}
-        placeholder={UI_TEXT.turn.steerPlaceholder}
-        tabIndex={hidden ? -1 : undefined}
-        value={hidden ? "" : steerText}
-        onChange={(event) => onSteerTextChange(event.currentTarget.value)}
-      />
-      <Button type="submit" size="xs" disabled={hidden || !steerText.trim()} tabIndex={hidden ? -1 : undefined}>
-        {UI_TEXT.turn.steerSubmit}
-      </Button>
+    <Box aria-label={UI_TEXT.turn.queueLabel} className="kodex-queued-steer" role="region">
+      {rows.map((row) => (
+        <Box
+          aria-label={UI_TEXT.turn.queueRow}
+          className="kodex-queued-steer-row"
+          data-steer-row-id={row.id}
+          key={row.id}
+          role="group"
+        >
+          <Text className="kodex-queued-steer-text" size="sm">
+            {row.text}
+          </Text>
+          <Button className="kodex-queued-steer-button" size="xs" onClick={() => onSubmitRow(row)}>
+            {UI_TEXT.turn.steerButton}
+          </Button>
+        </Box>
+      ))}
     </Box>
   );
 }
@@ -2173,14 +2196,6 @@ function threadNeedsApproval(thread: ThreadSummary, approvals: Approval[]): bool
 
 function threadStatusNeedsApproval(thread: ThreadSummary): boolean {
   return typeof thread.status === "string" && thread.status.toLowerCase().includes("approval");
-}
-
-function threadStatusMayHaveActiveTurn(thread: ThreadSummary): boolean {
-  if (typeof thread.status !== "string") {
-    return false;
-  }
-  const status = thread.status.toLowerCase();
-  return status.includes("running") || status.includes("active");
 }
 
 function accountInitial(label: string): string {
