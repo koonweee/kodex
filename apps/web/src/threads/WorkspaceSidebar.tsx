@@ -12,6 +12,7 @@ import {
 } from "@mantine/core";
 import { Archive, FolderClosed, FolderOpen, GitBranch, Inbox, SquarePen } from "lucide-react";
 import {
+  memo,
   useState,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -44,7 +45,7 @@ const SIDEBAR_TEXT = {
   workspaceLabel: "Workspace",
 };
 
-export function WorkspaceSidebar({
+export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   account,
   approvals,
   hoveredThreadActionId,
@@ -212,13 +213,14 @@ export function WorkspaceSidebar({
                         {projectThreads.map((thread) => (
                           <ThreadListRow
                             approvals={approvals}
-                            hoveredThreadActionId={hoveredThreadActionId}
+                            isSelected={thread.id === selectedThreadId}
                             key={thread.id}
                             onArchiveThread={onArchiveThread}
-                            onSelectThread={() => onSelectThread(project.id, thread.id)}
+                            onSelectThread={onSelectThread}
                             onThreadActionHoverChange={onThreadActionHoverChange}
                             pendingTitleThreadIds={pendingTitleThreadIds}
-                            selectedThreadId={selectedThreadId}
+                            projectId={project.id}
+                            showThreadArchiveAction={hoveredThreadActionId === thread.id}
                             thread={thread}
                           />
                         ))}
@@ -256,37 +258,40 @@ export function WorkspaceSidebar({
       />
     </AppShell.Navbar>
   );
-}
+});
 
-function ThreadListRow({
+export type ThreadListRowProps = {
+  approvals: Approval[];
+  isSelected: boolean;
+  onArchiveThread: (threadId: string) => void;
+  onSelectThread: (projectId: string, threadId: string) => void;
+  onThreadActionHoverChange: (threadId: string | null) => void;
+  pendingTitleThreadIds: Set<string>;
+  projectId: string;
+  showThreadArchiveAction: boolean;
+  thread: ThreadSummary;
+};
+
+export const ThreadListRow = memo(function ThreadListRow({
   approvals,
-  hoveredThreadActionId,
+  isSelected,
   onArchiveThread,
   onSelectThread,
   onThreadActionHoverChange,
   pendingTitleThreadIds,
-  selectedThreadId,
+  projectId,
+  showThreadArchiveAction,
   thread,
-}: {
-  approvals: Approval[];
-  hoveredThreadActionId: string | null;
-  onArchiveThread: (threadId: string) => void;
-  onSelectThread: () => void;
-  onThreadActionHoverChange: (threadId: string | null) => void;
-  pendingTitleThreadIds: Set<string>;
-  selectedThreadId: string | null;
-  thread: ThreadSummary;
-}) {
+}: ThreadListRowProps) {
   const needsApproval = threadNeedsApproval(thread, approvals);
   const isThreadInProgress = threadInProgress(thread);
   const hasUnreadAgentTurn = thread.unreadCompletedAgentTurn === true;
   const displayTitle = pendingTitleThreadIds.has(thread.id) ? SIDEBAR_TEXT.newThread : threadDisplayTitle(thread);
-  const showThreadArchiveAction = hoveredThreadActionId === thread.id;
 
   return (
     <Box
       className="kodex-list-button kodex-thread-list-button"
-      data-active={thread.id === selectedThreadId}
+      data-active={isSelected}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) {
           onThreadActionHoverChange(null);
@@ -296,7 +301,7 @@ function ThreadListRow({
       onMouseEnter={() => onThreadActionHoverChange(thread.id)}
       onMouseLeave={() => onThreadActionHoverChange(null)}
     >
-      <button className="kodex-thread-select-button" onClick={onSelectThread} type="button">
+      <button className="kodex-thread-select-button" onClick={() => onSelectThread(projectId, thread.id)} type="button">
         <Group
           align="flex-start"
           className="kodex-thread-list-row"
@@ -357,5 +362,19 @@ function ThreadListRow({
         ) : null}
       </Box>
     </Box>
+  );
+}, areThreadListRowPropsEqual);
+
+export function areThreadListRowPropsEqual(previous: ThreadListRowProps, next: ThreadListRowProps) {
+  return (
+    previous.approvals === next.approvals &&
+    previous.isSelected === next.isSelected &&
+    previous.onArchiveThread === next.onArchiveThread &&
+    previous.onSelectThread === next.onSelectThread &&
+    previous.onThreadActionHoverChange === next.onThreadActionHoverChange &&
+    previous.pendingTitleThreadIds === next.pendingTitleThreadIds &&
+    previous.projectId === next.projectId &&
+    previous.showThreadArchiveAction === next.showThreadArchiveAction &&
+    previous.thread === next.thread
   );
 }

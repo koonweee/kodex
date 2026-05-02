@@ -26,6 +26,7 @@ This file is the directory of record for Kodex plans. Keep the status column cur
 | [Composer footer controls plan](composer-footer-controls.md) | Complete | Codex-style composer controls for model, reasoning effort, fast mode, permissions presets, and context usage | Implemented composer controls, request forwarding, generated OpenAPI/frontend types, and context usage display. |
 | [Composer toolbar persistence plan](composer-toolbar-persistence.md) | Complete | App-server-backed persistence for composer model, reasoning effort, and Fast mode | Implemented app-server config read/write routes, generated frontend types, startup hydration, thread-state reconciliation, and persist-on-selection UX without browser storage. |
 | [Frontend ownership refactor plan](frontend-ownership-refactor.md) | Complete | React module ownership, large-file cleanup, and frontend contributor guardrails | Split shell, timeline, composer, approvals, tests, and styles into clearer ownership boundaries and added frontend guardrails. |
+| [Thread open performance plan](thread-open-performance.md) | Complete | Frontend thread selection jank, sidebar render isolation, and initial timeline measurement readiness | Implemented sidebar render isolation, stable shell callbacks, and stricter initial timeline readiness; verified with tests, build, and long-thread benchmark repeats. |
 | [Future extensions overview](future-extensions.md) | Proposed | Non-MVP feature map linked to app-server APIs | Overview only, not an implementation plan. |
 
 ## Maintenance Rules

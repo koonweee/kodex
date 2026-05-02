@@ -17,7 +17,7 @@ import { TimelineActivityGroupRenderer, TimelineItemRenderer } from "./renderers
 import type { TimelineState } from "./reducer";
 
 const EMPTY_APPROVALS: Approval[] = [];
-const INITIAL_BOTTOM_STABLE_FRAMES = 2;
+const INITIAL_BOTTOM_STABLE_FRAMES = 18;
 const INITIAL_BOTTOM_MAX_SETTLE_FRAMES = 90;
 const BOTTOM_DISTANCE_EPSILON = 2;
 const disableTimelineScrollAdjustment = () => false;
@@ -231,7 +231,11 @@ function useBottomPinnedVirtualTimeline({
     }
 
     const frameIds: number[] = [];
-    const settleBottom = (attempt: number, stableFrames: number, previousScrollHeight: number) => {
+    const settleBottom = (
+      attempt: number,
+      stableFrames: number,
+      previousSnapshot: TimelineInitialBottomSettleSnapshot | null,
+    ) => {
       if (!nearBottomRef.current) {
         markTimelineReady();
         return;
@@ -240,20 +244,25 @@ function useBottomPinnedVirtualTimeline({
       scrollToTimelineBottom();
       const frameId = requestAnimationFrame(() => {
         const scrollElement = scrollParentElement;
-        const scrollHeight = scrollElement?.scrollHeight ?? 0;
-        const nextStableFrames = isSettledAtBottom(scrollElement, previousScrollHeight, rowCount) ? stableFrames + 1 : 0;
+        const snapshot = getTimelineInitialBottomSettleSnapshot(
+          scrollElement,
+          rowVirtualizer.getTotalSize(),
+          rowVirtualizer.getVirtualItems(),
+          rowCount,
+        );
+        const nextStableFrames = isTimelineInitialBottomSettled(snapshot, previousSnapshot) ? stableFrames + 1 : 0;
 
         if (nextStableFrames >= INITIAL_BOTTOM_STABLE_FRAMES || attempt >= INITIAL_BOTTOM_MAX_SETTLE_FRAMES) {
           finishInitialBottomReveal();
           return;
         }
 
-        settleBottom(attempt + 1, nextStableFrames, scrollHeight);
+        settleBottom(attempt + 1, nextStableFrames, snapshot);
       });
       frameIds.push(frameId);
     };
 
-    settleBottom(0, 0, -1);
+    settleBottom(0, 0, null);
     return () => {
       for (const frameId of frameIds) {
         cancelAnimationFrame(frameId);
@@ -367,14 +376,52 @@ function getDistanceFromBottom(scrollElement: HTMLElement) {
   return scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight;
 }
 
-function isSettledAtBottom(scrollElement: HTMLElement | null, previousScrollHeight: number, rowCount: number) {
+export type TimelineInitialBottomSettleSnapshot = {
+  distanceFromBottom: number;
+  hasRenderedDomBottom: boolean;
+  hasRenderedVirtualBottom: boolean;
+  scrollHeight: number;
+  totalSize: number;
+};
+
+function getTimelineInitialBottomSettleSnapshot(
+  scrollElement: HTMLElement | null,
+  totalSize: number,
+  virtualItems: Array<{ index: number }>,
+  rowCount: number,
+): TimelineInitialBottomSettleSnapshot {
   if (!scrollElement) {
-    return true;
+    return {
+      distanceFromBottom: 0,
+      hasRenderedDomBottom: true,
+      hasRenderedVirtualBottom: true,
+      scrollHeight: 0,
+      totalSize,
+    };
+  }
+
+  return {
+    distanceFromBottom: getDistanceFromBottom(scrollElement),
+    hasRenderedDomBottom: hasRenderedTimelineBottom(scrollElement, rowCount),
+    hasRenderedVirtualBottom: hasRenderedVirtualTimelineBottom(virtualItems, rowCount),
+    scrollHeight: scrollElement.scrollHeight,
+    totalSize,
+  };
+}
+
+export function isTimelineInitialBottomSettled(
+  snapshot: TimelineInitialBottomSettleSnapshot,
+  previousSnapshot: TimelineInitialBottomSettleSnapshot | null,
+) {
+  if (!previousSnapshot) {
+    return false;
   }
   return (
-    scrollElement.scrollHeight === previousScrollHeight &&
-    hasRenderedTimelineBottom(scrollElement, rowCount) &&
-    Math.abs(getDistanceFromBottom(scrollElement)) < BOTTOM_DISTANCE_EPSILON
+    snapshot.scrollHeight === previousSnapshot.scrollHeight &&
+    snapshot.totalSize === previousSnapshot.totalSize &&
+    snapshot.hasRenderedDomBottom &&
+    snapshot.hasRenderedVirtualBottom &&
+    Math.abs(snapshot.distanceFromBottom) < BOTTOM_DISTANCE_EPSILON
   );
 }
 
@@ -383,4 +430,11 @@ function hasRenderedTimelineBottom(scrollElement: HTMLElement, rowCount: number)
     return true;
   }
   return scrollElement.querySelector(`[data-index="${rowCount - 1}"]`) !== null;
+}
+
+function hasRenderedVirtualTimelineBottom(virtualItems: Array<{ index: number }>, rowCount: number) {
+  if (rowCount === 0) {
+    return true;
+  }
+  return virtualItems.some((virtualItem) => virtualItem.index === rowCount - 1);
 }

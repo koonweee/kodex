@@ -1,6 +1,7 @@
 import { MantineProvider } from "@mantine/core";
 import {
   FormEvent,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -63,6 +64,18 @@ import "./App.css";
 
 const NEW_THREAD_TITLE = "New thread";
 const DRAFT_COMPOSER_TRANSITION_MS = 280;
+
+function useEventCallback<TArgs extends unknown[], TResult>(
+  callback: (...args: TArgs) => TResult,
+): (...args: TArgs) => TResult {
+  const callbackRef = useRef(callback);
+
+  useLayoutEffect(() => {
+    callbackRef.current = callback;
+  });
+
+  return useCallback((...args: TArgs) => callbackRef.current(...args), []);
+}
 
 export function App() {
   const [colorSchemeId, setColorSchemeId] = useState<KodexColorSchemeId>(() => readStoredKodexColorScheme());
@@ -521,6 +534,22 @@ function KodexShell({
     setComposerResetToken((current) => current + 1);
   }
 
+  const handleArchiveSelectedThread = useEventCallback(() => void handleArchiveThread());
+  const handleArchiveThreadById = useEventCallback((threadId: string) => void handleArchiveThread(threadId));
+  const handleCloseLightbox = useEventCallback(() => setLightboxImage(null));
+  const handleClosePreferences = useEventCallback(() => setPreferencesOpen(false));
+  const handleOpenPreferences = useEventCallback(() => setPreferencesOpen(true));
+  const handleTimelineReadyForSelectedThread = useEventCallback(() => {
+    const threadId = selectedThreadIdRef.current;
+    if (threadId) {
+      handleTimelineReady(threadId);
+    }
+  });
+  const stableHandleCreateProject = useEventCallback(handleCreateProject);
+  const stableHandleCreateThread = useEventCallback(handleCreateThread);
+  const stableHandleSelectProject = useEventCallback(handleSelectProject);
+  const stableHandleSelectThread = useEventCallback(handleSelectThread);
+
   return (
     <>
       <KodexShellView
@@ -539,30 +568,30 @@ function KodexShell({
         mobilePanel={mobilePanel}
         onMobilePanelChange={setMobilePanel}
         preferencesProps={{
-          activeSection: preferencesSection, colorSchemeId, onClose: () => setPreferencesOpen(false), onColorSchemeChange,
+          activeSection: preferencesSection, colorSchemeId, onClose: handleClosePreferences, onColorSchemeChange,
           onSectionChange: setPreferencesSection, opened: preferencesOpen,
         }}
         sidebarWidth={sidebarWidth}
         threadPanelProps={{
           errorMessage, imagePreviewUrlsByPath, isDraftThreadSelected, isSelectedTimelineLoading,
-          onArchiveThread: () => void handleArchiveThread(), onApprovalDecision: handleApprovalDecision, onImageOpen: setLightboxImage,
-          onTimelineReady: () => selectedThread && handleTimelineReady(selectedThread.id), pendingTitleThreadIds,
+          onArchiveThread: handleArchiveSelectedThread, onApprovalDecision: handleApprovalDecision, onImageOpen: setLightboxImage,
+          onTimelineReady: handleTimelineReadyForSelectedThread, pendingTitleThreadIds,
           scrollParentElement: timelineScrollElement, selectedThread, selectedThreadApprovals, selectedThreadTitle,
           selectedTimelineEntry, setTimelineScrollElement, showDebugEvents, timeline,
         }}
         workspaceSidebarProps={{
           account, approvals, hoveredThreadActionId, isSidebarResizing, loginState,
-          onArchiveThread: (threadId) => void handleArchiveThread(threadId), onCancelLogin: handleCancelLogin,
-          onCreateProject: handleCreateProject, onCreateThread: handleCreateThread, onLogin: handleLogin, onLogout: handleLogout,
-          onOpenPreferences: () => setPreferencesOpen(true), onProjectCwdChange: setProjectCwd, onProjectFormOpenChange: setProjectFormOpen,
-          onProjectNameChange: setProjectName, onSelectProject: handleSelectProject, onSelectThread: handleSelectThread,
+          onArchiveThread: handleArchiveThreadById, onCancelLogin: handleCancelLogin,
+          onCreateProject: stableHandleCreateProject, onCreateThread: stableHandleCreateThread, onLogin: handleLogin, onLogout: handleLogout,
+          onOpenPreferences: handleOpenPreferences, onProjectCwdChange: setProjectCwd, onProjectFormOpenChange: setProjectFormOpen,
+          onProjectNameChange: setProjectName, onSelectProject: stableHandleSelectProject, onSelectThread: stableHandleSelectThread,
           onShowDebugEventsChange: setShowDebugEvents, onSidebarResizeKeyDown: handleSidebarResizeKeyDown,
           onSidebarResizePointerDown: handleSidebarResizePointerDown, onThreadActionHoverChange: setHoveredThreadActionId,
           pendingTitleThreadIds, projectCwd, projectFormOpen, projectName, projects, selectedProjectId, selectedThreadId,
           showDebugEvents, sidebarWidth, threadsByProjectId,
         }}
       />
-      <ImageLightbox image={lightboxImage} onClose={() => setLightboxImage(null)} />
+      <ImageLightbox image={lightboxImage} onClose={handleCloseLightbox} />
     </>
   );
 }
