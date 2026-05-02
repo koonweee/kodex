@@ -243,11 +243,12 @@ fn initialize_params() -> Value {
 
 fn is_expected_probe_missing_thread_error(message: &str) -> bool {
     let message = message.to_ascii_lowercase();
-    message.contains("thread")
+    (message.contains("thread")
         && (message.contains("not found")
             || message.contains("no such")
             || message.contains("does not exist")
-            || message.contains("unknown"))
+            || message.contains("unknown")))
+        || message.contains("no rollout found for thread id")
 }
 
 #[async_trait]
@@ -463,6 +464,9 @@ pub mod tests {
     fn startup_probe_only_accepts_missing_thread_errors() {
         assert!(is_expected_probe_missing_thread_error("thread not found"));
         assert!(is_expected_probe_missing_thread_error("no such thread"));
+        assert!(is_expected_probe_missing_thread_error(
+            "no rollout found for thread id 00000000-0000-0000-0000-000000000000"
+        ));
         assert!(!is_expected_probe_missing_thread_error("missing field cwd"));
         assert!(!is_expected_probe_missing_thread_error(
             "unknown field persistExtendedHistory"
