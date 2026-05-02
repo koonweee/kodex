@@ -387,6 +387,82 @@ describe("MVP timeline flows", () => {
     expect(gateway.callsFor("GET", "/v1/events")).toHaveLength(0);
   });
 
+  it("applies selected-thread stream events even when their server timestamp predates snapshot completion", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(baseRoutes());
+
+    render(<App />);
+
+    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    expect(selectedThreadStream).toBeDefined();
+
+    act(() => {
+      selectedThreadStream?.emit({
+        id: "historical-replay-1",
+        seq: 1,
+        kind: "timeline.item_upsert",
+        codexMethod: "item/upsert",
+        projectId: project.id,
+        threadId: thread.id,
+        turnId: "turn-1",
+        itemId: "historical-agent-1",
+        payload: {
+          source: "gatewayStream",
+          item: { id: "historical-agent-1", type: "agentMessage", text: "Snapshot race live event" },
+        },
+        receivedAt: "2026-04-30T00:00:00Z",
+      });
+    });
+
+    expect(await screen.findByText(/snapshot race live event/i)).toBeInTheDocument();
+  });
+
+  it("accepts selected-thread live events with low gateway seq after a high completed-turn marker", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const markerThread = { ...thread, lastCompletedAgentTurnSeq: 100 };
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [markerThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "GET /v1/threads/thread-1": threadDetail(markerThread, [
+          snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "High marker snapshot" })]),
+        ]),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/high marker snapshot/i)).toBeInTheDocument();
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    expect(selectedThreadStream).toBeDefined();
+    expect(selectedThreadStream?.url).toContain("cursor=0");
+
+    act(() => {
+      selectedThreadStream?.emit({
+        id: "low-seq-live-event-1",
+        seq: 1,
+        kind: "timeline.item_upsert",
+        codexMethod: "item/upsert",
+        projectId: project.id,
+        threadId: thread.id,
+        turnId: "turn-2",
+        itemId: "low-seq-live-agent-1",
+        payload: {
+          source: "gatewayStream",
+          item: { id: "low-seq-live-agent-1", type: "agentMessage", text: "Low seq live event" },
+        },
+        receivedAt: new Date(Date.now() + 1000).toISOString(),
+      });
+    });
+
+    expect(await screen.findByText(/low seq live event/i)).toBeInTheDocument();
+  });
+
   it("keeps a resumed idle external thread in send state after selected snapshot recovery", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     let detailCall = 0;

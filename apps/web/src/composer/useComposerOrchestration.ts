@@ -43,6 +43,7 @@ type UseComposerOrchestrationParams = {
   isDraftThreadSelected: boolean;
   onCreateDraftThread: (request: DraftThreadCreateRequest) => Promise<string>;
   onError: (error: unknown) => void;
+  onThreadMaterialized: (threadId: string) => void;
   selectedProjectId: string | null;
   selectedThreadId: string | null;
   setTimeline: Dispatch<SetStateAction<TimelineState>>;
@@ -56,6 +57,7 @@ export function useComposerOrchestration({
   isDraftThreadSelected,
   onCreateDraftThread,
   onError,
+  onThreadMaterialized,
   selectedProjectId,
   selectedThreadId,
   setTimeline,
@@ -145,6 +147,7 @@ export function useComposerOrchestration({
           });
         }
         await startTurn(selectedThreadId, input, composerTurnOptions(composerSettings));
+        onThreadMaterialized(selectedThreadId);
         updateOptimisticMessage(optimisticClientRequestId, { confirmationState: "sent", error: undefined });
         clearPendingAttachments();
         setIsComposerSubmitting(false);
@@ -177,6 +180,7 @@ export function useComposerOrchestration({
         });
       }
       await startTurn(threadId, input, composerTurnOptions(composerSettings));
+      onThreadMaterialized(threadId);
       updateOptimisticMessage(optimisticClientRequestId, { confirmationState: "sent", error: undefined });
       clearPendingAttachments();
       setIsComposerSubmitting(false);

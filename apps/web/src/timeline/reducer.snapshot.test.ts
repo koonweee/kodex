@@ -147,6 +147,219 @@ describe("timeline reducer snapshots", () => {
 
     expect(state.activeTurnId).toBeNull();
   });
+
+  it("deduplicates replayed completed app-server items after a snapshot", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("Done", "agent-1"));
+
+    state = applyTimelineEvent(state, {
+      id: "historical-user-upsert-1",
+      seq: 2,
+      kind: "timeline.item_upsert",
+      codexMethod: "item/upsert",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "user-replay-1",
+      projectId: null,
+      payload: {
+        source: "appServerSnapshot",
+        turnId: "turn-1",
+        itemId: "user-replay-1",
+        item: { id: "user-replay-1", type: "userMessage", content: [{ type: "text", text: "Hello" }] },
+        itemSnapshot: { id: "user-replay-1", itemType: "userMessage", rawPayload: {} },
+      },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+    state = applyTimelineEvent(state, {
+      id: "historical-agent-upsert-1",
+      seq: 3,
+      kind: "timeline.item_upsert",
+      codexMethod: "item/upsert",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "agent-replay-1",
+      projectId: null,
+      payload: {
+        source: "appServerSnapshot",
+        turnId: "turn-1",
+        itemId: "agent-replay-1",
+        item: { id: "agent-replay-1", type: "agentMessage", text: "Done" },
+        itemSnapshot: { id: "agent-replay-1", itemType: "agentMessage", rawPayload: {} },
+      },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(state.items.map((item) => item.text)).toEqual(["Hello", "Done"]);
+    expect(state.items.map((item) => item.status)).toEqual(["completed", "completed"]);
+    expect(state.turns).toEqual([{ turnId: "turn-1", itemIds: ["user-1", "agent-1"] }]);
+  });
+
+  it("ignores repeated full-text deltas for completed snapshot items", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("Done", "agent-1"));
+
+    state = applyTimelineEvent(state, {
+      id: "historical-agent-delta-1",
+      seq: 2,
+      kind: "timeline.item_delta",
+      codexMethod: "item/agentMessage/delta",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "agent-1",
+      projectId: null,
+      payload: { source: "gatewayStream", delta: "Done", rawPayload: { delta: "Done" } },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(state.items.map((item) => item.text)).toEqual(["Hello", "Done"]);
+  });
+
+  it("ignores replayed completed deltas that use a different item id than the snapshot", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("Done", "agent-1"));
+
+    state = applyTimelineEvent(state, {
+      id: "historical-turn-upsert-1",
+      seq: 2,
+      kind: "timeline.turn_upsert",
+      codexMethod: "turn/upsert",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: null,
+      projectId: null,
+      payload: {
+        source: "gatewayStream",
+        liveState: "streaming",
+        turn: { id: "turn-1", status: "inProgress", items: [] },
+      },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+    state = applyTimelineEvent(state, {
+      id: "historical-agent-delta-1",
+      seq: 3,
+      kind: "timeline.item_delta",
+      codexMethod: "item/agentMessage/delta",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "agent-replay-1",
+      projectId: null,
+      payload: { source: "gatewayStream", type: "agentMessage", delta: "Do", rawPayload: { delta: "Do" } },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+    state = applyTimelineEvent(state, {
+      id: "historical-agent-delta-2",
+      seq: 4,
+      kind: "timeline.item_delta",
+      codexMethod: "item/agentMessage/delta",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "agent-replay-1",
+      projectId: null,
+      payload: { source: "gatewayStream", type: "agentMessage", delta: "ne", rawPayload: { delta: "ne" } },
+      receivedAt: "2026-04-30T00:00:01Z",
+    });
+
+    expect(state.items.map((item) => item.text)).toEqual(["Hello", "Done"]);
+    expect(state.items.map((item) => item.id)).toEqual(["user-1", "agent-1"]);
+    expect(state.turns).toEqual([{ turnId: "turn-1", itemIds: ["user-1", "agent-1"] }]);
+    expect(state.activeTurnId).toBeNull();
+  });
+
+  it("deduplicates a completed assistant upsert after streaming the same text under another item id", () => {
+    let state = createTimelineState();
+
+    state = applyTimelineEvent(state, {
+      id: "agent-delta-1",
+      seq: 1,
+      kind: "timeline.item_delta",
+      codexMethod: "item/agentMessage/delta",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "agent-stream-1",
+      projectId: null,
+      payload: { source: "gatewayStream", type: "agentMessage", delta: "Done", rawPayload: { delta: "Done" } },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+    state = applyTimelineEvent(state, {
+      id: "agent-completed-1",
+      seq: 2,
+      kind: "timeline.item_upsert",
+      codexMethod: "item/completed",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "agent-completed-1",
+      projectId: null,
+      payload: {
+        source: "gatewayStream",
+        item: { id: "agent-completed-1", type: "agentMessage", text: "Done" },
+      },
+      receivedAt: "2026-04-30T00:00:01Z",
+    });
+
+    expect(state.items.map((item) => item.text)).toEqual(["Done"]);
+    expect(state.items.map((item) => item.status)).toEqual(["completed"]);
+    expect(state.turns).toEqual([{ turnId: "turn-1", itemIds: ["agent-stream-1"] }]);
+  });
+
+  it("keeps active-turn assistant deltas even when they match completed text in another item", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("Done", "agent-1"));
+
+    state = applyTimelineEvent(state, {
+      id: "live-turn-upsert-1",
+      seq: 2,
+      kind: "timeline.turn_upsert",
+      codexMethod: "turn/upsert",
+      threadId: "thread-1",
+      turnId: "turn-2",
+      itemId: null,
+      projectId: null,
+      payload: {
+        source: "gatewayStream",
+        liveState: "streaming",
+        turn: { id: "turn-2", status: "inProgress", items: [] },
+      },
+      receivedAt: "2026-04-30T00:00:01Z",
+    });
+    state = applyTimelineEvent(state, {
+      id: "live-agent-delta-1",
+      seq: 3,
+      kind: "timeline.item_delta",
+      codexMethod: "item/agentMessage/delta",
+      threadId: "thread-1",
+      turnId: "turn-2",
+      itemId: "agent-live-1",
+      projectId: null,
+      payload: { source: "gatewayStream", type: "agentMessage", delta: "Do", rawPayload: { delta: "Do" } },
+      receivedAt: "2026-04-30T00:00:02Z",
+    });
+
+    expect(state.activeTurnId).toBe("turn-2");
+    expect(state.items.map((item) => item.text)).toEqual(["Hello", "Done", "Do"]);
+    expect(state.turns).toEqual([
+      { turnId: "turn-1", itemIds: ["user-1", "agent-1"] },
+      { turnId: "turn-2", itemIds: ["agent-live-1"] },
+    ]);
+  });
+
+  it("uses payload item ids to merge completed items when the event item id is absent", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("Done", "agent-1"));
+
+    state = applyTimelineEvent(state, {
+      id: "agent-completed-event-1",
+      seq: 2,
+      kind: "timeline.item_upsert",
+      codexMethod: "item/completed",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: null,
+      projectId: null,
+      payload: {
+        source: "gatewayStream",
+        item: { id: "agent-1", type: "agentMessage", text: "Done" },
+      },
+      receivedAt: "2026-04-30T00:00:01Z",
+    });
+
+    expect(state.items.map((item) => item.text)).toEqual(["Hello", "Done"]);
+    expect(state.items.map((item) => item.id)).toEqual(["user-1", "agent-1"]);
+  });
 });
 
 function snapshot(agentText: string, agentId: string): ThreadDetailResponse {

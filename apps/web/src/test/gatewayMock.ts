@@ -23,6 +23,9 @@ export function mockGateway(routes: GatewayRouteMap) {
     }
 
     const body = typeof handler === "function" ? await handler(request.clone()) : handler;
+    if (body instanceof Response) {
+      return body;
+    }
     return jsonResponse(body, request.method === "POST" && key === "POST /v1/projects" ? 201 : 200);
   });
 

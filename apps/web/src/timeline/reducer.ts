@@ -87,9 +87,10 @@ function applyTimelineEventInternal(state: TimelineState, event: EventEnvelope):
     return applyTimelineSnapshot(state, event.payload as ThreadDetailResponse);
   }
 
+  const currentIndexes = indexesForState(state);
   const next: TimelineDraft = {
-    activeTurnId: nextActiveTurnId(state.activeTurnId, event),
-    indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    activeTurnId: nextActiveTurnId(state.activeTurnId, event, currentIndexes),
+    indexes: prepareTimelineIndexesForUpdate(currentIndexes),
     lastSeq: Math.max(state.lastSeq, event.seq),
   };
 
@@ -124,11 +125,20 @@ function applyTimelineEventInternal(state: TimelineState, event: EventEnvelope):
   }
 
   const existing = timelineItemById(next.indexes, presentation.item.id);
+  const completedReplayDeltaItem =
+    existing && shouldIgnoreCompletedReplayDelta(state.activeTurnId, existing, presentation.item, event)
+      ? existing
+      : matchingCompletedReplayDeltaItem(next.indexes, state.activeTurnId, presentation.item, event);
+  if (completedReplayDeltaItem) {
+    next.activeTurnId = state.activeTurnId;
+    next.indexes.itemUpdatesById.set(completedReplayDeltaItem.id, appendTimelineDebugEvent(completedReplayDeltaItem, event));
+    return createTimelineStateFromDraft(next);
+  }
+
   if (existing) {
     next.indexes.itemUpdatesById.set(presentation.item.id, mergeTimelineItem(existing, presentation.item, event));
   } else {
-    const confirmedItem =
-      presentation.item.kind === "user_message" ? matchingConfirmedUserMessage(next.indexes, presentation.item) : undefined;
+    const confirmedItem = matchingConfirmedAppServerItem(next.indexes, presentation.item);
     const optimisticItem = confirmedItem
       ? undefined
       : presentation.item.kind === "user_message"
@@ -144,10 +154,12 @@ function applyTimelineEventInternal(state: TimelineState, event: EventEnvelope):
           : presentation.item;
     if (confirmedItem) {
       next.indexes.itemUpdatesById.set(confirmedItem.id, item);
+      addToTurn(next, item);
       return createTimelineStateFromDraft(next);
     }
     if (optimisticItem) {
       next.indexes.itemUpdatesById.set(optimisticItem.id, item);
+      addToTurn(next, item);
       return createTimelineStateFromDraft(next);
     }
     next.indexes.pendingItemById.delete(presentation.item.id);
@@ -179,6 +191,15 @@ export function addOptimisticUserMessage(state: TimelineState, input: Optimistic
     clientRequestId: input.clientRequestId,
     confirmationState: input.confirmationState,
   };
+  const existing = matchingOptimisticUserMessage(next.indexes, item);
+  if (existing) {
+    next.indexes.itemUpdatesById.set(existing.id, {
+      ...item,
+      id: existing.id,
+      seq: existing.seq,
+    });
+    return createTimelineStateFromDraft(next);
+  }
   addItem(next, item);
   addToTurn(next, item);
   return createTimelineStateFromDraft(next);
@@ -269,7 +290,7 @@ export function applyTimelineSnapshot(state: TimelineState, snapshot: ThreadDeta
 function optimisticOnlyTimeline(state: TimelineState): TimelineState {
   let next = createTimelineState();
   for (const item of state.items) {
-    if (item.source !== "optimistic" || item.confirmationState === "sent") {
+    if (item.source !== "optimistic" || item.confirmationState === "failed") {
       continue;
     }
     next = addOptimisticUserMessage(next, {
@@ -295,11 +316,14 @@ function withSnapshotLiveState(state: TimelineState, snapshot: ThreadDetailRespo
   });
 }
 
-function nextActiveTurnId(currentTurnId: string | null, event: EventEnvelope) {
+function nextActiveTurnId(currentTurnId: string | null, event: EventEnvelope, indexes: TimelineIndexes) {
   if (event.codexMethod === "turn/completed") {
     return null;
   }
   if (event.kind === "timeline.turn_upsert") {
+    if (historicalTurnUpsertWouldReactivateCompletedTurn(indexes, event)) {
+      return currentTurnId;
+    }
     if (timelineTurnUpsertIsActive(event)) {
       return event.turnId ?? currentTurnId;
     }
@@ -309,6 +333,20 @@ function nextActiveTurnId(currentTurnId: string | null, event: EventEnvelope) {
     return currentTurnId;
   }
   return event.turnId;
+}
+
+function historicalTurnUpsertWouldReactivateCompletedTurn(indexes: TimelineIndexes, event: EventEnvelope): boolean {
+  if (!event.turnId || !timelineTurnUpsertIsActive(event)) {
+    return false;
+  }
+  const turn = timelineTurnById(indexes, event.turnId);
+  if (!turn || turn.itemIds.length === 0) {
+    return false;
+  }
+  return turn.itemIds.every((itemId) => {
+    const item = timelineItemById(indexes, itemId);
+    return item ? isTerminalTurnStatus(item.status) : false;
+  });
 }
 
 function timelineTurnUpsertIsActive(event: EventEnvelope): boolean {
@@ -335,9 +373,7 @@ function eventCanMarkTurnActive(event: EventEnvelope) {
 }
 
 function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event: EventEnvelope): TimelineItem {
-  const text = event.codexMethod?.endsWith("/delta")
-    ? existing.text + incoming.text
-    : incoming.text || existing.text;
+  const text = mergeTimelineText(existing, incoming, event);
   const output = isCommandOutputDelta(event)
     ? (existing.output ?? "") + incoming.text
     : incoming.output || existing.output;
@@ -358,10 +394,30 @@ function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event
     payload: event.payload,
     resultSummary: incoming.resultSummary || existing.resultSummary,
     seq: Math.min(existing.seq, incoming.seq),
-    status: incoming.status,
+    status: mergeTimelineStatus(existing, incoming, event),
     toolName: incoming.toolName || existing.toolName,
     text,
   };
+}
+
+function mergeTimelineText(existing: TimelineItem, incoming: TimelineItem, event: EventEnvelope): string {
+  if (!event.codexMethod?.endsWith("/delta")) {
+    return incoming.text || existing.text;
+  }
+  if (!incoming.text) {
+    return existing.text;
+  }
+  if (existing.status === "completed" && existing.text.includes(incoming.text)) {
+    return existing.text;
+  }
+  return existing.text + incoming.text;
+}
+
+function mergeTimelineStatus(existing: TimelineItem, incoming: TimelineItem, event: EventEnvelope) {
+  if (existing.status === "completed" && event.codexMethod !== "item/completed") {
+    return existing.status;
+  }
+  return incoming.status;
 }
 
 function matchingOptimisticUserMessage(indexes: TimelineIndexes, incoming: TimelineItem): TimelineItem | undefined {
@@ -376,14 +432,113 @@ function matchingOptimisticUserMessage(indexes: TimelineIndexes, incoming: Timel
   );
 }
 
+function matchingConfirmedAppServerItem(indexes: TimelineIndexes, incoming: TimelineItem): TimelineItem | undefined {
+  if (incoming.kind === "user_message") {
+    return matchingConfirmedUserMessage(indexes, incoming) ?? matchingEquivalentCompletedItem(indexes, incoming);
+  }
+  if (incoming.kind === "assistant_message") {
+    return matchingEquivalentCompletedItem(indexes, incoming);
+  }
+  return undefined;
+}
+
 function matchingConfirmedUserMessage(indexes: TimelineIndexes, incoming: TimelineItem): TimelineItem | undefined {
   return timelineItems(indexes).find(
     (item) =>
-      item.source === "app_server" &&
       item.kind === "user_message" &&
       item.serverItemId === incoming.id &&
       (!item.turnId || !incoming.turnId || item.turnId === incoming.turnId),
   );
+}
+
+function matchingEquivalentCompletedItem(indexes: TimelineIndexes, incoming: TimelineItem): TimelineItem | undefined {
+  if (!incoming.turnId || !incoming.text) {
+    return undefined;
+  }
+  for (const item of timelineItems(indexes)) {
+    if (
+      item.kind === incoming.kind &&
+      item.id !== incoming.id &&
+      sameEquivalentItemTurn(item, incoming) &&
+      equivalentItemStatusMatches(item, incoming) &&
+      item.text === incoming.text &&
+      imagesCompatibleForEquivalentItem(item, incoming)
+    ) {
+      return item;
+    }
+  }
+  return undefined;
+}
+
+function equivalentItemStatusMatches(existing: TimelineItem, incoming: TimelineItem): boolean {
+  return incoming.kind === "assistant_message" || existing.status === "completed";
+}
+
+function sameEquivalentItemTurn(existing: TimelineItem, incoming: TimelineItem): boolean {
+  if (existing.kind === "user_message" && !existing.turnId) {
+    return true;
+  }
+  return existing.turnId === incoming.turnId;
+}
+
+function imagesCompatibleForEquivalentItem(existing: TimelineItem, incoming: TimelineItem): boolean {
+  if (incoming.kind === "user_message" && (incoming.images ?? []).length === 0) {
+    return true;
+  }
+  return imagesMatch(existing.images ?? [], incoming.images ?? []);
+}
+
+function matchingCompletedReplayDeltaItem(
+  indexes: TimelineIndexes,
+  activeTurnId: string | null,
+  incoming: TimelineItem,
+  event: EventEnvelope,
+): TimelineItem | undefined {
+  if (!shouldCheckCompletedReplayDelta(activeTurnId, incoming, event)) {
+    return undefined;
+  }
+  for (const item of timelineItems(indexes)) {
+    if (shouldIgnoreCompletedReplayDelta(activeTurnId, item, incoming, event)) {
+      return item;
+    }
+  }
+  return undefined;
+}
+
+function shouldIgnoreCompletedReplayDelta(
+  activeTurnId: string | null,
+  existing: TimelineItem,
+  incoming: TimelineItem,
+  event: EventEnvelope,
+): boolean {
+  return (
+    shouldCheckCompletedReplayDelta(activeTurnId, incoming, event) &&
+    existing.kind === "assistant_message" &&
+    existing.turnId === incoming.turnId &&
+    existing.status === "completed" &&
+    Boolean(incoming.text) &&
+    existing.text.includes(incoming.text)
+  );
+}
+
+function shouldCheckCompletedReplayDelta(
+  activeTurnId: string | null,
+  incoming: TimelineItem,
+  event: EventEnvelope,
+): boolean {
+  return (
+    event.codexMethod?.endsWith("/delta") === true &&
+    incoming.kind === "assistant_message" &&
+    Boolean(incoming.turnId) &&
+    activeTurnId !== incoming.turnId
+  );
+}
+
+function appendTimelineDebugEvent(item: TimelineItem, event: EventEnvelope): TimelineItem {
+  return {
+    ...item,
+    debugEvents: [...item.debugEvents, event],
+  };
 }
 
 function confirmOptimisticUserMessage(existing: TimelineItem, incoming: TimelineItem, event: EventEnvelope): TimelineItem {
@@ -391,14 +546,15 @@ function confirmOptimisticUserMessage(existing: TimelineItem, incoming: Timeline
 }
 
 function confirmAppServerUserMessage(existing: TimelineItem, incoming: TimelineItem, event: EventEnvelope): TimelineItem {
+  const merged = mergeTimelineItem(existing, incoming, event);
   return {
-    ...mergeTimelineItem(existing, incoming, event),
+    ...merged,
     id: existing.id,
     serverItemId: existing.serverItemId ?? incoming.id,
     source: "app_server",
     confirmationState: "sent",
     error: undefined,
-    status: incoming.status,
+    status: merged.status,
     turnId: incoming.turnId || existing.turnId,
   };
 }
@@ -475,6 +631,11 @@ function addToTurn(state: TimelineDraft, item: TimelineItem) {
   }
   const existing = timelineTurnById(state.indexes, item.turnId);
   if (existing) {
+    for (const itemId of existing.itemIds) {
+      if (itemId === item.id) {
+        return;
+      }
+    }
     state.indexes.turnUpdatesById.set(item.turnId, {
       turnId: existing.turnId,
       itemIds: [...existing.itemIds, item.id],

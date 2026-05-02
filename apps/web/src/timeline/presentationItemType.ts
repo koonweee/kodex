@@ -2,10 +2,11 @@ import type { EventEnvelope } from "../api/client";
 import { eventItem, isErrorEvent, isWarningEvent, payloadRecord, stringValue } from "./presentationShared";
 
 export function presentationItemId(event: EventEnvelope, itemType: string): string {
+  const payloadItemId = stringValue(eventItem(event).id);
   if (itemType === "web_search_group") {
-    return `web-search-${event.turnId ?? event.itemId ?? event.id}`;
+    return `web-search-${event.turnId ?? event.itemId ?? payloadItemId ?? event.id}`;
   }
-  return event.itemId ?? event.id;
+  return event.itemId ?? payloadItemId ?? event.id;
 }
 
 export function normalizedItemType(event: EventEnvelope): string {

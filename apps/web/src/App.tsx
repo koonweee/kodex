@@ -107,6 +107,7 @@ function KodexShell({
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [draftThreadProjectId, setDraftThreadProjectId] = useState<string | null>(null);
   const [pendingTitleThreadIds, setPendingTitleThreadIds] = useState<Set<string>>(new Set());
+  const [materializingThreadIds, setMaterializingThreadIds] = useState<Set<string>>(new Set());
   const [timeline, setTimeline] = useState<TimelineState>(createTimelineState());
   const [timelineEntry, setTimelineEntry] = useState<TimelineEntry>(idleTimelineEntry);
   const [projectFormOpen, setProjectFormOpen] = useState(false);
@@ -181,6 +182,8 @@ function KodexShell({
   } = useSidebarResize();
   const selectedTimelineEntry =
     selectedThread !== null && timelineEntry.threadId === selectedThread.id ? timelineEntry : idleTimelineEntry;
+  const isSelectedThreadSnapshotDeferred =
+    selectedThreadId !== null && materializingThreadIds.has(selectedThreadId);
   const isSelectedThreadNotLoaded = selectedThread?.status === "notLoaded";
   const isSelectedTimelineLoading = selectedTimelineEntry.phase === "loadingSnapshot";
   const isSelectedTimelineReady =
@@ -214,6 +217,7 @@ function KodexShell({
     isDraftThreadSelected,
     onCreateDraftThread: createDraftThreadFromComposer,
     onError: reportError,
+    onThreadMaterialized: markThreadMaterialized,
     selectedProjectId,
     selectedThreadId,
     setTimeline,
@@ -318,6 +322,7 @@ function KodexShell({
 
   useSelectedThreadTimeline({
     isSelectedThreadNotLoaded,
+    isSelectedThreadSnapshotDeferred,
     onApprovalEvent: applyApprovalEventWithTombstone,
     onError: reportError,
     onSnapshotThread: handleSelectedThreadSnapshot,
@@ -401,6 +406,12 @@ function KodexShell({
     setTimelineEntry({ phase: "loadingSnapshot", threadId });
   }
 
+  function beginMaterializingTimelineEntry(threadId: string) {
+    markCompletedAgentTurnSeen(threadId);
+    setTimeline(createTimelineState());
+    setTimelineEntry({ phase: "streamingLive", threadId });
+  }
+
   async function handleCreateProject(event: FormEvent) {
     event.preventDefault();
     const project = await createProject({ name: projectName || null, cwd: projectCwd });
@@ -470,13 +481,29 @@ function KodexShell({
     );
     setThreadsByProjectId((current) => prependThreadForProject(current, projectId, thread));
     setPendingTitleThreadIds((current) => markThreadTitlePending(current, thread));
+    setMaterializingThreadIds((current) => {
+      const next = new Set(current);
+      next.add(thread.id);
+      return next;
+    });
     setIsDraftComposerTransitioning(draftComposerTransitionOriginRef.current !== null);
     setDraftThreadProjectId(null);
     selectedThreadIdRef.current = thread.id;
-    beginTimelineEntry(thread.id);
+    beginMaterializingTimelineEntry(thread.id);
     setSelectedThreadId(thread.id);
     setDraftComposerTransitionToken((current) => current + 1);
     return thread.id;
+  }
+
+  function markThreadMaterialized(threadId: string) {
+    setMaterializingThreadIds((current) => {
+      if (!current.has(threadId)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(threadId);
+      return next;
+    });
   }
 
   function handleSelectThread(projectId: string, threadId: string) {

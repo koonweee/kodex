@@ -8,8 +8,11 @@ import { applyTimelineEventBatch } from "./batch";
 import { idleTimelineEntry, type TimelineEntry } from "./entry";
 import { applyTimelineSnapshot, createTimelineState, type TimelineState } from "./reducer";
 
+const MATERIALIZING_THREAD_SNAPSHOT_RETRY_MS = 250;
+
 export function useSelectedThreadTimeline({
   isSelectedThreadNotLoaded,
+  isSelectedThreadSnapshotDeferred,
   onApprovalEvent,
   onError,
   onSnapshotThread,
@@ -20,6 +23,7 @@ export function useSelectedThreadTimeline({
   setTimelineEntry,
 }: {
   isSelectedThreadNotLoaded: boolean;
+  isSelectedThreadSnapshotDeferred: boolean;
   onApprovalEvent: (current: Approval[], event: EventEnvelope) => Approval[];
   onError: (error: unknown) => void;
   onSnapshotThread: (thread: ThreadSummary) => void;
@@ -111,9 +115,16 @@ export function useSelectedThreadTimeline({
       beginEntry(threadId);
       return;
     }
+    if (isSelectedThreadSnapshotDeferred) {
+      selectedThreadStreamToken.current += 1;
+      cancelQueuedTimelineEvents();
+      markEntryStreaming(threadId);
+      return;
+    }
 
     let cancelled = false;
     let closeStream: (() => void) | null = null;
+    let materializingThreadRetry: ReturnType<typeof setTimeout> | null = null;
     const streamToken = selectedThreadStreamToken.current + 1;
     selectedThreadStreamToken.current = streamToken;
 
@@ -131,63 +142,84 @@ export function useSelectedThreadTimeline({
       return true;
     }
 
-    refreshSnapshot("loadingSnapshot")
-      .then((loaded) => {
-        if (!loaded || cancelled) {
-          return;
-        }
-
-        const refetchSnapshot = () => {
-          void refreshSnapshot("refreshingSnapshot").catch((error) => {
-            if (!cancelled) {
-              latestCallbacks.current.onError(error);
-            }
-          });
-        };
-
-        const client = createEventStreamClient({
-          threadId,
-          onStatusChange: (status) => {
-            if (status === "reconnecting" && selectedThreadStreamToken.current === streamToken) {
-              refetchSnapshot();
-            }
-          },
-          onEvent: (event) => {
-            if (selectedThreadStreamToken.current !== streamToken) {
-              return;
-            }
-            if (event.threadId && event.threadId !== threadId) {
-              return;
-            }
-            if (event.kind === "timeline.snapshot_required") {
-              refetchSnapshot();
-              return;
-            }
-            latestCallbacks.current.onThreadMetadataEvent(event);
-            if (isApprovalEvent(event)) {
-              setApprovals((current) => latestCallbacks.current.onApprovalEvent(current, event));
-              return;
-            }
-            queuedTimelineEvents.current.push(event);
-            scheduleQueuedTimelineFlush();
-          },
-        });
-        client.connect();
-        closeStream = client.close;
-      })
-      .catch((error) => {
+    const refetchSnapshot = () => {
+      void refreshSnapshot("refreshingSnapshot").catch((error) => {
         if (cancelled) {
           return;
         }
-        clearEntryForThread(threadId);
         latestCallbacks.current.onError(error);
       });
+    };
+
+    const connectSelectedThreadStream = () => {
+      const client = createEventStreamClient({
+        threadId,
+        onStatusChange: (status) => {
+          if (status === "reconnecting" && selectedThreadStreamToken.current === streamToken) {
+            refetchSnapshot();
+          }
+        },
+        onEvent: (event) => {
+          if (selectedThreadStreamToken.current !== streamToken) {
+            return;
+          }
+          if (event.threadId && event.threadId !== threadId) {
+            return;
+          }
+          if (event.kind === "timeline.snapshot_required") {
+            refetchSnapshot();
+            return;
+          }
+          latestCallbacks.current.onThreadMetadataEvent(event);
+          if (isApprovalEvent(event)) {
+            setApprovals((current) => latestCallbacks.current.onApprovalEvent(current, event));
+            return;
+          }
+          queuedTimelineEvents.current.push(event);
+          scheduleQueuedTimelineFlush();
+        },
+      });
+      client.connect();
+      closeStream = client.close;
+    };
+
+    const loadInitialSnapshot = () => {
+      void refreshSnapshot("loadingSnapshot")
+        .then((loaded) => {
+          if (!loaded || cancelled) {
+            return;
+          }
+          connectSelectedThreadStream();
+        })
+        .catch((error) => {
+          if (cancelled) {
+            return;
+          }
+          if (isThreadMaterializingError(error)) {
+            materializingThreadRetry = setTimeout(loadInitialSnapshot, MATERIALIZING_THREAD_SNAPSHOT_RETRY_MS);
+            return;
+          }
+          clearEntryForThread(threadId);
+          latestCallbacks.current.onError(error);
+        });
+    };
+
+    loadInitialSnapshot();
 
     return () => {
       cancelled = true;
       selectedThreadStreamToken.current += 1;
+      if (materializingThreadRetry !== null) {
+        clearTimeout(materializingThreadRetry);
+      }
       closeStream?.();
       cancelQueuedTimelineEvents();
     };
-  }, [isSelectedThreadNotLoaded, selectedThreadId, setApprovals, setTimeline, setTimelineEntry]);
+  }, [isSelectedThreadNotLoaded, isSelectedThreadSnapshotDeferred, selectedThreadId, setApprovals, setTimeline, setTimelineEntry]);
+}
+
+function isThreadMaterializingError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  return normalized.includes("not materialized yet") && normalized.includes("includeturns");
 }

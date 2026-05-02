@@ -14,7 +14,10 @@ import {
   project,
   requestJson,
   secondThread,
+  snapshotItem,
+  snapshotTurn,
   thread,
+  threadDetail,
   timelineElement,
 } from "./test/mvpAppHarness";
 
@@ -75,7 +78,7 @@ describe("MVP composer input flows", () => {
     expect(screen.getByRole("button", { name: /open attachment menu/i })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /open attachment menu/i }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: /add attachment/i }));
+    await clickMenuItem(/add attachment/i);
     await waitFor(() => {
       expect(screen.queryByRole("menuitem", { name: /add attachment/i })).not.toBeInTheDocument();
     });
@@ -353,6 +356,61 @@ describe("MVP composer input flows", () => {
     });
   });
 
+  it("waits to load a new draft thread snapshot until the first turn materializes it", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let materialized = false;
+    let resolveTurn: (value: unknown) => void = () => undefined;
+    const draftThread = { ...thread, id: "thread-2", name: "New thread", preview: null };
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads": { thread: draftThread, rawPayload: {} },
+        "POST /v1/threads/thread-2/turns": () =>
+          new Promise((resolve) => {
+            resolveTurn = (value) => {
+              materialized = true;
+              resolve(value);
+            };
+          }),
+        "GET /v1/threads/thread-2": () => {
+          if (!materialized) {
+            throw new Error('APP-SERVER ERROR -32600 "thread thread-2 is not materialized yet"');
+          }
+          return threadDetail(
+            { ...draftThread, preview: "Materialize this" },
+            [
+              snapshotTurn("turn-1", [
+                snapshotItem("user-1", "userMessage", {
+                  content: [{ type: "text", text: "Materialize this" }],
+                }),
+                snapshotItem("agent-1", "agentMessage", { text: "Materialized response" }),
+              ]),
+            ],
+          );
+        },
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Materialize this");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(1);
+    });
+    expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(0);
+    expect(screen.queryByText(/not materialized yet/i)).not.toBeInTheDocument();
+
+    act(() => resolveTurn({ payload: {} }));
+
+    expect(await within(timelineElement(container)).findByText("Materialized response")).toBeInTheDocument();
+    expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(1);
+    expect(within(timelineElement(container)).getAllByText("Materialize this")).toHaveLength(1);
+  });
+
   it("keeps failed draft thread image uploads visible and retryable", async () => {
     let rejectUpload: (reason?: unknown) => void = () => undefined;
     let uploadAttempts = 0;
@@ -376,6 +434,16 @@ describe("MVP composer input flows", () => {
           };
         },
         "POST /v1/threads/thread-2/turns": { payload: {} },
+        "GET /v1/threads/thread-2": threadDetail(
+          { ...thread, id: "thread-2", name: "New thread", preview: "Inspect this" },
+          [
+            snapshotTurn("turn-1", [
+              snapshotItem("user-1", "userMessage", {
+                content: [{ type: "text", text: "Inspect this" }],
+              }),
+            ]),
+          ],
+        ),
       }),
     );
 
