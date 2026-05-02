@@ -144,7 +144,7 @@ impl JsonRpcAppServer {
             .startup_probe_request(
                 "thread/resume",
                 json!({
-                    "threadId": "__kodex_gateway_persist_extended_history_probe__",
+                    "threadId": "00000000-0000-0000-0000-000000000000",
                     "persistExtendedHistory": true
                 }),
             )
