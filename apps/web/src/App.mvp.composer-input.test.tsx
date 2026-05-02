@@ -120,6 +120,75 @@ describe("MVP composer input flows", () => {
     });
   });
 
+  it("keeps a background send in progress after switching threads and renders one materialized prompt", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let resolveTurn: (value: unknown) => void = () => undefined;
+    let firstThreadTurns: ReturnType<typeof snapshotTurn>[] = [];
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/threads/thread-1": () => threadDetail(thread, firstThreadTurns),
+        "GET /v1/threads/thread-2": threadDetail(secondThread, [
+          snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Second thread snapshot" })]),
+        ]),
+        "POST /v1/threads/thread-1/turns": () =>
+          new Promise((resolve) => {
+            resolveTurn = resolve;
+          }),
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    const firstThreadButton = await screen.findByRole("button", { name: /implement frontend/i });
+    const firstThreadRow = firstThreadButton.closest(".kodex-thread-list-button");
+    expect(firstThreadRow).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/message composer/i), "sleep 5s, then send hello");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+      expect(firstThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    expect(await screen.findByText(/second thread snapshot/i)).toBeInTheDocument();
+    expect(firstThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument();
+
+    firstThreadTurns = [
+      snapshotTurn("turn-3", [
+        snapshotItem("user-3", "userMessage", {
+          content: [{ type: "text", text: "sleep 5s, then send hello" }],
+        }),
+        snapshotItem("agent-3", "agentMessage", { text: "hello" }),
+      ]),
+    ];
+    act(() => resolveTurn({ payload: {} }));
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
+    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    act(() => {
+      globalStream?.emit({
+        id: "event-background-send-completed",
+        seq: 3,
+        kind: "timeline.turn_upsert",
+        codexMethod: "turn/upsert",
+        projectId: project.id,
+        threadId: thread.id,
+        turnId: "turn-3",
+        itemId: null,
+        payload: { threadId: thread.id, turn: { id: "turn-3", status: "completed", items: [] } },
+        receivedAt: "2026-05-02T00:00:02Z",
+      });
+    });
+
+    expect(firstThreadRow?.querySelector(".kodex-thread-progress-indicator")).not.toBeInTheDocument();
+    expect(firstThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
+
+    await userEvent.click(firstThreadButton);
+    expect(await within(timelineElement(container)).findByText("hello")).toBeInTheDocument();
+    expect(within(timelineElement(container)).getAllByText("sleep 5s, then send hello")).toHaveLength(1);
+  });
+
   it("removes failed optimistic text sends before retrying from the restored composer", async () => {
     let turnAttempts = 0;
     const gateway = mockGateway(

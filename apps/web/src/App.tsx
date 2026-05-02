@@ -47,6 +47,7 @@ import {
   replaceThreadInProjects,
   threadDisplayTitle,
   threadHasDisplayTitle,
+  updateThreadReadStateInProjects,
   type ThreadsByProjectId,
 } from "./threads/helpers";
 import { useThreadMetadata } from "./threads/useThreadMetadata";
@@ -218,6 +219,8 @@ function KodexShell({
     onCreateDraftThread: createDraftThreadFromComposer,
     onError: reportError,
     onThreadMaterialized: markThreadMaterialized,
+    onThreadTurnStartFailed: markThreadIdle,
+    onThreadTurnStarted: markThreadActive,
     selectedProjectId,
     selectedThreadId,
     setTimeline,
@@ -504,6 +507,22 @@ function KodexShell({
       next.delete(threadId);
       return next;
     });
+  }
+
+  function markThreadActive(threadId: string) {
+    setThreadsByProjectId((current) =>
+      updateThreadReadStateInProjects(current, threadId, (thread) =>
+        thread.status === "active" ? {} : { status: "active" },
+      ),
+    );
+  }
+
+  function markThreadIdle(threadId: string) {
+    setThreadsByProjectId((current) =>
+      updateThreadReadStateInProjects(current, threadId, (thread) =>
+        thread.status === "idle" ? {} : { status: "idle" },
+      ),
+    );
   }
 
   function handleSelectThread(projectId: string, threadId: string) {

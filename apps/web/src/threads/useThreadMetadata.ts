@@ -3,8 +3,8 @@ import { useState, type Dispatch, type SetStateAction } from "react";
 import type { ContextUsage } from "../ComposerFooterControls";
 import type { EventEnvelope } from "../api/client";
 import { contextUsageFromEvent } from "../composer/settings";
-import { threadNameUpdateFromEvent } from "./events";
-import { updateThreadNameInProjects, type ThreadsByProjectId } from "./helpers";
+import { threadNameUpdateFromEvent, threadStatusUpdateFromEvent } from "./events";
+import { updateThreadNameInProjects, updateThreadReadStateInProjects, type ThreadsByProjectId } from "./helpers";
 
 type UseThreadMetadataParams = {
   selectedThreadId: string | null;
@@ -24,6 +24,15 @@ export function useThreadMetadata({
     const tokenUsage = contextUsageFromEvent(event);
     if (tokenUsage && event.threadId) {
       setContextUsageByThreadId((current) => ({ ...current, [event.threadId as string]: tokenUsage }));
+    }
+
+    const statusUpdate = threadStatusUpdateFromEvent(event);
+    if (statusUpdate) {
+      setThreadsByProjectId((current) =>
+        updateThreadReadStateInProjects(current, statusUpdate.threadId, (thread) =>
+          thread.status === statusUpdate.status ? {} : { status: statusUpdate.status },
+        ),
+      );
     }
 
     const update = threadNameUpdateFromEvent(event);

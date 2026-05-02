@@ -44,6 +44,8 @@ type UseComposerOrchestrationParams = {
   onCreateDraftThread: (request: DraftThreadCreateRequest) => Promise<string>;
   onError: (error: unknown) => void;
   onThreadMaterialized: (threadId: string) => void;
+  onThreadTurnStartFailed: (threadId: string) => void;
+  onThreadTurnStarted: (threadId: string) => void;
   selectedProjectId: string | null;
   selectedThreadId: string | null;
   setTimeline: Dispatch<SetStateAction<TimelineState>>;
@@ -58,6 +60,8 @@ export function useComposerOrchestration({
   onCreateDraftThread,
   onError,
   onThreadMaterialized,
+  onThreadTurnStartFailed,
+  onThreadTurnStarted,
   selectedProjectId,
   selectedThreadId,
   setTimeline,
@@ -126,6 +130,7 @@ export function useComposerOrchestration({
     const optimisticImages = attachmentPreviewImages(attachments);
     const initialConfirmationState = attachments.length > 0 ? "uploading" : "sending";
     let optimisticClientRequestId: string | null = null;
+    let startedThreadId: string | null = null;
     let retryRestoreContext: ComposerContext = {
       activeSelectedTurnId,
       draftThreadProjectId,
@@ -136,6 +141,8 @@ export function useComposerOrchestration({
     try {
       if (selectedThreadId) {
         optimisticClientRequestId = addOptimisticMessage(text, optimisticImages, null, initialConfirmationState);
+        startedThreadId = selectedThreadId;
+        onThreadTurnStarted(selectedThreadId);
         draftControls.clearText();
         const input = await buildTurnInput(text, attachments);
         const uploadedImages = userInputImages(input);
@@ -169,6 +176,8 @@ export function useComposerOrchestration({
       latestComposerContextRef.current = retryRestoreContext;
       composerContextRef.current = retryRestoreContext;
       optimisticClientRequestId = addOptimisticMessage(text, optimisticImages, null, initialConfirmationState);
+      startedThreadId = threadId;
+      onThreadTurnStarted(threadId);
       draftControls.clearText();
       const input = await buildTurnInput(text, attachments);
       const uploadedImages = userInputImages(input);
@@ -188,6 +197,9 @@ export function useComposerOrchestration({
       if (optimisticClientRequestId) {
         const clientRequestId = optimisticClientRequestId;
         setTimeline((current) => removeOptimisticUserMessage(current, clientRequestId));
+      }
+      if (startedThreadId) {
+        onThreadTurnStartFailed(startedThreadId);
       }
       if (sameComposerContext(latestComposerContextRef.current, retryRestoreContext)) {
         draftControls.restoreText(text);

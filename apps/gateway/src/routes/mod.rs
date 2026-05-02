@@ -618,6 +618,25 @@ mod tests {
         assert_eq!(body["threads"][1]["lastCompletedAgentTurnSeq"], Value::Null);
         assert_eq!(body["threads"][1]["unreadCompletedAgentTurn"], json!(false));
 
+        let mut list_thread_with_cursor_like_marker = thread_summary("thread-1");
+        list_thread_with_cursor_like_marker["lastCompletedAgentTurnSeq"] = json!(129381);
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "data": [
+                list_thread_with_cursor_like_marker
+            ],
+            "nextCursor": null,
+            "backwardsCursor": null
+        }));
+        let response = app
+            .clone()
+            .oneshot(Request::get("/v1/threads").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["threads"][0]["lastCompletedAgentTurnSeq"], Value::Null);
+        assert_eq!(body["threads"][0]["unreadCompletedAgentTurn"], json!(false));
+
         *app_server.next_response.lock().unwrap() = Some(json!({
             "thread": thread_summary_with_completed_turns("thread-1", 1)
         }));

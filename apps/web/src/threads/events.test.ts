@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { EventEnvelope } from "../api/client";
-import { completedAgentTurnEvent } from "./events";
+import { completedAgentTurnEvent, threadStatusUpdateFromEvent } from "./events";
 
 describe("thread events", () => {
   it("ignores legacy raw completion notifications", () => {
@@ -28,6 +28,27 @@ describe("thread events", () => {
         }),
       ),
     ).toEqual({ threadId: "thread-1", seq: 10 });
+  });
+
+  it("recognizes running and terminal thread status updates", () => {
+    expect(
+      threadStatusUpdateFromEvent(
+        event({
+          kind: "timeline.thread_status",
+          threadId: "thread-1",
+          payload: { status: "running" },
+        }),
+      ),
+    ).toEqual({ threadId: "thread-1", status: "active" });
+
+    expect(
+      threadStatusUpdateFromEvent(
+        event({
+          kind: "timeline.turn_upsert",
+          payload: { threadId: "thread-1", turn: { id: "turn-1", status: "completed" } },
+        }),
+      ),
+    ).toEqual({ threadId: "thread-1", status: "idle" });
   });
 });
 
