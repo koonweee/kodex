@@ -102,8 +102,8 @@ type TimelineItemRendererProps = {
 function TimelineItemRendererImpl({ item, imagePreviewUrlsByPath = {}, showDebug = false }: TimelineItemRendererProps) {
   const render = rendererRegistry[item.kind] ?? unknownRenderer;
   const label = labels[item.kind] ?? "Unsupported item";
-  const showStatus = item.status !== "completed";
   const isMessage = isTimelineMessage(item.kind);
+  const showStatus = !isMessage && item.status !== "completed";
   return (
     <Box className={`kodex-timeline-item kodex-timeline-item-${item.kind}`}>
       {!isMessage || showStatus ? (

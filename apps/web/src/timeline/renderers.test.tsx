@@ -267,6 +267,7 @@ describe("timeline renderer registry", () => {
 
     const { container, rerender } = render(<StreamingHarness text="Checking..." />);
     expect(screen.getByText("Checking...")).toBeInTheDocument();
+    expect(screen.queryByText("running")).not.toBeInTheDocument();
     reactMarkdownRenderSpy.mockClear();
 
     rerender(<StreamingHarness text={"Checking...\nFound source."} />);

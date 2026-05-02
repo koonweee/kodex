@@ -429,6 +429,9 @@ pub struct ThreadSummary {
     pub approvals_reviewer: Option<String>,
     pub sandbox: Option<Value>,
     pub preview: Option<Value>,
+    pub last_completed_agent_turn_seq: Option<i64>,
+    pub seen_completed_agent_turn_seq: i64,
+    pub unread_completed_agent_turn: bool,
     pub raw_payload: Value,
 }
 
@@ -449,8 +452,22 @@ impl ThreadSummary {
             approvals_reviewer: optional_string(payload, "approvalsReviewer"),
             sandbox: optional_value(payload, "sandbox"),
             preview: payload.get("preview").cloned(),
+            last_completed_agent_turn_seq: None,
+            seen_completed_agent_turn_seq: 0,
+            unread_completed_agent_turn: false,
             raw_payload: payload.clone(),
         })
+    }
+
+    pub fn apply_completed_agent_turn_read_state(
+        &mut self,
+        last_completed_agent_turn_seq: Option<i64>,
+        seen_completed_agent_turn_seq: i64,
+    ) {
+        self.last_completed_agent_turn_seq = last_completed_agent_turn_seq;
+        self.seen_completed_agent_turn_seq = seen_completed_agent_turn_seq.max(0);
+        self.unread_completed_agent_turn = last_completed_agent_turn_seq
+            .is_some_and(|seq| seq > self.seen_completed_agent_turn_seq);
     }
 }
 

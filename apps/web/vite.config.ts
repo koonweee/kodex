@@ -1,8 +1,33 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
+import { buildKodexColorSchemeBootstrapScript, buildKodexColorSchemeCss } from "./src/themeRegistry";
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: "kodex-theme-bootstrap",
+      transformIndexHtml(html) {
+        return {
+          html,
+          tags: [
+            {
+              tag: "script",
+              children: buildKodexColorSchemeBootstrapScript(),
+              injectTo: "head-prepend",
+            },
+            {
+              tag: "style",
+              attrs: { id: "kodex-theme-registry" },
+              children: buildKodexColorSchemeCss(),
+              injectTo: "head-prepend",
+            },
+          ],
+        };
+      },
+    },
+  ],
   server: {
     host: "127.0.0.1",
     port: 5173,

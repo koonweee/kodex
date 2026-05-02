@@ -1,0 +1,280 @@
+export type KodexColorSchemeId = "oled-black" | "paper-light" | "dracula" | "monokai";
+
+export type KodexColorSchemeDefinition = {
+  id: KodexColorSchemeId;
+  label: string;
+  description: string;
+  mode: "dark" | "light";
+  swatches: [string, string, string];
+  rootVariables: Record<string, string>;
+  mantineAccent: string[];
+  mantineGray: string[];
+  mantineRed: string[];
+};
+
+export const KODEX_COLOR_SCHEME_STORAGE_KEY = "kodex-color-scheme";
+export const DEFAULT_KODEX_COLOR_SCHEME_ID: KodexColorSchemeId = "oled-black";
+
+export const KODEX_COLOR_SCHEMES: KodexColorSchemeDefinition[] = [
+  {
+    id: "oled-black",
+    label: "OLED Black",
+    description: "Pitch-black surfaces with bright jade accents.",
+    mode: "dark",
+    swatches: ["#050505", "#111111", "#5ce0c3"],
+    rootVariables: {
+      "--kodex-bg-app": "#050505",
+      "--kodex-bg-shell": "#0a0a0a",
+      "--kodex-bg-thread-surface": "#151515",
+      "--kodex-bg-sidebar-hover": "#171717",
+      "--kodex-bg-composer": "#111111",
+      "--kodex-bg-composer-alt": "#1a1a1a",
+      "--kodex-bg-composer-muted": "#202020",
+      "--kodex-bg-button-hover": "#1c1c1c",
+      "--kodex-bg-selected": "#0f2621",
+      "--kodex-bg-selected-strong": "#14362f",
+      "--kodex-bg-command": "#1b1d22",
+      "--kodex-bg-code": "#13211e",
+      "--kodex-bg-empty-icon": "#202020",
+      "--kodex-bg-mobile": "#0f0f0f",
+      "--kodex-bg-user-bubble": "#1b7464",
+      "--kodex-border-subtle": "#2b2b2b",
+      "--kodex-border-strong": "#3d3d3d",
+      "--kodex-border-accent": "#5ce0c3",
+      "--kodex-border-accent-soft": "rgb(92 224 195 / 42%)",
+      "--kodex-text-primary": "#f3f3f3",
+      "--kodex-text-secondary": "#d0d0d0",
+      "--kodex-text-muted": "#8d8d8d",
+      "--kodex-text-accent": "#82f3dd",
+      "--kodex-text-accent-soft": "#d8fff7",
+      "--kodex-text-on-accent": "#f6fffd",
+      "--kodex-text-danger": "#ffb4a8",
+      "--kodex-accent": "#5ce0c3",
+      "--kodex-accent-strong": "#82f3dd",
+      "--kodex-accent-muted": "#a7bdb9",
+      "--kodex-danger": "#ff8e7a",
+      "--kodex-danger-muted": "#ffb4a8",
+      "--kodex-shadow-strong": "0 16px 48px rgb(0 0 0 / 30%)",
+      "--kodex-shadow-floating": "0 6px 18px rgb(0 0 0 / 28%)",
+      "--kodex-overlay-strong": "rgb(0 0 0 / 70%)",
+      "--kodex-overlay-muted": "rgb(0 0 0 / 58%)",
+      "--kodex-inline-code-border": "#36544e",
+      "--kodex-scroll-button-bg": "#1d1d1d",
+      "--kodex-scroll-button-hover": "#272727",
+      "--kodex-scroll-button-color": "#e5e5e5",
+      "--kodex-scroll-button-border": "#464646",
+      "--kodex-context-unused": "#4f4f4f",
+      "--kodex-context-unknown": "#747474",
+      "--kodex-context-unknown-muted": "#3f3f3f",
+    },
+    mantineAccent: ["#0d1916", "#0f241f", "#133b33", "#175149", "#1d685e", "#258071", "#309786", "#45b29d", "#5ce0c3", "#82f3dd"],
+    mantineGray: ["#f5f5f5", "#dfdfdf", "#c6c6c6", "#adadad", "#8d8d8d", "#727272", "#565656", "#3f3f3f", "#292929", "#161616"],
+    mantineRed: ["#fff0ed", "#ffdcd4", "#ffbda8", "#ff9b7d", "#ff8e7a", "#ff745f", "#f85f49", "#d44b37", "#aa3828", "#7f2419"],
+  },
+  {
+    id: "paper-light",
+    label: "Paper Light",
+    description: "Warm paper tones with deep ink and jade controls.",
+    mode: "light",
+    swatches: ["#f4f1e8", "#fcfaf4", "#0d8a74"],
+    rootVariables: {
+      "--kodex-bg-app": "#ece6db",
+      "--kodex-bg-shell": "#efe8dc",
+      "--kodex-bg-thread-surface": "#fcfaf4",
+      "--kodex-bg-sidebar-hover": "#ece2d2",
+      "--kodex-bg-composer": "#f7f2e8",
+      "--kodex-bg-composer-alt": "#f1eadc",
+      "--kodex-bg-composer-muted": "#ede4d4",
+      "--kodex-bg-button-hover": "#e8ddcb",
+      "--kodex-bg-selected": "#dcebe2",
+      "--kodex-bg-selected-strong": "#cfe5da",
+      "--kodex-bg-command": "#ebe6dc",
+      "--kodex-bg-code": "#dfece6",
+      "--kodex-bg-empty-icon": "#ece4d6",
+      "--kodex-bg-mobile": "#ece4d5",
+      "--kodex-bg-user-bubble": "#0d8a74",
+      "--kodex-border-subtle": "#d8cfc2",
+      "--kodex-border-strong": "#c8bcae",
+      "--kodex-border-accent": "#0d8a74",
+      "--kodex-border-accent-soft": "rgb(13 138 116 / 28%)",
+      "--kodex-text-primary": "#2f271f",
+      "--kodex-text-secondary": "#4b4036",
+      "--kodex-text-muted": "#7b6f62",
+      "--kodex-text-accent": "#0f7f6b",
+      "--kodex-text-accent-soft": "#0d8a74",
+      "--kodex-text-on-accent": "#f7fffc",
+      "--kodex-text-danger": "#b44938",
+      "--kodex-accent": "#0d8a74",
+      "--kodex-accent-strong": "#0f6e5d",
+      "--kodex-accent-muted": "#5a7d74",
+      "--kodex-danger": "#c25d4b",
+      "--kodex-danger-muted": "#b44938",
+      "--kodex-shadow-strong": "0 16px 40px rgb(86 62 24 / 10%)",
+      "--kodex-shadow-floating": "0 8px 20px rgb(86 62 24 / 12%)",
+      "--kodex-overlay-strong": "rgb(47 39 31 / 16%)",
+      "--kodex-overlay-muted": "rgb(47 39 31 / 12%)",
+      "--kodex-inline-code-border": "#b8cbc3",
+      "--kodex-scroll-button-bg": "#fcfaf4",
+      "--kodex-scroll-button-hover": "#f2ebdf",
+      "--kodex-scroll-button-color": "#2f271f",
+      "--kodex-scroll-button-border": "#cdbfaf",
+      "--kodex-context-unused": "#c0b3a3",
+      "--kodex-context-unknown": "#aa9d8f",
+      "--kodex-context-unknown-muted": "#dad0c3",
+    },
+    mantineAccent: ["#e6f5f1", "#d2ece5", "#addbcf", "#86cab8", "#63b9a3", "#45a991", "#2a9980", "#0d8a74", "#0a725f", "#08594b"],
+    mantineGray: ["#ffffff", "#f5f2eb", "#ebe5db", "#dad0c3", "#c8bcae", "#aa9d8f", "#8c7f72", "#695d51", "#4b4036", "#2f271f"],
+    mantineRed: ["#fff1ee", "#ffddd7", "#f6b4a7", "#e98d7e", "#d96b5a", "#c25d4b", "#ab4a39", "#8a3728", "#6a281c", "#4c1b12"],
+  },
+  {
+    id: "dracula",
+    label: "Dracula",
+    description: "Graphite violets with neon purple and cyan accents.",
+    mode: "dark",
+    swatches: ["#1c1f28", "#2a2d39", "#bd93f9"],
+    rootVariables: {
+      "--kodex-bg-app": "#151720",
+      "--kodex-bg-shell": "#1c1f28",
+      "--kodex-bg-thread-surface": "#2a2d39",
+      "--kodex-bg-sidebar-hover": "#303445",
+      "--kodex-bg-composer": "#20232d",
+      "--kodex-bg-composer-alt": "#252834",
+      "--kodex-bg-composer-muted": "#2b2f3b",
+      "--kodex-bg-button-hover": "#33384a",
+      "--kodex-bg-selected": "#363b55",
+      "--kodex-bg-selected-strong": "#41476a",
+      "--kodex-bg-command": "#232632",
+      "--kodex-bg-code": "#211f2f",
+      "--kodex-bg-empty-icon": "#2a2d39",
+      "--kodex-bg-mobile": "#1a1c25",
+      "--kodex-bg-user-bubble": "#6f56b5",
+      "--kodex-border-subtle": "#3a3f54",
+      "--kodex-border-strong": "#4a506a",
+      "--kodex-border-accent": "#bd93f9",
+      "--kodex-border-accent-soft": "rgb(189 147 249 / 36%)",
+      "--kodex-text-primary": "#f8f8f2",
+      "--kodex-text-secondary": "#ddddef",
+      "--kodex-text-muted": "#a6abc5",
+      "--kodex-text-accent": "#8be9fd",
+      "--kodex-text-accent-soft": "#cdb8ff",
+      "--kodex-text-on-accent": "#f8f8f2",
+      "--kodex-text-danger": "#ffb7b3",
+      "--kodex-accent": "#bd93f9",
+      "--kodex-accent-strong": "#8be9fd",
+      "--kodex-accent-muted": "#c8c9d9",
+      "--kodex-danger": "#ff9580",
+      "--kodex-danger-muted": "#ffb7b3",
+      "--kodex-shadow-strong": "0 16px 48px rgb(11 12 16 / 34%)",
+      "--kodex-shadow-floating": "0 6px 18px rgb(11 12 16 / 28%)",
+      "--kodex-overlay-strong": "rgb(11 12 16 / 70%)",
+      "--kodex-overlay-muted": "rgb(11 12 16 / 58%)",
+      "--kodex-inline-code-border": "#5c5476",
+      "--kodex-scroll-button-bg": "#262936",
+      "--kodex-scroll-button-hover": "#313546",
+      "--kodex-scroll-button-color": "#ececf4",
+      "--kodex-scroll-button-border": "#51566e",
+      "--kodex-context-unused": "#5d637d",
+      "--kodex-context-unknown": "#8e93ab",
+      "--kodex-context-unknown-muted": "#4c5061",
+    },
+    mantineAccent: ["#20172f", "#2c1d41", "#433063", "#5b4385", "#7558a8", "#8c70c4", "#a284dd", "#bd93f9", "#cfb1ff", "#e1d2ff"],
+    mantineGray: ["#f8f8f2", "#e8e8ee", "#d2d3dc", "#b8bbca", "#a6abc5", "#848aa0", "#656b80", "#4b5064", "#323644", "#1f2230"],
+    mantineRed: ["#fff0ee", "#ffd8d2", "#ffb7b3", "#ff9580", "#ff866f", "#f06f59", "#d35a46", "#a94535", "#813225", "#5b2118"],
+  },
+  {
+    id: "monokai",
+    label: "Monokai",
+    description: "Charcoal syntax tones with lime and amber highlights.",
+    mode: "dark",
+    swatches: ["#141510", "#22241d", "#a6e22e"],
+    rootVariables: {
+      "--kodex-bg-app": "#0f100d",
+      "--kodex-bg-shell": "#141510",
+      "--kodex-bg-thread-surface": "#22241d",
+      "--kodex-bg-sidebar-hover": "#2a2c24",
+      "--kodex-bg-composer": "#1a1b16",
+      "--kodex-bg-composer-alt": "#20211c",
+      "--kodex-bg-composer-muted": "#262721",
+      "--kodex-bg-button-hover": "#303229",
+      "--kodex-bg-selected": "#243327",
+      "--kodex-bg-selected-strong": "#304332",
+      "--kodex-bg-command": "#20221c",
+      "--kodex-bg-code": "#212517",
+      "--kodex-bg-empty-icon": "#272923",
+      "--kodex-bg-mobile": "#151610",
+      "--kodex-bg-user-bubble": "#66811e",
+      "--kodex-border-subtle": "#36382f",
+      "--kodex-border-strong": "#474a3f",
+      "--kodex-border-accent": "#a6e22e",
+      "--kodex-border-accent-soft": "rgb(166 226 46 / 34%)",
+      "--kodex-text-primary": "#f8f8f2",
+      "--kodex-text-secondary": "#dfddd0",
+      "--kodex-text-muted": "#9e9f8e",
+      "--kodex-text-accent": "#ffd866",
+      "--kodex-text-accent-soft": "#d6ff7d",
+      "--kodex-text-on-accent": "#fcfff6",
+      "--kodex-text-danger": "#ff9abb",
+      "--kodex-accent": "#a6e22e",
+      "--kodex-accent-strong": "#ffd866",
+      "--kodex-accent-muted": "#c5cf88",
+      "--kodex-danger": "#ff6188",
+      "--kodex-danger-muted": "#ff9abb",
+      "--kodex-shadow-strong": "0 16px 48px rgb(0 0 0 / 34%)",
+      "--kodex-shadow-floating": "0 6px 18px rgb(0 0 0 / 28%)",
+      "--kodex-overlay-strong": "rgb(0 0 0 / 70%)",
+      "--kodex-overlay-muted": "rgb(0 0 0 / 58%)",
+      "--kodex-inline-code-border": "#5b6940",
+      "--kodex-scroll-button-bg": "#23251d",
+      "--kodex-scroll-button-hover": "#2e3128",
+      "--kodex-scroll-button-color": "#efefe8",
+      "--kodex-scroll-button-border": "#505449",
+      "--kodex-context-unused": "#5a5c4d",
+      "--kodex-context-unknown": "#848674",
+      "--kodex-context-unknown-muted": "#414338",
+    },
+    mantineAccent: ["#212b0f", "#2c3910", "#425815", "#58741b", "#6f9020", "#86ac25", "#94c929", "#a6e22e", "#c4f071", "#e0f8aa"],
+    mantineGray: ["#f8f8f2", "#ebeadf", "#d7d5c6", "#c1bfad", "#9e9f8e", "#7e7f70", "#626355", "#4b4d42", "#34362f", "#1d1f1a"],
+    mantineRed: ["#fff0f6", "#ffd8e5", "#ffbad0", "#ff9abb", "#ff7aa4", "#ff6188", "#e44d71", "#bf3d5b", "#932d46", "#681d31"],
+  },
+];
+
+const COLOR_SCHEME_BY_ID = new Map(KODEX_COLOR_SCHEMES.map((scheme) => [scheme.id, scheme]));
+
+export function isKodexColorSchemeId(value: string): value is KodexColorSchemeId {
+  return COLOR_SCHEME_BY_ID.has(value as KodexColorSchemeId);
+}
+
+export function getKodexColorSchemeDefinition(colorSchemeId: KodexColorSchemeId): KodexColorSchemeDefinition {
+  return COLOR_SCHEME_BY_ID.get(colorSchemeId) ?? COLOR_SCHEME_BY_ID.get(DEFAULT_KODEX_COLOR_SCHEME_ID)!;
+}
+
+export function buildKodexColorSchemeCss() {
+  return KODEX_COLOR_SCHEMES.map((scheme, index) => {
+    const selector =
+      index === 0
+        ? `:root,\n:root[data-kodex-color-scheme="${scheme.id}"]`
+        : `:root[data-kodex-color-scheme="${scheme.id}"]`;
+    const declarations = Object.entries(scheme.rootVariables)
+      .map(([name, value]) => `  ${name}: ${value};`)
+      .join("\n");
+    return `${selector} {\n${declarations}\n}`;
+  }).join("\n\n");
+}
+
+export function buildKodexColorSchemeBootstrapScript() {
+  const modes = Object.fromEntries(KODEX_COLOR_SCHEMES.map((scheme) => [scheme.id, scheme.mode]));
+  return `(() => {
+  const storageKey = ${JSON.stringify(KODEX_COLOR_SCHEME_STORAGE_KEY)};
+  const colorSchemeModes = ${JSON.stringify(modes)};
+  const root = document.documentElement;
+  try {
+    const storedColorScheme = window.localStorage.getItem(storageKey);
+    const colorScheme = colorSchemeModes[storedColorScheme] ? storedColorScheme : ${JSON.stringify(DEFAULT_KODEX_COLOR_SCHEME_ID)};
+    root.setAttribute("data-kodex-color-scheme", colorScheme);
+    root.setAttribute("data-mantine-color-scheme", colorSchemeModes[colorScheme]);
+  } catch {
+    root.setAttribute("data-kodex-color-scheme", ${JSON.stringify(DEFAULT_KODEX_COLOR_SCHEME_ID)});
+    root.setAttribute("data-mantine-color-scheme", ${JSON.stringify(getKodexColorSchemeDefinition(DEFAULT_KODEX_COLOR_SCHEME_ID).mode)});
+  }
+})();`;
+}

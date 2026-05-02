@@ -13,6 +13,7 @@ export type LoginStartResponse = components["schemas"]["LoginStartResponse"];
 export type ModelSummary = components["schemas"]["ModelSummary"];
 export type Project = components["schemas"]["Project"];
 export type RateLimitsResponse = components["schemas"]["RateLimitsResponse"];
+export type ThreadRead = components["schemas"]["ThreadRead"];
 export type ThreadSummary = components["schemas"]["ThreadSummary"];
 export type UserInput = components["schemas"]["UserInput"];
 export type ImageUpload = components["schemas"]["ImageUpload"];
@@ -81,6 +82,16 @@ export async function forkThread(threadId: string): Promise<ThreadSummary> {
 
 export async function archiveThread(threadId: string): Promise<void> {
   await unwrap(api.POST("/v1/threads/{threadId}/archive", { params: { path: { threadId } } }));
+}
+
+export async function markThreadSeen(threadId: string, seenCompletedAgentTurnSeq?: number): Promise<ThreadRead> {
+  const body =
+    seenCompletedAgentTurnSeq === undefined
+      ? {}
+      : {
+          seenCompletedAgentTurnSeq,
+        };
+  return unwrap(api.POST("/v1/threads/{threadId}/seen", { params: { path: { threadId } }, body }));
 }
 
 export async function listEvents(threadId: string): Promise<EventEnvelope[]> {

@@ -236,6 +236,28 @@ test("resolves a pending approval", async ({ page }) => {
   await expect(threadCard.getByText(/needs approval/i)).toBeHidden();
 });
 
+test("opens preferences from the settings menu and switches between dark and light schemes", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: /account settings/i }).click();
+  await page.getByRole("menuitem", { name: /preferences/i }).click();
+
+  const dialog = page.getByRole("dialog", { name: /preferences/i });
+  await expect(dialog).toBeVisible();
+
+  const dracula = dialog.getByRole("radio", { name: /dracula/i });
+  await dracula.click();
+  await expect(dracula).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator("html")).toHaveAttribute("data-kodex-color-scheme", "dracula");
+  await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", "dark");
+
+  const paperLight = dialog.getByRole("radio", { name: /paper light/i });
+  await paperLight.click();
+  await expect(paperLight).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator("html")).toHaveAttribute("data-kodex-color-scheme", "paper-light");
+  await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", "light");
+});
+
 async function mockGateway(page: Page) {
   await page.route("**/v1/**", async (route) => {
     const request = route.request();

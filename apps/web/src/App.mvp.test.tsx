@@ -392,7 +392,7 @@ describe("MVP frontend flows", () => {
 
   it("uses last turn token usage instead of cumulative usage for context left", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    mockGateway(
+    const gateway = mockGateway(
       baseRoutes({
         "GET /v1/events": { events: [] },
       }),
@@ -681,6 +681,32 @@ describe("MVP frontend flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/archive")).toHaveLength(1);
     });
+  });
+
+  it("archives a thread from the thread selector hover action", async () => {
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, secondThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "POST /v1/threads/thread-2/archive": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    const secondThreadButton = await screen.findByRole("button", { name: /second thread/i });
+    await userEvent.hover(secondThreadButton);
+    await userEvent.click(screen.getByRole("button", { name: /archive second thread/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/archive")).toHaveLength(1);
+    });
+    expect(screen.queryByRole("button", { name: /second thread/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
   });
 
   it("hides thread loading state and resumes not-loaded threads on selection", async () => {
@@ -1949,6 +1975,8 @@ describe("MVP frontend flows", () => {
     expect(appCss).toMatch(/\.kodex-approval-command\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
     expect(appCss).toMatch(/\.kodex-approval-action\s*\{[^}]*max-width:\s*100%;/s);
     expect(appCss).toMatch(/\.kodex-approval-action\s*\{[^}]*white-space:\s*normal;/s);
+    expect(appCss).toMatch(/\.kodex-thread-list-button:hover\s+\.kodex-thread-archive-button/s);
+    expect(appCss).toMatch(/\.kodex-thread-list-button:hover\s+\.kodex-thread-unread-agent-turn-indicator/s);
   });
 
   it("does not resurrect a locally resolved approval from a stale created event", async () => {
@@ -2226,6 +2254,122 @@ describe("MVP frontend flows", () => {
       expect(within(timeline).queryByText(/cargo fmt/i)).not.toBeInTheDocument();
       expect(within(secondThreadButton).queryByText(/needs approval/i)).not.toBeInTheDocument();
     });
+  });
+
+  it("marks completed unread agent turns in the thread list and clears them when seen", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, secondThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "POST /v1/threads/thread-2/seen": {
+          threadId: "thread-2",
+          seenCompletedAgentTurnSeq: 3,
+          updatedAt: "2026-04-30T00:00:02Z",
+        },
+      }),
+    );
+
+    render(<App />);
+
+    const firstThreadButton = await screen.findByRole("button", { name: /implement frontend/i });
+    const secondThreadButton = await screen.findByRole("button", { name: /second thread/i });
+    const firstThreadRow = firstThreadButton.closest(".kodex-thread-list-button");
+    const secondThreadRow = secondThreadButton.closest(".kodex-thread-list-button");
+    expect(firstThreadRow).toBeInTheDocument();
+    expect(secondThreadRow).toBeInTheDocument();
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
+    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    expect(globalStream).toBeDefined();
+
+    act(() => {
+      globalStream?.emit({
+        id: "event-other-thread-delta",
+        seq: 2,
+        kind: "codex",
+        codexMethod: "item/agentMessage/delta",
+        projectId: project.id,
+        threadId: "thread-2",
+        turnId: "turn-2",
+        itemId: "answer-2",
+        payload: { delta: "Still streaming" },
+        receivedAt: "2026-04-30T00:00:01Z",
+      });
+    });
+    expect(secondThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
+
+    act(() => {
+      globalStream?.emit({
+        id: "event-other-thread-completed",
+        seq: 3,
+        kind: "codex",
+        codexMethod: "turn/completed",
+        projectId: project.id,
+        threadId: "thread-2",
+        turnId: "turn-2",
+        itemId: null,
+        payload: { threadId: "thread-2", turn: { id: "turn-2" } },
+        receivedAt: "2026-04-30T00:00:02Z",
+      });
+    });
+    expect(secondThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
+    expect(firstThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
+
+    await userEvent.click(secondThreadButton);
+    await waitFor(() => {
+      expect(secondThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
+    });
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/seen")).toHaveLength(1);
+  });
+
+  it("does not mark already represented completed turns unread when the global stream replays after refresh", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [
+            thread,
+            {
+              ...secondThread,
+              lastCompletedAgentTurnSeq: 3,
+              seenCompletedAgentTurnSeq: 3,
+              unreadCompletedAgentTurn: false,
+            },
+          ],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+      }),
+    );
+
+    render(<App />);
+
+    const secondThreadButton = await screen.findByRole("button", { name: /second thread/i });
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
+    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    expect(globalStream).toBeDefined();
+
+    act(() => {
+      globalStream?.emit({
+        id: "event-replayed-completed",
+        seq: 3,
+        kind: "codex",
+        codexMethod: "turn/completed",
+        projectId: project.id,
+        threadId: "thread-2",
+        turnId: "turn-2",
+        itemId: null,
+        payload: { threadId: "thread-2", turn: { id: "turn-2" } },
+        receivedAt: "2026-04-30T00:00:02Z",
+      });
+    });
+
+    expect(secondThreadButton.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
   });
 
   it("does not drop streamed approvals when the initial pending approval request resolves later", async () => {

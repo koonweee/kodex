@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -66,6 +66,20 @@ pub struct Approval {
     pub response: Option<Value>,
     pub created_at: DateTime<Utc>,
     pub resolved_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadRead {
+    pub thread_id: String,
+    pub seen_completed_agent_turn_seq: i64,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ThreadReadState {
+    pub last_completed_agent_turn_seq: Option<i64>,
+    pub seen_completed_agent_turn_seq: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -161,6 +175,29 @@ impl Store {
             )
             "#,
         )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
+            create table if not exists thread_reads (
+                thread_id text primary key,
+                seen_completed_agent_turn_seq integer not null default 0,
+                updated_at text not null
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
+            insert or ignore into thread_reads (thread_id, seen_completed_agent_turn_seq, updated_at)
+            select thread_id, max(seq), ?
+            from events
+            where thread_id is not null and codex_method = 'turn/completed'
+            group by thread_id
+            "#,
+        )
+        .bind(Utc::now())
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -304,6 +341,108 @@ impl Store {
         row.map(row_to_project)
             .transpose()?
             .ok_or_else(|| ApiError::NotFound(format!("project {id}")))
+    }
+
+    pub async fn thread_read_states(
+        &self,
+        thread_ids: &[String],
+    ) -> ApiResult<HashMap<String, ThreadReadState>> {
+        if thread_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut states = HashMap::new();
+
+        let mut completed_builder = QueryBuilder::<Sqlite>::new(
+            "select thread_id, max(seq) as last_completed_agent_turn_seq from events where codex_method = 'turn/completed' and thread_id in (",
+        );
+        {
+            let mut separated = completed_builder.separated(", ");
+            for thread_id in thread_ids {
+                separated.push_bind(thread_id);
+            }
+        }
+        completed_builder.push(") group by thread_id");
+
+        for row in completed_builder.build().fetch_all(&self.pool).await? {
+            let thread_id: String = row.try_get("thread_id")?;
+            states
+                .entry(thread_id)
+                .or_insert_with(ThreadReadState::default)
+                .last_completed_agent_turn_seq =
+                row.try_get::<Option<i64>, _>("last_completed_agent_turn_seq")?;
+        }
+
+        let mut read_builder = QueryBuilder::<Sqlite>::new(
+            "select thread_id, seen_completed_agent_turn_seq from thread_reads where thread_id in (",
+        );
+        {
+            let mut separated = read_builder.separated(", ");
+            for thread_id in thread_ids {
+                separated.push_bind(thread_id);
+            }
+        }
+        read_builder.push(")");
+
+        for row in read_builder.build().fetch_all(&self.pool).await? {
+            let thread_id: String = row.try_get("thread_id")?;
+            states
+                .entry(thread_id)
+                .or_insert_with(ThreadReadState::default)
+                .seen_completed_agent_turn_seq = row.try_get("seen_completed_agent_turn_seq")?;
+        }
+
+        Ok(states)
+    }
+
+    pub async fn last_completed_agent_turn_seq(&self, thread_id: &str) -> ApiResult<Option<i64>> {
+        sqlx::query_scalar(
+            "select max(seq) from events where thread_id = ? and codex_method = 'turn/completed'",
+        )
+        .bind(thread_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(Into::into)
+    }
+
+    pub async fn mark_thread_seen_completed_agent_turns(
+        &self,
+        thread_id: &str,
+        seen_completed_agent_turn_seq: i64,
+    ) -> ApiResult<ThreadRead> {
+        let updated_at = Utc::now();
+        sqlx::query(
+            r#"
+            insert into thread_reads (thread_id, seen_completed_agent_turn_seq, updated_at)
+            values (?, ?, ?)
+            on conflict(thread_id) do update set
+                seen_completed_agent_turn_seq = max(
+                    thread_reads.seen_completed_agent_turn_seq,
+                    excluded.seen_completed_agent_turn_seq
+                ),
+                updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(thread_id)
+        .bind(seen_completed_agent_turn_seq.max(0))
+        .bind(updated_at)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_thread_read(thread_id).await
+    }
+
+    pub async fn get_thread_read(&self, thread_id: &str) -> ApiResult<ThreadRead> {
+        let row = sqlx::query(
+            "select thread_id, seen_completed_agent_turn_seq, updated_at from thread_reads where thread_id = ?",
+        )
+        .bind(thread_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.map(row_to_thread_read)
+            .transpose()?
+            .ok_or_else(|| ApiError::NotFound(format!("thread read state {thread_id}")))
     }
 
     pub async fn insert_approval(&self, approval: NewApproval) -> ApiResult<Approval> {
@@ -462,6 +601,14 @@ fn row_to_project(row: sqlx::sqlite::SqliteRow) -> ApiResult<Project> {
     })
 }
 
+fn row_to_thread_read(row: sqlx::sqlite::SqliteRow) -> ApiResult<ThreadRead> {
+    Ok(ThreadRead {
+        thread_id: row.try_get("thread_id")?,
+        seen_completed_agent_turn_seq: row.try_get("seen_completed_agent_turn_seq")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
 fn row_to_approval(row: sqlx::sqlite::SqliteRow) -> ApiResult<Approval> {
     let payload_json: String = row.try_get("payload_json")?;
     let response_json: Option<String> = row.try_get("response_json")?;
@@ -497,12 +644,15 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'approvals') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'approvals', 'thread_reads') order by name",
         )
         .fetch_all(store.pool())
         .await
         .unwrap();
-        assert_eq!(tables, vec!["approvals", "events", "projects"]);
+        assert_eq!(
+            tables,
+            vec!["approvals", "events", "projects", "thread_reads"]
+        );
     }
 
     #[tokio::test]
@@ -541,6 +691,53 @@ mod tests {
             .unwrap();
         assert_eq!(replay.len(), 1);
         assert_eq!(replay[0].seq, second.seq);
+    }
+
+    #[tokio::test]
+    async fn migration_backfills_thread_reads_for_existing_completed_turns() {
+        let store = Store::in_memory().await.unwrap();
+        let completed = store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("thread-1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                item_id: None,
+                kind: "codex.notification".to_string(),
+                codex_method: Some("turn/completed".to_string()),
+                payload: json!({"threadId": "thread-1"}),
+            })
+            .await
+            .unwrap();
+        store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("thread-2".to_string()),
+                turn_id: Some("turn-2".to_string()),
+                item_id: Some("item-2".to_string()),
+                kind: "codex.notification".to_string(),
+                codex_method: Some("item/agentMessage/delta".to_string()),
+                payload: json!({"threadId": "thread-2"}),
+            })
+            .await
+            .unwrap();
+
+        sqlx::query("drop table thread_reads")
+            .execute(store.pool())
+            .await
+            .unwrap();
+        store.migrate().await.unwrap();
+
+        let thread_ids = vec!["thread-1".to_string(), "thread-2".to_string()];
+        let states = store.thread_read_states(&thread_ids).await.unwrap();
+        assert_eq!(
+            states["thread-1"].seen_completed_agent_turn_seq,
+            completed.seq
+        );
+        assert_eq!(
+            states["thread-1"].last_completed_agent_turn_seq,
+            Some(completed.seq)
+        );
+        assert!(!states.contains_key("thread-2"));
     }
 
     #[tokio::test]

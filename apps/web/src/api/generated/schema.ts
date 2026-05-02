@@ -340,6 +340,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads/{threadId}/seen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["mark_thread_seen"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/threads/{threadId}/turns": {
         parameters: {
             query?: never;
@@ -551,6 +567,10 @@ export interface components {
             userCode?: string | null;
             verificationUrl?: string | null;
         };
+        MarkThreadSeenRequest: {
+            /** Format: int64 */
+            seenCompletedAgentTurnSeq?: number | null;
+        };
         ModelListResponse: {
             models: components["schemas"]["ModelSummary"][];
             nextCursor?: string | null;
@@ -650,6 +670,13 @@ export interface components {
             rawPayload: unknown;
             threads: components["schemas"]["ThreadSummary"][];
         };
+        ThreadRead: {
+            /** Format: int64 */
+            seenCompletedAgentTurnSeq: number;
+            threadId: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
         /** @enum {string} */
         ThreadStatus: "notLoaded" | "idle" | "systemError" | "active";
         ThreadSummary: {
@@ -659,15 +686,20 @@ export interface components {
             createdAt: number;
             cwd: string;
             id: string;
+            /** Format: int64 */
+            lastCompletedAgentTurnSeq?: number | null;
             model?: string | null;
             name?: string | null;
             preview?: unknown;
             rawPayload: unknown;
             reasoningEffort?: string | null;
             sandbox?: unknown;
+            /** Format: int64 */
+            seenCompletedAgentTurnSeq: number;
             serviceTier?: string | null;
             source?: string | null;
             status: components["schemas"]["ThreadStatus"];
+            unreadCompletedAgentTurn: boolean;
             /** Format: int64 */
             updatedAt: number;
         };
@@ -1231,6 +1263,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadCommandResponse"];
+                };
+            };
+        };
+    };
+    mark_thread_seen: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkThreadSeenRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadRead"];
                 };
             };
         };

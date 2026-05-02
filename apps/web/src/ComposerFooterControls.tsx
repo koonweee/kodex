@@ -100,7 +100,7 @@ export function ComposerFooterControls({
             leftSection={<Shield size={14} />}
             size="compact-sm"
             type="button"
-            variant={settings.permissionPreset ? "light" : "subtle"}
+            variant="subtle"
           >
             {permissionLabel}
           </Button>
@@ -111,6 +111,7 @@ export function ComposerFooterControls({
               key={preset.id}
               closeMenuOnClick={preset.id !== "fullAccess" || confirmingFullAccess}
               color={preset.tone === "danger" ? "red" : undefined}
+              data-active={settings.permissionPreset === preset.id ? "true" : undefined}
               leftSection={settings.permissionPreset === preset.id ? <Check size={14} /> : <Shield size={14} />}
               onClick={() => selectPermissionPreset(preset.id)}
             >
@@ -148,7 +149,7 @@ export function ComposerFooterControls({
             leftSection={settings.fast ? <Zap size={14} fill="currentColor" /> : <Brain size={14} />}
             size="compact-sm"
             type="button"
-            variant={settings.model || settings.effort || settings.fast ? "light" : "subtle"}
+            variant="subtle"
           >
             {selectedModelLabel}
             {selectedEffort ? ` ${titleCase(selectedEffort)}` : ""}
@@ -159,6 +160,7 @@ export function ComposerFooterControls({
           {models.map((model) => (
             <Menu.Item
               key={model.id}
+              data-active={selectedModel?.id === model.id ? "true" : undefined}
               leftSection={selectedModel?.id === model.id ? <Check size={14} /> : <Brain size={14} />}
               onClick={() =>
                 updateSettings({
@@ -181,6 +183,7 @@ export function ComposerFooterControls({
               {supportedEfforts.map((effort) => (
                 <Menu.Item
                   key={effort.reasoningEffort}
+                  data-active={selectedEffort === effort.reasoningEffort ? "true" : undefined}
                   leftSection={selectedEffort === effort.reasoningEffort ? <Check size={14} /> : <Gauge size={14} />}
                   onClick={() => updateSettings({ model: selectedModel?.id, effort: effort.reasoningEffort })}
                 >
@@ -198,6 +201,7 @@ export function ComposerFooterControls({
           ) : null}
           <Menu.Divider />
           <Menu.Item
+            data-active={settings.fast ? "true" : undefined}
             leftSection={settings.fast ? <Check size={14} /> : <Zap size={14} />}
             onClick={() => updateSettings({ fast: !settings.fast })}
           >

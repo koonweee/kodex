@@ -13,7 +13,6 @@ import {
   Textarea,
   Title,
   Tooltip,
-  createTheme,
 } from "@mantine/core";
 import {
   ArrowDownToLine,
@@ -67,6 +66,7 @@ import {
   listProjects,
   listThreads,
   logout,
+  markThreadSeen,
   persistComposerSettings,
   resumeThread,
   startLogin,
@@ -92,7 +92,16 @@ import {
   type ContextUsage,
   type PermissionPresetId,
 } from "./ComposerFooterControls";
+import { PreferencesModal } from "./PreferencesModal";
 import { createEventStreamClient } from "./events/stream";
+import {
+  applyKodexColorScheme,
+  createKodexMantineTheme,
+  getKodexColorScheme,
+  readStoredKodexColorScheme,
+  writeStoredKodexColorScheme,
+  type KodexColorSchemeId,
+} from "./theme";
 import { applyTimelineEventBatch } from "./timeline/batch";
 import {
   buildApprovalIndex,
@@ -112,16 +121,6 @@ import {
   type TimelineState,
 } from "./timeline/reducer";
 import "./App.css";
-
-const theme = createTheme({
-  primaryColor: "teal",
-  fontFamily:
-    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-  headings: {
-    fontFamily:
-      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-  },
-});
 
 const UI_TEXT = {
   appName: "Kodex",
@@ -176,6 +175,11 @@ const UI_TEXT = {
     submit: "Create project",
     title: "Projects",
   },
+  preferences: {
+    appearance: "Appearance",
+    menuItem: "Preferences",
+    title: "Preferences",
+  },
   shell: {
     mainLabel: "Thread",
     resizeSidebarLabel: "Resize workspace sidebar",
@@ -192,6 +196,7 @@ const UI_TEXT = {
     actions: "Thread actions",
     new: "New thread",
     title: "Threads",
+    unreadAgentTurn: "Unread completed agent turn",
     untitled: "Untitled thread",
   },
   turn: {
@@ -208,9 +213,18 @@ type LoginState = {
 };
 
 export function App() {
+  const [colorSchemeId, setColorSchemeId] = useState<KodexColorSchemeId>(() => readStoredKodexColorScheme());
+  const colorScheme = useMemo(() => getKodexColorScheme(colorSchemeId), [colorSchemeId]);
+  const theme = useMemo(() => createKodexMantineTheme(colorScheme), [colorScheme]);
+
+  useLayoutEffect(() => {
+    writeStoredKodexColorScheme(colorSchemeId);
+    applyKodexColorScheme(document.documentElement, colorScheme);
+  }, [colorScheme, colorSchemeId]);
+
   return (
-    <MantineProvider theme={theme} defaultColorScheme="dark">
-      <KodexShell />
+    <MantineProvider forceColorScheme={colorScheme.mode} theme={theme}>
+      <KodexShell colorSchemeId={colorSchemeId} onColorSchemeChange={setColorSchemeId} />
     </MantineProvider>
   );
 }
@@ -280,7 +294,13 @@ function hasRenderedTimelineBottom(scrollElement: HTMLElement, rowCount: number)
   return scrollElement.querySelector(`[data-index="${rowCount - 1}"]`) !== null;
 }
 
-function KodexShell() {
+function KodexShell({
+  colorSchemeId,
+  onColorSchemeChange,
+}: {
+  colorSchemeId: KodexColorSchemeId;
+  onColorSchemeChange: (colorSchemeId: KodexColorSchemeId) => void;
+}) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [threadsByProjectId, setThreadsByProjectId] = useState<ThreadsByProjectId>({});
@@ -310,12 +330,17 @@ function KodexShell() {
   const [showDebugEvents, setShowDebugEvents] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("chat");
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [preferencesSection, setPreferencesSection] = useState<"appearance">("appearance");
+  const [hoveredThreadActionId, setHoveredThreadActionId] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_MIN_WIDTH);
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const sidebarResizeStart = useRef<{ x: number; width: number } | null>(null);
   const [timelineScrollElement, setTimelineScrollElement] = useState<HTMLDivElement | null>(null);
   const resolvedApprovalIds = useRef<Set<string>>(new Set());
   const selectedProjectIdRef = useRef<string | null>(null);
+  const selectedThreadIdRef = useRef<string | null>(null);
+  const threadsByProjectIdRef = useRef<ThreadsByProjectId>({});
   const threadRequestIds = useRef<Map<string, number>>(new Map());
   const nextThreadRequestId = useRef(0);
   const nextQueuedSteerId = useRef(0);
@@ -358,6 +383,14 @@ function KodexShell() {
   useEffect(() => {
     loadInitialState();
   }, []);
+
+  useEffect(() => {
+    selectedThreadIdRef.current = selectedThreadId;
+  }, [selectedThreadId]);
+
+  useEffect(() => {
+    threadsByProjectIdRef.current = threadsByProjectId;
+  }, [threadsByProjectId]);
 
   useEffect(() => {
     const nextContext = { activeSelectedTurnId, draftThreadProjectId, selectedProjectId, selectedThreadId };
@@ -421,6 +454,7 @@ function KodexShell() {
     const client = createEventStreamClient({
       onEvent: (event) => {
         applyThreadMetadataEvent(event);
+        applyCompletedAgentTurnEvent(event);
         if (isApprovalEvent(event)) {
           setApprovals((current) => applyApprovalEventWithTombstone(current, event));
         }
@@ -551,8 +585,10 @@ function KodexShell() {
           selectedThreadId: nextThreadId,
         };
         if (nextThreadId) {
+          selectedThreadIdRef.current = nextThreadId;
           beginTimelineEntry(nextThreadId);
         } else {
+          selectedThreadIdRef.current = null;
           clearTimelineEntry();
         }
         setSelectedThreadId(nextThreadId);
@@ -574,12 +610,72 @@ function KodexShell() {
   }
 
   function beginTimelineEntry(threadId: string) {
+    markCompletedAgentTurnSeen(threadId);
     setTimeline(createTimelineState());
     setTimelineEntry({ phase: "loading", threadId });
   }
 
   function markTimelineEntryAligning(threadId: string) {
     setTimelineEntry((current) => (current.threadId === threadId ? { phase: "aligning", threadId } : current));
+  }
+
+  function applyCompletedAgentTurnEvent(event: EventEnvelope) {
+    const completedTurn = completedAgentTurnEvent(event);
+    if (!completedTurn) {
+      return;
+    }
+    const thread = threadById(threadsByProjectIdRef.current, completedTurn.threadId);
+    if (!thread || completedTurn.seq <= (thread.lastCompletedAgentTurnSeq ?? 0)) {
+      return;
+    }
+    const isSelected = completedTurn.threadId === selectedThreadIdRef.current;
+    setThreadsByProjectId((current) =>
+      updateThreadReadStateInProjects(current, completedTurn.threadId, (thread) => {
+        const lastCompletedAgentTurnSeq = Math.max(thread.lastCompletedAgentTurnSeq ?? 0, completedTurn.seq);
+        const seenCompletedAgentTurnSeq = isSelected
+          ? Math.max(thread.seenCompletedAgentTurnSeq ?? 0, completedTurn.seq)
+          : (thread.seenCompletedAgentTurnSeq ?? 0);
+        return {
+          lastCompletedAgentTurnSeq,
+          seenCompletedAgentTurnSeq,
+          unreadCompletedAgentTurn: lastCompletedAgentTurnSeq > seenCompletedAgentTurnSeq,
+        };
+      }),
+    );
+    if (isSelected) {
+      void persistCompletedAgentTurnSeen(completedTurn.threadId, completedTurn.seq);
+    }
+  }
+
+  function markCompletedAgentTurnSeen(threadId: string) {
+    const thread = threadById(threadsByProjectId, threadId);
+    const seenCompletedAgentTurnSeq = thread?.lastCompletedAgentTurnSeq ?? 0;
+    if (!thread || seenCompletedAgentTurnSeq <= (thread.seenCompletedAgentTurnSeq ?? 0)) {
+      return;
+    }
+    setThreadsByProjectId((current) =>
+      updateThreadReadStateInProjects(current, threadId, () => ({
+        seenCompletedAgentTurnSeq,
+        unreadCompletedAgentTurn: false,
+      })),
+    );
+    void persistCompletedAgentTurnSeen(threadId, seenCompletedAgentTurnSeq);
+  }
+
+  async function persistCompletedAgentTurnSeen(threadId: string, seenCompletedAgentTurnSeq: number) {
+    try {
+      const read = await markThreadSeen(threadId, seenCompletedAgentTurnSeq);
+      setThreadsByProjectId((current) =>
+        updateThreadReadStateInProjects(current, threadId, (thread) => ({
+          seenCompletedAgentTurnSeq: Math.max(thread.seenCompletedAgentTurnSeq ?? 0, read.seenCompletedAgentTurnSeq),
+          unreadCompletedAgentTurn:
+            (thread.lastCompletedAgentTurnSeq ?? 0) >
+            Math.max(thread.seenCompletedAgentTurnSeq ?? 0, read.seenCompletedAgentTurnSeq),
+        })),
+      );
+    } catch (error) {
+      reportError(error);
+    }
   }
 
   async function handleCreateProject(event: FormEvent) {
@@ -606,6 +702,7 @@ function KodexShell() {
       void hydrateComposerDefaults(projectId);
     }
     setSelectedProjectId(projectId);
+    selectedThreadIdRef.current = null;
     setSelectedThreadId(null);
     setDraftThreadProjectId(null);
     const nextThreads = threadsByProjectId[projectId];
@@ -618,8 +715,10 @@ function KodexShell() {
         selectedThreadId: nextThreadId,
       };
       if (nextThreadId) {
+        selectedThreadIdRef.current = nextThreadId;
         beginTimelineEntry(nextThreadId);
       } else {
+        selectedThreadIdRef.current = null;
         clearTimelineEntry();
       }
       setSelectedThreadId(nextThreadId);
@@ -645,6 +744,7 @@ function KodexShell() {
     };
     setSelectedProjectId(projectId);
     setDraftThreadProjectId(projectId);
+    selectedThreadIdRef.current = null;
     setSelectedThreadId(null);
     clearTimelineEntry();
     setComposerText("");
@@ -663,18 +763,22 @@ function KodexShell() {
     };
     setSelectedProjectId(projectId);
     setDraftThreadProjectId(null);
+    selectedThreadIdRef.current = threadId;
     beginTimelineEntry(threadId);
     setSelectedThreadId(threadId);
   }
 
-  async function handleArchiveThread() {
-    if (!selectedThreadId) {
+  async function handleArchiveThread(threadId = selectedThreadId) {
+    if (!threadId) {
       return;
     }
-    await archiveThread(selectedThreadId);
-    setThreadsByProjectId((current) => removeThreadFromProjects(current, selectedThreadId));
-    clearTimelineEntry();
-    setSelectedThreadId(null);
+    await archiveThread(threadId);
+    setThreadsByProjectId((current) => removeThreadFromProjects(current, threadId));
+    if (threadId === selectedThreadId) {
+      clearTimelineEntry();
+      selectedThreadIdRef.current = null;
+      setSelectedThreadId(null);
+    }
   }
 
   async function handleSubmitTurn(event: FormEvent) {
@@ -736,6 +840,7 @@ function KodexShell() {
       setThreadsByProjectId((current) => prependThreadForProject(current, selectedProjectId, thread));
       setPendingTitleThreadIds((current) => markThreadTitlePending(current, thread));
       setDraftThreadProjectId(null);
+      selectedThreadIdRef.current = thread.id;
       beginTimelineEntry(thread.id);
       setSelectedThreadId(thread.id);
       retryRestoreContext = {
@@ -1299,39 +1404,80 @@ function KodexShell() {
                         <Stack className="kodex-project-thread-list" gap={6}>
                           {projectThreads.map((thread) => {
                             const needsApproval = threadNeedsApproval(thread, approvals);
+                            const hasUnreadAgentTurn = thread.unreadCompletedAgentTurn === true;
+                            const displayTitle = pendingTitleThreadIds.has(thread.id)
+                              ? UI_TEXT.thread.new
+                              : threadDisplayTitle(thread);
+                            const showThreadArchiveAction = hoveredThreadActionId === thread.id;
                             return (
-                              <button
+                              <Box
                                 className="kodex-list-button kodex-thread-list-button"
                                 data-active={thread.id === selectedThreadId}
                                 key={thread.id}
-                                onClick={() => handleSelectThread(project.id, thread.id)}
-                                type="button"
+                                onBlur={(event) => {
+                                  if (!event.currentTarget.contains(event.relatedTarget)) {
+                                    setHoveredThreadActionId(null);
+                                  }
+                                }}
+                                onFocus={() => setHoveredThreadActionId(thread.id)}
+                                onMouseEnter={() => setHoveredThreadActionId(thread.id)}
+                                onMouseLeave={() => setHoveredThreadActionId(null)}
                               >
-                                <Group
-                                  align="flex-start"
-                                  className="kodex-thread-list-row"
-                                  data-has-approval={needsApproval ? "true" : undefined}
-                                  gap="xs"
-                                  justify="space-between"
-                                  wrap="nowrap"
+                                <button
+                                  className="kodex-thread-select-button"
+                                  onClick={() => handleSelectThread(project.id, thread.id)}
+                                  type="button"
                                 >
-                                  <Text
-                                    className="kodex-thread-list-title"
-                                    c={pendingTitleThreadIds.has(thread.id) ? "dimmed" : undefined}
-                                    data-placeholder-title={pendingTitleThreadIds.has(thread.id) ? "true" : undefined}
-                                    fw={400}
-                                    size="xs"
-                                    lineClamp={1}
+                                  <Group
+                                    align="flex-start"
+                                    className="kodex-thread-list-row"
+                                    data-has-sidecar={needsApproval ? "true" : undefined}
+                                    gap="xs"
+                                    justify="space-between"
+                                    wrap="nowrap"
                                   >
-                                    {pendingTitleThreadIds.has(thread.id) ? UI_TEXT.thread.new : threadDisplayTitle(thread)}
-                                  </Text>
-                                  {needsApproval ? (
-                                    <Badge className="kodex-thread-approval-badge" color="orange" size="xs" variant="light">
-                                      Needs approval
-                                    </Badge>
+                                    <Text
+                                      className="kodex-thread-list-title"
+                                      c={pendingTitleThreadIds.has(thread.id) ? "dimmed" : undefined}
+                                      data-placeholder-title={pendingTitleThreadIds.has(thread.id) ? "true" : undefined}
+                                      fw={400}
+                                      size="xs"
+                                      lineClamp={1}
+                                    >
+                                      {displayTitle}
+                                    </Text>
+                                    {needsApproval ? (
+                                      <Badge className="kodex-thread-approval-badge" color="orange" size="xs" variant="light">
+                                        Needs approval
+                                      </Badge>
+                                    ) : null}
+                                  </Group>
+                                </button>
+                                <Box className="kodex-thread-list-action-slot">
+                                  {hasUnreadAgentTurn && !showThreadArchiveAction ? (
+                                    <Tooltip label={UI_TEXT.thread.unreadAgentTurn}>
+                                      <Box
+                                        aria-label={UI_TEXT.thread.unreadAgentTurn}
+                                        className="kodex-thread-unread-agent-turn-indicator"
+                                        component="span"
+                                        role="img"
+                                      />
+                                    </Tooltip>
                                   ) : null}
-                                </Group>
-                              </button>
+                                  {showThreadArchiveAction ? (
+                                    <Tooltip label={UI_TEXT.thread.archive}>
+                                      <button
+                                        aria-label={`Archive ${displayTitle}`}
+                                        className="kodex-thread-archive-button"
+                                        onClick={() => handleArchiveThread(thread.id)}
+                                        type="button"
+                                      >
+                                        <Archive size={13} />
+                                      </button>
+                                    </Tooltip>
+                                  ) : null}
+                                </Box>
+                              </Box>
                             );
                           })}
                         </Stack>
@@ -1348,6 +1494,7 @@ function KodexShell() {
             onCancelLogin={handleCancelLogin}
             onLogin={handleLogin}
             onLogout={handleLogout}
+            onOpenPreferences={() => setPreferencesOpen(true)}
             onShowDebugEventsChange={setShowDebugEvents}
             showDebugEvents={showDebugEvents}
           />
@@ -1396,7 +1543,7 @@ function KodexShell() {
                       </ActionIcon>
                     </Menu.Target>
                     <Menu.Dropdown>
-                      <Menu.Item leftSection={<Archive size={14} />} onClick={handleArchiveThread}>
+                      <Menu.Item leftSection={<Archive size={14} />} onClick={() => handleArchiveThread()}>
                         {UI_TEXT.thread.archive}
                       </Menu.Item>
                     </Menu.Dropdown>
@@ -1556,6 +1703,15 @@ function KodexShell() {
           </Box>
         </Stack>
       </AppShell.Main>
+
+      <PreferencesModal
+        activeSection={preferencesSection}
+        colorSchemeId={colorSchemeId}
+        onClose={() => setPreferencesOpen(false)}
+        onColorSchemeChange={onColorSchemeChange}
+        onSectionChange={setPreferencesSection}
+        opened={preferencesOpen}
+      />
     </AppShell>
   );
 }
@@ -1842,6 +1998,7 @@ function SidebarAccountFooter({
   onCancelLogin,
   onLogin,
   onLogout,
+  onOpenPreferences,
   onShowDebugEventsChange,
   showDebugEvents,
 }: {
@@ -1850,6 +2007,7 @@ function SidebarAccountFooter({
   onCancelLogin: () => void;
   onLogin: () => void;
   onLogout: () => void;
+  onOpenPreferences: () => void;
   onShowDebugEventsChange: (value: boolean) => void;
   showDebugEvents: boolean;
 }) {
@@ -1891,6 +2049,7 @@ function SidebarAccountFooter({
       <SettingsMenu
         isAuthenticated={Boolean(account?.account)}
         onLogout={onLogout}
+        onOpenPreferences={onOpenPreferences}
         onShowDebugEventsChange={onShowDebugEventsChange}
         showDebugEvents={showDebugEvents}
       />
@@ -1901,11 +2060,13 @@ function SidebarAccountFooter({
 function SettingsMenu({
   isAuthenticated,
   onLogout,
+  onOpenPreferences,
   onShowDebugEventsChange,
   showDebugEvents,
 }: {
   isAuthenticated: boolean;
   onLogout: () => void;
+  onOpenPreferences: () => void;
   onShowDebugEventsChange: (value: boolean) => void;
   showDebugEvents: boolean;
 }) {
@@ -1917,6 +2078,9 @@ function SettingsMenu({
         </ActionIcon>
       </Menu.Target>
       <Menu.Dropdown>
+        <Menu.Item onClick={onOpenPreferences}>
+          {UI_TEXT.preferences.menuItem}
+        </Menu.Item>
         {isAuthenticated ? (
           <Menu.Item onClick={onLogout}>
             {UI_TEXT.auth.logout}
@@ -2931,6 +3095,15 @@ function isApprovalEvent(event: EventEnvelope): boolean {
   return event.kind === "approval.created" || event.kind === "approval.resolved";
 }
 
+function completedAgentTurnEvent(event: EventEnvelope): { threadId: string; seq: number } | null {
+  if (event.codexMethod !== "turn/completed") {
+    return null;
+  }
+  const payload = asRecord(event.payload);
+  const threadId = event.threadId ?? stringValue(payload.threadId) ?? stringValue(payload.thread_id);
+  return threadId ? { threadId, seq: event.seq } : null;
+}
+
 function threadNameUpdateFromEvent(event: EventEnvelope): { threadId: string; name: string | null } | null {
   const method = (event.codexMethod ?? "").toLowerCase();
   if (method !== "thread/nameupdated" && method !== "thread/name_updated") {
@@ -3008,6 +3181,37 @@ function replaceThreadInProjects(
     ...current,
     [projectId]: (current[projectId] ?? []).map((item) => (item.id === thread.id ? thread : item)),
   };
+}
+
+function threadById(current: ThreadsByProjectId, threadId: string): ThreadSummary | null {
+  for (const threads of Object.values(current)) {
+    const thread = threads.find((item) => item.id === threadId);
+    if (thread) {
+      return thread;
+    }
+  }
+  return null;
+}
+
+function updateThreadReadStateInProjects(
+  current: ThreadsByProjectId,
+  threadId: string,
+  update: (thread: ThreadSummary) => Partial<ThreadSummary>,
+): ThreadsByProjectId {
+  let changed = false;
+  const next: ThreadsByProjectId = {};
+
+  for (const [projectId, threads] of Object.entries(current)) {
+    next[projectId] = threads.map((thread) => {
+      if (thread.id !== threadId) {
+        return thread;
+      }
+      changed = true;
+      return { ...thread, ...update(thread) };
+    });
+  }
+
+  return changed ? next : current;
 }
 
 function updateThreadNameInProjects(

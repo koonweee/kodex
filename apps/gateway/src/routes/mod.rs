@@ -494,6 +494,120 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn thread_list_derives_unread_completed_agent_turns_from_persisted_read_state() {
+        let (state, app_server) = test_state().await;
+        let completed = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("thread-1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                item_id: None,
+                kind: "codex.notification".to_string(),
+                codex_method: Some("turn/completed".to_string()),
+                payload: json!({"threadId": "thread-1", "turn": {"id": "turn-1"}}),
+            })
+            .await
+            .unwrap();
+        state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("thread-2".to_string()),
+                turn_id: Some("turn-2".to_string()),
+                item_id: Some("item-2".to_string()),
+                kind: "codex.notification".to_string(),
+                codex_method: Some("item/agentMessage/delta".to_string()),
+                payload: json!({"threadId": "thread-2", "delta": "still streaming"}),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state);
+
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "data": [
+                thread_summary("thread-1"),
+                thread_summary("thread-2")
+            ],
+            "nextCursor": null,
+            "backwardsCursor": null
+        }));
+        let response = app
+            .clone()
+            .oneshot(Request::get("/v1/threads").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(
+            body["threads"][0]["lastCompletedAgentTurnSeq"],
+            json!(completed.seq)
+        );
+        assert_eq!(body["threads"][0]["seenCompletedAgentTurnSeq"], json!(0));
+        assert_eq!(body["threads"][0]["unreadCompletedAgentTurn"], json!(true));
+        assert_eq!(body["threads"][1]["lastCompletedAgentTurnSeq"], Value::Null);
+        assert_eq!(body["threads"][1]["unreadCompletedAgentTurn"], json!(false));
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads/thread-1/seen")
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["seenCompletedAgentTurnSeq"], json!(completed.seq));
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads/thread-1/seen")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["seenCompletedAgentTurnSeq"], json!(completed.seq));
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads/thread-1/seen")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"seenCompletedAgentTurnSeq":0}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["seenCompletedAgentTurnSeq"], json!(completed.seq));
+
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "data": [thread_summary("thread-1")],
+            "nextCursor": null,
+            "backwardsCursor": null
+        }));
+        let response = app
+            .oneshot(Request::get("/v1/threads").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(
+            body["threads"][0]["seenCompletedAgentTurnSeq"],
+            json!(completed.seq)
+        );
+        assert_eq!(body["threads"][0]["unreadCompletedAgentTurn"], json!(false));
+    }
+
+    #[tokio::test]
     async fn thread_start_requires_stored_project_before_app_server_call() {
         let (state, app_server) = test_state().await;
         let app = build_router(state);
@@ -1603,6 +1717,22 @@ mod tests {
     async fn response_json(response: axum::response::Response) -> Value {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         serde_json::from_slice(&body).unwrap()
+    }
+
+    fn thread_summary(id: &str) -> Value {
+        json!({
+            "id": id,
+            "cliVersion": "0.128.0",
+            "cwd": "/workspace",
+            "ephemeral": false,
+            "modelProvider": "openai",
+            "preview": "hello",
+            "source": "cli",
+            "status": {"type": "idle"},
+            "turns": [],
+            "createdAt": 1_767_225_600_i64,
+            "updatedAt": 1_767_225_600_i64
+        })
     }
 
     fn multipart_body(file_name: &str, content_type: &str, bytes: &[u8]) -> Vec<u8> {

@@ -26,12 +26,12 @@ use crate::{
         health::{HealthResponse, ReadyResponse},
         models::ModelsQuery,
         projects::{CreateProjectRequest, ProjectListResponse},
-        threads::{CreateThreadRequest, ThreadListQuery},
+        threads::{CreateThreadRequest, MarkThreadSeenRequest, ThreadListQuery},
         turns::{TurnStartRequest, TurnSteerRequest},
         uploads::{ImageUpload, ImageUploadRequest, ImageUploadResponse},
     },
     static_assets,
-    store::{Approval, EventEnvelope, Project, Store},
+    store::{Approval, EventEnvelope, Project, Store, ThreadRead},
 };
 
 #[derive(Clone)]
@@ -72,6 +72,7 @@ impl AppState {
         crate::routes::threads::resume_thread,
         crate::routes::threads::fork_thread,
         crate::routes::threads::archive_thread,
+        crate::routes::threads::mark_thread_seen,
         crate::routes::turns::start_turn,
         crate::routes::turns::steer_turn,
         crate::routes::turns::interrupt_turn,
@@ -109,6 +110,8 @@ impl AppState {
         ThreadCommandResponse,
         ThreadListQuery,
         CreateThreadRequest,
+        MarkThreadSeenRequest,
+        ThreadRead,
         UserInput,
         TurnStartRequest,
         TurnSteerRequest,

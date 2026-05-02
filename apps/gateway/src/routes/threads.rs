@@ -10,9 +10,11 @@ use utoipa::{IntoParams, ToSchema};
 use crate::{
     api::AppState,
     app_server_api::{
-        self, RawAppServerResponse, ThreadCommandResponse, ThreadDetailResponse, ThreadListResponse,
+        self, RawAppServerResponse, ThreadCommandResponse, ThreadDetailResponse,
+        ThreadListResponse, ThreadSummary,
     },
     error::ApiResult,
+    store::ThreadRead,
 };
 
 pub fn router() -> Router<AppState> {
@@ -22,6 +24,7 @@ pub fn router() -> Router<AppState> {
         .route("/v1/threads/{thread_id}/resume", post(resume_thread))
         .route("/v1/threads/{thread_id}/fork", post(fork_thread))
         .route("/v1/threads/{thread_id}/archive", post(archive_thread))
+        .route("/v1/threads/{thread_id}/seen", post(mark_thread_seen))
 }
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
@@ -50,6 +53,15 @@ pub struct CreateThreadRequest {
     pub payload: Value,
 }
 
+#[derive(Debug, Default, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkThreadSeenRequest {
+    #[serde(default)]
+    pub seen_completed_agent_turn_seq: Option<i64>,
+}
+
+pub type MarkThreadSeenResponse = ThreadRead;
+
 #[utoipa::path(get, path = "/v1/threads", params(ThreadListQuery), responses((status = 200, body = ThreadListResponse)))]
 pub async fn list_threads(
     State(state): State<AppState>,
@@ -60,11 +72,11 @@ pub async fn list_threads(
         None => None,
     };
 
-    Ok(Json(
-        app_server_api::client(&state.app_server)
-            .thread_list(cwd, query.cursor, query.limit)
-            .await?,
-    ))
+    let mut response = app_server_api::client(&state.app_server)
+        .thread_list(cwd, query.cursor, query.limit)
+        .await?;
+    apply_thread_read_state(&state, &mut response.threads).await?;
+    Ok(Json(response))
 }
 
 #[utoipa::path(post, path = "/v1/threads", request_body = CreateThreadRequest, responses((status = 200, body = ThreadCommandResponse)))]
@@ -74,11 +86,11 @@ pub async fn create_thread(
 ) -> ApiResult<Json<ThreadCommandResponse>> {
     let project = state.store.get_project(&request.project_id).await?;
     let payload = create_thread_payload(request);
-    Ok(Json(
-        app_server_api::client(&state.app_server)
-            .thread_start(project.id, project.cwd, payload)
-            .await?,
-    ))
+    let mut response = app_server_api::client(&state.app_server)
+        .thread_start(project.id, project.cwd, payload)
+        .await?;
+    apply_thread_read_state(&state, std::slice::from_mut(&mut response.thread)).await?;
+    Ok(Json(response))
 }
 
 fn create_thread_payload(request: CreateThreadRequest) -> Value {
@@ -106,11 +118,11 @@ pub async fn get_thread(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
 ) -> ApiResult<Json<ThreadDetailResponse>> {
-    Ok(Json(
-        app_server_api::client(&state.app_server)
-            .thread_read(thread_id)
-            .await?,
-    ))
+    let mut response = app_server_api::client(&state.app_server)
+        .thread_read(thread_id)
+        .await?;
+    apply_thread_read_state(&state, std::slice::from_mut(&mut response.thread)).await?;
+    Ok(Json(response))
 }
 
 #[utoipa::path(post, path = "/v1/threads/{threadId}/resume", responses((status = 200, body = ThreadCommandResponse)))]
@@ -119,11 +131,11 @@ pub async fn resume_thread(
     Path(thread_id): Path<String>,
     Json(payload): Json<Value>,
 ) -> ApiResult<Json<ThreadCommandResponse>> {
-    Ok(Json(
-        app_server_api::client(&state.app_server)
-            .thread_resume(thread_id, payload)
-            .await?,
-    ))
+    let mut response = app_server_api::client(&state.app_server)
+        .thread_resume(thread_id, payload)
+        .await?;
+    apply_thread_read_state(&state, std::slice::from_mut(&mut response.thread)).await?;
+    Ok(Json(response))
 }
 
 #[utoipa::path(post, path = "/v1/threads/{threadId}/fork", responses((status = 200, body = ThreadCommandResponse)))]
@@ -132,11 +144,11 @@ pub async fn fork_thread(
     Path(thread_id): Path<String>,
     Json(payload): Json<Value>,
 ) -> ApiResult<Json<ThreadCommandResponse>> {
-    Ok(Json(
-        app_server_api::client(&state.app_server)
-            .thread_fork(thread_id, payload)
-            .await?,
-    ))
+    let mut response = app_server_api::client(&state.app_server)
+        .thread_fork(thread_id, payload)
+        .await?;
+    apply_thread_read_state(&state, std::slice::from_mut(&mut response.thread)).await?;
+    Ok(Json(response))
 }
 
 #[utoipa::path(post, path = "/v1/threads/{threadId}/archive", responses((status = 200, body = RawAppServerResponse)))]
@@ -149,4 +161,49 @@ pub async fn archive_thread(
             .thread_archive(thread_id)
             .await?,
     ))
+}
+
+#[utoipa::path(post, path = "/v1/threads/{threadId}/seen", request_body = MarkThreadSeenRequest, responses((status = 200, body = MarkThreadSeenResponse)))]
+pub async fn mark_thread_seen(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+    request: Option<Json<MarkThreadSeenRequest>>,
+) -> ApiResult<Json<MarkThreadSeenResponse>> {
+    let request = request.map(|Json(request)| request).unwrap_or_default();
+    let last_completed_agent_turn_seq = state
+        .store
+        .last_completed_agent_turn_seq(&thread_id)
+        .await?
+        .unwrap_or(0);
+    let requested_seen_seq = request
+        .seen_completed_agent_turn_seq
+        .unwrap_or(last_completed_agent_turn_seq)
+        .max(0);
+    let seen_seq = requested_seen_seq.min(last_completed_agent_turn_seq);
+    Ok(Json(
+        state
+            .store
+            .mark_thread_seen_completed_agent_turns(&thread_id, seen_seq)
+            .await?,
+    ))
+}
+
+async fn apply_thread_read_state(state: &AppState, threads: &mut [ThreadSummary]) -> ApiResult<()> {
+    let thread_ids = threads
+        .iter()
+        .map(|thread| thread.id.clone())
+        .collect::<Vec<_>>();
+    let read_states = state.store.thread_read_states(&thread_ids).await?;
+
+    for thread in threads {
+        let read_state = read_states.get(&thread.id);
+        thread.apply_completed_agent_turn_read_state(
+            read_state.and_then(|state| state.last_completed_agent_turn_seq),
+            read_state
+                .map(|state| state.seen_completed_agent_turn_seq)
+                .unwrap_or(0),
+        );
+    }
+
+    Ok(())
 }

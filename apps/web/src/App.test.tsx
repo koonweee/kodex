@@ -7,6 +7,10 @@ import { mockGateway } from "./test/gatewayMock";
 
 describe("App shell", () => {
   afterEach(() => {
+    window.localStorage.clear();
+    document.documentElement.removeAttribute("data-kodex-color-scheme");
+    document.documentElement.removeAttribute("data-mantine-color-scheme");
+    document.documentElement.removeAttribute("style");
     vi.restoreAllMocks();
   });
 
@@ -32,6 +36,83 @@ describe("App shell", () => {
     expect(screen.queryByText(/gateway/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/app-server/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/trusted network/i)).not.toBeInTheDocument();
+  });
+
+  it("opens preferences from the sidebar settings menu and switches color schemes", async () => {
+    mockGateway({
+      "GET /v1/projects": { projects: [] },
+      "GET /v1/approvals": { approvals: [] },
+      "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(document.documentElement).toHaveAttribute("data-kodex-color-scheme", "oled-black");
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /account settings/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /preferences/i }));
+
+    expect(await screen.findByRole("dialog", { name: /preferences/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /appearance/i })).toHaveAttribute("data-active", "true");
+
+    const colorSchemeGroup = screen.getByRole("radiogroup", { name: /color scheme/i });
+    await userEvent.click(within(colorSchemeGroup).getByRole("radio", { name: /dracula/i }));
+
+    await waitFor(() => {
+      expect(document.documentElement).toHaveAttribute("data-kodex-color-scheme", "dracula");
+      expect(document.documentElement).toHaveAttribute("data-mantine-color-scheme", "dark");
+    });
+    expect(window.localStorage.getItem("kodex-color-scheme")).toBe("dracula");
+  });
+
+  it("hydrates a persisted light color scheme before opening preferences", async () => {
+    window.localStorage.setItem("kodex-color-scheme", "paper-light");
+    mockGateway({
+      "GET /v1/projects": { projects: [] },
+      "GET /v1/approvals": { approvals: [] },
+      "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(document.documentElement).toHaveAttribute("data-kodex-color-scheme", "paper-light");
+      expect(document.documentElement).toHaveAttribute("data-mantine-color-scheme", "light");
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /account settings/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /preferences/i }));
+
+    const colorSchemeGroup = await screen.findByRole("radiogroup", { name: /color scheme/i });
+    expect(within(colorSchemeGroup).getByRole("radio", { name: /paper light/i })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("moves the selected color scheme with arrow keys in preferences", async () => {
+    mockGateway({
+      "GET /v1/projects": { projects: [] },
+      "GET /v1/approvals": { approvals: [] },
+      "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
+    });
+
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: /account settings/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /preferences/i }));
+
+    const colorSchemeGroup = await screen.findByRole("radiogroup", { name: /color scheme/i });
+    const oledBlack = within(colorSchemeGroup).getByRole("radio", { name: /oled black/i });
+    oledBlack.focus();
+    expect(oledBlack).toHaveFocus();
+
+    await userEvent.keyboard("{ArrowDown}");
+    expect(within(colorSchemeGroup).getByRole("radio", { name: /paper light/i })).toHaveAttribute("aria-checked", "true");
+    expect(document.documentElement).toHaveAttribute("data-kodex-color-scheme", "paper-light");
+
+    await userEvent.keyboard("{ArrowUp}");
+    expect(within(colorSchemeGroup).getByRole("radio", { name: /oled black/i })).toHaveAttribute("aria-checked", "true");
+    expect(document.documentElement).toHaveAttribute("data-kodex-color-scheme", "oled-black");
   });
 
   it("keeps the shell visible when optional app-server-backed calls fail", async () => {
