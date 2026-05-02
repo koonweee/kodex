@@ -42,6 +42,7 @@ This creates fragile mixed semantics. Snapshot data uses app-server turn/item id
 
 - Do not remove approval persistence.
 - Do not remove `/v1/events` entirely if approvals/debug still need it.
+- Do not expose raw debug replay through normal `/v1/events` query parameters.
 - Do not add WebSockets.
 - Do not build broad background indexing of all app-server history.
 - Do not reintroduce a gateway-owned durable timeline cache.
@@ -58,7 +59,8 @@ Failing tests first:
 Implementation:
 
 - Add event replay filtering so timeline kinds are excluded from HTTP replay by default.
-- If debug visibility is still needed, expose it through an explicit debug-only query such as `includeDebug=true` or a separate debug endpoint.
+- Move raw persisted event replay to a separate diagnostic endpoint, for example `GET /v1/debug/events` or `GET /v1/threads/{threadId}/debug/events`.
+- Do not add an `includeDebug=true` escape hatch to `/v1/events`; the normal event route should remain narrow enough that canonical timeline code cannot accidentally depend on raw replay again.
 - Keep persisted `approval.created`, `approval.resolved`, and `gateway.warning` replay behavior.
 - Keep live broadcast behavior for selected-thread normalized timeline events.
 - Update route tests to assert replay filtering and approval preservation.
@@ -67,7 +69,7 @@ Exit conditions:
 
 - No canonical frontend timeline code depends on `/v1/events` returning timeline history.
 - Approval replay still works after page reload.
-- Debug/audit access to raw gateway events remains intentionally scoped and documented.
+- Debug/audit access to raw gateway events is available only through the explicit debug endpoint and is documented as diagnostic/local-only.
 - `cargo test` passes.
 
 ## Backend Milestone 2: Snapshot Recovery Instead Of Timeline Replay
@@ -198,11 +200,12 @@ Exit conditions:
 Failing tests first:
 
 - OpenAPI/generated frontend types no longer imply timeline history replay is required for selected-thread loading.
-- README/API docs state snapshots are canonical and `/v1/events` is gateway-owned/debug/realtime only.
+- README/API docs state snapshots are canonical, `/v1/events` is gateway-owned operational/live transport, and raw persisted replay is diagnostic-only through `/v1/debug/events`.
 
 Implementation:
 
 - Update backend route docs and OpenAPI descriptions where helpful.
+- Add OpenAPI coverage for the explicit debug endpoint if it is part of the public local API surface.
 - Regenerate frontend API types if route query parameters or DTOs change.
 - Update `README.md` with the deterministic selected-thread load sequence.
 - Update `AGENTS.md` only if workflow rules change.
@@ -211,6 +214,7 @@ Implementation:
 Exit conditions:
 
 - Public docs no longer describe gateway event replay as timeline history.
+- Public docs clearly separate `/v1/events` from diagnostic raw replay endpoints.
 - Generated frontend types are current if API changed.
 - `cargo test`, `cd apps/web && npm test`, `cd apps/web && npm run build`, and `cd apps/web && npm run test:e2e` pass.
 
@@ -265,6 +269,7 @@ Commands:
 ## Design Decisions
 
 - Remove timeline replay first; remove the event table only if a later plan replaces approval/debug persistence.
+- Use a separate debug endpoint for raw persisted event replay; do not add debug replay flags to `/v1/events`.
 - Treat selected-thread snapshot refetch as the recovery primitive for missed or uncertain timeline updates.
 - Keep live SSE for responsiveness, not correctness.
 - Keep deployment assumptions local/VPN-only; this plan does not add auth.
