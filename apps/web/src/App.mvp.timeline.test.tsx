@@ -387,6 +387,110 @@ describe("MVP timeline flows", () => {
     expect(gateway.callsFor("GET", "/v1/events")).toHaveLength(0);
   });
 
+  it("keeps a resumed idle external thread in send state after selected snapshot recovery", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let detailCall = 0;
+    const externalThread = {
+      ...secondThread,
+      status: "notLoaded",
+      source: "external",
+      lastCompletedAgentTurnSeq: null,
+      seenCompletedAgentTurnSeq: 0,
+      unreadCompletedAgentTurn: false,
+    };
+    const resumedThread = {
+      ...externalThread,
+      status: "idle",
+      lastCompletedAgentTurnSeq: 1,
+    };
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, externalThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "POST /v1/threads/thread-2/resume": { thread: resumedThread, rawPayload: {} },
+        "GET /v1/threads/thread-2": () => {
+          detailCall += 1;
+          return threadDetail(resumedThread, [
+            snapshotTurn("turn-2", [
+              snapshotItem("agent-2", "agentMessage", {
+                text: detailCall === 1 ? "External completed snapshot" : "External recovered snapshot",
+              }),
+            ]),
+          ]);
+        },
+        "POST /v1/threads/thread-2/seen": {
+          threadId: "thread-2",
+          seenCompletedAgentTurnSeq: 1,
+          updatedAt: "2026-04-30T00:00:02Z",
+        },
+      }),
+    );
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /second thread/i }));
+    expect(await screen.findByText(/external completed snapshot/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /stop turn/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /send message/i })).toBeInTheDocument();
+    await waitFor(() => expect(FakeEventSource.instances.some((instance) => instance.url.includes("threadId=thread-2"))).toBe(true));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-2"));
+
+    act(() => {
+      selectedThreadStream?.emit({
+        id: "snapshot-required-external",
+        seq: 1,
+        kind: "timeline.snapshot_required",
+        codexMethod: "thread/snapshot_required",
+        projectId: project.id,
+        threadId: "thread-2",
+        turnId: null,
+        itemId: null,
+        payload: { threadId: "thread-2", reason: "thread_changed" },
+        receivedAt: "2026-04-30T00:00:02Z",
+      });
+    });
+
+    expect(await screen.findByText(/external recovered snapshot/i)).toBeInTheDocument();
+
+    act(() => {
+      selectedThreadStream?.emit({
+        id: "historical-item-upsert-external",
+        seq: 2,
+        kind: "timeline.item_upsert",
+        codexMethod: "item/upsert",
+        projectId: project.id,
+        threadId: "thread-2",
+        turnId: "turn-2",
+        itemId: "agent-2",
+        payload: {
+          source: "appServerSnapshot",
+          turnId: "turn-2",
+          itemId: "agent-2",
+          item: { id: "agent-2", type: "agentMessage", text: "External recovered snapshot" },
+          itemSnapshot: { id: "agent-2", itemType: "agentMessage", rawPayload: {} },
+        },
+        receivedAt: "2026-04-30T00:00:03Z",
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: /stop turn/i })).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: /send message/i })).toBeInTheDocument();
+    const externalThreadButton = screen
+      .getAllByRole("button", { name: /second thread/i })
+      .find((button) => button.classList.contains("kodex-thread-select-button"));
+    expect(externalThreadButton).toBeDefined();
+    const externalThreadRow = externalThreadButton!.closest(".kodex-thread-list-button");
+    expect(externalThreadRow?.querySelector(".kodex-thread-progress-indicator")).not.toBeInTheDocument();
+    expect(externalThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
+    expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(2);
+  });
+
   it("marks the selected thread seen from the loaded snapshot marker", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const gateway = mockGateway(

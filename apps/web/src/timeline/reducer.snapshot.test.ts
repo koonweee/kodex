@@ -120,6 +120,33 @@ describe("timeline reducer snapshots", () => {
 
     expect(state.activeTurnId).toBeNull();
   });
+
+  it("does not mark historical item upserts active without a live turn", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("Done", "agent-1"));
+
+    expect(state.activeTurnId).toBeNull();
+
+    state = applyTimelineEvent(state, {
+      id: "historical-item-upsert-1",
+      seq: 2,
+      kind: "timeline.item_upsert",
+      codexMethod: "item/upsert",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "agent-1",
+      projectId: null,
+      payload: {
+        source: "appServerSnapshot",
+        turnId: "turn-1",
+        itemId: "agent-1",
+        item: { id: "agent-1", type: "agentMessage", text: "Done" },
+        itemSnapshot: { id: "agent-1", itemType: "agentMessage", rawPayload: {} },
+      },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(state.activeTurnId).toBeNull();
+  });
 });
 
 function snapshot(agentText: string, agentId: string): ThreadDetailResponse {

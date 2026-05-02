@@ -328,7 +328,10 @@ function isTerminalTurnStatus(status: string): boolean {
 
 function eventCanMarkTurnActive(event: EventEnvelope) {
   const method = event.codexMethod ?? "";
-  return Boolean(event.itemId) || method.startsWith("turn/");
+  if (method === "item/completed" || method === "item/upsert") {
+    return false;
+  }
+  return method.endsWith("/delta") || method === "item/started" || method.startsWith("turn/");
 }
 
 function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event: EventEnvelope): TimelineItem {
