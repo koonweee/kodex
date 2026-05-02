@@ -10,7 +10,7 @@ import {
   TextInput,
   Tooltip,
 } from "@mantine/core";
-import { Archive, FolderClosed, FolderOpen, GitBranch, GripVertical, Inbox, SquarePen } from "lucide-react";
+import { Archive, FolderClosed, FolderOpen, GitBranch, Inbox, SquarePen } from "lucide-react";
 import {
   memo,
   useLayoutEffect,
@@ -45,7 +45,6 @@ const SIDEBAR_TEXT = {
   noProjectsText: "Create a project to begin.",
   noProjectsTitle: "No projects",
   projects: "Projects",
-  reorderProject: "Drag to reorder project",
   resizeSidebarLabel: "Resize workspace sidebar",
   showLessThreads: "Show less",
   showMoreThreads: "Show more",
@@ -286,22 +285,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                   >
                     <Box
                       className="kodex-project-row"
+                      draggable
+                      onDragEnd={handleProjectDragEnd}
                       onDragOver={(event) => handleProjectDragOver(event, project.id)}
+                      onDragStart={(event) => handleProjectDragStart(event, project.id)}
                     >
-                      <Tooltip label={SIDEBAR_TEXT.reorderProject}>
-                        <ActionIcon
-                          aria-label={`${SIDEBAR_TEXT.reorderProject}: ${project.name}`}
-                          className="kodex-project-drag-handle"
-                          color="gray"
-                          draggable
-                          onDragEnd={handleProjectDragEnd}
-                          onDragStart={(event) => handleProjectDragStart(event, project.id)}
-                          size="sm"
-                          variant="subtle"
-                        >
-                          <GripVertical size={14} />
-                        </ActionIcon>
-                      </Tooltip>
                       <button
                         aria-expanded={!projectCollapsed}
                         aria-label={`${project.name} ${project.cwd}`}

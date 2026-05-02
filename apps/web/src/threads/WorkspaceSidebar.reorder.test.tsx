@@ -26,14 +26,16 @@ describe("WorkspaceSidebar project reorder", () => {
       setDragImage: vi.fn(),
       setData: (type: string, value: string) => data.set(type, value),
     };
-    const oldHandle = screen.getByRole("button", { name: /drag to reorder project: old/i });
+    const oldProjectButton = screen.getByRole("button", { name: /old \/workspace\/old/i });
+    const oldProjectRow = oldProjectButton.closest(".kodex-project-row");
     const newProjectButton = screen.getByRole("button", { name: /new \/workspace\/new/i });
     const newProjectRow = newProjectButton.closest(".kodex-project-row");
+    expect(oldProjectRow).toBeInTheDocument();
     expect(newProjectRow).toBeInTheDocument();
     vi.spyOn(newProjectRow!, "getBoundingClientRect").mockReturnValue(rect({ top: 40, height: 20 }));
 
-    fireEvent.dragStart(oldHandle, { dataTransfer });
-    expect(dataTransfer.setDragImage).toHaveBeenCalledWith(oldHandle.closest(".kodex-project-row"), 12, 0);
+    fireEvent.dragStart(oldProjectRow!, { dataTransfer });
+    expect(dataTransfer.setDragImage).toHaveBeenCalledWith(oldProjectRow, 12, 0);
     fireEvent.dragOver(screen.getByRole("group", { name: "New" }), { dataTransfer, clientY: 45 });
     expect(projectOrder(container)).toEqual(["New", "Middle", "Old"]);
 
@@ -41,11 +43,11 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(projectOrder(container)).toEqual(["Old", "New", "Middle"]);
     expect(onReorderProjects).not.toHaveBeenCalled();
 
-    fireEvent.dragEnd(oldHandle, { dataTransfer });
+    fireEvent.dragEnd(oldProjectRow!, { dataTransfer });
     expect(projectOrder(container)).toEqual(["New", "Middle", "Old"]);
     expect(onReorderProjects).not.toHaveBeenCalled();
 
-    fireEvent.dragStart(oldHandle, { dataTransfer });
+    fireEvent.dragStart(oldProjectRow!, { dataTransfer });
     fireEvent.dragOver(newProjectButton, { dataTransfer, clientY: 45 });
     fireEvent.drop(screen.getByRole("group", { name: "New" }), { dataTransfer });
 

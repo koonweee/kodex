@@ -40,18 +40,15 @@
 
 .kodex-project-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 4px;
   align-items: center;
   min-width: 0;
   border-radius: 6px;
-}
-
-.kodex-project-drag-handle {
   cursor: grab;
 }
 
-.kodex-project-drag-handle:active {
+.kodex-project-row:active {
   cursor: grabbing;
 }
 
