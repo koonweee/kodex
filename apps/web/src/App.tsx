@@ -60,6 +60,7 @@ import { useSidebarResize } from "./shell/useSidebarResize";
 import "./App.css";
 
 const NEW_THREAD_TITLE = "New thread";
+const DRAFT_COMPOSER_TRANSITION_MS = 280;
 
 export function App() {
   const [colorSchemeId, setColorSchemeId] = useState<KodexColorSchemeId>(() => readStoredKodexColorScheme());
@@ -105,8 +106,12 @@ function KodexShell({
   const [timelineScrollElement, setTimelineScrollElement] = useState<HTMLDivElement | null>(null);
   const selectedProjectIdRef = useRef<string | null>(null);
   const selectedThreadIdRef = useRef<string | null>(null);
+  const composerShellRef = useRef<HTMLDivElement | null>(null);
+  const draftComposerTransitionOriginRef = useRef<DOMRect | null>(null);
   const threadRequestIds = useRef<Map<string, number>>(new Map());
   const nextThreadRequestId = useRef(0);
+  const [draftComposerTransitionToken, setDraftComposerTransitionToken] = useState(0);
+  const [isDraftComposerTransitioning, setIsDraftComposerTransitioning] = useState(false);
 
   const selectedProjectThreads = selectedProjectId ? threadsByProjectId[selectedProjectId] ?? [] : [];
   const selectedThread = selectedProjectThreads.find((thread) => thread.id === selectedThreadId) ?? null;
@@ -223,6 +228,65 @@ function KodexShell({
   useEffect(() => {
     selectedThreadIdRef.current = selectedThreadId;
   }, [selectedThreadId]);
+
+  useLayoutEffect(() => {
+    if (draftComposerTransitionToken === 0) {
+      return;
+    }
+
+    const originRect = draftComposerTransitionOriginRef.current;
+    draftComposerTransitionOriginRef.current = null;
+    const composerShell = composerShellRef.current;
+    if (!originRect || !composerShell) {
+      setIsDraftComposerTransitioning(false);
+      return;
+    }
+
+    const targetRect = composerShell.getBoundingClientRect();
+    const deltaX = originRect.left - targetRect.left;
+    const deltaY = originRect.top - targetRect.top;
+    if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) {
+      setIsDraftComposerTransitioning(false);
+      return;
+    }
+
+    const prefersReducedMotion =
+      typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReducedMotion) {
+      setIsDraftComposerTransitioning(false);
+      return;
+    }
+
+    const previousTransition = composerShell.style.transition;
+    const previousTransform = composerShell.style.transform;
+    const previousWillChange = composerShell.style.willChange;
+    let frameId = 0;
+    let timeoutId = 0;
+
+    composerShell.style.transition = "none";
+    composerShell.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+    composerShell.style.willChange = "transform";
+    composerShell.getBoundingClientRect();
+
+    frameId = window.requestAnimationFrame(() => {
+      composerShell.style.transition = `transform ${DRAFT_COMPOSER_TRANSITION_MS}ms cubic-bezier(0.2, 0, 0, 1)`;
+      composerShell.style.transform = "translate(0, 0)";
+      timeoutId = window.setTimeout(() => {
+        composerShell.style.transition = previousTransition;
+        composerShell.style.transform = previousTransform;
+        composerShell.style.willChange = previousWillChange;
+        setIsDraftComposerTransitioning(false);
+      }, DRAFT_COMPOSER_TRANSITION_MS);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.clearTimeout(timeoutId);
+      composerShell.style.transition = previousTransition;
+      composerShell.style.transform = previousTransform;
+      composerShell.style.willChange = previousWillChange;
+    };
+  }, [draftComposerTransitionToken]);
 
   useEffect(() => {
     const client = createEventStreamClient({
@@ -389,16 +453,19 @@ function KodexShell({
     firstMessageText: string;
     projectId: string;
   }) {
+    draftComposerTransitionOriginRef.current = composerShellRef.current?.getBoundingClientRect() ?? null;
     const thread = optimisticThreadSummary(
       await createThread(projectId, createThreadOptions(composerSettings)),
       firstMessageText,
     );
     setThreadsByProjectId((current) => prependThreadForProject(current, projectId, thread));
     setPendingTitleThreadIds((current) => markThreadTitlePending(current, thread));
+    setIsDraftComposerTransitioning(draftComposerTransitionOriginRef.current !== null);
     setDraftThreadProjectId(null);
     selectedThreadIdRef.current = thread.id;
     beginTimelineEntry(thread.id);
     setSelectedThreadId(thread.id);
+    setDraftComposerTransitionToken((current) => current + 1);
     return thread.id;
   }
 
@@ -454,7 +521,8 @@ function KodexShell({
     <KodexShellView
       composerPanelProps={{
         attachmentInputRef, canCompose, canSubmitComposer, composerSettings, composerSettingsError, composerText,
-        contextUsage: selectedContextUsage, isComposerDragActive, isComposerSubmitting, isSelectedTimelineReady, models,
+        composerShellRef, contextUsage: selectedContextUsage, isDraftComposerTransitioning, isComposerDragActive,
+        isComposerSubmitting, isSelectedTimelineReady, models,
         onAbortQueuedSteer: handleAbortQueuedSteer, onAttachmentInputChange: handleAttachmentInputChange,
         onComposerDragLeave: handleComposerDragLeave, onComposerDragOver: handleComposerDragOver, onComposerDrop: handleComposerDrop,
         onComposerKeyDown: handleComposerKeyDown, onComposerSettingsChange: handleComposerSettingsChange,

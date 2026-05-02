@@ -32,7 +32,9 @@ export function ComposerPanel({
   composerSettings,
   composerSettingsError,
   composerText,
+  composerShellRef,
   contextUsage,
+  isDraftComposerTransitioning,
   isComposerDragActive,
   isComposerSubmitting,
   isSelectedTimelineReady,
@@ -60,7 +62,9 @@ export function ComposerPanel({
   composerSettings: ComposerSettings;
   composerSettingsError: string | null;
   composerText: string;
+  composerShellRef?: RefObject<HTMLDivElement | null>;
   contextUsage?: ContextUsage | null;
+  isDraftComposerTransitioning: boolean;
   isComposerDragActive: boolean;
   isComposerSubmitting: boolean;
   isSelectedTimelineReady: boolean;
@@ -84,8 +88,11 @@ export function ComposerPanel({
 }) {
   return (
     <Box
+      ref={composerShellRef}
       className="kodex-composer-shell kodex-main-column"
-      data-entry-ready={selectedThreadPresent && !isSelectedTimelineReady ? "false" : "true"}
+      data-entry-ready={
+        selectedThreadPresent && !isSelectedTimelineReady && !isDraftComposerTransitioning ? "false" : "true"
+      }
       data-drag-active={isComposerDragActive ? "true" : "false"}
       onDragLeave={onComposerDragLeave}
       onDragOver={onComposerDragOver}
