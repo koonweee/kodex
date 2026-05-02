@@ -1,57 +1,22 @@
 import { AppShell, MantineProvider } from "@mantine/core";
 import { fireEvent, render, screen } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { Project } from "../api/client";
+import type { Project, ThreadSummary } from "../api/client";
 import { WorkspaceSidebar } from "./WorkspaceSidebar";
 
 describe("WorkspaceSidebar project reorder", () => {
   it("emits a persisted order when a project is dragged before another project", () => {
     const onReorderProjects = vi.fn();
-    const { container } = render(
-      <MantineProvider>
-        <AppShell>
-          <WorkspaceSidebar
-            account={null}
-            approvals={[]}
-            hoveredThreadActionId={null}
-            isSidebarResizing={false}
-            loginState={{}}
-            onArchiveThread={vi.fn()}
-            onCancelLogin={vi.fn()}
-            onCreateProject={vi.fn()}
-            onCreateThread={vi.fn()}
-            onLogin={vi.fn()}
-            onLogout={vi.fn()}
-            onOpenPreferences={vi.fn()}
-            onProjectCwdChange={vi.fn()}
-            onProjectFormOpenChange={vi.fn()}
-            onProjectNameChange={vi.fn()}
-            onReorderProjects={onReorderProjects}
-            onSelectProject={vi.fn()}
-            onSelectThread={vi.fn()}
-            onShowDebugEventsChange={vi.fn()}
-            onSidebarResizeKeyDown={vi.fn()}
-            onSidebarResizePointerDown={vi.fn()}
-            onThreadActionHoverChange={vi.fn()}
-            pendingTitleThreadIds={new Set()}
-            projectCwd=""
-            projectFormOpen={false}
-            projectName=""
-            projects={[
-              projectSummary("new", "New"),
-              projectSummary("middle", "Middle"),
-              projectSummary("old", "Old"),
-            ]}
-            selectedProjectId="new"
-            selectedThreadId={null}
-            showDebugEvents={false}
-            sidebarWidth={320}
-            threadsByProjectId={{}}
-          />
-        </AppShell>
-      </MantineProvider>,
-    );
+    const { container } = renderSidebar({
+      onReorderProjects,
+      projects: [
+        projectSummary("new", "New"),
+        projectSummary("middle", "Middle"),
+        projectSummary("old", "Old"),
+      ],
+    });
 
     const data = new Map<string, string>();
     const dataTransfer = {
@@ -87,7 +52,74 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(projectOrder(container)).toEqual(["New", "Middle", "Old"]);
     expect(onReorderProjects).toHaveBeenCalledWith(["old", "new", "middle"]);
   });
+
+  it("collapses older project threads behind a subdued show more toggle", () => {
+    renderSidebar({
+      projects: [projectSummary("project-1", "Project")],
+      threadsByProjectId: {
+        "project-1": Array.from({ length: 7 }, (_value, index) => threadSummary(index + 1)),
+      },
+    });
+
+    expect(screen.getByRole("button", { name: "Thread 7" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Thread 3" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Thread 2" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Thread 1" })).not.toBeInTheDocument();
+
+    const showMore = screen.getByRole("button", { name: "Show more" });
+    expect(showMore).toHaveClass("kodex-thread-list-more-button");
+    fireEvent.click(showMore);
+
+    expect(screen.getByRole("button", { name: "Thread 2" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Thread 1" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show less" }));
+    expect(screen.queryByRole("button", { name: "Thread 2" })).not.toBeInTheDocument();
+  });
 });
+
+function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar>> = {}) {
+  return render(
+    <MantineProvider>
+      <AppShell>
+        <WorkspaceSidebar
+          account={null}
+          approvals={[]}
+          hoveredThreadActionId={null}
+          isSidebarResizing={false}
+          loginState={{}}
+          onArchiveThread={vi.fn()}
+          onCancelLogin={vi.fn()}
+          onCreateProject={vi.fn()}
+          onCreateThread={vi.fn()}
+          onLogin={vi.fn()}
+          onLogout={vi.fn()}
+          onOpenPreferences={vi.fn()}
+          onProjectCwdChange={vi.fn()}
+          onProjectFormOpenChange={vi.fn()}
+          onProjectNameChange={vi.fn()}
+          onReorderProjects={vi.fn()}
+          onSelectProject={vi.fn()}
+          onSelectThread={vi.fn()}
+          onShowDebugEventsChange={vi.fn()}
+          onSidebarResizeKeyDown={vi.fn()}
+          onSidebarResizePointerDown={vi.fn()}
+          onThreadActionHoverChange={vi.fn()}
+          pendingTitleThreadIds={new Set()}
+          projectCwd=""
+          projectFormOpen={false}
+          projectName=""
+          projects={[]}
+          selectedProjectId={null}
+          selectedThreadId={null}
+          showDebugEvents={false}
+          sidebarWidth={320}
+          threadsByProjectId={{}}
+          {...overrides}
+        />
+      </AppShell>
+    </MantineProvider>,
+  );
+}
 
 function projectOrder(container: HTMLElement): Array<string | null> {
   return Array.from(container.querySelectorAll(".kodex-project-group")).map((element) => element.getAttribute("aria-label"));
@@ -114,5 +146,19 @@ function projectSummary(id: string, name: string): Project {
     id,
     name,
     updatedAt: "2026-05-01T00:00:00Z",
+  };
+}
+
+function threadSummary(index: number): ThreadSummary {
+  return {
+    createdAt: index,
+    cwd: "/workspace/project-1",
+    id: `thread-${index}`,
+    name: `Thread ${index}`,
+    rawPayload: {},
+    seenCompletedAgentTurnSeq: 0,
+    status: "idle",
+    unreadCompletedAgentTurn: false,
+    updatedAt: index,
   };
 }

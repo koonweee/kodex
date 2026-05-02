@@ -128,9 +128,30 @@
 }
 
 .kodex-thread-select-button:focus-visible,
-.kodex-thread-archive-button:focus-visible {
+.kodex-thread-archive-button:focus-visible,
+.kodex-thread-list-more-button:focus-visible {
   outline: 2px solid var(--kodex-border-accent-soft);
   outline-offset: 2px;
+}
+
+.kodex-thread-list-more-button {
+  appearance: none;
+  width: max-content;
+  max-width: 100%;
+  border: 0;
+  border-radius: 6px;
+  padding: 2px 8px;
+  background: transparent;
+  color: var(--kodex-text-muted);
+  font: inherit;
+  font-size: var(--mantine-font-size-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.kodex-thread-list-more-button:hover {
+  background: var(--kodex-bg-sidebar-hover);
+  color: var(--kodex-text-primary);
 }
 
 .kodex-thread-list-row {

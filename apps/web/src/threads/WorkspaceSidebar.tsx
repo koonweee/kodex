@@ -47,10 +47,14 @@ const SIDEBAR_TEXT = {
   projects: "Projects",
   reorderProject: "Drag to reorder project",
   resizeSidebarLabel: "Resize workspace sidebar",
+  showLessThreads: "Show less",
+  showMoreThreads: "Show more",
   threadInProgress: "Thread in progress",
   unreadAgentTurn: "Unread completed agent turn",
   workspaceLabel: "Workspace",
 };
+
+const VISIBLE_THREAD_LIMIT = 5;
 
 export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   account,
@@ -121,6 +125,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
 }) {
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => new Set());
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
+  const [expandedThreadProjectIds, setExpandedThreadProjectIds] = useState<Set<string>>(() => new Set());
   const [previewProjectIds, setPreviewProjectIds] = useState<string[] | null>(null);
   const projectGroupRefs = useRef<Map<string, HTMLElement>>(new Map());
   const pendingProjectAnimationRects = useRef<Map<string, DOMRect> | null>(null);
@@ -255,6 +260,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                   approvals,
                   pendingTitleThreadIds,
                 );
+                const showAllProjectThreads = expandedThreadProjectIds.has(project.id);
+                const visibleProjectThreads = showAllProjectThreads
+                  ? projectThreads
+                  : projectThreads.slice(0, VISIBLE_THREAD_LIMIT);
+                const hasHiddenProjectThreads = projectThreads.length > VISIBLE_THREAD_LIMIT;
                 const projectCollapsed = collapsedProjectIds.has(project.id);
                 const FolderIcon = projectCollapsed ? FolderClosed : FolderOpen;
                 const newThreadLabel =
@@ -334,7 +344,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                     </Box>
                     {!projectCollapsed && projectThreads.length > 0 ? (
                       <Stack className="kodex-project-thread-list" gap={6}>
-                        {projectThreads.map((thread) => (
+                        {visibleProjectThreads.map((thread) => (
                           <ThreadListRow
                             approvals={approvals}
                             isSelected={thread.id === selectedThreadId}
@@ -348,6 +358,25 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                             thread={thread}
                           />
                         ))}
+                        {hasHiddenProjectThreads ? (
+                          <button
+                            className="kodex-thread-list-more-button"
+                            onClick={() => {
+                              setExpandedThreadProjectIds((current) => {
+                                const next = new Set(current);
+                                if (next.has(project.id)) {
+                                  next.delete(project.id);
+                                } else {
+                                  next.add(project.id);
+                                }
+                                return next;
+                              });
+                            }}
+                            type="button"
+                          >
+                            {showAllProjectThreads ? SIDEBAR_TEXT.showLessThreads : SIDEBAR_TEXT.showMoreThreads}
+                          </button>
+                        ) : null}
                       </Stack>
                     ) : null}
                   </Box>
