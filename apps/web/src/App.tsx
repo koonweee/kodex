@@ -3090,13 +3090,16 @@ function contextUsageFromEvent(event: EventEnvelope): ContextUsage | null {
 
   const payload = asRecord(event.payload);
   const tokenUsage = asRecord(payload.tokenUsage ?? payload.token_usage ?? event.payload);
+  const last = asRecord(tokenUsage.last);
   const total = asRecord(tokenUsage.total);
-  const totalTokens = numberValue(total.totalTokens ?? total.total_tokens ?? tokenUsage.totalTokens ?? tokenUsage.total_tokens);
+  const contextTokens =
+    numberValue(last.totalTokens ?? last.total_tokens) ??
+    numberValue(total.totalTokens ?? total.total_tokens ?? tokenUsage.totalTokens ?? tokenUsage.total_tokens);
   const modelContextWindow = numberValue(tokenUsage.modelContextWindow ?? tokenUsage.model_context_window);
-  if (totalTokens === null && modelContextWindow === null) {
+  if (contextTokens === null && modelContextWindow === null) {
     return null;
   }
-  return { totalTokens, modelContextWindow };
+  return { contextTokens, modelContextWindow };
 }
 
 function sameComposerContext(left: ComposerContext | null, right: ComposerContext): boolean {

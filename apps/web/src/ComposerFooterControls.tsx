@@ -15,7 +15,7 @@ export type ComposerSettings = {
 };
 
 export type ContextUsage = {
-  totalTokens?: number | null;
+  contextTokens?: number | null;
   modelContextWindow?: number | null;
 };
 
@@ -199,15 +199,21 @@ export function ComposerFooterControls({
   );
 }
 
+const CONTEXT_USAGE_BASELINE_TOKENS = 12_000;
+
 function ContextUsageIndicator({ usage }: { usage?: ContextUsage | null }) {
-  const used = usage?.totalTokens ?? null;
+  const used = usage?.contextTokens ?? null;
   const windowSize = usage?.modelContextWindow ?? null;
   const hasWindow = typeof used === "number" && typeof windowSize === "number" && windowSize > 0;
-  const percentUsed = hasWindow ? Math.min(100, Math.max(0, (used / windowSize) * 100)) : 0;
-  const percentLeft = hasWindow ? Math.max(0, Math.round(100 - percentUsed)) : null;
-  const label = hasWindow
-    ? `${percentLeft}% context left. ${used.toLocaleString()} of ${windowSize.toLocaleString()} tokens used.`
-    : "Context usage unavailable";
+  const percentLeft = hasWindow ? contextPercentLeft(used, windowSize) : null;
+  const percentUsed = percentLeft === null ? 0 : 100 - percentLeft;
+  const usedLabel = typeof used === "number" ? used.toLocaleString() : null;
+  const label =
+    percentLeft !== null && usedLabel
+      ? `${percentLeft}% context left. ${usedLabel} context tokens in use.`
+      : usedLabel
+        ? `${usedLabel} context tokens in use. Context window unavailable.`
+        : "Context usage unavailable";
 
   return (
     <Tooltip label={label}>
@@ -224,6 +230,17 @@ function ContextUsageIndicator({ usage }: { usage?: ContextUsage | null }) {
       </ActionIcon>
     </Tooltip>
   );
+}
+
+function contextPercentLeft(usedTokens: number, contextWindow: number) {
+  if (contextWindow <= CONTEXT_USAGE_BASELINE_TOKENS) {
+    return 0;
+  }
+
+  const effectiveWindow = contextWindow - CONTEXT_USAGE_BASELINE_TOKENS;
+  const effectiveUsed = Math.max(0, usedTokens - CONTEXT_USAGE_BASELINE_TOKENS);
+  const remaining = Math.max(0, effectiveWindow - effectiveUsed);
+  return Math.round(Math.min(100, Math.max(0, (remaining / effectiveWindow) * 100)));
 }
 
 function titleCase(value: string) {

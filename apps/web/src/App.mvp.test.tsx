@@ -264,8 +264,9 @@ describe("MVP frontend flows", () => {
         threadId: thread.id,
         payload: {
           tokenUsage: {
-            total: { totalTokens: 4000 },
-            modelContextWindow: 8000,
+            total: { totalTokens: 20_000 },
+            last: { totalTokens: 20_000 },
+            modelContextWindow: 28_000,
           },
         },
         receivedAt: "2026-04-30T00:00:02Z",
@@ -296,6 +297,44 @@ describe("MVP frontend flows", () => {
       approvalsReviewer: "user",
       sandboxPolicy: { type: "dangerFullAccess" },
     });
+  });
+
+  it("uses last turn token usage instead of cumulative usage for context left", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+      }),
+    );
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
+    await waitFor(() => {
+      expect(FakeEventSource.instances.some((instance) => instance.url.includes("threadId=thread-1"))).toBe(true);
+    });
+
+    const threadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    act(() => {
+      threadStream?.emit({
+        id: "usage-1",
+        seq: 3,
+        kind: "codex.notification",
+        codexMethod: "thread/tokenUsage/updated",
+        projectId: project.id,
+        threadId: thread.id,
+        payload: {
+          tokenUsage: {
+            total: { totalTokens: 571_000 },
+            last: { totalTokens: 25_000 },
+            modelContextWindow: 258_000,
+          },
+        },
+        receivedAt: "2026-04-30T00:00:02Z",
+      });
+    });
+
+    expect(await screen.findByLabelText(/95% context left/i)).toBeInTheDocument();
   });
 
   it("forwards draft thread composer settings to thread start and first turn", async () => {
