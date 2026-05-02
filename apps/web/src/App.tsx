@@ -107,6 +107,7 @@ function KodexShell({
   const [preferencesSection, setPreferencesSection] = useState<"appearance">("appearance");
   const [hoveredThreadActionId, setHoveredThreadActionId] = useState<string | null>(null);
   const [timelineScrollElement, setTimelineScrollElement] = useState<HTMLDivElement | null>(null);
+  const [composerResetToken, setComposerResetToken] = useState(0);
   const selectedProjectIdRef = useRef<string | null>(null);
   const selectedThreadIdRef = useRef<string | null>(null);
   const composerShellRef = useRef<HTMLDivElement | null>(null);
@@ -175,9 +176,6 @@ function KodexShell({
   const canCompose = selectedThread !== null || isDraftThreadSelected;
   const {
     attachmentInputRef,
-    canSubmitComposer,
-    clearComposerText,
-    composerText,
     handleAbortQueuedSteer,
     handleAttachmentInputChange,
     handleComposerDragLeave,
@@ -194,8 +192,6 @@ function KodexShell({
     pendingAttachments,
     queuedSteerRows,
     removePendingAttachment,
-    setComposerText,
-    shouldShowStopAction,
   } = useComposerOrchestration({
     activeSelectedTurnId,
     canCompose,
@@ -447,7 +443,7 @@ function KodexShell({
     selectedThreadIdRef.current = null;
     setSelectedThreadId(null);
     clearTimelineEntry();
-    clearComposerText();
+    resetComposerDraft();
   }
 
   async function createDraftThreadFromComposer({
@@ -521,19 +517,23 @@ function KodexShell({
     setErrorMessage(errorMessageFrom(error));
   }
 
+  function resetComposerDraft() {
+    setComposerResetToken((current) => current + 1);
+  }
+
   return (
     <>
       <KodexShellView
         composerPanelProps={{
-          attachmentInputRef, canCompose, canSubmitComposer, composerSettings, composerSettingsError, composerText,
+          activeSelectedTurnId, attachmentInputRef, canCompose, composerResetToken, composerSettings, composerSettingsError,
           composerShellRef, contextUsage: selectedContextUsage, isDraftThreadSelected, isDraftComposerTransitioning, isComposerDragActive,
           isComposerSubmitting, isSelectedTimelineReady, models,
           onAbortQueuedSteer: handleAbortQueuedSteer, onAttachmentInputChange: handleAttachmentInputChange,
           onComposerDragLeave: handleComposerDragLeave, onComposerDragOver: handleComposerDragOver, onComposerDrop: handleComposerDrop,
           onComposerKeyDown: handleComposerKeyDown, onComposerPaste: handleComposerPaste, onComposerSettingsChange: handleComposerSettingsChange,
-          onComposerTextChange: setComposerText, onImageOpen: setLightboxImage, onRemovePendingAttachment: removePendingAttachment, onStopTurn: handleStopTurn,
+          onImageOpen: setLightboxImage, onRemovePendingAttachment: removePendingAttachment, onStopTurn: handleStopTurn,
           onSubmitQueuedSteer: handleSubmitQueuedSteer, onSubmitTurn: handleSubmitTurn, pendingAttachments, queuedSteerRows,
-          selectedThreadPresent: selectedThread !== null, shouldShowStopAction,
+          selectedThreadPresent: selectedThread !== null,
         }}
         isSidebarResizing={isSidebarResizing}
         mobilePanel={mobilePanel}

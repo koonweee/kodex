@@ -1,5 +1,6 @@
 import { ActionIcon, Box, Group, Menu, Textarea, Tooltip } from "@mantine/core";
 import { ArrowUp, Paperclip, Plus, Square } from "lucide-react";
+import { useEffect, useState } from "react";
 import type {
   ClipboardEvent as ReactClipboardEvent,
   ChangeEvent as ReactChangeEvent,
@@ -27,13 +28,18 @@ const COMPOSER_TEXT = {
   stop: "Stop turn",
 };
 
+export type ComposerDraftControls = {
+  clearText: () => void;
+  restoreText: (text: string) => void;
+};
+
 export function ComposerPanel({
+  activeSelectedTurnId,
   attachmentInputRef,
   canCompose,
-  canSubmitComposer,
   composerSettings,
   composerSettingsError,
-  composerText,
+  composerResetToken,
   composerShellRef,
   contextUsage,
   isDraftThreadSelected,
@@ -50,7 +56,6 @@ export function ComposerPanel({
   onComposerKeyDown,
   onComposerPaste,
   onComposerSettingsChange,
-  onComposerTextChange,
   onImageOpen,
   onRemovePendingAttachment,
   onStopTurn,
@@ -59,14 +64,13 @@ export function ComposerPanel({
   pendingAttachments,
   queuedSteerRows,
   selectedThreadPresent,
-  shouldShowStopAction,
 }: {
+  activeSelectedTurnId: string | null;
   attachmentInputRef: RefObject<HTMLInputElement | null>;
   canCompose: boolean;
-  canSubmitComposer: boolean;
   composerSettings: ComposerSettings;
   composerSettingsError: string | null;
-  composerText: string;
+  composerResetToken: number;
   composerShellRef?: RefObject<HTMLDivElement | null>;
   contextUsage?: ContextUsage | null;
   isDraftThreadSelected: boolean;
@@ -83,19 +87,25 @@ export function ComposerPanel({
   onComposerKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
   onComposerPaste: (event: ReactClipboardEvent<HTMLTextAreaElement>) => void;
   onComposerSettingsChange: (settings: ComposerSettings) => void;
-  onComposerTextChange: (value: string) => void;
   onImageOpen: (image: ImageLightboxImage) => void;
   onRemovePendingAttachment: (id: string) => void;
   onStopTurn: () => void;
   onSubmitQueuedSteer: (row: QueuedSteerRow) => void;
-  onSubmitTurn: (event: FormEvent) => void;
+  onSubmitTurn: (event: FormEvent, draftText: string, controls: ComposerDraftControls) => void;
   pendingAttachments: PendingAttachment[];
   queuedSteerRows: QueuedSteerRow[];
   selectedThreadPresent: boolean;
-  shouldShowStopAction: boolean;
 }) {
+  const [composerText, setComposerText] = useState("");
   const draftHeroText = greetingForDate(new Date());
   const shouldShowDraftHero = isDraftThreadSelected || isDraftComposerTransitioning;
+  const canSubmitComposer =
+    canCompose && !isComposerSubmitting && (Boolean(composerText.trim()) || pendingAttachments.length > 0);
+  const shouldShowStopAction = activeSelectedTurnId !== null && !canSubmitComposer;
+
+  useEffect(() => {
+    setComposerText("");
+  }, [composerResetToken]);
 
   return (
     <Box
@@ -124,7 +134,16 @@ export function ComposerPanel({
           onSubmitRow={onSubmitQueuedSteer}
         />
       ) : null}
-      <Box component="form" className="kodex-composer" onSubmit={onSubmitTurn}>
+      <Box
+        component="form"
+        className="kodex-composer"
+        onSubmit={(event) =>
+          onSubmitTurn(event, composerText, {
+            clearText: () => setComposerText(""),
+            restoreText: setComposerText,
+          })
+        }
+      >
         <input
           ref={attachmentInputRef}
           aria-label={COMPOSER_TEXT.addAttachment}
@@ -148,7 +167,7 @@ export function ComposerPanel({
           value={composerText}
           onChange={(event) => {
             if (!isComposerSubmitting) {
-              onComposerTextChange(event.currentTarget.value);
+              setComposerText(event.currentTarget.value);
             }
           }}
           onKeyDown={onComposerKeyDown}

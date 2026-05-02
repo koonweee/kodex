@@ -30,6 +30,7 @@ import {
   revokeObjectUrl,
   userInputImages,
 } from "./attachmentUtils";
+import type { ComposerDraftControls } from "./ComposerPanel";
 import type { PendingAttachment, QueuedSteerRow } from "./types";
 
 type DraftThreadCreateRequest = { firstMessageText: string; projectId: string };
@@ -59,7 +60,6 @@ export function useComposerOrchestration({
   selectedThreadId,
   setTimeline,
 }: UseComposerOrchestrationParams) {
-  const [composerText, setComposerText] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [isComposerSubmitting, setIsComposerSubmitting] = useState(false);
   const [isComposerDragActive, setIsComposerDragActive] = useState(false);
@@ -72,10 +72,6 @@ export function useComposerOrchestration({
   const nextAttachmentId = useRef(0);
   const nextOptimisticMessageId = useRef(0);
   const nextQueuedSteerId = useRef(0);
-
-  const canSubmitComposer =
-    canCompose && !isComposerSubmitting && (Boolean(composerText.trim()) || pendingAttachments.length > 0);
-  const shouldShowStopAction = activeSelectedTurnId !== null && !canSubmitComposer;
 
   useEffect(() => {
     const nextContext = { activeSelectedTurnId, draftThreadProjectId, selectedProjectId, selectedThreadId };
@@ -106,8 +102,10 @@ export function useComposerOrchestration({
     clearPendingAttachments();
   }, [activeSelectedTurnId, draftThreadProjectId, isComposerSubmitting, selectedProjectId, selectedThreadId]);
 
-  async function handleSubmitTurn(event: FormEvent) {
+  async function handleSubmitTurn(event: FormEvent, composerText: string, draftControls: ComposerDraftControls) {
     event.preventDefault();
+    const canSubmitComposer =
+      canCompose && !isComposerSubmitting && (Boolean(composerText.trim()) || pendingAttachments.length > 0);
     if (!canSubmitComposer) {
       return;
     }
@@ -118,7 +116,7 @@ export function useComposerOrchestration({
       const id = `queued-steer-${nextQueuedSteerId.current + 1}`;
       nextQueuedSteerId.current += 1;
       setQueuedSteerRows((current) => [...current, { id, text, attachments }]);
-      setComposerText("");
+      draftControls.clearText();
       setPendingAttachments([]);
       return;
     }
@@ -136,7 +134,7 @@ export function useComposerOrchestration({
     try {
       if (selectedThreadId) {
         optimisticClientRequestId = addOptimisticMessage(text, optimisticImages, null, initialConfirmationState);
-        setComposerText("");
+        draftControls.clearText();
         const input = await buildTurnInput(text, attachments);
         const uploadedImages = userInputImages(input);
         if (uploadedImages.length > 0) {
@@ -168,7 +166,7 @@ export function useComposerOrchestration({
       latestComposerContextRef.current = retryRestoreContext;
       composerContextRef.current = retryRestoreContext;
       optimisticClientRequestId = addOptimisticMessage(text, optimisticImages, null, initialConfirmationState);
-      setComposerText("");
+      draftControls.clearText();
       const input = await buildTurnInput(text, attachments);
       const uploadedImages = userInputImages(input);
       if (uploadedImages.length > 0) {
@@ -188,7 +186,7 @@ export function useComposerOrchestration({
         setTimeline((current) => removeOptimisticUserMessage(current, clientRequestId));
       }
       if (sameComposerContext(latestComposerContextRef.current, retryRestoreContext)) {
-        setComposerText(text);
+        draftControls.restoreText(text);
       } else {
         clearPendingAttachments();
       }
@@ -311,10 +309,6 @@ export function useComposerOrchestration({
 
     event.preventDefault();
     event.currentTarget.form?.requestSubmit();
-  }
-
-  function clearComposerText() {
-    setComposerText("");
   }
 
   async function buildTurnInput(text: string, attachments: PendingAttachment[]): Promise<UserInput[]> {
@@ -472,9 +466,6 @@ export function useComposerOrchestration({
 
   return {
     attachmentInputRef,
-    canSubmitComposer,
-    clearComposerText,
-    composerText,
     handleAbortQueuedSteer,
     handleAttachmentInputChange,
     handleComposerDragLeave,
@@ -491,7 +482,5 @@ export function useComposerOrchestration({
     pendingAttachments,
     queuedSteerRows,
     removePendingAttachment,
-    setComposerText,
-    shouldShowStopAction,
   };
 }
