@@ -18,6 +18,7 @@ import {
   createThread,
   listThreads,
   resumeThread,
+  type Approval,
   type EventEnvelope,
   type Project,
   type ThreadSummary,
@@ -45,11 +46,17 @@ import {
   prependThreadForProject,
   removeThreadFromProjects,
   replaceThreadInProjects,
+  sortThreadsForSidebar,
   threadDisplayTitle,
   threadHasDisplayTitle,
   updateThreadReadStateInProjects,
   type ThreadsByProjectId,
 } from "./threads/helpers";
+import {
+  applySidebarProjectOrder,
+  loadSidebarProjectOrder,
+  saveSidebarProjectOrder,
+} from "./threads/projectOrder";
 import { useThreadMetadata } from "./threads/useThreadMetadata";
 import { useThreadReadState } from "./threads/useThreadReadState";
 import {
@@ -103,6 +110,7 @@ function KodexShell({
   onColorSchemeChange: (colorSchemeId: KodexColorSchemeId) => void;
 }) {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectOrderIds, setProjectOrderIds] = useState<string[] | null>(() => loadSidebarProjectOrder());
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [threadsByProjectId, setThreadsByProjectId] = useState<ThreadsByProjectId>({});
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
@@ -125,14 +133,21 @@ function KodexShell({
   const [composerResetToken, setComposerResetToken] = useState(0);
   const selectedProjectIdRef = useRef<string | null>(null);
   const selectedThreadIdRef = useRef<string | null>(null);
+  const autoSelectedThreadIdRef = useRef<string | null>(null);
+  const approvalsRef = useRef<Approval[]>([]);
+  const pendingTitleThreadIdsRef = useRef<Set<string>>(new Set());
+  const threadsByProjectIdRef = useRef<ThreadsByProjectId>({});
   const composerShellRef = useRef<HTMLDivElement | null>(null);
   const draftComposerTransitionOriginRef = useRef<DOMRect | null>(null);
+  const initialPendingApprovalsReconciledRef = useRef(false);
   const threadRequestIds = useRef<Map<string, number>>(new Map());
   const nextThreadRequestId = useRef(0);
   const [draftComposerTransitionToken, setDraftComposerTransitionToken] = useState(0);
   const [isDraftComposerTransitioning, setIsDraftComposerTransitioning] = useState(false);
+  const [initialPendingApprovalsLoaded, setInitialPendingApprovalsLoaded] = useState(false);
 
   const selectedProjectThreads = selectedProjectId ? threadsByProjectId[selectedProjectId] ?? [] : [];
+  const orderedProjects = useMemo(() => applySidebarProjectOrder(projects, projectOrderIds), [projectOrderIds, projects]);
   const selectedThread = selectedProjectThreads.find((thread) => thread.id === selectedThreadId) ?? null;
   const {
     approvals,
@@ -143,6 +158,9 @@ function KodexShell({
     selectedThreadApprovals,
     setApprovals,
   } = useApprovalsState({ selectedThreadId });
+  approvalsRef.current = approvals;
+  pendingTitleThreadIdsRef.current = pendingTitleThreadIds;
+  threadsByProjectIdRef.current = threadsByProjectId;
   const {
     account,
     handleCancelLogin,
@@ -235,16 +253,29 @@ function KodexShell({
     void loadInitialKodexState({
       hydrateComposerDefaults,
       loadProjectThreads,
-      mergePendingApprovals: mergeFetchedPendingApprovals,
+      mergePendingApprovals: (nextApprovals) => {
+        mergeFetchedPendingApprovals(nextApprovals);
+        setInitialPendingApprovalsLoaded(true);
+      },
       onError: reportError,
-      onProjectsLoaded: (nextProjects, firstProjectId) => {
+      onProjectsLoaded: (nextProjects) => {
+        const firstProjectId = applySidebarProjectOrder(nextProjects, projectOrderIds)[0]?.id ?? null;
         setProjects(nextProjects);
         selectedProjectIdRef.current = firstProjectId;
         setSelectedProjectId(firstProjectId);
+        return firstProjectId;
       },
       setAccount,
     });
   }, []);
+
+  useEffect(() => {
+    if (!initialPendingApprovalsLoaded || initialPendingApprovalsReconciledRef.current) {
+      return;
+    }
+    initialPendingApprovalsReconciledRef.current = true;
+    reconcileAutoSelectedThreadWithSidebarOrder();
+  }, [approvals, initialPendingApprovalsLoaded]);
 
   useEffect(() => {
     selectedThreadIdRef.current = selectedThreadId;
@@ -374,16 +405,22 @@ function KodexShell({
       setPendingTitleThreadIds((current) => clearAvailableThreadTitles(current, nextThreads));
 
       if (options.selectWhenLoaded && selectedProjectIdRef.current === projectId) {
+        const currentSelectedThreadId = selectedThreadIdRef.current;
+        const preservesCurrentSelection =
+          currentSelectedThreadId !== null && nextThreads.some((thread) => thread.id === currentSelectedThreadId);
         const nextThreadId =
-          selectedThreadId && nextThreads.some((thread) => thread.id === selectedThreadId)
-            ? selectedThreadId
-            : nextThreads[0]?.id ?? null;
+          preservesCurrentSelection
+            ? currentSelectedThreadId
+            : firstSidebarThreadId(nextThreads);
         if (nextThreadId) {
           selectedThreadIdRef.current = nextThreadId;
           beginTimelineEntry(nextThreadId);
         } else {
           selectedThreadIdRef.current = null;
           clearTimelineEntry();
+        }
+        if (!preservesCurrentSelection || autoSelectedThreadIdRef.current === nextThreadId) {
+          autoSelectedThreadIdRef.current = nextThreadId;
         }
         setSelectedThreadId(nextThreadId);
       }
@@ -418,12 +455,44 @@ function KodexShell({
   async function handleCreateProject(event: FormEvent) {
     event.preventDefault();
     const project = await createProject({ name: projectName || null, cwd: projectCwd });
-    setProjects((current) => [...current, project]);
+    setProjects((current) => [project, ...current]);
     setThreadsByProjectId((current) => ({ ...current, [project.id]: [] }));
     selectProject(project.id);
     setProjectName("");
     setProjectCwd("");
     setProjectFormOpen(false);
+  }
+
+  function handleReorderProjects(nextProjectIds: string[]) {
+    setProjectOrderIds(nextProjectIds);
+    saveSidebarProjectOrder(nextProjectIds);
+  }
+
+  function firstSidebarThreadId(threads: ThreadSummary[], nextApprovals = approvalsRef.current): string | null {
+    return sortThreadsForSidebar(threads, nextApprovals, pendingTitleThreadIdsRef.current)[0]?.id ?? null;
+  }
+
+  function reconcileAutoSelectedThreadWithSidebarOrder() {
+    const projectId = selectedProjectIdRef.current;
+    const autoSelectedThreadId = autoSelectedThreadIdRef.current;
+    if (!projectId || !autoSelectedThreadId || selectedThreadIdRef.current !== autoSelectedThreadId) {
+      return;
+    }
+
+    const projectThreads = threadsByProjectIdRef.current[projectId] ?? [];
+    if (!projectThreads.some((thread) => thread.id === autoSelectedThreadId)) {
+      return;
+    }
+
+    const nextThreadId = firstSidebarThreadId(projectThreads);
+    if (!nextThreadId || nextThreadId === autoSelectedThreadId) {
+      return;
+    }
+
+    autoSelectedThreadIdRef.current = nextThreadId;
+    selectedThreadIdRef.current = nextThreadId;
+    beginTimelineEntry(nextThreadId);
+    setSelectedThreadId(nextThreadId);
   }
 
   function handleSelectProject(projectId: string) {
@@ -440,16 +509,19 @@ function KodexShell({
     }
     setSelectedProjectId(projectId);
     selectedThreadIdRef.current = null;
+    autoSelectedThreadIdRef.current = null;
     setSelectedThreadId(null);
     setDraftThreadProjectId(null);
     const nextThreads = threadsByProjectId[projectId];
     if (nextThreads) {
-      const nextThreadId = nextThreads[0]?.id ?? null;
+      const nextThreadId = firstSidebarThreadId(nextThreads);
       if (nextThreadId) {
         selectedThreadIdRef.current = nextThreadId;
+        autoSelectedThreadIdRef.current = nextThreadId;
         beginTimelineEntry(nextThreadId);
       } else {
         selectedThreadIdRef.current = null;
+        autoSelectedThreadIdRef.current = null;
         clearTimelineEntry();
       }
       setSelectedThreadId(nextThreadId);
@@ -465,6 +537,7 @@ function KodexShell({
     setSelectedProjectId(projectId);
     setDraftThreadProjectId(projectId);
     selectedThreadIdRef.current = null;
+    autoSelectedThreadIdRef.current = null;
     setSelectedThreadId(null);
     clearTimelineEntry();
     resetComposerDraft();
@@ -492,6 +565,7 @@ function KodexShell({
     setIsDraftComposerTransitioning(draftComposerTransitionOriginRef.current !== null);
     setDraftThreadProjectId(null);
     selectedThreadIdRef.current = thread.id;
+    autoSelectedThreadIdRef.current = null;
     beginMaterializingTimelineEntry(thread.id);
     setSelectedThreadId(thread.id);
     setDraftComposerTransitionToken((current) => current + 1);
@@ -534,6 +608,7 @@ function KodexShell({
     setSelectedProjectId(projectId);
     setDraftThreadProjectId(null);
     selectedThreadIdRef.current = threadId;
+    autoSelectedThreadIdRef.current = null;
     beginTimelineEntry(threadId);
     setSelectedThreadId(threadId);
   }
@@ -547,6 +622,7 @@ function KodexShell({
     if (threadId === selectedThreadId) {
       clearTimelineEntry();
       selectedThreadIdRef.current = null;
+      autoSelectedThreadIdRef.current = null;
       setSelectedThreadId(null);
     }
   }
@@ -633,10 +709,10 @@ function KodexShell({
           onArchiveThread: handleArchiveThreadById, onCancelLogin: handleCancelLogin,
           onCreateProject: stableHandleCreateProject, onCreateThread: stableHandleCreateThread, onLogin: handleLogin, onLogout: handleLogout,
           onOpenPreferences: handleOpenPreferences, onProjectCwdChange: setProjectCwd, onProjectFormOpenChange: setProjectFormOpen,
-          onProjectNameChange: setProjectName, onSelectProject: stableHandleSelectProject, onSelectThread: stableHandleSelectThread,
+          onProjectNameChange: setProjectName, onReorderProjects: handleReorderProjects, onSelectProject: stableHandleSelectProject, onSelectThread: stableHandleSelectThread,
           onShowDebugEventsChange: setShowDebugEvents, onSidebarResizeKeyDown: handleSidebarResizeKeyDown,
           onSidebarResizePointerDown: handleSidebarResizePointerDown, onThreadActionHoverChange: setHoveredThreadActionId,
-          pendingTitleThreadIds, projectCwd, projectFormOpen, projectName, projects, selectedProjectId, selectedThreadId,
+          pendingTitleThreadIds, projectCwd, projectFormOpen, projectName, projects: orderedProjects, selectedProjectId, selectedThreadId,
           showDebugEvents, sidebarWidth, threadsByProjectId,
         }}
       />

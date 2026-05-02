@@ -10,10 +10,11 @@ import {
   TextInput,
   Tooltip,
 } from "@mantine/core";
-import { Archive, FolderClosed, FolderOpen, GitBranch, Inbox, SquarePen } from "lucide-react";
+import { Archive, FolderClosed, FolderOpen, GitBranch, GripVertical, Inbox, SquarePen } from "lucide-react";
 import {
   memo,
   useState,
+  type DragEvent as ReactDragEvent,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -26,8 +27,10 @@ import {
   threadDisplayTitle,
   threadInProgress,
   threadNeedsApproval,
+  sortThreadsForSidebar,
   type ThreadsByProjectId,
 } from "./helpers";
+import { moveProjectInSidebarOrder } from "./projectOrder";
 
 const SIDEBAR_TEXT = {
   cancelLogin: "Cancel login",
@@ -39,6 +42,7 @@ const SIDEBAR_TEXT = {
   noProjectsText: "Create a project to begin.",
   noProjectsTitle: "No projects",
   projects: "Projects",
+  reorderProject: "Drag to reorder project",
   resizeSidebarLabel: "Resize workspace sidebar",
   threadInProgress: "Thread in progress",
   unreadAgentTurn: "Unread completed agent turn",
@@ -61,6 +65,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onProjectCwdChange,
   onProjectFormOpenChange,
   onProjectNameChange,
+  onReorderProjects,
   onSelectProject,
   onSelectThread,
   onShowDebugEventsChange,
@@ -93,6 +98,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onProjectCwdChange: (value: string) => void;
   onProjectFormOpenChange: (open: boolean | ((open: boolean) => boolean)) => void;
   onProjectNameChange: (value: string) => void;
+  onReorderProjects: (projectIds: string[]) => void;
   onSelectProject: (projectId: string) => void;
   onSelectThread: (projectId: string, threadId: string) => void;
   onShowDebugEventsChange: (value: boolean) => void;
@@ -111,6 +117,28 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   threadsByProjectId: ThreadsByProjectId;
 }) {
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => new Set());
+  const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
+
+  function handleProjectDragStart(event: ReactDragEvent<HTMLElement>, projectId: string) {
+    setDraggedProjectId(projectId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", projectId);
+  }
+
+  function handleProjectDragOver(event: ReactDragEvent<HTMLElement>) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }
+
+  function handleProjectDrop(event: ReactDragEvent<HTMLElement>, targetProjectId: string) {
+    event.preventDefault();
+    const sourceProjectId = draggedProjectId ?? event.dataTransfer.getData("text/plain");
+    setDraggedProjectId(null);
+    if (!sourceProjectId || sourceProjectId === targetProjectId) {
+      return;
+    }
+    onReorderProjects(moveProjectInSidebarOrder(projects.map((project) => project.id), sourceProjectId, targetProjectId));
+  }
 
   return (
     <AppShell.Navbar
@@ -160,14 +188,39 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
               <EmptyPanel icon={<Inbox size={20} />} title={SIDEBAR_TEXT.noProjectsTitle} text={SIDEBAR_TEXT.noProjectsText} />
             ) : (
               projects.map((project) => {
-                const projectThreads = threadsByProjectId[project.id] ?? [];
+                const projectThreads = sortThreadsForSidebar(
+                  threadsByProjectId[project.id] ?? [],
+                  approvals,
+                  pendingTitleThreadIds,
+                );
                 const projectCollapsed = collapsedProjectIds.has(project.id);
                 const FolderIcon = projectCollapsed ? FolderClosed : FolderOpen;
                 const newThreadLabel =
                   project.id === selectedProjectId ? SIDEBAR_TEXT.newThread : `Create thread in ${project.name}`;
                 return (
-                  <Box className="kodex-project-group" key={project.id} role="group" aria-label={project.name}>
+                  <Box
+                    className="kodex-project-group"
+                    key={project.id}
+                    role="group"
+                    aria-label={project.name}
+                    onDragOver={handleProjectDragOver}
+                    onDrop={(event) => handleProjectDrop(event, project.id)}
+                  >
                     <Box className="kodex-project-row">
+                      <Tooltip label={SIDEBAR_TEXT.reorderProject}>
+                        <ActionIcon
+                          aria-label={`${SIDEBAR_TEXT.reorderProject}: ${project.name}`}
+                          className="kodex-project-drag-handle"
+                          color="gray"
+                          draggable
+                          onDragEnd={() => setDraggedProjectId(null)}
+                          onDragStart={(event) => handleProjectDragStart(event, project.id)}
+                          size="sm"
+                          variant="subtle"
+                        >
+                          <GripVertical size={14} />
+                        </ActionIcon>
+                      </Tooltip>
                       <button
                         aria-expanded={!projectCollapsed}
                         aria-label={`${project.name} ${project.cwd}`}

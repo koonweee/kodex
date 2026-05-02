@@ -88,6 +88,66 @@ describe("MVP approvals UI flows", () => {
     expect(within(threadView).getByText(/reason: verify changes/i)).toBeInTheDocument();
   });
 
+  it("selects the displayed first thread when initial pending approvals reorder loaded threads", async () => {
+    let resolveApprovals: (value: unknown) => void = () => undefined;
+    const delayedApprovals = new Promise((resolve) => {
+      resolveApprovals = resolve;
+    });
+    const recentIdleThread = {
+      ...thread,
+      id: "thread-recent-idle",
+      name: "Recent idle thread",
+      updatedAt: 1777503000,
+    };
+    const olderApprovalThread = {
+      ...secondThread,
+      id: "thread-older-approval",
+      name: "Older approval thread",
+      updatedAt: 1777500000,
+    };
+    const approval = {
+      id: "approval-initial-reorder",
+      requestId: "request-initial-reorder",
+      threadId: olderApprovalThread.id,
+      turnId: "turn-older",
+      itemId: "item-older",
+      method: "item/commandExecution/requestApproval",
+      status: "pending",
+      payload: { command: "cargo test", cwd: "/home/example/kodex", reason: "Verify before continuing" },
+      response: null,
+      createdAt: "2026-04-30T00:00:00Z",
+      resolvedAt: null,
+    };
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [recentIdleThread, olderApprovalThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "GET /v1/approvals": () => delayedApprovals,
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    const threadView = await screen.findByRole("main", { name: /thread/i });
+    expect(await within(threadView).findByRole("heading", { name: /recent idle thread/i })).toBeInTheDocument();
+
+    await act(async () => {
+      resolveApprovals({ approvals: [approval] });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      const threadButtons = Array.from(container.querySelectorAll<HTMLElement>(".kodex-thread-select-button"));
+      expect(threadButtons[0]).toHaveTextContent(/older approval thread/i);
+      expect(threadButtons[0].closest(".kodex-list-button")).toHaveAttribute("data-active", "true");
+    });
+    expect(await within(threadView).findByRole("heading", { name: /older approval thread/i })).toBeInTheDocument();
+  });
+
   it("posts schema-shaped command, file, permission, MCP, and tool-user-input approval responses", async () => {
     const approval = {
       id: "approval-1",

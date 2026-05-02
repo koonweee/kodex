@@ -165,6 +165,7 @@ describe("MVP timeline flows", () => {
     expect(runningThreadRow).toBeInTheDocument();
     expect(runningThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument();
     expect(runningThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /implement frontend/i }));
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
     const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
     expect(globalStream).toBeDefined();
@@ -184,8 +185,13 @@ describe("MVP timeline flows", () => {
       });
     });
 
-    expect(runningThreadRow?.querySelector(".kodex-thread-progress-indicator")).not.toBeInTheDocument();
-    expect(runningThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
+    await waitFor(() => {
+      const updatedRunningThreadRow = screen
+        .getByRole("button", { name: /running thread/i })
+        .closest(".kodex-thread-list-button");
+      expect(updatedRunningThreadRow?.querySelector(".kodex-thread-progress-indicator")).not.toBeInTheDocument();
+      expect(updatedRunningThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
+    });
   });
 
   it("does not mark already represented completed turns unread when the global stream replays after refresh", async () => {

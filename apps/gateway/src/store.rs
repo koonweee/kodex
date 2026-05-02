@@ -311,7 +311,7 @@ impl Store {
 
     pub async fn list_projects(&self) -> ApiResult<Vec<Project>> {
         let rows = sqlx::query(
-            "select id, name, cwd, created_at, updated_at from projects order by updated_at desc",
+            "select id, name, cwd, created_at, updated_at from projects order by created_at desc",
         )
         .fetch_all(&self.pool)
         .await?;

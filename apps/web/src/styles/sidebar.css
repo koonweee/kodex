@@ -40,10 +40,18 @@
 
 .kodex-project-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 4px;
   align-items: center;
   min-width: 0;
+}
+
+.kodex-project-drag-handle {
+  cursor: grab;
+}
+
+.kodex-project-drag-handle:active {
+  cursor: grabbing;
 }
 
 .kodex-project-select-button {

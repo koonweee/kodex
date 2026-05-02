@@ -154,6 +154,49 @@ export function threadInProgress(thread: ThreadSummary): boolean {
   return typeof thread.status === "string" && thread.status.toLowerCase() === "active";
 }
 
+export function sortThreadsForSidebar(
+  threads: ThreadSummary[],
+  approvals: Approval[],
+  pendingTitleThreadIds: Set<string>,
+): ThreadSummary[] {
+  return [...threads].sort((left, right) => compareSidebarThreads(left, right, approvals, pendingTitleThreadIds));
+}
+
+function compareSidebarThreads(
+  left: ThreadSummary,
+  right: ThreadSummary,
+  approvals: Approval[],
+  pendingTitleThreadIds: Set<string>,
+): number {
+  return (
+    threadPriority(left, approvals, pendingTitleThreadIds) - threadPriority(right, approvals, pendingTitleThreadIds) ||
+    right.updatedAt - left.updatedAt ||
+    right.createdAt - left.createdAt ||
+    threadDisplayTitle(left).localeCompare(threadDisplayTitle(right)) ||
+    left.id.localeCompare(right.id)
+  );
+}
+
+function threadPriority(
+  thread: ThreadSummary,
+  approvals: Approval[],
+  pendingTitleThreadIds: Set<string>,
+): number {
+  if (pendingTitleThreadIds.has(thread.id)) {
+    return 0;
+  }
+  if (threadInProgress(thread)) {
+    return 1;
+  }
+  if (threadNeedsApproval(thread, approvals)) {
+    return 2;
+  }
+  if (thread.unreadCompletedAgentTurn) {
+    return 3;
+  }
+  return 4;
+}
+
 function threadStatusNeedsApproval(thread: ThreadSummary): boolean {
   return typeof thread.status === "string" && thread.status.toLowerCase().includes("approval");
 }

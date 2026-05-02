@@ -8,7 +8,7 @@ The MVP target is a Rust gateway that supervises an external `codex app-server` 
 
 The first Rust gateway implementation exists under `apps/gateway`. It includes the backend scaffold, SQLite project/approval/read-marker storage, diagnostic event replay, a stdio JSON-RPC app-server supervisor, HTTP/SSE API routes, approval brokering, OpenAPI generation, an app-server adapter layer, product-shaped frontend response DTOs, and optional static frontend serving.
 
-The first React web client exists under `apps/web`. It includes the Vite/Mantine scaffold, generated OpenAPI TypeScript types, a typed fetch client, project/thread navigation, snapshot-first timeline rendering, composer controls, pending approval decisions, and account/model surfaces.
+The first React web client exists under `apps/web`. It includes the Vite/Mantine scaffold, generated OpenAPI TypeScript types, a typed fetch client, project/thread navigation, stable draggable project ordering, attention-sorted threads, snapshot-first timeline rendering, composer controls, pending approval decisions, and account/model surfaces.
 
 See [plans/index.md](plans/index.md) for the plan directory and status table.
 
