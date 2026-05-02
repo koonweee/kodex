@@ -395,6 +395,32 @@ describe("MVP shell flows", () => {
     expect(within(panelSwitcher).getByRole("tab", { name: /threads/i })).toHaveAttribute("aria-selected", "true");
   });
 
+  it("returns narrow viewport navigation to chat after selecting or creating a thread", async () => {
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    const panelSwitcher = await screen.findByRole("tablist", { name: /mobile panels/i });
+    const threadsTab = within(panelSwitcher).getByRole("tab", { name: /threads/i });
+    const chatTab = within(panelSwitcher).getByRole("tab", { name: /chat/i });
+
+    await userEvent.click(threadsTab);
+    expect(threadsTab).toHaveAttribute("aria-selected", "true");
+
+    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    expect(chatTab).toHaveAttribute("aria-selected", "true");
+
+    await userEvent.click(threadsTab);
+    expect(threadsTab).toHaveAttribute("aria-selected", "true");
+
+    await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+    expect(chatTab).toHaveAttribute("aria-selected", "true");
+  });
+
   it("clears the old active thread immediately after creating a project", async () => {
     let resolveNewProjectThreads: (value: unknown) => void = () => undefined;
     const newProjectThreads = new Promise((resolve) => {

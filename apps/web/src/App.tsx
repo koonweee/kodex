@@ -450,6 +450,7 @@ function KodexShell({
   }
 
   function handleCreateThread(projectId: string) {
+    setMobilePanel("chat");
     selectedProjectIdRef.current = projectId;
     setSelectedProjectId(projectId);
     setDraftThreadProjectId(projectId);
@@ -483,6 +484,7 @@ function KodexShell({
   }
 
   function handleSelectThread(projectId: string, threadId: string) {
+    setMobilePanel("chat");
     if (projectId === selectedProjectId && threadId === selectedThreadId) {
       return;
     }

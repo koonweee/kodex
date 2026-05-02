@@ -153,6 +153,12 @@
   resize: none;
 }
 
+@media (pointer: coarse) {
+  .kodex-composer-textarea textarea {
+    font-size: 16px;
+  }
+}
+
 .kodex-composer-toolbar {
   min-height: 30px;
   margin-top: 6px;
