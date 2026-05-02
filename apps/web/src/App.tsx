@@ -58,6 +58,7 @@ import {
   createProject,
   createThread,
   decideApproval,
+  getComposerSettings,
   getAccount,
   interruptTurn,
   listEvents,
@@ -66,6 +67,7 @@ import {
   listProjects,
   listThreads,
   logout,
+  persistComposerSettings,
   resumeThread,
   startLogin,
   startTurn,
@@ -74,6 +76,7 @@ import {
   type AccountResponse,
   type Approval,
   type ApprovalResponse,
+  type ComposerSettingsResponse,
   type EventEnvelope,
   type ImageUpload,
   type ModelSummary,
@@ -289,7 +292,10 @@ function KodexShell() {
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [account, setAccount] = useState<AccountResponse | null>(null);
   const [models, setModels] = useState<ModelSummary[]>([]);
-  const [composerSettings, setComposerSettings] = useState<ComposerSettings>(DEFAULT_COMPOSER_SETTINGS);
+  const [composerDefaults, setComposerDefaults] = useState<ComposerSettings>(DEFAULT_COMPOSER_SETTINGS);
+  const [draftComposerSettings, setDraftComposerSettings] = useState<ComposerSettings>(DEFAULT_COMPOSER_SETTINGS);
+  const [threadComposerSettingsById, setThreadComposerSettingsById] = useState<Record<string, ComposerSettings>>({});
+  const [composerSettingsError, setComposerSettingsError] = useState<string | null>(null);
   const [contextUsageByThreadId, setContextUsageByThreadId] = useState<Record<string, ContextUsage>>({});
   const [loginState, setLoginState] = useState<LoginState>({});
   const [projectFormOpen, setProjectFormOpen] = useState(false);
@@ -319,9 +325,13 @@ function KodexShell() {
   const composerContextRef = useRef<ComposerContext | null>(null);
   const latestComposerContextRef = useRef<ComposerContext | null>(null);
   const imagePreviewUrlsByPathRef = useRef<Record<string, string>>({});
+  const draftComposerEditedRef = useRef(false);
 
   const selectedProjectThreads = selectedProjectId ? threadsByProjectId[selectedProjectId] ?? [] : [];
   const selectedThread = selectedProjectThreads.find((thread) => thread.id === selectedThreadId) ?? null;
+  const composerSettings = selectedThread
+    ? threadComposerSettingsById[selectedThread.id] ?? composerSettingsFromThread(selectedThread) ?? draftComposerSettings
+    : draftComposerSettings;
   const selectedThreadApprovals = useMemo(
     () => (selectedThreadId ? approvals.filter((approval) => approval.threadId === selectedThreadId) : []),
     [approvals, selectedThreadId],
@@ -457,12 +467,15 @@ function KodexShell() {
   }, [selectedThread?.id, selectedThread?.status]);
 
   async function loadInitialState() {
+    let composerDefaultsRequested = false;
     try {
       const nextProjects = await listProjects();
       const firstProjectId = nextProjects[0]?.id ?? null;
       setProjects(nextProjects);
       selectedProjectIdRef.current = firstProjectId;
       setSelectedProjectId(firstProjectId);
+      void hydrateComposerDefaults(firstProjectId);
+      composerDefaultsRequested = true;
       nextProjects.forEach((project, index) => {
         void loadProjectThreads(project.id, { selectWhenLoaded: index === 0 });
       });
@@ -485,9 +498,31 @@ function KodexShell() {
       .then(setAccount)
       .catch(reportError);
 
-    void listModels()
-      .then(setModels)
-      .catch(reportError);
+    if (!composerDefaultsRequested) {
+      void hydrateComposerDefaults(null);
+    }
+  }
+
+  async function hydrateComposerDefaults(projectId: string | null) {
+    try {
+      const nextModels = await listModels();
+      setModels(nextModels);
+      const settings = await getComposerSettings(projectId);
+      const normalized = normalizePersistedComposerSettings(settings, nextModels);
+      setComposerDefaults(normalized);
+      if (!draftComposerEditedRef.current) {
+        setDraftComposerSettings(normalized);
+      }
+    } catch (error) {
+      if (models.length === 0) {
+        try {
+          const nextModels = await listModels();
+          setModels(nextModels);
+        } catch (modelsError) {
+          reportError(modelsError);
+        }
+      }
+    }
   }
 
   async function loadProjectThreads(projectId: string, options: { selectWhenLoaded?: boolean } = {}) {
@@ -567,6 +602,9 @@ function KodexShell() {
 
   function selectProject(projectId: string) {
     selectedProjectIdRef.current = projectId;
+    if (!draftComposerEditedRef.current) {
+      void hydrateComposerDefaults(projectId);
+    }
     setSelectedProjectId(projectId);
     setSelectedThreadId(null);
     setDraftThreadProjectId(null);
@@ -1041,7 +1079,48 @@ function KodexShell() {
     setAccount({ requiresOpenaiAuth: true, account: null, rawPayload: {} });
   }
 
+  function handleComposerSettingsChange(nextSettings: ComposerSettings) {
+    const previousSettings = composerSettings;
+    if (selectedThread) {
+      setThreadComposerSettingsById((current) => ({ ...current, [selectedThread.id]: nextSettings }));
+    } else {
+      draftComposerEditedRef.current = true;
+      setDraftComposerSettings(nextSettings);
+    }
+    persistDurableComposerSettings(previousSettings, nextSettings);
+  }
+
+  function persistDurableComposerSettings(previousSettings: ComposerSettings, nextSettings: ComposerSettings) {
+    const patch: Parameters<typeof persistComposerSettings>[0] = {};
+    if (previousSettings.model !== nextSettings.model) {
+      patch.model = nextSettings.model ?? null;
+    }
+    if (previousSettings.effort !== nextSettings.effort) {
+      patch.effort = nextSettings.effort ?? null;
+    }
+    if (previousSettings.fast !== nextSettings.fast) {
+      patch.serviceTier = nextSettings.fast ? "fast" : null;
+    }
+
+    if (Object.keys(patch).length === 0) {
+      return;
+    }
+
+    setComposerSettingsError(null);
+    void persistComposerSettings(patch)
+      .then(() => {
+        setComposerDefaults((current) => mergeDurableComposerSettings(current, patch));
+      })
+      .catch((error) => {
+        setComposerSettingsError(`Composer settings were not saved: ${errorMessageFrom(error)}`);
+      });
+  }
+
   function replaceThread(thread: ThreadSummary) {
+    const threadSettings = composerSettingsFromThread(thread);
+    if (threadSettings) {
+      setThreadComposerSettingsById((current) => ({ ...current, [thread.id]: threadSettings }));
+    }
     setThreadsByProjectId((current) => replaceThreadInProjects(current, thread, selectedProjectId));
     if (isThreadTitleAvailable(thread)) {
       setPendingTitleThreadIds((current) => {
@@ -1437,8 +1516,9 @@ function KodexShell() {
                     contextUsage={selectedContextUsage}
                     disabled={!canCompose || isComposerSubmitting}
                     models={models}
+                    settingsError={composerSettingsError}
                     settings={composerSettings}
-                    onSettingsChange={setComposerSettings}
+                    onSettingsChange={handleComposerSettingsChange}
                   />
                 </Group>
                 <Tooltip label={shouldShowStopAction ? UI_TEXT.composer.stop : UI_TEXT.composer.send}>
@@ -3022,6 +3102,105 @@ function threadNeedsApproval(thread: ThreadSummary, approvals: Approval[]): bool
 
 function threadStatusNeedsApproval(thread: ThreadSummary): boolean {
   return typeof thread.status === "string" && thread.status.toLowerCase().includes("approval");
+}
+
+function normalizePersistedComposerSettings(
+  settings: ComposerSettingsResponse,
+  models: ModelSummary[],
+): ComposerSettings {
+  const model = settings.model && models.some((candidate) => candidate.id === settings.model) ? settings.model : undefined;
+  const selectedModel = model ? models.find((candidate) => candidate.id === model) : null;
+  const effort =
+    selectedModel && settings.effort && supportsReasoningEffort(selectedModel, settings.effort)
+      ? settings.effort
+      : undefined;
+
+  return {
+    model,
+    effort,
+    fast: settings.serviceTier === "fast",
+    permissionPreset: permissionPresetFromGateway(settings.permissionsPreset),
+  };
+}
+
+function mergeDurableComposerSettings(
+  current: ComposerSettings,
+  patch: Parameters<typeof persistComposerSettings>[0],
+): ComposerSettings {
+  return {
+    ...current,
+    ...(Object.prototype.hasOwnProperty.call(patch, "model") ? { model: patch.model ?? undefined } : {}),
+    ...(Object.prototype.hasOwnProperty.call(patch, "effort") ? { effort: patch.effort ?? undefined } : {}),
+    ...(Object.prototype.hasOwnProperty.call(patch, "serviceTier") ? { fast: patch.serviceTier === "fast" } : {}),
+  };
+}
+
+function composerSettingsFromThread(thread: ThreadSummary): ComposerSettings | null {
+  const rawPayload = asRecord(thread.rawPayload);
+  const model = stringValue(thread.model) ?? stringValue(rawPayload.model);
+  const effort = stringValue(thread.reasoningEffort) ?? stringValue(rawPayload.reasoningEffort);
+  const serviceTier = stringValue(thread.serviceTier) ?? stringValue(rawPayload.serviceTier);
+  const approvalPolicy = stringValue(thread.approvalPolicy) ?? stringValue(rawPayload.approvalPolicy);
+  const approvalsReviewer = stringValue(thread.approvalsReviewer) ?? stringValue(rawPayload.approvalsReviewer);
+  const sandbox = thread.sandbox ?? rawPayload.sandbox;
+  const permissionPreset = permissionPresetFromThread(approvalPolicy, approvalsReviewer, sandbox);
+
+  if (!model && !effort && !serviceTier && !permissionPreset) {
+    return null;
+  }
+
+  return {
+    model: model ?? undefined,
+    effort: effort ?? undefined,
+    fast: serviceTier === "fast",
+    permissionPreset,
+  };
+}
+
+function supportsReasoningEffort(model: ModelSummary, effort: string) {
+  return model.supportedReasoningEfforts.some((option) => option.reasoningEffort === effort);
+}
+
+function permissionPresetFromGateway(
+  preset: ComposerSettingsResponse["permissionsPreset"] | undefined | null,
+): PermissionPresetId | undefined {
+  if (preset === "autoReview") {
+    return "autoReview";
+  }
+  if (preset === "fullAccess") {
+    return "fullAccess";
+  }
+  if (preset === "default") {
+    return "default";
+  }
+  return undefined;
+}
+
+function permissionPresetFromThread(
+  approvalPolicy: string | null,
+  approvalsReviewer: string | null,
+  sandbox: unknown,
+): PermissionPresetId | undefined {
+  const sandboxKind = sandboxPolicyKind(sandbox);
+  if (approvalPolicy === "never" || sandboxKind === "danger-full-access" || sandboxKind === "dangerFullAccess") {
+    return "fullAccess";
+  }
+  if (approvalsReviewer === "auto_review" || approvalsReviewer === "guardian_subagent") {
+    return "autoReview";
+  }
+  if (approvalPolicy || approvalsReviewer || sandboxKind || sandbox != null) {
+    return "default";
+  }
+  return undefined;
+}
+
+function sandboxPolicyKind(sandbox: unknown): string | null {
+  const legacyMode = stringValue(sandbox);
+  if (legacyMode) {
+    return legacyMode;
+  }
+
+  return stringValue(asRecord(sandbox).type);
 }
 
 function createThreadOptions(settings: ComposerSettings): CreateThreadOptions {

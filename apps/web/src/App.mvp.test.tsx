@@ -114,6 +114,7 @@ function baseRoutes(overrides = {}) {
     "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     "GET /v1/account/rate-limits": { rateLimits: null, rateLimitsByLimitId: null, rawPayload: {} },
     "GET /v1/models": { models: [model], nextCursor: null, rawPayload: {} },
+    "GET /v1/composer-settings": { model: null, effort: null, serviceTier: null, permissionsPreset: null },
     ...overrides,
   };
 }
@@ -299,6 +300,88 @@ describe("MVP frontend flows", () => {
     });
   });
 
+  it("hydrates and persists composer model effort and fast mode without browser storage or permission writes", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const storageSpy = vi.spyOn(Storage.prototype, "setItem");
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
+        "GET /v1/composer-settings": {
+          model: "gpt-5.4",
+          effort: "high",
+          serviceTier: "fast",
+          permissionsPreset: "autoReview",
+        },
+        "GET /v1/events": { events: [] },
+        "PATCH /v1/composer-settings": { saved: true },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, high/i }));
+    await clickMenuItem(/medium.*balanced/i);
+    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
+    await clickMenuItem(/^fast$/i);
+    await userEvent.click(screen.getByRole("button", { name: /permissions: auto review/i }));
+    await clickMenuItem(/default permissions/i);
+
+    await waitFor(() => {
+      expect(gateway.callsFor("PATCH", "/v1/composer-settings")).toHaveLength(2);
+    });
+    await expect(requestJson(gateway.callsFor("PATCH", "/v1/composer-settings")[0])).resolves.toEqual({
+      effort: "medium",
+    });
+    await expect(requestJson(gateway.callsFor("PATCH", "/v1/composer-settings")[1])).resolves.toEqual({
+      serviceTier: null,
+    });
+    expect(storageSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not show a global error banner when composer settings are unavailable on first load", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
+        "GET /v1/composer-settings": undefined,
+        "GET /v1/events": { events: [] },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(gateway.callsFor("GET", "/v1/composer-settings")).toHaveLength(1);
+    });
+    expect(screen.queryByText("Gateway request failed")).not.toBeInTheDocument();
+  });
+
+  it("shows composer-local save failure instead of a global banner when model setting persistence fails", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
+        "GET /v1/events": { events: [] },
+        "PATCH /v1/composer-settings": undefined,
+      }),
+    );
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i }));
+    await clickMenuItem(/high.*deeper reasoning/i);
+
+    await waitFor(() => {
+      expect(gateway.callsFor("PATCH", "/v1/composer-settings")).toHaveLength(1);
+    });
+    expect(await screen.findByLabelText(/composer settings were not saved/i)).toBeInTheDocument();
+    expect(screen.queryByText("Gateway request failed")).not.toBeInTheDocument();
+  });
+
   it("uses last turn token usage instead of cumulative usage for context left", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     mockGateway(
@@ -380,6 +463,76 @@ describe("MVP frontend flows", () => {
       approvalsReviewer: "auto_review",
       sandboxPolicy: { type: "workspaceWrite", networkAccess: false, writableRoots: [] },
     });
+  });
+
+  it("uses resumed thread composer state before durable new-thread defaults", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(
+      baseRoutes({
+        "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
+        "GET /v1/composer-settings": {
+          model: "gpt-5.4",
+          effort: "medium",
+          serviceTier: null,
+          permissionsPreset: "default",
+        },
+        "GET /v1/threads": {
+          threads: [{ ...thread, status: "notLoaded" }],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "POST /v1/threads/thread-1/resume": {
+          thread: {
+            ...thread,
+            reasoningEffort: "high",
+            serviceTier: "fast",
+            approvalsReviewer: "auto_review",
+          },
+          rawPayload: {},
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+  });
+
+  it("derives full access from app-server sandbox policy objects on active threads", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(
+      baseRoutes({
+        "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
+        "GET /v1/composer-settings": {
+          model: "gpt-5.4",
+          effort: "medium",
+          serviceTier: null,
+          permissionsPreset: "default",
+        },
+        "GET /v1/threads": {
+          threads: [{ ...thread, status: "notLoaded" }],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "POST /v1/threads/thread-1/resume": {
+          thread: {
+            ...thread,
+            model: "gpt-5.4",
+            approvalPolicy: "on-request",
+            approvalsReviewer: "user",
+            sandbox: { type: "dangerFullAccess" },
+          },
+          rawPayload: {},
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: /permissions: full access/i })).toBeInTheDocument();
   });
 
   it("uses preview text as the display title for unnamed threads", async () => {

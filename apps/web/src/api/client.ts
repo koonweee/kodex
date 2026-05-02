@@ -6,6 +6,8 @@ export type AccountResponse = components["schemas"]["AccountResponse"];
 export type Approval = components["schemas"]["Approval"];
 export type ApprovalResponse = Record<string, unknown>;
 export type Capabilities = components["schemas"]["CapabilitiesResponse"];
+export type ComposerSettingsResponse = components["schemas"]["ComposerSettingsResponse"];
+export type ComposerSettingsUpdateRequest = components["schemas"]["ComposerSettingsUpdateRequest"];
 export type EventEnvelope = components["schemas"]["EventEnvelope"];
 export type LoginStartResponse = components["schemas"]["LoginStartResponse"];
 export type ModelSummary = components["schemas"]["ModelSummary"];
@@ -165,6 +167,16 @@ export async function getRateLimits(): Promise<RateLimitsResponse> {
 export async function listModels(): Promise<ModelSummary[]> {
   const response = await unwrap(api.GET("/v1/models", { params: { query: { includeHidden: false } } }));
   return response.models.filter((model) => !model.hidden);
+}
+
+export async function getComposerSettings(projectId?: string | null): Promise<ComposerSettingsResponse> {
+  return unwrap(
+    api.GET("/v1/composer-settings", { params: { query: { projectId: projectId ?? undefined } } }),
+  );
+}
+
+export async function persistComposerSettings(input: ComposerSettingsUpdateRequest): Promise<void> {
+  await unwrap(api.PATCH("/v1/composer-settings", { body: input }));
 }
 
 async function unwrap<T>(request: Promise<{ data?: T; error?: unknown }>): Promise<T> {

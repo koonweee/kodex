@@ -9,9 +9,10 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::{
     app_server::DynAppServer,
     app_server_api::{
-        AccountResponse, LoginStartResponse, ModelListResponse, RateLimitsResponse,
-        RawAppServerResponse, ThreadCommandResponse, ThreadDetailResponse, ThreadListResponse,
-        UserInput,
+        AccountResponse, ComposerPermissionsPreset, ComposerSettingsResponse,
+        ComposerSettingsUpdateRequest, ComposerSettingsUpdateResponse, LoginStartResponse,
+        ModelListResponse, RateLimitsResponse, RawAppServerResponse, ThreadCommandResponse,
+        ThreadDetailResponse, ThreadListResponse, UserInput,
     },
     config::Config,
     error::ApiErrorBody,
@@ -20,6 +21,7 @@ use crate::{
         account::{AccountQuery, LoginRequest},
         approvals::{ApprovalDecisionRequest, ApprovalListResponse},
         capabilities::{AppServerCapabilities, CapabilitiesResponse, GatewayCapabilities},
+        composer_settings::ComposerSettingsQuery,
         events::EventListResponse,
         health::{HealthResponse, ReadyResponse},
         models::ModelsQuery,
@@ -58,6 +60,8 @@ impl AppState {
         crate::routes::health::healthz,
         crate::routes::health::readyz,
         crate::routes::capabilities::capabilities,
+        crate::routes::composer_settings::read_composer_settings,
+        crate::routes::composer_settings::update_composer_settings,
         crate::events::events,
         crate::routes::projects::list_projects,
         crate::routes::projects::create_project,
@@ -89,6 +93,11 @@ impl AppState {
         CapabilitiesResponse,
         GatewayCapabilities,
         AppServerCapabilities,
+        ComposerSettingsQuery,
+        ComposerSettingsResponse,
+        ComposerSettingsUpdateRequest,
+        ComposerSettingsUpdateResponse,
+        ComposerPermissionsPreset,
         EventEnvelope,
         EventListResponse,
         Project,
@@ -124,6 +133,7 @@ pub fn build_router(state: AppState) -> Router {
     let mut router = Router::new()
         .merge(routes::health::router())
         .merge(routes::capabilities::router())
+        .merge(routes::composer_settings::router())
         .merge(routes::events::router())
         .merge(routes::projects::router())
         .merge(routes::threads::router())

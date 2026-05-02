@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 use utoipa::ToSchema;
 
@@ -174,6 +174,30 @@ impl CodexClient {
         ModelListResponse::from_payload(payload, include_hidden)
     }
 
+    pub async fn composer_settings(
+        &self,
+        cwd: Option<String>,
+    ) -> ApiResult<ComposerSettingsResponse> {
+        let payload = self
+            .request("config/read", json!({ "cwd": cwd, "includeLayers": false }))
+            .await?;
+        ComposerSettingsResponse::from_payload(payload)
+    }
+
+    pub async fn update_composer_settings(
+        &self,
+        request: ComposerSettingsUpdateRequest,
+    ) -> ApiResult<ComposerSettingsUpdateResponse> {
+        let edits = request.config_edits();
+        if edits.is_empty() {
+            return Ok(ComposerSettingsUpdateResponse { saved: true });
+        }
+
+        self.request("config/batchWrite", json!({ "edits": edits }))
+            .await?;
+        Ok(ComposerSettingsUpdateResponse { saved: true })
+    }
+
     async fn raw_request(&self, method: &str, params: Value) -> ApiResult<RawAppServerResponse> {
         let payload = self.request(method, params).await?;
         Ok(RawAppServerResponse { payload })
@@ -233,6 +257,88 @@ impl TurnStartOptions {
 #[serde(rename_all = "camelCase")]
 pub struct RawAppServerResponse {
     pub payload: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ComposerSettingsResponse {
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub service_tier: Option<String>,
+    pub permissions_preset: Option<ComposerPermissionsPreset>,
+}
+
+impl ComposerSettingsResponse {
+    fn from_payload(payload: Value) -> ApiResult<Self> {
+        let config = payload
+            .get("config")
+            .ok_or_else(|| bad_gateway("config/read response missing config"))?;
+        Ok(Self {
+            model: optional_string(config, "model"),
+            effort: optional_string(config, "model_reasoning_effort"),
+            service_tier: optional_string(config, "service_tier"),
+            permissions_preset: composer_permissions_preset(config),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum ComposerPermissionsPreset {
+    Default,
+    AutoReview,
+    FullAccess,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ComposerSettingsUpdateRequest {
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_string_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub model: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_string_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub effort: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_string_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub service_tier: Option<Option<String>>,
+}
+
+impl ComposerSettingsUpdateRequest {
+    fn config_edits(self) -> Vec<Value> {
+        let mut edits = Vec::new();
+        if let Some(model) = self.model {
+            edits.push(config_edit("model", option_string_value(model)));
+        }
+        if let Some(effort) = self.effort {
+            edits.push(config_edit(
+                "model_reasoning_effort",
+                option_string_value(effort),
+            ));
+        }
+        if let Some(service_tier) = self.service_tier {
+            edits.push(config_edit(
+                "service_tier",
+                option_string_value(service_tier),
+            ));
+        }
+        edits
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ComposerSettingsUpdateResponse {
+    pub saved: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -316,6 +422,12 @@ pub struct ThreadSummary {
     pub created_at: i64,
     pub updated_at: i64,
     pub source: Option<String>,
+    pub model: Option<String>,
+    pub reasoning_effort: Option<String>,
+    pub service_tier: Option<String>,
+    pub approval_policy: Option<String>,
+    pub approvals_reviewer: Option<String>,
+    pub sandbox: Option<Value>,
     pub preview: Option<Value>,
     pub raw_payload: Value,
 }
@@ -330,6 +442,12 @@ impl ThreadSummary {
             created_at: required_i64(payload, "createdAt")?,
             updated_at: required_i64(payload, "updatedAt")?,
             source: optional_string(payload, "source"),
+            model: optional_string(payload, "model"),
+            reasoning_effort: optional_string(payload, "reasoningEffort"),
+            service_tier: optional_string(payload, "serviceTier"),
+            approval_policy: optional_string(payload, "approvalPolicy"),
+            approvals_reviewer: optional_string(payload, "approvalsReviewer"),
+            sandbox: optional_value(payload, "sandbox"),
             preview: payload.get("preview").cloned(),
             raw_payload: payload.clone(),
         })
@@ -371,6 +489,11 @@ pub struct ThreadCommandResponse {
     pub cwd: Option<String>,
     pub model: Option<String>,
     pub model_provider: Option<String>,
+    pub reasoning_effort: Option<String>,
+    pub service_tier: Option<String>,
+    pub approval_policy: Option<String>,
+    pub approvals_reviewer: Option<String>,
+    pub sandbox: Option<Value>,
     pub raw_payload: Value,
 }
 
@@ -379,11 +502,18 @@ impl ThreadCommandResponse {
         let thread = payload
             .get("thread")
             .ok_or_else(|| bad_gateway("thread command response missing thread"))?;
+        let mut thread = ThreadSummary::from_payload(thread)?;
+        overlay_thread_composer_state(&mut thread, &payload);
         Ok(Self {
-            thread: ThreadSummary::from_payload(thread)?,
+            thread,
             cwd: optional_string(&payload, "cwd"),
             model: optional_string(&payload, "model"),
             model_provider: optional_string(&payload, "modelProvider"),
+            reasoning_effort: optional_string(&payload, "reasoningEffort"),
+            service_tier: optional_string(&payload, "serviceTier"),
+            approval_policy: optional_string(&payload, "approvalPolicy"),
+            approvals_reviewer: optional_string(&payload, "approvalsReviewer"),
+            sandbox: optional_value(&payload, "sandbox"),
             raw_payload: payload,
         })
     }
@@ -692,6 +822,77 @@ fn optional_string(payload: &Value, field: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+fn optional_value(payload: &Value, field: &str) -> Option<Value> {
+    payload.get(field).filter(|value| !value.is_null()).cloned()
+}
+
+fn config_edit(key_path: &str, value: Value) -> Value {
+    json!({
+        "keyPath": key_path,
+        "mergeStrategy": "replace",
+        "value": value,
+    })
+}
+
+fn option_string_value(value: Option<String>) -> Value {
+    value.map(Value::String).unwrap_or(Value::Null)
+}
+
+fn deserialize_optional_string_update<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(Some)
+}
+
+fn composer_permissions_preset(payload: &Value) -> Option<ComposerPermissionsPreset> {
+    let approval_policy = optional_string(payload, "approval_policy");
+    let approvals_reviewer = optional_string(payload, "approvals_reviewer");
+    let sandbox_mode = optional_string(payload, "sandbox_mode");
+
+    if approval_policy.as_deref() == Some("never")
+        || sandbox_mode.as_deref() == Some("danger-full-access")
+    {
+        return Some(ComposerPermissionsPreset::FullAccess);
+    }
+
+    if matches!(
+        approvals_reviewer.as_deref(),
+        Some("auto_review" | "guardian_subagent")
+    ) {
+        return Some(ComposerPermissionsPreset::AutoReview);
+    }
+
+    if approval_policy.is_some() || approvals_reviewer.is_some() || sandbox_mode.is_some() {
+        return Some(ComposerPermissionsPreset::Default);
+    }
+
+    None
+}
+
+fn overlay_thread_composer_state(thread: &mut ThreadSummary, payload: &Value) {
+    if let Some(model) = optional_string(payload, "model") {
+        thread.model = Some(model);
+    }
+    if let Some(reasoning_effort) = optional_string(payload, "reasoningEffort") {
+        thread.reasoning_effort = Some(reasoning_effort);
+    }
+    if let Some(service_tier) = optional_string(payload, "serviceTier") {
+        thread.service_tier = Some(service_tier);
+    }
+    if let Some(approval_policy) = optional_string(payload, "approvalPolicy") {
+        thread.approval_policy = Some(approval_policy);
+    }
+    if let Some(approvals_reviewer) = optional_string(payload, "approvalsReviewer") {
+        thread.approvals_reviewer = Some(approvals_reviewer);
+    }
+    if let Some(sandbox) = optional_value(payload, "sandbox") {
+        thread.sandbox = Some(sandbox);
+    }
+}
+
 fn required_bool(payload: &Value, field: &str) -> ApiResult<bool> {
     payload
         .get(field)
@@ -938,6 +1139,100 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn adapter_reads_and_writes_composer_settings_without_permissions() {
+        let server = Arc::new(RecordingServer {
+            ready: AtomicBool::new(true),
+            response: StdMutex::new(json!({
+                "config": {
+                    "model": "gpt-5.4",
+                    "model_reasoning_effort": "high",
+                    "service_tier": "fast",
+                    "approval_policy": "on-request",
+                    "approvals_reviewer": "auto_review",
+                    "sandbox_mode": "workspace-write"
+                },
+                "origins": {}
+            })),
+            ..Default::default()
+        });
+        let client = CodexClient::new(server.clone());
+
+        let settings = client
+            .composer_settings(Some("/workspace".to_string()))
+            .await
+            .unwrap();
+        assert_eq!(settings.model.as_deref(), Some("gpt-5.4"));
+        assert_eq!(settings.effort.as_deref(), Some("high"));
+        assert_eq!(settings.service_tier.as_deref(), Some("fast"));
+        assert_eq!(
+            settings.permissions_preset,
+            Some(ComposerPermissionsPreset::AutoReview)
+        );
+
+        *server.response.lock().unwrap() = json!({"ok": true});
+        client
+            .update_composer_settings(ComposerSettingsUpdateRequest {
+                model: Some(Some("gpt-5.4".to_string())),
+                effort: Some(Some("medium".to_string())),
+                service_tier: Some(None),
+            })
+            .await
+            .unwrap();
+
+        let requests = server.requests.lock().unwrap();
+        assert_eq!(
+            requests[0],
+            (
+                "config/read".to_string(),
+                json!({"cwd": "/workspace", "includeLayers": false})
+            )
+        );
+        assert_eq!(requests[1].0, "config/batchWrite");
+        assert_eq!(
+            requests[1].1,
+            json!({
+                "edits": [
+                    {"keyPath": "model", "mergeStrategy": "replace", "value": "gpt-5.4"},
+                    {"keyPath": "model_reasoning_effort", "mergeStrategy": "replace", "value": "medium"},
+                    {"keyPath": "service_tier", "mergeStrategy": "replace", "value": null}
+                ]
+            })
+        );
+        assert!(requests[1].1.get("reloadUserConfig").is_none());
+    }
+
+    #[test]
+    fn composer_settings_permission_hint_is_read_only_and_conservative() {
+        let default = ComposerSettingsResponse::from_payload(json!({
+            "config": {
+                "approval_policy": "on-request",
+                "approvals_reviewer": "user",
+                "sandbox_mode": "workspace-write"
+            },
+            "origins": {}
+        }))
+        .unwrap();
+        assert_eq!(
+            default.permissions_preset,
+            Some(ComposerPermissionsPreset::Default)
+        );
+
+        let full_access = ComposerSettingsResponse::from_payload(json!({
+            "config": {
+                "approval_policy": "never",
+                "approvals_reviewer": "user",
+                "sandbox_mode": "workspace-write"
+            },
+            "origins": {}
+        }))
+        .unwrap();
+        assert_eq!(
+            full_access.permissions_preset,
+            Some(ComposerPermissionsPreset::FullAccess)
+        );
+    }
+
     #[test]
     fn thread_list_normalization_accepts_missing_optional_fields_and_rejects_drift() {
         let response = ThreadListResponse::from_payload(json!({
@@ -1031,6 +1326,20 @@ mod tests {
         assert_eq!(response.thread.id, "thread-1");
         assert_eq!(response.model, None);
         assert_eq!(response.model_provider, None);
+        let response =
+            ThreadCommandResponse::from_payload(thread_command_payload("thread-1")).unwrap();
+        assert_eq!(response.thread.model.as_deref(), Some("gpt-5.4"));
+        assert_eq!(response.thread.reasoning_effort.as_deref(), Some("high"));
+        assert_eq!(response.thread.service_tier.as_deref(), Some("fast"));
+        assert_eq!(
+            response.thread.approvals_reviewer.as_deref(),
+            Some("auto_review")
+        );
+        assert_eq!(response.sandbox, Some(json!({"type": "dangerFullAccess"})));
+        assert_eq!(
+            response.thread.sandbox,
+            Some(json!({"type": "dangerFullAccess"}))
+        );
         assert!(
             ThreadCommandResponse::from_payload(json!({"thread": {"id": "thread-1"}})).is_err()
         );
@@ -1129,7 +1438,12 @@ mod tests {
             "thread": thread_summary_payload(id),
             "cwd": "/workspace",
             "model": "gpt-5.4",
-            "modelProvider": "openai"
+            "modelProvider": "openai",
+            "reasoningEffort": "high",
+            "serviceTier": "fast",
+            "approvalPolicy": "on-request",
+            "approvalsReviewer": "auto_review",
+            "sandbox": {"type": "dangerFullAccess"}
         })
     }
 

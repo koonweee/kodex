@@ -1,6 +1,7 @@
 pub mod account;
 pub mod approvals;
 pub mod capabilities;
+pub mod composer_settings;
 pub mod events;
 pub mod health;
 pub mod models;
@@ -132,6 +133,7 @@ mod tests {
             "/healthz",
             "/readyz",
             "/v1/capabilities",
+            "/v1/composer-settings",
             "/v1/events",
             "/v1/projects",
             "/v1/projects/{projectId}",
@@ -352,6 +354,85 @@ mod tests {
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "thread/list");
         assert_eq!(requests[0].1["cwd"], cwd);
+    }
+
+    #[tokio::test]
+    async fn composer_settings_reads_project_config_and_persists_only_toolbar_defaults() {
+        let (state, app_server) = test_state().await;
+        let cwd = std::env::current_dir().unwrap().display().to_string();
+        let project = state
+            .store
+            .create_project("Kodex".to_string(), cwd.clone())
+            .await
+            .unwrap();
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "config": {
+                "model": "gpt-5.4",
+                "model_reasoning_effort": "high",
+                "service_tier": "fast",
+                "approval_policy": "on-request",
+                "approvals_reviewer": "auto_review",
+                "sandbox_mode": "workspace-write"
+            },
+            "origins": {}
+        }));
+        let app = build_router(state);
+
+        let read = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/v1/composer-settings?projectId={}", project.id))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(read.status(), StatusCode::OK);
+        let body = response_json(read).await;
+        assert_eq!(body["model"], "gpt-5.4");
+        assert_eq!(body["effort"], "high");
+        assert_eq!(body["serviceTier"], "fast");
+        assert_eq!(body["permissionsPreset"], "autoReview");
+
+        let write = app
+            .oneshot(
+                Request::patch("/v1/composer-settings")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "model": "gpt-5.4",
+                            "effort": "medium",
+                            "serviceTier": null,
+                            "permissionsPreset": "fullAccess"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(write.status(), StatusCode::OK);
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(
+            requests[0],
+            (
+                "config/read".to_string(),
+                json!({"cwd": cwd, "includeLayers": false})
+            )
+        );
+        assert_eq!(requests[1].0, "config/batchWrite");
+        assert_eq!(
+            requests[1].1,
+            json!({
+                "edits": [
+                    {"keyPath": "model", "mergeStrategy": "replace", "value": "gpt-5.4"},
+                    {"keyPath": "model_reasoning_effort", "mergeStrategy": "replace", "value": "medium"},
+                    {"keyPath": "service_tier", "mergeStrategy": "replace", "value": null}
+                ]
+            })
+        );
+        assert!(requests[1].1.get("reloadUserConfig").is_none());
     }
 
     #[tokio::test]

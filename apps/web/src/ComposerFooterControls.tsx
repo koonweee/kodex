@@ -1,5 +1,5 @@
 import { ActionIcon, Box, Button, Group, Menu, Text, Tooltip } from "@mantine/core";
-import { Brain, Check, Gauge, Shield, Zap } from "lucide-react";
+import { AlertCircle, Brain, Check, Gauge, Shield, Zap } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useState } from "react";
 
@@ -23,6 +23,7 @@ type ComposerFooterControlsProps = {
   contextUsage?: ContextUsage | null;
   disabled?: boolean;
   models: ModelSummary[];
+  settingsError?: string | null;
   settings: ComposerSettings;
   onSettingsChange: (settings: ComposerSettings) => void;
 };
@@ -55,6 +56,7 @@ export function ComposerFooterControls({
   contextUsage,
   disabled = false,
   models,
+  settingsError,
   settings,
   onSettingsChange,
 }: ComposerFooterControlsProps) {
@@ -128,6 +130,14 @@ export function ComposerFooterControls({
       </Menu>
 
       <ContextUsageIndicator usage={contextUsage} />
+
+      {settingsError ? (
+        <Tooltip label={settingsError}>
+          <ActionIcon aria-label={settingsError} color="red" size="md" type="button" variant="subtle">
+            <AlertCircle size={15} />
+          </ActionIcon>
+        </Tooltip>
+      ) : null}
 
       <Menu position="top-start" withinPortal>
         <Menu.Target>

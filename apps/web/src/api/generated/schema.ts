@@ -180,6 +180,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/composer-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["read_composer_settings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_composer_settings"];
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -446,6 +462,25 @@ export interface components {
             appServer: components["schemas"]["AppServerCapabilities"];
             gateway: components["schemas"]["GatewayCapabilities"];
         };
+        /** @enum {string} */
+        ComposerPermissionsPreset: "default" | "autoReview" | "fullAccess";
+        ComposerSettingsQuery: {
+            projectId?: string | null;
+        };
+        ComposerSettingsResponse: {
+            effort?: string | null;
+            model?: string | null;
+            permissionsPreset?: null | components["schemas"]["ComposerPermissionsPreset"];
+            serviceTier?: string | null;
+        };
+        ComposerSettingsUpdateRequest: {
+            effort?: string | null;
+            model?: string | null;
+            serviceTier?: string | null;
+        };
+        ComposerSettingsUpdateResponse: {
+            saved: boolean;
+        };
         CreateProjectRequest: {
             cwd: string;
             name?: string | null;
@@ -588,10 +623,15 @@ export interface components {
             placeholder?: string | null;
         };
         ThreadCommandResponse: {
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
             cwd?: string | null;
             model?: string | null;
             modelProvider?: string | null;
             rawPayload: unknown;
+            reasoningEffort?: string | null;
+            sandbox?: unknown;
+            serviceTier?: string | null;
             thread: components["schemas"]["ThreadSummary"];
         };
         ThreadDetailResponse: {
@@ -613,13 +653,19 @@ export interface components {
         /** @enum {string} */
         ThreadStatus: "notLoaded" | "idle" | "systemError" | "active";
         ThreadSummary: {
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
             /** Format: int64 */
             createdAt: number;
             cwd: string;
             id: string;
+            model?: string | null;
             name?: string | null;
             preview?: unknown;
             rawPayload: unknown;
+            reasoningEffort?: string | null;
+            sandbox?: unknown;
+            serviceTier?: string | null;
             source?: string | null;
             status: components["schemas"]["ThreadStatus"];
             /** Format: int64 */
@@ -896,6 +942,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CapabilitiesResponse"];
+                };
+            };
+        };
+    };
+    read_composer_settings: {
+        parameters: {
+            query?: {
+                projectId?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComposerSettingsResponse"];
+                };
+            };
+        };
+    };
+    update_composer_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComposerSettingsUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComposerSettingsUpdateResponse"];
                 };
             };
         };
