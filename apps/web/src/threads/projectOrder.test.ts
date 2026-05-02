@@ -5,6 +5,7 @@ import {
   applySidebarProjectOrder,
   loadSidebarProjectOrder,
   moveProjectInSidebarOrder,
+  moveProjectInSidebarOrderAt,
   saveSidebarProjectOrder,
 } from "./projectOrder";
 
@@ -54,5 +55,18 @@ describe("sidebar project ordering", () => {
 
     saveSidebarProjectOrder(order, storage);
     expect(loadSidebarProjectOrder(storage)).toEqual(["old", "new", "middle"]);
+  });
+
+  it("can move projects before or after a target id", () => {
+    expect(moveProjectInSidebarOrderAt(["new", "middle", "old"], "old", "new", "before")).toEqual([
+      "old",
+      "new",
+      "middle",
+    ]);
+    expect(moveProjectInSidebarOrderAt(["new", "middle", "old"], "old", "new", "after")).toEqual([
+      "new",
+      "old",
+      "middle",
+    ]);
   });
 });

@@ -54,6 +54,15 @@ export function applySidebarProjectOrder(projects: Project[], orderIds: string[]
 }
 
 export function moveProjectInSidebarOrder(orderIds: string[], sourceProjectId: string, targetProjectId: string): string[] {
+  return moveProjectInSidebarOrderAt(orderIds, sourceProjectId, targetProjectId, "before");
+}
+
+export function moveProjectInSidebarOrderAt(
+  orderIds: string[],
+  sourceProjectId: string,
+  targetProjectId: string,
+  placement: "before" | "after",
+): string[] {
   if (sourceProjectId === targetProjectId) {
     return orderIds;
   }
@@ -63,7 +72,7 @@ export function moveProjectInSidebarOrder(orderIds: string[], sourceProjectId: s
   if (targetIndex === -1) {
     return orderIds;
   }
-  next.splice(targetIndex, 0, sourceProjectId);
+  next.splice(placement === "after" ? targetIndex + 1 : targetIndex, 0, sourceProjectId);
   return next;
 }
 

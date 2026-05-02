@@ -13,6 +13,9 @@ import {
 import { Archive, FolderClosed, FolderOpen, GitBranch, GripVertical, Inbox, SquarePen } from "lucide-react";
 import {
   memo,
+  useLayoutEffect,
+  useMemo,
+  useRef,
   useState,
   type DragEvent as ReactDragEvent,
   type FormEvent,
@@ -30,7 +33,7 @@ import {
   sortThreadsForSidebar,
   type ThreadsByProjectId,
 } from "./helpers";
-import { moveProjectInSidebarOrder } from "./projectOrder";
+import { moveProjectInSidebarOrderAt } from "./projectOrder";
 
 const SIDEBAR_TEXT = {
   cancelLogin: "Cancel login",
@@ -118,26 +121,85 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
 }) {
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => new Set());
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
+  const [previewProjectIds, setPreviewProjectIds] = useState<string[] | null>(null);
+  const projectGroupRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const pendingProjectAnimationRects = useRef<Map<string, DOMRect> | null>(null);
+  const displayedProjects = useMemo(
+    () => projectsFromPreviewOrder(projects, previewProjectIds),
+    [previewProjectIds, projects],
+  );
+
+  useLayoutEffect(() => {
+    const beforeRects = pendingProjectAnimationRects.current;
+    pendingProjectAnimationRects.current = null;
+    if (!beforeRects) {
+      return;
+    }
+    for (const project of displayedProjects) {
+      const element = projectGroupRefs.current.get(project.id);
+      const before = beforeRects.get(project.id);
+      if (!element || !before || typeof element.animate !== "function") {
+        continue;
+      }
+      const after = element.getBoundingClientRect();
+      const deltaY = before.top - after.top;
+      if (Math.abs(deltaY) < 1) {
+        continue;
+      }
+      element.animate([{ transform: `translateY(${deltaY}px)` }, { transform: "translateY(0)" }], {
+        duration: 160,
+        easing: "cubic-bezier(0.2, 0, 0, 1)",
+      });
+    }
+  }, [displayedProjects]);
 
   function handleProjectDragStart(event: ReactDragEvent<HTMLElement>, projectId: string) {
     setDraggedProjectId(projectId);
+    setPreviewProjectIds(projects.map((project) => project.id));
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", projectId);
+    const dragImage = event.currentTarget.closest(".kodex-project-row");
+    if (dragImage instanceof HTMLElement && typeof event.dataTransfer.setDragImage === "function") {
+      event.dataTransfer.setDragImage(dragImage, 12, dragImage.offsetHeight / 2);
+    }
   }
 
-  function handleProjectDragOver(event: ReactDragEvent<HTMLElement>) {
+  function handleProjectDragOver(event: ReactDragEvent<HTMLElement>, targetProjectId: string) {
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
+    const sourceProjectId = draggedProjectId ?? event.dataTransfer.getData("text/plain");
+    if (!sourceProjectId || sourceProjectId === targetProjectId) {
+      return;
+    }
+    const fallbackOrder = projects.map((project) => project.id);
+    const placement = projectDragPlacement(event);
+    const currentOrder = previewProjectIds ?? fallbackOrder;
+    const next = moveProjectInSidebarOrderAt(currentOrder, sourceProjectId, targetProjectId, placement);
+    if (sameOrder(next, currentOrder)) {
+      return;
+    }
+    pendingProjectAnimationRects.current = projectRects(projectGroupRefs.current);
+    setPreviewProjectIds(next);
   }
 
   function handleProjectDrop(event: ReactDragEvent<HTMLElement>, targetProjectId: string) {
     event.preventDefault();
     const sourceProjectId = draggedProjectId ?? event.dataTransfer.getData("text/plain");
+    const currentProjectIds = projects.map((project) => project.id);
+    const nextProjectIds =
+      previewProjectIds ??
+      moveProjectInSidebarOrderAt(currentProjectIds, sourceProjectId, targetProjectId, projectDragPlacement(event));
     setDraggedProjectId(null);
-    if (!sourceProjectId || sourceProjectId === targetProjectId) {
+    setPreviewProjectIds(null);
+    if (!sourceProjectId || sameOrder(nextProjectIds, currentProjectIds)) {
       return;
     }
-    onReorderProjects(moveProjectInSidebarOrder(projects.map((project) => project.id), sourceProjectId, targetProjectId));
+    onReorderProjects(nextProjectIds);
+  }
+
+  function handleProjectDragEnd() {
+    setDraggedProjectId(null);
+    setPreviewProjectIds(null);
   }
 
   return (
@@ -187,7 +249,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             {projects.length === 0 ? (
               <EmptyPanel icon={<Inbox size={20} />} title={SIDEBAR_TEXT.noProjectsTitle} text={SIDEBAR_TEXT.noProjectsText} />
             ) : (
-              projects.map((project) => {
+              displayedProjects.map((project) => {
                 const projectThreads = sortThreadsForSidebar(
                   threadsByProjectId[project.id] ?? [],
                   approvals,
@@ -201,19 +263,28 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                   <Box
                     className="kodex-project-group"
                     key={project.id}
+                    ref={(element: HTMLDivElement | null) => {
+                      if (element) {
+                        projectGroupRefs.current.set(project.id, element);
+                      } else {
+                        projectGroupRefs.current.delete(project.id);
+                      }
+                    }}
                     role="group"
                     aria-label={project.name}
-                    onDragOver={handleProjectDragOver}
                     onDrop={(event) => handleProjectDrop(event, project.id)}
                   >
-                    <Box className="kodex-project-row">
+                    <Box
+                      className="kodex-project-row"
+                      onDragOver={(event) => handleProjectDragOver(event, project.id)}
+                    >
                       <Tooltip label={SIDEBAR_TEXT.reorderProject}>
                         <ActionIcon
                           aria-label={`${SIDEBAR_TEXT.reorderProject}: ${project.name}`}
                           className="kodex-project-drag-handle"
                           color="gray"
                           draggable
-                          onDragEnd={() => setDraggedProjectId(null)}
+                          onDragEnd={handleProjectDragEnd}
                           onDragStart={(event) => handleProjectDragStart(event, project.id)}
                           size="sm"
                           variant="subtle"
@@ -312,6 +383,31 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     </AppShell.Navbar>
   );
 });
+
+function projectsFromPreviewOrder(projects: Project[], previewProjectIds: string[] | null): Project[] {
+  if (!previewProjectIds) {
+    return projects;
+  }
+  const projectsById = new Map(projects.map((project) => [project.id, project]));
+  const orderedProjects = previewProjectIds
+    .map((projectId) => projectsById.get(projectId))
+    .filter((project): project is Project => Boolean(project));
+  const orderedIds = new Set(orderedProjects.map((project) => project.id));
+  return [...orderedProjects, ...projects.filter((project) => !orderedIds.has(project.id))];
+}
+
+function projectRects(projectRefs: Map<string, HTMLElement>): Map<string, DOMRect> {
+  return new Map(Array.from(projectRefs, ([projectId, element]) => [projectId, element.getBoundingClientRect()]));
+}
+
+function projectDragPlacement(event: ReactDragEvent<HTMLElement>): "before" | "after" {
+  const bounds = event.currentTarget.getBoundingClientRect();
+  return event.clientY > bounds.top + bounds.height / 2 ? "after" : "before";
+}
+
+function sameOrder(left: string[] | null, right: string[]): boolean {
+  return left !== null && left.length === right.length && left.every((value, index) => value === right[index]);
+}
 
 export type ThreadListRowProps = {
   approvals: Approval[];
