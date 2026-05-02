@@ -216,6 +216,20 @@
   background: var(--kodex-bg-shell);
 }
 
+.kodex-activity-image-preview {
+  width: 96px;
+  height: 96px;
+}
+
+.kodex-activity-image-preview img {
+  width: 96px;
+  aspect-ratio: 1;
+  border: 1px solid var(--kodex-border-strong);
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--kodex-bg-shell);
+}
+
 .kodex-user-message-bubble {
   position: relative;
   box-sizing: border-box;
@@ -317,4 +331,3 @@
 .kodex-timeline-debug-payload {
   max-height: 220px;
 }
-

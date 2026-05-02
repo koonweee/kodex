@@ -3,6 +3,7 @@ import {
   useRef,
   useState,
   type ChangeEvent as ReactChangeEvent,
+  type ClipboardEvent as ReactClipboardEvent,
   type Dispatch,
   type DragEvent as ReactDragEvent,
   type FormEvent,
@@ -25,6 +26,7 @@ import {
   attachmentPreviewImages,
   createObjectUrl,
   hasImageFiles,
+  imageFilesFromDataTransfer,
   revokeObjectUrl,
   userInputImages,
 } from "./attachmentUtils";
@@ -291,7 +293,15 @@ export function useComposerOrchestration({
     }
     event.preventDefault();
     setIsComposerDragActive(false);
-    appendImageFiles(event.dataTransfer.files);
+    appendImageFiles(imageFilesFromDataTransfer(event.dataTransfer));
+  }
+
+  function handleComposerPaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
+    if (!canCompose || isComposerSubmitting || !hasImageFiles(event.clipboardData)) {
+      return;
+    }
+    event.preventDefault();
+    appendImageFiles(imageFilesFromDataTransfer(event.clipboardData));
   }
 
   function handleComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
@@ -471,6 +481,7 @@ export function useComposerOrchestration({
     handleComposerDragOver,
     handleComposerDrop,
     handleComposerKeyDown,
+    handleComposerPaste,
     handleStopTurn,
     handleSubmitQueuedSteer,
     handleSubmitTurn,

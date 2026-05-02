@@ -1,7 +1,8 @@
-import { ActionIcon, Badge, Box, Group, Menu, Stack, Title } from "@mantine/core";
-import { AlertCircle, Archive, Inbox, MoreHorizontal, PanelRightOpen } from "lucide-react";
+import { ActionIcon, Badge, Box, Group, Menu, Title } from "@mantine/core";
+import { AlertCircle, Archive, MoreHorizontal, PanelRightOpen } from "lucide-react";
 
 import type { Approval, ApprovalResponse, ThreadSummary } from "../api/client";
+import type { ImageLightboxImage } from "../images/types";
 import { EmptyPanel } from "../ui/EmptyPanel";
 import { TimelineView } from "../timeline/TimelineView";
 import type { TimelineEntry } from "../timeline/entry";
@@ -10,8 +11,6 @@ import type { TimelineState } from "../timeline/reducer";
 const THREAD_PANEL_TEXT = {
   actions: "Thread actions",
   archive: "Archive thread",
-  noEventsText: "Thread activity will stream into this timeline.",
-  noEventsTitle: "No events",
   threadTimelineText: "Select or create a thread to view events, messages, tool calls, and warnings.",
   threadTimelineTitle: "Thread timeline",
 };
@@ -23,6 +22,7 @@ export function ThreadPanel({
   isSelectedTimelineLoading,
   onArchiveThread,
   onApprovalDecision,
+  onImageOpen,
   onTimelineReady,
   pendingTitleThreadIds,
   scrollParentElement,
@@ -40,6 +40,7 @@ export function ThreadPanel({
   isSelectedTimelineLoading: boolean;
   onArchiveThread: () => void;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
+  onImageOpen: (image: ImageLightboxImage) => void;
   onTimelineReady: () => void;
   pendingTitleThreadIds: Set<string>;
   scrollParentElement: HTMLDivElement | null;
@@ -88,32 +89,29 @@ export function ThreadPanel({
               </Menu>
             ) : null}
           </Group>
-          <Box
-            className="kodex-timeline-scroll"
-            data-entry-phase={selectedTimelineEntry.phase}
-            ref={setTimelineScrollElement}
-          >
-            {selectedThread && isSelectedTimelineLoading ? (
-              <Box aria-busy="true" className="kodex-timeline-loading" />
-            ) : selectedThread ? (
-              <TimelineView
-                key={selectedThread.id}
-                approvals={selectedThreadApprovals}
-                onReady={onTimelineReady}
-                onApprovalDecision={onApprovalDecision}
-                imagePreviewUrlsByPath={imagePreviewUrlsByPath}
-                scrollParentElement={scrollParentElement}
-                showDebug={showDebugEvents}
-                timeline={timeline}
-              />
-            ) : (
-              <EmptyPanel
-                icon={<Inbox size={20} />}
-                title={THREAD_PANEL_TEXT.noEventsTitle}
-                text={THREAD_PANEL_TEXT.noEventsText}
-              />
-            )}
-          </Box>
+          {selectedThread ? (
+            <Box
+              className="kodex-timeline-scroll"
+              data-entry-phase={selectedTimelineEntry.phase}
+              ref={setTimelineScrollElement}
+            >
+              {isSelectedTimelineLoading ? (
+                <Box aria-busy="true" className="kodex-timeline-loading" />
+              ) : (
+                <TimelineView
+                  key={selectedThread.id}
+                  approvals={selectedThreadApprovals}
+                  onReady={onTimelineReady}
+                  onApprovalDecision={onApprovalDecision}
+                  onImageOpen={onImageOpen}
+                  imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+                  scrollParentElement={scrollParentElement}
+                  showDebug={showDebugEvents}
+                  timeline={timeline}
+                />
+              )}
+            </Box>
+          ) : null}
         </>
       ) : (
         <Box className="kodex-thread-empty kodex-main-column">

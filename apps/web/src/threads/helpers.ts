@@ -150,6 +150,10 @@ export function threadNeedsApproval(thread: ThreadSummary, approvals: Approval[]
   return approvals.some((approval) => approval.threadId === thread.id && approval.status === "pending") || threadStatusNeedsApproval(thread);
 }
 
+export function threadInProgress(thread: ThreadSummary): boolean {
+  return typeof thread.status === "string" && thread.status.toLowerCase() === "active";
+}
+
 function threadStatusNeedsApproval(thread: ThreadSummary): boolean {
   return typeof thread.status === "string" && thread.status.toLowerCase().includes("approval");
 }

@@ -29,6 +29,21 @@ describe("MVP timeline flows", () => {
     FakeEventSource.instances = [];
   });
 
+  it("does not render a no-events placeholder in an empty selected thread", async () => {
+    mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const timeline = timelineElement(container);
+    expect(within(timeline).queryByText("No events")).not.toBeInTheDocument();
+    expect(within(timeline).queryByText("Thread activity will stream into this timeline.")).not.toBeInTheDocument();
+  });
+
   it("groups command and search activity into nested timeline collapsibles", async () => {
     mockGateway(
       baseRoutes({
@@ -155,6 +170,49 @@ describe("MVP timeline flows", () => {
       expect(secondThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
     });
     expect(gateway.callsFor("POST", "/v1/threads/thread-2/seen")).toHaveLength(1);
+  });
+
+  it("transitions an in-progress thread indicator to unread when a background turn completes", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, { ...activeThread, id: "thread-2", name: "Running thread" }],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+      }),
+    );
+
+    render(<App />);
+
+    const runningThreadButton = await screen.findByRole("button", { name: /running thread/i });
+    const runningThreadRow = runningThreadButton.closest(".kodex-thread-list-button");
+    expect(runningThreadRow).toBeInTheDocument();
+    expect(runningThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument();
+    expect(runningThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
+    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    expect(globalStream).toBeDefined();
+
+    act(() => {
+      globalStream?.emit({
+        id: "event-running-thread-completed",
+        seq: 3,
+        kind: "codex",
+        codexMethod: "turn/completed",
+        projectId: project.id,
+        threadId: "thread-2",
+        turnId: "turn-2",
+        itemId: null,
+        payload: { threadId: "thread-2", turn: { id: "turn-2" } },
+        receivedAt: "2026-04-30T00:00:02Z",
+      });
+    });
+
+    expect(runningThreadRow?.querySelector(".kodex-thread-progress-indicator")).not.toBeInTheDocument();
+    expect(runningThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
   });
 
   it("does not mark already represented completed turns unread when the global stream replays after refresh", async () => {

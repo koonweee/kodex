@@ -42,6 +42,7 @@ export function useThreadReadState({
         return {
           lastCompletedAgentTurnSeq,
           seenCompletedAgentTurnSeq,
+          status: "idle",
           unreadCompletedAgentTurn: lastCompletedAgentTurnSeq > seenCompletedAgentTurnSeq,
         };
       }),

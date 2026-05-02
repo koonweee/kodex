@@ -1,6 +1,7 @@
 import { ActionIcon, Box, Group, Menu, Textarea, Tooltip } from "@mantine/core";
 import { ArrowUp, Paperclip, Plus, Square } from "lucide-react";
 import type {
+  ClipboardEvent as ReactClipboardEvent,
   ChangeEvent as ReactChangeEvent,
   DragEvent as ReactDragEvent,
   FormEvent,
@@ -10,6 +11,7 @@ import type {
 
 import { ComposerFooterControls, type ComposerSettings, type ContextUsage } from "../ComposerFooterControls";
 import type { ModelSummary } from "../api/client";
+import type { ImageLightboxImage } from "../images/types";
 import { AttachmentTray } from "./AttachmentTray";
 import { QueuedSteerCard } from "./QueuedSteerCard";
 import type { PendingAttachment, QueuedSteerRow } from "./types";
@@ -34,6 +36,7 @@ export function ComposerPanel({
   composerText,
   composerShellRef,
   contextUsage,
+  isDraftThreadSelected,
   isDraftComposerTransitioning,
   isComposerDragActive,
   isComposerSubmitting,
@@ -45,8 +48,10 @@ export function ComposerPanel({
   onComposerDragOver,
   onComposerDrop,
   onComposerKeyDown,
+  onComposerPaste,
   onComposerSettingsChange,
   onComposerTextChange,
+  onImageOpen,
   onRemovePendingAttachment,
   onStopTurn,
   onSubmitQueuedSteer,
@@ -64,6 +69,7 @@ export function ComposerPanel({
   composerText: string;
   composerShellRef?: RefObject<HTMLDivElement | null>;
   contextUsage?: ContextUsage | null;
+  isDraftThreadSelected: boolean;
   isDraftComposerTransitioning: boolean;
   isComposerDragActive: boolean;
   isComposerSubmitting: boolean;
@@ -75,8 +81,10 @@ export function ComposerPanel({
   onComposerDragOver: (event: ReactDragEvent<HTMLElement>) => void;
   onComposerDrop: (event: ReactDragEvent<HTMLElement>) => void;
   onComposerKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
+  onComposerPaste: (event: ReactClipboardEvent<HTMLTextAreaElement>) => void;
   onComposerSettingsChange: (settings: ComposerSettings) => void;
   onComposerTextChange: (value: string) => void;
+  onImageOpen: (image: ImageLightboxImage) => void;
   onRemovePendingAttachment: (id: string) => void;
   onStopTurn: () => void;
   onSubmitQueuedSteer: (row: QueuedSteerRow) => void;
@@ -86,6 +94,9 @@ export function ComposerPanel({
   selectedThreadPresent: boolean;
   shouldShowStopAction: boolean;
 }) {
+  const draftHeroText = greetingForDate(new Date());
+  const shouldShowDraftHero = isDraftThreadSelected || isDraftComposerTransitioning;
+
   return (
     <Box
       ref={composerShellRef}
@@ -98,6 +109,14 @@ export function ComposerPanel({
       onDragOver={onComposerDragOver}
       onDrop={onComposerDrop}
     >
+      {shouldShowDraftHero ? (
+        <Box
+          className="kodex-composer-hero-stage"
+          data-transitioning={isDraftComposerTransitioning ? "true" : "false"}
+        >
+          <Box className="kodex-composer-hero">{draftHeroText}</Box>
+        </Box>
+      ) : null}
       {queuedSteerRows.length > 0 ? (
         <QueuedSteerCard
           rows={queuedSteerRows}
@@ -117,7 +136,7 @@ export function ComposerPanel({
           onChange={onAttachmentInputChange}
         />
         {pendingAttachments.length > 0 && !isComposerSubmitting ? (
-          <AttachmentTray attachments={pendingAttachments} onRemove={onRemovePendingAttachment} />
+          <AttachmentTray attachments={pendingAttachments} onImageOpen={onImageOpen} onRemove={onRemovePendingAttachment} />
         ) : null}
         <Textarea
           aria-label="Message composer"
@@ -133,6 +152,7 @@ export function ComposerPanel({
             }
           }}
           onKeyDown={onComposerKeyDown}
+          onPaste={onComposerPaste}
           disabled={!canCompose || isComposerSubmitting}
           variant="unstyled"
         />
@@ -206,4 +226,18 @@ export function ComposerPanel({
       </Box>
     </Box>
   );
+}
+
+function greetingForDate(date: Date) {
+  const hour = date.getHours();
+  if (hour < 5) {
+    return "Burning the midnight oil?";
+  }
+  if (hour < 12) {
+    return "Good morning";
+  }
+  if (hour < 17) {
+    return "Good afternoon";
+  }
+  return "Good evening";
 }

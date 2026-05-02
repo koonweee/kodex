@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -92,10 +92,12 @@ describe("timeline renderer registry", () => {
   });
 
   it("renders user image thumbnails above the message bubble", () => {
+    const onImageOpen = vi.fn();
     render(
       <MantineProvider>
         <TimelineItemRenderer
           imagePreviewUrlsByPath={{ "/tmp/diagram.png": "blob:kodex-test" }}
+          onImageOpen={onImageOpen}
           item={item({
             kind: "user_message",
             text: "Inspect this",
@@ -107,6 +109,65 @@ describe("timeline renderer registry", () => {
 
     expect(screen.getByText("Inspect this")).toBeInTheDocument();
     expect(document.querySelector(".kodex-user-image-grid img")).toHaveAttribute("src", "blob:kodex-test");
+    fireEvent.click(screen.getByRole("button", { name: /open \/tmp\/diagram\.png/i }));
+    expect(onImageOpen).toHaveBeenCalledWith({
+      alt: "",
+      src: "blob:kodex-test",
+      title: "/tmp/diagram.png",
+    });
+  });
+
+  it("opens displayable image activity thumbnails", () => {
+    const onImageOpen = vi.fn();
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          onImageOpen={onImageOpen}
+          item={item({
+            kind: "image_generation",
+            path: "https://example.test/generated.png",
+            text: "Generated image",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /open https:\/\/example\.test\/generated\.png/i }));
+    expect(onImageOpen).toHaveBeenCalledWith({
+      alt: "",
+      src: "https://example.test/generated.png",
+      title: "https://example.test/generated.png",
+    });
+  });
+
+  it("renders generated image data URLs without showing raw base64 output", () => {
+    const onImageOpen = vi.fn();
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          onImageOpen={onImageOpen}
+          item={item({
+            kind: "image_generation",
+            imageSrc: "data:image/png;base64,iVBORw0KGgo=",
+            path: "/tmp/generated.png",
+            text: "Generated image",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.queryByText(/iVBORw0KGgo=/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Generated image")).not.toBeInTheDocument();
+    expect(document.querySelector(".kodex-activity-image-preview img")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,iVBORw0KGgo=",
+    );
+    fireEvent.click(screen.getByRole("button", { name: /open \/tmp\/generated\.png/i }));
+    expect(onImageOpen).toHaveBeenCalledWith({
+      alt: "",
+      src: "data:image/png;base64,iVBORw0KGgo=",
+      title: "/tmp/generated.png",
+    });
   });
 
   it("renders subtle optimistic user message status", () => {

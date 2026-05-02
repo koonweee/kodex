@@ -26,6 +26,7 @@ export type TimelineItem = {
   cwd?: string;
   output?: string;
   path?: string;
+  imageSrc?: string;
   messagePhase?: string;
   resultSummary?: string;
   summary?: string;

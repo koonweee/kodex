@@ -6,17 +6,26 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
+import { ImageThumbnail } from "../images/ImageThumbnail";
+import type { ImageLightboxImage } from "../images/types";
 import type { TimelineItem, WebSearchAction } from "./reducer";
 
 type TimelineRendererOptions = {
   imagePreviewUrlsByPath: Record<string, string>;
+  onImageOpen?: (image: ImageLightboxImage) => void;
 };
 type TimelineRenderer = (item: TimelineItem, options: TimelineRendererOptions) => ReactNode;
 
 const rendererRegistry: Record<string, TimelineRenderer> = {
   agent_message: (item) => <AssistantMessageMarkdown itemId={item.id} text={item.text || "No assistant content yet"} />,
   assistant_message: (item) => <AssistantMessageMarkdown itemId={item.id} text={item.text || "No assistant content yet"} />,
-  user_message: (item, options) => <UserMessageBubble item={item} imagePreviewUrlsByPath={options.imagePreviewUrlsByPath} />,
+  user_message: (item, options) => (
+    <UserMessageBubble
+      item={item}
+      imagePreviewUrlsByPath={options.imagePreviewUrlsByPath}
+      onImageOpen={options.onImageOpen}
+    />
+  ),
   reasoning_summary: (item) => <ReasoningBlock item={item} />,
   reasoning: (item) => <ReasoningBlock item={item} />,
   command_execution: (item) => <CommandBlock item={item} />,
@@ -26,8 +35,8 @@ const rendererRegistry: Record<string, TimelineRenderer> = {
   collab_agent_tool_call: (item) => <CollabAgentBlock item={item} />,
   web_search_group: (item) => <WebSearchBlock actions={item.actions ?? []} />,
   plan: (item) => <PlanBlock item={item} />,
-  image_view: (item) => <ImageActivityBlock item={item} />,
-  image_generation: (item) => <ImageActivityBlock item={item} />,
+  image_view: (item, options) => <ImageActivityBlock item={item} onImageOpen={options.onImageOpen} />,
+  image_generation: (item, options) => <ImageActivityBlock item={item} onImageOpen={options.onImageOpen} />,
   review_mode_started: (item) => <StatusMarker item={item} />,
   review_mode_finished: (item) => <StatusMarker item={item} />,
   context_compaction: (item) => <StatusMarker item={item} />,
@@ -96,10 +105,16 @@ const assistantMarkdownComponents: Components = {
 type TimelineItemRendererProps = {
   item: TimelineItem;
   imagePreviewUrlsByPath?: Record<string, string>;
+  onImageOpen?: (image: ImageLightboxImage) => void;
   showDebug?: boolean;
 };
 
-function TimelineItemRendererImpl({ item, imagePreviewUrlsByPath = {}, showDebug = false }: TimelineItemRendererProps) {
+function TimelineItemRendererImpl({
+  item,
+  imagePreviewUrlsByPath = {},
+  onImageOpen,
+  showDebug = false,
+}: TimelineItemRendererProps) {
   const render = rendererRegistry[item.kind] ?? unknownRenderer;
   const label = labels[item.kind] ?? "Unsupported item";
   const isMessage = isTimelineMessage(item.kind);
@@ -123,7 +138,7 @@ function TimelineItemRendererImpl({ item, imagePreviewUrlsByPath = {}, showDebug
           ) : null}
         </Group>
       ) : null}
-      {render(item, { imagePreviewUrlsByPath })}
+      {render(item, { imagePreviewUrlsByPath, onImageOpen })}
       {showDebug ? <DebugDisclosure item={item} /> : null}
     </Box>
   );
@@ -134,11 +149,13 @@ TimelineItemRenderer.displayName = "TimelineItemRenderer";
 
 type TimelineActivityGroupRendererProps = {
   items: TimelineItem[];
+  onImageOpen?: (image: ImageLightboxImage) => void;
   showDebug?: boolean;
 };
 
 function TimelineActivityGroupRendererImpl({
   items,
+  onImageOpen,
   showDebug = false,
 }: TimelineActivityGroupRendererProps) {
   return (
@@ -154,7 +171,7 @@ function TimelineActivityGroupRendererImpl({
       </summary>
       <Stack gap={8} mt={8}>
         {items.map((item) => (
-          <ActivityItemRenderer item={item} key={item.id} showDebug={showDebug} />
+          <ActivityItemRenderer item={item} key={item.id} onImageOpen={onImageOpen} showDebug={showDebug} />
         ))}
       </Stack>
     </details>
@@ -179,9 +196,11 @@ function MessageText({ text }: { text: string }) {
 function UserMessageBubble({
   imagePreviewUrlsByPath,
   item,
+  onImageOpen,
 }: {
   imagePreviewUrlsByPath: Record<string, string>;
   item: TimelineItem;
+  onImageOpen?: (image: ImageLightboxImage) => void;
 }) {
   const images = item.images ?? [];
   return (
@@ -191,7 +210,15 @@ function UserMessageBubble({
           <Box className="kodex-user-image-grid">
             {images.map((image, index) => {
               const src = image.url ?? (image.path ? imagePreviewUrlsByPath[image.path] : undefined);
-              return src ? <img alt="" key={`${src}-${index}`} src={src} /> : null;
+              return src ? (
+                <ImageThumbnail
+                  alt=""
+                  key={`${src}-${index}`}
+                  src={src}
+                  title={image.path}
+                  onOpen={onImageOpen}
+                />
+              ) : null;
             })}
           </Box>
         ) : null}
@@ -262,7 +289,15 @@ function WebSearchBlock({ actions }: { actions: WebSearchAction[] }) {
   );
 }
 
-const ActivityItemRenderer = memo(function ActivityItemRenderer({ item, showDebug }: { item: TimelineItem; showDebug: boolean }) {
+const ActivityItemRenderer = memo(function ActivityItemRenderer({
+  item,
+  onImageOpen,
+  showDebug,
+}: {
+  item: TimelineItem;
+  onImageOpen?: (image: ImageLightboxImage) => void;
+  showDebug: boolean;
+}) {
   const render = rendererRegistry[item.kind] ?? unknownRenderer;
   if (item.kind === "command_execution") {
     return (
@@ -292,7 +327,7 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({ item, showDebu
         </Group>
         <ChevronRight size={16} className="kodex-activity-caret" aria-hidden="true" />
       </summary>
-      <Box className="kodex-activity-body">{render(item, { imagePreviewUrlsByPath: {} })}</Box>
+      <Box className="kodex-activity-body">{render(item, { imagePreviewUrlsByPath: {}, onImageOpen })}</Box>
       {showDebug ? <DebugDisclosure item={item} /> : null}
     </details>
   );
@@ -379,10 +414,23 @@ function PlanBlock({ item }: { item: TimelineItem }) {
   return <Text size="sm">{item.text || "Plan updated"}</Text>;
 }
 
-function ImageActivityBlock({ item }: { item: TimelineItem }) {
+function ImageActivityBlock({
+  item,
+  onImageOpen,
+}: {
+  item: TimelineItem;
+  onImageOpen?: (image: ImageLightboxImage) => void;
+}) {
+  const src = item.imageSrc || displayableImageSrc(item.path);
+  const title = item.imageSrc ? item.path || item.text : item.path;
   return (
     <Stack gap={4}>
-      <Text size="sm">{item.text || "Image activity"}</Text>
+      {!src ? <Text size="sm">{item.text || "Image activity"}</Text> : null}
+      {src ? (
+        <Box className="kodex-activity-image-preview">
+          <ImageThumbnail alt="" src={src} title={title} onOpen={onImageOpen} />
+        </Box>
+      ) : null}
       {item.path ? (
         <Text size="xs" c="dimmed" className="kodex-timeline-inline-row">
           Path: {item.path}
@@ -400,6 +448,13 @@ function ImageActivityBlock({ item }: { item: TimelineItem }) {
       ) : null}
     </Stack>
   );
+}
+
+function displayableImageSrc(path?: string): string | null {
+  if (!path) {
+    return null;
+  }
+  return /^(?:https?:|blob:|data:image\/)/.test(path) ? path : null;
 }
 
 function StatusMarker({ item }: { item: TimelineItem }) {

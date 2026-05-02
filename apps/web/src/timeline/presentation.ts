@@ -195,10 +195,11 @@ export function createPresentationItem(
   if (itemType === "image_generation") {
     const path = stringValue(item.savedPath) || stringValue(item.saved_path);
     const revisedPrompt = stringValue(item.revisedPrompt) || stringValue(item.revised_prompt);
+    const result = stringValue(item.result);
     return {
       item: {
         ...base,
-        output: stringValue(item.result),
+        imageSrc: result ? imageDataUrl(result) : undefined,
         path,
         resultSummary: revisedPrompt,
         text: "Generated image",
@@ -265,6 +266,10 @@ export function createPresentationItem(
   }
 
   return null;
+}
+
+function imageDataUrl(result: string): string {
+  return result.startsWith("data:image/") ? result : `data:image/png;base64,${result}`;
 }
 
 export function createDiagnosticItem(event: EventEnvelope): TimelineItem {

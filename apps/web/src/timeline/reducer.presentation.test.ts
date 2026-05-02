@@ -292,7 +292,7 @@ describe("timeline reducer presentation", () => {
             id: "image-generation-1",
             type: "imageGeneration",
             status: "completed",
-            result: "completed",
+            result: "iVBORw0KGgo=",
             revisedPrompt: "A diagram",
             savedPath: "/tmp/generated.png",
           },
@@ -318,6 +318,7 @@ describe("timeline reducer presentation", () => {
     ]);
     expect(state.items.find((item) => item.kind === "image_view")).toMatchObject({ path: "/tmp/input.png" });
     expect(state.items.find((item) => item.kind === "image_generation")).toMatchObject({
+      imageSrc: "data:image/png;base64,iVBORw0KGgo=",
       path: "/tmp/generated.png",
       resultSummary: "A diagram",
     });

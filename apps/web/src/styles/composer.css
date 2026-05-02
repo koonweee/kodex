@@ -10,6 +10,36 @@
   pointer-events: none;
 }
 
+.kodex-main-stack[data-draft-thread="true"] .kodex-composer-shell {
+  margin-top: auto;
+  margin-bottom: auto;
+}
+
+.kodex-composer-hero-stage {
+  position: relative;
+  justify-self: center;
+  width: min(100%, 720px);
+  margin-bottom: 32px;
+  overflow: hidden;
+  opacity: 1;
+  transition: opacity 220ms ease, transform 220ms ease;
+}
+
+.kodex-composer-hero-stage[data-transitioning="true"] {
+  opacity: 0;
+  transform: translateY(-12px);
+}
+
+.kodex-composer-hero {
+  position: relative;
+  color: var(--kodex-text-secondary);
+  font-size: 40px;
+  font-weight: 400;
+  line-height: 1.12;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
 .kodex-composer {
   position: relative;
   display: grid;
@@ -99,6 +129,7 @@
   color: var(--kodex-text-on-accent);
   font-size: 10px;
   font-weight: 700;
+  pointer-events: none;
 }
 
 .kodex-queued-steer + .kodex-composer {
@@ -236,3 +267,12 @@
   justify-self: end;
 }
 
+@media (max-width: 700px) {
+  .kodex-composer-hero-stage {
+    margin-bottom: 24px;
+  }
+
+  .kodex-composer-hero {
+    font-size: 30px;
+  }
+}

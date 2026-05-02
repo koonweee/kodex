@@ -3,11 +3,21 @@ import type { TimelineImage } from "../timeline/reducer";
 import type { PendingAttachment } from "./types";
 
 export function hasImageFiles(dataTransfer: DataTransfer) {
+  return imageFilesFromDataTransfer(dataTransfer).length > 0;
+}
+
+export function imageFilesFromDataTransfer(dataTransfer: DataTransfer): File[] {
   const items = Array.from(dataTransfer.items);
   if (items.length > 0) {
-    return items.some((item) => item.kind === "file" && item.type.startsWith("image/"));
+    const itemFiles = items
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => (typeof item.getAsFile === "function" ? item.getAsFile() : null))
+      .filter((file): file is File => file !== null);
+    if (itemFiles.length > 0) {
+      return itemFiles;
+    }
   }
-  return Array.from(dataTransfer.files).some((file) => file.type.startsWith("image/"));
+  return Array.from(dataTransfer.files).filter((file) => file.type.startsWith("image/"));
 }
 
 export function createObjectUrl(file: File) {

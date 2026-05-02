@@ -606,6 +606,41 @@ describe("MVP composer input flows", () => {
     expect(screen.queryByText(/drop images to attach/i)).not.toBeInTheDocument();
   });
 
+  it("attaches pasted image files from the message composer", async () => {
+    mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const composer = screen.getByLabelText(/message composer/i);
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:pasted-preview");
+    const file = new File(["fake"], "pasted.png", { type: "image/png" });
+    const pasteEvent = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(pasteEvent, "clipboardData", {
+      value: {
+        files: [],
+        items: [{ kind: "file", type: "image/png", getAsFile: () => file }],
+      },
+    });
+
+    fireEvent(composer, pasteEvent);
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(screen.getByRole("button", { name: /remove pasted.png/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /open pasted.png/i }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toBeInTheDocument();
+    expect(dialog.querySelector(".kodex-image-lightbox-img")).toHaveAttribute("src", "blob:pasted-preview");
+
+    await userEvent.click(screen.getByRole("button", { name: /close image preview/i }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("queues active-turn composer text, steers selected rows, and removes only successful rows", async () => {
     const gateway = mockGateway(
       baseRoutes({

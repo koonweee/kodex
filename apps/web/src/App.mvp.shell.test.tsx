@@ -89,6 +89,19 @@ describe("MVP shell flows", () => {
     expect(screen.getAllByRole("button", { name: /new thread/i })).toHaveLength(1);
     expect(screen.getByRole("heading", { name: /new thread/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
+    const main = screen.getByRole("main", { name: /thread/i });
+    expect(within(main).getByText(/good (morning|afternoon|evening)|burning the midnight oil\?/i)).toBeInTheDocument();
+    const mainStack = main.querySelector(".kodex-main-stack");
+    expect(mainStack).toHaveAttribute("data-draft-thread", "true");
+    expect(main.querySelector(".kodex-timeline-scroll")).not.toBeInTheDocument();
+    expect(within(main).queryByText("No events")).not.toBeInTheDocument();
+    expect(appCss).toMatch(
+      /\.kodex-main-stack\[data-draft-thread="true"\]\s+\.kodex-composer-shell\s*\{[^}]*margin-top:\s*auto;/s,
+    );
+    expect(appCss).toMatch(
+      /\.kodex-main-stack\[data-draft-thread="true"\]\s+\.kodex-composer-shell\s*\{[^}]*margin-bottom:\s*auto;/s,
+    );
+    expect(appCss).toMatch(/\.kodex-composer-hero-stage\[data-transitioning="true"\]\s*\{[^}]*opacity:\s*0;/s);
 
     await userEvent.type(screen.getByLabelText(/message composer/i), "Implement the next milestone for the web client");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
@@ -215,10 +228,24 @@ describe("MVP shell flows", () => {
     render(<App />);
 
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
+    const kodexProjectButton = within(kodexGroup).getByRole("button", { name: /kodex \/home\/example\/kodex/i });
+    expect(kodexProjectButton).toHaveAttribute("aria-expanded", "true");
     expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
 
     const scratchGroup = await screen.findByRole("group", { name: /scratch/i });
+    const scratchProjectButton = within(scratchGroup).getByRole("button", { name: /scratch \/tmp\/scratch/i });
+    expect(scratchProjectButton).toHaveAttribute("aria-expanded", "true");
     expect(within(scratchGroup).getByRole("button", { name: /second thread/i })).toBeInTheDocument();
+
+    await userEvent.click(kodexProjectButton);
+
+    expect(kodexProjectButton).toHaveAttribute("aria-expanded", "false");
+    expect(within(kodexGroup).queryByRole("button", { name: /implement frontend/i })).not.toBeInTheDocument();
+
+    await userEvent.click(kodexProjectButton);
+
+    expect(kodexProjectButton).toHaveAttribute("aria-expanded", "true");
+    expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
   });
 
   it("shows compact thread actions without fork or path subtitle", async () => {
@@ -268,6 +295,34 @@ describe("MVP shell flows", () => {
     });
     expect(screen.queryByRole("button", { name: /second thread/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+  });
+
+  it("shows in-progress threads in the selector action slot until archive is available", async () => {
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, { ...activeThread, id: "thread-2", name: "Running thread" }],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+      }),
+    );
+
+    render(<App />);
+
+    const runningThreadButton = await screen.findByRole("button", { name: /running thread/i });
+    const runningThreadRow = runningThreadButton.closest(".kodex-thread-list-button");
+    expect(runningThreadRow).toBeInTheDocument();
+    expect(within(runningThreadRow as HTMLElement).getByLabelText(/thread in progress/i)).toHaveClass(
+      "kodex-thread-progress-indicator",
+    );
+    expect(within(runningThreadRow as HTMLElement).queryByRole("button", { name: /archive running thread/i })).not.toBeInTheDocument();
+
+    await userEvent.hover(runningThreadButton);
+
+    expect(within(runningThreadRow as HTMLElement).getByRole("button", { name: /archive running thread/i })).toBeInTheDocument();
+    expect(within(runningThreadRow as HTMLElement).queryByLabelText(/thread in progress/i)).not.toBeInTheDocument();
   });
 
   it("hides thread loading state and resumes not-loaded threads on selection", async () => {

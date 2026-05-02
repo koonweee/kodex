@@ -10,14 +10,20 @@ import {
   TextInput,
   Tooltip,
 } from "@mantine/core";
-import { Archive, Folder, GitBranch, Inbox, SquarePen } from "lucide-react";
-import type { FormEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
+import { Archive, FolderClosed, FolderOpen, GitBranch, Inbox, SquarePen } from "lucide-react";
+import {
+  useState,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 
 import type { AccountResponse, Approval, Project, ThreadSummary } from "../api/client";
 import { SidebarAccountFooter, type LoginState } from "../account/SidebarAccountFooter";
 import { EmptyPanel } from "../ui/EmptyPanel";
 import {
   threadDisplayTitle,
+  threadInProgress,
   threadNeedsApproval,
   type ThreadsByProjectId,
 } from "./helpers";
@@ -33,6 +39,7 @@ const SIDEBAR_TEXT = {
   noProjectsTitle: "No projects",
   projects: "Projects",
   resizeSidebarLabel: "Resize workspace sidebar",
+  threadInProgress: "Thread in progress",
   unreadAgentTurn: "Unread completed agent turn",
   workspaceLabel: "Workspace",
 };
@@ -102,26 +109,30 @@ export function WorkspaceSidebar({
   sidebarWidth: number;
   threadsByProjectId: ThreadsByProjectId;
 }) {
+  const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => new Set());
+
   return (
     <AppShell.Navbar
       aria-label={SIDEBAR_TEXT.workspaceLabel}
-      p="md"
+      p="sm"
       className="kodex-sidebar"
       style={{ width: sidebarWidth }}
     >
       <Stack gap="lg" h="100%">
         <Box className="kodex-sidebar-scroll">
           <Group justify="space-between" align="center" mb="sm">
-            <Text fw={700} size="sm">
+            <Text className="kodex-project-section-title" fw={700} size="sm">
               {SIDEBAR_TEXT.projects}
             </Text>
             <Tooltip label={SIDEBAR_TEXT.newProject}>
               <ActionIcon
                 variant="subtle"
                 aria-label={SIDEBAR_TEXT.newProject}
+                color="gray"
                 onClick={() => onProjectFormOpenChange((open) => !open)}
+                size="sm"
               >
-                <GitBranch size={18} />
+                <GitBranch size={16} />
               </ActionIcon>
             </Tooltip>
           </Group>
@@ -149,19 +160,37 @@ export function WorkspaceSidebar({
             ) : (
               projects.map((project) => {
                 const projectThreads = threadsByProjectId[project.id] ?? [];
+                const projectCollapsed = collapsedProjectIds.has(project.id);
+                const FolderIcon = projectCollapsed ? FolderClosed : FolderOpen;
                 const newThreadLabel =
                   project.id === selectedProjectId ? SIDEBAR_TEXT.newThread : `Create thread in ${project.name}`;
                 return (
                   <Box className="kodex-project-group" key={project.id} role="group" aria-label={project.name}>
                     <Box className="kodex-project-row">
                       <button
+                        aria-expanded={!projectCollapsed}
                         aria-label={`${project.name} ${project.cwd}`}
                         className="kodex-project-select-button"
                         data-active={project.id === selectedProjectId}
-                        onClick={() => onSelectProject(project.id)}
+                        onClick={() => {
+                          setCollapsedProjectIds((current) => {
+                            const next = new Set(current);
+                            if (project.id === selectedProjectId) {
+                              if (next.has(project.id)) {
+                                next.delete(project.id);
+                              } else {
+                                next.add(project.id);
+                              }
+                            } else {
+                              next.delete(project.id);
+                            }
+                            return next;
+                          });
+                          onSelectProject(project.id);
+                        }}
                         type="button"
                       >
-                        <Folder size={15} />
+                        <FolderIcon size={15} />
                         <Text fw={500} size="xs" lineClamp={1}>
                           {project.name}
                         </Text>
@@ -178,7 +207,7 @@ export function WorkspaceSidebar({
                         </ActionIcon>
                       </Tooltip>
                     </Box>
-                    {projectThreads.length > 0 ? (
+                    {!projectCollapsed && projectThreads.length > 0 ? (
                       <Stack className="kodex-project-thread-list" gap={6}>
                         {projectThreads.map((thread) => (
                           <ThreadListRow
@@ -249,6 +278,7 @@ function ThreadListRow({
   thread: ThreadSummary;
 }) {
   const needsApproval = threadNeedsApproval(thread, approvals);
+  const isThreadInProgress = threadInProgress(thread);
   const hasUnreadAgentTurn = thread.unreadCompletedAgentTurn === true;
   const displayTitle = pendingTitleThreadIds.has(thread.id) ? SIDEBAR_TEXT.newThread : threadDisplayTitle(thread);
   const showThreadArchiveAction = hoveredThreadActionId === thread.id;
@@ -293,7 +323,17 @@ function ThreadListRow({
         </Group>
       </button>
       <Box className="kodex-thread-list-action-slot">
-        {hasUnreadAgentTurn && !showThreadArchiveAction ? (
+        {isThreadInProgress && !showThreadArchiveAction ? (
+          <Tooltip label={SIDEBAR_TEXT.threadInProgress}>
+            <Box
+              aria-label={SIDEBAR_TEXT.threadInProgress}
+              className="kodex-thread-progress-indicator"
+              component="span"
+              role="status"
+            />
+          </Tooltip>
+        ) : null}
+        {hasUnreadAgentTurn && !isThreadInProgress && !showThreadArchiveAction ? (
           <Tooltip label={SIDEBAR_TEXT.unreadAgentTurn}>
             <Box
               aria-label={SIDEBAR_TEXT.unreadAgentTurn}

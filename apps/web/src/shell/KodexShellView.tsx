@@ -39,7 +39,12 @@ export function KodexShellView({
       <MobilePanelSwitcher activePanel={mobilePanel} onChange={onMobilePanelChange} />
       <WorkspaceSidebar {...workspaceSidebarProps} />
       <AppShell.Main aria-label="Thread" className="kodex-main">
-        <Stack h="calc(100vh - var(--app-shell-padding))" gap="md" className="kodex-main-stack">
+        <Stack
+          h="calc(100vh - var(--app-shell-padding))"
+          gap="md"
+          className="kodex-main-stack"
+          data-draft-thread={threadPanelProps.isDraftThreadSelected ? "true" : undefined}
+        >
           <ThreadPanel {...threadPanelProps} />
           <ComposerPanel {...composerPanelProps} />
         </Stack>

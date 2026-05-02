@@ -25,6 +25,8 @@ import { createThreadOptions } from "./composer/settings";
 import { useComposerSettingsState } from "./composer/useComposerSettingsState";
 import { useComposerOrchestration } from "./composer/useComposerOrchestration";
 import { createEventStreamClient } from "./events/stream";
+import { ImageLightbox } from "./images/ImageLightbox";
+import type { ImageLightboxImage } from "./images/types";
 import {
   applyKodexColorScheme,
   createKodexMantineTheme,
@@ -100,6 +102,7 @@ function KodexShell({
   const [showDebugEvents, setShowDebugEvents] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("chat");
+  const [lightboxImage, setLightboxImage] = useState<ImageLightboxImage | null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesSection, setPreferencesSection] = useState<"appearance">("appearance");
   const [hoveredThreadActionId, setHoveredThreadActionId] = useState<string | null>(null);
@@ -181,6 +184,7 @@ function KodexShell({
     handleComposerDragOver,
     handleComposerDrop,
     handleComposerKeyDown,
+    handleComposerPaste,
     handleStopTurn,
     handleSubmitQueuedSteer,
     handleSubmitTurn,
@@ -518,44 +522,47 @@ function KodexShell({
   }
 
   return (
-    <KodexShellView
-      composerPanelProps={{
-        attachmentInputRef, canCompose, canSubmitComposer, composerSettings, composerSettingsError, composerText,
-        composerShellRef, contextUsage: selectedContextUsage, isDraftComposerTransitioning, isComposerDragActive,
-        isComposerSubmitting, isSelectedTimelineReady, models,
-        onAbortQueuedSteer: handleAbortQueuedSteer, onAttachmentInputChange: handleAttachmentInputChange,
-        onComposerDragLeave: handleComposerDragLeave, onComposerDragOver: handleComposerDragOver, onComposerDrop: handleComposerDrop,
-        onComposerKeyDown: handleComposerKeyDown, onComposerSettingsChange: handleComposerSettingsChange,
-        onComposerTextChange: setComposerText, onRemovePendingAttachment: removePendingAttachment, onStopTurn: handleStopTurn,
-        onSubmitQueuedSteer: handleSubmitQueuedSteer, onSubmitTurn: handleSubmitTurn, pendingAttachments, queuedSteerRows,
-        selectedThreadPresent: selectedThread !== null, shouldShowStopAction,
-      }}
-      isSidebarResizing={isSidebarResizing}
-      mobilePanel={mobilePanel}
-      onMobilePanelChange={setMobilePanel}
-      preferencesProps={{
-        activeSection: preferencesSection, colorSchemeId, onClose: () => setPreferencesOpen(false), onColorSchemeChange,
-        onSectionChange: setPreferencesSection, opened: preferencesOpen,
-      }}
-      sidebarWidth={sidebarWidth}
-      threadPanelProps={{
-        errorMessage, imagePreviewUrlsByPath, isDraftThreadSelected, isSelectedTimelineLoading,
-        onArchiveThread: () => void handleArchiveThread(), onApprovalDecision: handleApprovalDecision,
-        onTimelineReady: () => selectedThread && handleTimelineReady(selectedThread.id), pendingTitleThreadIds,
-        scrollParentElement: timelineScrollElement, selectedThread, selectedThreadApprovals, selectedThreadTitle,
-        selectedTimelineEntry, setTimelineScrollElement, showDebugEvents, timeline,
-      }}
-      workspaceSidebarProps={{
-        account, approvals, hoveredThreadActionId, isSidebarResizing, loginState,
-        onArchiveThread: (threadId) => void handleArchiveThread(threadId), onCancelLogin: handleCancelLogin,
-        onCreateProject: handleCreateProject, onCreateThread: handleCreateThread, onLogin: handleLogin, onLogout: handleLogout,
-        onOpenPreferences: () => setPreferencesOpen(true), onProjectCwdChange: setProjectCwd, onProjectFormOpenChange: setProjectFormOpen,
-        onProjectNameChange: setProjectName, onSelectProject: handleSelectProject, onSelectThread: handleSelectThread,
-        onShowDebugEventsChange: setShowDebugEvents, onSidebarResizeKeyDown: handleSidebarResizeKeyDown,
-        onSidebarResizePointerDown: handleSidebarResizePointerDown, onThreadActionHoverChange: setHoveredThreadActionId,
-        pendingTitleThreadIds, projectCwd, projectFormOpen, projectName, projects, selectedProjectId, selectedThreadId,
-        showDebugEvents, sidebarWidth, threadsByProjectId,
-      }}
-    />
+    <>
+      <KodexShellView
+        composerPanelProps={{
+          attachmentInputRef, canCompose, canSubmitComposer, composerSettings, composerSettingsError, composerText,
+          composerShellRef, contextUsage: selectedContextUsage, isDraftThreadSelected, isDraftComposerTransitioning, isComposerDragActive,
+          isComposerSubmitting, isSelectedTimelineReady, models,
+          onAbortQueuedSteer: handleAbortQueuedSteer, onAttachmentInputChange: handleAttachmentInputChange,
+          onComposerDragLeave: handleComposerDragLeave, onComposerDragOver: handleComposerDragOver, onComposerDrop: handleComposerDrop,
+          onComposerKeyDown: handleComposerKeyDown, onComposerPaste: handleComposerPaste, onComposerSettingsChange: handleComposerSettingsChange,
+          onComposerTextChange: setComposerText, onImageOpen: setLightboxImage, onRemovePendingAttachment: removePendingAttachment, onStopTurn: handleStopTurn,
+          onSubmitQueuedSteer: handleSubmitQueuedSteer, onSubmitTurn: handleSubmitTurn, pendingAttachments, queuedSteerRows,
+          selectedThreadPresent: selectedThread !== null, shouldShowStopAction,
+        }}
+        isSidebarResizing={isSidebarResizing}
+        mobilePanel={mobilePanel}
+        onMobilePanelChange={setMobilePanel}
+        preferencesProps={{
+          activeSection: preferencesSection, colorSchemeId, onClose: () => setPreferencesOpen(false), onColorSchemeChange,
+          onSectionChange: setPreferencesSection, opened: preferencesOpen,
+        }}
+        sidebarWidth={sidebarWidth}
+        threadPanelProps={{
+          errorMessage, imagePreviewUrlsByPath, isDraftThreadSelected, isSelectedTimelineLoading,
+          onArchiveThread: () => void handleArchiveThread(), onApprovalDecision: handleApprovalDecision, onImageOpen: setLightboxImage,
+          onTimelineReady: () => selectedThread && handleTimelineReady(selectedThread.id), pendingTitleThreadIds,
+          scrollParentElement: timelineScrollElement, selectedThread, selectedThreadApprovals, selectedThreadTitle,
+          selectedTimelineEntry, setTimelineScrollElement, showDebugEvents, timeline,
+        }}
+        workspaceSidebarProps={{
+          account, approvals, hoveredThreadActionId, isSidebarResizing, loginState,
+          onArchiveThread: (threadId) => void handleArchiveThread(threadId), onCancelLogin: handleCancelLogin,
+          onCreateProject: handleCreateProject, onCreateThread: handleCreateThread, onLogin: handleLogin, onLogout: handleLogout,
+          onOpenPreferences: () => setPreferencesOpen(true), onProjectCwdChange: setProjectCwd, onProjectFormOpenChange: setProjectFormOpen,
+          onProjectNameChange: setProjectName, onSelectProject: handleSelectProject, onSelectThread: handleSelectThread,
+          onShowDebugEventsChange: setShowDebugEvents, onSidebarResizeKeyDown: handleSidebarResizeKeyDown,
+          onSidebarResizePointerDown: handleSidebarResizePointerDown, onThreadActionHoverChange: setHoveredThreadActionId,
+          pendingTitleThreadIds, projectCwd, projectFormOpen, projectName, projects, selectedProjectId, selectedThreadId,
+          showDebugEvents, sidebarWidth, threadsByProjectId,
+        }}
+      />
+      <ImageLightbox image={lightboxImage} onClose={() => setLightboxImage(null)} />
+    </>
   );
 }

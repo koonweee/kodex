@@ -1,11 +1,11 @@
 import { ActionIcon, Box, Stack, Tooltip } from "@mantine/core";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDownToLine, PanelRightOpen } from "lucide-react";
+import { ArrowDownToLine } from "lucide-react";
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, useEffect } from "react";
 
 import type { Approval, ApprovalResponse } from "../api/client";
 import { ApprovalCard, ThreadApprovalStack } from "../approvals/ApprovalCard";
-import { EmptyPanel } from "../ui/EmptyPanel";
+import type { ImageLightboxImage } from "../images/types";
 import {
   buildApprovalIndex,
   deriveTimelineRows,
@@ -23,8 +23,6 @@ const BOTTOM_DISTANCE_EPSILON = 2;
 const disableTimelineScrollAdjustment = () => false;
 
 const TIMELINE_TEXT = {
-  noEventsText: "Thread activity will stream into this timeline.",
-  noEventsTitle: "No events",
   scrollToBottom: "Scroll to bottom",
 };
 
@@ -32,6 +30,7 @@ export function TimelineView({
   approvals,
   imagePreviewUrlsByPath,
   onApprovalDecision,
+  onImageOpen,
   onReady,
   scrollParentElement,
   showDebug,
@@ -40,6 +39,7 @@ export function TimelineView({
   approvals: Approval[];
   imagePreviewUrlsByPath: Record<string, string>;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
+  onImageOpen: (image: ImageLightboxImage) => void;
   onReady: () => void;
   scrollParentElement: HTMLDivElement | null;
   showDebug: boolean;
@@ -67,15 +67,7 @@ export function TimelineView({
   });
 
   if (rowCount === 0) {
-    return approvals.length > 0 ? (
-      <ThreadApprovalStack approvals={approvals} onDecision={onApprovalDecision} />
-    ) : (
-      <EmptyPanel
-        icon={<PanelRightOpen size={22} />}
-        title={TIMELINE_TEXT.noEventsTitle}
-        text={TIMELINE_TEXT.noEventsText}
-      />
-    );
+    return approvals.length > 0 ? <ThreadApprovalStack approvals={approvals} onDecision={onApprovalDecision} /> : null;
   }
 
   const virtualItems = rowVirtualizer.getVirtualItems();
@@ -110,6 +102,7 @@ export function TimelineView({
                 approvals={approvalsByRowKey.get(row.key) ?? EMPTY_APPROVALS}
                 imagePreviewUrlsByPath={imagePreviewUrlsByPath}
                 onApprovalDecision={onApprovalDecision}
+                onImageOpen={onImageOpen}
                 row={row}
                 showDebug={showDebug}
               />
@@ -314,12 +307,14 @@ const TimelineRowView = memo(function TimelineRowView({
   approvals,
   imagePreviewUrlsByPath,
   onApprovalDecision,
+  onImageOpen,
   row,
   showDebug,
 }: {
   approvals: Approval[];
   imagePreviewUrlsByPath: Record<string, string>;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
+  onImageOpen: (image: ImageLightboxImage) => void;
   row: TimelineRow;
   showDebug: boolean;
 }) {
@@ -327,9 +322,14 @@ const TimelineRowView = memo(function TimelineRowView({
     <Box className="kodex-turn-group">
       {row.dividerBefore === "final_response" ? <Box aria-hidden="true" className="kodex-timeline-final-response-divider" /> : null}
       {row.type === "activity" ? (
-        <TimelineActivityGroupRenderer items={row.items} showDebug={showDebug} />
+        <TimelineActivityGroupRenderer items={row.items} onImageOpen={onImageOpen} showDebug={showDebug} />
       ) : (
-        <TimelineItemRenderer item={row.item} imagePreviewUrlsByPath={imagePreviewUrlsByPath} showDebug={showDebug} />
+        <TimelineItemRenderer
+          item={row.item}
+          imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+          onImageOpen={onImageOpen}
+          showDebug={showDebug}
+        />
       )}
       {approvals.length > 0 ? (
         <Stack gap="xs" mt="xs">

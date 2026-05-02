@@ -231,6 +231,7 @@ function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event
     command: incoming.command || existing.command,
     cwd: incoming.cwd || existing.cwd,
     debugEvents: [...existing.debugEvents, event],
+    imageSrc: incoming.imageSrc || existing.imageSrc,
     kind: incoming.kind === "debug_event" && existing.kind !== "debug_event" ? existing.kind : incoming.kind,
     output,
     path: incoming.path || existing.path,
