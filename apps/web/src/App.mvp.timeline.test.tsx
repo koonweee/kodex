@@ -14,7 +14,10 @@ import {
   project,
   requestJson,
   secondThread,
+  snapshotItem,
+  snapshotTurn,
   thread,
+  threadDetail,
   timelineElement,
 } from "./test/mvpAppHarness";
 
@@ -47,48 +50,18 @@ describe("MVP timeline flows", () => {
   it("groups command and search activity into nested timeline collapsibles", async () => {
     mockGateway(
       baseRoutes({
-        "GET /v1/events": {
-          events: [
-            {
-              id: "event-command",
-              seq: 1,
-              kind: "codex.notification",
-              codexMethod: "item/completed",
-              projectId: project.id,
-              threadId: thread.id,
-              turnId: "turn-1",
-              itemId: "cmd-1",
-              payload: {
-                item: {
-                  id: "cmd-1",
-                  type: "commandExecution",
-                  command: "pwd",
-                  cwd: "/home/example/kodex",
-                  output: "/home/example/kodex\n",
-                },
-              },
-              receivedAt: "2026-04-30T00:00:00Z",
-            },
-            {
-              id: "event-search",
-              seq: 2,
-              kind: "codex.notification",
-              codexMethod: "item/completed",
-              projectId: project.id,
-              threadId: thread.id,
-              turnId: "turn-1",
-              itemId: "web-1",
-              payload: {
-                item: {
-                  id: "web-1",
-                  type: "webSearch",
-                  action: { type: "search", query: "Codex renderer nested collapsibles" },
-                },
-              },
-              receivedAt: "2026-04-30T00:00:01Z",
-            },
-          ],
-        },
+        "GET /v1/threads/thread-1": threadDetail(thread, [
+          snapshotTurn("turn-1", [
+            snapshotItem("cmd-1", "commandExecution", {
+              command: "pwd",
+              cwd: "/home/example/kodex",
+              output: "/home/example/kodex\n",
+            }),
+            snapshotItem("web-1", "webSearch", {
+              action: { type: "search", query: "Codex renderer nested collapsibles" },
+            }),
+          ]),
+        ]),
       }),
     );
 
@@ -152,13 +125,13 @@ describe("MVP timeline flows", () => {
       globalStream?.emit({
         id: "event-other-thread-completed",
         seq: 3,
-        kind: "codex",
-        codexMethod: "turn/completed",
+        kind: "timeline.turn_upsert",
+        codexMethod: "turn/upsert",
         projectId: project.id,
         threadId: "thread-2",
         turnId: "turn-2",
         itemId: null,
-        payload: { threadId: "thread-2", turn: { id: "turn-2" } },
+        payload: { threadId: "thread-2", turn: { id: "turn-2", status: "completed", items: [] } },
         receivedAt: "2026-04-30T00:00:02Z",
       });
     });
@@ -200,13 +173,13 @@ describe("MVP timeline flows", () => {
       globalStream?.emit({
         id: "event-running-thread-completed",
         seq: 3,
-        kind: "codex",
-        codexMethod: "turn/completed",
+        kind: "timeline.turn_upsert",
+        codexMethod: "turn/upsert",
         projectId: project.id,
         threadId: "thread-2",
         turnId: "turn-2",
         itemId: null,
-        payload: { threadId: "thread-2", turn: { id: "turn-2" } },
+        payload: { threadId: "thread-2", turn: { id: "turn-2", status: "completed", items: [] } },
         receivedAt: "2026-04-30T00:00:02Z",
       });
     });
@@ -261,17 +234,77 @@ describe("MVP timeline flows", () => {
     expect(secondThreadButton.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
   });
 
-  it("ignores stale event replay and streams after switching threads", async () => {
+  it("advances background completion markers from persisted seen state when list markers are unknown", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    let resolveFirstEvents: (value: unknown) => void = () => undefined;
-    let resolveSecondEvents: (value: unknown) => void = () => undefined;
-    const firstEvents = new Promise((resolve) => {
-      resolveFirstEvents = resolve;
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [
+            thread,
+            {
+              ...secondThread,
+              lastCompletedAgentTurnSeq: null,
+              seenCompletedAgentTurnSeq: 1,
+              unreadCompletedAgentTurn: false,
+            },
+          ],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "POST /v1/threads/thread-2/seen": {
+          threadId: "thread-2",
+          seenCompletedAgentTurnSeq: 2,
+          updatedAt: "2026-04-30T00:00:02Z",
+        },
+      }),
+    );
+
+    render(<App />);
+
+    const secondThreadButton = await screen.findByRole("button", { name: /second thread/i });
+    const secondThreadRow = secondThreadButton.closest(".kodex-thread-list-button");
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
+    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    expect(globalStream).toBeDefined();
+
+    act(() => {
+      globalStream?.emit({
+        id: "event-background-completed-after-reload",
+        seq: 4,
+        kind: "timeline.turn_upsert",
+        codexMethod: "turn/upsert",
+        projectId: project.id,
+        threadId: "thread-2",
+        turnId: "turn-2",
+        itemId: null,
+        payload: { threadId: "thread-2", turn: { id: "turn-2", status: "completed", items: [] } },
+        receivedAt: "2026-04-30T00:00:02Z",
+      });
     });
-    const secondEvents = new Promise((resolve) => {
-      resolveSecondEvents = resolve;
+
+    expect(secondThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
+
+    await userEvent.click(secondThreadButton);
+    await waitFor(() => {
+      expect(secondThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
     });
-    mockGateway(
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-2/seen")[0])).resolves.toEqual({
+      seenCompletedAgentTurnSeq: 2,
+    });
+  });
+
+  it("opens threads from snapshots without listEvents replay and ignores stale snapshot loads", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let resolveFirstDetail: (value: unknown) => void = () => undefined;
+    let resolveSecondDetail: (value: unknown) => void = () => undefined;
+    const firstDetail = new Promise((resolve) => {
+      resolveFirstDetail = resolve;
+    });
+    const secondDetail = new Promise((resolve) => {
+      resolveSecondDetail = resolve;
+    });
+    const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": {
           threads: [thread, secondThread],
@@ -279,10 +312,8 @@ describe("MVP timeline flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "GET /v1/events": (request: Request) => {
-          const url = new URL(request.url);
-          return url.searchParams.get("threadId") === "thread-1" ? firstEvents : secondEvents;
-        },
+        "GET /v1/threads/thread-1": () => firstDetail,
+        "GET /v1/threads/thread-2": () => secondDetail,
       }),
     );
 
@@ -290,47 +321,103 @@ describe("MVP timeline flows", () => {
 
     expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
-    resolveSecondEvents({
-      events: [
-        {
-          id: "event-second",
-          seq: 1,
-          kind: "codex",
-          codexMethod: "item/agentMessage/delta",
-          projectId: project.id,
-          threadId: "thread-2",
-          turnId: "turn-2",
-          itemId: "item-2",
-          payload: { delta: "Second thread replay" },
-          receivedAt: "2026-04-30T00:00:01Z",
-        },
-      ],
-    });
+    resolveSecondDetail(
+      threadDetail(secondThread, [
+        snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Second thread snapshot" })]),
+      ]),
+    );
 
-    expect(await screen.findByText(/second thread replay/i)).toBeInTheDocument();
-    resolveFirstEvents({
-      events: [
-        {
-          id: "event-first",
-          seq: 1,
-          kind: "codex",
-          codexMethod: "item/agentMessage/delta",
-          projectId: project.id,
-          threadId: "thread-1",
-          turnId: "turn-1",
-          itemId: "item-1",
-          payload: { delta: "Stale first thread replay" },
-          receivedAt: "2026-04-30T00:00:02Z",
-        },
-      ],
-    });
+    expect(await screen.findByText(/second thread snapshot/i)).toBeInTheDocument();
+    resolveFirstDetail(
+      threadDetail(thread, [
+        snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "Stale first snapshot" })]),
+      ]),
+    );
 
     await waitFor(() => {
-      expect(screen.queryByText(/stale first thread replay/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/stale first snapshot/i)).not.toBeInTheDocument();
     });
+    expect(gateway.callsFor("GET", "/v1/events")).toHaveLength(0);
     const threadStreams = FakeEventSource.instances.filter((instance) => instance.url.includes("threadId="));
     expect(threadStreams).toHaveLength(1);
     expect(threadStreams[0].url).toContain("threadId=thread-2");
+  });
+
+  it("refetches the selected snapshot when the stream requires snapshot recovery", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let detailCall = 0;
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads/thread-1": () => {
+          detailCall += 1;
+          return threadDetail(thread, [
+            snapshotTurn("turn-1", [
+              snapshotItem("item-1", "agentMessage", {
+                text: detailCall === 1 ? "Initial snapshot" : "Recovered snapshot",
+              }),
+            ]),
+          ]);
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/initial snapshot/i)).toBeInTheDocument();
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    expect(selectedThreadStream).toBeDefined();
+
+    act(() => {
+      selectedThreadStream?.emit({
+        id: "snapshot-required-1",
+        seq: 1,
+        kind: "timeline.snapshot_required",
+        codexMethod: "thread/snapshot_required",
+        projectId: project.id,
+        threadId: thread.id,
+        turnId: null,
+        itemId: null,
+        payload: { threadId: thread.id, reason: "lagged" },
+        receivedAt: "2026-04-30T00:00:02Z",
+      });
+    });
+
+    expect(await screen.findByText(/recovered snapshot/i)).toBeInTheDocument();
+    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(2);
+    expect(gateway.callsFor("GET", "/v1/events")).toHaveLength(0);
+  });
+
+  it("marks the selected thread seen from the loaded snapshot marker", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [{ ...thread, lastCompletedAgentTurnSeq: null, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: false }],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "GET /v1/threads/thread-1": threadDetail(
+          { ...thread, lastCompletedAgentTurnSeq: 2, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: true },
+          [snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "Historical snapshot" })])],
+        ),
+        "POST /v1/threads/thread-1/seen": {
+          threadId: "thread-1",
+          seenCompletedAgentTurnSeq: 2,
+          updatedAt: "2026-04-30T00:00:02Z",
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/historical snapshot/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/seen")).toHaveLength(1);
+    });
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/seen")[0])).resolves.toEqual({
+      seenCompletedAgentTurnSeq: 2,
+    });
   });
 
   it("ignores late events from a closed previous thread stream", async () => {
@@ -343,53 +430,23 @@ describe("MVP timeline flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "GET /v1/events": (request: Request) => {
-          const url = new URL(request.url);
-          return url.searchParams.get("threadId") === "thread-2"
-            ? {
-                events: [
-                  {
-                    id: "event-second",
-                    seq: 1,
-                    kind: "codex",
-                    codexMethod: "item/agentMessage/delta",
-                    projectId: project.id,
-                    threadId: "thread-2",
-                    turnId: "turn-2",
-                    itemId: "item-2",
-                    payload: { delta: "Second thread replay" },
-                    receivedAt: "2026-04-30T00:00:01Z",
-                  },
-                ],
-              }
-            : {
-                events: [
-                  {
-                    id: "event-first",
-                    seq: 1,
-                    kind: "codex",
-                    codexMethod: "item/agentMessage/delta",
-                    projectId: project.id,
-                    threadId: "thread-1",
-                    turnId: "turn-1",
-                    itemId: "item-1",
-                    payload: { delta: "First thread replay" },
-                    receivedAt: "2026-04-30T00:00:00Z",
-                  },
-                ],
-              };
-        },
+        "GET /v1/threads/thread-1": threadDetail(thread, [
+          snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "First thread snapshot" })]),
+        ]),
+        "GET /v1/threads/thread-2": threadDetail(secondThread, [
+          snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Second thread snapshot" })]),
+        ]),
       }),
     );
 
     render(<App />);
 
-    expect(await screen.findByText(/first thread replay/i)).toBeInTheDocument();
+    expect(await screen.findByText(/first thread snapshot/i)).toBeInTheDocument();
     const firstThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
     expect(firstThreadStream).toBeDefined();
 
     await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
-    expect(await screen.findByText(/second thread replay/i)).toBeInTheDocument();
+    expect(await screen.findByText(/second thread snapshot/i)).toBeInTheDocument();
 
     act(() => {
       firstThreadStream?.emit({

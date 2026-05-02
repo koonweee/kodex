@@ -44,7 +44,45 @@ export type {
   WebSearchAction,
 } from "./state";
 
+const LIVE_TIMELINE_EVENT_KINDS = new Set([
+  "timeline.item_delta",
+  "timeline.item_upsert",
+  "timeline.turn_upsert",
+  "timeline.thread_status",
+]);
+
+export function applyLiveTimelineUpdate(state: TimelineState, event: EventEnvelope): TimelineState {
+  if (event.kind === "timeline.snapshot_required") {
+    return state;
+  }
+  if (event.kind === "timeline.snapshot") {
+    return applyTimelineSnapshot(state, event.payload as ThreadDetailResponse);
+  }
+  if (!LIVE_TIMELINE_EVENT_KINDS.has(event.kind)) {
+    return applyDebugEvent(state, event);
+  }
+  return applyTimelineEventInternal(state, event);
+}
+
+export function applyDebugEvent(state: TimelineState, event: EventEnvelope): TimelineState {
+  const next: TimelineDraft = {
+    activeTurnId: state.activeTurnId,
+    indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    lastSeq: Math.max(state.lastSeq, event.seq),
+  };
+  if (isWarningEvent(event) || isErrorEvent(event)) {
+    addOrReplaceItem(next, createDiagnosticItem(event));
+  } else {
+    addHiddenDebugItem(next, event);
+  }
+  return createTimelineStateFromDraft(next);
+}
+
 export function applyTimelineEvent(state: TimelineState, event: EventEnvelope): TimelineState {
+  return applyTimelineEventInternal(state, event);
+}
+
+function applyTimelineEventInternal(state: TimelineState, event: EventEnvelope): TimelineState {
   if (event.kind === "timeline.snapshot") {
     return applyTimelineSnapshot(state, event.payload as ThreadDetailResponse);
   }

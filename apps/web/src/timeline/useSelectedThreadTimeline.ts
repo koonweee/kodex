@@ -1,7 +1,7 @@
 import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
 
-import type { Approval, EventEnvelope } from "../api/client";
-import { getThreadDetail, listEvents } from "../api/client";
+import type { Approval, EventEnvelope, ThreadSummary } from "../api/client";
+import { getThreadDetail } from "../api/client";
 import { isApprovalEvent } from "../approvals/state";
 import { createEventStreamClient } from "../events/stream";
 import { applyTimelineEventBatch } from "./batch";
@@ -11,10 +11,9 @@ import { applyTimelineSnapshot, createTimelineState, type TimelineState } from "
 export function useSelectedThreadTimeline({
   isSelectedThreadNotLoaded,
   onApprovalEvent,
-  onApprovalEvents,
   onError,
+  onSnapshotThread,
   onThreadMetadataEvent,
-  onThreadMetadataEvents,
   selectedThreadId,
   setApprovals,
   setTimeline,
@@ -22,10 +21,9 @@ export function useSelectedThreadTimeline({
 }: {
   isSelectedThreadNotLoaded: boolean;
   onApprovalEvent: (current: Approval[], event: EventEnvelope) => Approval[];
-  onApprovalEvents: (current: Approval[], events: EventEnvelope[]) => Approval[];
   onError: (error: unknown) => void;
+  onSnapshotThread: (thread: ThreadSummary) => void;
   onThreadMetadataEvent: (event: EventEnvelope) => void;
-  onThreadMetadataEvents: (events: EventEnvelope[]) => void;
   selectedThreadId: string | null;
   setApprovals: Dispatch<SetStateAction<Approval[]>>;
   setTimeline: Dispatch<SetStateAction<TimelineState>>;
@@ -35,8 +33,8 @@ export function useSelectedThreadTimeline({
   const timelineFlushFrame = useRef<number | null>(null);
   const timelineFlushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedThreadStreamToken = useRef(0);
-  const latestCallbacks = useRef({ onApprovalEvent, onApprovalEvents, onError, onThreadMetadataEvent, onThreadMetadataEvents });
-  latestCallbacks.current = { onApprovalEvent, onApprovalEvents, onError, onThreadMetadataEvent, onThreadMetadataEvents };
+  const latestCallbacks = useRef({ onApprovalEvent, onError, onSnapshotThread, onThreadMetadataEvent });
+  latestCallbacks.current = { onApprovalEvent, onError, onSnapshotThread, onThreadMetadataEvent };
 
   function clearEntry() {
     setTimelineEntry(idleTimelineEntry);
@@ -45,15 +43,19 @@ export function useSelectedThreadTimeline({
 
   function beginEntry(threadId: string) {
     setTimeline(createTimelineState());
-    setTimelineEntry({ phase: "loading", threadId });
+    setTimelineEntry({ phase: "loadingSnapshot", threadId });
   }
 
-  function markEntryAligning(threadId: string) {
-    setTimelineEntry((current) => (current.threadId === threadId ? { phase: "aligning", threadId } : current));
+  function markEntryStreaming(threadId: string) {
+    setTimelineEntry((current) => (current.threadId === threadId ? { phase: "streamingLive", threadId } : current));
+  }
+
+  function markEntryRefreshing(threadId: string) {
+    setTimelineEntry((current) => (current.threadId === threadId ? { phase: "refreshingSnapshot", threadId } : current));
   }
 
   function clearEntryForThread(threadId: string) {
-    setTimelineEntry((current) => (current.threadId === threadId ? idleTimelineEntry : current));
+    setTimelineEntry((current) => (current.threadId === threadId ? { phase: "error", threadId } : current));
   }
 
   function scheduleQueuedTimelineFlush() {
@@ -114,32 +116,51 @@ export function useSelectedThreadTimeline({
     let closeStream: (() => void) | null = null;
     const streamToken = selectedThreadStreamToken.current + 1;
     selectedThreadStreamToken.current = streamToken;
-    getThreadDetail(threadId)
-      .then(async (snapshot) => {
-        if (cancelled) {
+
+    async function refreshSnapshot(phase: "loadingSnapshot" | "refreshingSnapshot") {
+      if (phase === "refreshingSnapshot") {
+        markEntryRefreshing(threadId);
+      }
+      const snapshot = await getThreadDetail(threadId);
+      if (cancelled || selectedThreadStreamToken.current !== streamToken) {
+        return false;
+      }
+      setTimeline((current) => applyTimelineSnapshot(current, snapshot));
+      latestCallbacks.current.onSnapshotThread(snapshot.thread);
+      markEntryStreaming(threadId);
+      return true;
+    }
+
+    refreshSnapshot("loadingSnapshot")
+      .then((loaded) => {
+        if (!loaded || cancelled) {
           return;
         }
 
-        setTimeline((current) => applyTimelineSnapshot(current, snapshot));
-        const events = await listEvents(threadId);
-        if (cancelled) {
-          return;
-        }
-        setApprovals((current) => latestCallbacks.current.onApprovalEvents(current, events));
-        latestCallbacks.current.onThreadMetadataEvents(events);
-        const debugTimelineEvents = events.filter((event) => !event.itemId && !isApprovalEvent(event));
-        if (debugTimelineEvents.length > 0) {
-          setTimeline((current) => applyTimelineEventBatch(current, debugTimelineEvents));
-        }
-        markEntryAligning(threadId);
+        const refetchSnapshot = () => {
+          void refreshSnapshot("refreshingSnapshot").catch((error) => {
+            if (!cancelled) {
+              latestCallbacks.current.onError(error);
+            }
+          });
+        };
+
         const client = createEventStreamClient({
-          cursor: events.reduce((seq, event) => Math.max(seq, event.seq), 0),
           threadId,
+          onStatusChange: (status) => {
+            if (status === "reconnecting" && selectedThreadStreamToken.current === streamToken) {
+              refetchSnapshot();
+            }
+          },
           onEvent: (event) => {
             if (selectedThreadStreamToken.current !== streamToken) {
               return;
             }
             if (event.threadId && event.threadId !== threadId) {
+              return;
+            }
+            if (event.kind === "timeline.snapshot_required") {
+              refetchSnapshot();
               return;
             }
             latestCallbacks.current.onThreadMetadataEvent(event);
@@ -155,10 +176,11 @@ export function useSelectedThreadTimeline({
         closeStream = client.close;
       })
       .catch((error) => {
-        if (!cancelled) {
-          clearEntryForThread(threadId);
-          latestCallbacks.current.onError(error);
+        if (cancelled) {
+          return;
         }
+        clearEntryForThread(threadId);
+        latestCallbacks.current.onError(error);
       });
 
     return () => {

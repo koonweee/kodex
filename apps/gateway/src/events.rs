@@ -23,10 +23,9 @@ use crate::{
     api::AppState,
     app_server::InboundMessage,
     app_server_api::{
-        self, ThreadDetailResponse, ThreadItemSnapshot, ThreadLiveState, ThreadStatus,
-        ThreadSummary, ThreadTurnSnapshot, TimelineItemDeltaPayload, TimelineItemUpsertPayload,
-        TimelineThreadMetadataPayload, TimelineThreadStatusPayload, TimelineTurnUpsertPayload,
-        TimelineUpdateSource,
+        self, ThreadItemSnapshot, ThreadLiveState, ThreadStatus, ThreadSummary, ThreadTurnSnapshot,
+        TimelineItemDeltaPayload, TimelineItemUpsertPayload, TimelineThreadMetadataPayload,
+        TimelineThreadStatusPayload, TimelineTurnUpsertPayload, TimelineUpdateSource,
     },
     error::{ApiError, ApiResult},
     schema::is_supported_approval_method,
@@ -36,6 +35,7 @@ use crate::{
 const SSE_REPLAY_PAGE_SIZE: i64 = 500;
 const SELECTED_THREAD_POLL_LIMIT: u32 = 25;
 const SELECTED_THREAD_ACTIVE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+const SNAPSHOT_REQUIRED_KIND: &str = "timeline.snapshot_required";
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -63,12 +63,21 @@ pub async fn events(
             .keep_alive(KeepAlive::default())
             .into_response())
     } else {
-        let events = state
-            .store
-            .replay_events(query.cursor, query.project_id, query.thread_id)
-            .await?;
+        let events = replay_operational_events(&state, &query).await?;
         Ok(Json(EventListResponse { events }).into_response())
     }
+}
+
+#[utoipa::path(get, path = "/v1/debug/events", params(EventsQuery), responses((status = 200, body = EventListResponse)))]
+pub async fn debug_events(
+    State(state): State<AppState>,
+    Query(query): Query<EventsQuery>,
+) -> ApiResult<Json<EventListResponse>> {
+    let events = state
+        .store
+        .replay_events(query.cursor, query.project_id, query.thread_id)
+        .await?;
+    Ok(Json(EventListResponse { events }))
 }
 
 pub async fn run_inbound_ingest(mut inbound: mpsc::Receiver<InboundMessage>, state: AppState) {
@@ -208,7 +217,7 @@ async fn event_stream(
             break;
         };
         replay_high_water = last.seq;
-        replay.extend(page);
+        replay.extend(page.into_iter().filter(is_operational_replay_event));
         if page_len < SSE_REPLAY_PAGE_SIZE as usize {
             break;
         }
@@ -228,29 +237,40 @@ async fn event_stream(
         loop {
             let received = timeout(Duration::from_secs(5), receiver.recv()).await;
             match received {
-                Ok(Ok(event)) if event.seq > high_water && event_matches(&event, &query) => {
+                Ok(Ok(event))
+                    if event.seq > high_water
+                        && event_matches(&event, &query)
+                        && is_normal_live_event(&event) =>
+                {
                     high_water = event.seq;
                     if let Ok(sse_event) = event_to_sse(event) {
                         yield Ok(sse_event);
                     }
                 }
                 Ok(Ok(_)) => {}
-                Ok(Err(broadcast::error::RecvError::Lagged(_))) => {}
+                Ok(Err(broadcast::error::RecvError::Lagged(_))) => {
+                    if let Some(thread_id) = query.thread_id.clone() {
+                        if let Ok(event) = snapshot_required_event(high_water, thread_id, "lagged") {
+                            if let Ok(sse_event) = event_to_sse(event) {
+                                yield Ok(sse_event);
+                            }
+                        }
+                    }
+                }
                 Ok(Err(broadcast::error::RecvError::Closed)) => break,
                 Err(_) => {
                     let Some(thread_id) = query.thread_id.clone() else {
                         continue;
                     };
                     match reconcile_selected_thread(&state, &thread_id, high_water, &mut selected_sync).await {
-                        Ok(events) => {
-                            for event in events {
-                                debug_assert!(event.seq <= high_water);
-                                if let Ok(sse_event) = event_to_sse(event) {
-                                    yield Ok(sse_event);
-                                }
+                        Ok(Some(event)) => {
+                            debug_assert!(event.seq <= high_water);
+                            if let Ok(sse_event) = event_to_sse(event) {
+                                yield Ok(sse_event);
                             }
                         }
                         Err(error) => tracing::debug!(%error, thread_id, "selected thread reconciliation failed"),
+                        Ok(None) => {}
                     }
                 }
             }
@@ -270,9 +290,9 @@ async fn reconcile_selected_thread(
     thread_id: &str,
     seq: i64,
     sync: &mut SelectedThreadSync,
-) -> ApiResult<Vec<EventEnvelope>> {
+) -> ApiResult<Option<EventEnvelope>> {
     let Some(summary) = find_recent_thread_summary(state, thread_id).await? else {
-        return Ok(Vec::new());
+        return Ok(None);
     };
 
     let updated_at_changed = sync
@@ -289,20 +309,17 @@ async fn reconcile_selected_thread(
         .is_none_or(|updated_at| summary.updated_at > updated_at);
 
     if !updated_at_changed && !active_refresh_due && !snapshot_stale {
-        return Ok(Vec::new());
+        return Ok(None);
     }
 
-    let snapshot = app_server_api::client(&state.app_server)
-        .thread_read(thread_id.to_string())
-        .await?;
-    sync.last_snapshot_updated_at = Some(snapshot.thread.updated_at);
-    if snapshot.thread.status == ThreadStatus::Active {
+    sync.last_snapshot_updated_at = Some(summary.updated_at);
+    if summary.status == ThreadStatus::Active {
         sync.last_active_refresh_at = Some(Instant::now());
     } else {
         sync.last_active_refresh_at = None;
     }
 
-    snapshot_timeline_events(&snapshot, seq)
+    snapshot_required_event(seq, thread_id.to_string(), "thread_changed").map(Some)
 }
 
 async fn find_recent_thread_summary(
@@ -318,70 +335,81 @@ async fn find_recent_thread_summary(
         .find(|thread| thread.id == thread_id))
 }
 
-fn snapshot_timeline_events(
-    snapshot: &ThreadDetailResponse,
-    seq: i64,
+async fn replay_operational_events(
+    state: &AppState,
+    query: &EventsQuery,
 ) -> ApiResult<Vec<EventEnvelope>> {
     let mut events = Vec::new();
-    events.push(synthetic_event(
-        seq,
-        Some(snapshot.thread.id.clone()),
-        None,
-        None,
-        "timeline.thread_metadata",
-        Some("thread/metadata"),
-        TimelineThreadMetadataPayload {
-            source: TimelineUpdateSource::AppServerSnapshot,
-            thread: snapshot.thread.clone(),
-        },
-    )?);
-    events.push(synthetic_event(
-        seq,
-        Some(snapshot.thread.id.clone()),
-        None,
-        None,
-        "timeline.thread_status",
-        Some("thread/status"),
-        TimelineThreadStatusPayload {
-            source: TimelineUpdateSource::AppServerSnapshot,
-            status: snapshot.thread.status,
-            live_state: snapshot.live_state,
-            raw_payload: snapshot.thread.raw_payload.clone(),
-        },
-    )?);
-    for turn in &snapshot.turns {
-        events.push(synthetic_event(
-            seq,
-            Some(snapshot.thread.id.clone()),
-            Some(turn.id.clone()),
-            None,
-            "timeline.turn_upsert",
-            Some("turn/upsert"),
-            TimelineTurnUpsertPayload {
-                source: TimelineUpdateSource::AppServerSnapshot,
-                turn: turn.clone(),
-                live_state: app_server_api::live_state_from_turn_status(&turn.status),
-            },
-        )?);
-        for item in &turn.items {
-            events.push(synthetic_event(
-                seq,
-                Some(snapshot.thread.id.clone()),
-                Some(turn.id.clone()),
-                Some(item.id.clone()),
-                "timeline.item_upsert",
-                Some("item/upsert"),
-                TimelineItemUpsertPayload {
-                    source: TimelineUpdateSource::AppServerSnapshot,
-                    turn_id: turn.id.clone(),
-                    item_id: item.id.clone(),
-                    item: item.raw_payload.clone(),
-                    item_snapshot: item.clone(),
-                },
-            )?);
+    let mut high_water = query.cursor.unwrap_or(0);
+
+    loop {
+        let page = state
+            .store
+            .replay_events_page(
+                Some(high_water),
+                query.project_id.as_deref(),
+                query.thread_id.as_deref(),
+                SSE_REPLAY_PAGE_SIZE,
+            )
+            .await?;
+        let page_len = page.len();
+        let Some(last) = page.last() else {
+            break;
+        };
+        high_water = last.seq;
+        events.extend(page.into_iter().filter(is_operational_replay_event));
+        if page_len < SSE_REPLAY_PAGE_SIZE as usize || events.len() >= SSE_REPLAY_PAGE_SIZE as usize
+        {
+            events.truncate(SSE_REPLAY_PAGE_SIZE as usize);
+            break;
         }
     }
+
     Ok(events)
+}
+
+fn is_operational_replay_event(event: &EventEnvelope) -> bool {
+    matches!(
+        event.kind.as_str(),
+        "approval.created" | "approval.resolved" | "gateway.warning"
+    )
+}
+
+fn is_normal_live_event(event: &EventEnvelope) -> bool {
+    is_operational_replay_event(event)
+        || is_thread_metadata_live_event(event)
+        || matches!(
+            event.kind.as_str(),
+            "timeline.item_delta"
+                | "timeline.item_upsert"
+                | "timeline.turn_upsert"
+                | "timeline.thread_status"
+                | "timeline.thread_metadata"
+                | SNAPSHOT_REQUIRED_KIND
+        )
+}
+
+fn is_thread_metadata_live_event(event: &EventEnvelope) -> bool {
+    event.kind == "codex.notification"
+        && event.codex_method.as_deref().is_some_and(|method| {
+            let method = method.to_ascii_lowercase();
+            method == "thread/nameupdated" || method == "thread/name_updated"
+        })
+}
+
+fn snapshot_required_event(seq: i64, thread_id: String, reason: &str) -> ApiResult<EventEnvelope> {
+    synthetic_event(
+        seq,
+        Some(thread_id.clone()),
+        None,
+        None,
+        SNAPSHOT_REQUIRED_KIND,
+        Some("thread/snapshot_required"),
+        json!({
+            "threadId": thread_id,
+            "reason": reason,
+        }),
+    )
 }
 
 fn synthetic_event(
@@ -875,62 +903,13 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_updates_use_current_cursor_without_advancing_high_water() {
-        let snapshot = ThreadDetailResponse {
-            thread: ThreadSummary {
-                id: "thread-1".to_string(),
-                name: None,
-                cwd: "/workspace".to_string(),
-                status: ThreadStatus::Active,
-                created_at: 1,
-                updated_at: 2,
-                source: None,
-                model: None,
-                reasoning_effort: None,
-                service_tier: None,
-                approval_policy: None,
-                approvals_reviewer: None,
-                sandbox: None,
-                preview: None,
-                last_completed_agent_turn_seq: None,
-                seen_completed_agent_turn_seq: 0,
-                unread_completed_agent_turn: false,
-                raw_payload: json!({"id": "thread-1", "status": {"type": "active"}}),
-            },
-            turns: vec![ThreadTurnSnapshot {
-                id: "turn-1".to_string(),
-                status: "completed".to_string(),
-                started_at: Some(1),
-                completed_at: Some(2),
-                items: vec![ThreadItemSnapshot {
-                    id: "item-1".to_string(),
-                    item_type: "agentMessage".to_string(),
-                    raw_payload: json!({"id": "item-1", "type": "agentMessage", "text": "hello"}),
-                }],
-                raw_payload: json!({"id": "turn-1", "status": {"type": "completed"}}),
-            }],
-            live_state: ThreadLiveState::Syncing,
-            raw_payload: json!({}),
-        };
+    fn snapshot_required_uses_current_cursor_without_advancing_high_water() {
+        let event = snapshot_required_event(42, "thread-1".to_string(), "lagged").unwrap();
 
-        let events = snapshot_timeline_events(&snapshot, 42).unwrap();
-
-        assert!(events.iter().all(|event| event.seq == 42));
-        assert_eq!(
-            events
-                .iter()
-                .map(|event| event.kind.as_str())
-                .collect::<Vec<_>>(),
-            vec![
-                "timeline.thread_metadata",
-                "timeline.thread_status",
-                "timeline.turn_upsert",
-                "timeline.item_upsert"
-            ]
-        );
-        assert_eq!(events[3].payload["source"], "appServerSnapshot");
-        assert_eq!(events[2].payload["liveState"], "idle");
-        assert_eq!(events[3].payload["item"]["text"], "hello");
+        assert_eq!(event.seq, 42);
+        assert_eq!(event.kind, SNAPSHOT_REQUIRED_KIND);
+        assert_eq!(event.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(event.payload["reason"], "lagged");
     }
 
     #[tokio::test]
@@ -958,8 +937,9 @@ mod tests {
         }));
         let mut sync = SelectedThreadSync::default();
 
-        let events = reconcile_selected_thread(&state, "thread-1", 10, &mut sync)
+        let event = reconcile_selected_thread(&state, "thread-1", 10, &mut sync)
             .await
+            .unwrap()
             .unwrap();
         sync.last_snapshot_updated_at = Some(2);
         sync.last_active_refresh_at = Some(Instant::now());
@@ -984,22 +964,16 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(
-            events
-                .iter()
-                .map(|event| event.kind.as_str())
-                .collect::<Vec<_>>(),
-            vec!["timeline.thread_metadata", "timeline.thread_status"]
-        );
-        assert!(events.iter().all(|event| event.seq == 10));
-        assert!(coalesced.is_empty());
+        assert_eq!(event.kind, SNAPSHOT_REQUIRED_KIND);
+        assert_eq!(event.seq, 10);
+        assert_eq!(event.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(event.payload["reason"], "thread_changed");
+        assert!(coalesced.is_none());
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "thread/list");
         assert_eq!(requests[0].1["sortKey"], "updated_at");
         assert_eq!(requests[0].1["limit"], SELECTED_THREAD_POLL_LIMIT);
-        assert_eq!(requests[1].0, "thread/read");
-        assert_eq!(requests[1].1["includeTurns"], true);
-        assert_eq!(requests[2].0, "thread/list");
-        assert_eq!(requests.len(), 3);
+        assert_eq!(requests[1].0, "thread/list");
+        assert_eq!(requests.len(), 2);
     }
 }

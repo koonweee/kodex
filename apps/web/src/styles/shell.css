@@ -97,8 +97,7 @@
   overflow-anchor: none;
 }
 
-.kodex-timeline-scroll[data-entry-phase="loading"],
-.kodex-timeline-scroll[data-entry-phase="aligning"] {
+.kodex-timeline-scroll[data-entry-phase="loadingSnapshot"] {
   overflow: hidden;
 }
 

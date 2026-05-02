@@ -2,15 +2,16 @@ import type { EventEnvelope } from "../api/client";
 import { asRecord, stringValue } from "../shared/values";
 
 export function completedAgentTurnEvent(event: EventEnvelope): { threadId: string; seq: number } | null {
-  if (event.kind === "timeline.turn_upsert") {
-    const turnPayload = asRecord(asRecord(event.payload).turn);
-    const status = stringValue(turnPayload.status)?.toLowerCase();
-    if (!status || !["completed", "failed", "cancelled", "canceled", "interrupted"].includes(status)) {
-      return null;
-    }
-  } else if (event.codexMethod !== "turn/completed") {
+  if (event.kind !== "timeline.turn_upsert") {
     return null;
   }
+
+  const turnPayload = asRecord(asRecord(event.payload).turn);
+  const status = stringValue(turnPayload.status)?.toLowerCase();
+  if (!status || !["completed", "failed", "cancelled", "canceled", "interrupted"].includes(status)) {
+    return null;
+  }
+
   const payload = asRecord(event.payload);
   const threadId = event.threadId ?? stringValue(payload.threadId) ?? stringValue(payload.thread_id);
   return threadId ? { threadId, seq: event.seq } : null;

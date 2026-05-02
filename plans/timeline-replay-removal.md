@@ -8,7 +8,7 @@ This plan is a follow-up to [App-server read-through thread sync](app-server-rea
 
 ## Status
 
-Proposed.
+Complete.
 
 ## Problem
 

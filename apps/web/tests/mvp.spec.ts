@@ -12,9 +12,12 @@ const thread = {
   id: "thread-1",
   name: "Frontend MVP",
   cwd: project.cwd,
-  status: "active",
+  status: "idle",
   source: "local",
   preview: "Build the web client",
+  lastCompletedAgentTurnSeq: null,
+  seenCompletedAgentTurnSeq: 0,
+  unreadCompletedAgentTurn: false,
   rawPayload: {},
   createdAt: 1777500000,
   updatedAt: 1777501200,
@@ -61,10 +64,23 @@ test("creates a thread and submits a turn", async ({ page }) => {
   await expect(page.getByLabel(/message composer/i)).toBeEmpty();
 });
 
-test("renders streamed assistant output", async ({ page }) => {
+test("renders selected thread snapshot output", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByText(/streamed assistant output/i)).toBeVisible();
+  await expect(page.getByText(/snapshot assistant output/i)).toBeVisible();
+});
+
+test("opens idle historical snapshots without unread or stop state after refresh interval", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(page.getByText(/snapshot assistant output/i)).toBeVisible();
+  await expect(page.locator(".kodex-thread-unread-agent-turn-indicator")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /stop turn/i })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /send message/i })).toBeVisible();
+  await page.waitForTimeout(5500);
+  await expect(page.locator(".kodex-thread-unread-agent-turn-indicator")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /stop turn/i })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /send message/i })).toBeVisible();
 });
 
 test("keeps long timeline content inside the thread viewer", async ({ page }) => {
@@ -215,6 +231,15 @@ test("lets thread titles use the expanded sidebar width before truncating", asyn
               rawPayload: {},
             },
           }
+        : key === "GET /v1/threads/thread-1"
+          ? {
+              body: {
+                thread: { ...thread, name: longTitle, status: "idle" },
+                turns: [],
+                liveState: "idle",
+                rawPayload: {},
+              },
+            }
         : key === "GET /v1/approvals"
           ? { body: { approvals: [] } }
         : await responseFor(key, route);
@@ -315,13 +340,13 @@ async function mockGateway(page: Page) {
         body: sse({
           id: "event-2",
           seq: Number(url.searchParams.get("cursor") ?? "1") + 1,
-          kind: "codex.notification",
+          kind: "timeline.item_delta",
           codexMethod: "item/agentMessage/delta",
           projectId: project.id,
           threadId: thread.id,
           turnId: "turn-1",
           itemId: "item-stream",
-          payload: { delta: "Streamed assistant output" },
+          payload: { source: "gatewayStream", delta: "Streamed assistant output", rawPayload: { delta: "Streamed assistant output" } },
           receivedAt: "2026-04-30T00:00:01Z",
         }),
       });
@@ -372,7 +397,29 @@ async function responseFor(key: string, route: Route): Promise<{ status?: number
     return { body: { threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} } };
   }
   if (key === "GET /v1/threads/thread-1") {
-    return { body: { thread, turns: [], liveState: "streaming", rawPayload: {} } };
+    return {
+      body: {
+        thread: { ...thread, lastCompletedAgentTurnSeq: 1, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: true },
+        turns: [
+          {
+            id: "turn-1",
+            status: "completed",
+            startedAt: 1777500001,
+            completedAt: 1777500002,
+            items: [
+              {
+                id: "item-stream",
+                itemType: "agentMessage",
+                rawPayload: { id: "item-stream", type: "agentMessage", text: "Snapshot assistant output" },
+              },
+            ],
+            rawPayload: {},
+          },
+        ],
+        liveState: "idle",
+        rawPayload: {},
+      },
+    };
   }
   if (key === "POST /v1/threads") {
     return {
@@ -393,6 +440,15 @@ async function responseFor(key: string, route: Route): Promise<{ status?: number
   }
   if (key === "POST /v1/threads/thread-2/turns" || key === "POST /v1/threads/thread-1/turns") {
     return { body: { payload: {} } };
+  }
+  if (key === "POST /v1/threads/thread-1/seen") {
+    return {
+      body: {
+        threadId: "thread-1",
+        seenCompletedAgentTurnSeq: 1,
+        updatedAt: "2026-04-30T00:00:02Z",
+      },
+    };
   }
   if (key === "GET /v1/account") {
     return { body: { requiresOpenaiAuth: true, account: null, rawPayload: {} } };

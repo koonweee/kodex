@@ -106,11 +106,6 @@ export async function markThreadSeen(threadId: string, seenCompletedAgentTurnSeq
   return unwrap(api.POST("/v1/threads/{threadId}/seen", { params: { path: { threadId } }, body }));
 }
 
-export async function listEvents(threadId: string): Promise<EventEnvelope[]> {
-  const response = await unwrap(api.GET("/v1/events", { params: { query: { threadId } } }));
-  return response.events;
-}
-
 export async function startTurn(threadId: string, input: UserInput[], options: TurnStartOptions = {}): Promise<void> {
   await unwrap(
     api.POST("/v1/threads/{threadId}/turns", {

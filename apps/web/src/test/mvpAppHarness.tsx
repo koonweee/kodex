@@ -110,22 +110,7 @@ function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
     "GET /v1/capabilities": capabilities,
     "GET /v1/projects": { projects: [project] },
     "GET /v1/threads": { threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-    "GET /v1/events": {
-      events: [
-        {
-          id: "event-1",
-          seq: 1,
-          kind: "codex",
-          codexMethod: "item/agentMessage/delta",
-          projectId: project.id,
-          threadId: thread.id,
-          turnId: "turn-1",
-          itemId: "item-1",
-          payload: { delta: "Hello from Codex" },
-          receivedAt: "2026-04-30T00:00:00Z",
-        },
-      ],
-    },
+    "GET /v1/events": { events: [] },
     "GET /v1/approvals": { approvals: [] },
     "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     "GET /v1/account/rate-limits": { rateLimits: null, rateLimitsByLimitId: null, rawPayload: {} },
@@ -133,15 +118,22 @@ function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
     "GET /v1/composer-settings": { model: null, effort: null, serviceTier: null, permissionsPreset: null },
     ...overrides,
   };
-  routes["GET /v1/threads/thread-1"] ??= (request: Request) => threadDetailFromEvents(routes, request, thread);
-  routes["GET /v1/threads/thread-2"] ??= (request: Request) => threadDetailFromEvents(routes, request, secondThread);
+  routes["GET /v1/threads/thread-1"] ??= (request: Request) =>
+    threadDetailFromSnapshot(routes, request, thread, [
+      snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "Hello from Codex" })]),
+    ]);
+  routes["GET /v1/threads/thread-2"] ??= (request: Request) =>
+    threadDetailFromSnapshot(routes, request, secondThread);
   return routes;
 }
 
-async function threadDetailFromEvents(
+type TestThreadSummary = typeof thread & Record<string, unknown>;
+
+async function threadDetailFromSnapshot(
   routes: GatewayRouteMap,
   _request: Request,
-  sourceThread: typeof thread,
+  sourceThread: TestThreadSummary,
+  turns = [] as Array<{ id: string; status: string; items: unknown[]; rawPayload: unknown }>,
 ) {
   const threadsRoute = routes["GET /v1/threads"];
   const threadsBody =
@@ -152,13 +144,6 @@ async function threadDetailFromEvents(
     (candidate) => candidate.id === sourceThread.id,
   );
   sourceThread = listedThread ?? sourceThread;
-  const eventRoute = routes["GET /v1/events"];
-  const eventRequest = new Request(`http://localhost/v1/events?threadId=${sourceThread.id}`);
-  const eventBody = typeof eventRoute === "function" ? await eventRoute(eventRequest) : eventRoute;
-  const events = Array.isArray((eventBody as { events?: unknown[] })?.events)
-    ? ((eventBody as { events: Array<Record<string, unknown>> }).events)
-    : [];
-  const turns = turnsFromEvents(events, sourceThread.id);
   if (sourceThread.status === "active") {
     const activeTurn = [...turns].reverse().find((turn) => turn.items.length > 0);
     if (activeTurn) {
@@ -173,41 +158,25 @@ async function threadDetailFromEvents(
   };
 }
 
-function turnsFromEvents(events: Array<Record<string, unknown>>, threadId: string) {
-  const turns = new Map<string, { id: string; status: string; items: unknown[]; rawPayload: unknown }>();
-  for (const event of events) {
-    if (event.threadId !== threadId || !event.turnId || !event.itemId) {
-      continue;
-    }
-    const turnId = String(event.turnId);
-    const turn = turns.get(turnId) ?? { id: turnId, status: "completed", items: [], rawPayload: {} };
-    const payload = event.payload && typeof event.payload === "object" ? (event.payload as Record<string, unknown>) : {};
-    const rawPayload =
-      payload.item && typeof payload.item === "object"
-        ? payload.item
-        : { id: event.itemId, type: itemTypeFromEvent(event), text: payload.delta, ...payload };
-    turn.items.push({
-      id: String(event.itemId),
-      itemType: String((rawPayload as Record<string, unknown>).type ?? itemTypeFromEvent(event)),
-      rawPayload,
-    });
-    turns.set(turnId, turn);
-  }
-  return [...turns.values()];
+function snapshotTurn(id: string, items: unknown[], status = "completed") {
+  return { id, status, items, rawPayload: { id, status: { type: status }, items } };
 }
 
-function itemTypeFromEvent(event: Record<string, unknown>) {
-  const method = String(event.codexMethod ?? "").toLowerCase();
-  if (method.includes("agentmessage")) {
-    return "agentMessage";
-  }
-  if (method.includes("user")) {
-    return "userMessage";
-  }
-  if (method.includes("command")) {
-    return "commandExecution";
-  }
-  return "agentMessage";
+function snapshotItem(id: string, itemType: string, payload: Record<string, unknown>) {
+  return {
+    id,
+    itemType,
+    rawPayload: { id, type: itemType, ...payload },
+  };
+}
+
+function threadDetail(sourceThread: TestThreadSummary, turns: ReturnType<typeof snapshotTurn>[] = []) {
+  return {
+    thread: sourceThread,
+    turns,
+    liveState: sourceThread.status === "active" ? "streaming" : "idle",
+    rawPayload: {},
+  };
 }
 
 function timelineElement(container: HTMLElement) {
@@ -240,6 +209,9 @@ export {
   project,
   requestJson,
   secondThread,
+  snapshotItem,
+  snapshotTurn,
   thread,
+  threadDetail,
   timelineElement,
 };

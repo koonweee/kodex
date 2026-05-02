@@ -4,7 +4,7 @@ import type { EventEnvelope } from "../api/client";
 import { completedAgentTurnEvent } from "./events";
 
 describe("thread events", () => {
-  it("recognizes legacy raw completion notifications for threads without snapshot counts", () => {
+  it("ignores legacy raw completion notifications", () => {
     expect(
       completedAgentTurnEvent(
         event({
@@ -14,7 +14,7 @@ describe("thread events", () => {
           payload: { threadId: "thread-1" },
         }),
       ),
-    ).toEqual({ threadId: "thread-1", seq: 10 });
+    ).toBeNull();
   });
 
   it("recognizes normalized terminal turn upserts", () => {

@@ -173,14 +173,7 @@ pub async fn mark_thread_seen(
     let snapshot = app_server_api::client(&state.app_server)
         .thread_read(thread_id.clone())
         .await?;
-    let last_completed_agent_turn_seq = snapshot
-        .thread
-        .last_completed_agent_turn_seq
-        .or(state
-            .store
-            .last_completed_agent_turn_seq(&thread_id)
-            .await?)
-        .unwrap_or(0);
+    let last_completed_agent_turn_seq = snapshot.thread.last_completed_agent_turn_seq.unwrap_or(0);
     let requested_seen_seq = request
         .seen_completed_agent_turn_seq
         .unwrap_or(last_completed_agent_turn_seq)
@@ -204,9 +197,7 @@ async fn apply_thread_read_state(state: &AppState, threads: &mut [ThreadSummary]
     for thread in threads {
         let read_state = read_states.get(&thread.id);
         thread.apply_completed_agent_turn_read_state(
-            thread
-                .last_completed_agent_turn_seq
-                .or_else(|| read_state.and_then(|state| state.last_completed_agent_turn_seq)),
+            thread.last_completed_agent_turn_seq,
             read_state
                 .map(|state| state.seen_completed_agent_turn_seq)
                 .unwrap_or(0),

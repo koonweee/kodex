@@ -78,7 +78,6 @@ pub struct ThreadRead {
 
 #[derive(Debug, Clone, Default)]
 pub struct ThreadReadState {
-    pub last_completed_agent_turn_seq: Option<i64>,
     pub seen_completed_agent_turn_seq: i64,
 }
 
@@ -186,18 +185,6 @@ impl Store {
             )
             "#,
         )
-        .execute(&self.pool)
-        .await?;
-        sqlx::query(
-            r#"
-            insert or ignore into thread_reads (thread_id, seen_completed_agent_turn_seq, updated_at)
-            select thread_id, max(seq), ?
-            from events
-            where thread_id is not null and codex_method = 'turn/completed'
-            group by thread_id
-            "#,
-        )
-        .bind(Utc::now())
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -353,26 +340,6 @@ impl Store {
 
         let mut states = HashMap::new();
 
-        let mut completed_builder = QueryBuilder::<Sqlite>::new(
-            "select thread_id, max(seq) as last_completed_agent_turn_seq from events where codex_method = 'turn/completed' and thread_id in (",
-        );
-        {
-            let mut separated = completed_builder.separated(", ");
-            for thread_id in thread_ids {
-                separated.push_bind(thread_id);
-            }
-        }
-        completed_builder.push(") group by thread_id");
-
-        for row in completed_builder.build().fetch_all(&self.pool).await? {
-            let thread_id: String = row.try_get("thread_id")?;
-            states
-                .entry(thread_id)
-                .or_insert_with(ThreadReadState::default)
-                .last_completed_agent_turn_seq =
-                row.try_get::<Option<i64>, _>("last_completed_agent_turn_seq")?;
-        }
-
         let mut read_builder = QueryBuilder::<Sqlite>::new(
             "select thread_id, seen_completed_agent_turn_seq from thread_reads where thread_id in (",
         );
@@ -393,16 +360,6 @@ impl Store {
         }
 
         Ok(states)
-    }
-
-    pub async fn last_completed_agent_turn_seq(&self, thread_id: &str) -> ApiResult<Option<i64>> {
-        sqlx::query_scalar(
-            "select max(seq) from events where thread_id = ? and codex_method = 'turn/completed'",
-        )
-        .bind(thread_id)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(Into::into)
     }
 
     pub async fn mark_thread_seen_completed_agent_turns(
@@ -694,9 +651,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn migration_backfills_thread_reads_for_existing_completed_turns() {
+    async fn migration_keeps_thread_reads_independent_from_event_replay() {
         let store = Store::in_memory().await.unwrap();
-        let completed = store
+        store
             .append_event(NewEvent {
                 project_id: None,
                 thread_id: Some("thread-1".to_string()),
@@ -708,18 +665,6 @@ mod tests {
             })
             .await
             .unwrap();
-        store
-            .append_event(NewEvent {
-                project_id: None,
-                thread_id: Some("thread-2".to_string()),
-                turn_id: Some("turn-2".to_string()),
-                item_id: Some("item-2".to_string()),
-                kind: "codex.notification".to_string(),
-                codex_method: Some("item/agentMessage/delta".to_string()),
-                payload: json!({"threadId": "thread-2"}),
-            })
-            .await
-            .unwrap();
 
         sqlx::query("drop table thread_reads")
             .execute(store.pool())
@@ -727,17 +672,9 @@ mod tests {
             .unwrap();
         store.migrate().await.unwrap();
 
-        let thread_ids = vec!["thread-1".to_string(), "thread-2".to_string()];
+        let thread_ids = vec!["thread-1".to_string()];
         let states = store.thread_read_states(&thread_ids).await.unwrap();
-        assert_eq!(
-            states["thread-1"].seen_completed_agent_turn_seq,
-            completed.seq
-        );
-        assert_eq!(
-            states["thread-1"].last_completed_agent_turn_seq,
-            Some(completed.seq)
-        );
-        assert!(!states.contains_key("thread-2"));
+        assert!(!states.contains_key("thread-1"));
     }
 
     #[tokio::test]

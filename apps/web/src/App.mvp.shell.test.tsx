@@ -14,7 +14,10 @@ import {
   project,
   requestJson,
   secondThread,
+  snapshotItem,
+  snapshotTurn,
   thread,
+  threadDetail,
   timelineElement,
 } from "./test/mvpAppHarness";
 
@@ -31,10 +34,6 @@ describe("MVP shell flows", () => {
 
   it("renders projects and threads, creates a project, and promotes a draft thread title from the first message", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    let resolveCreatedThreadEvents: (value: unknown) => void = () => {};
-    const createdThreadEvents = new Promise<unknown>((resolve) => {
-      resolveCreatedThreadEvents = resolve;
-    });
     const gateway = mockGateway(
       baseRoutes({
         "POST /v1/projects": async (request: Request) => ({
@@ -44,28 +43,11 @@ describe("MVP shell flows", () => {
           createdAt: "2026-04-30T00:00:00Z",
           updatedAt: "2026-04-30T00:00:00Z",
         }),
-        "GET /v1/events": (request: Request) => {
-          const url = new URL(request.url);
-          return url.searchParams.get("threadId") === "thread-2"
-            ? createdThreadEvents
-            : {
-                events: [
-                  {
-                    id: "event-1",
-                    seq: 1,
-                    kind: "codex",
-                    codexMethod: "item/agentMessage/delta",
-                    projectId: project.id,
-                    threadId: thread.id,
-                    turnId: "turn-1",
-                    itemId: "item-1",
-                    payload: { delta: "Hello from Codex" },
-                    receivedAt: "2026-04-30T00:00:00Z",
-                  },
-                ],
-              };
-        },
-        "POST /v1/threads": { thread: { ...thread, id: "thread-2", name: "New thread", preview: null }, rawPayload: {} },
+        "POST /v1/threads": { thread: { ...thread, id: "thread-2", name: "New thread", preview: "" }, rawPayload: {} },
+        "GET /v1/threads/thread-2": threadDetail(
+          { ...thread, id: "thread-2", name: "New thread", preview: "Implement the next milestone for the web client" },
+          [],
+        ),
         "POST /v1/threads/thread-2/turns": { payload: {} },
       }),
     );
@@ -119,20 +101,21 @@ describe("MVP shell flows", () => {
     ).not.toHaveAttribute("data-placeholder-title");
     expect(screen.getByRole("heading", { name: /implement the next milestone for the web client/i })).toBeInTheDocument();
 
+    let createdThreadStream: FakeEventSource | undefined;
+    await waitFor(() => {
+      createdThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-2"));
+      expect(createdThreadStream).toBeDefined();
+    });
     act(() => {
-      resolveCreatedThreadEvents({
-        events: [
-          {
-            id: "event-title",
-            seq: 2,
-            kind: "codex.notification",
-            codexMethod: "thread/nameUpdated",
-            projectId: project.id,
-            threadId: "thread-2",
-            payload: { threadId: "thread-2", threadName: "Implement the next milestone" },
-            receivedAt: "2026-04-30T00:00:01Z",
-          },
-        ],
+      createdThreadStream?.emit({
+        id: "event-title",
+        seq: 2,
+        kind: "codex.notification",
+        codexMethod: "thread/nameUpdated",
+        projectId: project.id,
+        threadId: "thread-2",
+        payload: { threadId: "thread-2", threadName: "Implement the next milestone" },
+        receivedAt: "2026-04-30T00:00:01Z",
       });
     });
 
@@ -338,31 +321,13 @@ describe("MVP shell flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "GET /v1/events": (request: Request) => {
-          const url = new URL(request.url);
-          return url.searchParams.get("threadId") === "thread-2"
-            ? {
-                events: [
-                  {
-                    id: "event-2",
-                    seq: 1,
-                    kind: "codex",
-                    codexMethod: "item/agentMessage/delta",
-                    projectId: project.id,
-                    threadId: "thread-2",
-                    turnId: "turn-2",
-                    itemId: "item-2",
-                    payload: { delta: "Replay after resume" },
-                    receivedAt: "2026-04-30T00:00:01Z",
-                  },
-                ],
-              }
-            : baseRoutes()["GET /v1/events"];
-        },
         "POST /v1/threads/thread-2/resume": {
           thread: { ...notLoadedThread, status: "idle" },
           rawPayload: {},
         },
+        "GET /v1/threads/thread-2": threadDetail({ ...notLoadedThread, status: "idle" }, [
+          snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Snapshot after resume" })]),
+        ]),
       }),
     );
 
@@ -378,7 +343,7 @@ describe("MVP shell flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-2/resume")).toHaveLength(1);
     });
-    expect(await screen.findByText(/replay after resume/i)).toBeInTheDocument();
+    expect(await screen.findByText(/snapshot after resume/i)).toBeInTheDocument();
   });
 
   it("provides a compact panel switcher for narrow viewports", async () => {
@@ -489,27 +454,9 @@ describe("MVP shell flows", () => {
           }
           return { threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} };
         },
-        "GET /v1/events": (request: Request) => {
-          const url = new URL(request.url);
-          return url.searchParams.get("threadId") === "thread-2"
-            ? {
-                events: [
-                  {
-                    id: "event-project-2",
-                    seq: 1,
-                    kind: "codex",
-                    codexMethod: "item/agentMessage/delta",
-                    projectId: "project-2",
-                    threadId: "thread-2",
-                    turnId: "turn-2",
-                    itemId: "item-2",
-                    payload: { delta: "Second project replay" },
-                    receivedAt: "2026-04-30T00:00:01Z",
-                  },
-                ],
-              }
-            : baseRoutes()["GET /v1/events"];
-        },
+        "GET /v1/threads/thread-2": threadDetail(secondThread, [
+          snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Second project snapshot" })]),
+        ]),
       }),
     );
 
@@ -519,7 +466,7 @@ describe("MVP shell flows", () => {
     await userEvent.click(screen.getByRole("button", { name: /scratch \/tmp\/scratch/i }));
 
     expect(await screen.findByRole("button", { name: /second thread/i })).toBeInTheDocument();
-    expect(await screen.findByText(/second project replay/i)).toBeInTheDocument();
+    expect(await screen.findByText(/second project snapshot/i)).toBeInTheDocument();
   });
 
   it("clears the old active thread while loading a newly selected project", async () => {

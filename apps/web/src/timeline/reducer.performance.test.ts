@@ -140,15 +140,24 @@ describe("timeline reducer performance", () => {
       event({
         id: "delta-1",
         seq: 2,
+        kind: "timeline.item_delta",
         codexMethod: "item/agentMessage/delta",
         itemId: "item-1",
-        payload: { delta: " updated" },
+        payload: { source: "gatewayStream", delta: " updated", rawPayload: { delta: " updated" } },
       }),
       event({
         id: "append-1",
         seq: 3,
+        kind: "timeline.item_upsert",
+        codexMethod: "item/upsert",
         itemId: "item-2",
-        payload: { item: { id: "item-2", type: "agentMessage", text: "Second" } },
+        payload: {
+          source: "gatewayStream",
+          turnId: "turn-1",
+          itemId: "item-2",
+          item: { id: "item-2", type: "agentMessage", text: "Second" },
+          itemSnapshot: { id: "item-2", itemType: "agentMessage", rawPayload: {} },
+        },
       }),
     ];
 

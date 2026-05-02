@@ -149,7 +149,7 @@ describe("MVP approvals stream flows", () => {
     await waitFor(() => {
       expect(within(timeline).queryByText(/npm test/i)).not.toBeInTheDocument();
     });
-    expect(gateway.callsFor("GET", "/v1/events")).toHaveLength(1);
+    expect(gateway.callsFor("GET", "/v1/events")).toHaveLength(0);
   });
 
   it("keeps non-selected thread approval badges in sync", async () => {

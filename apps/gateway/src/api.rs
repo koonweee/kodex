@@ -66,6 +66,7 @@ impl AppState {
         crate::routes::composer_settings::read_composer_settings,
         crate::routes::composer_settings::update_composer_settings,
         crate::events::events,
+        crate::events::debug_events,
         crate::routes::projects::list_projects,
         crate::routes::projects::create_project,
         crate::routes::projects::get_project,

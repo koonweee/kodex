@@ -80,7 +80,7 @@ describe("event stream client", () => {
     expect(FakeEventSource.instances[1].closed).toBe(true);
   });
 
-  it("receives named SSE events emitted by the gateway", () => {
+  it("receives live thread metadata notification events emitted by the gateway", () => {
     const received: string[] = [];
     const client = createEventStreamClient({
       EventSourceCtor: FakeEventSource,
@@ -93,16 +93,16 @@ describe("event stream client", () => {
       id: "event-7",
       seq: 7,
       kind: "codex.notification",
-      codexMethod: "item/agentMessage/delta",
-      itemId: "item-1",
+      codexMethod: "thread/nameUpdated",
+      itemId: null,
       threadId: "thread-1",
-      turnId: "turn-1",
+      turnId: null,
       projectId: "project-1",
-      payload: { delta: "Hi" },
+      payload: { threadId: "thread-1", threadName: "New title" },
       receivedAt: "2026-04-30T00:00:00Z",
     });
 
-    expect(received).toEqual(["item/agentMessage/delta"]);
+    expect(received).toEqual(["thread/nameUpdated"]);
     client.close();
   });
 

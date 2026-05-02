@@ -5,6 +5,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { mockGateway } from "./test/gatewayMock";
 
+function snapshotItem(id: string, itemType: string, payload: Record<string, unknown>) {
+  return { id, itemType, rawPayload: { id, type: itemType, ...payload } };
+}
+
+function snapshotTurn(id: string, items: unknown[], status = "completed") {
+  return { id, status, items, rawPayload: { id, status: { type: status }, items } };
+}
+
+function threadDetail(thread: Record<string, unknown>, turns: ReturnType<typeof snapshotTurn>[]) {
+  return { thread, turns, liveState: thread.status === "active" ? "streaming" : "idle", rawPayload: {} };
+}
+
 describe("App shell", () => {
   afterEach(() => {
     window.localStorage.clear();
@@ -19,6 +31,9 @@ describe("App shell", () => {
       "GET /v1/projects": { projects: [] },
       "GET /v1/approvals": { approvals: [] },
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
+      "GET /v1/account/rate-limits": { rateLimits: null, rateLimitsByLimitId: null, rawPayload: {} },
+      "GET /v1/models": { models: [], nextCursor: null, rawPayload: {} },
+      "GET /v1/composer-settings": { model: null, effort: null, serviceTier: null, permissionsPreset: null },
     });
 
     render(<App />);
@@ -169,34 +184,24 @@ describe("App shell", () => {
         backwardsCursor: null,
         rawPayload: {},
       },
-      "GET /v1/events": {
-        events: [
-          {
-            id: "event-1",
-            seq: 1,
-            kind: "codex.notification",
-            codexMethod: "turn/started",
-            projectId: "project-1",
-            threadId: "thread-1",
-            turnId: "turn-1",
-            itemId: null,
-            payload: { status: "running" },
-            receivedAt: "2026-04-30T00:00:00Z",
-          },
-          {
-            id: "event-2",
-            seq: 2,
-            kind: "codex.notification",
-            codexMethod: "item/completed",
-            projectId: "project-1",
-            threadId: "thread-1",
-            turnId: "turn-1",
-            itemId: "answer-1",
-            payload: { item: { id: "answer-1", type: "agentMessage", text: "Visible answer" } },
-            receivedAt: "2026-04-30T00:00:01Z",
-          },
+      "GET /v1/threads/thread-1": threadDetail(
+        {
+          id: "thread-1",
+          name: "Investigate timeline rendering with a deliberately long generated title",
+          cwd: "/home/example/kodex",
+          status: "idle",
+          source: "local",
+          preview: "",
+          rawPayload: {},
+          createdAt: 1777500000,
+          updatedAt: 1777501200,
+        },
+        [
+          snapshotTurn("turn-1", [
+            snapshotItem("answer-1", "agentMessage", { text: "Visible answer" }),
+          ]),
         ],
-      },
+      ),
       "GET /v1/approvals": { approvals: [] },
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     });
@@ -214,8 +219,8 @@ describe("App shell", () => {
     await userEvent.click(screen.getByRole("button", { name: /account settings/i }));
     await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /show debug events/i }));
 
-    expect(await within(thread).findAllByText(/turn\/started/i)).not.toHaveLength(0);
-    expect(within(thread).getByText(/"status": "running"/i)).toBeInTheDocument();
+    expect(await within(thread).findAllByText(/item\/completed/i)).not.toHaveLength(0);
+    expect(within(thread).getByText(/"text": "Visible answer"/i)).toBeInTheDocument();
   });
 
   it("mounts a bounded row window for large timelines", async () => {
@@ -251,20 +256,27 @@ describe("App shell", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "GET /v1/events": {
-          events: Array.from({ length: 30 }, (_, index) => ({
-            id: `event-${index}`,
-            seq: index + 1,
-            kind: "codex.notification",
-            codexMethod: "item/completed",
-            projectId: "project-1",
-            threadId: "thread-1",
-            turnId: "turn-1",
-            itemId: `answer-${index}`,
-            payload: { item: { id: `answer-${index}`, type: "agentMessage", text: `Large answer ${index}` } },
-            receivedAt: "2026-04-30T00:00:00Z",
-          })),
-        },
+        "GET /v1/threads/thread-1": threadDetail(
+          {
+            id: "thread-1",
+            name: "Large thread",
+            cwd: "/home/example/kodex",
+            status: "idle",
+            source: "local",
+            preview: "",
+            rawPayload: {},
+            createdAt: 1777500000,
+            updatedAt: 1777501200,
+          },
+          [
+            snapshotTurn(
+              "turn-1",
+              Array.from({ length: 30 }, (_, index) =>
+                snapshotItem(`answer-${index}`, "agentMessage", { text: `Large answer ${index}` }),
+              ),
+            ),
+          ],
+        ),
         "GET /v1/approvals": { approvals: [] },
         "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
       });
@@ -319,20 +331,27 @@ describe("App shell", () => {
         backwardsCursor: null,
         rawPayload: {},
       },
-      "GET /v1/events": {
-        events: Array.from({ length: 30 }, (_, index) => ({
-          id: `event-${index}`,
-          seq: index + 1,
-          kind: "codex.notification",
-          codexMethod: "item/completed",
-          projectId: "project-1",
-          threadId: "thread-1",
-          turnId: "turn-1",
-          itemId: `answer-${index}`,
-          payload: { item: { id: `answer-${index}`, type: "agentMessage", text: `Large answer ${index}` } },
-          receivedAt: "2026-04-30T00:00:00Z",
-        })),
-      },
+      "GET /v1/threads/thread-1": threadDetail(
+        {
+          id: "thread-1",
+          name: "Large thread",
+          cwd: "/home/example/kodex",
+          status: "idle",
+          source: "local",
+          preview: "",
+          rawPayload: {},
+          createdAt: 1777500000,
+          updatedAt: 1777501200,
+        },
+        [
+          snapshotTurn(
+            "turn-1",
+            Array.from({ length: 30 }, (_, index) =>
+              snapshotItem(`answer-${index}`, "agentMessage", { text: `Large answer ${index}` }),
+            ),
+          ),
+        ],
+      ),
       "GET /v1/approvals": { approvals: [] },
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     });
@@ -384,27 +403,30 @@ describe("App shell", () => {
         backwardsCursor: null,
         rawPayload: {},
       },
-      "GET /v1/events": {
-        events: Array.from({ length: 300 }, (_, index) => ({
-          id: `event-${index}`,
-          seq: index + 1,
-          kind: "codex.notification",
-          codexMethod: "item/completed",
-          projectId: "project-1",
-          threadId: "thread-1",
-          turnId: "turn-1",
-          itemId: `cmd-${index}`,
-          payload: {
-            item: {
-              id: `cmd-${index}`,
-              type: "commandExecution",
-              command: `echo command-${index}`,
-              output: "ok",
-            },
-          },
-          receivedAt: "2026-04-30T00:00:00Z",
-        })),
-      },
+      "GET /v1/threads/thread-1": threadDetail(
+        {
+          id: "thread-1",
+          name: "Activity thread",
+          cwd: "/home/example/kodex",
+          status: "idle",
+          source: "local",
+          preview: "",
+          rawPayload: {},
+          createdAt: 1777500000,
+          updatedAt: 1777501200,
+        },
+        [
+          snapshotTurn(
+            "turn-1",
+            Array.from({ length: 300 }, (_, index) =>
+              snapshotItem(`cmd-${index}`, "commandExecution", {
+                command: `echo command-${index}`,
+                output: "ok",
+              }),
+            ),
+          ),
+        ],
+      ),
       "GET /v1/approvals": { approvals: [] },
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     });

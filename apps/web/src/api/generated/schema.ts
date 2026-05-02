@@ -196,6 +196,22 @@ export interface paths {
         patch: operations["update_composer_settings"];
         trace?: never;
     };
+    "/v1/debug/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["debug_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -1067,6 +1083,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ComposerSettingsUpdateResponse"];
+                };
+            };
+        };
+    };
+    debug_events: {
+        parameters: {
+            query?: {
+                cursor?: number | null;
+                projectId?: string | null;
+                threadId?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventListResponse"];
                 };
             };
         };

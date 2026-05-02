@@ -456,7 +456,6 @@ pub struct ThreadSummary {
 
 impl ThreadSummary {
     fn from_payload(payload: &Value) -> ApiResult<Self> {
-        let last_completed_agent_turn_seq = completed_turn_count(payload);
         Ok(Self {
             id: required_string(payload, "id")?,
             name: optional_string(payload, "name"),
@@ -472,9 +471,9 @@ impl ThreadSummary {
             approvals_reviewer: optional_string(payload, "approvalsReviewer"),
             sandbox: optional_value(payload, "sandbox"),
             preview: payload.get("preview").cloned(),
-            last_completed_agent_turn_seq,
+            last_completed_agent_turn_seq: None,
             seen_completed_agent_turn_seq: 0,
-            unread_completed_agent_turn: last_completed_agent_turn_seq.is_some_and(|seq| seq > 0),
+            unread_completed_agent_turn: false,
             raw_payload: payload.clone(),
         })
     }
@@ -522,8 +521,11 @@ impl ThreadDetailResponse {
             .map(ThreadTurnSnapshot::from_payload)
             .collect::<ApiResult<Vec<_>>>()?;
         let live_state = live_state_from_thread(thread);
+        let last_completed_agent_turn_seq = completed_turn_count(&turns);
+        let mut thread = ThreadSummary::from_payload(thread)?;
+        thread.apply_completed_agent_turn_read_state(last_completed_agent_turn_seq, 0);
         Ok(Self {
-            thread: ThreadSummary::from_payload(thread)?,
+            thread,
             turns,
             live_state,
             raw_payload: payload,
@@ -1054,23 +1056,22 @@ fn overlay_thread_composer_state(thread: &mut ThreadSummary, payload: &Value) {
     }
 }
 
-fn completed_turn_count(thread: &Value) -> Option<i64> {
-    let turns = thread.get("turns")?.as_array()?;
+fn completed_turn_count(turns: &[ThreadTurnSnapshot]) -> Option<i64> {
     if turns.is_empty() {
         return None;
     }
     Some(
         turns
             .iter()
-            .filter(|turn| {
-                status_type(turn.get("status")).is_some_and(|status| {
-                    matches!(
-                        status.as_str(),
-                        "completed" | "failed" | "cancelled" | "canceled" | "interrupted"
-                    )
-                })
-            })
+            .filter(|turn| is_terminal_turn_status(&turn.status))
             .count() as i64,
+    )
+}
+
+fn is_terminal_turn_status(status: &str) -> bool {
+    matches!(
+        status.to_lowercase().as_str(),
+        "completed" | "failed" | "cancelled" | "canceled" | "interrupted"
     )
 }
 
@@ -1095,14 +1096,6 @@ fn turn_is_active(turn: &Value) -> bool {
         Some("completed" | "failed" | "cancelled" | "canceled" | "interrupted") => false,
         Some(_) => true,
         None => false,
-    }
-}
-
-pub(crate) fn live_state_from_turn_status(status: &str) -> ThreadLiveState {
-    match status {
-        "completed" | "failed" | "cancelled" | "canceled" | "interrupted" => ThreadLiveState::Idle,
-        "unknown" => ThreadLiveState::NotLoaded,
-        _ => ThreadLiveState::Streaming,
     }
 }
 
@@ -1549,6 +1542,21 @@ mod tests {
         assert_eq!(thread.status, ThreadStatus::Active);
         assert_eq!(thread.created_at, 1_767_225_600);
         assert_eq!(thread.updated_at, 1_767_225_660);
+    }
+
+    #[test]
+    fn thread_list_normalization_does_not_derive_completed_marker_from_turns() {
+        let mut thread = thread_summary_payload("thread-1");
+        thread["turns"] = json!([{
+            "id": "turn-1",
+            "status": {"type": "completed"},
+            "items": []
+        }]);
+        let response = ThreadListResponse::from_payload(json!({"data": [thread]})).unwrap();
+
+        assert_eq!(response.threads[0].last_completed_agent_turn_seq, None);
+        assert_eq!(response.threads[0].seen_completed_agent_turn_seq, 0);
+        assert!(!response.threads[0].unread_completed_agent_turn);
     }
 
     #[test]

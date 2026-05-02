@@ -135,6 +135,7 @@ mod tests {
             "/v1/capabilities",
             "/v1/composer-settings",
             "/v1/events",
+            "/v1/debug/events",
             "/v1/projects",
             "/v1/projects/{projectId}",
             "/v1/threads",
@@ -581,29 +582,16 @@ mod tests {
     #[tokio::test]
     async fn thread_list_derives_unread_completed_agent_turns_from_persisted_read_state() {
         let (state, app_server) = test_state().await;
-        let completed = state
-            .store
-            .append_event(NewEvent {
-                project_id: None,
-                thread_id: Some("thread-1".to_string()),
-                turn_id: Some("turn-1".to_string()),
-                item_id: None,
-                kind: "codex.notification".to_string(),
-                codex_method: Some("turn/completed".to_string()),
-                payload: json!({"threadId": "thread-1", "turn": {"id": "turn-1"}}),
-            })
-            .await
-            .unwrap();
         state
             .store
             .append_event(NewEvent {
                 project_id: None,
-                thread_id: Some("thread-2".to_string()),
-                turn_id: Some("turn-2".to_string()),
-                item_id: Some("item-2".to_string()),
+                thread_id: Some("thread-1".to_string()),
+                turn_id: Some("legacy-turn".to_string()),
+                item_id: None,
                 kind: "codex.notification".to_string(),
-                codex_method: Some("item/agentMessage/delta".to_string()),
-                payload: json!({"threadId": "thread-2", "delta": "still streaming"}),
+                codex_method: Some("turn/completed".to_string()),
+                payload: json!({"threadId": "thread-1"}),
             })
             .await
             .unwrap();
@@ -624,15 +612,15 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(
-            body["threads"][0]["lastCompletedAgentTurnSeq"],
-            json!(completed.seq)
-        );
+        assert_eq!(body["threads"][0]["lastCompletedAgentTurnSeq"], Value::Null);
         assert_eq!(body["threads"][0]["seenCompletedAgentTurnSeq"], json!(0));
-        assert_eq!(body["threads"][0]["unreadCompletedAgentTurn"], json!(true));
+        assert_eq!(body["threads"][0]["unreadCompletedAgentTurn"], json!(false));
         assert_eq!(body["threads"][1]["lastCompletedAgentTurnSeq"], Value::Null);
         assert_eq!(body["threads"][1]["unreadCompletedAgentTurn"], json!(false));
 
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "thread": thread_summary_with_completed_turns("thread-1", 1)
+        }));
         let response = app
             .clone()
             .oneshot(
@@ -645,8 +633,11 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["seenCompletedAgentTurnSeq"], json!(completed.seq));
+        assert_eq!(body["seenCompletedAgentTurnSeq"], json!(1));
 
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "thread": thread_summary_with_completed_turns("thread-1", 1)
+        }));
         let response = app
             .clone()
             .oneshot(
@@ -658,8 +649,11 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["seenCompletedAgentTurnSeq"], json!(completed.seq));
+        assert_eq!(body["seenCompletedAgentTurnSeq"], json!(1));
 
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "thread": thread_summary_with_completed_turns("thread-1", 1)
+        }));
         let response = app
             .clone()
             .oneshot(
@@ -672,7 +666,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["seenCompletedAgentTurnSeq"], json!(completed.seq));
+        assert_eq!(body["seenCompletedAgentTurnSeq"], json!(1));
 
         *app_server.next_response.lock().unwrap() = Some(json!({
             "data": [thread_summary("thread-1")],
@@ -685,11 +679,9 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(
-            body["threads"][0]["seenCompletedAgentTurnSeq"],
-            json!(completed.seq)
-        );
+        assert_eq!(body["threads"][0]["seenCompletedAgentTurnSeq"], json!(1));
         assert_eq!(body["threads"][0]["unreadCompletedAgentTurn"], json!(false));
+        assert_eq!(body["threads"][0]["lastCompletedAgentTurnSeq"], Value::Null);
     }
 
     #[tokio::test]
@@ -1628,7 +1620,70 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn event_replay_returns_persisted_events() {
+    async fn event_replay_excludes_timeline_history_and_keeps_operational_events() {
+        let (state, _) = test_state().await;
+        state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("t1".to_string()),
+                turn_id: None,
+                item_id: None,
+                kind: "codex.notification".to_string(),
+                codex_method: Some("turn/completed".to_string()),
+                payload: json!({"threadId": "t1"}),
+            })
+            .await
+            .unwrap();
+        let approval = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("t1".to_string()),
+                turn_id: None,
+                item_id: None,
+                kind: "approval.created".to_string(),
+                codex_method: Some("apply_patch".to_string()),
+                payload: json!({"threadId": "t1", "status": "pending"}),
+            })
+            .await
+            .unwrap();
+        let warning = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("t1".to_string()),
+                turn_id: None,
+                item_id: None,
+                kind: "gateway.warning".to_string(),
+                codex_method: None,
+                payload: json!({"threadId": "t1", "message": "careful"}),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?threadId=t1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        let events = body["events"].as_array().unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["seq"], approval.seq);
+        assert_eq!(events[0]["kind"], "approval.created");
+        assert_eq!(events[1]["seq"], warning.seq);
+        assert_eq!(events[1]["kind"], "gateway.warning");
+    }
+
+    #[tokio::test]
+    async fn debug_event_replay_returns_raw_persisted_events() {
         let (state, _) = test_state().await;
         state
             .store
@@ -1647,16 +1702,16 @@ mod tests {
 
         let response = app
             .oneshot(
-                Request::get("/v1/events?threadId=t1")
+                Request::get("/v1/debug/events?threadId=t1")
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let body: Value = serde_json::from_slice(&body).unwrap();
+        let body = response_json(response).await;
         assert_eq!(body["events"].as_array().unwrap().len(), 1);
+        assert_eq!(body["events"][0]["kind"], "codex.notification");
     }
 
     #[tokio::test]
@@ -1670,10 +1725,9 @@ mod tests {
                     thread_id: Some("t1".to_string()),
                     turn_id: None,
                     item_id: None,
-                    kind: "codex.notification".to_string(),
-                    codex_method: Some("item/agentMessage/delta".to_string()),
+                    kind: "gateway.warning".to_string(),
+                    codex_method: None,
                     payload: json!({
-                        "threadId": "t1",
                         "phase": "replay",
                         "index": index,
                     }),
@@ -1688,10 +1742,9 @@ mod tests {
                         thread_id: Some("t1".to_string()),
                         turn_id: None,
                         item_id: None,
-                        kind: "codex.notification".to_string(),
-                        codex_method: Some("item/agentMessage/delta".to_string()),
+                        kind: "gateway.warning".to_string(),
+                        codex_method: None,
                         payload: json!({
-                            "threadId": "t1",
                             "phase": "filtered",
                             "index": index,
                         }),
@@ -1720,7 +1773,7 @@ mod tests {
                 thread_id: Some("t1".to_string()),
                 turn_id: None,
                 item_id: None,
-                kind: "codex.notification".to_string(),
+                kind: "timeline.item_delta".to_string(),
                 codex_method: Some("item/agentMessage/delta".to_string()),
                 payload: json!({"threadId": "t1", "phase": "live"}),
             })
@@ -1748,7 +1801,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sse_replays_persisted_events_before_live_events() {
+    async fn sse_skips_persisted_timeline_replay_before_live_events() {
         let (state, _) = test_state().await;
         let replay = state
             .store
@@ -1777,9 +1830,6 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
 
         let mut body = response.into_body();
-        let first = next_sse_chunk(&mut body).await;
-        assert!(first.contains(&format!("id: {}", replay.seq)));
-        assert!(first.contains("\"phase\":\"replay\""));
 
         let live = state
             .store
@@ -1788,7 +1838,7 @@ mod tests {
                 thread_id: Some("t1".to_string()),
                 turn_id: None,
                 item_id: None,
-                kind: "codex.notification".to_string(),
+                kind: "timeline.item_delta".to_string(),
                 codex_method: Some("item/agentMessage/delta".to_string()),
                 payload: json!({"threadId": "t1", "phase": "live"}),
             })
@@ -1797,9 +1847,48 @@ mod tests {
         state.events.send(replay.clone()).unwrap();
         state.events.send(live.clone()).unwrap();
 
-        let second = next_sse_chunk(&mut body).await;
-        assert!(second.contains(&format!("id: {}", live.seq)));
-        assert!(second.contains("\"phase\":\"live\""));
+        let first = next_sse_chunk(&mut body).await;
+        assert!(first.contains(&format!("id: {}", live.seq)));
+        assert!(first.contains("\"phase\":\"live\""));
+        assert!(!first.contains("\"phase\":\"replay\""));
+    }
+
+    #[tokio::test]
+    async fn sse_allows_live_thread_title_notifications() {
+        let (state, _) = test_state().await;
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?threadId=t1")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let title = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("t1".to_string()),
+                turn_id: None,
+                item_id: None,
+                kind: "codex.notification".to_string(),
+                codex_method: Some("thread/nameUpdated".to_string()),
+                payload: json!({"threadId": "t1", "threadName": "New title"}),
+            })
+            .await
+            .unwrap();
+        state.events.send(title.clone()).unwrap();
+
+        let mut body = response.into_body();
+        let chunk = next_sse_chunk(&mut body).await;
+        assert!(chunk.contains(&format!("id: {}", title.seq)));
+        assert!(chunk.contains("thread/nameUpdated"));
+        assert!(chunk.contains("New title"));
     }
 
     async fn response_json(response: axum::response::Response) -> Value {
@@ -1821,6 +1910,21 @@ mod tests {
             "createdAt": 1_767_225_600_i64,
             "updatedAt": 1_767_225_600_i64
         })
+    }
+
+    fn thread_summary_with_completed_turns(id: &str, completed_turns: usize) -> Value {
+        let turns = (0..completed_turns)
+            .map(|index| {
+                json!({
+                    "id": format!("turn-{index}"),
+                    "status": {"type": "completed"},
+                    "items": []
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut thread = thread_summary(id);
+        thread["turns"] = Value::Array(turns);
+        thread
     }
 
     fn multipart_body(file_name: &str, content_type: &str, bytes: &[u8]) -> Vec<u8> {

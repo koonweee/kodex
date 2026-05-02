@@ -182,8 +182,9 @@ function KodexShell({
   const selectedTimelineEntry =
     selectedThread !== null && timelineEntry.threadId === selectedThread.id ? timelineEntry : idleTimelineEntry;
   const isSelectedThreadNotLoaded = selectedThread?.status === "notLoaded";
-  const isSelectedTimelineLoading = selectedTimelineEntry.phase === "loading";
-  const isSelectedTimelineReady = selectedTimelineEntry.phase === "ready";
+  const isSelectedTimelineLoading = selectedTimelineEntry.phase === "loadingSnapshot";
+  const isSelectedTimelineReady =
+    selectedTimelineEntry.phase === "streamingLive" || selectedTimelineEntry.phase === "refreshingSnapshot";
   const activeSelectedTurnId = selectedThread !== null ? timeline.activeTurnId : null;
   const isDraftThreadSelected = draftThreadProjectId !== null && draftThreadProjectId === selectedProjectId;
   const canCompose = selectedThread !== null || isDraftThreadSelected;
@@ -318,10 +319,9 @@ function KodexShell({
   useSelectedThreadTimeline({
     isSelectedThreadNotLoaded,
     onApprovalEvent: applyApprovalEventWithTombstone,
-    onApprovalEvents: applyApprovalEventsWithTombstone,
     onError: reportError,
+    onSnapshotThread: handleSelectedThreadSnapshot,
     onThreadMetadataEvent: applyThreadMetadataEvent,
-    onThreadMetadataEvents: applyThreadMetadataEvents,
     selectedThreadId,
     setApprovals,
     setTimeline,
@@ -398,11 +398,7 @@ function KodexShell({
   function beginTimelineEntry(threadId: string) {
     markCompletedAgentTurnSeen(threadId);
     setTimeline(createTimelineState());
-    setTimelineEntry({ phase: "loading", threadId });
-  }
-
-  function markTimelineEntryAligning(threadId: string) {
-    setTimelineEntry((current) => (current.threadId === threadId ? { phase: "aligning", threadId } : current));
+    setTimelineEntry({ phase: "loadingSnapshot", threadId });
   }
 
   async function handleCreateProject(event: FormEvent) {
@@ -510,7 +506,12 @@ function KodexShell({
   }
 
   function handleTimelineReady(threadId: string) {
-    setTimelineEntry((current) => (current.threadId === threadId ? { phase: "ready", threadId } : current));
+    setTimelineEntry((current) => (current.threadId === threadId ? { phase: "streamingLive", threadId } : current));
+  }
+
+  function handleSelectedThreadSnapshot(thread: ThreadSummary) {
+    replaceThread(thread);
+    markCompletedAgentTurnSeen(thread.id, thread.lastCompletedAgentTurnSeq);
   }
 
   function replaceThread(thread: ThreadSummary) {

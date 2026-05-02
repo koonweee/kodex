@@ -29,18 +29,23 @@ export function useThreadReadState({
       return;
     }
     const thread = threadById(threadsByProjectIdRef.current, completedTurn.threadId);
-    if (!thread || completedTurn.seq <= (thread.lastCompletedAgentTurnSeq ?? 0)) {
+    if (!thread) {
       return;
     }
-    if (event.kind !== "timeline.turn_upsert" && thread.lastCompletedAgentTurnSeq != null) {
+    const knownCompletedAgentTurnSeq = Math.max(
+      thread.lastCompletedAgentTurnSeq ?? 0,
+      thread.seenCompletedAgentTurnSeq ?? 0,
+    );
+    const nextCompletedAgentTurnSeq = knownCompletedAgentTurnSeq + 1;
+    if (nextCompletedAgentTurnSeq <= (thread.seenCompletedAgentTurnSeq ?? 0)) {
       return;
     }
     const isSelected = completedTurn.threadId === selectedThreadIdRef.current;
     setThreadsByProjectId((current) =>
       updateThreadReadStateInProjects(current, completedTurn.threadId, (thread) => {
-        const lastCompletedAgentTurnSeq = Math.max(thread.lastCompletedAgentTurnSeq ?? 0, completedTurn.seq);
+        const lastCompletedAgentTurnSeq = Math.max(thread.lastCompletedAgentTurnSeq ?? 0, nextCompletedAgentTurnSeq);
         const seenCompletedAgentTurnSeq = isSelected
-          ? Math.max(thread.seenCompletedAgentTurnSeq ?? 0, completedTurn.seq)
+          ? Math.max(thread.seenCompletedAgentTurnSeq ?? 0, nextCompletedAgentTurnSeq)
           : (thread.seenCompletedAgentTurnSeq ?? 0);
         return {
           lastCompletedAgentTurnSeq,
@@ -51,18 +56,19 @@ export function useThreadReadState({
       }),
     );
     if (isSelected) {
-      void persistCompletedAgentTurnSeen(completedTurn.threadId, completedTurn.seq);
+      void persistCompletedAgentTurnSeen(completedTurn.threadId, nextCompletedAgentTurnSeq);
     }
   }
 
-  function markCompletedAgentTurnSeen(threadId: string) {
+  function markCompletedAgentTurnSeen(threadId: string, lastCompletedAgentTurnSeq?: number | null) {
     const thread = threadById(threadsByProjectIdRef.current, threadId);
-    const seenCompletedAgentTurnSeq = thread?.lastCompletedAgentTurnSeq ?? 0;
-    if (!thread || seenCompletedAgentTurnSeq <= (thread.seenCompletedAgentTurnSeq ?? 0)) {
+    const seenCompletedAgentTurnSeq = lastCompletedAgentTurnSeq ?? thread?.lastCompletedAgentTurnSeq ?? 0;
+    if (seenCompletedAgentTurnSeq <= (thread?.seenCompletedAgentTurnSeq ?? 0)) {
       return;
     }
     setThreadsByProjectId((current) =>
       updateThreadReadStateInProjects(current, threadId, () => ({
+        lastCompletedAgentTurnSeq: seenCompletedAgentTurnSeq,
         seenCompletedAgentTurnSeq,
         unreadCompletedAgentTurn: false,
       })),

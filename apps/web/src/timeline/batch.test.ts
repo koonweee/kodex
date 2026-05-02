@@ -8,13 +8,13 @@ function event(overrides: Partial<EventEnvelope>): EventEnvelope {
   return {
     id: "event-1",
     seq: 1,
-    kind: "codex.notification",
+    kind: "timeline.item_delta",
     codexMethod: "item/agentMessage/delta",
     threadId: "thread-1",
     turnId: "turn-1",
     itemId: "answer-1",
     projectId: "project-1",
-    payload: { delta: "Hello" },
+    payload: { source: "gatewayStream", delta: "Hello", rawPayload: { delta: "Hello" } },
     receivedAt: "2026-04-30T00:00:00Z",
     ...overrides,
   };
@@ -23,9 +23,9 @@ function event(overrides: Partial<EventEnvelope>): EventEnvelope {
 describe("timeline event batching", () => {
   it("produces the same final timeline state as sequential sorted updates", () => {
     const events = [
-      event({ id: "event-3", seq: 3, payload: { delta: "!" } }),
-      event({ id: "event-1", seq: 1, payload: { delta: "Hello" } }),
-      event({ id: "event-2", seq: 2, payload: { delta: " world" } }),
+      event({ id: "event-3", seq: 3, payload: { source: "gatewayStream", delta: "!", rawPayload: { delta: "!" } } }),
+      event({ id: "event-1", seq: 1, payload: { source: "gatewayStream", delta: "Hello", rawPayload: { delta: "Hello" } } }),
+      event({ id: "event-2", seq: 2, payload: { source: "gatewayStream", delta: " world", rawPayload: { delta: " world" } } }),
     ];
 
     const expected = [...events]
@@ -42,8 +42,8 @@ describe("timeline event batching", () => {
 
   it("does not mutate the queued event array", () => {
     const events = [
-      event({ id: "event-2", seq: 2, payload: { delta: " second" } }),
-      event({ id: "event-1", seq: 1, payload: { delta: "First" } }),
+      event({ id: "event-2", seq: 2, payload: { source: "gatewayStream", delta: " second", rawPayload: { delta: " second" } } }),
+      event({ id: "event-1", seq: 1, payload: { source: "gatewayStream", delta: "First", rawPayload: { delta: "First" } } }),
     ];
     const originalOrder = events.map((queuedEvent) => queuedEvent.id);
 
