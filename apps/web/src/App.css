@@ -39,10 +39,14 @@ body {
 .kodex-shell {
   min-height: 100vh;
   color: #f2f2f2;
+  background: #171717;
+  --shell-handle-main-gap: 6px;
+  --shell-thread-surface: #2a2c39;
 }
 
 .kodex-sidebar {
-  border-color: #2b2b2b;
+  border-color: transparent;
+  border-inline-end: 0;
   background: #171717;
 }
 
@@ -65,7 +69,7 @@ body {
   top: 0;
   right: 4px;
   bottom: 0;
-  width: 2px;
+  width: 1px;
   background: transparent;
   content: "";
 }
@@ -73,11 +77,11 @@ body {
 .kodex-sidebar-resize-handle:hover::after,
 .kodex-sidebar-resize-handle:focus-visible::after,
 .kodex-shell[data-sidebar-resizing="true"] .kodex-sidebar-resize-handle::after {
-  background: #5cc8b6;
+  background: rgb(92 200 182 / 45%);
 }
 
 .kodex-sidebar-resize-handle:focus-visible {
-  outline: 2px solid #5cc8b6;
+  outline: 1px solid rgb(92 200 182 / 55%);
   outline-offset: -2px;
 }
 
@@ -88,14 +92,24 @@ body {
 }
 
 .kodex-main {
-  background: #1f1f1f;
+  padding-top: calc(var(--app-shell-padding) / 2);
+  padding-right: calc(var(--app-shell-padding) / 2);
+  padding-bottom: calc(var(--app-shell-padding) / 2);
+  padding-left: calc(var(--app-shell-navbar-offset) + var(--shell-handle-main-gap));
+  background: #171717;
 }
 
 .kodex-main-stack {
+  box-sizing: border-box;
   width: 100%;
   max-width: 100%;
   min-height: 0;
   min-width: 0;
+  border-radius: 28px;
+  padding: 20px 16px 16px;
+  background: var(--shell-thread-surface);
+  box-shadow: none;
+  overflow: hidden;
 }
 
 .kodex-thread-header {
@@ -537,7 +551,12 @@ body {
 }
 
 .kodex-sidebar-scroll {
+  flex: 1 1 auto;
   min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  margin-right: calc(var(--app-shell-padding) * -1);
+  padding-right: calc(var(--app-shell-padding) + 6px);
 }
 
 .kodex-sidebar-footer {
@@ -576,6 +595,8 @@ body {
 .kodex-approval-card {
   display: grid;
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   border: 1px solid #383838;
   border-radius: 8px;
@@ -950,8 +971,16 @@ body {
   overflow-wrap: anywhere;
 }
 
+.kodex-approval-card > * {
+  min-width: 0;
+}
+
 .kodex-approval-command {
+  box-sizing: border-box;
   display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   max-height: 132px;
   overflow: auto;
   border: 1px solid #3d3d3d;
@@ -963,6 +992,28 @@ body {
   font-size: 12px;
   line-height: 1.45;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.kodex-approval-actions {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.kodex-approval-action {
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+}
+
+.kodex-approval-action .mantine-Button-inner,
+.kodex-approval-action .mantine-Button-label {
+  min-width: 0;
+}
+
+.kodex-approval-action .mantine-Button-label {
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 @media (max-width: 900px) {
@@ -990,6 +1041,14 @@ body {
     padding: 12px !important;
     overflow: auto;
     transform: none !important;
+  }
+
+  .kodex-main-stack {
+    border-radius: 0;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
   }
 
   .kodex-sidebar-resize-handle {

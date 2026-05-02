@@ -729,7 +729,10 @@ function KodexShell() {
         return;
       }
 
-      const thread = await createThread(selectedProjectId, createThreadOptions(composerSettings));
+      const thread = optimisticThreadSummary(
+        await createThread(selectedProjectId, createThreadOptions(composerSettings)),
+        text,
+      );
       setThreadsByProjectId((current) => prependThreadForProject(current, selectedProjectId, thread));
       setPendingTitleThreadIds((current) => markThreadTitlePending(current, thread));
       setDraftThreadProjectId(null);
@@ -1122,7 +1125,7 @@ function KodexShell() {
       setThreadComposerSettingsById((current) => ({ ...current, [thread.id]: threadSettings }));
     }
     setThreadsByProjectId((current) => replaceThreadInProjects(current, thread, selectedProjectId));
-    if (isThreadTitleAvailable(thread)) {
+    if (threadHasDisplayTitle(thread)) {
       setPendingTitleThreadIds((current) => {
         if (!current.has(thread.id)) {
           return current;
@@ -1364,7 +1367,7 @@ function KodexShell() {
       </AppShell.Navbar>
 
       <AppShell.Main aria-label={UI_TEXT.shell.mainLabel} className="kodex-main">
-        <Stack h="calc(100vh - 32px)" gap="md" className="kodex-main-stack">
+        <Stack h="calc(100vh - var(--app-shell-padding))" gap="md" className="kodex-main-stack">
           {errorMessage ? (
             <Badge className="kodex-main-column" color="red" variant="light" leftSection={<AlertCircle size={12} />}>
               {errorMessage}
@@ -2355,10 +2358,11 @@ function ApprovalCard({
           ))}
         </Stack>
       ) : null}
-      <Group gap="xs" mt="sm">
+      <Group className="kodex-approval-actions" gap="xs" mt="sm">
         {actions.map((action) => (
           <Button
             aria-label={action.ariaLabel}
+            className="kodex-approval-action"
             color={action.color}
             key={action.label}
             leftSection={action.icon}
@@ -2946,7 +2950,7 @@ function threadNameUpdateFromEvent(event: EventEnvelope): { threadId: string; na
 }
 
 function markThreadTitlePending(current: Set<string>, thread: ThreadSummary): Set<string> {
-  if (isThreadTitleAvailable(thread)) {
+  if (threadHasDisplayTitle(thread)) {
     return current;
   }
   const next = new Set(current);
@@ -2957,7 +2961,7 @@ function markThreadTitlePending(current: Set<string>, thread: ThreadSummary): Se
 function clearAvailableThreadTitles(current: Set<string>, threads: ThreadSummary[]): Set<string> {
   let next: Set<string> | null = null;
   for (const thread of threads) {
-    if (!current.has(thread.id) || !isThreadTitleAvailable(thread)) {
+    if (!current.has(thread.id) || !threadHasDisplayTitle(thread)) {
       continue;
     }
     next ??= new Set(current);
@@ -3040,11 +3044,6 @@ function projectIdForThread(
   return Object.entries(current).find(([, threads]) => threads.some((item) => item.id === thread.id))?.[0] ?? fallbackProjectId;
 }
 
-function isThreadTitleAvailable(thread: ThreadSummary): boolean {
-  const name = thread.name?.replace(/\s+/g, " ").trim();
-  return Boolean(name && name !== UI_TEXT.thread.new);
-}
-
 function applyApprovalEvents(current: Approval[], events: EventEnvelope[]): Approval[] {
   return events.reduce(applyApprovalEvent, current);
 }
@@ -3090,10 +3089,32 @@ function approvalFromPayload(payload: unknown): Approval | null {
 
 function threadDisplayTitle(thread: ThreadSummary): string {
   return (
-    normalizeTitle(thread.name ?? null) ??
+    threadNameTitle(thread) ??
     normalizeTitle(previewTitle(thread.preview)) ??
     `${UI_TEXT.thread.untitled} ${thread.id.slice(0, 8)}`
   );
+}
+
+function threadHasDisplayTitle(thread: ThreadSummary): boolean {
+  return Boolean(threadNameTitle(thread) ?? normalizeTitle(previewTitle(thread.preview)));
+}
+
+function optimisticThreadSummary(thread: ThreadSummary, firstMessageText: string): ThreadSummary {
+  if (threadHasDisplayTitle(thread)) {
+    return thread;
+  }
+
+  const preview = normalizeTitle(firstMessageText);
+  if (!preview) {
+    return thread;
+  }
+
+  return { ...thread, preview };
+}
+
+function threadNameTitle(thread: ThreadSummary): string | null {
+  const name = normalizeTitle(thread.name ?? null);
+  return name === UI_TEXT.thread.new ? null : name;
 }
 
 function threadNeedsApproval(thread: ThreadSummary, approvals: Approval[]): boolean {

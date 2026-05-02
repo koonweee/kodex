@@ -1,9 +1,13 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 import { mockGateway, requestJson } from "./test/gatewayMock";
+
+const appCss = readFileSync(join(process.cwd(), "src/App.css"), "utf8");
 
 const capabilities = {
   gateway: {
@@ -142,7 +146,7 @@ describe("MVP frontend flows", () => {
     FakeEventSource.instances = [];
   });
 
-  it("renders projects and threads, creates a project, and starts a draft thread after the first message", async () => {
+  it("renders projects and threads, creates a project, and promotes a draft thread title from the first message", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     let resolveCreatedThreadEvents: (value: unknown) => void = () => {};
     const createdThreadEvents = new Promise<unknown>((resolve) => {
@@ -203,7 +207,7 @@ describe("MVP frontend flows", () => {
     expect(screen.getByRole("heading", { name: /new thread/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
 
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Implement the next milestone");
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Implement the next milestone for the web client");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
@@ -211,10 +215,13 @@ describe("MVP frontend flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(1);
     });
-    const draftThreadButtons = await screen.findAllByRole("button", { name: /new thread/i });
-    expect(draftThreadButtons).toHaveLength(2);
-    const draftTitle = within(draftThreadButtons[1]).getByText("New thread");
-    expect(draftTitle).toHaveAttribute("data-placeholder-title", "true");
+    const optimisticThread = await screen.findByRole("button", {
+      name: /implement the next milestone for the web client/i,
+    });
+    expect(
+      within(optimisticThread).getByText("Implement the next milestone for the web client"),
+    ).not.toHaveAttribute("data-placeholder-title");
+    expect(screen.getByRole("heading", { name: /implement the next milestone for the web client/i })).toBeInTheDocument();
 
     act(() => {
       resolveCreatedThreadEvents({
@@ -235,6 +242,7 @@ describe("MVP frontend flows", () => {
 
     const titledThread = await screen.findByRole("button", { name: /implement the next milestone/i });
     expect(within(titledThread).getByText("Implement the next milestone")).not.toHaveAttribute("data-placeholder-title");
+    expect(screen.getByRole("heading", { name: /implement the next milestone/i })).toBeInTheDocument();
   });
 
   it("sends composer footer model, speed, permissions, and context settings", async () => {
@@ -1140,7 +1148,7 @@ describe("MVP frontend flows", () => {
     await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
-    expect(await screen.findByText("Inspect this")).toBeInTheDocument();
+    expect(await within(timelineElement(container)).findByText("Inspect this")).toBeInTheDocument();
     expect(screen.getByText("Uploading")).toBeInTheDocument();
     expect(input).toBeDisabled();
     fireEvent.change(input!, {
@@ -1192,7 +1200,7 @@ describe("MVP frontend flows", () => {
     await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
-    expect(await screen.findByText("Inspect this")).toBeInTheDocument();
+    expect(await within(timelineElement(container)).findByText("Inspect this")).toBeInTheDocument();
     expect(screen.getByText("Uploading")).toBeInTheDocument();
     expect(container.querySelector(".kodex-user-image-grid img")).toHaveAttribute("src", "blob:draft-diagram");
     expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
@@ -1248,7 +1256,7 @@ describe("MVP frontend flows", () => {
     await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
-    expect(await screen.findByText("Inspect this")).toBeInTheDocument();
+    expect(await within(timelineElement(container)).findByText("Inspect this")).toBeInTheDocument();
     expect(screen.getByText("Uploading")).toBeInTheDocument();
     expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
     expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(0);
@@ -1895,6 +1903,52 @@ describe("MVP frontend flows", () => {
     expect(within(timeline).getByText(/reason: verify production ui/i)).toBeInTheDocument();
     const command = within(timeline).getByText(/\$ npm run build -- --mode production/i);
     expect(command.closest("code")).toHaveClass("kodex-approval-command");
+  });
+
+  it("keeps long approval commands and action labels inside the card", async () => {
+    const longPrefix = `allow ${"very-long-option-without-natural-breaks-".repeat(8)}suffix`;
+    const longCommand = `/usr/bin/env ${"--long-option-without-natural-breaks=".repeat(8)}value`;
+    const approval = {
+      id: "approval-long-display",
+      requestId: "request-long-display",
+      threadId: thread.id,
+      turnId: "turn-1",
+      itemId: "item-1",
+      method: "item/commandExecution/requestApproval",
+      status: "pending",
+      payload: {
+        command: longCommand,
+        commandActions: [{ type: "unknown", command: longCommand }],
+        cwd: "/home/example/kodex",
+        proposedExecpolicyAmendment: [longPrefix],
+        reason: "Exercise long approval text",
+      },
+      response: null,
+      createdAt: "2026-04-30T00:00:00Z",
+      resolvedAt: null,
+    };
+    mockGateway(
+      baseRoutes({
+        "GET /v1/approvals": { approvals: [approval] },
+      }),
+    );
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: /implement frontend/i });
+    const timeline = await screen.findByRole("main", { name: /thread/i });
+    const command = await within(timeline).findByText(`$ ${longCommand}`);
+    const action = within(timeline).getByRole("button", {
+      name: /yes, and don't ask again for commands that start with/i,
+    });
+
+    expect(command).toHaveClass("kodex-approval-command");
+    expect(action).toHaveClass("kodex-approval-action");
+    expect(appCss).toMatch(/\.kodex-approval-command\s*\{[^}]*min-width:\s*0;/s);
+    expect(appCss).toMatch(/\.kodex-approval-command\s*\{[^}]*max-width:\s*100%;/s);
+    expect(appCss).toMatch(/\.kodex-approval-command\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
+    expect(appCss).toMatch(/\.kodex-approval-action\s*\{[^}]*max-width:\s*100%;/s);
+    expect(appCss).toMatch(/\.kodex-approval-action\s*\{[^}]*white-space:\s*normal;/s);
   });
 
   it("does not resurrect a locally resolved approval from a stale created event", async () => {
