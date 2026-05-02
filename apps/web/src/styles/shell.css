@@ -31,11 +31,11 @@
 .kodex-sidebar-resize-handle:hover::after,
 .kodex-sidebar-resize-handle:focus-visible::after,
 .kodex-shell[data-sidebar-resizing="true"] .kodex-sidebar-resize-handle::after {
-  background: var(--kodex-border-accent-soft);
+  background: transparent;
 }
 
 .kodex-sidebar-resize-handle:focus-visible {
-  outline: 1px solid var(--kodex-border-accent-soft);
+  outline: 1px solid transparent;
   outline-offset: -2px;
 }
 
@@ -164,4 +164,3 @@
   min-width: 0;
   flex: 1;
 }
-
