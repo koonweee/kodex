@@ -14,7 +14,15 @@ export type ModelSummary = components["schemas"]["ModelSummary"];
 export type Project = components["schemas"]["Project"];
 export type RateLimitsResponse = components["schemas"]["RateLimitsResponse"];
 export type ThreadRead = components["schemas"]["ThreadRead"];
+export type ThreadDetailResponse = components["schemas"]["ThreadDetailResponse"];
 export type ThreadSummary = components["schemas"]["ThreadSummary"];
+export type TimelineItemDeltaPayload = components["schemas"]["TimelineItemDeltaPayload"];
+export type TimelineItemUpsertPayload = components["schemas"]["TimelineItemUpsertPayload"];
+export type TimelineLiveState = components["schemas"]["ThreadLiveState"];
+export type TimelineThreadMetadataPayload = components["schemas"]["TimelineThreadMetadataPayload"];
+export type TimelineThreadStatusPayload = components["schemas"]["TimelineThreadStatusPayload"];
+export type TimelineTurnUpsertPayload = components["schemas"]["TimelineTurnUpsertPayload"];
+export type TimelineUpdateSource = components["schemas"]["TimelineUpdateSource"];
 export type UserInput = components["schemas"]["UserInput"];
 export type ImageUpload = components["schemas"]["ImageUpload"];
 export type CreateThreadOptions = Omit<components["schemas"]["CreateThreadRequest"], "payload" | "projectId">;
@@ -78,6 +86,10 @@ export async function forkThread(threadId: string): Promise<ThreadSummary> {
     api.POST("/v1/threads/{threadId}/fork", { params: { path: { threadId } }, body: {} }),
   );
   return response.thread;
+}
+
+export async function getThreadDetail(threadId: string): Promise<ThreadDetailResponse> {
+  return unwrap(api.GET("/v1/threads/{threadId}", { params: { path: { threadId } } }));
 }
 
 export async function archiveThread(threadId: string): Promise<void> {

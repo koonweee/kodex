@@ -87,13 +87,13 @@
             "$ref": "#/definitions/AskForApproval"
           }
         },
-        "featureRequirements": {
+        "allowedApprovalsReviewers": {
           "type": [
-            "object",
+            "array",
             "null"
           ],
-          "additionalProperties": {
-            "type": "boolean"
+          "items": {
+            "$ref": "#/definitions/ApprovalsReviewer"
           }
         },
         "allowedSandboxModes": {
@@ -118,6 +118,35 @@
           "anyOf": [
             {
               "$ref": "#/definitions/ResidencyRequirement"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "featureRequirements": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
+        "hooks": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ManagedHooksRequirements"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "network": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/NetworkRequirements"
             },
             {
               "type": "null"

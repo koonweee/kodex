@@ -49,10 +49,75 @@
         "null"
       ]
     },
-    "sessionStartSource": {
+    "dynamicTools": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "#/definitions/DynamicToolSpec"
+      }
+    },
+    "environments": {
+      "description": "Optional sticky environments for this thread.\n\nOmitted selects the default environment when environment access is enabled. Empty disables environment access for turns that do not provide a turn override. Non-empty selects the first environment as the current turn environment.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "#/definitions/TurnEnvironmentParams"
+      }
+    },
+    "ephemeral": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "experimentalRawEvents": {
+      "description": "If true, opt into emitting raw Responses API items on the event stream. This is for internal use only (e.g. Codex Cloud).",
+      "default": false,
+      "type": "boolean"
+    },
+    "mockExperimentalField": {
+      "description": "Test-only experimental field used to validate experimental gating and schema filtering behavior in a stable way.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "model": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "modelProvider": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "permissions": {
+      "description": "Named profile selection for this thread. Cannot be combined with `sandbox`. Use bounded `modifications` for supported turn/thread adjustments instead of replacing the full permissions profile.",
       "anyOf": [
         {
-          "$ref": "#/definitions/ThreadStartSource"
+          "$ref": "#/definitions/PermissionProfileSelectionParams"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "persistExtendedHistory": {
+      "description": "If true, persist additional rollout EventMsg variants required to reconstruct a richer thread history on resume/fork/read.",
+      "default": false,
+      "type": "boolean"
+    },
+    "personality": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Personality"
         },
         {
           "type": "null"
@@ -69,35 +134,7 @@
         }
       ]
     },
-    "ephemeral": {
-      "type": [
-        "boolean",
-        "null"
-      ]
-    },
     "serviceName": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "personality": {
-      "anyOf": [
-        {
-          "$ref": "#/definitions/Personality"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "model": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "modelProvider": {
       "type": [
         "string",
         "null"
@@ -114,6 +151,16 @@
               "type": "null"
             }
           ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionStartSource": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ThreadStartSource"
         },
         {
           "type": "null"

@@ -10,21 +10,32 @@ use axum::{
     },
     Json,
 };
+use chrono::Utc;
 use futures_core::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::{broadcast, mpsc};
+use tokio::time::{timeout, Duration, Instant};
 use utoipa::{IntoParams, ToSchema};
+use uuid::Uuid;
 
 use crate::{
     api::AppState,
     app_server::InboundMessage,
-    error::ApiResult,
+    app_server_api::{
+        self, ThreadDetailResponse, ThreadItemSnapshot, ThreadLiveState, ThreadStatus,
+        ThreadSummary, ThreadTurnSnapshot, TimelineItemDeltaPayload, TimelineItemUpsertPayload,
+        TimelineThreadMetadataPayload, TimelineThreadStatusPayload, TimelineTurnUpsertPayload,
+        TimelineUpdateSource,
+    },
+    error::{ApiError, ApiResult},
     schema::is_supported_approval_method,
     store::{EventEnvelope, NewApproval, NewEvent},
 };
 
 const SSE_REPLAY_PAGE_SIZE: i64 = 500;
+const SELECTED_THREAD_POLL_LIMIT: u32 = 25;
+const SELECTED_THREAD_ACTIVE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -75,16 +86,27 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             let event = state
                 .store
                 .append_event(NewEvent {
-                    project_id: metadata.project_id,
-                    thread_id: metadata.thread_id,
-                    turn_id: metadata.turn_id,
-                    item_id: metadata.item_id,
+                    project_id: metadata.project_id.clone(),
+                    thread_id: metadata.thread_id.clone(),
+                    turn_id: metadata.turn_id.clone(),
+                    item_id: metadata.item_id.clone(),
                     kind: "codex.notification".to_string(),
-                    codex_method: Some(method),
-                    payload: params,
+                    codex_method: Some(method.clone()),
+                    payload: params.clone(),
                 })
                 .await?;
             let _ = state.events.send(event);
+            for normalized in normalized_timeline_events(
+                state,
+                &method,
+                &params,
+                &metadata,
+                TimelineUpdateSource::GatewayStream,
+            )
+            .await?
+            {
+                let _ = state.events.send(normalized);
+            }
         }
         InboundMessage::ServerRequest {
             request_id,
@@ -194,6 +216,7 @@ async fn event_stream(
 
     Ok(stream! {
         let mut high_water = replay_high_water;
+        let mut selected_sync = SelectedThreadSync::default();
 
         for event in replay {
             high_water = high_water.max(event.seq);
@@ -203,19 +226,524 @@ async fn event_stream(
         }
 
         loop {
-            match receiver.recv().await {
-                Ok(event) if event.seq > high_water && event_matches(&event, &query) => {
+            let received = timeout(Duration::from_secs(5), receiver.recv()).await;
+            match received {
+                Ok(Ok(event)) if event.seq > high_water && event_matches(&event, &query) => {
                     high_water = event.seq;
                     if let Ok(sse_event) = event_to_sse(event) {
                         yield Ok(sse_event);
                     }
                 }
-                Ok(_) => {}
-                Err(broadcast::error::RecvError::Lagged(_)) => {}
-                Err(broadcast::error::RecvError::Closed) => break,
+                Ok(Ok(_)) => {}
+                Ok(Err(broadcast::error::RecvError::Lagged(_))) => {}
+                Ok(Err(broadcast::error::RecvError::Closed)) => break,
+                Err(_) => {
+                    let Some(thread_id) = query.thread_id.clone() else {
+                        continue;
+                    };
+                    match reconcile_selected_thread(&state, &thread_id, high_water, &mut selected_sync).await {
+                        Ok(events) => {
+                            for event in events {
+                                debug_assert!(event.seq <= high_water);
+                                if let Ok(sse_event) = event_to_sse(event) {
+                                    yield Ok(sse_event);
+                                }
+                            }
+                        }
+                        Err(error) => tracing::debug!(%error, thread_id, "selected thread reconciliation failed"),
+                    }
+                }
             }
         }
     })
+}
+
+#[derive(Default)]
+struct SelectedThreadSync {
+    last_seen_updated_at: Option<i64>,
+    last_snapshot_updated_at: Option<i64>,
+    last_active_refresh_at: Option<Instant>,
+}
+
+async fn reconcile_selected_thread(
+    state: &AppState,
+    thread_id: &str,
+    seq: i64,
+    sync: &mut SelectedThreadSync,
+) -> ApiResult<Vec<EventEnvelope>> {
+    let Some(summary) = find_recent_thread_summary(state, thread_id).await? else {
+        return Ok(Vec::new());
+    };
+
+    let updated_at_changed = sync
+        .last_seen_updated_at
+        .is_none_or(|updated_at| summary.updated_at > updated_at);
+    sync.last_seen_updated_at = Some(summary.updated_at);
+
+    let active_refresh_due = summary.status == ThreadStatus::Active
+        && sync
+            .last_active_refresh_at
+            .is_none_or(|last| last.elapsed() >= SELECTED_THREAD_ACTIVE_REFRESH_INTERVAL);
+    let snapshot_stale = sync
+        .last_snapshot_updated_at
+        .is_none_or(|updated_at| summary.updated_at > updated_at);
+
+    if !updated_at_changed && !active_refresh_due && !snapshot_stale {
+        return Ok(Vec::new());
+    }
+
+    let snapshot = app_server_api::client(&state.app_server)
+        .thread_read(thread_id.to_string())
+        .await?;
+    sync.last_snapshot_updated_at = Some(snapshot.thread.updated_at);
+    if snapshot.thread.status == ThreadStatus::Active {
+        sync.last_active_refresh_at = Some(Instant::now());
+    } else {
+        sync.last_active_refresh_at = None;
+    }
+
+    snapshot_timeline_events(&snapshot, seq)
+}
+
+async fn find_recent_thread_summary(
+    state: &AppState,
+    thread_id: &str,
+) -> ApiResult<Option<ThreadSummary>> {
+    let response = app_server_api::client(&state.app_server)
+        .thread_list_recent_updated(SELECTED_THREAD_POLL_LIMIT)
+        .await?;
+    Ok(response
+        .threads
+        .into_iter()
+        .find(|thread| thread.id == thread_id))
+}
+
+fn snapshot_timeline_events(
+    snapshot: &ThreadDetailResponse,
+    seq: i64,
+) -> ApiResult<Vec<EventEnvelope>> {
+    let mut events = Vec::new();
+    events.push(synthetic_event(
+        seq,
+        Some(snapshot.thread.id.clone()),
+        None,
+        None,
+        "timeline.thread_metadata",
+        Some("thread/metadata"),
+        TimelineThreadMetadataPayload {
+            source: TimelineUpdateSource::AppServerSnapshot,
+            thread: snapshot.thread.clone(),
+        },
+    )?);
+    events.push(synthetic_event(
+        seq,
+        Some(snapshot.thread.id.clone()),
+        None,
+        None,
+        "timeline.thread_status",
+        Some("thread/status"),
+        TimelineThreadStatusPayload {
+            source: TimelineUpdateSource::AppServerSnapshot,
+            status: snapshot.thread.status,
+            live_state: snapshot.live_state,
+            raw_payload: snapshot.thread.raw_payload.clone(),
+        },
+    )?);
+    for turn in &snapshot.turns {
+        events.push(synthetic_event(
+            seq,
+            Some(snapshot.thread.id.clone()),
+            Some(turn.id.clone()),
+            None,
+            "timeline.turn_upsert",
+            Some("turn/upsert"),
+            TimelineTurnUpsertPayload {
+                source: TimelineUpdateSource::AppServerSnapshot,
+                turn: turn.clone(),
+                live_state: snapshot.live_state,
+            },
+        )?);
+        for item in &turn.items {
+            events.push(synthetic_event(
+                seq,
+                Some(snapshot.thread.id.clone()),
+                Some(turn.id.clone()),
+                Some(item.id.clone()),
+                "timeline.item_upsert",
+                Some("item/upsert"),
+                TimelineItemUpsertPayload {
+                    source: TimelineUpdateSource::AppServerSnapshot,
+                    turn_id: turn.id.clone(),
+                    item_id: item.id.clone(),
+                    item: item.raw_payload.clone(),
+                    item_snapshot: item.clone(),
+                },
+            )?);
+        }
+    }
+    Ok(events)
+}
+
+fn synthetic_event(
+    seq: i64,
+    thread_id: Option<String>,
+    turn_id: Option<String>,
+    item_id: Option<String>,
+    kind: &str,
+    codex_method: Option<&str>,
+    payload: impl Serialize,
+) -> ApiResult<EventEnvelope> {
+    Ok(EventEnvelope {
+        seq,
+        id: Uuid::new_v4().to_string(),
+        received_at: Utc::now(),
+        project_id: None,
+        thread_id,
+        turn_id,
+        item_id,
+        kind: kind.to_string(),
+        codex_method: codex_method.map(str::to_string),
+        payload: serde_json::to_value(payload)?,
+    })
+}
+
+async fn normalized_timeline_events(
+    state: &AppState,
+    method: &str,
+    params: &Value,
+    metadata: &EventMetadata,
+    source: TimelineUpdateSource,
+) -> ApiResult<Vec<EventEnvelope>> {
+    let mut events = Vec::new();
+    if metadata.thread_id.is_none() {
+        return Ok(events);
+    }
+
+    if let Some(event) = timeline_item_delta_event(state, method, params, metadata, source).await? {
+        events.push(event);
+    }
+    if let Some(event) = timeline_item_upsert_event(state, params, metadata, source).await? {
+        events.push(event);
+    }
+    if let Some(event) = timeline_turn_upsert_event(state, params, metadata, source).await? {
+        events.push(event);
+    }
+    if let Some(event) = timeline_thread_metadata_event(state, params, metadata, source).await? {
+        events.push(event);
+    }
+    if let Some(event) = timeline_thread_status_event(state, params, metadata, source).await? {
+        events.push(event);
+    }
+
+    Ok(events)
+}
+
+async fn timeline_item_delta_event(
+    state: &AppState,
+    method: &str,
+    params: &Value,
+    metadata: &EventMetadata,
+    source: TimelineUpdateSource,
+) -> ApiResult<Option<EventEnvelope>> {
+    if !method.ends_with("/delta") {
+        return Ok(None);
+    }
+    let Some(thread_id) = metadata.thread_id.clone() else {
+        return Ok(None);
+    };
+    let Some(item_id) = metadata.item_id.clone() else {
+        return Ok(None);
+    };
+    let payload = TimelineItemDeltaPayload {
+        source,
+        delta: string_field(params, &["delta", "text", "content"]).unwrap_or_default(),
+        raw_payload: params.clone(),
+    };
+    append_timeline_event(
+        state,
+        NewEvent {
+            project_id: metadata.project_id.clone(),
+            thread_id: Some(thread_id),
+            turn_id: metadata.turn_id.clone(),
+            item_id: Some(item_id),
+            kind: "timeline.item_delta".to_string(),
+            codex_method: Some(method.to_string()),
+            payload: serde_json::to_value(payload)?,
+        },
+    )
+    .await
+    .map(Some)
+}
+
+async fn timeline_item_upsert_event(
+    state: &AppState,
+    params: &Value,
+    metadata: &EventMetadata,
+    source: TimelineUpdateSource,
+) -> ApiResult<Option<EventEnvelope>> {
+    let Some(thread_id) = metadata.thread_id.clone() else {
+        return Ok(None);
+    };
+    let Some(turn_id) = metadata.turn_id.clone() else {
+        return Ok(None);
+    };
+    let Some(item) = params.get("item").filter(|item| item.is_object()) else {
+        return Ok(None);
+    };
+    let Ok(item_snapshot) = item_snapshot_from_value(item) else {
+        return Ok(None);
+    };
+    let payload = TimelineItemUpsertPayload {
+        source,
+        turn_id: turn_id.clone(),
+        item_id: item_snapshot.id.clone(),
+        item: item.clone(),
+        item_snapshot,
+    };
+    append_timeline_event(
+        state,
+        NewEvent {
+            project_id: metadata.project_id.clone(),
+            thread_id: Some(thread_id),
+            turn_id: Some(turn_id),
+            item_id: Some(payload.item_id.clone()),
+            kind: "timeline.item_upsert".to_string(),
+            codex_method: Some("item/upsert".to_string()),
+            payload: serde_json::to_value(payload)?,
+        },
+    )
+    .await
+    .map(Some)
+}
+
+async fn timeline_turn_upsert_event(
+    state: &AppState,
+    params: &Value,
+    metadata: &EventMetadata,
+    source: TimelineUpdateSource,
+) -> ApiResult<Option<EventEnvelope>> {
+    let Some(thread_id) = metadata.thread_id.clone() else {
+        return Ok(None);
+    };
+    let Some(turn) = params.get("turn").filter(|turn| turn.is_object()) else {
+        return Ok(None);
+    };
+    let Ok(turn) = turn_snapshot_from_value(turn) else {
+        return Ok(None);
+    };
+    let payload = TimelineTurnUpsertPayload {
+        source,
+        live_state: live_state_from_turn_status(&turn.status),
+        turn: turn.clone(),
+    };
+    append_timeline_event(
+        state,
+        NewEvent {
+            project_id: metadata.project_id.clone(),
+            thread_id: Some(thread_id),
+            turn_id: Some(turn.id),
+            item_id: None,
+            kind: "timeline.turn_upsert".to_string(),
+            codex_method: Some("turn/upsert".to_string()),
+            payload: serde_json::to_value(payload)?,
+        },
+    )
+    .await
+    .map(Some)
+}
+
+async fn timeline_thread_metadata_event(
+    state: &AppState,
+    params: &Value,
+    metadata: &EventMetadata,
+    source: TimelineUpdateSource,
+) -> ApiResult<Option<EventEnvelope>> {
+    let Some(thread_id) = metadata.thread_id.clone() else {
+        return Ok(None);
+    };
+    let Some(thread) = params.get("thread").filter(|thread| thread.is_object()) else {
+        return Ok(None);
+    };
+    let payload = TimelineThreadMetadataPayload {
+        source,
+        thread: match thread_summary_from_value(thread) {
+            Ok(thread) => thread,
+            Err(_) => return Ok(None),
+        },
+    };
+    append_timeline_event(
+        state,
+        NewEvent {
+            project_id: metadata.project_id.clone(),
+            thread_id: Some(thread_id),
+            turn_id: None,
+            item_id: None,
+            kind: "timeline.thread_metadata".to_string(),
+            codex_method: Some("thread/metadata".to_string()),
+            payload: serde_json::to_value(payload)?,
+        },
+    )
+    .await
+    .map(Some)
+}
+
+async fn timeline_thread_status_event(
+    state: &AppState,
+    params: &Value,
+    metadata: &EventMetadata,
+    source: TimelineUpdateSource,
+) -> ApiResult<Option<EventEnvelope>> {
+    let Some(thread_id) = metadata.thread_id.clone() else {
+        return Ok(None);
+    };
+    let status_value = params
+        .get("status")
+        .or_else(|| params.get("thread").and_then(|thread| thread.get("status")));
+    let Some(status) = status_value.and_then(thread_status_from_value) else {
+        return Ok(None);
+    };
+    let payload = TimelineThreadStatusPayload {
+        source,
+        status,
+        live_state: live_state_from_thread_status(status),
+        raw_payload: params.clone(),
+    };
+    append_timeline_event(
+        state,
+        NewEvent {
+            project_id: metadata.project_id.clone(),
+            thread_id: Some(thread_id),
+            turn_id: None,
+            item_id: None,
+            kind: "timeline.thread_status".to_string(),
+            codex_method: Some("thread/status".to_string()),
+            payload: serde_json::to_value(payload)?,
+        },
+    )
+    .await
+    .map(Some)
+}
+
+async fn append_timeline_event(state: &AppState, event: NewEvent) -> ApiResult<EventEnvelope> {
+    state.store.append_event(event).await
+}
+
+fn turn_snapshot_from_value(turn: &Value) -> ApiResult<ThreadTurnSnapshot> {
+    let items = turn
+        .get("items")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .map(item_snapshot_from_value)
+                .collect::<ApiResult<Vec<_>>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    Ok(ThreadTurnSnapshot {
+        id: required_payload_string(turn, "id")?,
+        status: status_type(turn.get("status")).unwrap_or_else(|| "unknown".to_string()),
+        started_at: turn.get("startedAt").and_then(Value::as_i64),
+        completed_at: turn.get("completedAt").and_then(Value::as_i64),
+        items,
+        raw_payload: turn.clone(),
+    })
+}
+
+fn item_snapshot_from_value(item: &Value) -> ApiResult<ThreadItemSnapshot> {
+    Ok(ThreadItemSnapshot {
+        id: required_payload_string(item, "id")?,
+        item_type: required_payload_string(item, "type")?,
+        raw_payload: item.clone(),
+    })
+}
+
+fn thread_summary_from_value(thread: &Value) -> ApiResult<ThreadSummary> {
+    let status = thread
+        .get("status")
+        .and_then(thread_status_from_value)
+        .ok_or_else(|| missing_payload_field("status.type"))?;
+    Ok(ThreadSummary {
+        id: required_payload_string(thread, "id")?,
+        name: string_field(thread, &["name"]),
+        cwd: required_payload_string(thread, "cwd")?,
+        status,
+        created_at: required_payload_i64(thread, "createdAt")?,
+        updated_at: required_payload_i64(thread, "updatedAt")?,
+        source: string_field(thread, &["source"]),
+        model: string_field(thread, &["model"]),
+        reasoning_effort: string_field(thread, &["reasoningEffort"]),
+        service_tier: string_field(thread, &["serviceTier"]),
+        approval_policy: string_field(thread, &["approvalPolicy"]),
+        approvals_reviewer: string_field(thread, &["approvalsReviewer"]),
+        sandbox: thread
+            .get("sandbox")
+            .filter(|value| !value.is_null())
+            .cloned(),
+        preview: thread.get("preview").cloned(),
+        last_completed_agent_turn_seq: None,
+        seen_completed_agent_turn_seq: 0,
+        unread_completed_agent_turn: false,
+        raw_payload: thread.clone(),
+    })
+}
+
+fn thread_status_from_value(status: &Value) -> Option<ThreadStatus> {
+    match status_type(Some(status)).as_deref() {
+        Some("notLoaded") => Some(ThreadStatus::NotLoaded),
+        Some("idle") => Some(ThreadStatus::Idle),
+        Some("systemError") => Some(ThreadStatus::SystemError),
+        Some("active") => Some(ThreadStatus::Active),
+        _ => None,
+    }
+}
+
+fn live_state_from_thread_status(status: ThreadStatus) -> ThreadLiveState {
+    match status {
+        ThreadStatus::Active => ThreadLiveState::Streaming,
+        ThreadStatus::Idle | ThreadStatus::SystemError => ThreadLiveState::Idle,
+        ThreadStatus::NotLoaded => ThreadLiveState::NotLoaded,
+    }
+}
+
+fn live_state_from_turn_status(status: &str) -> ThreadLiveState {
+    match status {
+        "completed" | "failed" | "cancelled" => ThreadLiveState::Idle,
+        "unknown" => ThreadLiveState::NotLoaded,
+        _ => ThreadLiveState::Streaming,
+    }
+}
+
+fn status_type(value: Option<&Value>) -> Option<String> {
+    value.and_then(|status| {
+        status.as_str().map(str::to_string).or_else(|| {
+            status
+                .get("type")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+    })
+}
+
+fn required_payload_string(payload: &Value, field: &str) -> ApiResult<String> {
+    payload
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| missing_payload_field(field))
+}
+
+fn required_payload_i64(payload: &Value, field: &str) -> ApiResult<i64> {
+    payload
+        .get(field)
+        .and_then(Value::as_i64)
+        .ok_or_else(|| missing_payload_field(field))
+}
+
+fn missing_payload_field(field: &str) -> ApiError {
+    ApiError::BadGateway(format!(
+        "unexpected app-server payload: missing timeline field {field}"
+    ))
 }
 
 fn event_matches(event: &EventEnvelope, query: &EventsQuery) -> bool {
@@ -312,5 +840,165 @@ mod tests {
         assert_eq!(replay[0].id, broadcast.id);
         assert_eq!(replay[0].thread_id.as_deref(), Some("thread-1"));
         assert_eq!(replay[0].turn_id.as_deref(), Some("turn-1"));
+    }
+
+    #[tokio::test]
+    async fn notification_ingest_emits_normalized_timeline_delta() {
+        let state = test_state().await;
+        let mut receiver = state.events.subscribe();
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "item/agentMessage/delta".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "item-1",
+                    "delta": "hello"
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let raw = receiver.recv().await.unwrap();
+        let normalized = receiver.recv().await.unwrap();
+        assert_eq!(raw.kind, "codex.notification");
+        assert_eq!(normalized.kind, "timeline.item_delta");
+        assert_eq!(normalized.seq, raw.seq + 1);
+        assert_eq!(normalized.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(normalized.turn_id.as_deref(), Some("turn-1"));
+        assert_eq!(normalized.item_id.as_deref(), Some("item-1"));
+        assert_eq!(normalized.payload["source"], "gatewayStream");
+        assert_eq!(normalized.payload["delta"], "hello");
+    }
+
+    #[test]
+    fn snapshot_updates_use_current_cursor_without_advancing_high_water() {
+        let snapshot = ThreadDetailResponse {
+            thread: ThreadSummary {
+                id: "thread-1".to_string(),
+                name: None,
+                cwd: "/workspace".to_string(),
+                status: ThreadStatus::Active,
+                created_at: 1,
+                updated_at: 2,
+                source: None,
+                model: None,
+                reasoning_effort: None,
+                service_tier: None,
+                approval_policy: None,
+                approvals_reviewer: None,
+                sandbox: None,
+                preview: None,
+                last_completed_agent_turn_seq: None,
+                seen_completed_agent_turn_seq: 0,
+                unread_completed_agent_turn: false,
+                raw_payload: json!({"id": "thread-1", "status": {"type": "active"}}),
+            },
+            turns: vec![ThreadTurnSnapshot {
+                id: "turn-1".to_string(),
+                status: "running".to_string(),
+                started_at: Some(1),
+                completed_at: None,
+                items: vec![ThreadItemSnapshot {
+                    id: "item-1".to_string(),
+                    item_type: "agentMessage".to_string(),
+                    raw_payload: json!({"id": "item-1", "type": "agentMessage", "text": "hello"}),
+                }],
+                raw_payload: json!({"id": "turn-1", "status": {"type": "running"}}),
+            }],
+            live_state: ThreadLiveState::Syncing,
+            raw_payload: json!({}),
+        };
+
+        let events = snapshot_timeline_events(&snapshot, 42).unwrap();
+
+        assert!(events.iter().all(|event| event.seq == 42));
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| event.kind.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "timeline.thread_metadata",
+                "timeline.thread_status",
+                "timeline.turn_upsert",
+                "timeline.item_upsert"
+            ]
+        );
+        assert_eq!(events[3].payload["source"], "appServerSnapshot");
+        assert_eq!(events[3].payload["item"]["text"], "hello");
+    }
+
+    #[tokio::test]
+    async fn selected_thread_reconciliation_polls_recent_threads_and_coalesces_reads() {
+        let store = Store::in_memory().await.unwrap();
+        let app_server = Arc::new(RecordingAppServer::default());
+        app_server.ready.store(true, Ordering::SeqCst);
+        let state = AppState::new(Config::default(), store, app_server.clone());
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "data": [{
+                "id": "thread-1",
+                "cliVersion": "0.128.0",
+                "cwd": "/workspace",
+                "ephemeral": false,
+                "modelProvider": "openai",
+                "preview": "hello",
+                "source": "cli",
+                "status": {"type": "active"},
+                "turns": [],
+                "createdAt": 1_i64,
+                "updatedAt": 2_i64
+            }],
+            "nextCursor": null,
+            "backwardsCursor": null
+        }));
+        let mut sync = SelectedThreadSync::default();
+
+        let events = reconcile_selected_thread(&state, "thread-1", 10, &mut sync)
+            .await
+            .unwrap();
+        sync.last_snapshot_updated_at = Some(2);
+        sync.last_active_refresh_at = Some(Instant::now());
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "data": [{
+                "id": "thread-1",
+                "cliVersion": "0.128.0",
+                "cwd": "/workspace",
+                "ephemeral": false,
+                "modelProvider": "openai",
+                "preview": "hello",
+                "source": "cli",
+                "status": {"type": "active"},
+                "turns": [],
+                "createdAt": 1_i64,
+                "updatedAt": 2_i64
+            }],
+            "nextCursor": null,
+            "backwardsCursor": null
+        }));
+        let coalesced = reconcile_selected_thread(&state, "thread-1", 10, &mut sync)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| event.kind.as_str())
+                .collect::<Vec<_>>(),
+            vec!["timeline.thread_metadata", "timeline.thread_status"]
+        );
+        assert!(events.iter().all(|event| event.seq == 10));
+        assert!(coalesced.is_empty());
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/list");
+        assert_eq!(requests[0].1["sortKey"], "updated_at");
+        assert_eq!(requests[0].1["limit"], SELECTED_THREAD_POLL_LIMIT);
+        assert_eq!(requests[1].0, "thread/read");
+        assert_eq!(requests[1].1["includeTurns"], true);
+        assert_eq!(requests[2].0, "thread/list");
+        assert_eq!(requests.len(), 3);
     }
 }

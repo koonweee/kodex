@@ -19,6 +19,8 @@ pub struct HealthResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ReadyResponse {
     pub ready: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 #[utoipa::path(get, path = "/healthz", responses((status = 200, body = HealthResponse)))]
@@ -30,7 +32,13 @@ pub async fn healthz() -> Json<HealthResponse> {
 
 #[utoipa::path(get, path = "/readyz", responses((status = 200, body = ReadyResponse)))]
 pub async fn readyz(State(state): State<AppState>) -> Json<ReadyResponse> {
+    let ready = state.app_server.is_ready();
     Json(ReadyResponse {
-        ready: state.app_server.is_ready(),
+        ready,
+        message: if ready {
+            None
+        } else {
+            state.app_server.readiness_error()
+        },
     })
 }

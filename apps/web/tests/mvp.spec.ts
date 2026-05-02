@@ -124,6 +124,41 @@ test("keeps long timeline content inside the thread viewer", async ({ page }) =>
       }),
     });
   });
+  await page.route("**/v1/threads/thread-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        thread,
+        liveState: "idle",
+        rawPayload: {},
+        turns: [
+          {
+            id: "turn-1",
+            status: "completed",
+            rawPayload: {},
+            items: [
+              {
+                id: "assistant-long",
+                itemType: "agentMessage",
+                rawPayload: { id: "assistant-long", type: "agentMessage", text: longWord },
+              },
+              {
+                id: "command-long",
+                itemType: "commandExecution",
+                rawPayload: {
+                  id: "command-long",
+                  type: "commandExecution",
+                  command: longCommand,
+                  output: `${longOutput}\n`,
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    });
+  });
 
   await page.setViewportSize({ width: 720, height: 760 });
   await page.goto("/");
@@ -335,6 +370,9 @@ async function responseFor(key: string, route: Route): Promise<{ status?: number
   }
   if (key === "GET /v1/threads") {
     return { body: { threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} } };
+  }
+  if (key === "GET /v1/threads/thread-1") {
+    return { body: { thread, turns: [], liveState: "streaming", rawPayload: {} } };
   }
   if (key === "POST /v1/threads") {
     return {

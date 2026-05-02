@@ -1,12 +1,12 @@
 import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
 
 import type { Approval, EventEnvelope } from "../api/client";
-import { listEvents } from "../api/client";
+import { getThreadDetail, listEvents } from "../api/client";
 import { isApprovalEvent } from "../approvals/state";
 import { createEventStreamClient } from "../events/stream";
 import { applyTimelineEventBatch } from "./batch";
 import { idleTimelineEntry, type TimelineEntry } from "./entry";
-import { createTimelineState, replayTimeline, type TimelineState } from "./reducer";
+import { applyTimelineSnapshot, createTimelineState, type TimelineState } from "./reducer";
 
 export function useSelectedThreadTimeline({
   isSelectedThreadNotLoaded,
@@ -114,20 +114,26 @@ export function useSelectedThreadTimeline({
     let closeStream: (() => void) | null = null;
     const streamToken = selectedThreadStreamToken.current + 1;
     selectedThreadStreamToken.current = streamToken;
-    listEvents(threadId)
-      .then((events) => {
+    getThreadDetail(threadId)
+      .then(async (snapshot) => {
         if (cancelled) {
           return;
         }
 
+        setTimeline((current) => applyTimelineSnapshot(current, snapshot));
+        const events = await listEvents(threadId);
+        if (cancelled) {
+          return;
+        }
         setApprovals((current) => latestCallbacks.current.onApprovalEvents(current, events));
         latestCallbacks.current.onThreadMetadataEvents(events);
-        const timelineEvents = events.filter((event) => !isApprovalEvent(event));
-        const replayedTimeline = replayTimeline(timelineEvents);
-        setTimeline((current) => applyTimelineEventBatch(current, timelineEvents));
+        const debugTimelineEvents = events.filter((event) => !event.itemId && !isApprovalEvent(event));
+        if (debugTimelineEvents.length > 0) {
+          setTimeline((current) => applyTimelineEventBatch(current, debugTimelineEvents));
+        }
         markEntryAligning(threadId);
         const client = createEventStreamClient({
-          cursor: replayedTimeline.lastSeq,
+          cursor: events.reduce((seq, event) => Math.max(seq, event.seq), 0),
           threadId,
           onEvent: (event) => {
             if (selectedThreadStreamToken.current !== streamToken) {

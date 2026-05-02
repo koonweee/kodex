@@ -187,6 +187,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn readyz_reports_app_server_incompatibility() {
+        let (state, app_server) = test_state().await;
+        *app_server.readiness_error.lock().unwrap() = Some(
+            "Codex app-server is incompatible: rejected required persistExtendedHistory field"
+                .to_string(),
+        );
+        let app = build_router(state);
+
+        let ready = app
+            .oneshot(Request::get("/readyz").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(ready.status(), StatusCode::OK);
+        let body = response_json(ready).await;
+        assert_eq!(body["ready"], false);
+        assert_eq!(
+            body["message"],
+            "Codex app-server is incompatible: rejected required persistExtendedHistory field"
+        );
+    }
+
+    #[tokio::test]
     async fn project_create_rejects_relative_cwd() {
         let (state, _) = test_state().await;
         let app = build_router(state);
@@ -286,6 +309,7 @@ mod tests {
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "thread/start");
         assert!(requests[0].1.get("cwd").is_some());
+        assert_eq!(requests[0].1["persistExtendedHistory"], true);
     }
 
     #[tokio::test]
@@ -328,6 +352,7 @@ mod tests {
         assert_eq!(requests[0].1["approvalPolicy"], "on-request");
         assert_eq!(requests[0].1["approvalsReviewer"], "auto_review");
         assert_eq!(requests[0].1["sandbox"], "workspace-write");
+        assert_eq!(requests[0].1["persistExtendedHistory"], true);
     }
 
     #[tokio::test]
@@ -485,12 +510,72 @@ mod tests {
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "thread/read");
         assert_eq!(requests[0].1["threadId"], "thread-1");
+        assert_eq!(requests[0].1["includeTurns"], true);
         assert_eq!(requests[1].0, "thread/resume");
         assert_eq!(requests[1].1["threadId"], "thread-1");
+        assert_eq!(requests[1].1["persistExtendedHistory"], true);
         assert_eq!(requests[2].0, "thread/fork");
         assert_eq!(requests[2].1["threadId"], "thread-1");
+        assert_eq!(requests[2].1["persistExtendedHistory"], true);
         assert_eq!(requests[3].0, "thread/archive");
         assert_eq!(requests[3].1["threadId"], "thread-1");
+    }
+
+    #[tokio::test]
+    async fn thread_detail_returns_app_server_snapshot_turns_without_gateway_events() {
+        let (state, app_server) = test_state().await;
+        let app = build_router(state);
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "thread": {
+                "id": "thread-1",
+                "cliVersion": "0.128.0",
+                "cwd": "/workspace",
+                "ephemeral": false,
+                "modelProvider": "openai",
+                "preview": "hello",
+                "source": "cli",
+                "status": {"type": "idle"},
+                "turns": [{
+                    "id": "turn-1",
+                    "status": {"type": "completed"},
+                    "startedAt": 1_767_225_600_i64,
+                    "completedAt": 1_767_225_610_i64,
+                    "items": [
+                        {"id": "item-user-1", "type": "userMessage", "content": [{"type": "text", "text": "hello"}]},
+                        {"id": "item-agent-1", "type": "agentMessage", "text": "world"}
+                    ]
+                }],
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_610_i64
+            }
+        }));
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["thread"]["id"], "thread-1");
+        assert_eq!(body["turns"][0]["id"], "turn-1");
+        assert_eq!(body["turns"][0]["items"][0]["id"], "item-user-1");
+        assert_eq!(body["thread"]["lastCompletedAgentTurnSeq"], 1);
+        assert_eq!(body["thread"]["unreadCompletedAgentTurn"], true);
+        assert_eq!(body["liveState"], "idle");
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(
+            requests[0],
+            (
+                "thread/read".to_string(),
+                json!({"threadId": "thread-1", "includeTurns": true})
+            )
+        );
     }
 
     #[tokio::test]
@@ -933,7 +1018,10 @@ mod tests {
         assert_eq!(persisted[0].turn_id.as_deref(), Some("turn-1"));
         assert_eq!(persisted[0].item_id.as_deref(), Some("item-1"));
 
-        let second_broadcast = receiver.recv().await.unwrap();
+        let mut second_broadcast = receiver.recv().await.unwrap();
+        while second_broadcast.codex_method.as_deref() != Some("turn/completed") {
+            second_broadcast = receiver.recv().await.unwrap();
+        }
         assert_eq!(
             second_broadcast.codex_method.as_deref(),
             Some("turn/completed")
@@ -1785,6 +1873,10 @@ mod tests {
             true
         }
 
+        fn readiness_error(&self) -> Option<String> {
+            None
+        }
+
         async fn request(&self, _method: &str, _params: Value) -> ApiResult<Value> {
             Err(ApiError::Retryable("server overloaded".to_string()))
         }
@@ -1798,6 +1890,10 @@ mod tests {
     impl AppServer for BlockingRespondAppServer {
         fn is_ready(&self) -> bool {
             self.ready.load(Ordering::SeqCst)
+        }
+
+        fn readiness_error(&self) -> Option<String> {
+            None
         }
 
         async fn request(&self, method: &str, _params: Value) -> ApiResult<Value> {

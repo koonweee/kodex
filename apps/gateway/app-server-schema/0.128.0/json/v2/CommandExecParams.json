@@ -51,9 +51,16 @@
       "format": "uint",
       "minimum": 0.0
     },
-    "tty": {
-      "description": "Enable PTY mode.\n\nThis implies `streamStdin` and `streamStdoutStderr`.",
-      "type": "boolean"
+    "permissionProfile": {
+      "description": "Optional full permissions profile for this command.\n\nDefaults to the user's configured permissions when omitted. Cannot be combined with `sandboxPolicy`.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/PermissionProfile"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "processId": {
       "description": "Optional client-supplied, connection-scoped process id.\n\nRequired for `tty`, `streamStdin`, `streamStdoutStderr`, and follow-up `command/exec/write`, `command/exec/resize`, and `command/exec/terminate` calls. When omitted, buffered execution gets an internal id that is not exposed to the client.",
@@ -99,6 +106,10 @@
         "null"
       ],
       "format": "int64"
+    },
+    "tty": {
+      "description": "Enable PTY mode.\n\nThis implies `streamStdin` and `streamStdoutStderr`.",
+      "type": "boolean"
     }
   },
   "definitions": {

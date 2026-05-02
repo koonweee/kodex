@@ -39,24 +39,43 @@ impl CodexClient {
         ThreadListResponse::from_payload(payload)
     }
 
+    pub async fn thread_list_recent_updated(&self, limit: u32) -> ApiResult<ThreadListResponse> {
+        let payload = self
+            .request(
+                "thread/list",
+                json!({
+                    "cursor": null,
+                    "limit": limit,
+                    "cwd": null,
+                    "sortKey": "updated_at",
+                    "sortDirection": "desc",
+                }),
+            )
+            .await?;
+        ThreadListResponse::from_payload(payload)
+    }
+
     pub async fn thread_start(
         &self,
         project_id: String,
         cwd: String,
         payload: Value,
     ) -> ApiResult<ThreadCommandResponse> {
-        let payload = merge_path_payload(
+        let payload = require_extended_history(merge_path_payload(
             "cwd",
             cwd,
             merge_path_payload("projectId", project_id, payload),
-        );
+        ));
         let payload = self.request("thread/start", payload).await?;
         ThreadCommandResponse::from_payload(payload)
     }
 
     pub async fn thread_read(&self, thread_id: String) -> ApiResult<ThreadDetailResponse> {
         let payload = self
-            .request("thread/read", json!({ "threadId": thread_id }))
+            .request(
+                "thread/read",
+                json!({ "threadId": thread_id, "includeTurns": true }),
+            )
             .await?;
         ThreadDetailResponse::from_payload(payload)
     }
@@ -69,7 +88,7 @@ impl CodexClient {
         let payload = self
             .request(
                 "thread/resume",
-                merge_path_payload("threadId", thread_id, payload),
+                require_extended_history(merge_path_payload("threadId", thread_id, payload)),
             )
             .await?;
         ThreadCommandResponse::from_payload(payload)
@@ -83,7 +102,7 @@ impl CodexClient {
         let payload = self
             .request(
                 "thread/fork",
-                merge_path_payload("threadId", thread_id, payload),
+                require_extended_history(merge_path_payload("threadId", thread_id, payload)),
             )
             .await?;
         ThreadCommandResponse::from_payload(payload)
@@ -282,7 +301,7 @@ impl ComposerSettingsResponse {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum ComposerPermissionsPreset {
     Default,
@@ -437,6 +456,7 @@ pub struct ThreadSummary {
 
 impl ThreadSummary {
     fn from_payload(payload: &Value) -> ApiResult<Self> {
+        let last_completed_agent_turn_seq = completed_turn_count(payload);
         Ok(Self {
             id: required_string(payload, "id")?,
             name: optional_string(payload, "name"),
@@ -452,9 +472,9 @@ impl ThreadSummary {
             approvals_reviewer: optional_string(payload, "approvalsReviewer"),
             sandbox: optional_value(payload, "sandbox"),
             preview: payload.get("preview").cloned(),
-            last_completed_agent_turn_seq: None,
+            last_completed_agent_turn_seq,
             seen_completed_agent_turn_seq: 0,
-            unread_completed_agent_turn: false,
+            unread_completed_agent_turn: last_completed_agent_turn_seq.is_some_and(|seq| seq > 0),
             raw_payload: payload.clone(),
         })
     }
@@ -471,7 +491,7 @@ impl ThreadSummary {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum ThreadStatus {
     NotLoaded,
@@ -484,6 +504,8 @@ pub enum ThreadStatus {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadDetailResponse {
     pub thread: ThreadSummary,
+    pub turns: Vec<ThreadTurnSnapshot>,
+    pub live_state: ThreadLiveState,
     pub raw_payload: Value,
 }
 
@@ -492,11 +514,128 @@ impl ThreadDetailResponse {
         let thread = payload
             .get("thread")
             .ok_or_else(|| bad_gateway("thread/read response missing thread"))?;
+        let turns = thread
+            .get("turns")
+            .and_then(Value::as_array)
+            .ok_or_else(|| bad_gateway("thread/read response thread missing turns array"))?
+            .iter()
+            .map(ThreadTurnSnapshot::from_payload)
+            .collect::<ApiResult<Vec<_>>>()?;
+        let live_state = live_state_from_thread(thread);
         Ok(Self {
             thread: ThreadSummary::from_payload(thread)?,
+            turns,
+            live_state,
             raw_payload: payload,
         })
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadTurnSnapshot {
+    pub id: String,
+    pub status: String,
+    pub started_at: Option<i64>,
+    pub completed_at: Option<i64>,
+    pub items: Vec<ThreadItemSnapshot>,
+    pub raw_payload: Value,
+}
+
+impl ThreadTurnSnapshot {
+    fn from_payload(payload: &Value) -> ApiResult<Self> {
+        let items = payload
+            .get("items")
+            .and_then(Value::as_array)
+            .ok_or_else(|| bad_gateway("turn missing items array"))?
+            .iter()
+            .map(ThreadItemSnapshot::from_payload)
+            .collect::<ApiResult<Vec<_>>>()?;
+        Ok(Self {
+            id: required_string(payload, "id")?,
+            status: status_type(payload.get("status")).unwrap_or_else(|| "unknown".to_string()),
+            started_at: optional_i64(payload, "startedAt"),
+            completed_at: optional_i64(payload, "completedAt"),
+            items,
+            raw_payload: payload.clone(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadItemSnapshot {
+    pub id: String,
+    pub item_type: String,
+    pub raw_payload: Value,
+}
+
+impl ThreadItemSnapshot {
+    fn from_payload(payload: &Value) -> ApiResult<Self> {
+        Ok(Self {
+            id: required_string(payload, "id")?,
+            item_type: required_string(payload, "type")?,
+            raw_payload: payload.clone(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum TimelineUpdateSource {
+    GatewayStream,
+    AppServerSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineTurnUpsertPayload {
+    pub source: TimelineUpdateSource,
+    pub turn: ThreadTurnSnapshot,
+    pub live_state: ThreadLiveState,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineItemUpsertPayload {
+    pub source: TimelineUpdateSource,
+    pub turn_id: String,
+    pub item_id: String,
+    pub item: Value,
+    pub item_snapshot: ThreadItemSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineItemDeltaPayload {
+    pub source: TimelineUpdateSource,
+    pub delta: String,
+    pub raw_payload: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineThreadStatusPayload {
+    pub source: TimelineUpdateSource,
+    pub status: ThreadStatus,
+    pub live_state: ThreadLiveState,
+    pub raw_payload: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineThreadMetadataPayload {
+    pub source: TimelineUpdateSource,
+    pub thread: ThreadSummary,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum ThreadLiveState {
+    Idle,
+    Streaming,
+    Syncing,
+    NotLoaded,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -824,6 +963,11 @@ fn merge_path_payload(field: &str, value: String, payload: Value) -> Value {
     payload
 }
 
+fn require_extended_history(mut payload: Value) -> Value {
+    payload["persistExtendedHistory"] = Value::Bool(true);
+    payload
+}
+
 fn required_string(payload: &Value, field: &str) -> ApiResult<String> {
     payload
         .get(field)
@@ -910,6 +1054,43 @@ fn overlay_thread_composer_state(thread: &mut ThreadSummary, payload: &Value) {
     }
 }
 
+fn completed_turn_count(thread: &Value) -> Option<i64> {
+    let turns = thread.get("turns")?.as_array()?;
+    if turns.is_empty() {
+        return None;
+    }
+    Some(
+        turns
+            .iter()
+            .filter(|turn| {
+                status_type(turn.get("status")).is_some_and(|status| {
+                    matches!(status.as_str(), "completed" | "failed" | "cancelled")
+                })
+            })
+            .count() as i64,
+    )
+}
+
+fn live_state_from_thread(thread: &Value) -> ThreadLiveState {
+    match status_type(thread.get("status")).as_deref() {
+        Some("notLoaded") => ThreadLiveState::NotLoaded,
+        Some("active") => ThreadLiveState::Streaming,
+        Some("idle" | "systemError") => ThreadLiveState::Idle,
+        _ => ThreadLiveState::NotLoaded,
+    }
+}
+
+fn status_type(value: Option<&Value>) -> Option<String> {
+    value.and_then(|status| {
+        status.as_str().map(str::to_string).or_else(|| {
+            status
+                .get("type")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+    })
+}
+
 fn required_bool(payload: &Value, field: &str) -> ApiResult<bool> {
     payload
         .get(field)
@@ -974,6 +1155,10 @@ mod tests {
             self.ready.load(Ordering::SeqCst)
         }
 
+        fn readiness_error(&self) -> Option<String> {
+            None
+        }
+
         async fn request(&self, method: &str, params: Value) -> ApiResult<Value> {
             self.requests
                 .lock()
@@ -1028,8 +1213,11 @@ mod tests {
         assert_eq!(requests[0].0, "thread/start");
         assert_eq!(requests[0].1["projectId"], "project-1");
         assert_eq!(requests[0].1["cwd"], "/workspace");
+        assert_eq!(requests[0].1["persistExtendedHistory"], true);
         assert_eq!(requests[1].0, "thread/resume");
+        assert_eq!(requests[1].1["persistExtendedHistory"], true);
         assert_eq!(requests[2].0, "thread/fork");
+        assert_eq!(requests[2].1["persistExtendedHistory"], true);
         assert_eq!(requests[3].0, "turn/steer");
         assert_eq!(requests[3].1["expectedTurnId"], "turn-1");
     }
@@ -1051,6 +1239,7 @@ mod tests {
             )
             .await
             .unwrap();
+        client.thread_list_recent_updated(10).await.unwrap();
         *server.response.lock().unwrap() = json!({"thread": thread_summary_payload("thread-1")});
         client.thread_read("thread-1".to_string()).await.unwrap();
         *server.response.lock().unwrap() = json!({"archived": true});
@@ -1081,24 +1270,40 @@ mod tests {
         );
         assert_eq!(
             requests[1],
-            ("thread/read".to_string(), json!({"threadId": "thread-1"}))
+            (
+                "thread/list".to_string(),
+                json!({
+                    "cursor": null,
+                    "limit": 10,
+                    "cwd": null,
+                    "sortKey": "updated_at",
+                    "sortDirection": "desc"
+                })
+            )
         );
         assert_eq!(
             requests[2],
+            (
+                "thread/read".to_string(),
+                json!({"threadId": "thread-1", "includeTurns": true})
+            )
+        );
+        assert_eq!(
+            requests[3],
             (
                 "thread/archive".to_string(),
                 json!({"threadId": "thread-1"})
             )
         );
         assert_eq!(
-            requests[3],
+            requests[4],
             (
                 "turn/start".to_string(),
                 json!({"threadId": "thread-1", "input": [{"type": "text", "text": "hi"}]})
             )
         );
         assert_eq!(
-            requests[4],
+            requests[5],
             (
                 "turn/interrupt".to_string(),
                 json!({"threadId": "thread-1", "turnId": "turn-1"})

@@ -57,8 +57,15 @@
       "description": "When true, return only thread metadata and live-resume state without populating `thread.turns`. This is useful when the client plans to call `thread/turns/list` immediately after resuming.",
       "type": "boolean"
     },
-    "threadId": {
-      "type": "string"
+    "history": {
+      "description": "[UNSTABLE] FOR CODEX CLOUD - DO NOT USE. If specified, the thread will be resumed with the provided history instead of loaded from disk.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "#/definitions/ResponseItem"
+      }
     },
     "model": {
       "description": "Configuration overrides for the resumed thread, if any.",
@@ -73,10 +80,43 @@
         "null"
       ]
     },
+    "path": {
+      "description": "[UNSTABLE] Specify the rollout path to resume from. If specified, the thread_id param will be ignored.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "permissions": {
+      "description": "Named profile selection for the resumed thread. Cannot be combined with `sandbox`. Use bounded `modifications` for supported thread adjustments instead of replacing the full permissions profile.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/PermissionProfileSelectionParams"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "persistExtendedHistory": {
+      "description": "If true, persist additional rollout EventMsg variants required to reconstruct a richer thread history on subsequent resume/fork/read.",
+      "default": false,
+      "type": "boolean"
+    },
     "personality": {
       "anyOf": [
         {
           "$ref": "#/definitions/Personality"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sandbox": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/SandboxMode"
         },
         {
           "type": "null"
@@ -100,15 +140,8 @@
         }
       ]
     },
-    "sandbox": {
-      "anyOf": [
-        {
-          "$ref": "#/definitions/SandboxMode"
-        },
-        {
-          "type": "null"
-        }
-      ]
+    "threadId": {
+      "type": "string"
     }
   },
   "definitions": {

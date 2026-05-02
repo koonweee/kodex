@@ -18,6 +18,16 @@
         "$ref": "#/definitions/UserInput"
       }
     },
+    "responsesapiClientMetadata": {
+      "description": "Optional turn-scoped Responses API client metadata.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
     "threadId": {
       "type": "string"
     }

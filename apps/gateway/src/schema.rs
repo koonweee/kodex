@@ -74,6 +74,16 @@ pub fn validate_client_request_params(method: &str, params: Value) -> ApiResult<
     validate_client_request(&message)
 }
 
+pub fn validate_required_experimental_fields() -> ApiResult<()> {
+    for method in ["thread/start", "thread/resume", "thread/fork"] {
+        validate_client_request_params(
+            method,
+            required_history_params(method, json!({"persistExtendedHistory": true})),
+        )?;
+    }
+    Ok(())
+}
+
 pub fn validate_client_notification(message: &Value) -> ApiResult<()> {
     validate("client notification", &CLIENT_NOTIFICATION_SCHEMA, message)
 }
@@ -123,6 +133,22 @@ fn validate(kind: &str, schema: &JSONSchema, message: &Value) -> ApiResult<()> {
     Ok(())
 }
 
+fn required_history_params(method: &str, extra: Value) -> Value {
+    match method {
+        "thread/start" => {
+            let mut params = extra;
+            params["cwd"] = Value::String("/workspace".to_string());
+            params
+        }
+        "thread/resume" | "thread/fork" => {
+            let mut params = extra;
+            params["threadId"] = Value::String("thread-1".to_string());
+            params
+        }
+        _ => extra,
+    }
+}
+
 fn validate_bad_request(kind: &str, schema: &JSONSchema, message: &Value) -> ApiResult<()> {
     if let Err(errors) = schema.validate(message) {
         let errors = validation_errors(errors);
@@ -161,6 +187,11 @@ mod tests {
         );
 
         validate_client_request(&message).unwrap();
+    }
+
+    #[test]
+    fn required_experimental_history_fields_are_supported() {
+        validate_required_experimental_fields().unwrap();
     }
 
     #[test]

@@ -105,4 +105,30 @@ describe("event stream client", () => {
     expect(received).toEqual(["item/agentMessage/delta"]);
     client.close();
   });
+
+  it("receives normalized timeline SSE events emitted by the gateway", () => {
+    const received: string[] = [];
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      threadId: "thread-1",
+      onEvent: (event) => received.push(event.kind),
+    });
+
+    client.connect();
+    FakeEventSource.instances[0].emitNamed("timeline.item_delta", {
+      id: "event-8",
+      seq: 8,
+      kind: "timeline.item_delta",
+      codexMethod: "item/agentMessage/delta",
+      itemId: "item-1",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      projectId: null,
+      payload: { source: "gatewayStream", delta: "Hi", rawPayload: { delta: "Hi" } },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(received).toEqual(["timeline.item_delta"]);
+    client.close();
+  });
 });

@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { expect, vi } from "vitest";
 
 import { App } from "../App";
+import type { GatewayRouteMap } from "./gatewayMock";
 import { mockGateway, requestJson } from "./gatewayMock";
 
 function readCssImportGraph(filePath: string, seen = new Set<string>()): string {
@@ -104,8 +105,8 @@ class FakeEventSource {
   }
 }
 
-function baseRoutes(overrides = {}) {
-  return {
+function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
+  const routes: GatewayRouteMap = {
     "GET /v1/capabilities": capabilities,
     "GET /v1/projects": { projects: [project] },
     "GET /v1/threads": { threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
@@ -132,6 +133,65 @@ function baseRoutes(overrides = {}) {
     "GET /v1/composer-settings": { model: null, effort: null, serviceTier: null, permissionsPreset: null },
     ...overrides,
   };
+  routes["GET /v1/threads/thread-1"] ??= (request: Request) => threadDetailFromEvents(routes, request, thread);
+  routes["GET /v1/threads/thread-2"] ??= (request: Request) => threadDetailFromEvents(routes, request, secondThread);
+  return routes;
+}
+
+async function threadDetailFromEvents(
+  routes: GatewayRouteMap,
+  _request: Request,
+  sourceThread: typeof thread,
+) {
+  const eventRoute = routes["GET /v1/events"];
+  const eventRequest = new Request(`http://localhost/v1/events?threadId=${sourceThread.id}`);
+  const eventBody = typeof eventRoute === "function" ? await eventRoute(eventRequest) : eventRoute;
+  const events = Array.isArray((eventBody as { events?: unknown[] })?.events)
+    ? ((eventBody as { events: Array<Record<string, unknown>> }).events)
+    : [];
+  return {
+    thread: sourceThread,
+    turns: turnsFromEvents(events, sourceThread.id),
+    liveState: sourceThread.status === "active" ? "streaming" : "idle",
+    rawPayload: {},
+  };
+}
+
+function turnsFromEvents(events: Array<Record<string, unknown>>, threadId: string) {
+  const turns = new Map<string, { id: string; status: string; items: unknown[]; rawPayload: unknown }>();
+  for (const event of events) {
+    if (event.threadId !== threadId || !event.turnId || !event.itemId) {
+      continue;
+    }
+    const turnId = String(event.turnId);
+    const turn = turns.get(turnId) ?? { id: turnId, status: "completed", items: [], rawPayload: {} };
+    const payload = event.payload && typeof event.payload === "object" ? (event.payload as Record<string, unknown>) : {};
+    const rawPayload =
+      payload.item && typeof payload.item === "object"
+        ? payload.item
+        : { id: event.itemId, type: itemTypeFromEvent(event), text: payload.delta, ...payload };
+    turn.items.push({
+      id: String(event.itemId),
+      itemType: String((rawPayload as Record<string, unknown>).type ?? itemTypeFromEvent(event)),
+      rawPayload,
+    });
+    turns.set(turnId, turn);
+  }
+  return [...turns.values()];
+}
+
+function itemTypeFromEvent(event: Record<string, unknown>) {
+  const method = String(event.codexMethod ?? "").toLowerCase();
+  if (method.includes("agentmessage")) {
+    return "agentMessage";
+  }
+  if (method.includes("user")) {
+    return "userMessage";
+  }
+  if (method.includes("command")) {
+    return "commandExecution";
+  }
+  return "agentMessage";
 }
 
 function timelineElement(container: HTMLElement) {

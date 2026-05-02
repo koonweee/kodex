@@ -3,7 +3,7 @@ use std::{
     process::Stdio,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc,
+        Arc, Mutex as StdMutex,
     },
 };
 
@@ -50,6 +50,7 @@ pub struct JsonRpcError {
 #[async_trait]
 pub trait AppServer: Send + Sync {
     fn is_ready(&self) -> bool;
+    fn readiness_error(&self) -> Option<String>;
     async fn request(&self, method: &str, params: Value) -> ApiResult<Value>;
     async fn respond(&self, request_id: &str, result: Value) -> ApiResult<()>;
 }
@@ -62,6 +63,10 @@ pub struct UnavailableAppServer;
 impl AppServer for UnavailableAppServer {
     fn is_ready(&self) -> bool {
         false
+    }
+
+    fn readiness_error(&self) -> Option<String> {
+        Some("Codex app-server is unavailable".to_string())
     }
 
     async fn request(&self, _method: &str, _params: Value) -> ApiResult<Value> {
@@ -79,6 +84,7 @@ pub struct JsonRpcAppServer {
     next_id: AtomicU64,
     pending: Mutex<HashMap<u64, oneshot::Sender<Result<Value, JsonRpcError>>>>,
     ready: AtomicBool,
+    readiness_error: StdMutex<Option<String>>,
 }
 
 impl JsonRpcAppServer {
@@ -106,6 +112,7 @@ impl JsonRpcAppServer {
             next_id: AtomicU64::new(1),
             pending: Mutex::new(HashMap::new()),
             ready: AtomicBool::new(false),
+            readiness_error: StdMutex::new(None),
         });
 
         tokio::spawn(read_loop(
@@ -122,8 +129,67 @@ impl JsonRpcAppServer {
     async fn initialize(&self) -> ApiResult<()> {
         self.request("initialize", initialize_params()).await?;
         self.send_initialized().await?;
+        if let Err(error) = crate::schema::validate_required_experimental_fields() {
+            self.ready.store(false, Ordering::SeqCst);
+            *self.readiness_error.lock().unwrap() = Some(error.to_string());
+            return Err(error);
+        }
+        self.probe_required_experimental_behavior().await?;
         self.ready.store(true, Ordering::SeqCst);
         Ok(())
+    }
+
+    async fn probe_required_experimental_behavior(&self) -> ApiResult<()> {
+        match self
+            .startup_probe_request(
+                "thread/resume",
+                json!({
+                    "threadId": "__kodex_gateway_persist_extended_history_probe__",
+                    "persistExtendedHistory": true
+                }),
+            )
+            .await?
+        {
+            Ok(_) => Ok(()),
+            Err(error) if error.message.contains("persistExtendedHistory") => {
+                self.mark_persist_extended_history_incompatible();
+                Err(ApiError::BadGateway(format!(
+                    "app-server error {}: {}",
+                    error.code, error.message
+                )))
+            }
+            Err(error) if is_expected_probe_missing_thread_error(&error.message) => Ok(()),
+            Err(error) => {
+                self.ready.store(false, Ordering::SeqCst);
+                *self.readiness_error.lock().unwrap() = Some(format!(
+                    "Codex app-server compatibility probe failed: {}",
+                    error.message
+                ));
+                Err(ApiError::BadGateway(format!(
+                    "app-server compatibility probe failed {}: {}",
+                    error.code, error.message
+                )))
+            }
+        }
+    }
+
+    async fn startup_probe_request(
+        &self,
+        method: &str,
+        params: Value,
+    ) -> ApiResult<Result<Value, JsonRpcError>> {
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let message = client_request_message(id, method, params);
+
+        let (sender, receiver) = oneshot::channel();
+        self.pending.lock().await.insert(id, sender);
+
+        if let Err(error) = self.write_message(message).await {
+            self.pending.lock().await.remove(&id);
+            return Err(error);
+        }
+
+        receiver.await.map_err(|_| ApiError::AppServerUnavailable)
     }
 
     async fn send_initialized(&self) -> ApiResult<()> {
@@ -152,6 +218,14 @@ impl JsonRpcAppServer {
         let _ = child.wait().await;
         Ok(())
     }
+
+    fn mark_persist_extended_history_incompatible(&self) {
+        self.ready.store(false, Ordering::SeqCst);
+        *self.readiness_error.lock().unwrap() = Some(
+            "Codex app-server is incompatible: rejected required persistExtendedHistory field"
+                .to_string(),
+        );
+    }
 }
 
 fn initialize_params() -> Value {
@@ -167,10 +241,23 @@ fn initialize_params() -> Value {
     })
 }
 
+fn is_expected_probe_missing_thread_error(message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    message.contains("thread")
+        && (message.contains("not found")
+            || message.contains("no such")
+            || message.contains("does not exist")
+            || message.contains("unknown"))
+}
+
 #[async_trait]
 impl AppServer for JsonRpcAppServer {
     fn is_ready(&self) -> bool {
-        self.ready.load(Ordering::SeqCst)
+        self.ready.load(Ordering::SeqCst) && self.readiness_error.lock().unwrap().is_none()
+    }
+
+    fn readiness_error(&self) -> Option<String> {
+        self.readiness_error.lock().unwrap().clone()
     }
 
     async fn request(&self, method: &str, params: Value) -> ApiResult<Value> {
@@ -193,10 +280,13 @@ impl AppServer for JsonRpcAppServer {
         match receiver.await {
             Ok(Ok(value)) => Ok(value),
             Ok(Err(error)) if error.code == -32001 => Err(ApiError::Retryable(error.message)),
-            Ok(Err(error)) => Err(ApiError::BadGateway(format!(
-                "app-server error {}: {}",
-                error.code, error.message
-            ))),
+            Ok(Err(error)) => {
+                let message = format!("app-server error {}: {}", error.code, error.message);
+                if message.contains("persistExtendedHistory") {
+                    self.mark_persist_extended_history_incompatible();
+                }
+                Err(ApiError::BadGateway(message))
+            }
             Err(_) => Err(ApiError::AppServerUnavailable),
         }
     }
@@ -347,6 +437,7 @@ pub mod tests {
     #[derive(Default)]
     pub struct RecordingAppServer {
         pub ready: AtomicBool,
+        pub readiness_error: StdMutex<Option<String>>,
         pub requests: StdMutex<Vec<(String, Value)>>,
         pub responses: StdMutex<Vec<(String, Value)>>,
         pub next_response: StdMutex<Option<Value>>,
@@ -366,6 +457,16 @@ pub mod tests {
         let notification = initialized_notification_message();
         assert_eq!(notification["method"], "initialized");
         assert!(notification.get("params").is_none());
+    }
+
+    #[test]
+    fn startup_probe_only_accepts_missing_thread_errors() {
+        assert!(is_expected_probe_missing_thread_error("thread not found"));
+        assert!(is_expected_probe_missing_thread_error("no such thread"));
+        assert!(!is_expected_probe_missing_thread_error("missing field cwd"));
+        assert!(!is_expected_probe_missing_thread_error(
+            "unknown field persistExtendedHistory"
+        ));
     }
 
     #[tokio::test]
@@ -420,6 +521,7 @@ pub mod tests {
             .map(|line| serde_json::from_str::<Value>(line).unwrap());
         assert_eq!(lines.next().unwrap()["method"], "initialize");
         assert_eq!(lines.next().unwrap()["method"], "initialized");
+        assert_eq!(lines.next().unwrap()["method"], "thread/resume");
         assert_eq!(lines.next().unwrap()["method"], "thread/list");
     }
 
@@ -447,6 +549,29 @@ pub mod tests {
         assert!(!server.is_ready());
     }
 
+    #[tokio::test]
+    async fn persist_extended_history_rejection_fails_startup_readiness() {
+        let dir = tempdir().unwrap();
+        let script = dir.path().join("rejecting-app-server.sh");
+        let log = dir.path().join("messages.log");
+        write_persist_rejecting_app_server(&script);
+
+        let config = CodexConfig {
+            binary: "/bin/bash".to_string(),
+            args: vec![script.display().to_string(), log.display().to_string()],
+        };
+        let (inbound_tx, _inbound_rx) = mpsc::channel(8);
+        let error = match JsonRpcAppServer::start(&config, inbound_tx).await {
+            Ok(server) => {
+                server.shutdown().await.unwrap();
+                panic!("expected incompatible app-server startup to fail");
+            }
+            Err(error) => error,
+        };
+
+        assert!(error.to_string().contains("persistExtendedHistory"));
+    }
+
     fn write_fake_app_server(path: &Path, exit_after_initialized: bool) {
         let exit_line = if exit_after_initialized { "exit 0" } else { "" };
         std::fs::write(
@@ -459,12 +584,15 @@ printf '%s\n' "$line" >> "$log"
 printf '%s\n' '{{"jsonrpc":"2.0","id":1,"result":{{"initialized":true}}}}'
 IFS= read -r line
 printf '%s\n' "$line" >> "$log"
+IFS= read -r line
+printf '%s\n' "$line" >> "$log"
+printf '%s\n' '{{"jsonrpc":"2.0","id":2,"error":{{"code":-32602,"message":"thread not found"}}}}'
 {exit_line}
 printf '%s\n' '{{"jsonrpc":"2.0","method":"turn/completed","params":{{"threadId":"thread-1","turnId":"turn-1","itemId":"item-1"}}}}'
 printf '%s\n' '{{"jsonrpc":"2.0","id":"approval-1","method":"item/permissions/requestApproval","params":{{"threadId":"thread-1","turnId":"turn-1","itemId":"item-1"}}}}'
 IFS= read -r line
 printf '%s\n' "$line" >> "$log"
-printf '%s\n' '{{"jsonrpc":"2.0","id":2,"result":{{"ok":true}}}}'
+printf '%s\n' '{{"jsonrpc":"2.0","id":3,"result":{{"ok":true}}}}'
 while IFS= read -r line; do
   printf '%s\n' "$line" >> "$log"
 done
@@ -474,10 +602,35 @@ done
         .unwrap();
     }
 
+    fn write_persist_rejecting_app_server(path: &Path) {
+        std::fs::write(
+            path,
+            r#"set -euo pipefail
+log="$1"
+IFS= read -r line
+printf '%s\n' "$line" >> "$log"
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"initialized":true}}'
+IFS= read -r line
+printf '%s\n' "$line" >> "$log"
+IFS= read -r line
+printf '%s\n' "$line" >> "$log"
+printf '%s\n' '{"jsonrpc":"2.0","id":2,"error":{"code":-32602,"message":"unknown field persistExtendedHistory"}}'
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$log"
+done
+"#,
+        )
+        .unwrap();
+    }
+
     #[async_trait]
     impl AppServer for RecordingAppServer {
         fn is_ready(&self) -> bool {
-            self.ready.load(Ordering::SeqCst)
+            self.ready.load(Ordering::SeqCst) && self.readiness_error.lock().unwrap().is_none()
+        }
+
+        fn readiness_error(&self) -> Option<String> {
+            self.readiness_error.lock().unwrap().clone()
         }
 
         async fn request(&self, method: &str, params: Value) -> ApiResult<Value> {

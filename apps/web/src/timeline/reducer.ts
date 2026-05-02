@@ -1,4 +1,4 @@
-import type { EventEnvelope } from "../api/client";
+import type { EventEnvelope, ThreadDetailResponse } from "../api/client";
 import {
   createBaseItem,
   createDiagnosticItem,
@@ -45,6 +45,10 @@ export type {
 } from "./state";
 
 export function applyTimelineEvent(state: TimelineState, event: EventEnvelope): TimelineState {
+  if (event.kind === "timeline.snapshot") {
+    return applyTimelineSnapshot(state, event.payload as ThreadDetailResponse);
+  }
+
   const next: TimelineDraft = {
     activeTurnId: nextActiveTurnId(state.activeTurnId, event),
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
@@ -201,14 +205,86 @@ export function replayTimeline(events: EventEnvelope[]): TimelineState {
   return events.reduce(applyTimelineEvent, createTimelineState());
 }
 
+export function applyTimelineSnapshot(state: TimelineState, snapshot: ThreadDetailResponse): TimelineState {
+  let next = optimisticOnlyTimeline(state);
+  let seq = Math.max(state.lastSeq, 0);
+  for (const turn of snapshot.turns) {
+    for (const item of turn.items) {
+      seq += 1;
+      next = applyTimelineEvent(next, {
+        id: `snapshot-${turn.id}-${item.id}`,
+        seq,
+        kind: "timeline.item_upsert",
+        codexMethod: turn.status === "completed" ? "item/completed" : "item/started",
+        threadId: snapshot.thread.id,
+        turnId: turn.id,
+        itemId: item.id,
+        projectId: null,
+        payload: { item: item.rawPayload },
+        receivedAt: new Date(0).toISOString(),
+      });
+    }
+  }
+  return withSnapshotLiveState(next, snapshot);
+}
+
+function optimisticOnlyTimeline(state: TimelineState): TimelineState {
+  let next = createTimelineState();
+  for (const item of state.items) {
+    if (item.source !== "optimistic" || item.confirmationState === "sent") {
+      continue;
+    }
+    next = addOptimisticUserMessage(next, {
+      clientRequestId: item.clientRequestId ?? item.id,
+      images: item.images ?? [],
+      text: item.text,
+      turnId: item.turnId,
+      confirmationState: item.confirmationState ?? "sending",
+    });
+  }
+  return next;
+}
+
+function withSnapshotLiveState(state: TimelineState, snapshot: ThreadDetailResponse): TimelineState {
+  if (snapshot.liveState !== "streaming" && snapshot.liveState !== "syncing") {
+    return state;
+  }
+  const activeTurn = [...snapshot.turns].reverse().find((turn) => turn.status !== "completed");
+  if (!activeTurn) {
+    return state;
+  }
+  return createTimelineStateFromDraft({
+    activeTurnId: activeTurn.id,
+    indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    lastSeq: state.lastSeq,
+  });
+}
+
 function nextActiveTurnId(currentTurnId: string | null, event: EventEnvelope) {
   if (event.codexMethod === "turn/completed") {
     return null;
+  }
+  if (event.kind === "timeline.turn_upsert") {
+    if (timelineTurnUpsertIsActive(event)) {
+      return event.turnId ?? currentTurnId;
+    }
+    return event.turnId === currentTurnId ? null : currentTurnId;
   }
   if (!event.turnId || !eventCanMarkTurnActive(event)) {
     return currentTurnId;
   }
   return event.turnId;
+}
+
+function timelineTurnUpsertIsActive(event: EventEnvelope): boolean {
+  const payload = event.payload && typeof event.payload === "object" ? (event.payload as Record<string, unknown>) : null;
+  const liveState = typeof payload?.liveState === "string" ? payload.liveState : "";
+  if (liveState === "streaming" || liveState === "syncing") {
+    return true;
+  }
+  const turn = payload?.turn && typeof payload.turn === "object" ? (payload.turn as Record<string, unknown>) : null;
+  const status = typeof turn?.status === "string" ? turn.status.toLowerCase() : "";
+  return Boolean(status && !["completed", "failed", "cancelled"].includes(status));
 }
 
 function eventCanMarkTurnActive(event: EventEnvelope) {

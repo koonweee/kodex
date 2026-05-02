@@ -8,9 +8,9 @@ schema_dir="$repo_root/apps/gateway/app-server-schema/$version"
 rm -rf "$schema_dir"
 mkdir -p "$schema_dir/json"
 
-codex app-server generate-json-schema --out "$schema_dir/json"
+codex app-server generate-json-schema --experimental --out "$schema_dir/json"
 
 cat > "$schema_dir/VERSION" <<EOF
 codex-cli $version
-generated with: codex app-server generate-json-schema --out apps/gateway/app-server-schema/$version/json
+generated with: codex app-server generate-json-schema --experimental --out apps/gateway/app-server-schema/$version/json
 EOF

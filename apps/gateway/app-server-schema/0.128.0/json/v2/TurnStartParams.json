@@ -29,11 +29,11 @@
         }
       ]
     },
-    "sandboxPolicy": {
-      "description": "Override the sandbox policy for this turn and subsequent turns.",
+    "collaborationMode": {
+      "description": "EXPERIMENTAL - Set a pre-set collaboration mode. Takes precedence over model, reasoning_effort, and developer instructions if set.\n\nFor `collaboration_mode.settings.developer_instructions`, `null` means \"use the built-in instructions for the selected mode\".",
       "anyOf": [
         {
-          "$ref": "#/definitions/SandboxPolicy"
+          "$ref": "#/definitions/CollaborationMode"
         },
         {
           "type": "null"
@@ -58,6 +58,75 @@
         }
       ]
     },
+    "environments": {
+      "description": "Optional turn-scoped environments.\n\nOmitted uses the thread sticky environments. Empty disables environment access for this turn. Non-empty selects the first environment as the current turn environment for this turn.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "#/definitions/TurnEnvironmentParams"
+      }
+    },
+    "input": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/UserInput"
+      }
+    },
+    "model": {
+      "description": "Override the model for this turn and subsequent turns.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "outputSchema": {
+      "description": "Optional JSON Schema used to constrain the final assistant message for this turn."
+    },
+    "permissions": {
+      "description": "Select a named permissions profile for this turn and subsequent turns. Cannot be combined with `sandboxPolicy`. Use bounded `modifications` for supported turn adjustments instead of replacing the full permissions profile.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/PermissionProfileSelectionParams"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "personality": {
+      "description": "Override the personality for this turn and subsequent turns.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Personality"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "responsesapiClientMetadata": {
+      "description": "Optional turn-scoped Responses API client metadata.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "sandboxPolicy": {
+      "description": "Override the sandbox policy for this turn and subsequent turns.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/SandboxPolicy"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "serviceTier": {
       "description": "Override the service tier for this turn and subsequent turns.",
       "anyOf": [
@@ -76,38 +145,11 @@
         }
       ]
     },
-    "input": {
-      "type": "array",
-      "items": {
-        "$ref": "#/definitions/UserInput"
-      }
-    },
-    "model": {
-      "description": "Override the model for this turn and subsequent turns.",
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "outputSchema": {
-      "description": "Optional JSON Schema used to constrain the final assistant message for this turn."
-    },
     "summary": {
       "description": "Override the reasoning summary for this turn and subsequent turns.",
       "anyOf": [
         {
           "$ref": "#/definitions/ReasoningSummary"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "personality": {
-      "description": "Override the personality for this turn and subsequent turns.",
-      "anyOf": [
-        {
-          "$ref": "#/definitions/Personality"
         },
         {
           "type": "null"

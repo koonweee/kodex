@@ -2,13 +2,13 @@
 
 Kodex is a local-first or VPN-only Codex gateway and web app built from scratch in a monorepo.
 
-The MVP target is a Rust gateway that supervises an external `codex app-server` process over stdio, persists and replays events, brokers approvals, and serves a React web client. The web client is intentionally replaceable later by another client.
+The MVP target is a Rust gateway that supervises an external `codex app-server` process over stdio, reads thread history through app-server snapshots, brokers approvals, and serves a React web client. The web client is intentionally replaceable later by another client.
 
 ## Current Status
 
-The first Rust gateway implementation exists under `apps/gateway`. It includes the backend scaffold, SQLite event/project/approval storage, a stdio JSON-RPC app-server supervisor, HTTP/SSE API routes, approval brokering, OpenAPI generation, an app-server adapter layer, product-shaped frontend response DTOs, and optional static frontend serving.
+The first Rust gateway implementation exists under `apps/gateway`. It includes the backend scaffold, SQLite project/approval/read-marker storage, transient event replay for debug/SSE, a stdio JSON-RPC app-server supervisor, HTTP/SSE API routes, approval brokering, OpenAPI generation, an app-server adapter layer, product-shaped frontend response DTOs, and optional static frontend serving.
 
-The first React web client exists under `apps/web`. It includes the Vite/Mantine scaffold, generated OpenAPI TypeScript types, a typed fetch client, project/thread navigation, timeline event replay, composer controls, pending approval decisions, and account/model surfaces.
+The first React web client exists under `apps/web`. It includes the Vite/Mantine scaffold, generated OpenAPI TypeScript types, a typed fetch client, project/thread navigation, snapshot-first timeline rendering, composer controls, pending approval decisions, and account/model surfaces.
 
 See [plans/index.md](plans/index.md) for the plan directory and status table.
 
@@ -29,7 +29,7 @@ See [plans/index.md](plans/index.md) for the plan directory and status table.
 Prerequisites:
 
 - Rust stable toolchain with `cargo` and `rustfmt`.
-- A `codex` binary on `PATH` for a ready app-server. The gateway still starts API-only if the app-server cannot be spawned, with `/readyz` reporting `ready: false`.
+- A `codex` binary on `PATH` for a ready app-server. The configured binary must support the checked-in experimental app-server schema, including `persistExtendedHistory`. The gateway still starts API-only if the app-server cannot be spawned, with `/readyz` reporting `ready: false`.
 - Build and smoke-test helpers: a C toolchain/linker, `bash`, `curl`, `jq`, and optionally `sqlite3` for inspecting local test databases.
 
 Backend Smoke Test Tooling:
@@ -113,9 +113,9 @@ Local routes:
 - `GET /readyz`
 - `GET /openapi.json`
 - `GET /docs`
-- `GET /v1/events` for JSON replay, or SSE when `Accept: text/event-stream`
+- `GET /v1/events` for transient/debug JSON replay, or SSE when `Accept: text/event-stream`
 - `POST /v1/uploads/images` for local image uploads used by browser-originated `localImage` turn inputs
-- Frontend-critical Codex routes such as `GET /v1/threads`, `GET /v1/models`, `GET /v1/account`, `GET /v1/account/rate-limits`, and `POST /v1/account/login` expose typed gateway DTOs with `rawPayload` retained only as an escape hatch for volatile app-server fields.
+- Frontend-critical Codex routes such as `GET /v1/threads`, `GET /v1/threads/{threadId}`, `GET /v1/models`, `GET /v1/account`, `GET /v1/account/rate-limits`, and `POST /v1/account/login` expose typed gateway DTOs with `rawPayload` retained only as an escape hatch for volatile app-server fields. `GET /v1/threads/{threadId}` reads `thread/read includeTurns:true` from app-server and is the canonical selected-thread timeline source.
 
 The gateway has no MVP auth and is intended only for localhost or a trusted VPN. Do not expose it directly to the public internet. ChatGPT/Codex login routes broker Codex/OpenAI auth through app-server APIs; they are not gateway access control. Uploaded image files are local helper assets for app-server input and inherit the same local/trusted-network assumption.
 
@@ -205,13 +205,13 @@ Gateway access remains localhost or trusted VPN only. The ChatGPT login UI only 
 
 ## App-Server Schema
 
-The checked-in app-server JSON Schema is generated from the exact Codex binary version used for gateway compatibility testing. Regenerate it after changing Codex versions:
+The checked-in app-server JSON Schema is generated from the exact Codex binary version used for gateway compatibility testing, always with experimental output enabled. Regenerate it after changing Codex versions:
 
 ```bash
 apps/gateway/scripts/generate-app-server-schema.sh
 ```
 
-The gateway validates outbound JSON-RPC client requests through the app-server adapter and validates the `initialized` notification against `apps/gateway/app-server-schema/0.128.0/json`.
+The gateway validates outbound JSON-RPC client requests through the app-server adapter and validates the `initialized` notification against `apps/gateway/app-server-schema/0.128.0/json`. Thread start, resume, and fork requests always send `persistExtendedHistory: true`; `/readyz` reports an incompatibility message if the configured app-server rejects that required field.
 
 ## Development Rules
 

@@ -32,7 +32,7 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - Inspect generated API contract at `GET /openapi.json`; local API docs are served at `GET /docs`.
 - The default database is `~/.kodex/gateway.db`; use `KODEX_DATABASE_PATH` or `KODEX_DATA_DIR` for local overrides.
 - Keep the configured `codex` binary version matched to the checked-in `apps/gateway/app-server-schema/<version>/VERSION` schema version.
-- Regenerate the checked-in Codex app-server JSON Schema with `apps/gateway/scripts/generate-app-server-schema.sh` after changing the Codex binary version.
+- Regenerate the checked-in Codex app-server JSON Schema with `apps/gateway/scripts/generate-app-server-schema.sh` after changing the Codex binary version; schemas are always generated with experimental API output enabled.
 
 ## Frontend Commands
 

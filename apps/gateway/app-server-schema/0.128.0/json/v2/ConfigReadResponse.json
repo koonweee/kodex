@@ -248,10 +248,11 @@
             }
           ]
         },
-        "web_search": {
+        "apps": {
+          "default": null,
           "anyOf": [
             {
-              "$ref": "#/definitions/WebSearchMode"
+              "$ref": "#/definitions/AppsConfig"
             },
             {
               "type": "null"
@@ -401,6 +402,16 @@
           "anyOf": [
             {
               "$ref": "#/definitions/ToolsV2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "web_search": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/WebSearchMode"
             },
             {
               "type": "null"

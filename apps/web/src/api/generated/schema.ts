@@ -632,6 +632,7 @@ export interface components {
             payload: unknown;
         };
         ReadyResponse: {
+            message?: string | null;
             ready: boolean;
         };
         ReasoningEffortOption: {
@@ -655,8 +656,15 @@ export interface components {
             thread: components["schemas"]["ThreadSummary"];
         };
         ThreadDetailResponse: {
+            liveState: components["schemas"]["ThreadLiveState"];
             rawPayload: unknown;
             thread: components["schemas"]["ThreadSummary"];
+            turns: components["schemas"]["ThreadTurnSnapshot"][];
+        };
+        ThreadItemSnapshot: {
+            id: string;
+            itemType: string;
+            rawPayload: unknown;
         };
         ThreadListQuery: {
             cursor?: string | null;
@@ -670,6 +678,8 @@ export interface components {
             rawPayload: unknown;
             threads: components["schemas"]["ThreadSummary"][];
         };
+        /** @enum {string} */
+        ThreadLiveState: "idle" | "streaming" | "syncing" | "notLoaded";
         ThreadRead: {
             /** Format: int64 */
             seenCompletedAgentTurnSeq: number;
@@ -703,6 +713,45 @@ export interface components {
             /** Format: int64 */
             updatedAt: number;
         };
+        ThreadTurnSnapshot: {
+            /** Format: int64 */
+            completedAt?: number | null;
+            id: string;
+            items: components["schemas"]["ThreadItemSnapshot"][];
+            rawPayload: unknown;
+            /** Format: int64 */
+            startedAt?: number | null;
+            status: string;
+        };
+        TimelineItemDeltaPayload: {
+            delta: string;
+            rawPayload: unknown;
+            source: components["schemas"]["TimelineUpdateSource"];
+        };
+        TimelineItemUpsertPayload: {
+            item: unknown;
+            itemId: string;
+            itemSnapshot: components["schemas"]["ThreadItemSnapshot"];
+            source: components["schemas"]["TimelineUpdateSource"];
+            turnId: string;
+        };
+        TimelineThreadMetadataPayload: {
+            source: components["schemas"]["TimelineUpdateSource"];
+            thread: components["schemas"]["ThreadSummary"];
+        };
+        TimelineThreadStatusPayload: {
+            liveState: components["schemas"]["ThreadLiveState"];
+            rawPayload: unknown;
+            source: components["schemas"]["TimelineUpdateSource"];
+            status: components["schemas"]["ThreadStatus"];
+        };
+        TimelineTurnUpsertPayload: {
+            liveState: components["schemas"]["ThreadLiveState"];
+            source: components["schemas"]["TimelineUpdateSource"];
+            turn: components["schemas"]["ThreadTurnSnapshot"];
+        };
+        /** @enum {string} */
+        TimelineUpdateSource: "gatewayStream" | "appServerSnapshot";
         TurnStartOptions: {
             approvalPolicy?: string | null;
             approvalsReviewer?: string | null;

@@ -24,6 +24,12 @@ const GATEWAY_SSE_EVENT_TYPES = [
   "codex.notification",
   "codex.server_request",
   "gateway.warning",
+  "timeline.item_delta",
+  "timeline.item_upsert",
+  "timeline.snapshot",
+  "timeline.thread_metadata",
+  "timeline.thread_status",
+  "timeline.turn_upsert",
 ];
 
 export function createEventStreamClient({

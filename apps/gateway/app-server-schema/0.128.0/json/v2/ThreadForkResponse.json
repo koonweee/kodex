@@ -12,10 +12,12 @@
     "thread"
   ],
   "properties": {
-    "serviceTier": {
+    "activePermissionProfile": {
+      "description": "Named or implicit built-in profile that produced the active permissions, when known.",
+      "default": null,
       "anyOf": [
         {
-          "$ref": "#/definitions/ServiceTier"
+          "$ref": "#/definitions/ActivePermissionProfile"
         },
         {
           "type": "null"
@@ -50,8 +52,17 @@
     "modelProvider": {
       "type": "string"
     },
-    "thread": {
-      "$ref": "#/definitions/Thread"
+    "permissionProfile": {
+      "description": "Full active permissions for this thread. `activePermissionProfile` carries display/provenance metadata for this runtime profile.",
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/PermissionProfile"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "reasoningEffort": {
       "anyOf": [
@@ -70,6 +81,19 @@
           "$ref": "#/definitions/SandboxPolicy"
         }
       ]
+    },
+    "serviceTier": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ServiceTier"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "thread": {
+      "$ref": "#/definitions/Thread"
     }
   },
   "definitions": {

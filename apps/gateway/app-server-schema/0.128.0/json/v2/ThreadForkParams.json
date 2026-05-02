@@ -73,8 +73,28 @@
         "null"
       ]
     },
-    "threadId": {
-      "type": "string"
+    "path": {
+      "description": "[UNSTABLE] Specify the rollout path to fork from. If specified, the thread_id param will be ignored.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "permissions": {
+      "description": "Named profile selection for the forked thread. Cannot be combined with `sandbox`. Use bounded `modifications` for supported thread adjustments instead of replacing the full permissions profile.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/PermissionProfileSelectionParams"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "persistExtendedHistory": {
+      "description": "If true, persist additional rollout EventMsg variants required to reconstruct a richer thread history on subsequent resume/fork/read.",
+      "default": false,
+      "type": "boolean"
     },
     "sandbox": {
       "anyOf": [
@@ -102,6 +122,9 @@
           "type": "null"
         }
       ]
+    },
+    "threadId": {
+      "type": "string"
     }
   },
   "definitions": {
