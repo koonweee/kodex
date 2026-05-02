@@ -65,10 +65,17 @@ async function fallbackThreadDetail(routes: GatewayRouteMap, request: Request) {
   const events = Array.isArray((eventsBody as { events?: unknown[] } | undefined)?.events)
     ? ((eventsBody as { events: Array<Record<string, unknown>> }).events)
     : [];
+  const turns = turnsFromEvents(events, threadId);
+  if (thread.status === "active") {
+    const activeTurn = [...turns].reverse().find((turn) => turn.items.length > 0);
+    if (activeTurn) {
+      activeTurn.status = "running";
+    }
+  }
 
   return {
     thread,
-    turns: turnsFromEvents(events, threadId),
+    turns,
     liveState: thread.status === "active" ? "streaming" : "idle",
     rawPayload: {},
   };

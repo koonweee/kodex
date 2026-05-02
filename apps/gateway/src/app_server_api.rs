@@ -1064,7 +1064,10 @@ fn completed_turn_count(thread: &Value) -> Option<i64> {
             .iter()
             .filter(|turn| {
                 status_type(turn.get("status")).is_some_and(|status| {
-                    matches!(status.as_str(), "completed" | "failed" | "cancelled")
+                    matches!(
+                        status.as_str(),
+                        "completed" | "failed" | "cancelled" | "canceled" | "interrupted"
+                    )
                 })
             })
             .count() as i64,
@@ -1072,11 +1075,34 @@ fn completed_turn_count(thread: &Value) -> Option<i64> {
 }
 
 fn live_state_from_thread(thread: &Value) -> ThreadLiveState {
+    if thread
+        .get("turns")
+        .and_then(Value::as_array)
+        .is_some_and(|turns| turns.iter().any(turn_is_active))
+    {
+        return ThreadLiveState::Streaming;
+    }
+
     match status_type(thread.get("status")).as_deref() {
         Some("notLoaded") => ThreadLiveState::NotLoaded,
-        Some("active") => ThreadLiveState::Streaming,
-        Some("idle" | "systemError") => ThreadLiveState::Idle,
+        Some("active" | "idle" | "systemError") => ThreadLiveState::Idle,
         _ => ThreadLiveState::NotLoaded,
+    }
+}
+
+fn turn_is_active(turn: &Value) -> bool {
+    match status_type(turn.get("status")).as_deref() {
+        Some("completed" | "failed" | "cancelled" | "canceled" | "interrupted") => false,
+        Some(_) => true,
+        None => false,
+    }
+}
+
+pub(crate) fn live_state_from_turn_status(status: &str) -> ThreadLiveState {
+    match status {
+        "completed" | "failed" | "cancelled" | "canceled" | "interrupted" => ThreadLiveState::Idle,
+        "unknown" => ThreadLiveState::NotLoaded,
+        _ => ThreadLiveState::Streaming,
     }
 }
 
@@ -1536,6 +1562,53 @@ mod tests {
         assert_eq!(response.thread.source.as_deref(), Some("cli"));
         assert!(ThreadDetailResponse::from_payload(json!({"thread": {"id": "thread-1"}})).is_err());
         assert!(ThreadDetailResponse::from_payload(json!({})).is_err());
+    }
+
+    #[test]
+    fn thread_detail_live_state_requires_active_turn_not_just_active_thread() {
+        let response = ThreadDetailResponse::from_payload(json!({
+            "thread": {
+                "id": "thread-1",
+                "cliVersion": "0.128.0",
+                "cwd": "/workspace",
+                "ephemeral": false,
+                "modelProvider": "openai",
+                "preview": "hello",
+                "source": "cli",
+                "status": {"type": "active"},
+                "turns": [{
+                    "id": "turn-1",
+                    "status": {"type": "completed"},
+                    "items": []
+                }],
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_600_i64
+            }
+        }))
+        .unwrap();
+        assert_eq!(response.live_state, ThreadLiveState::Idle);
+
+        let response = ThreadDetailResponse::from_payload(json!({
+            "thread": {
+                "id": "thread-1",
+                "cliVersion": "0.128.0",
+                "cwd": "/workspace",
+                "ephemeral": false,
+                "modelProvider": "openai",
+                "preview": "hello",
+                "source": "cli",
+                "status": {"type": "active"},
+                "turns": [{
+                    "id": "turn-1",
+                    "status": {"type": "running"},
+                    "items": []
+                }],
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_600_i64
+            }
+        }))
+        .unwrap();
+        assert_eq!(response.live_state, ThreadLiveState::Streaming);
     }
 
     #[test]

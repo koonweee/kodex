@@ -246,15 +246,12 @@ function optimisticOnlyTimeline(state: TimelineState): TimelineState {
 }
 
 function withSnapshotLiveState(state: TimelineState, snapshot: ThreadDetailResponse): TimelineState {
-  if (snapshot.liveState !== "streaming" && snapshot.liveState !== "syncing") {
-    return state;
-  }
-  const activeTurn = [...snapshot.turns].reverse().find((turn) => turn.status !== "completed");
-  if (!activeTurn) {
+  const activeTurn = [...snapshot.turns].reverse().find((turn) => !isTerminalTurnStatus(turn.status));
+  if (!activeTurn && state.activeTurnId === null) {
     return state;
   }
   return createTimelineStateFromDraft({
-    activeTurnId: activeTurn.id,
+    activeTurnId: activeTurn ? activeTurn.id : null,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
     lastSeq: state.lastSeq,
   });
@@ -278,13 +275,17 @@ function nextActiveTurnId(currentTurnId: string | null, event: EventEnvelope) {
 
 function timelineTurnUpsertIsActive(event: EventEnvelope): boolean {
   const payload = event.payload && typeof event.payload === "object" ? (event.payload as Record<string, unknown>) : null;
-  const liveState = typeof payload?.liveState === "string" ? payload.liveState : "";
-  if (liveState === "streaming" || liveState === "syncing") {
-    return true;
-  }
   const turn = payload?.turn && typeof payload.turn === "object" ? (payload.turn as Record<string, unknown>) : null;
   const status = typeof turn?.status === "string" ? turn.status.toLowerCase() : "";
-  return Boolean(status && !["completed", "failed", "cancelled"].includes(status));
+  if (status) {
+    return !isTerminalTurnStatus(status);
+  }
+  const liveState = typeof payload?.liveState === "string" ? payload.liveState : "";
+  return liveState === "streaming" || liveState === "syncing";
+}
+
+function isTerminalTurnStatus(status: string): boolean {
+  return ["completed", "failed", "cancelled", "canceled", "interrupted"].includes(status.toLowerCase());
 }
 
 function eventCanMarkTurnActive(event: EventEnvelope) {

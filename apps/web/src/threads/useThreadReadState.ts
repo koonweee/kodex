@@ -32,6 +32,9 @@ export function useThreadReadState({
     if (!thread || completedTurn.seq <= (thread.lastCompletedAgentTurnSeq ?? 0)) {
       return;
     }
+    if (event.kind !== "timeline.turn_upsert" && thread.lastCompletedAgentTurnSeq != null) {
+      return;
+    }
     const isSelected = completedTurn.threadId === selectedThreadIdRef.current;
     setThreadsByProjectId((current) =>
       updateThreadReadStateInProjects(current, completedTurn.threadId, (thread) => {

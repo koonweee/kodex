@@ -91,6 +91,35 @@ describe("timeline reducer snapshots", () => {
     expect(state.items.map((item) => item.text)).toEqual(["Hello"]);
     expect(state.turns).toEqual([{ turnId: "turn-1", itemIds: ["agent-1"] }]);
   });
+
+  it("does not mark completed snapshot turns active when thread syncs", () => {
+    let state = createTimelineState();
+    state = applyTimelineEvent(state, {
+      id: "turn-upsert-1",
+      seq: 0,
+      kind: "timeline.turn_upsert",
+      codexMethod: "turn/upsert",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: null,
+      projectId: null,
+      payload: {
+        source: "appServerSnapshot",
+        liveState: "syncing",
+        turn: { id: "turn-1", status: "completed", items: [] },
+      },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(state.activeTurnId).toBeNull();
+
+    state = applyTimelineSnapshot(state, {
+      ...snapshot("Done", "agent-1"),
+      liveState: "syncing",
+    });
+
+    expect(state.activeTurnId).toBeNull();
+  });
 });
 
 function snapshot(agentText: string, agentId: string): ThreadDetailResponse {

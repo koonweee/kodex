@@ -360,7 +360,7 @@ fn snapshot_timeline_events(
             TimelineTurnUpsertPayload {
                 source: TimelineUpdateSource::AppServerSnapshot,
                 turn: turn.clone(),
-                live_state: snapshot.live_state,
+                live_state: app_server_api::live_state_from_turn_status(&turn.status),
             },
         )?);
         for item in &turn.items {
@@ -708,7 +708,7 @@ fn live_state_from_thread_status(status: ThreadStatus) -> ThreadLiveState {
 
 fn live_state_from_turn_status(status: &str) -> ThreadLiveState {
     match status {
-        "completed" | "failed" | "cancelled" => ThreadLiveState::Idle,
+        "completed" | "failed" | "cancelled" | "canceled" | "interrupted" => ThreadLiveState::Idle,
         "unknown" => ThreadLiveState::NotLoaded,
         _ => ThreadLiveState::Streaming,
     }
@@ -899,15 +899,15 @@ mod tests {
             },
             turns: vec![ThreadTurnSnapshot {
                 id: "turn-1".to_string(),
-                status: "running".to_string(),
+                status: "completed".to_string(),
                 started_at: Some(1),
-                completed_at: None,
+                completed_at: Some(2),
                 items: vec![ThreadItemSnapshot {
                     id: "item-1".to_string(),
                     item_type: "agentMessage".to_string(),
                     raw_payload: json!({"id": "item-1", "type": "agentMessage", "text": "hello"}),
                 }],
-                raw_payload: json!({"id": "turn-1", "status": {"type": "running"}}),
+                raw_payload: json!({"id": "turn-1", "status": {"type": "completed"}}),
             }],
             live_state: ThreadLiveState::Syncing,
             raw_payload: json!({}),
@@ -929,6 +929,7 @@ mod tests {
             ]
         );
         assert_eq!(events[3].payload["source"], "appServerSnapshot");
+        assert_eq!(events[2].payload["liveState"], "idle");
         assert_eq!(events[3].payload["item"]["text"], "hello");
     }
 

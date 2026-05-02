@@ -143,15 +143,31 @@ async function threadDetailFromEvents(
   _request: Request,
   sourceThread: typeof thread,
 ) {
+  const threadsRoute = routes["GET /v1/threads"];
+  const threadsBody =
+    typeof threadsRoute === "function"
+      ? await threadsRoute(new Request("http://localhost/v1/threads"))
+      : threadsRoute;
+  const listedThread = (threadsBody as { threads?: Array<typeof thread> } | undefined)?.threads?.find(
+    (candidate) => candidate.id === sourceThread.id,
+  );
+  sourceThread = listedThread ?? sourceThread;
   const eventRoute = routes["GET /v1/events"];
   const eventRequest = new Request(`http://localhost/v1/events?threadId=${sourceThread.id}`);
   const eventBody = typeof eventRoute === "function" ? await eventRoute(eventRequest) : eventRoute;
   const events = Array.isArray((eventBody as { events?: unknown[] })?.events)
     ? ((eventBody as { events: Array<Record<string, unknown>> }).events)
     : [];
+  const turns = turnsFromEvents(events, sourceThread.id);
+  if (sourceThread.status === "active") {
+    const activeTurn = [...turns].reverse().find((turn) => turn.items.length > 0);
+    if (activeTurn) {
+      activeTurn.status = "running";
+    }
+  }
   return {
     thread: sourceThread,
-    turns: turnsFromEvents(events, sourceThread.id),
+    turns,
     liveState: sourceThread.status === "active" ? "streaming" : "idle",
     rawPayload: {},
   };
