@@ -206,13 +206,20 @@ test("lets thread titles use the expanded sidebar width before truncating", asyn
   await expect(threadButton).toBeVisible();
 
   const metrics = await threadButton.evaluate((button) => {
-    const titleNode = button.querySelector(".mantine-Text-root");
+    const titleNode = button.querySelector(".kodex-thread-list-title");
+    const actionSlot = button.querySelector(".kodex-thread-list-action-slot");
     if (!titleNode) {
       throw new Error("Missing thread title node");
     }
+    if (!actionSlot) {
+      throw new Error("Missing thread action slot");
+    }
     const buttonRect = button.getBoundingClientRect();
     const titleRect = titleNode.getBoundingClientRect();
+    const actionRect = actionSlot.getBoundingClientRect();
     return {
+      actionLeft: actionRect.left,
+      actionWidth: actionRect.width,
       buttonRight: buttonRect.right,
       text: titleNode.textContent,
       titleRight: titleRect.right,
@@ -220,7 +227,9 @@ test("lets thread titles use the expanded sidebar width before truncating", asyn
   });
 
   expect(metrics.text).toBe(longTitle);
-  expect(metrics.buttonRight - metrics.titleRight).toBeLessThanOrEqual(18);
+  expect(metrics.titleRight).toBeLessThanOrEqual(metrics.actionLeft);
+  expect(metrics.actionWidth).toBeGreaterThanOrEqual(18);
+  expect(metrics.buttonRight - metrics.titleRight).toBeLessThanOrEqual(48);
 });
 
 test("resolves a pending approval", async ({ page }) => {

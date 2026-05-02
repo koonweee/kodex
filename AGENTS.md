@@ -44,6 +44,15 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - Regenerate frontend OpenAPI types with a gateway running, then `cd apps/web && npm run generate:api`.
 - The generated OpenAPI TypeScript output is committed at `apps/web/src/api/generated/schema.ts`; do not hand-write duplicate gateway DTO interfaces.
 
+## Frontend Code Organization
+
+- Keep `apps/web/src/App.tsx` as the shell coordinator. New feature behavior belongs in a feature module, hook, reducer, or component under a domain directory such as `timeline`, `composer`, `approvals`, `threads`, `events`, `api`, or theme/preferences modules.
+- Do not add unrelated responsibilities to an already-large file. If a source file is approaching 500 lines, extract before adding more behavior. If a test file is approaching 800 lines or a CSS file is approaching 600 lines, split it by workflow or feature.
+- Keep ownership boundaries explicit: API calls in `api`, SSE in `events`, timeline state and presentation in `timeline`, composer behavior in `composer`, approval behavior in `approvals`, thread/project navigation in `threads`, and theme/preferences in their existing modules.
+- Prefer pure helper modules for payload normalization, reducer transformations, and decision construction. Components should mostly render and delegate side effects through props or hooks.
+- New frontend behavior should add or update the closest domain test. Avoid growing broad app-level MVP tests unless the behavior genuinely spans multiple domains.
+- When a feature needs app-server raw payload interpretation, isolate it in a named normalization helper and cover it with focused tests.
+
 ## Parallel Work
 
 - Use subagents for independent, parallelizable work when the active environment and instructions permit it.

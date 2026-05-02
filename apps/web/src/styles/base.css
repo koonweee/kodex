@@ -1,0 +1,124 @@
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--kodex-bg-app);
+  color: var(--kodex-text-primary);
+}
+
+.mantine-active:active {
+  transform: none;
+}
+
+.mantine-Menu-dropdown {
+  border: 1px solid var(--kodex-border-subtle);
+  border-radius: 18px;
+  background: var(--kodex-bg-composer);
+  color: var(--kodex-text-primary);
+  box-shadow: var(--kodex-shadow-floating);
+  overflow: hidden;
+  padding: 4px;
+}
+
+.mantine-Menu-label {
+  color: var(--kodex-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.045em;
+}
+
+.mantine-Menu-divider {
+  border-color: var(--kodex-border-subtle);
+}
+
+.mantine-Modal-content,
+.kodex-preferences-modal-content {
+  background: var(--kodex-bg-thread-surface);
+  color: var(--kodex-text-primary);
+}
+
+.kodex-preferences-modal-content {
+  overflow: hidden;
+  border: 1px solid var(--kodex-border-subtle);
+  border-radius: 16px;
+}
+
+.mantine-Modal-header,
+.kodex-preferences-modal-header {
+  background: var(--kodex-bg-thread-surface);
+  border-bottom: 1px solid var(--kodex-border-subtle);
+}
+
+.kodex-preferences-modal-header {
+  min-height: 44px;
+  padding: 11px 14px;
+}
+
+.mantine-Modal-close {
+  color: var(--kodex-text-secondary);
+}
+
+.mantine-Modal-close:hover {
+  background: var(--kodex-bg-button-hover);
+}
+
+.mantine-Menu-dropdown [data-menu-item],
+.kodex-debug-toggle {
+  appearance: none;
+  width: 100%;
+  border: 1px solid transparent;
+  border-color: transparent;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: transparent;
+  color: var(--kodex-text-secondary);
+  font-size: 13px;
+  text-align: left;
+}
+
+.mantine-Menu-dropdown [data-menu-item] svg,
+.kodex-debug-toggle svg {
+  color: currentColor;
+}
+
+.mantine-Menu-dropdown [data-menu-item]:hover,
+.mantine-Menu-dropdown [data-menu-item][data-hovered],
+.kodex-debug-toggle:hover {
+  background: var(--kodex-bg-button-hover);
+  color: var(--kodex-text-primary);
+}
+
+.mantine-Menu-dropdown [data-menu-item][data-active="true"],
+.kodex-debug-toggle[aria-checked="true"],
+.kodex-composer-control[data-variant="light"],
+.kodex-list-button[data-active="true"],
+.kodex-preferences-section-button[data-active="true"],
+.kodex-scheme-option[data-active="true"] {
+  background: var(--kodex-bg-selected);
+  color: var(--kodex-text-primary);
+}
+
+.mantine-Menu-dropdown [data-menu-item][data-active="true"],
+.kodex-debug-toggle[aria-checked="true"],
+.kodex-composer-control[data-variant="light"],
+.kodex-scheme-option[data-active="true"] {
+  border-color: var(--kodex-border-accent);
+}
+
+.mantine-Menu-dropdown [data-menu-item][data-active="true"]:hover,
+.mantine-Menu-dropdown [data-menu-item][data-active="true"][data-hovered],
+.kodex-debug-toggle[aria-checked="true"]:hover {
+  background: var(--kodex-bg-selected-strong);
+}
+
+.kodex-shell {
+  min-height: 100vh;
+  color: var(--kodex-text-primary);
+  background: var(--kodex-bg-shell);
+  --shell-handle-main-gap: 6px;
+}
+
