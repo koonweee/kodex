@@ -235,7 +235,7 @@
   box-sizing: border-box;
   max-width: 100%;
   margin: 0;
-  border-radius: 14px 14px 4px 14px;
+  border-radius: 14px;
   padding: 9px 12px;
   background: var(--kodex-bg-user-bubble);
   color: var(--kodex-text-on-accent);
