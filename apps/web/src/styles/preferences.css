@@ -89,7 +89,39 @@
 .kodex-approval-action {
   max-width: 100%;
   min-width: 0;
+  border: 1px solid transparent;
+  color: var(--kodex-text-primary);
   white-space: normal;
+}
+
+.kodex-approval-action[data-approval-tone="positive"] {
+  border-color: var(--kodex-border-accent-soft);
+}
+
+.kodex-approval-action[data-approval-tone="positive"][data-variant="filled"] {
+  background: var(--kodex-bg-selected-strong);
+}
+
+.kodex-approval-action[data-approval-tone="positive"][data-variant="light"] {
+  background: var(--kodex-bg-selected);
+}
+
+.kodex-approval-action[data-approval-tone="danger"] {
+  border-color: color-mix(in srgb, var(--kodex-danger) 42%, transparent);
+  background: color-mix(in srgb, var(--kodex-danger) 12%, transparent);
+}
+
+.kodex-approval-action[data-approval-tone="neutral"] {
+  color: var(--kodex-text-secondary);
+}
+
+.kodex-approval-action:hover {
+  background: var(--kodex-bg-button-hover);
+  color: var(--kodex-text-primary);
+}
+
+.kodex-approval-action .mantine-Button-section {
+  color: currentColor;
 }
 
 .kodex-approval-action .mantine-Button-inner,

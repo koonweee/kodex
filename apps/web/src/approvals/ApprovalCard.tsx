@@ -128,10 +128,11 @@ function ApprovalActionButtons({
           aria-label={action.ariaLabel}
           className="kodex-approval-action"
           color={action.color}
+          data-approval-tone={approvalActionTone(action)}
           key={action.label}
           leftSection={action.icon}
           size="xs"
-          variant={action.variant}
+          variant={action.variant ?? "filled"}
           onClick={() => onDecision(approval, action.response)}
         >
           {action.label}
@@ -146,6 +147,16 @@ function renderableApprovalAction(action: ApprovalActionSpec): ApprovalAction {
     ...action,
     icon: approvalActionIcon(action.icon),
   };
+}
+
+function approvalActionTone(action: ApprovalAction): "danger" | "neutral" | "positive" {
+  if (action.color === "red") {
+    return "danger";
+  }
+  if (action.color === "gray") {
+    return "neutral";
+  }
+  return "positive";
 }
 
 function approvalActionIcon(icon: ApprovalActionIcon): ReactNode {
