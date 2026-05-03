@@ -172,9 +172,24 @@
   gap: 8px;
 }
 
-.kodex-composer-toolbar-left,
-.kodex-composer-footer-controls {
+.kodex-composer-toolbar-left {
+  flex: 1 1 auto;
   min-width: 0;
+}
+
+.kodex-composer-footer-controls {
+  flex: 1 1 auto;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.kodex-composer-footer-left,
+.kodex-composer-footer-right {
+  min-width: 0;
+}
+
+.kodex-composer-footer-right {
+  margin-left: auto;
 }
 
 .kodex-composer-action,
@@ -191,6 +206,50 @@
   max-width: 176px;
   min-width: 0;
   padding-inline: 9px;
+  color: var(--kodex-text-secondary);
+}
+
+.kodex-composer-model-control {
+  width: fit-content;
+  max-width: none;
+  flex: 0 0 auto;
+}
+
+.kodex-composer-model-name,
+.kodex-composer-model-effort {
+  display: inline-flex;
+  align-items: center;
+  font-size: inherit;
+  color: var(--kodex-text-secondary);
+  font-weight: 500;
+  opacity: 0.78;
+  line-height: 1;
+}
+
+.kodex-composer-model-name {
+  color: inherit;
+  opacity: 1;
+  font-weight: inherit;
+}
+
+.kodex-composer-model-effort {
+  margin-left: 5px;
+}
+
+.kodex-composer-model-control .mantine-Button-label {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.kodex-composer-fast-indicator {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  margin-right: -3px;
+  border-radius: 999px;
   color: var(--kodex-text-secondary);
 }
 
@@ -216,8 +275,8 @@
 
 .kodex-composer-control .mantine-Button-label {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: clip;
   white-space: nowrap;
 }
 
@@ -231,14 +290,35 @@
   min-width: 0;
 }
 
+.mantine-Menu-dropdown .kodex-composer-fast-row,
+.mantine-Menu-dropdown .kodex-composer-fast-row:hover,
+.mantine-Menu-dropdown .kodex-composer-fast-row[data-hovered],
+.mantine-Menu-dropdown .kodex-composer-fast-row[data-active="true"],
+.mantine-Menu-dropdown .kodex-composer-fast-row[data-active="true"]:hover,
+.mantine-Menu-dropdown .kodex-composer-fast-row[data-active="true"][data-hovered] {
+  background: transparent !important;
+  color: var(--kodex-text-secondary) !important;
+  cursor: default;
+}
+
+.kodex-composer-fast-row .mantine-Switch-root,
+.kodex-composer-fast-row .mantine-Switch-root * {
+  cursor: pointer;
+}
+
 .kodex-context-usage {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
   border-radius: 999px;
+  color: var(--kodex-text-secondary);
 }
 
 .kodex-context-usage span {
   display: block;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border-radius: 999px;
   background:
     radial-gradient(circle at center, var(--kodex-bg-composer) 0 42%, transparent 43%),

@@ -14,7 +14,10 @@ import {
   project,
   requestJson,
   secondThread,
+  snapshotItem,
+  snapshotTurn,
   thread,
+  threadDetail,
   timelineElement,
 } from "./test/mvpAppHarness";
 
@@ -72,6 +75,14 @@ describe("MVP approvals UI flows", () => {
             },
           ],
         },
+        "GET /v1/threads/thread-2": threadDetail(blockedThread, [
+          snapshotTurn("turn-2", [
+            snapshotItem("item-visible", "agentMessage", {
+              phase: "commentary",
+              text: "Waiting for approval",
+            }),
+          ]),
+        ]),
       }),
     );
 
@@ -84,7 +95,9 @@ describe("MVP approvals UI flows", () => {
     await userEvent.click(blockedThreadButton);
 
     const threadView = await screen.findByRole("main", { name: /thread/i });
-    expect(await within(threadView).findByText(/cargo test/i)).toBeInTheDocument();
+    const visibleHistory = await within(threadView).findByText(/waiting for approval/i);
+    const approvalCard = await within(threadView).findByText(/cargo test/i);
+    expect(Boolean(visibleHistory.compareDocumentPosition(approvalCard) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     expect(within(threadView).getByText(/reason: verify changes/i)).toBeInTheDocument();
   });
 

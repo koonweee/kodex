@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import type { ThreadDetailResponse } from "../api/client";
-import { addOptimisticUserMessage, applyTimelineEvent, applyTimelineSnapshot, createTimelineState } from "./reducer";
+import { sortedVisibleTimelineItems } from "./derive";
+import {
+  addOptimisticUserMessage,
+  applyTimelineEvent,
+  applyTimelineSnapshot,
+  createTimelineState,
+  updateOptimisticUserMessage,
+} from "./reducer";
 
 describe("timeline reducer snapshots", () => {
   it("loads app-server snapshot turns and replaces stale canonical rows", () => {
@@ -28,14 +35,352 @@ describe("timeline reducer snapshots", () => {
     state = applyTimelineSnapshot(state, snapshot("Agent response", "agent-1"));
 
     expect(state.items).toHaveLength(2);
-    expect(state.items[0]).toMatchObject({
-      id: "optimistic-client-message-1",
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+      "optimistic-client-message-1",
+      "agent-1",
+    ]);
+    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
       serverItemId: "user-1",
       source: "app_server",
+    });
+  });
+
+  it("reconciles optimistic user messages when a running snapshot has only the user item", () => {
+    let state = addOptimisticUserMessage(createTimelineState(), {
+      clientRequestId: "client-message-1",
+      images: [],
+      text: "Hello",
+      turnId: null,
+      confirmationState: "sending",
+    });
+
+    state = applyTimelineSnapshot(state, snapshotWithUserOnlyTurn("Hello"));
+
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+      "optimistic-client-message-1",
+    ]);
+    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+      serverItemId: "user-1",
+      source: "app_server",
+      confirmationState: "sent",
+      turnId: "turn-1",
+    });
+  });
+
+  it("retains locally confirmed user messages across stale snapshots", () => {
+    let state = addOptimisticUserMessage(createTimelineState(), {
+      clientRequestId: "client-message-1",
+      images: [],
+      text: "Hello",
+      turnId: null,
+      confirmationState: "sending",
+    });
+
+    state = applyTimelineEvent(state, {
+      id: "event-user",
+      seq: 1,
+      kind: "codex.notification",
+      codexMethod: "item/completed",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "user-1",
+      projectId: "project-1",
+      payload: { item: { id: "user-1", type: "userMessage", content: [{ type: "text", text: "Hello" }] } },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(state.items[0]).toMatchObject({
+      source: "app_server",
+      clientRequestId: "client-message-1",
+      confirmationState: "sent",
+    });
+
+    state = applyTimelineSnapshot(state, {
+      ...snapshot("Agent response", "agent-1"),
+      turns: [],
+    });
+
+    expect(state.items).toHaveLength(1);
+    expect(state.items[0]).toMatchObject({
+      kind: "user_message",
+      clientRequestId: "client-message-1",
       confirmationState: "sent",
       text: "Hello",
       turnId: "turn-1",
     });
+  });
+
+  it("keeps locally optimistic user messages after stale snapshot rows", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("Previous answer", "agent-1"));
+    state = addOptimisticUserMessage(state, {
+      clientRequestId: "client-message-1",
+      images: [],
+      text: "New question",
+      turnId: null,
+      confirmationState: "sending",
+    });
+
+    state = applyTimelineSnapshot(state, snapshot("Previous answer", "agent-1"));
+
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.text)).toEqual([
+      "Hello",
+      "Previous answer",
+      "New question",
+    ]);
+  });
+
+  it("keeps a duplicate optimistic user message when a stale snapshot has the same text", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("Previous answer", "agent-1"));
+    state = addOptimisticUserMessage(state, {
+      clientRequestId: "client-message-1",
+      images: [],
+      text: "Hello",
+      turnId: null,
+      confirmationState: "sending",
+    });
+
+    state = applyTimelineSnapshot(state, snapshot("Previous answer", "agent-1"));
+
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.text)).toEqual([
+      "Hello",
+      "Previous answer",
+      "Hello",
+    ]);
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+      "user-1",
+      "agent-1",
+      "optimistic-client-message-1",
+    ]);
+  });
+
+  it("reconciles same-text local user messages when a response snapshot was not loaded first", () => {
+    let state = addOptimisticUserMessage(createTimelineState(), {
+      clientRequestId: "client-message-1",
+      images: [],
+      text: "Hello",
+      turnId: null,
+      confirmationState: "sending",
+    });
+
+    state = applyTimelineSnapshot(state, snapshot("Previous answer", "agent-1"));
+
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.text)).toEqual([
+      "Hello",
+      "Previous answer",
+    ]);
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+      "optimistic-client-message-1",
+      "agent-1",
+    ]);
+    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+      serverItemId: "user-1",
+      source: "app_server",
+    });
+  });
+
+  it("reconciles same-text locally sent user messages when a response snapshot was not loaded first", () => {
+    let state = addOptimisticUserMessage(createTimelineState(), {
+      clientRequestId: "client-message-1",
+      images: [],
+      text: "Hello",
+      turnId: null,
+      confirmationState: "sending",
+    });
+    state = updateOptimisticUserMessage(state, "client-message-1", { confirmationState: "sent" });
+
+    state = applyTimelineSnapshot(state, snapshot("Previous answer", "agent-1"));
+
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.text)).toEqual([
+      "Hello",
+      "Previous answer",
+    ]);
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+      "optimistic-client-message-1",
+      "agent-1",
+    ]);
+    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+      serverItemId: "user-1",
+      source: "app_server",
+    });
+  });
+
+  it("reconciles the local user message when a refreshed snapshot includes a response", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("Previous answer", "agent-1"));
+    state = addOptimisticUserMessage(state, {
+      clientRequestId: "client-message-1",
+      images: [],
+      text: "New question",
+      turnId: null,
+      confirmationState: "sending",
+    });
+
+    state = applyTimelineSnapshot(state, snapshotWithSecondUser("New question", "Next answer"));
+
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.text)).toEqual([
+      "Hello",
+      "Previous answer",
+      "New question",
+      "Next answer",
+    ]);
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+      "user-1",
+      "agent-1",
+      "optimistic-client-message-1",
+      "agent-2",
+    ]);
+    expect(sortedVisibleTimelineItems(state, false)[2]).toMatchObject({
+      serverItemId: "user-2",
+      source: "app_server",
+    });
+  });
+
+  it("keeps the reconciled local user message when a direct server event replays after a response snapshot", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("Previous answer", "agent-1"));
+    state = addOptimisticUserMessage(state, {
+      clientRequestId: "client-message-1",
+      images: [],
+      text: "New question",
+      turnId: null,
+      confirmationState: "sending",
+    });
+    state = applyTimelineSnapshot(state, snapshotWithSecondUser("New question", "Next answer"));
+
+    state = applyTimelineEvent(state, {
+      id: "event-user-2",
+      seq: 10,
+      kind: "codex.notification",
+      codexMethod: "item/completed",
+      threadId: "thread-1",
+      turnId: "turn-2",
+      itemId: "user-2",
+      projectId: "project-1",
+      payload: { item: { id: "user-2", type: "userMessage", content: [{ type: "text", text: "New question" }] } },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.text)).toEqual([
+      "Hello",
+      "Previous answer",
+      "New question",
+      "Next answer",
+    ]);
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+      "user-1",
+      "agent-1",
+      "optimistic-client-message-1",
+      "agent-2",
+    ]);
+    expect(sortedVisibleTimelineItems(state, false)[2]).toMatchObject({
+      serverItemId: "user-2",
+      source: "app_server",
+    });
+  });
+
+  it("keeps a newer same-text local user message when a stale direct server event replays", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("Previous answer", "agent-1"));
+    state = addOptimisticUserMessage(state, {
+      clientRequestId: "client-message-1",
+      images: [],
+      text: "Hello",
+      turnId: null,
+      confirmationState: "sending",
+    });
+
+    state = applyTimelineEvent(state, {
+      id: "event-user-1-replay",
+      seq: 1,
+      kind: "codex.notification",
+      codexMethod: "item/completed",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "user-1",
+      projectId: "project-1",
+      payload: { item: { id: "user-1", type: "userMessage", content: [{ type: "text", text: "Hello" }] } },
+      receivedAt: "2026-04-30T00:00:01Z",
+    });
+
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+      "user-1",
+      "agent-1",
+      "optimistic-client-message-1",
+    ]);
+  });
+
+  it("reconciles a direct-confirmed local user message when a later snapshot includes its server item", () => {
+    let state = addOptimisticUserMessage(createTimelineState(), {
+      clientRequestId: "client-message-1",
+      images: [],
+      text: "Hello",
+      turnId: null,
+      confirmationState: "sending",
+    });
+    state = applyTimelineEvent(state, {
+      id: "event-user-1",
+      seq: 1,
+      kind: "codex.notification",
+      codexMethod: "item/completed",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "user-1",
+      projectId: "project-1",
+      payload: { item: { id: "user-1", type: "userMessage", content: [{ type: "text", text: "Hello" }] } },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    state = applyTimelineSnapshot(state, snapshot("Previous answer", "agent-1"));
+
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+      "optimistic-client-message-1",
+      "agent-1",
+    ]);
+    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+      serverItemId: "user-1",
+      source: "app_server",
+    });
+  });
+
+  it("confirms a same-turn duplicate local user message before matching an older equivalent user message", () => {
+    let state = applyTimelineEvent(createTimelineState(), {
+      id: "event-user-1",
+      seq: 1,
+      kind: "codex.notification",
+      codexMethod: "item/completed",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "user-1",
+      projectId: "project-1",
+      payload: { item: { id: "user-1", type: "userMessage", content: [{ type: "text", text: "Hello" }] } },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+    state = addOptimisticUserMessage(state, {
+      clientRequestId: "client-message-1",
+      images: [],
+      text: "Hello",
+      turnId: "turn-1",
+      confirmationState: "sending",
+    });
+
+    state = applyTimelineEvent(state, {
+      id: "event-user-2",
+      seq: 2,
+      kind: "codex.notification",
+      codexMethod: "item/completed",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "user-2",
+      projectId: "project-1",
+      payload: { item: { id: "user-2", type: "userMessage", content: [{ type: "text", text: "Hello" }] } },
+      receivedAt: "2026-04-30T00:00:01Z",
+    });
+
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+      "user-1",
+      "optimistic-client-message-1",
+    ]);
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.serverItemId)).toEqual([
+      undefined,
+      "user-2",
+    ]);
   });
 
   it("applies normalized snapshot upserts and gateway deltas on the same item path", () => {
@@ -397,6 +742,57 @@ function snapshot(agentText: string, agentId: string): ThreadDetailResponse {
             id: agentId,
             itemType: "agentMessage",
             rawPayload: { id: agentId, type: "agentMessage", text: agentText },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function snapshotWithSecondUser(userText: string, agentText: string): ThreadDetailResponse {
+  return {
+    ...snapshot("Previous answer", "agent-1"),
+    turns: [
+      ...snapshot("Previous answer", "agent-1").turns,
+      {
+        id: "turn-2",
+        status: "completed",
+        startedAt: 3,
+        completedAt: 4,
+        rawPayload: {},
+        items: [
+          {
+            id: "user-2",
+            itemType: "userMessage",
+            rawPayload: { id: "user-2", type: "userMessage", content: [{ type: "text", text: userText }] },
+          },
+          {
+            id: "agent-2",
+            itemType: "agentMessage",
+            rawPayload: { id: "agent-2", type: "agentMessage", text: agentText },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function snapshotWithUserOnlyTurn(userText: string): ThreadDetailResponse {
+  return {
+    ...snapshot("Previous answer", "agent-1"),
+    liveState: "streaming",
+    turns: [
+      {
+        id: "turn-1",
+        status: "running",
+        startedAt: 1,
+        completedAt: null,
+        rawPayload: {},
+        items: [
+          {
+            id: "user-1",
+            itemType: "userMessage",
+            rawPayload: { id: "user-1", type: "userMessage", content: [{ type: "text", text: userText }] },
           },
         ],
       },

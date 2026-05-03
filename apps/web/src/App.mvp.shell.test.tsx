@@ -54,7 +54,8 @@ describe("MVP shell flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("button", { name: /kodex \/home\/example\/kodex/i })).toBeInTheDocument();
+    expect(await screen.findByText("Kodex")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /kodex \/home\/example\/kodex/i })).not.toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /new project/i }));
@@ -211,23 +212,16 @@ describe("MVP shell flows", () => {
     render(<App />);
 
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
-    const kodexProjectButton = within(kodexGroup).getByRole("button", { name: /kodex \/home\/example\/kodex/i });
-    expect(kodexProjectButton).toHaveAttribute("aria-expanded", "true");
+    const kodexProjectTitle = within(kodexGroup).getByText("Kodex");
+    expect(within(kodexGroup).queryByRole("button", { name: /kodex \/home\/example\/kodex/i })).not.toBeInTheDocument();
     expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
 
     const scratchGroup = await screen.findByRole("group", { name: /scratch/i });
-    const scratchProjectButton = within(scratchGroup).getByRole("button", { name: /scratch \/tmp\/scratch/i });
-    expect(scratchProjectButton).toHaveAttribute("aria-expanded", "true");
+    expect(within(scratchGroup).queryByRole("button", { name: /scratch \/tmp\/scratch/i })).not.toBeInTheDocument();
     expect(within(scratchGroup).getByRole("button", { name: /second thread/i })).toBeInTheDocument();
 
-    await userEvent.click(kodexProjectButton);
+    await userEvent.click(kodexProjectTitle);
 
-    expect(kodexProjectButton).toHaveAttribute("aria-expanded", "false");
-    expect(within(kodexGroup).queryByRole("button", { name: /implement frontend/i })).not.toBeInTheDocument();
-
-    await userEvent.click(kodexProjectButton);
-
-    expect(kodexProjectButton).toHaveAttribute("aria-expanded", "true");
     expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
   });
 
@@ -432,7 +426,7 @@ describe("MVP shell flows", () => {
     expect(await screen.findByRole("button", { name: /second thread/i })).toBeInTheDocument();
   });
 
-  it("selects the first available thread when switching projects", async () => {
+  it("selects the clicked thread when switching projects from the sidebar", async () => {
     const otherProject = {
       ...project,
       id: "project-2",
@@ -463,13 +457,12 @@ describe("MVP shell flows", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /scratch \/tmp\/scratch/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /second thread/i }));
 
-    expect(await screen.findByRole("button", { name: /second thread/i })).toBeInTheDocument();
     expect(await screen.findByText(/second project snapshot/i)).toBeInTheDocument();
   });
 
-  it("clears the old active thread while loading a newly selected project", async () => {
+  it("keeps the old active thread when a project title row is clicked", async () => {
     let resolveSecondThreads: (value: unknown) => void = () => undefined;
     const secondThreads = new Promise((resolve) => {
       resolveSecondThreads = resolve;
@@ -495,10 +488,10 @@ describe("MVP shell flows", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /scratch \/tmp\/scratch/i }));
+    await userEvent.click(screen.getByText("Scratch"));
 
-    expect(screen.getByLabelText(/message composer/i)).toBeDisabled();
-    expect(screen.getByText(/select or create a thread/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
+    expect(screen.getByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
 
     resolveSecondThreads({
       threads: [secondThread],
@@ -507,6 +500,7 @@ describe("MVP shell flows", () => {
       rawPayload: {},
     });
     expect(await screen.findByRole("button", { name: /second thread/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
   });
 
   it("keeps failed uploads visible and retryable", async () => {

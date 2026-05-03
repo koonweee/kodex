@@ -495,13 +495,6 @@ function KodexShell({
     setSelectedThreadId(nextThreadId);
   }
 
-  function handleSelectProject(projectId: string) {
-    if (projectId === selectedProjectId) {
-      return;
-    }
-    selectProject(projectId);
-  }
-
   function selectProject(projectId: string) {
     selectedProjectIdRef.current = projectId;
     if (!draftComposerEditedRef.current) {
@@ -672,7 +665,6 @@ function KodexShell({
   });
   const stableHandleCreateProject = useEventCallback(handleCreateProject);
   const stableHandleCreateThread = useEventCallback(handleCreateThread);
-  const stableHandleSelectProject = useEventCallback(handleSelectProject);
   const stableHandleSelectThread = useEventCallback(handleSelectThread);
 
   return (
@@ -709,7 +701,7 @@ function KodexShell({
           onArchiveThread: handleArchiveThreadById, onCancelLogin: handleCancelLogin,
           onCreateProject: stableHandleCreateProject, onCreateThread: stableHandleCreateThread, onLogin: handleLogin, onLogout: handleLogout,
           onOpenPreferences: handleOpenPreferences, onProjectCwdChange: setProjectCwd, onProjectFormOpenChange: setProjectFormOpen,
-          onProjectNameChange: setProjectName, onReorderProjects: handleReorderProjects, onSelectProject: stableHandleSelectProject, onSelectThread: stableHandleSelectThread,
+          onProjectNameChange: setProjectName, onReorderProjects: handleReorderProjects, onSelectThread: stableHandleSelectThread,
           onShowDebugEventsChange: setShowDebugEvents, onSidebarResizeKeyDown: handleSidebarResizeKeyDown,
           onSidebarResizePointerDown: handleSidebarResizePointerDown, onThreadActionHoverChange: setHoveredThreadActionId,
           pendingTitleThreadIds, projectCwd, projectFormOpen, projectName, projects: orderedProjects, selectedProjectId, selectedThreadId,

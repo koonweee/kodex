@@ -393,7 +393,10 @@ fn is_thread_metadata_live_event(event: &EventEnvelope) -> bool {
     event.kind == "codex.notification"
         && event.codex_method.as_deref().is_some_and(|method| {
             let method = method.to_ascii_lowercase();
-            method == "thread/nameupdated" || method == "thread/name_updated"
+            matches!(
+                method.as_str(),
+                "thread/nameupdated" | "thread/name_updated" | "thread/tokenusage/updated"
+            )
         })
 }
 

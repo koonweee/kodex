@@ -209,6 +209,7 @@ export function ComposerPanel({
               contextUsage={contextUsage}
               disabled={!canCompose || isComposerSubmitting}
               models={models}
+              showContextUsage={!shouldShowDraftHero}
               settingsError={composerSettingsError}
               settings={composerSettings}
               onSettingsChange={onComposerSettingsChange}

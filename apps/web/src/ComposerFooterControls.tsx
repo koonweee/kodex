@@ -1,5 +1,5 @@
-import { ActionIcon, Box, Button, Group, Menu, Text, Tooltip } from "@mantine/core";
-import { AlertCircle, Brain, Check, Gauge, Shield, Zap } from "lucide-react";
+import { ActionIcon, Box, Button, Group, Menu, Switch, Text, Tooltip } from "@mantine/core";
+import { AlertCircle, Check, Gauge, Shield } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useState } from "react";
 
@@ -23,6 +23,7 @@ type ComposerFooterControlsProps = {
   contextUsage?: ContextUsage | null;
   disabled?: boolean;
   models: ModelSummary[];
+  showContextUsage?: boolean;
   settingsError?: string | null;
   settings: ComposerSettings;
   onSettingsChange: (settings: ComposerSettings) => void;
@@ -56,13 +57,15 @@ export function ComposerFooterControls({
   contextUsage,
   disabled = false,
   models,
+  showContextUsage = true,
   settingsError,
   settings,
   onSettingsChange,
 }: ComposerFooterControlsProps) {
   const defaultModel = models.find((model) => model.isDefault) ?? models[0] ?? null;
   const selectedModel = models.find((model) => model.id === settings.model) ?? defaultModel;
-  const selectedModelLabel = selectedModel?.displayName || selectedModel?.model || selectedModel?.id || "Model";
+  const selectedModelLabel = modelFullLabel(selectedModel);
+  const selectedModelShortLabel = modelShortLabel(selectedModel);
   const selectedEffort = settings.effort ?? selectedModel?.defaultReasoningEffort ?? null;
   const selectedPermission = PERMISSION_PRESETS.find((preset) => preset.id === settings.permissionPreset);
   const permissionLabel = selectedPermission?.label ?? "Default permissions";
@@ -91,124 +94,139 @@ export function ComposerFooterControls({
 
   return (
     <Group className="kodex-composer-footer-controls" gap={6} wrap="nowrap">
-      <Menu position="top-start" withinPortal onClose={() => setConfirmingFullAccess(false)}>
-        <Menu.Target>
-          <Button
-            aria-label={`Permissions: ${permissionLabel}`}
-            className="kodex-composer-control"
-            disabled={disabled}
-            leftSection={<Shield size={14} />}
-            size="compact-sm"
-            type="button"
-            variant="subtle"
-          >
-            {permissionLabel}
-          </Button>
-        </Menu.Target>
-        <Menu.Dropdown aria-label="Permissions presets" className="kodex-composer-menu">
-          {PERMISSION_PRESETS.map((preset) => (
-            <Menu.Item
-              key={preset.id}
-              closeMenuOnClick={preset.id !== "fullAccess" || confirmingFullAccess}
-              color={preset.tone === "danger" ? "red" : undefined}
-              data-active={settings.permissionPreset === preset.id ? "true" : undefined}
-              leftSection={settings.permissionPreset === preset.id ? <Check size={14} /> : <Shield size={14} />}
-              onClick={() => selectPermissionPreset(preset.id)}
+      <Group className="kodex-composer-footer-left" gap={6} wrap="nowrap">
+        <Menu position="top-start" withinPortal onClose={() => setConfirmingFullAccess(false)}>
+          <Menu.Target>
+            <Button
+              aria-label={`Permissions: ${permissionLabel}`}
+              className="kodex-composer-control"
+              disabled={disabled}
+              leftSection={<Shield size={14} />}
+              size="compact-sm"
+              type="button"
+              variant="subtle"
             >
-              <Box className="kodex-composer-menu-item">
-                <Text size="sm" fw={600}>
-                  {preset.id === "fullAccess" && confirmingFullAccess ? "Confirm full access" : preset.label}
-                </Text>
-                <Text size="xs" c={preset.tone === "danger" ? "red.3" : "dimmed"}>
-                  {preset.id === "fullAccess" && confirmingFullAccess
-                    ? "Click again to run without sandbox restrictions."
-                    : preset.description}
-                </Text>
-              </Box>
-            </Menu.Item>
-          ))}
-        </Menu.Dropdown>
-      </Menu>
+              {permissionLabel}
+            </Button>
+          </Menu.Target>
+          <Menu.Dropdown aria-label="Permissions presets" className="kodex-composer-menu">
+            {PERMISSION_PRESETS.map((preset) => (
+              <Menu.Item
+                key={preset.id}
+                closeMenuOnClick={preset.id !== "fullAccess" || confirmingFullAccess}
+                color={preset.tone === "danger" ? "red" : undefined}
+                data-active={settings.permissionPreset === preset.id ? "true" : undefined}
+                leftSection={settings.permissionPreset === preset.id ? <Check size={14} /> : <Shield size={14} />}
+                onClick={() => selectPermissionPreset(preset.id)}
+              >
+                <Box className="kodex-composer-menu-item">
+                  <Text size="sm" fw={600}>
+                    {preset.id === "fullAccess" && confirmingFullAccess ? "Confirm full access" : preset.label}
+                  </Text>
+                  <Text size="xs" c={preset.tone === "danger" ? "red.3" : "dimmed"}>
+                    {preset.id === "fullAccess" && confirmingFullAccess
+                      ? "Click again to run without sandbox restrictions."
+                      : preset.description}
+                  </Text>
+                </Box>
+              </Menu.Item>
+            ))}
+          </Menu.Dropdown>
+        </Menu>
 
-      <ContextUsageIndicator usage={contextUsage} />
+        {settingsError ? (
+          <Tooltip label={settingsError}>
+            <ActionIcon aria-label={settingsError} color="red" size="md" type="button" variant="subtle">
+              <AlertCircle size={15} />
+            </ActionIcon>
+          </Tooltip>
+        ) : null}
+      </Group>
 
-      {settingsError ? (
-        <Tooltip label={settingsError}>
-          <ActionIcon aria-label={settingsError} color="red" size="md" type="button" variant="subtle">
-            <AlertCircle size={15} />
-          </ActionIcon>
-        </Tooltip>
-      ) : null}
+      <Group className="kodex-composer-footer-right" gap={6} wrap="nowrap">
+        {showContextUsage ? <ContextUsageIndicator usage={contextUsage} /> : null}
+        {settings.fast ? (
+          <Tooltip label="Fast responses enabled">
+            <Box aria-label="Fast responses enabled" className="kodex-composer-fast-indicator" component="span" role="img">
+              <SolidBoltIcon />
+            </Box>
+          </Tooltip>
+        ) : null}
 
-      <Menu position="top-start" withinPortal>
-        <Menu.Target>
-          <Button
-            aria-label={`Model: ${selectedModelLabel}${selectedEffort ? `, ${selectedEffort}` : ""}`}
-            className="kodex-composer-control"
-            disabled={disabled || models.length === 0}
-            leftSection={settings.fast ? <Zap size={14} fill="currentColor" /> : <Brain size={14} />}
-            size="compact-sm"
-            type="button"
-            variant="subtle"
-          >
-            {selectedModelLabel}
-            {selectedEffort ? ` ${titleCase(selectedEffort)}` : ""}
-          </Button>
-        </Menu.Target>
-        <Menu.Dropdown aria-label="Model and speed controls" className="kodex-composer-menu">
-          <Menu.Label>Model</Menu.Label>
-          {models.map((model) => (
+        <Menu position="top-start" withinPortal>
+          <Menu.Target>
+            <Button
+              aria-label={`Model: ${selectedModelLabel}${selectedEffort ? `, ${selectedEffort}` : ""}`}
+              className="kodex-composer-control kodex-composer-model-control"
+              disabled={disabled || models.length === 0}
+              size="compact-sm"
+              type="button"
+              variant="subtle"
+            >
+              <span className="kodex-composer-model-name">{selectedModelShortLabel}</span>
+              {selectedEffort ? (
+                <span className="kodex-composer-model-effort">{reasoningEffortLabel(selectedEffort)}</span>
+              ) : null}
+            </Button>
+          </Menu.Target>
+          <Menu.Dropdown aria-label="Model and speed controls" className="kodex-composer-menu">
+            <Menu.Label>Model</Menu.Label>
+            {models.map((model) => (
+              <Menu.Item
+                key={model.id}
+                data-active={selectedModel?.id === model.id ? "true" : undefined}
+                leftSection={selectedModel?.id === model.id ? <Check size={14} /> : undefined}
+                onClick={() =>
+                  updateSettings({
+                    model: model.id,
+                    effort: model.supportedReasoningEfforts.some(
+                      (effort) => effort.reasoningEffort === settings.effort,
+                    )
+                      ? settings.effort
+                      : undefined,
+                  })
+                }
+              >
+                {model.model}
+              </Menu.Item>
+            ))}
+            {supportedEfforts.length > 0 ? (
+              <>
+                <Menu.Divider />
+                <Menu.Label>Reasoning</Menu.Label>
+                {supportedEfforts.map((effort) => (
+                  <Menu.Item
+                    key={effort.reasoningEffort}
+                    data-active={selectedEffort === effort.reasoningEffort ? "true" : undefined}
+                    leftSection={selectedEffort === effort.reasoningEffort ? <Check size={14} /> : <Gauge size={14} />}
+                    onClick={() => updateSettings({ model: selectedModel?.id, effort: effort.reasoningEffort })}
+                  >
+                    {reasoningEffortLabel(effort.reasoningEffort)}
+                  </Menu.Item>
+                ))}
+              </>
+            ) : null}
+            <Menu.Divider />
             <Menu.Item
-              key={model.id}
-              data-active={selectedModel?.id === model.id ? "true" : undefined}
-              leftSection={selectedModel?.id === model.id ? <Check size={14} /> : <Brain size={14} />}
-              onClick={() =>
-                updateSettings({
-                  model: model.id,
-                  effort: model.supportedReasoningEfforts.some(
-                    (effort) => effort.reasoningEffort === settings.effort,
-                  )
-                    ? settings.effort
-                    : undefined,
-                })
+              className="kodex-composer-fast-row"
+              closeMenuOnClick={false}
+              component="div"
+              leftSection={<SolidBoltIcon />}
+              rightSection={
+                <Switch
+                  aria-label="Fast responses"
+                  checked={settings.fast}
+                  onChange={(event) => updateSettings({ fast: event.currentTarget.checked })}
+                  onClick={(event) => event.stopPropagation()}
+                  size="xs"
+                />
               }
             >
-              {model.displayName || model.model || model.id}
+              Fast
             </Menu.Item>
-          ))}
-          {supportedEfforts.length > 0 ? (
-            <>
-              <Menu.Divider />
-              <Menu.Label>Reasoning</Menu.Label>
-              {supportedEfforts.map((effort) => (
-                <Menu.Item
-                  key={effort.reasoningEffort}
-                  data-active={selectedEffort === effort.reasoningEffort ? "true" : undefined}
-                  leftSection={selectedEffort === effort.reasoningEffort ? <Check size={14} /> : <Gauge size={14} />}
-                  onClick={() => updateSettings({ model: selectedModel?.id, effort: effort.reasoningEffort })}
-                >
-                  <Box className="kodex-composer-menu-item">
-                    <Text size="sm" fw={600}>
-                      {titleCase(effort.reasoningEffort)}
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      {effort.description}
-                    </Text>
-                  </Box>
-                </Menu.Item>
-              ))}
-            </>
-          ) : null}
-          <Menu.Divider />
-          <Menu.Item
-            data-active={settings.fast ? "true" : undefined}
-            leftSection={settings.fast ? <Check size={14} /> : <Zap size={14} />}
-            onClick={() => updateSettings({ fast: !settings.fast })}
-          >
-            Fast
-          </Menu.Item>
-        </Menu.Dropdown>
-      </Menu>
+          </Menu.Dropdown>
+        </Menu>
+      </Group>
     </Group>
   );
 }
@@ -231,19 +249,34 @@ function ContextUsageIndicator({ usage }: { usage?: ContextUsage | null }) {
 
   return (
     <Tooltip label={label}>
-      <ActionIcon
+      <Box
+        component="span"
         aria-label={label}
         className="kodex-context-usage"
         data-known={hasWindow ? "true" : "false"}
-        size="md"
-        type="button"
-        variant="subtle"
+        role="img"
         style={{ "--context-used": `${percentUsed}%` } as CSSProperties}
       >
         <span aria-hidden="true" />
-      </ActionIcon>
+      </Box>
     </Tooltip>
   );
+}
+
+function modelFullLabel(model: ModelSummary | null) {
+  return model?.model || model?.displayName || model?.id || "Model";
+}
+
+function modelShortLabel(model: ModelSummary | null) {
+  const label = modelFullLabel(model);
+  return label.replace(/^gpt-/i, "");
+}
+
+function reasoningEffortLabel(value: string) {
+  if (value.toLowerCase() === "xhigh") {
+    return "xHigh";
+  }
+  return titleCase(value);
 }
 
 function contextPercentLeft(usedTokens: number, contextWindow: number) {
@@ -259,4 +292,12 @@ function contextPercentLeft(usedTokens: number, contextWindow: number) {
 
 function titleCase(value: string) {
   return value ? `${value.slice(0, 1).toUpperCase()}${value.slice(1)}` : value;
+}
+
+function SolidBoltIcon() {
+  return (
+    <svg aria-hidden="true" fill="currentColor" height="14" viewBox="0 0 24 24" width="14">
+      <path d="M13 2 3 14h7l-1 8 12-14h-7z" />
+    </svg>
+  );
 }

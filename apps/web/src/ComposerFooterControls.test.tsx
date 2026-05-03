@@ -21,11 +21,75 @@ const model: ModelSummary = {
   upgrade: null,
 };
 
+const reasoningModel: ModelSummary = {
+  ...model,
+  supportedReasoningEfforts: [
+    { reasoningEffort: "low", description: "Fast responses with lighter reasoning" },
+    { reasoningEffort: "medium", description: "Balances speed and reasoning depth for everyday tasks" },
+    { reasoningEffort: "high", description: "Greater reasoning depth for complex problems" },
+    { reasoningEffort: "xhigh", description: "Extra high reasoning depth for complex problems" },
+  ],
+};
+
 const settings: ComposerSettings = {
   fast: false,
 };
 
 describe("ComposerFooterControls", () => {
+  it("renders context usage as a non-interactive indicator and uses a compact model label", () => {
+    renderWithProvider(
+      <ComposerFooterControls
+        contextUsage={{ contextTokens: 42_000, modelContextWindow: 200_000 }}
+        models={[model]}
+        settings={settings}
+        onSettingsChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: /context left/i })).toHaveClass("kodex-context-usage");
+    expect(screen.queryByRole("button", { name: /context left/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i })).toHaveTextContent("5.4 Medium");
+  });
+
+  it("uses model ids in the menu, compact reasoning labels, and a non-dismissing fast switch", async () => {
+    const onSettingsChange = vi.fn();
+    const { rerender } = renderWithProvider(
+      <ComposerFooterControls models={[reasoningModel]} settings={settings} onSettingsChange={onSettingsChange} />,
+    );
+
+    expect(screen.queryByRole("button", { name: /fast responses/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /fast responses enabled/i })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("menuitem", { name: /^gpt-5\.4$/i, hidden: true })).toBeInTheDocument();
+    });
+    expect(screen.getByRole("menuitem", { name: /^xhigh$/i, hidden: true })).toHaveTextContent("xHigh");
+
+    const fastItem = screen.getByRole("menuitem", { name: /fast/i, hidden: true });
+    expect(fastItem).not.toHaveAttribute("data-disabled");
+    expect(fastItem).toHaveClass("kodex-composer-fast-row");
+    await userEvent.click(fastItem);
+    expect(onSettingsChange).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("switch", { name: /fast responses/i, hidden: true }));
+    expect(onSettingsChange).toHaveBeenCalledWith({ fast: true });
+
+    rerender(
+      <MantineProvider>
+        <ComposerFooterControls
+          models={[reasoningModel]}
+          settings={{ fast: true }}
+          onSettingsChange={onSettingsChange}
+        />
+      </MantineProvider>,
+    );
+    expect(screen.getByRole("img", { name: /fast responses enabled/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /fast responses/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /fast/i, hidden: true })).toBeInTheDocument();
+  });
+
   it("requires a second confirmation click before applying full access", async () => {
     const onSettingsChange = vi.fn();
 

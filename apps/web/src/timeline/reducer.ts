@@ -51,6 +51,10 @@ const LIVE_TIMELINE_EVENT_KINDS = new Set([
   "timeline.thread_status",
 ]);
 
+type TimelineEventApplyOptions = {
+  skipOptimisticUserMessageMatch?: boolean;
+};
+
 export function applyLiveTimelineUpdate(state: TimelineState, event: EventEnvelope): TimelineState {
   if (event.kind === "timeline.snapshot_required") {
     return state;
@@ -82,7 +86,11 @@ export function applyTimelineEvent(state: TimelineState, event: EventEnvelope): 
   return applyTimelineEventInternal(state, event);
 }
 
-function applyTimelineEventInternal(state: TimelineState, event: EventEnvelope): TimelineState {
+function applyTimelineEventInternal(
+  state: TimelineState,
+  event: EventEnvelope,
+  options: TimelineEventApplyOptions = {},
+): TimelineState {
   if (event.kind === "timeline.snapshot") {
     return applyTimelineSnapshot(state, event.payload as ThreadDetailResponse);
   }
@@ -138,12 +146,19 @@ function applyTimelineEventInternal(state: TimelineState, event: EventEnvelope):
   if (existing) {
     next.indexes.itemUpdatesById.set(presentation.item.id, mergeTimelineItem(existing, presentation.item, event));
   } else {
-    const confirmedItem = matchingConfirmedAppServerItem(next.indexes, presentation.item);
-    const optimisticItem = confirmedItem
-      ? undefined
-      : presentation.item.kind === "user_message"
+    const exactConfirmedUserItem =
+      presentation.item.kind === "user_message" ? matchingConfirmedUserMessage(next.indexes, presentation.item) : undefined;
+    const optimisticItem =
+      !exactConfirmedUserItem && presentation.item.kind === "user_message" && !options.skipOptimisticUserMessageMatch
         ? matchingOptimisticUserMessage(next.indexes, presentation.item)
         : undefined;
+    const confirmedItem =
+      exactConfirmedUserItem ??
+      (optimisticItem
+        ? undefined
+        : matchingConfirmedAppServerItem(next.indexes, presentation.item, {
+            allowUntetheredUserMessageMatch: !options.skipOptimisticUserMessageMatch,
+          }));
     const pendingItem = pendingTimelineItemById(next.indexes, presentation.item.id);
     const item = confirmedItem
       ? confirmAppServerUserMessage(confirmedItem, presentation.item, event)
@@ -241,21 +256,7 @@ export function removeOptimisticUserMessage(state: TimelineState, clientRequestI
     return state;
   }
 
-  next.indexes.itemIds = next.indexes.itemIds.filter((itemId) => itemId !== item.id);
-  next.indexes.itemUpdatesById.delete(item.id);
-  next.indexes.pendingItemById.delete(item.id);
-  if (item.turnId) {
-    const turn = timelineTurnById(next.indexes, item.turnId);
-    if (turn) {
-      const itemIds = turn.itemIds.filter((itemId) => itemId !== item.id);
-      if (itemIds.length > 0) {
-        next.indexes.turnUpdatesById.set(item.turnId, { ...turn, itemIds });
-      } else {
-        next.indexes.turnIds = next.indexes.turnIds.filter((turnId) => turnId !== item.turnId);
-        next.indexes.turnUpdatesById.delete(item.turnId);
-      }
-    }
-  }
+  removeItem(next, item.id);
 
   return createTimelineStateFromDraft(next);
 }
@@ -267,41 +268,109 @@ export function replayTimeline(events: EventEnvelope[]): TimelineState {
 export function applyTimelineSnapshot(state: TimelineState, snapshot: ThreadDetailResponse): TimelineState {
   let next = optimisticOnlyTimeline(state);
   let seq = Math.max(state.lastSeq, 0);
+  const knownAppServerItemIds = appServerItemIdsForState(state);
   for (const turn of snapshot.turns) {
     for (const item of turn.items) {
       seq += 1;
-      next = applyTimelineEvent(next, {
-        id: `snapshot-${turn.id}-${item.id}`,
-        seq,
-        kind: "timeline.item_upsert",
-        codexMethod: turn.status === "completed" ? "item/completed" : "item/started",
-        threadId: snapshot.thread.id,
-        turnId: turn.id,
-        itemId: item.id,
-        projectId: null,
-        payload: { item: item.rawPayload },
-        receivedAt: new Date(0).toISOString(),
-      });
+      const shouldSkipLocalUserMessageMatch = snapshotItemShouldSkipLocalUserMessageMatch(item, knownAppServerItemIds);
+      next = applyTimelineEventInternal(
+        next,
+        {
+          id: `snapshot-${turn.id}-${item.id}`,
+          seq,
+          kind: "timeline.item_upsert",
+          codexMethod: turn.status === "completed" ? "item/completed" : "item/started",
+          threadId: snapshot.thread.id,
+          turnId: turn.id,
+          itemId: item.id,
+          projectId: null,
+          payload: { item: item.rawPayload },
+          receivedAt: new Date(0).toISOString(),
+        },
+        { skipOptimisticUserMessageMatch: shouldSkipLocalUserMessageMatch },
+      );
     }
   }
+  next = moveUnmatchedLocalUserMessagesAfterSnapshot(next, seq);
   return withSnapshotLiveState(next, snapshot);
 }
 
-function optimisticOnlyTimeline(state: TimelineState): TimelineState {
-  let next = createTimelineState();
+function snapshotItemShouldSkipLocalUserMessageMatch(
+  item: ThreadDetailResponse["turns"][number]["items"][number],
+  knownAppServerItemIds: Set<string>,
+): boolean {
+  return snapshotItemIsUserMessage(item) && knownAppServerItemIds.has(item.id);
+}
+
+function snapshotItemIsUserMessage(item: ThreadDetailResponse["turns"][number]["items"][number]): boolean {
+  return item.itemType.toLowerCase().includes("user");
+}
+
+function appServerItemIdsForState(state: TimelineState): Set<string> {
+  const itemIds = new Set<string>();
   for (const item of state.items) {
-    if (item.source !== "optimistic" || item.confirmationState === "failed") {
+    if (item.source === "optimistic" && !item.serverItemId) {
       continue;
     }
-    next = addOptimisticUserMessage(next, {
-      clientRequestId: item.clientRequestId ?? item.id,
-      images: item.images ?? [],
-      text: item.text,
-      turnId: item.turnId,
-      confirmationState: item.confirmationState ?? "sending",
-    });
+    itemIds.add(item.serverItemId ?? item.id);
   }
-  return next;
+  return itemIds;
+}
+
+function optimisticOnlyTimeline(state: TimelineState): TimelineState {
+  const next: TimelineDraft = {
+    activeTurnId: null,
+    indexes: prepareTimelineIndexesForUpdate(indexesForState(createTimelineState())),
+    lastSeq: 0,
+  };
+  for (const item of state.items) {
+    if (!shouldCarryLocalUserMessageAcrossSnapshot(item)) {
+      continue;
+    }
+    addItem(next, item);
+    addToTurn(next, item);
+  }
+  return createTimelineStateFromDraft(next);
+}
+
+function shouldCarryLocalUserMessageAcrossSnapshot(item: TimelineItem): boolean {
+  return (
+    item.kind === "user_message" &&
+    Boolean(item.clientRequestId) &&
+    item.confirmationState !== "failed" &&
+    (item.source === "optimistic" || item.confirmationState === "sent")
+  );
+}
+
+function moveUnmatchedLocalUserMessagesAfterSnapshot(state: TimelineState, snapshotMaxSeq: number): TimelineState {
+  if (snapshotMaxSeq <= 0) {
+    return state;
+  }
+
+  const next: TimelineDraft = {
+    activeTurnId: state.activeTurnId,
+    indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    lastSeq: state.lastSeq,
+  };
+  let seq = snapshotMaxSeq;
+  let changed = false;
+  for (const item of timelineItems(next.indexes)) {
+    if (!shouldMoveLocalUserMessageAfterSnapshot(item, snapshotMaxSeq)) {
+      continue;
+    }
+    seq += 0.1;
+    next.indexes.itemUpdatesById.set(item.id, { ...item, seq });
+    changed = true;
+  }
+  return changed ? createTimelineStateFromDraft(next) : state;
+}
+
+function shouldMoveLocalUserMessageAfterSnapshot(item: TimelineItem, snapshotMaxSeq: number): boolean {
+  return (
+    shouldCarryLocalUserMessageAcrossSnapshot(item) &&
+    item.seq <= snapshotMaxSeq &&
+    !item.debugEvents.some((event) => event.id.startsWith("snapshot-"))
+  );
 }
 
 function withSnapshotLiveState(state: TimelineState, snapshot: ThreadDetailResponse): TimelineState {
@@ -432,12 +501,19 @@ function matchingOptimisticUserMessage(indexes: TimelineIndexes, incoming: Timel
   );
 }
 
-function matchingConfirmedAppServerItem(indexes: TimelineIndexes, incoming: TimelineItem): TimelineItem | undefined {
+function matchingConfirmedAppServerItem(
+  indexes: TimelineIndexes,
+  incoming: TimelineItem,
+  options: { allowUntetheredUserMessageMatch: boolean },
+): TimelineItem | undefined {
   if (incoming.kind === "user_message") {
-    return matchingConfirmedUserMessage(indexes, incoming) ?? matchingEquivalentCompletedItem(indexes, incoming);
+    return (
+      matchingConfirmedUserMessage(indexes, incoming) ??
+      matchingEquivalentCompletedItem(indexes, incoming, options)
+    );
   }
   if (incoming.kind === "assistant_message") {
-    return matchingEquivalentCompletedItem(indexes, incoming);
+    return matchingEquivalentCompletedItem(indexes, incoming, options);
   }
   return undefined;
 }
@@ -451,7 +527,11 @@ function matchingConfirmedUserMessage(indexes: TimelineIndexes, incoming: Timeli
   );
 }
 
-function matchingEquivalentCompletedItem(indexes: TimelineIndexes, incoming: TimelineItem): TimelineItem | undefined {
+function matchingEquivalentCompletedItem(
+  indexes: TimelineIndexes,
+  incoming: TimelineItem,
+  options: { allowUntetheredUserMessageMatch: boolean },
+): TimelineItem | undefined {
   if (!incoming.turnId || !incoming.text) {
     return undefined;
   }
@@ -459,6 +539,7 @@ function matchingEquivalentCompletedItem(indexes: TimelineIndexes, incoming: Tim
     if (
       item.kind === incoming.kind &&
       item.id !== incoming.id &&
+      (options.allowUntetheredUserMessageMatch || !isUntetheredUserMessage(item)) &&
       sameEquivalentItemTurn(item, incoming) &&
       equivalentItemStatusMatches(item, incoming) &&
       item.text === incoming.text &&
@@ -468,6 +549,10 @@ function matchingEquivalentCompletedItem(indexes: TimelineIndexes, incoming: Tim
     }
   }
   return undefined;
+}
+
+function isUntetheredUserMessage(item: TimelineItem): boolean {
+  return item.kind === "user_message" && item.source === "optimistic" && !item.serverItemId && !item.turnId;
 }
 
 function equivalentItemStatusMatches(existing: TimelineItem, incoming: TimelineItem): boolean {
@@ -554,6 +639,7 @@ function confirmAppServerUserMessage(existing: TimelineItem, incoming: TimelineI
     source: "app_server",
     confirmationState: "sent",
     error: undefined,
+    seq: event.id.startsWith("snapshot-") ? incoming.seq : merged.seq,
     status: merged.status,
     turnId: incoming.turnId || existing.turnId,
   };
@@ -605,6 +691,27 @@ function addOrReplaceItem(state: TimelineDraft, item: TimelineItem) {
 function addItem(state: TimelineDraft, item: TimelineItem) {
   state.indexes.itemIds = [...state.indexes.itemIds, item.id];
   state.indexes.itemUpdatesById.set(item.id, item);
+}
+
+function removeItem(state: TimelineDraft, itemId: string) {
+  const item = timelineItemById(state.indexes, itemId);
+  state.indexes.itemIds = state.indexes.itemIds.filter((candidateId) => candidateId !== itemId);
+  state.indexes.itemUpdatesById.delete(itemId);
+  state.indexes.pendingItemById.delete(itemId);
+  if (!item?.turnId) {
+    return;
+  }
+  const turn = timelineTurnById(state.indexes, item.turnId);
+  if (!turn) {
+    return;
+  }
+  const itemIds = turn.itemIds.filter((candidateId) => candidateId !== itemId);
+  if (itemIds.length > 0) {
+    state.indexes.turnUpdatesById.set(item.turnId, { ...turn, itemIds });
+    return;
+  }
+  state.indexes.turnIds = state.indexes.turnIds.filter((turnId) => turnId !== item.turnId);
+  state.indexes.turnUpdatesById.delete(item.turnId);
 }
 
 function retainPendingTimelineItem(state: TimelineDraft, item: TimelineItem) {

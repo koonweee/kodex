@@ -172,4 +172,46 @@ describe("ComposerPanel", () => {
 
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
   });
+
+  it("hides context usage while the draft composer is selected", () => {
+    const attachmentInputRef = { current: null } as RefObject<HTMLInputElement | null>;
+
+    render(
+      <MantineProvider>
+        <ComposerPanel
+          activeSelectedTurnId={null}
+          attachmentInputRef={attachmentInputRef}
+          canCompose
+          composerResetToken={0}
+          composerSettings={composerSettings}
+          composerSettingsError={null}
+          contextUsage={{ contextTokens: 42_000, modelContextWindow: 200_000 }}
+          isDraftThreadSelected
+          isDraftComposerTransitioning={false}
+          isComposerDragActive={false}
+          isComposerSubmitting={false}
+          isSelectedTimelineReady
+          models={[]}
+          onAbortQueuedSteer={vi.fn()}
+          onAttachmentInputChange={vi.fn()}
+          onComposerDragLeave={vi.fn()}
+          onComposerDragOver={vi.fn()}
+          onComposerDrop={vi.fn()}
+          onComposerKeyDown={vi.fn()}
+          onComposerPaste={vi.fn()}
+          onComposerSettingsChange={vi.fn()}
+          onImageOpen={vi.fn()}
+          onRemovePendingAttachment={vi.fn()}
+          onStopTurn={vi.fn()}
+          onSubmitQueuedSteer={vi.fn()}
+          onSubmitTurn={noopSubmit}
+          pendingAttachments={[]}
+          queuedSteerRows={[]}
+          selectedThreadPresent={false}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.queryByLabelText(/context/i)).not.toBeInTheDocument();
+  });
 });

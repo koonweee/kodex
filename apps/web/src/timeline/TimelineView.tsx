@@ -76,9 +76,6 @@ export function TimelineView({
 
   return (
     <Box className="kodex-timeline-virtual-root" data-initial-bottom-aligned={initialBottomAligned ? "true" : "false"}>
-      {unanchoredApprovals.length > 0 ? (
-        <ThreadApprovalStack approvals={unanchoredApprovals} onDecision={onApprovalDecision} />
-      ) : null}
       <Box className="kodex-timeline-virtual-spacer" style={{ height: rowVirtualizer.getTotalSize() }}>
         {renderedVirtualItems.map((virtualItem) => {
           const row = rows[virtualItem.index];
@@ -110,6 +107,9 @@ export function TimelineView({
           );
         })}
       </Box>
+      {unanchoredApprovals.length > 0 ? (
+        <ThreadApprovalStack approvals={unanchoredApprovals} onDecision={onApprovalDecision} />
+      ) : null}
       {showScrollToBottom ? (
         <Tooltip label={TIMELINE_TEXT.scrollToBottom}>
           <ActionIcon

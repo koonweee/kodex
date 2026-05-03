@@ -10,7 +10,7 @@ import {
   TextInput,
   Tooltip,
 } from "@mantine/core";
-import { Archive, FolderClosed, FolderOpen, GitBranch, Inbox, SquarePen } from "lucide-react";
+import { Archive, FolderOpen, GitBranch, Inbox, SquarePen } from "lucide-react";
 import {
   memo,
   useLayoutEffect,
@@ -72,7 +72,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onProjectFormOpenChange,
   onProjectNameChange,
   onReorderProjects,
-  onSelectProject,
   onSelectThread,
   onShowDebugEventsChange,
   onSidebarResizeKeyDown,
@@ -105,7 +104,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onProjectFormOpenChange: (open: boolean | ((open: boolean) => boolean)) => void;
   onProjectNameChange: (value: string) => void;
   onReorderProjects: (projectIds: string[]) => void;
-  onSelectProject: (projectId: string) => void;
   onSelectThread: (projectId: string, threadId: string) => void;
   onShowDebugEventsChange: (value: boolean) => void;
   onSidebarResizeKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => void;
@@ -122,7 +120,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   sidebarWidth: number;
   threadsByProjectId: ThreadsByProjectId;
 }) {
-  const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => new Set());
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
   const [expandedThreadProjectIds, setExpandedThreadProjectIds] = useState<Set<string>>(() => new Set());
   const [previewProjectIds, setPreviewProjectIds] = useState<string[] | null>(null);
@@ -264,8 +261,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                   ? projectThreads
                   : projectThreads.slice(0, VISIBLE_THREAD_LIMIT);
                 const hasHiddenProjectThreads = projectThreads.length > VISIBLE_THREAD_LIMIT;
-                const projectCollapsed = collapsedProjectIds.has(project.id);
-                const FolderIcon = projectCollapsed ? FolderClosed : FolderOpen;
                 const newThreadLabel =
                   project.id === selectedProjectId ? SIDEBAR_TEXT.newThread : `Create thread in ${project.name}`;
                 return (
@@ -290,34 +285,16 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                       onDragOver={(event) => handleProjectDragOver(event, project.id)}
                       onDragStart={(event) => handleProjectDragStart(event, project.id)}
                     >
-                      <button
-                        aria-expanded={!projectCollapsed}
+                      <Box
                         aria-label={`${project.name} ${project.cwd}`}
-                        className="kodex-project-select-button"
+                        className="kodex-project-title"
                         data-active={project.id === selectedProjectId}
-                        onClick={() => {
-                          setCollapsedProjectIds((current) => {
-                            const next = new Set(current);
-                            if (project.id === selectedProjectId) {
-                              if (next.has(project.id)) {
-                                next.delete(project.id);
-                              } else {
-                                next.add(project.id);
-                              }
-                            } else {
-                              next.delete(project.id);
-                            }
-                            return next;
-                          });
-                          onSelectProject(project.id);
-                        }}
-                        type="button"
                       >
-                        <FolderIcon size={15} />
+                        <FolderOpen size={15} />
                         <Text fw={500} size="xs" lineClamp={1}>
                           {project.name}
                         </Text>
-                      </button>
+                      </Box>
                       <Tooltip label={SIDEBAR_TEXT.newThread}>
                         <ActionIcon
                           aria-label={newThreadLabel}
@@ -330,7 +307,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                         </ActionIcon>
                       </Tooltip>
                     </Box>
-                    {!projectCollapsed && projectThreads.length > 0 ? (
+                    {projectThreads.length > 0 ? (
                       <Stack className="kodex-project-thread-list" gap={6}>
                         {visibleProjectThreads.map((thread) => (
                           <ThreadListRow

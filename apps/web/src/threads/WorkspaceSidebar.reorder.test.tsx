@@ -26,10 +26,12 @@ describe("WorkspaceSidebar project reorder", () => {
       setDragImage: vi.fn(),
       setData: (type: string, value: string) => data.set(type, value),
     };
-    const oldProjectButton = screen.getByRole("button", { name: /old \/workspace\/old/i });
-    const oldProjectRow = oldProjectButton.closest(".kodex-project-row");
-    const newProjectButton = screen.getByRole("button", { name: /new \/workspace\/new/i });
-    const newProjectRow = newProjectButton.closest(".kodex-project-row");
+    const oldProjectTitle = screen.getByText("Old").closest(".kodex-project-title");
+    const oldProjectRow = oldProjectTitle?.closest(".kodex-project-row");
+    const newProjectTitle = screen.getByText("New").closest(".kodex-project-title");
+    const newProjectRow = newProjectTitle?.closest(".kodex-project-row");
+    expect(oldProjectTitle).toBeInTheDocument();
+    expect(newProjectTitle).toBeInTheDocument();
     expect(oldProjectRow).toBeInTheDocument();
     expect(newProjectRow).toBeInTheDocument();
     vi.spyOn(newProjectRow!, "getBoundingClientRect").mockReturnValue(rect({ top: 40, height: 20 }));
@@ -39,7 +41,7 @@ describe("WorkspaceSidebar project reorder", () => {
     fireEvent.dragOver(screen.getByRole("group", { name: "New" }), { dataTransfer, clientY: 45 });
     expect(projectOrder(container)).toEqual(["New", "Middle", "Old"]);
 
-    fireEvent.dragOver(newProjectButton, { dataTransfer, clientY: 45 });
+    fireEvent.dragOver(newProjectTitle!, { dataTransfer, clientY: 45 });
     expect(projectOrder(container)).toEqual(["Old", "New", "Middle"]);
     expect(onReorderProjects).not.toHaveBeenCalled();
 
@@ -48,7 +50,7 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(onReorderProjects).not.toHaveBeenCalled();
 
     fireEvent.dragStart(oldProjectRow!, { dataTransfer });
-    fireEvent.dragOver(newProjectButton, { dataTransfer, clientY: 45 });
+    fireEvent.dragOver(newProjectTitle!, { dataTransfer, clientY: 45 });
     fireEvent.drop(screen.getByRole("group", { name: "New" }), { dataTransfer });
 
     expect(projectOrder(container)).toEqual(["New", "Middle", "Old"]);
@@ -77,6 +79,21 @@ describe("WorkspaceSidebar project reorder", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show less" }));
     expect(screen.queryByRole("button", { name: "Thread 2" })).not.toBeInTheDocument();
   });
+
+  it("does not collapse a project when its title row is clicked", () => {
+    renderSidebar({
+      projects: [projectSummary("project-1", "Project")],
+      selectedProjectId: "project-1",
+      threadsByProjectId: {
+        "project-1": [threadSummary(1)],
+      },
+    });
+
+    fireEvent.click(screen.getByText("Project"));
+
+    expect(screen.queryByRole("button", { name: /project \/workspace\/project-1/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Thread 1" })).toBeInTheDocument();
+  });
 });
 
 function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar>> = {}) {
@@ -100,7 +117,6 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
           onProjectFormOpenChange={vi.fn()}
           onProjectNameChange={vi.fn()}
           onReorderProjects={vi.fn()}
-          onSelectProject={vi.fn()}
           onSelectThread={vi.fn()}
           onShowDebugEventsChange={vi.fn()}
           onSidebarResizeKeyDown={vi.fn()}

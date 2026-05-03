@@ -52,31 +52,33 @@
   cursor: grabbing;
 }
 
-.kodex-project-select-button {
+.kodex-project-title {
   display: grid;
   grid-template-columns: 15px minmax(0, 1fr);
   gap: 6px;
   align-items: center;
   width: 100%;
   min-width: 0;
-  border: 0;
   border-radius: 6px;
   padding: 4px;
-  background: transparent;
   color: inherit;
   text-align: left;
-  cursor: pointer;
+  cursor: grab;
 }
 
-.kodex-project-select-button:hover {
+.kodex-project-title:active {
+  cursor: grabbing;
+}
+
+.kodex-project-title:hover {
   background: var(--kodex-bg-sidebar-hover);
 }
 
-.kodex-project-select-button[data-active="true"] {
+.kodex-project-title[data-active="true"] {
   color: var(--kodex-text-accent-soft);
 }
 
-.kodex-project-select-button svg {
+.kodex-project-title svg {
   color: var(--kodex-text-muted);
 }
 

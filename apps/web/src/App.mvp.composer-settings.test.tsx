@@ -22,6 +22,10 @@ function clickMenuItem(name: RegExp) {
   return clickMenuItemWithDeps(name, screen, waitFor, fireEvent);
 }
 
+async function clickFastSwitch() {
+  await userEvent.click(screen.getByRole("switch", { name: /fast responses/i, hidden: true }));
+}
+
 describe("MVP composer settings flows", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -68,9 +72,9 @@ describe("MVP composer settings flows", () => {
     expect(await screen.findByLabelText(/50% context left/i)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
-    await clickMenuItem(/high.*deeper reasoning/i);
+    await clickMenuItem(/^high$/i);
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, high/i }));
-    await clickMenuItem(/^fast$/i);
+    await clickFastSwitch();
     await userEvent.click(screen.getByRole("button", { name: /permissions: default permissions/i }));
     await clickMenuItem(/full access/i);
     expect(screen.getByRole("button", { name: /permissions: default permissions/i })).toBeInTheDocument();
@@ -113,11 +117,14 @@ describe("MVP composer settings flows", () => {
 
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+    expect(appCss).toMatch(/\.kodex-composer-model-control\s*\{[^}]*width:\s*fit-content;/s);
+    expect(appCss).toMatch(/\.kodex-composer-model-control\s*\{[^}]*max-width:\s*none;/s);
+    expect(appCss).toMatch(/\.kodex-composer-control\s+\.mantine-Button-label\s*\{[^}]*overflow:\s*visible;/s);
 
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, high/i }));
-    await clickMenuItem(/medium.*balanced/i);
+    await clickMenuItem(/^medium$/i);
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
-    await clickMenuItem(/^fast$/i);
+    await clickFastSwitch();
     await userEvent.click(screen.getByRole("button", { name: /permissions: auto review/i }));
     await clickMenuItem(/default permissions/i);
 
@@ -165,7 +172,7 @@ describe("MVP composer settings flows", () => {
     render(<App />);
 
     await userEvent.click(await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i }));
-    await clickMenuItem(/high.*deeper reasoning/i);
+    await clickMenuItem(/^high$/i);
 
     await waitFor(() => {
       expect(gateway.callsFor("PATCH", "/v1/composer-settings")).toHaveLength(1);
@@ -227,9 +234,9 @@ describe("MVP composer settings flows", () => {
     await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
     await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
-    await clickMenuItem(/high.*deeper reasoning/i);
+    await clickMenuItem(/^high$/i);
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, high/i }));
-    await clickMenuItem(/^fast$/i);
+    await clickFastSwitch();
     await userEvent.click(screen.getByRole("button", { name: /permissions: default permissions/i }));
     await clickMenuItem(/auto review/i);
 

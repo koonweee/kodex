@@ -1910,6 +1910,52 @@ mod tests {
         assert!(chunk.contains("New title"));
     }
 
+    #[tokio::test]
+    async fn sse_allows_live_thread_token_usage_notifications() {
+        let (state, _) = test_state().await;
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?threadId=t1")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let token_usage = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("t1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                item_id: None,
+                kind: "codex.notification".to_string(),
+                codex_method: Some("thread/tokenUsage/updated".to_string()),
+                payload: json!({
+                    "threadId": "t1",
+                    "turnId": "turn-1",
+                    "tokenUsage": {
+                        "last": {"totalTokens": 20_000},
+                        "total": {"totalTokens": 20_000},
+                        "modelContextWindow": 28_000
+                    }
+                }),
+            })
+            .await
+            .unwrap();
+        state.events.send(token_usage.clone()).unwrap();
+
+        let mut body = response.into_body();
+        let chunk = next_sse_chunk(&mut body).await;
+        assert!(chunk.contains(&format!("id: {}", token_usage.seq)));
+        assert!(chunk.contains("thread/tokenUsage/updated"));
+        assert!(chunk.contains("modelContextWindow"));
+    }
+
     async fn response_json(response: axum::response::Response) -> Value {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         serde_json::from_slice(&body).unwrap()
