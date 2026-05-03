@@ -153,6 +153,13 @@
   resize: none;
 }
 
+.kodex-composer-textarea textarea:disabled {
+  background: transparent;
+  color: var(--input-color);
+  opacity: 1;
+  -webkit-text-fill-color: var(--input-color);
+}
+
 @media (pointer: coarse) {
   .kodex-composer-textarea textarea {
     font-size: 16px;
@@ -175,12 +182,26 @@
   border-radius: 999px;
 }
 
+.kodex-composer-secondary-action {
+  color: var(--kodex-text-secondary);
+}
+
 .kodex-composer-control {
   border: 1px solid transparent;
   max-width: 176px;
   min-width: 0;
   padding-inline: 9px;
   color: var(--kodex-text-secondary);
+}
+
+.kodex-composer-control:disabled,
+.kodex-composer-control[data-disabled],
+.kodex-composer-secondary-action:disabled,
+.kodex-composer-secondary-action[data-disabled] {
+  background: transparent;
+  border-color: transparent;
+  color: var(--kodex-text-secondary);
+  opacity: 1;
 }
 
 .kodex-composer-control[data-variant="subtle"]:hover {
