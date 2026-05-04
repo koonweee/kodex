@@ -133,6 +133,68 @@ describe("timeline derivation", () => {
     expect(rows.find((row) => row.key === "item-answer-2")).not.toHaveProperty("dividerBefore");
   });
 
+  it("renders an active turn work row before intermediate messages", () => {
+    const rows = deriveTimelineRows(
+      timelineState({
+        activeTurnId: "turn-1",
+        turns: [{ turnId: "turn-1", itemIds: ["user-1", "reasoning-1"], status: "inProgress", startedAtMs: 1_000 }],
+        items: [
+          timelineItem({ id: "user-1", kind: "user_message", seq: 1, text: "Inspect this." }),
+          timelineItem({ id: "reasoning-1", kind: "reasoning_summary", seq: 2, summary: "Need context." }),
+        ],
+      }),
+    );
+
+    expect(rows.map((row) => row.key)).toEqual(["item-user-1", "work-turn-1", "item-reasoning-1"]);
+    expect(rows[1]).toMatchObject({
+      type: "work",
+      state: "running",
+      turnId: "turn-1",
+      startedAtMs: 1_000,
+    });
+  });
+
+  it("collapses completed turn work before the final answer divider", () => {
+    const rows = deriveTimelineRows(
+      timelineState({
+        turns: [
+          {
+            turnId: "turn-1",
+            itemIds: ["user-1", "reasoning-1", "cmd-1", "answer-1"],
+            status: "completed",
+            startedAtMs: 1_000,
+            completedAtMs: 6_000,
+          },
+        ],
+        items: [
+          timelineItem({ id: "user-1", kind: "user_message", seq: 1, text: "Inspect this." }),
+          timelineItem({ id: "reasoning-1", kind: "reasoning_summary", seq: 2, summary: "Need context." }),
+          timelineItem({ id: "cmd-1", kind: "command_execution", seq: 3, command: "rg issue" }),
+          timelineItem({
+            id: "answer-1",
+            kind: "assistant_message",
+            messagePhase: "final_answer",
+            seq: 4,
+            text: "Done.",
+          }),
+        ],
+      }),
+    );
+
+    expect(rows.map((row) => row.key)).toEqual(["item-user-1", "work-turn-1", "item-answer-1"]);
+    expect(rows[1]).toMatchObject({
+      type: "work",
+      state: "completed",
+      startedAtMs: 1_000,
+      completedAtMs: 6_000,
+      collapsedRows: [
+        { type: "item", item: { id: "reasoning-1" } },
+        { type: "activity", items: [{ id: "cmd-1" }] },
+      ],
+    });
+    expect(rows[2]).toMatchObject({ dividerBefore: "final_response" });
+  });
+
   it("keeps activity row keys stable as groups grow and chunks large activity runs", () => {
     const initialRows = deriveTimelineRows(
       timelineState({

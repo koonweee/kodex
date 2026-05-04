@@ -56,6 +56,9 @@ export type OptimisticUserMessageUpdate = Partial<Pick<TimelineItem, "confirmati
 export type TimelineTurn = {
   turnId: string;
   itemIds: string[];
+  status?: string;
+  startedAtMs?: number;
+  completedAtMs?: number;
 };
 
 export type TimelineState = {
@@ -197,6 +200,9 @@ function buildTimelineIndexes(state: TimelineState): TimelineIndexes {
     indexes.turnById.set(turn.turnId, {
       turnId: turn.turnId,
       itemIds: [...turn.itemIds],
+      status: turn.status,
+      startedAtMs: turn.startedAtMs,
+      completedAtMs: turn.completedAtMs,
     });
   }
   stateIndexes.set(state, indexes);
@@ -219,7 +225,13 @@ function orderedTurns(turnIds: string[], indexes: TimelineIndexes): TimelineTurn
   for (const turnId of turnIds) {
     const turn = timelineTurnById(indexes, turnId);
     if (turn) {
-      turns.push({ turnId: turn.turnId, itemIds: [...turn.itemIds] });
+      turns.push({
+        turnId: turn.turnId,
+        itemIds: [...turn.itemIds],
+        status: turn.status,
+        startedAtMs: turn.startedAtMs,
+        completedAtMs: turn.completedAtMs,
+      });
     }
   }
   return turns;

@@ -260,6 +260,68 @@ describe("timeline reducer lifecycle", () => {
     ]);
   });
 
+  it("keeps active turn timing from normalized turn upserts", () => {
+    let state = createTimelineState();
+    state = applyTimelineEvent(state, {
+      id: "turn-start",
+      seq: 1,
+      kind: "timeline.turn_upsert",
+      codexMethod: "turn/upsert",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: null,
+      projectId: "project-1",
+      payload: {
+        source: "gatewayStream",
+        liveState: "streaming",
+        turn: { id: "turn-1", status: "inProgress", startedAt: 1_767_225_600, items: [] },
+      },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(state.activeTurnId).toBe("turn-1");
+    expect(state.turns).toEqual([
+      {
+        turnId: "turn-1",
+        itemIds: [],
+        status: "inProgress",
+        startedAtMs: 1_767_225_600_000,
+        completedAtMs: undefined,
+      },
+    ]);
+
+    state = applyTimelineEvent(state, {
+      id: "turn-complete",
+      seq: 2,
+      kind: "timeline.turn_upsert",
+      codexMethod: "turn/upsert",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: null,
+      projectId: "project-1",
+      payload: {
+        source: "gatewayStream",
+        liveState: "idle",
+        turn: {
+          id: "turn-1",
+          status: "completed",
+          startedAt: 1_767_225_600,
+          completedAt: 1_767_225_605,
+          items: [],
+        },
+      },
+      receivedAt: "2026-04-30T00:00:05Z",
+    });
+
+    expect(state.activeTurnId).toBeNull();
+    expect(state.turns[0]).toMatchObject({
+      turnId: "turn-1",
+      status: "completed",
+      startedAtMs: 1_767_225_600_000,
+      completedAtMs: 1_767_225_605_000,
+    });
+  });
+
   it("preserves command metadata while streaming command output deltas", () => {
     let state = createTimelineState();
 

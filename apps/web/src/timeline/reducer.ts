@@ -101,6 +101,9 @@ function applyTimelineEventInternal(
     indexes: prepareTimelineIndexesForUpdate(currentIndexes),
     lastSeq: Math.max(state.lastSeq, event.seq),
   };
+  if (event.kind === "timeline.turn_upsert") {
+    upsertTimelineTurn(next, event);
+  }
 
   if (event.codexMethod === "turn/completed") {
     next.activeTurnId = null;
@@ -292,6 +295,7 @@ export function applyTimelineSnapshot(state: TimelineState, snapshot: ThreadDeta
     }
   }
   next = moveUnmatchedLocalUserMessagesAfterSnapshot(next, seq);
+  next = withSnapshotTurnMetadata(next, snapshot);
   return withSnapshotLiveState(next, snapshot);
 }
 
@@ -363,6 +367,23 @@ function moveUnmatchedLocalUserMessagesAfterSnapshot(state: TimelineState, snaps
     changed = true;
   }
   return changed ? createTimelineStateFromDraft(next) : state;
+}
+
+function withSnapshotTurnMetadata(state: TimelineState, snapshot: ThreadDetailResponse): TimelineState {
+  const next: TimelineDraft = {
+    activeTurnId: state.activeTurnId,
+    indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    lastSeq: state.lastSeq,
+  };
+  for (const turn of snapshot.turns) {
+    upsertTimelineTurnSnapshot(next, {
+      turnId: turn.id,
+      status: turn.status,
+      startedAtMs: unixSecondsToMs(turn.startedAt),
+      completedAtMs: unixSecondsToMs(turn.completedAt),
+    });
+  }
+  return createTimelineStateFromDraft(next);
 }
 
 function shouldMoveLocalUserMessageAfterSnapshot(item: TimelineItem, snapshotMaxSeq: number): boolean {
@@ -746,6 +767,9 @@ function addToTurn(state: TimelineDraft, item: TimelineItem) {
     state.indexes.turnUpdatesById.set(item.turnId, {
       turnId: existing.turnId,
       itemIds: [...existing.itemIds, item.id],
+      status: existing.status,
+      startedAtMs: existing.startedAtMs,
+      completedAtMs: existing.completedAtMs,
     });
     return;
   }
@@ -754,4 +778,69 @@ function addToTurn(state: TimelineDraft, item: TimelineItem) {
     turnId: item.turnId,
     itemIds: [item.id],
   });
+}
+
+type TimelineTurnSnapshotUpdate = {
+  turnId: string;
+  status?: string;
+  startedAtMs?: number;
+  completedAtMs?: number;
+};
+
+function upsertTimelineTurn(state: TimelineDraft, event: EventEnvelope) {
+  const payload = recordValue(event.payload);
+  const turn = recordValue(payload?.turn);
+  const turnId = event.turnId ?? stringValue(turn?.id);
+  if (!turnId) {
+    return;
+  }
+  upsertTimelineTurnSnapshot(state, {
+    turnId,
+    status: stringValue(turn?.status),
+    startedAtMs: unixSecondsToMs(numberValue(turn?.startedAt)) ?? eventReceivedAtMs(event),
+    completedAtMs: unixSecondsToMs(numberValue(turn?.completedAt)) ?? terminalTurnCompletedAtMs(turn, event),
+  });
+}
+
+function upsertTimelineTurnSnapshot(state: TimelineDraft, update: TimelineTurnSnapshotUpdate) {
+  const existing = timelineTurnById(state.indexes, update.turnId);
+  if (!existing && !state.indexes.turnIds.includes(update.turnId)) {
+    state.indexes.turnIds = [...state.indexes.turnIds, update.turnId];
+  }
+  state.indexes.turnUpdatesById.set(update.turnId, {
+    turnId: update.turnId,
+    itemIds: existing ? [...existing.itemIds] : [],
+    status: update.status || existing?.status,
+    startedAtMs: update.startedAtMs ?? existing?.startedAtMs,
+    completedAtMs: update.completedAtMs ?? existing?.completedAtMs,
+  });
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
+}
+
+function unixSecondsToMs(value: number | null | undefined): number | undefined {
+  return typeof value === "number" ? value * 1_000 : undefined;
+}
+
+function terminalTurnCompletedAtMs(turn: Record<string, unknown> | null, event: EventEnvelope): number | undefined {
+  return isTerminalTurnStatusValue(stringValue(turn?.status)) ? eventReceivedAtMs(event) : undefined;
+}
+
+function eventReceivedAtMs(event: EventEnvelope): number | undefined {
+  const parsed = Date.parse(event.receivedAt);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function isTerminalTurnStatusValue(status: string | undefined): boolean {
+  return ["completed", "failed", "cancelled", "canceled", "interrupted"].includes((status ?? "").toLowerCase());
 }

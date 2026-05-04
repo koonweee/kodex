@@ -13,7 +13,7 @@ import {
   getUnanchoredApprovals,
   type TimelineRow,
 } from "./derive";
-import { TimelineActivityGroupRenderer, TimelineItemRenderer } from "./renderers";
+import { TimelineActivityGroupRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
 import type { TimelineState } from "./reducer";
 
 const EMPTY_APPROVALS: Approval[] = [];
@@ -329,8 +329,17 @@ const TimelineRowView = memo(function TimelineRowView({
 }) {
   return (
     <Box className="kodex-turn-group">
-      {row.dividerBefore === "final_response" ? <Box aria-hidden="true" className="kodex-timeline-final-response-divider" /> : null}
-      {row.type === "activity" ? (
+      {row.type !== "work" && row.dividerBefore === "final_response" ? (
+        <Box aria-hidden="true" className="kodex-timeline-final-response-divider" />
+      ) : null}
+      {row.type === "work" ? (
+        <TimelineWorkRowRenderer
+          imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+          onImageOpen={onImageOpen}
+          row={row}
+          showDebug={showDebug}
+        />
+      ) : row.type === "activity" ? (
         <TimelineActivityGroupRenderer items={row.items} onImageOpen={onImageOpen} showDebug={showDebug} />
       ) : (
         <TimelineItemRenderer

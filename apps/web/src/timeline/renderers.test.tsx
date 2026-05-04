@@ -16,7 +16,7 @@ vi.mock("react-markdown", async (importOriginal) => {
   };
 });
 
-import { TimelineActivityGroupRenderer, TimelineItemRenderer } from "./renderers";
+import { TimelineActivityGroupRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
 import type { TimelineItem } from "./reducer";
 
 function item(overrides: Partial<TimelineItem>): TimelineItem {
@@ -444,6 +444,47 @@ describe("timeline renderer registry", () => {
     expect(screen.getByText("$ pwd")).toBeInTheDocument();
     expect(screen.getByText("/home/example/kodex")).toBeInTheDocument();
     expect(screen.getAllByText("Shell")).not.toHaveLength(0);
+  });
+
+  it("renders completed work rows collapsed with elapsed time", () => {
+    const { container } = render(
+      <MantineProvider>
+        <TimelineWorkRowRenderer
+          imagePreviewUrlsByPath={{}}
+          row={{
+            type: "work",
+            key: "work-turn-1",
+            turnKey: "turn-turn-1",
+            turnId: "turn-1",
+            state: "completed",
+            startedAtMs: 1_000,
+            completedAtMs: 65_000,
+            seq: 1.1,
+            collapsedRows: [
+              {
+                type: "item",
+                key: "item-reasoning-1",
+                turnKey: "turn-turn-1",
+                turnId: "turn-1",
+                item: item({
+                  id: "reasoning-1",
+                  kind: "reasoning_summary",
+                  summary: "Need context.",
+                  text: "Need context.",
+                  seq: 2,
+                }),
+              },
+            ],
+          }}
+        />
+      </MantineProvider>,
+    );
+
+    const details = container.querySelector("details.kodex-work-row");
+    expect(details).toBeInTheDocument();
+    expect(details).not.toHaveAttribute("open");
+    expect(screen.getByText("Worked for 1m 04s")).toBeInTheDocument();
+    expect(screen.getByText("Need context.")).toBeInTheDocument();
   });
 
   it("renders plan, review mode, and context compaction timeline markers", () => {

@@ -15,7 +15,7 @@ describe("timeline reducer snapshots", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot("First answer", "agent-1"));
 
     expect(state.items.map((item) => item.text)).toEqual(["Hello", "First answer"]);
-    expect(state.turns).toEqual([{ turnId: "turn-1", itemIds: ["user-1", "agent-1"] }]);
+    expect(state.turns).toMatchObject([{ turnId: "turn-1", itemIds: ["user-1", "agent-1"] }]);
 
     state = applyTimelineSnapshot(state, snapshot("Updated answer", "agent-2"));
 
@@ -434,7 +434,7 @@ describe("timeline reducer snapshots", () => {
 
     expect(state.activeTurnId).toBe("turn-1");
     expect(state.items.map((item) => item.text)).toEqual(["Hello"]);
-    expect(state.turns).toEqual([{ turnId: "turn-1", itemIds: ["agent-1"] }]);
+    expect(state.turns).toMatchObject([{ turnId: "turn-1", itemIds: ["agent-1"] }]);
   });
 
   it("does not mark completed snapshot turns active when thread syncs", () => {
@@ -535,7 +535,7 @@ describe("timeline reducer snapshots", () => {
 
     expect(state.items.map((item) => item.text)).toEqual(["Hello", "Done"]);
     expect(state.items.map((item) => item.status)).toEqual(["completed", "completed"]);
-    expect(state.turns).toEqual([{ turnId: "turn-1", itemIds: ["user-1", "agent-1"] }]);
+    expect(state.turns).toMatchObject([{ turnId: "turn-1", itemIds: ["user-1", "agent-1"] }]);
   });
 
   it("ignores repeated full-text deltas for completed snapshot items", () => {
@@ -603,7 +603,7 @@ describe("timeline reducer snapshots", () => {
 
     expect(state.items.map((item) => item.text)).toEqual(["Hello", "Done"]);
     expect(state.items.map((item) => item.id)).toEqual(["user-1", "agent-1"]);
-    expect(state.turns).toEqual([{ turnId: "turn-1", itemIds: ["user-1", "agent-1"] }]);
+    expect(state.turns).toMatchObject([{ turnId: "turn-1", itemIds: ["user-1", "agent-1"] }]);
     expect(state.activeTurnId).toBeNull();
   });
 
@@ -640,7 +640,7 @@ describe("timeline reducer snapshots", () => {
 
     expect(state.items.map((item) => item.text)).toEqual(["Done"]);
     expect(state.items.map((item) => item.status)).toEqual(["completed"]);
-    expect(state.turns).toEqual([{ turnId: "turn-1", itemIds: ["agent-stream-1"] }]);
+    expect(state.turns).toMatchObject([{ turnId: "turn-1", itemIds: ["agent-stream-1"] }]);
   });
 
   it("keeps active-turn assistant deltas even when they match completed text in another item", () => {
@@ -677,7 +677,7 @@ describe("timeline reducer snapshots", () => {
 
     expect(state.activeTurnId).toBe("turn-2");
     expect(state.items.map((item) => item.text)).toEqual(["Hello", "Done", "Do"]);
-    expect(state.turns).toEqual([
+    expect(state.turns).toMatchObject([
       { turnId: "turn-1", itemIds: ["user-1", "agent-1"] },
       { turnId: "turn-2", itemIds: ["agent-live-1"] },
     ]);

@@ -39,6 +39,47 @@
   background: color-mix(in srgb, var(--kodex-text-primary) 8%, transparent);
 }
 
+.kodex-work-row {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 8px 0;
+}
+
+.kodex-work-row > summary {
+  display: inline-grid;
+  grid-template-columns: minmax(0, auto) 16px;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  cursor: pointer;
+  list-style: none;
+}
+
+.kodex-work-row > summary::-webkit-details-marker {
+  display: none;
+}
+
+.kodex-work-caret {
+  width: 16px;
+  height: 16px;
+  color: var(--kodex-text-muted);
+  transform-origin: center;
+  transition: transform 120ms ease;
+}
+
+.kodex-work-row[open] > summary .kodex-work-caret {
+  transform: rotate(90deg);
+}
+
+.kodex-work-collapsed-rows {
+  min-width: 0;
+  padding-left: 14px;
+  border-left: 1px solid color-mix(in srgb, var(--kodex-text-primary) 8%, transparent);
+}
+
 .kodex-activity-group {
   box-sizing: border-box;
   display: grid;
