@@ -33,6 +33,7 @@ export function ThreadPanel({
   setTimelineScrollElement,
   showDebugEvents,
   timeline,
+  timelineFollowLiveToken,
 }: {
   errorMessage: string | null;
   imagePreviewUrlsByPath: Record<string, string>;
@@ -51,6 +52,7 @@ export function ThreadPanel({
   setTimelineScrollElement: (element: HTMLDivElement | null) => void;
   showDebugEvents: boolean;
   timeline: TimelineState;
+  timelineFollowLiveToken: number;
 }) {
   return (
     <>
@@ -108,6 +110,7 @@ export function ThreadPanel({
                   scrollParentElement={scrollParentElement}
                   showDebug={showDebugEvents}
                   timeline={timeline}
+                  followLiveToken={timelineFollowLiveToken}
                 />
               )}
             </Box>

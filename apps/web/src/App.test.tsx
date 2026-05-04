@@ -380,6 +380,77 @@ describe("App shell", () => {
     });
   });
 
+  it("returns to the live edge when the user sends while scrolled up", async () => {
+    mockGateway({
+      "GET /v1/projects": {
+        projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
+      },
+      "GET /v1/threads": {
+        threads: [
+          {
+            id: "thread-1",
+            name: "Large thread",
+            cwd: "/home/example/kodex",
+            status: "idle",
+            source: "local",
+            preview: "",
+            rawPayload: {},
+            createdAt: 1777500000,
+            updatedAt: 1777501200,
+          },
+        ],
+        nextCursor: null,
+        backwardsCursor: null,
+        rawPayload: {},
+      },
+      "GET /v1/threads/thread-1": threadDetail(
+        {
+          id: "thread-1",
+          name: "Large thread",
+          cwd: "/home/example/kodex",
+          status: "idle",
+          source: "local",
+          preview: "",
+          rawPayload: {},
+          createdAt: 1777500000,
+          updatedAt: 1777501200,
+        },
+        [
+          snapshotTurn(
+            "turn-1",
+            Array.from({ length: 30 }, (_, index) =>
+              snapshotItem(`answer-${index}`, "agentMessage", { text: `Large answer ${index}` }),
+            ),
+          ),
+        ],
+      ),
+      "POST /v1/threads/thread-1/turns": { payload: {} },
+      "GET /v1/approvals": { approvals: [] },
+      "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Large answer 29")).toBeInTheDocument();
+    const scrollRegion = document.querySelector(".kodex-timeline-scroll") as HTMLElement;
+    Object.defineProperties(scrollRegion, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 3600 },
+      scrollTop: { configurable: true, writable: true, value: 600 },
+    });
+    fireEvent.scroll(scrollRegion);
+    expect(await screen.findByRole("button", { name: /scroll to bottom/i })).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Follow live after send");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(scrollRegion.scrollTop).toBe(3200);
+    });
+    expect(screen.queryByRole("button", { name: /scroll to bottom/i })).not.toBeInTheDocument();
+    expect(await screen.findByText("Follow live after send")).toBeInTheDocument();
+  });
+
   it("bounds mounted nested activity items in activity-heavy timelines", async () => {
     mockGateway({
       "GET /v1/projects": {
