@@ -208,6 +208,16 @@ function TimelineWorkRowRendererImpl({
     );
   }
 
+  if (row.collapsedRows.length === 0) {
+    return (
+      <Box className="kodex-work-row" data-state="completed">
+        <Text size="sm" c="dimmed">
+          {label}
+        </Text>
+      </Box>
+    );
+  }
+
   return (
     <details className="kodex-work-row" data-state="completed">
       <summary>
@@ -216,19 +226,17 @@ function TimelineWorkRowRendererImpl({
         </Text>
         <ChevronRight size={16} className="kodex-work-caret" aria-hidden="true" />
       </summary>
-      {row.collapsedRows.length > 0 ? (
-        <Stack gap={8} mt={8} className="kodex-work-collapsed-rows">
-          {row.collapsedRows.map((collapsedRow) => (
-            <CollapsedWorkRowRenderer
-              imagePreviewUrlsByPath={imagePreviewUrlsByPath}
-              key={collapsedRow.key}
-              onImageOpen={onImageOpen}
-              row={collapsedRow}
-              showDebug={showDebug}
-            />
-          ))}
-        </Stack>
-      ) : null}
+      <Stack gap={8} mt={8} className="kodex-work-collapsed-rows">
+        {row.collapsedRows.map((collapsedRow) => (
+          <CollapsedWorkRowRenderer
+            imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+            key={collapsedRow.key}
+            onImageOpen={onImageOpen}
+            row={collapsedRow}
+            showDebug={showDebug}
+          />
+        ))}
+      </Stack>
     </details>
   );
 }

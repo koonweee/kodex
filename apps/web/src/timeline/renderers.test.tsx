@@ -487,6 +487,31 @@ describe("timeline renderer registry", () => {
     expect(screen.getByText("Need context.")).toBeInTheDocument();
   });
 
+  it("renders completed work rows without a caret when there is nothing to expand", () => {
+    const { container } = render(
+      <MantineProvider>
+        <TimelineWorkRowRenderer
+          imagePreviewUrlsByPath={{}}
+          row={{
+            type: "work",
+            key: "work-turn-1",
+            turnKey: "turn-turn-1",
+            turnId: "turn-1",
+            state: "completed",
+            startedAtMs: 1_000,
+            completedAtMs: 6_000,
+            seq: 1.1,
+            collapsedRows: [],
+          }}
+        />
+      </MantineProvider>,
+    );
+
+    expect(container.querySelector("details.kodex-work-row")).not.toBeInTheDocument();
+    expect(container.querySelector(".kodex-work-caret")).not.toBeInTheDocument();
+    expect(screen.getByText("Worked for 5s")).toBeInTheDocument();
+  });
+
   it("renders plan, review mode, and context compaction timeline markers", () => {
     render(
       <MantineProvider>
