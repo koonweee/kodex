@@ -24,6 +24,7 @@ import {
 } from "react";
 
 import type { AccountResponse, Approval, Project, ThreadSummary } from "../api/client";
+import type { UsageLimitLines } from "../account/rateLimits";
 import { SidebarAccountFooter, type LoginState } from "../account/SidebarAccountFooter";
 import { EmptyPanel } from "../ui/EmptyPanel";
 import {
@@ -87,6 +88,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   showDebugEvents,
   sidebarWidth,
   threadsByProjectId,
+  usageLimitLines,
 }: {
   account: AccountResponse | null;
   approvals: Approval[];
@@ -119,6 +121,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   showDebugEvents: boolean;
   sidebarWidth: number;
   threadsByProjectId: ThreadsByProjectId;
+  usageLimitLines?: UsageLimitLines | null;
 }) {
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
   const [expandedThreadProjectIds, setExpandedThreadProjectIds] = useState<Set<string>>(() => new Set());
@@ -359,6 +362,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           onOpenPreferences={onOpenPreferences}
           onShowDebugEventsChange={onShowDebugEventsChange}
           showDebugEvents={showDebugEvents}
+          usageLimitLines={usageLimitLines}
         />
       </Stack>
       <button

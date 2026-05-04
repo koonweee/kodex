@@ -343,6 +343,18 @@
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
 }
 
+.kodex-settings-usage-limits {
+  display: grid;
+  gap: 2px;
+  padding: 7px 10px 8px;
+  border-bottom: 1px solid var(--kodex-border-subtle);
+  color: var(--kodex-text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+  opacity: 0.76;
+  pointer-events: none;
+}
+
 .kodex-settings-menu-item,
 .kodex-debug-toggle {
   width: 100%;

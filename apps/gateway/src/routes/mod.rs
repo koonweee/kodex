@@ -1956,6 +1956,58 @@ mod tests {
         assert!(chunk.contains("modelContextWindow"));
     }
 
+    #[tokio::test]
+    async fn sse_allows_live_account_rate_limit_notifications() {
+        let (state, _) = test_state().await;
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let rate_limits = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: None,
+                turn_id: None,
+                item_id: None,
+                kind: "codex.notification".to_string(),
+                codex_method: Some("account/rateLimits/updated".to_string()),
+                payload: json!({
+                    "rateLimits": {
+                        "limitId": "codex",
+                        "primary": {
+                            "usedPercent": 12,
+                            "resetsAt": 1_777_750_400_i64,
+                            "windowDurationMins": 300
+                        },
+                        "secondary": {
+                            "usedPercent": 25,
+                            "resetsAt": 1_778_355_200_i64,
+                            "windowDurationMins": 10_080
+                        }
+                    }
+                }),
+            })
+            .await
+            .unwrap();
+        state.events.send(rate_limits.clone()).unwrap();
+
+        let mut body = response.into_body();
+        let chunk = next_sse_chunk(&mut body).await;
+        assert!(chunk.contains(&format!("id: {}", rate_limits.seq)));
+        assert!(chunk.contains("account/rateLimits/updated"));
+        assert!(chunk.contains("\"usedPercent\":12"));
+    }
+
     async fn response_json(response: axum::response::Response) -> Value {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         serde_json::from_slice(&body).unwrap()

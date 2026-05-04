@@ -88,6 +88,7 @@ const highReasoningModel = {
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
 
+  private listeners = new Map<string, Array<(event: MessageEvent<string>) => void>>();
   onerror: (() => void) | null = null;
   onmessage: ((event: MessageEvent<string>) => void) | null = null;
   closed = false;
@@ -102,6 +103,16 @@ class FakeEventSource {
 
   emit(payload: unknown) {
     this.onmessage?.({ data: JSON.stringify(payload) } as MessageEvent<string>);
+  }
+
+  addEventListener(type: string, listener: (event: MessageEvent<string>) => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+
+  emitNamed(type: string, payload: unknown) {
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener({ data: JSON.stringify(payload) } as MessageEvent<string>);
+    }
   }
 }
 

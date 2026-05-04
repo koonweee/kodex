@@ -3,6 +3,7 @@ import { LogIn, Settings } from "lucide-react";
 import { useState } from "react";
 
 import type { AccountResponse } from "../api/client";
+import type { UsageLimitLines } from "./rateLimits";
 
 export type LoginState = {
   authUrl?: string | null;
@@ -28,6 +29,7 @@ export function SidebarAccountFooter({
   onOpenPreferences,
   onShowDebugEventsChange,
   showDebugEvents,
+  usageLimitLines,
 }: {
   account: AccountResponse | null;
   loginState: LoginState;
@@ -37,6 +39,7 @@ export function SidebarAccountFooter({
   onOpenPreferences: () => void;
   onShowDebugEventsChange: (value: boolean) => void;
   showDebugEvents: boolean;
+  usageLimitLines?: UsageLimitLines | null;
 }) {
   const accountLabel = account?.account?.email ?? account?.account?.accountType ?? ACCOUNT_TEXT.connect;
 
@@ -79,6 +82,7 @@ export function SidebarAccountFooter({
         onOpenPreferences={onOpenPreferences}
         onShowDebugEventsChange={onShowDebugEventsChange}
         showDebugEvents={showDebugEvents}
+        usageLimitLines={usageLimitLines}
       />
     </Group>
   );
@@ -90,12 +94,14 @@ function SettingsMenu({
   onOpenPreferences,
   onShowDebugEventsChange,
   showDebugEvents,
+  usageLimitLines,
 }: {
   isAuthenticated: boolean;
   onLogout: () => void;
   onOpenPreferences: () => void;
   onShowDebugEventsChange: (value: boolean) => void;
   showDebugEvents: boolean;
+  usageLimitLines?: UsageLimitLines | null;
 }) {
   const [opened, setOpened] = useState(false);
 
@@ -112,6 +118,17 @@ function SettingsMenu({
       </ActionIcon>
       {opened ? (
         <Box className="kodex-settings-dropdown" role="menu">
+          {usageLimitLines ? (
+            <Box
+              aria-label="Usage limits"
+              className="kodex-settings-usage-limits"
+              data-testid="sidebar-usage-limits"
+              role="presentation"
+            >
+              <span>{usageLimitLines.primary}</span>
+              {usageLimitLines.secondary ? <span>{usageLimitLines.secondary}</span> : null}
+            </Box>
+          ) : null}
           <button
             className="kodex-settings-menu-item"
             type="button"

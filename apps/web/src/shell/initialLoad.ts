@@ -1,4 +1,13 @@
-import { getAccount, listPendingApprovals, listProjects, type AccountResponse, type Approval, type Project } from "../api/client";
+import {
+  getAccount,
+  getRateLimits,
+  listPendingApprovals,
+  listProjects,
+  type AccountResponse,
+  type Approval,
+  type Project,
+  type RateLimitsResponse,
+} from "../api/client";
 
 type LoadInitialKodexStateParams = {
   hydrateComposerDefaults: (projectId: string | null) => void;
@@ -7,6 +16,7 @@ type LoadInitialKodexStateParams = {
   onError: (error: unknown) => void;
   onProjectsLoaded: (projects: Project[]) => string | null;
   setAccount: (account: AccountResponse) => void;
+  setRateLimits: (rateLimits: RateLimitsResponse) => void;
 };
 
 export async function loadInitialKodexState({
@@ -16,6 +26,7 @@ export async function loadInitialKodexState({
   onError,
   onProjectsLoaded,
   setAccount,
+  setRateLimits,
 }: LoadInitialKodexStateParams) {
   let composerDefaultsRequested = false;
   try {
@@ -32,6 +43,7 @@ export async function loadInitialKodexState({
 
   void listPendingApprovals().then(mergePendingApprovals).catch(onError);
   void getAccount().then(setAccount).catch(onError);
+  void getRateLimits().then(setRateLimits).catch(() => undefined);
 
   if (!composerDefaultsRequested) {
     hydrateComposerDefaults(null);

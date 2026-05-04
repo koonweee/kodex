@@ -219,6 +219,124 @@ describe("MVP composer settings flows", () => {
     expect(await screen.findByLabelText(/95% context left/i)).toBeInTheDocument();
   });
 
+  it("shows initial usage limits and updates them from account rate-limit notifications", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const initialPrimaryReset = new Date(2026, 4, 4, 14, 14);
+    const initialSecondaryReset = new Date(2026, 4, 7, 9, 0);
+    const updatedPrimaryReset = new Date(2026, 4, 4, 15, 30);
+    mockGateway(
+      baseRoutes({
+        "GET /v1/account/rate-limits": {
+          rateLimits: {
+            limitId: "codex",
+            primary: { usedPercent: 18, resetsAt: initialPrimaryReset.getTime() / 1000, windowDurationMins: 300 },
+            secondary: { usedPercent: 36, resetsAt: initialSecondaryReset.getTime() / 1000, windowDurationMins: 10_080 },
+          },
+          rateLimitsByLimitId: null,
+          rawPayload: {},
+        },
+        "GET /v1/events": { events: [] },
+      }),
+    );
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /account settings/i }));
+    expect(await screen.findByText("5h 82% left - 2:14 PM")).toBeInTheDocument();
+    expect(screen.getByText("7d 64% left - 9:00 AM (May 07)")).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /5h 82% left/i })).not.toBeInTheDocument();
+
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
+    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    act(() => {
+      globalStream?.emitNamed("codex.notification", {
+        id: "rate-limit-update-1",
+        seq: 5,
+        kind: "codex.notification",
+        codexMethod: "account/rateLimits/updated",
+        projectId: null,
+        threadId: null,
+        payload: {
+          rateLimits: {
+            limitId: "codex",
+            primary: { usedPercent: 7, resetsAt: updatedPrimaryReset.getTime() / 1000, windowDurationMins: 300 },
+            secondary: { usedPercent: 21, resetsAt: initialSecondaryReset.getTime() / 1000, windowDurationMins: 10_080 },
+          },
+        },
+        receivedAt: "2026-05-04T00:00:02Z",
+      });
+    });
+
+    expect(await screen.findByText("5h 93% left - 3:30 PM")).toBeInTheDocument();
+    expect(screen.getByText("7d 79% left - 9:00 AM (May 07)")).toBeInTheDocument();
+  });
+
+  it("keeps live account rate-limit updates when the initial rate-limit snapshot resolves later", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const stalePrimaryReset = new Date(2026, 4, 4, 14, 14);
+    const staleSecondaryReset = new Date(2026, 4, 7, 9, 0);
+    const livePrimaryReset = new Date(2026, 4, 4, 15, 30);
+    let resolveRateLimits!: (response: unknown) => void;
+    const delayedRateLimits = new Promise<unknown>((resolve) => {
+      resolveRateLimits = resolve;
+    });
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/account/rate-limits": () => delayedRateLimits,
+        "GET /v1/events": { events: [] },
+      }),
+    );
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
+    await waitFor(() => {
+      expect(gateway.callsFor("GET", "/v1/account/rate-limits")).toHaveLength(1);
+    });
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
+    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    act(() => {
+      globalStream?.emitNamed("codex.notification", {
+        id: "rate-limit-update-1",
+        seq: 5,
+        kind: "codex.notification",
+        codexMethod: "account/rateLimits/updated",
+        projectId: null,
+        threadId: null,
+        payload: {
+          rateLimits: {
+            limitId: "codex",
+            primary: { usedPercent: 7, resetsAt: livePrimaryReset.getTime() / 1000, windowDurationMins: 300 },
+            secondary: { usedPercent: 21, resetsAt: staleSecondaryReset.getTime() / 1000, windowDurationMins: 10_080 },
+          },
+        },
+        receivedAt: "2026-05-04T00:00:02Z",
+      });
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /account settings/i }));
+    expect(await screen.findByText("5h 93% left - 3:30 PM")).toBeInTheDocument();
+
+    await act(async () => {
+      resolveRateLimits({
+        rateLimits: {
+          limitId: "codex",
+          primary: { usedPercent: 18, resetsAt: stalePrimaryReset.getTime() / 1000, windowDurationMins: 300 },
+          secondary: { usedPercent: 36, resetsAt: staleSecondaryReset.getTime() / 1000, windowDurationMins: 10_080 },
+        },
+        rateLimitsByLimitId: null,
+        rawPayload: {},
+      });
+      await delayedRateLimits;
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("5h 93% left - 3:30 PM")).toBeInTheDocument();
+      expect(screen.getByText("7d 79% left - 9:00 AM (May 07)")).toBeInTheDocument();
+      expect(screen.queryByText("5h 82% left - 2:14 PM")).not.toBeInTheDocument();
+    });
+  });
+
   it("forwards draft thread composer settings to thread start and first turn", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const gateway = mockGateway(

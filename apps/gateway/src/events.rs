@@ -378,6 +378,7 @@ fn is_operational_replay_event(event: &EventEnvelope) -> bool {
 fn is_normal_live_event(event: &EventEnvelope) -> bool {
     is_operational_replay_event(event)
         || is_thread_metadata_live_event(event)
+        || is_account_live_event(event)
         || matches!(
             event.kind.as_str(),
             "timeline.item_delta"
@@ -398,6 +399,14 @@ fn is_thread_metadata_live_event(event: &EventEnvelope) -> bool {
                 "thread/nameupdated" | "thread/name_updated" | "thread/tokenusage/updated"
             )
         })
+}
+
+fn is_account_live_event(event: &EventEnvelope) -> bool {
+    event.kind == "codex.notification"
+        && event
+            .codex_method
+            .as_deref()
+            .is_some_and(|method| method.eq_ignore_ascii_case("account/rateLimits/updated"))
 }
 
 fn snapshot_required_event(seq: i64, thread_id: String, reason: &str) -> ApiResult<EventEnvelope> {

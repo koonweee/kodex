@@ -10,7 +10,11 @@ import type {
   RefObject,
 } from "react";
 
-import { ComposerFooterControls, type ComposerSettings, type ContextUsage } from "../ComposerFooterControls";
+import {
+  ComposerFooterControls,
+  type ComposerSettings,
+  type ContextUsage,
+} from "../ComposerFooterControls";
 import type { ModelSummary } from "../api/client";
 import type { ImageLightboxImage } from "../images/types";
 import { AttachmentTray } from "./AttachmentTray";

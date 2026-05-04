@@ -11,6 +11,11 @@ import {
 
 import { isApprovalEvent } from "./approvals/state";
 import { useApprovalsState } from "./approvals/useApprovalsState";
+import {
+  formatUsageLimitLines,
+  usageLimitSnapshotFromEvent,
+  usageLimitSnapshotFromResponse,
+} from "./account/rateLimits";
 import { useAccountSession } from "./account/useAccountSession";
 import {
   archiveThread,
@@ -21,6 +26,7 @@ import {
   type Approval,
   type EventEnvelope,
   type Project,
+  type RateLimitSnapshot,
   type ThreadSummary,
 } from "./api/client";
 import { createThreadOptions } from "./composer/settings";
@@ -129,6 +135,7 @@ function KodexShell({
   const [lightboxImage, setLightboxImage] = useState<ImageLightboxImage | null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesSection, setPreferencesSection] = useState<"appearance">("appearance");
+  const [usageLimitSnapshot, setUsageLimitSnapshot] = useState<RateLimitSnapshot | null>(null);
   const [hoveredThreadActionId, setHoveredThreadActionId] = useState<string | null>(null);
   const [timelineScrollElement, setTimelineScrollElement] = useState<HTMLDivElement | null>(null);
   const [composerResetToken, setComposerResetToken] = useState(0);
@@ -141,6 +148,7 @@ function KodexShell({
   const composerShellRef = useRef<HTMLDivElement | null>(null);
   const draftComposerTransitionOriginRef = useRef<DOMRect | null>(null);
   const initialPendingApprovalsReconciledRef = useRef(false);
+  const liveUsageLimitSnapshotReceivedRef = useRef(false);
   const threadRequestIds = useRef<Map<string, number>>(new Map());
   const nextThreadRequestId = useRef(0);
   const [draftComposerTransitionToken, setDraftComposerTransitionToken] = useState(0);
@@ -251,6 +259,7 @@ function KodexShell({
       ? NEW_THREAD_TITLE
       : threadDisplayTitle(selectedThread)
     : NEW_THREAD_TITLE;
+  const usageLimitLines = useMemo(() => formatUsageLimitLines(usageLimitSnapshot), [usageLimitSnapshot]);
 
   useEffect(() => {
     void loadInitialKodexState({
@@ -269,6 +278,11 @@ function KodexShell({
         return firstProjectId;
       },
       setAccount,
+      setRateLimits: (rateLimits) => {
+        if (!liveUsageLimitSnapshotReceivedRef.current) {
+          setUsageLimitSnapshot(usageLimitSnapshotFromResponse(rateLimits));
+        }
+      },
     });
   }, []);
 
@@ -348,6 +362,11 @@ function KodexShell({
       onEvent: (event) => {
         applyThreadMetadataEvent(event);
         applyCompletedAgentTurnEvent(event);
+        const nextUsageLimitSnapshot = usageLimitSnapshotFromEvent(event);
+        if (nextUsageLimitSnapshot) {
+          liveUsageLimitSnapshotReceivedRef.current = true;
+          setUsageLimitSnapshot(nextUsageLimitSnapshot);
+        }
         if (isApprovalEvent(event)) {
           setApprovals((current) => applyApprovalEventWithTombstone(current, event));
         }
@@ -714,7 +733,7 @@ function KodexShell({
           onShowDebugEventsChange: setShowDebugEvents, onSidebarResizeKeyDown: handleSidebarResizeKeyDown,
           onSidebarResizePointerDown: handleSidebarResizePointerDown, onThreadActionHoverChange: setHoveredThreadActionId,
           pendingTitleThreadIds, projectCwd, projectFormOpen, projectName, projects: orderedProjects, selectedProjectId, selectedThreadId,
-          showDebugEvents, sidebarWidth, threadsByProjectId,
+          showDebugEvents, sidebarWidth, threadsByProjectId, usageLimitLines,
         }}
       />
       <ImageLightbox image={lightboxImage} onClose={handleCloseLightbox} />
