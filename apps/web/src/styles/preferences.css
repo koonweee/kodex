@@ -271,6 +271,7 @@
 
   .kodex-sidebar,
   .kodex-main {
+    box-sizing: border-box;
     position: fixed !important;
     inset: 49px 0 0 0 !important;
     display: none !important;
@@ -279,6 +280,10 @@
     padding: 12px !important;
     overflow: auto;
     transform: none !important;
+  }
+
+  .kodex-main {
+    overflow: hidden;
   }
 
   .kodex-main-stack {

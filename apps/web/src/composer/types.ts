@@ -13,5 +13,6 @@ export type QueuedSteerRow = {
   id: string;
   text: string;
   attachments: PendingAttachment[];
+  autoStartFailed?: boolean;
   isSubmitting?: boolean;
 };

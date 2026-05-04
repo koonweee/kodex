@@ -4,6 +4,11 @@ body,
   height: 100%;
 }
 
+html,
+body {
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   background: var(--kodex-bg-app);
@@ -116,9 +121,11 @@ body {
 }
 
 .kodex-shell {
+  height: 100dvh;
   min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
   color: var(--kodex-text-primary);
   background: var(--kodex-bg-shell);
   --shell-handle-main-gap: 6px;
 }
-

@@ -339,7 +339,7 @@
   padding: 4px;
   border: 1px solid var(--kodex-border-subtle);
   border-radius: 6px;
-  background: var(--kodex-bg-surface);
+  background: var(--kodex-bg-composer);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
 }
 

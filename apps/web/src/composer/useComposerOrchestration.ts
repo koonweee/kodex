@@ -68,6 +68,7 @@ export function useComposerOrchestration({
 }: UseComposerOrchestrationParams) {
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [isComposerSubmitting, setIsComposerSubmitting] = useState(false);
+  const [isQueuedTurnStartPending, setIsQueuedTurnStartPending] = useState(false);
   const [isComposerDragActive, setIsComposerDragActive] = useState(false);
   const [imagePreviewUrlsByPath, setImagePreviewUrlsByPath] = useState<Record<string, string>>({});
   const [queuedSteerRows, setQueuedSteerRows] = useState<QueuedSteerRow[]>([]);
@@ -75,9 +76,22 @@ export function useComposerOrchestration({
   const composerContextRef = useRef<ComposerContext | null>(null);
   const latestComposerContextRef = useRef<ComposerContext | null>(null);
   const imagePreviewUrlsByPathRef = useRef<Record<string, string>>({});
+  const autoStartIdleConsumedRef = useRef(false);
+  const previousActiveSelectedTurnIdRef = useRef<string | null>(activeSelectedTurnId);
   const nextAttachmentId = useRef(0);
   const nextOptimisticMessageId = useRef(0);
   const nextQueuedSteerId = useRef(0);
+
+  useEffect(() => {
+    const previousActiveSelectedTurnId = previousActiveSelectedTurnIdRef.current;
+    if (activeSelectedTurnId || previousActiveSelectedTurnId) {
+      autoStartIdleConsumedRef.current = false;
+    }
+    if (activeSelectedTurnId) {
+      setIsQueuedTurnStartPending(false);
+    }
+    previousActiveSelectedTurnIdRef.current = activeSelectedTurnId;
+  }, [activeSelectedTurnId]);
 
   useEffect(() => {
     const nextContext = { activeSelectedTurnId, draftThreadProjectId, selectedProjectId, selectedThreadId };
@@ -86,7 +100,6 @@ export function useComposerOrchestration({
     latestComposerContextRef.current = nextContext;
     if (
       previousContext &&
-      previousContext.activeSelectedTurnId === activeSelectedTurnId &&
       previousContext.draftThreadProjectId === draftThreadProjectId &&
       previousContext.selectedProjectId === selectedProjectId &&
       previousContext.selectedThreadId === selectedThreadId
@@ -97,6 +110,7 @@ export function useComposerOrchestration({
       return;
     }
 
+    setIsQueuedTurnStartPending(false);
     setQueuedSteerRows((current) => {
       for (const row of current) {
         for (const attachment of row.attachments) {
@@ -108,10 +122,26 @@ export function useComposerOrchestration({
     clearPendingAttachments();
   }, [activeSelectedTurnId, draftThreadProjectId, isComposerSubmitting, selectedProjectId, selectedThreadId]);
 
+  useEffect(() => {
+    if (!selectedThreadId || activeSelectedTurnId || isComposerSubmitting || autoStartIdleConsumedRef.current) {
+      return;
+    }
+    const row = queuedSteerRows.find((item) => !item.isSubmitting && !item.autoStartFailed);
+    if (!row) {
+      return;
+    }
+
+    autoStartIdleConsumedRef.current = true;
+    void submitQueuedTurn(row, selectedThreadId);
+  }, [activeSelectedTurnId, composerSettings, isComposerSubmitting, queuedSteerRows, selectedThreadId]);
+
   async function handleSubmitTurn(event: FormEvent, composerText: string, draftControls: ComposerDraftControls) {
     event.preventDefault();
     const canSubmitComposer =
-      canCompose && !isComposerSubmitting && (Boolean(composerText.trim()) || pendingAttachments.length > 0);
+      canCompose &&
+      !isComposerSubmitting &&
+      !isQueuedTurnStartPending &&
+      (Boolean(composerText.trim()) || pendingAttachments.length > 0);
     if (!canSubmitComposer) {
       return;
     }
@@ -220,7 +250,15 @@ export function useComposerOrchestration({
   }
 
   async function handleSubmitQueuedSteer(row: QueuedSteerRow) {
-    if (!selectedThreadId || !activeSelectedTurnId) {
+    if (!selectedThreadId) {
+      return;
+    }
+
+    if (!activeSelectedTurnId) {
+      if (isQueuedTurnStartPending) {
+        return;
+      }
+      await submitQueuedTurn(row, selectedThreadId);
       return;
     }
 
@@ -255,6 +293,51 @@ export function useComposerOrchestration({
         current.map((item) => (item.id === row.id ? { ...item, isSubmitting: false } : item)),
       );
       onError(error);
+    }
+  }
+
+  async function submitQueuedTurn(row: QueuedSteerRow, threadId: string) {
+    const optimisticClientRequestId = addOptimisticMessage(
+      row.text,
+      attachmentPreviewImages(row.attachments),
+      null,
+      row.attachments.length > 0 ? "uploading" : "sending",
+    );
+    setIsComposerSubmitting(true);
+    setIsQueuedTurnStartPending(true);
+    setQueuedSteerRows((current) =>
+      current.map((item) => (item.id === row.id ? { ...item, isSubmitting: true } : item)),
+    );
+    onThreadTurnStarted(threadId);
+    try {
+      const input = await buildTurnInput(row.text, row.attachments);
+      const uploadedImages = userInputImages(input);
+      if (uploadedImages.length > 0) {
+        updateOptimisticMessage(optimisticClientRequestId, {
+          images: uploadedImages,
+          confirmationState: "sending",
+          error: undefined,
+        });
+      }
+      await startTurn(threadId, input, composerTurnOptions(composerSettings));
+      onThreadMaterialized(threadId);
+      updateOptimisticMessage(optimisticClientRequestId, { confirmationState: "sent", error: undefined });
+      for (const attachment of row.attachments) {
+        releaseAttachmentObjectUrl(attachment);
+      }
+      setQueuedSteerRows((current) => current.filter((item) => item.id !== row.id));
+    } catch (error) {
+      setTimeline((current) => removeOptimisticUserMessage(current, optimisticClientRequestId));
+      onThreadTurnStartFailed(threadId);
+      setIsQueuedTurnStartPending(false);
+      setQueuedSteerRows((current) =>
+        current.map((item) =>
+          item.id === row.id ? { ...item, autoStartFailed: true, isSubmitting: false } : item,
+        ),
+      );
+      onError(error);
+    } finally {
+      setIsComposerSubmitting(false);
     }
   }
 
@@ -495,6 +578,7 @@ export function useComposerOrchestration({
     imagePreviewUrlsByPath,
     isComposerDragActive,
     isComposerSubmitting,
+    isQueuedTurnStartPending,
     pendingAttachments,
     queuedSteerRows,
     removePendingAttachment,

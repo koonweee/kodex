@@ -10,6 +10,7 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - Follow YAGNI. Do not build features outside the active plan milestone unless the current change requires them.
 - Treat generated OpenAPI as the public API contract. Public request/response DTOs live in Rust code and must generate `/openapi.json`.
 - When integrating with the Codex app-server, treat the checked-in generated schemas and the upstream app-server README as the source of truth. Verify request/response shapes, lifecycle rules, and transport assumptions against `apps/gateway/app-server-schema/<version>/json` and https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md instead of inferring behavior from gateway code or handwritten notes.
+- For official real-client behavior examples, the upstream Codex TUI is a useful reference: https://github.com/openai/codex/tree/main/codex-rs/tui/src. Use it to understand client sequencing, UI-facing lifecycle handling, and edge cases, but do not treat it as the wire contract when it conflicts with the generated schemas or app-server README.
 - Do not create separate handwritten API contract docs unless a specific implementation issue requires explanatory prose.
 - Frontend API types must come from generated OpenAPI artifacts, not ad hoc duplicate TypeScript interfaces.
 - Prefer small, milestone-scoped changes that keep the repo runnable.

@@ -165,7 +165,10 @@ export function ComposerFooterControls({
             >
               <span className="kodex-composer-model-name">{selectedModelShortLabel}</span>
               {selectedEffort ? (
-                <span className="kodex-composer-model-effort">{reasoningEffortLabel(selectedEffort)}</span>
+                <>
+                  {" "}
+                  <span className="kodex-composer-model-effort">{reasoningEffortLabel(selectedEffort)}</span>
+                </>
               ) : null}
             </Button>
           </Menu.Target>

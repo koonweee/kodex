@@ -151,16 +151,19 @@ Useful tmux controls:
 - Reattach: `tmux attach -t kodex`
 - Stop both servers: reattach and press `Ctrl-c` in each pane
 
-For production-style static serving from the gateway:
+For production-style static serving from the gateway in a tmux pane:
 
 ```bash
+tmux new -s kodex-prod
 cd apps/web
 npm run build
 cd ../..
 KODEX_FRONTEND_DIST=apps/web/dist cargo run -p kodex-gateway
 ```
 
-Then open `http://127.0.0.1:8787`. Keep either setup local or trusted-VPN only; the MVP gateway has no access-control layer.
+Then open `http://127.0.0.1:8787`. The build step exits after writing `apps/web/dist`, and the gateway stays running in the pane to serve both the API and built frontend assets. Detach with `Ctrl-b d`, reattach with `tmux attach -t kodex-prod`, and stop the production-style server with `Ctrl-c` in that pane.
+
+Keep either setup local or trusted-VPN only; the MVP gateway has no access-control layer.
 
 ## Frontend Development
 

@@ -40,7 +40,7 @@ export function KodexShellView({
       <WorkspaceSidebar {...workspaceSidebarProps} />
       <AppShell.Main aria-label="Thread" className="kodex-main">
         <Stack
-          h="calc(100vh - var(--app-shell-padding))"
+          h="calc(100dvh - var(--app-shell-padding))"
           gap="md"
           className="kodex-main-stack"
           data-draft-thread={threadPanelProps.isDraftThreadSelected ? "true" : undefined}

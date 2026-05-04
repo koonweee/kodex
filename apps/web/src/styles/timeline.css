@@ -187,6 +187,7 @@
   justify-items: end;
   gap: 8px;
   max-width: min(78%, 680px);
+  min-width: 0;
 }
 
 .kodex-user-message-status {
@@ -234,13 +235,14 @@
   position: relative;
   box-sizing: border-box;
   max-width: 100%;
+  min-width: 0;
   margin: 0;
   border-radius: 14px;
   padding: 9px 12px;
   background: var(--kodex-bg-user-bubble);
   color: var(--kodex-text-on-accent);
   white-space: pre-wrap;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
   word-break: normal;
 }
 

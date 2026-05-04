@@ -46,6 +46,7 @@ export function ComposerPanel({
   isDraftComposerTransitioning,
   isComposerDragActive,
   isComposerSubmitting,
+  isQueuedTurnStartPending,
   isSelectedTimelineReady,
   models,
   onAbortQueuedSteer,
@@ -77,6 +78,7 @@ export function ComposerPanel({
   isDraftComposerTransitioning: boolean;
   isComposerDragActive: boolean;
   isComposerSubmitting: boolean;
+  isQueuedTurnStartPending?: boolean;
   isSelectedTimelineReady: boolean;
   models: ModelSummary[];
   onAbortQueuedSteer: (row: QueuedSteerRow) => void;
@@ -99,8 +101,9 @@ export function ComposerPanel({
   const [composerText, setComposerText] = useState("");
   const draftHeroText = greetingForDate(new Date());
   const shouldShowDraftHero = isDraftThreadSelected || isDraftComposerTransitioning;
+  const isComposerBusy = isComposerSubmitting || Boolean(isQueuedTurnStartPending);
   const canSubmitComposer =
-    canCompose && !isComposerSubmitting && (Boolean(composerText.trim()) || pendingAttachments.length > 0);
+    canCompose && !isComposerBusy && (Boolean(composerText.trim()) || pendingAttachments.length > 0);
   const shouldShowStopAction = activeSelectedTurnId !== null && !canSubmitComposer;
 
   useEffect(() => {
@@ -129,6 +132,8 @@ export function ComposerPanel({
       ) : null}
       {queuedSteerRows.length > 0 ? (
         <QueuedSteerCard
+          blockIdleStartActions={activeSelectedTurnId === null && Boolean(isQueuedTurnStartPending)}
+          hasActiveTurn={activeSelectedTurnId !== null}
           rows={queuedSteerRows}
           onAbortRow={onAbortQueuedSteer}
           onSubmitRow={onSubmitQueuedSteer}
@@ -151,10 +156,10 @@ export function ComposerPanel({
           type="file"
           accept="image/*"
           multiple
-          disabled={!canCompose || isComposerSubmitting}
+          disabled={!canCompose || isComposerBusy}
           onChange={onAttachmentInputChange}
         />
-        {pendingAttachments.length > 0 && !isComposerSubmitting ? (
+        {pendingAttachments.length > 0 && !isComposerBusy ? (
           <AttachmentTray attachments={pendingAttachments} onImageOpen={onImageOpen} onRemove={onRemovePendingAttachment} />
         ) : null}
         <Textarea
@@ -166,13 +171,13 @@ export function ComposerPanel({
           autosize
           value={composerText}
           onChange={(event) => {
-            if (!isComposerSubmitting) {
+            if (!isComposerBusy) {
               setComposerText(event.currentTarget.value);
             }
           }}
           onKeyDown={onComposerKeyDown}
           onPaste={onComposerPaste}
-          disabled={!canCompose || isComposerSubmitting}
+          disabled={!canCompose || isComposerBusy}
           variant="unstyled"
         />
         {isComposerDragActive ? (
@@ -190,14 +195,14 @@ export function ComposerPanel({
                   size="md"
                   type="button"
                   variant="subtle"
-                  disabled={!canCompose || isComposerSubmitting}
+                  disabled={!canCompose || isComposerBusy}
                 >
                   <Plus size={16} />
                 </ActionIcon>
               </Menu.Target>
               <Menu.Dropdown aria-label={COMPOSER_TEXT.attachments}>
                 <Menu.Item
-                  disabled={!canCompose || isComposerSubmitting}
+                  disabled={!canCompose || isComposerBusy}
                   leftSection={<Paperclip size={14} />}
                   onClick={() => attachmentInputRef.current?.click()}
                 >
@@ -207,7 +212,7 @@ export function ComposerPanel({
             </Menu>
             <ComposerFooterControls
               contextUsage={contextUsage}
-              disabled={!canCompose || isComposerSubmitting}
+              disabled={!canCompose || isComposerBusy}
               models={models}
               showContextUsage={!shouldShowDraftHero}
               settingsError={composerSettingsError}

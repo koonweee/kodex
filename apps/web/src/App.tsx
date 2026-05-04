@@ -225,6 +225,7 @@ function KodexShell({
     imagePreviewUrlsByPath,
     isComposerDragActive,
     isComposerSubmitting,
+    isQueuedTurnStartPending,
     pendingAttachments,
     queuedSteerRows,
     removePendingAttachment,
@@ -673,7 +674,7 @@ function KodexShell({
         composerPanelProps={{
           activeSelectedTurnId, attachmentInputRef, canCompose, composerResetToken, composerSettings, composerSettingsError,
           composerShellRef, contextUsage: selectedContextUsage, isDraftThreadSelected, isDraftComposerTransitioning, isComposerDragActive,
-          isComposerSubmitting, isSelectedTimelineReady, models,
+          isComposerSubmitting, isQueuedTurnStartPending, isSelectedTimelineReady, models,
           onAbortQueuedSteer: handleAbortQueuedSteer, onAttachmentInputChange: handleAttachmentInputChange,
           onComposerDragLeave: handleComposerDragLeave, onComposerDragOver: handleComposerDragOver, onComposerDrop: handleComposerDrop,
           onComposerKeyDown: handleComposerKeyDown, onComposerPaste: handleComposerPaste, onComposerSettingsChange: handleComposerSettingsChange,

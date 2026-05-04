@@ -352,6 +352,9 @@ describe("MVP shell flows", () => {
 
     await userEvent.click(within(panelSwitcher).getByRole("tab", { name: /threads/i }));
     expect(within(panelSwitcher).getByRole("tab", { name: /threads/i })).toHaveAttribute("aria-selected", "true");
+    expect(appCss).toMatch(/html,\s*body\s*\{[^}]*overflow:\s*hidden;/s);
+    expect(appCss).toMatch(/\.kodex-shell\s*\{[^}]*height:\s*100dvh;[^}]*overflow:\s*hidden;/s);
+    expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-main\s*\{[^}]*overflow:\s*hidden;/s);
   });
 
   it("returns narrow viewport navigation to chat after selecting or creating a thread", async () => {
