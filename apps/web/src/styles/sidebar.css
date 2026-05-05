@@ -79,10 +79,6 @@
   background: var(--kodex-bg-button-hover);
 }
 
-.kodex-project-title[data-active="true"] {
-  color: var(--kodex-text-accent-soft);
-}
-
 .kodex-project-title svg {
   color: var(--kodex-text-muted);
 }

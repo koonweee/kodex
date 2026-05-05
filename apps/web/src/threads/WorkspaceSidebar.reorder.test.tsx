@@ -94,6 +94,31 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(screen.queryByRole("button", { name: /project \/workspace\/project-1/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Thread 1" })).toBeInTheDocument();
   });
+
+  it("does not mark the project title active when a thread or draft thread is selected", () => {
+    const { unmount } = renderSidebar({
+      projects: [projectSummary("project-1", "Project")],
+      selectedProjectId: "project-1",
+      selectedThreadId: "thread-1",
+      threadsByProjectId: {
+        "project-1": [threadSummary(1)],
+      },
+    });
+
+    expect(screen.getByText("Project").closest(".kodex-project-title")).not.toHaveAttribute("data-active", "true");
+
+    unmount();
+    renderSidebar({
+      projects: [projectSummary("project-1", "Project")],
+      selectedProjectId: "project-1",
+      selectedThreadId: null,
+      threadsByProjectId: {
+        "project-1": [threadSummary(1)],
+      },
+    });
+
+    expect(screen.getByText("Project").closest(".kodex-project-title")).not.toHaveAttribute("data-active", "true");
+  });
 });
 
 function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar>> = {}) {

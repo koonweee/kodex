@@ -310,7 +310,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                       <Box
                         aria-label={`${project.name} ${project.cwd}`}
                         className="kodex-ui-selectable kodex-project-title"
-                        data-active={project.id === selectedProjectId}
                       >
                         <FolderOpen size={15} />
                         <Text fw={500} size="xs" lineClamp={1}>
