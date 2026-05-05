@@ -1,20 +1,28 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
 
 import type { ContextUsage } from "../ComposerFooterControls";
-import type { EventEnvelope } from "../api/client";
+import type { EventEnvelope, ThreadSummary } from "../api/client";
 import { contextUsageFromEvent } from "../composer/settings";
 import { threadNameUpdateFromEvent, threadStatusUpdateFromEvent } from "./events";
-import { updateThreadNameInProjects, updateThreadReadStateInProjects, type ThreadsByProjectId } from "./helpers";
+import {
+  updateThreadNameInList,
+  updateThreadNameInProjects,
+  updateThreadReadStateInList,
+  updateThreadReadStateInProjects,
+  type ThreadsByProjectId,
+} from "./helpers";
 
 type UseThreadMetadataParams = {
   selectedThreadId: string | null;
   setPendingTitleThreadIds: Dispatch<SetStateAction<Set<string>>>;
+  setChatThreads: Dispatch<SetStateAction<ThreadSummary[]>>;
   setThreadsByProjectId: Dispatch<SetStateAction<ThreadsByProjectId>>;
 };
 
 export function useThreadMetadata({
   selectedThreadId,
   setPendingTitleThreadIds,
+  setChatThreads,
   setThreadsByProjectId,
 }: UseThreadMetadataParams) {
   const [contextUsageByThreadId, setContextUsageByThreadId] = useState<Record<string, ContextUsage>>({});
@@ -33,6 +41,11 @@ export function useThreadMetadata({
           thread.status === statusUpdate.status ? {} : { status: statusUpdate.status },
         ),
       );
+      setChatThreads((current) =>
+        updateThreadReadStateInList(current, statusUpdate.threadId, (thread) =>
+          thread.status === statusUpdate.status ? {} : { status: statusUpdate.status },
+        ),
+      );
     }
 
     const update = threadNameUpdateFromEvent(event);
@@ -43,6 +56,7 @@ export function useThreadMetadata({
     const name = update.name?.trim();
     if (name) {
       setThreadsByProjectId((current) => updateThreadNameInProjects(current, update.threadId, name));
+      setChatThreads((current) => updateThreadNameInList(current, update.threadId, name));
       setPendingTitleThreadIds((current) => {
         if (!current.has(update.threadId)) {
           return current;

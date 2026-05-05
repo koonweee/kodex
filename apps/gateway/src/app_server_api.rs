@@ -55,6 +55,27 @@ impl CodexClient {
         ThreadListResponse::from_payload(payload)
     }
 
+    pub async fn thread_list_cwds_updated(
+        &self,
+        cwds: Vec<String>,
+        cursor: Option<String>,
+        limit: Option<u32>,
+    ) -> ApiResult<ThreadListResponse> {
+        let payload = self
+            .request(
+                "thread/list",
+                json!({
+                    "cursor": cursor,
+                    "limit": limit,
+                    "cwd": cwds,
+                    "sortKey": "updated_at",
+                    "sortDirection": "desc",
+                }),
+            )
+            .await?;
+        ThreadListResponse::from_payload(payload)
+    }
+
     pub async fn thread_start(
         &self,
         project_id: String,
@@ -66,6 +87,16 @@ impl CodexClient {
             cwd,
             merge_path_payload("projectId", project_id, payload),
         ));
+        let payload = self.request("thread/start", payload).await?;
+        ThreadCommandResponse::from_payload(payload)
+    }
+
+    pub async fn thread_start_in_cwd(
+        &self,
+        cwd: String,
+        payload: Value,
+    ) -> ApiResult<ThreadCommandResponse> {
+        let payload = require_extended_history(merge_path_payload("cwd", cwd, payload));
         let payload = self.request("thread/start", payload).await?;
         ThreadCommandResponse::from_payload(payload)
     }
@@ -1259,6 +1290,14 @@ mod tests {
             .await
             .unwrap();
         client.thread_list_recent_updated(10).await.unwrap();
+        client
+            .thread_list_cwds_updated(
+                vec!["/chat/a".to_string(), "/chat/b".to_string()],
+                None,
+                Some(50),
+            )
+            .await
+            .unwrap();
         *server.response.lock().unwrap() = json!({"thread": thread_summary_payload("thread-1")});
         client.thread_read("thread-1".to_string()).await.unwrap();
         *server.response.lock().unwrap() = json!({"archived": true});
@@ -1303,26 +1342,39 @@ mod tests {
         assert_eq!(
             requests[2],
             (
+                "thread/list".to_string(),
+                json!({
+                    "cursor": null,
+                    "limit": 50,
+                    "cwd": ["/chat/a", "/chat/b"],
+                    "sortKey": "updated_at",
+                    "sortDirection": "desc",
+                })
+            )
+        );
+        assert_eq!(
+            requests[3],
+            (
                 "thread/read".to_string(),
                 json!({"threadId": "thread-1", "includeTurns": true})
             )
         );
         assert_eq!(
-            requests[3],
+            requests[4],
             (
                 "thread/archive".to_string(),
                 json!({"threadId": "thread-1"})
             )
         );
         assert_eq!(
-            requests[4],
+            requests[5],
             (
                 "turn/start".to_string(),
                 json!({"threadId": "thread-1", "input": [{"type": "text", "text": "hi"}]})
             )
         );
         assert_eq!(
-            requests[5],
+            requests[6],
             (
                 "turn/interrupt".to_string(),
                 json!({"threadId": "thread-1", "turnId": "turn-1"})

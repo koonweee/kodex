@@ -43,15 +43,17 @@ import {
 import type { ComposerDraftControls } from "./ComposerPanel";
 import type { PendingAttachment, QueuedSteerRow } from "./types";
 
-type DraftThreadCreateRequest = { firstMessageText: string; projectId: string };
+type DraftThreadCreateRequest = { firstMessageText: string; projectId?: string };
+type DraftThreadCreateResult = { threadId: string; composerSettings: ComposerSettings };
 
 type UseComposerOrchestrationParams = {
   activeSelectedTurnId: string | null;
   canCompose: boolean;
   composerSettings: ComposerSettings;
+  draftChatThreadSelected: boolean;
   draftThreadProjectId: string | null;
   isDraftThreadSelected: boolean;
-  onCreateDraftThread: (request: DraftThreadCreateRequest) => Promise<string>;
+  onCreateDraftThread: (request: DraftThreadCreateRequest) => Promise<DraftThreadCreateResult>;
   onError: (error: unknown) => void;
   onQueuedInputDeleted: (threadId: string, queueId: string) => void;
   onQueuedInputUpsert: (row: QueuedSteerRow) => void;
@@ -68,6 +70,7 @@ export function useComposerOrchestration({
   activeSelectedTurnId,
   canCompose,
   composerSettings,
+  draftChatThreadSelected,
   draftThreadProjectId,
   isDraftThreadSelected,
   onCreateDraftThread,
@@ -103,12 +106,13 @@ export function useComposerOrchestration({
   }, [activeSelectedTurnId]);
 
   useEffect(() => {
-    const nextContext = { activeSelectedTurnId, draftThreadProjectId, selectedProjectId, selectedThreadId };
+    const nextContext = { activeSelectedTurnId, draftChatThreadSelected, draftThreadProjectId, selectedProjectId, selectedThreadId };
     const previousContext = composerContextRef.current;
     composerContextRef.current = nextContext;
     latestComposerContextRef.current = nextContext;
     if (
       previousContext &&
+      previousContext.draftChatThreadSelected === draftChatThreadSelected &&
       previousContext.draftThreadProjectId === draftThreadProjectId &&
       previousContext.selectedProjectId === selectedProjectId &&
       previousContext.selectedThreadId === selectedThreadId
@@ -121,7 +125,7 @@ export function useComposerOrchestration({
 
     setIsQueuedTurnStartPending(false);
     clearPendingAttachments();
-  }, [activeSelectedTurnId, draftThreadProjectId, isComposerSubmitting, selectedProjectId, selectedThreadId]);
+  }, [activeSelectedTurnId, draftChatThreadSelected, draftThreadProjectId, isComposerSubmitting, selectedProjectId, selectedThreadId]);
 
   async function handleSubmitTurn(event: FormEvent, composerText: string, draftControls: ComposerDraftControls) {
     event.preventDefault();
@@ -163,6 +167,7 @@ export function useComposerOrchestration({
     let startedThreadId: string | null = null;
     let retryRestoreContext: ComposerContext = {
       activeSelectedTurnId,
+      draftChatThreadSelected,
       draftThreadProjectId,
       selectedProjectId,
       selectedThreadId,
@@ -191,16 +196,21 @@ export function useComposerOrchestration({
         return;
       }
 
-      if (!isDraftThreadSelected || !selectedProjectId) {
+      if (!isDraftThreadSelected || (!draftChatThreadSelected && !selectedProjectId)) {
         setIsComposerSubmitting(false);
         return;
       }
 
-      const threadId = await onCreateDraftThread({ firstMessageText: text, projectId: selectedProjectId });
+      const createdThread = await onCreateDraftThread({
+        firstMessageText: text,
+        ...(draftChatThreadSelected ? {} : { projectId: selectedProjectId ?? undefined }),
+      });
+      const threadId = createdThread.threadId;
       retryRestoreContext = {
         activeSelectedTurnId: null,
+        draftChatThreadSelected: false,
         draftThreadProjectId: null,
-        selectedProjectId,
+        selectedProjectId: draftChatThreadSelected ? null : selectedProjectId,
         selectedThreadId: threadId,
       };
       latestComposerContextRef.current = retryRestoreContext;
@@ -218,7 +228,7 @@ export function useComposerOrchestration({
           error: undefined,
         });
       }
-      await startTurn(threadId, input, composerTurnOptions(composerSettings));
+      await startTurn(threadId, input, composerTurnOptions(createdThread.composerSettings));
       onThreadMaterialized(threadId);
       updateOptimisticMessage(optimisticClientRequestId, { confirmationState: "sent", error: undefined });
       clearPendingAttachments();

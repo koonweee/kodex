@@ -80,6 +80,29 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(screen.queryByRole("button", { name: "Thread 2" })).not.toBeInTheDocument();
   });
 
+  it("renders add project copy and collapses older chat threads", () => {
+    const onCreateChat = vi.fn();
+    renderSidebar({
+      chatThreads: Array.from({ length: 7 }, (_value, index) => threadSummary(index + 1)),
+      onCreateChat,
+      projectFormOpen: true,
+    });
+
+    expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+    expect(onCreateChat).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Chats")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Add project" })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Thread 7" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Thread 3" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Thread 2" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show more" }));
+    expect(screen.getByRole("button", { name: "Thread 2" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show less" }));
+    expect(screen.queryByRole("button", { name: "Thread 2" })).not.toBeInTheDocument();
+  });
+
   it("does not collapse a project when its title row is clicked", () => {
     renderSidebar({
       projects: [projectSummary("project-1", "Project")],
@@ -128,11 +151,13 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
         <WorkspaceSidebar
           account={null}
           approvals={[]}
+          chatThreads={[]}
           hoveredThreadActionId={null}
           isSidebarResizing={false}
           loginState={{}}
           onArchiveThread={vi.fn()}
           onCancelLogin={vi.fn()}
+          onCreateChat={vi.fn()}
           onCreateProject={vi.fn()}
           onCreateThread={vi.fn()}
           onLogin={vi.fn()}
@@ -142,6 +167,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
           onProjectDirectoryCreateCancel={vi.fn()}
           onProjectFormOpenChange={vi.fn()}
           onReorderProjects={vi.fn()}
+          onSelectChatThread={vi.fn()}
           onSelectThread={vi.fn()}
           onShowDebugEventsChange={vi.fn()}
           onSidebarResizeKeyDown={vi.fn()}

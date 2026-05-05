@@ -180,6 +180,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/chats/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_chat_threads"];
+        put?: never;
+        post: operations["create_chat_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/composer-settings": {
         parameters: {
             query?: never;
@@ -576,6 +592,15 @@ export interface components {
         };
         ComposerSettingsUpdateResponse: {
             saved: boolean;
+        };
+        CreateChatThreadRequest: {
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            firstMessageText: string;
+            model?: string | null;
+            payload?: unknown;
+            sandbox?: string | null;
+            serviceTier?: string | null;
         };
         CreateProjectRequest: {
             createDirectory?: boolean | null;
@@ -1136,6 +1161,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CapabilitiesResponse"];
+                };
+            };
+        };
+    };
+    list_chat_threads: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadListResponse"];
+                };
+            };
+        };
+    };
+    create_chat_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateChatThreadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadCommandResponse"];
                 };
             };
         };

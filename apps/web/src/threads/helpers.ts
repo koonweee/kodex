@@ -53,6 +53,11 @@ export function removeThreadFromProjects(current: ThreadsByProjectId, threadId: 
   return changed ? next : current;
 }
 
+export function removeThreadFromList(current: ThreadSummary[], threadId: string): ThreadSummary[] {
+  const next = current.filter((thread) => thread.id !== threadId);
+  return next.length === current.length ? current : next;
+}
+
 export function replaceThreadInProjects(
   current: ThreadsByProjectId,
   thread: ThreadSummary,
@@ -67,6 +72,18 @@ export function replaceThreadInProjects(
     ...current,
     [projectId]: (current[projectId] ?? []).map((item) => (item.id === thread.id ? thread : item)),
   };
+}
+
+export function replaceThreadInList(current: ThreadSummary[], thread: ThreadSummary): ThreadSummary[] {
+  let changed = false;
+  const next = current.map((item) => {
+    if (item.id !== thread.id) {
+      return item;
+    }
+    changed = true;
+    return thread;
+  });
+  return changed ? next : current;
 }
 
 export function threadById(current: ThreadsByProjectId, threadId: string): ThreadSummary | null {
@@ -100,6 +117,22 @@ export function updateThreadReadStateInProjects(
   return changed ? next : current;
 }
 
+export function updateThreadReadStateInList(
+  current: ThreadSummary[],
+  threadId: string,
+  update: (thread: ThreadSummary) => Partial<ThreadSummary>,
+): ThreadSummary[] {
+  let changed = false;
+  const next = current.map((thread) => {
+    if (thread.id !== threadId) {
+      return thread;
+    }
+    changed = true;
+    return { ...thread, ...update(thread) };
+  });
+  return changed ? next : current;
+}
+
 export function updateThreadNameInProjects(
   current: ThreadsByProjectId,
   threadId: string,
@@ -119,6 +152,10 @@ export function updateThreadNameInProjects(
   }
 
   return changed ? next : current;
+}
+
+export function updateThreadNameInList(current: ThreadSummary[], threadId: string, name: string): ThreadSummary[] {
+  return updateThreadReadStateInList(current, threadId, () => ({ name }));
 }
 
 export function threadDisplayTitle(thread: ThreadSummary): string {

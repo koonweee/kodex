@@ -32,7 +32,6 @@ function rowProps(overrides: Partial<ThreadListRowProps> = {}): ThreadListRowPro
     onSelectThread,
     onThreadActionHoverChange,
     pendingTitleThreadIds,
-    projectId: "project-1",
     showThreadArchiveAction: false,
     thread,
     ...overrides,

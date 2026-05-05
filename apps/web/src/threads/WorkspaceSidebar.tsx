@@ -10,7 +10,7 @@ import {
   TextInput,
   Tooltip,
 } from "@mantine/core";
-import { Archive, FolderOpen, GitBranch, Inbox, SquarePen, X } from "lucide-react";
+import { Archive, FolderOpen, FolderPlus, Inbox, MessageSquare, SquarePen, X } from "lucide-react";
 import {
   memo,
   useLayoutEffect,
@@ -38,9 +38,11 @@ import { moveProjectInSidebarOrderAt } from "./projectOrder";
 
 const SIDEBAR_TEXT = {
   cancelLogin: "Cancel login",
-  createProject: "Create project",
+  chats: "Chats",
+  createProject: "Add project",
   cwd: "Directory",
-  newProject: "New project",
+  newChat: "New chat",
+  newProject: "Add project",
   newThread: "New thread",
   noProjectsText: "Create a project to begin.",
   noProjectsTitle: "No projects",
@@ -58,11 +60,13 @@ const VISIBLE_THREAD_LIMIT = 5;
 export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   account,
   approvals,
+  chatThreads,
   hoveredThreadActionId,
   isSidebarResizing,
   loginState,
   onArchiveThread,
   onCancelLogin,
+  onCreateChat,
   onCreateProject,
   onCreateThread,
   onLogin,
@@ -72,6 +76,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onProjectDirectoryCreateCancel,
   onProjectFormOpenChange,
   onReorderProjects,
+  onSelectChatThread,
   onSelectThread,
   onShowDebugEventsChange,
   onSidebarResizeKeyDown,
@@ -91,11 +96,13 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
 }: {
   account: AccountResponse | null;
   approvals: Approval[];
+  chatThreads: ThreadSummary[];
   hoveredThreadActionId: string | null;
   isSidebarResizing: boolean;
   loginState: LoginState;
   onArchiveThread: (threadId: string) => void;
   onCancelLogin: () => void;
+  onCreateChat: () => void;
   onCreateProject: (options?: { createDirectory?: boolean }) => void;
   onCreateThread: (projectId: string) => void;
   onLogin: () => void;
@@ -105,6 +112,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onProjectDirectoryCreateCancel: () => void;
   onProjectFormOpenChange: (open: boolean | ((open: boolean) => boolean)) => void;
   onReorderProjects: (projectIds: string[]) => void;
+  onSelectChatThread: (threadId: string) => void;
   onSelectThread: (projectId: string, threadId: string) => void;
   onShowDebugEventsChange: (value: boolean) => void;
   onSidebarResizeKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => void;
@@ -123,6 +131,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   usageLimitLines?: UsageLimitLines | null;
 }) {
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
+  const [chatThreadsExpanded, setChatThreadsExpanded] = useState(false);
   const [expandedThreadProjectIds, setExpandedThreadProjectIds] = useState<Set<string>>(() => new Set());
   const [previewProjectIds, setPreviewProjectIds] = useState<string[] | null>(null);
   const projectGroupRefs = useRef<Map<string, HTMLElement>>(new Map());
@@ -130,6 +139,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const displayedProjects = useMemo(
     () => projectsFromPreviewOrder(projects, previewProjectIds),
     [previewProjectIds, projects],
+  );
+  const sortedChatThreads = useMemo(
+    () => sortThreadsForSidebar(chatThreads, approvals, pendingTitleThreadIds),
+    [approvals, chatThreads, pendingTitleThreadIds],
   );
 
   useLayoutEffect(() => {
@@ -215,7 +228,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       <Stack gap="lg" h="100%">
         <Box className="kodex-sidebar-scroll">
           <Group justify="space-between" align="center" mb="sm">
-            <Text className="kodex-project-section-title" fw={700} size="sm">
+            <Text className="kodex-sidebar-section-title" fw={700} size="sm">
               {SIDEBAR_TEXT.projects}
             </Text>
             <Tooltip label={SIDEBAR_TEXT.newProject}>
@@ -226,7 +239,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 onClick={() => onProjectFormOpenChange((open) => !open)}
                 size="sm"
               >
-                <GitBranch size={16} />
+                <FolderPlus size={15} />
               </ActionIcon>
             </Tooltip>
           </Group>
@@ -279,10 +292,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                   pendingTitleThreadIds,
                 );
                 const showAllProjectThreads = expandedThreadProjectIds.has(project.id);
-                const visibleProjectThreads = showAllProjectThreads
-                  ? projectThreads
-                  : projectThreads.slice(0, VISIBLE_THREAD_LIMIT);
-                const hasHiddenProjectThreads = projectThreads.length > VISIBLE_THREAD_LIMIT;
                 const newThreadLabel =
                   project.id === selectedProjectId ? SIDEBAR_TEXT.newThread : `Create thread in ${project.name}`;
                 return (
@@ -312,7 +321,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                         className="kodex-ui-selectable kodex-project-title"
                       >
                         <FolderOpen size={15} />
-                        <Text fw={500} size="xs" lineClamp={1}>
+                        <Text fw={400} size="xs" lineClamp={1}>
                           {project.name}
                         </Text>
                       </Box>
@@ -329,47 +338,75 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                       </Tooltip>
                     </Box>
                     {projectThreads.length > 0 ? (
-                      <Stack className="kodex-project-thread-list" gap={6}>
-                        {visibleProjectThreads.map((thread) => (
-                          <ThreadListRow
-                            approvals={approvals}
-                            isSelected={thread.id === selectedThreadId}
-                            key={thread.id}
-                            onArchiveThread={onArchiveThread}
-                            onSelectThread={onSelectThread}
-                            onThreadActionHoverChange={onThreadActionHoverChange}
-                            pendingTitleThreadIds={pendingTitleThreadIds}
-                            projectId={project.id}
-                            showThreadArchiveAction={hoveredThreadActionId === thread.id}
-                            thread={thread}
-                          />
-                        ))}
-                        {hasHiddenProjectThreads ? (
-                          <button
-                            className="kodex-ui-button kodex-thread-list-more-button"
-                            onClick={() => {
-                              setExpandedThreadProjectIds((current) => {
-                                const next = new Set(current);
-                                if (next.has(project.id)) {
-                                  next.delete(project.id);
-                                } else {
-                                  next.add(project.id);
-                                }
-                                return next;
-                              });
-                            }}
-                            type="button"
-                          >
-                            {showAllProjectThreads ? SIDEBAR_TEXT.showLessThreads : SIDEBAR_TEXT.showMoreThreads}
-                          </button>
-                        ) : null}
-                      </Stack>
+                      <ThreadList
+                        approvals={approvals}
+                        className="kodex-project-thread-list"
+                        expanded={showAllProjectThreads}
+                        hoveredThreadActionId={hoveredThreadActionId}
+                        onArchiveThread={onArchiveThread}
+                        onSelectThread={(threadId) => onSelectThread(project.id, threadId)}
+                        onThreadActionHoverChange={onThreadActionHoverChange}
+                        onToggleExpanded={() => {
+                          setExpandedThreadProjectIds((current) => {
+                            const next = new Set(current);
+                            if (next.has(project.id)) {
+                              next.delete(project.id);
+                            } else {
+                              next.add(project.id);
+                            }
+                            return next;
+                          });
+                        }}
+                        pendingTitleThreadIds={pendingTitleThreadIds}
+                        selectedThreadId={selectedThreadId}
+                        threads={projectThreads}
+                      />
                     ) : null}
                   </Box>
                 );
               })
             )}
           </Stack>
+          <Box className="kodex-sidebar-section">
+            <Group justify="space-between" align="center" mb="sm">
+              <Text className="kodex-sidebar-section-title" fw={700} size="sm">
+                {SIDEBAR_TEXT.chats}
+              </Text>
+              <Tooltip label={SIDEBAR_TEXT.newChat}>
+                <ActionIcon
+                  aria-label={SIDEBAR_TEXT.newChat}
+                  color="gray"
+                  onClick={onCreateChat}
+                  size="sm"
+                  variant="subtle"
+                >
+                  <SquarePen size={16} />
+                </ActionIcon>
+              </Tooltip>
+            </Group>
+            {sortedChatThreads.length > 0 ? (
+              <ThreadList
+                approvals={approvals}
+                className="kodex-chat-thread-list"
+                expanded={chatThreadsExpanded}
+                hoveredThreadActionId={hoveredThreadActionId}
+                onArchiveThread={onArchiveThread}
+                onSelectThread={onSelectChatThread}
+                onThreadActionHoverChange={onThreadActionHoverChange}
+                onToggleExpanded={() => setChatThreadsExpanded((expanded) => !expanded)}
+                pendingTitleThreadIds={pendingTitleThreadIds}
+                selectedThreadId={selectedThreadId}
+                threads={sortedChatThreads}
+              />
+            ) : (
+              <Box className="kodex-chat-empty">
+                <MessageSquare size={14} />
+                <Text c="dimmed" size="xs">
+                  No chats
+                </Text>
+              </Box>
+            )}
+          </Box>
         </Box>
         <SidebarAccountFooter
           account={account}
@@ -437,10 +474,9 @@ export type ThreadListRowProps = {
   approvals: Approval[];
   isSelected: boolean;
   onArchiveThread: (threadId: string) => void;
-  onSelectThread: (projectId: string, threadId: string) => void;
+  onSelectThread: (threadId: string) => void;
   onThreadActionHoverChange: (threadId: string | null) => void;
   pendingTitleThreadIds: Set<string>;
-  projectId: string;
   showThreadArchiveAction: boolean;
   thread: ThreadSummary;
 };
@@ -452,7 +488,6 @@ export const ThreadListRow = memo(function ThreadListRow({
   onSelectThread,
   onThreadActionHoverChange,
   pendingTitleThreadIds,
-  projectId,
   showThreadArchiveAction,
   thread,
 }: ThreadListRowProps) {
@@ -474,7 +509,7 @@ export const ThreadListRow = memo(function ThreadListRow({
       onMouseEnter={() => onThreadActionHoverChange(thread.id)}
       onMouseLeave={() => onThreadActionHoverChange(null)}
     >
-      <button className="kodex-ui-button kodex-thread-select-button" onClick={() => onSelectThread(projectId, thread.id)} type="button">
+      <button className="kodex-ui-button kodex-thread-select-button" onClick={() => onSelectThread(thread.id)} type="button">
         <Group
           align="flex-start"
           className="kodex-thread-list-row"
@@ -546,8 +581,59 @@ export function areThreadListRowPropsEqual(previous: ThreadListRowProps, next: T
     previous.onSelectThread === next.onSelectThread &&
     previous.onThreadActionHoverChange === next.onThreadActionHoverChange &&
     previous.pendingTitleThreadIds === next.pendingTitleThreadIds &&
-    previous.projectId === next.projectId &&
     previous.showThreadArchiveAction === next.showThreadArchiveAction &&
     previous.thread === next.thread
+  );
+}
+
+function ThreadList({
+  approvals,
+  className,
+  expanded,
+  hoveredThreadActionId,
+  onArchiveThread,
+  onSelectThread,
+  onThreadActionHoverChange,
+  onToggleExpanded,
+  pendingTitleThreadIds,
+  selectedThreadId,
+  threads,
+}: {
+  approvals: Approval[];
+  className: string;
+  expanded: boolean;
+  hoveredThreadActionId: string | null;
+  onArchiveThread: (threadId: string) => void;
+  onSelectThread: (threadId: string) => void;
+  onThreadActionHoverChange: (threadId: string | null) => void;
+  onToggleExpanded: () => void;
+  pendingTitleThreadIds: Set<string>;
+  selectedThreadId: string | null;
+  threads: ThreadSummary[];
+}) {
+  const visibleThreads = expanded ? threads : threads.slice(0, VISIBLE_THREAD_LIMIT);
+  const hasHiddenThreads = threads.length > VISIBLE_THREAD_LIMIT;
+
+  return (
+    <Stack className={className} gap={6}>
+      {visibleThreads.map((thread) => (
+        <ThreadListRow
+          approvals={approvals}
+          isSelected={thread.id === selectedThreadId}
+          key={thread.id}
+          onArchiveThread={onArchiveThread}
+          onSelectThread={onSelectThread}
+          onThreadActionHoverChange={onThreadActionHoverChange}
+          pendingTitleThreadIds={pendingTitleThreadIds}
+          showThreadArchiveAction={hoveredThreadActionId === thread.id}
+          thread={thread}
+        />
+      ))}
+      {hasHiddenThreads ? (
+        <button className="kodex-ui-button kodex-thread-list-more-button" onClick={onToggleExpanded} type="button">
+          {expanded ? SIDEBAR_TEXT.showLessThreads : SIDEBAR_TEXT.showMoreThreads}
+        </button>
+      ) : null}
+    </Stack>
   );
 }

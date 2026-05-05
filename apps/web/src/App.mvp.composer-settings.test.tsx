@@ -15,11 +15,22 @@ import {
   requestJson,
   secondThread,
   thread,
+  threadDetail,
   timelineElement,
 } from "./test/mvpAppHarness";
 
 function clickMenuItem(name: RegExp) {
   return clickMenuItemWithDeps(name, screen, waitFor, fireEvent);
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, reject, resolve };
 }
 
 async function clickFastSwitch() {
@@ -390,6 +401,142 @@ describe("MVP composer settings flows", () => {
       approvalsReviewer: "auto_review",
       sandboxPolicy: { type: "workspaceWrite", networkAccess: false, writableRoots: [] },
     });
+  });
+
+  it("uses global composer defaults when creating a chat from project-scoped defaults", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const chatThread = {
+      ...thread,
+      id: "chat-thread-1",
+      name: "New thread",
+      cwd: "/home/example/Documents/Codex/2026-05-05/global-defaults",
+      preview: "",
+    };
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
+        "GET /v1/composer-settings": (request: Request) => {
+          const projectId = new URL(request.url).searchParams.get("projectId");
+          return projectId === project.id
+            ? { model: "gpt-5.4", effort: "high", serviceTier: "fast", permissionsPreset: "autoReview" }
+            : { model: null, effort: null, serviceTier: null, permissionsPreset: null };
+        },
+        "POST /v1/chats/threads": { thread: chatThread, rawPayload: {} },
+        "GET /v1/threads/chat-thread-1": threadDetail(chatThread),
+        "POST /v1/threads/chat-thread-1/turns": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /new chat/i }));
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Use global defaults");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/chats/threads")).toHaveLength(1);
+    });
+    const body = await requestJson(gateway.callsFor("POST", "/v1/chats/threads")[0]);
+    expect(body).toMatchObject({ firstMessageText: "Use global defaults" });
+    expect(body).not.toHaveProperty("model");
+    expect(body).not.toHaveProperty("serviceTier");
+    expect(body).not.toHaveProperty("approvalPolicy");
+    expect(body).not.toHaveProperty("approvalsReviewer");
+    expect(body).not.toHaveProperty("sandbox");
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/chat-thread-1/turns")).toHaveLength(1);
+    });
+    const turnBody = await requestJson(gateway.callsFor("POST", "/v1/threads/chat-thread-1/turns")[0]);
+    expect(turnBody).not.toHaveProperty("model");
+    expect(turnBody).not.toHaveProperty("effort");
+    expect(turnBody).not.toHaveProperty("serviceTier");
+    expect(turnBody).not.toHaveProperty("approvalPolicy");
+    expect(turnBody).not.toHaveProperty("approvalsReviewer");
+    expect(turnBody).not.toHaveProperty("sandboxPolicy");
+  });
+
+  it("hydrates global composer defaults when selecting an existing chat without a snapshot", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const chatThread = {
+      ...thread,
+      id: "chat-thread-1",
+      name: "Chat without settings",
+      cwd: "/home/example/Documents/Codex/2026-05-05/chat-without-settings",
+      preview: "No thread-specific settings",
+    };
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
+        "GET /v1/composer-settings": (request: Request) => {
+          const projectId = new URL(request.url).searchParams.get("projectId");
+          return projectId === project.id
+            ? { model: "gpt-5.4", effort: "high", serviceTier: "fast", permissionsPreset: "autoReview" }
+            : { model: null, effort: null, serviceTier: null, permissionsPreset: null };
+        },
+        "GET /v1/chats/threads": { threads: [chatThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/threads/chat-thread-1": threadDetail(chatThread),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: /chat without settings/i }));
+
+    expect(await screen.findByRole("button", { name: /permissions: default permissions/i })).toBeInTheDocument();
+    expect(gateway.callsFor("GET", "/v1/composer-settings").some((request) => !new URL(request.url).searchParams.has("projectId"))).toBe(true);
+  });
+
+  it("uses default chat settings for an immediate send after selecting a chat while global hydration is delayed", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const globalSettings = deferred<{
+      model: null;
+      effort: null;
+      serviceTier: null;
+      permissionsPreset: null;
+    }>();
+    const chatThread = {
+      ...thread,
+      id: "chat-thread-1",
+      name: "Chat without settings",
+      cwd: "/home/example/Documents/Codex/2026-05-05/chat-without-settings",
+      preview: "No thread-specific settings",
+    };
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
+        "GET /v1/composer-settings": (request: Request) => {
+          const projectId = new URL(request.url).searchParams.get("projectId");
+          return projectId === project.id
+            ? { model: "gpt-5.4", effort: "high", serviceTier: "fast", permissionsPreset: "autoReview" }
+            : globalSettings.promise;
+        },
+        "GET /v1/chats/threads": { threads: [chatThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/threads/chat-thread-1": threadDetail(chatThread),
+        "POST /v1/threads/chat-thread-1/turns": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: /chat without settings/i }));
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Send before global hydration");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/chat-thread-1/turns")).toHaveLength(1);
+    });
+    const turnBody = await requestJson(gateway.callsFor("POST", "/v1/threads/chat-thread-1/turns")[0]);
+    expect(turnBody).not.toHaveProperty("model");
+    expect(turnBody).not.toHaveProperty("effort");
+    expect(turnBody).not.toHaveProperty("serviceTier");
+    expect(turnBody).not.toHaveProperty("approvalPolicy");
+    expect(turnBody).not.toHaveProperty("approvalsReviewer");
+    expect(turnBody).not.toHaveProperty("sandboxPolicy");
+    expect(gateway.callsFor("GET", "/v1/composer-settings").some((request) => !new URL(request.url).searchParams.has("projectId"))).toBe(true);
   });
 
   it("uses resumed thread composer state before durable new-thread defaults", async () => {

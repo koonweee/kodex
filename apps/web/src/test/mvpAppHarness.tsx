@@ -122,6 +122,7 @@ function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
     "GET /v1/capabilities": capabilities,
     "GET /v1/projects": { projects: [project] },
     "GET /v1/threads": { threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+    "GET /v1/chats/threads": { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
     "GET /v1/events": { events: [] },
     "GET /v1/approvals": { approvals: [] },
     "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },

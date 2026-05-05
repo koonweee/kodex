@@ -73,8 +73,21 @@ export async function listThreads(projectId: string): Promise<ThreadSummary[]> {
   return response.threads;
 }
 
+export async function listChatThreads(): Promise<ThreadSummary[]> {
+  const response = await unwrap(api.GET("/v1/chats/threads"));
+  return response.threads;
+}
+
 export async function createThread(projectId: string, options: CreateThreadOptions = {}): Promise<ThreadSummary> {
   const response = await unwrap(api.POST("/v1/threads", { body: { projectId, ...options } }));
+  return response.thread;
+}
+
+export async function createChatThread(
+  firstMessageText: string,
+  options: CreateThreadOptions = {},
+): Promise<ThreadSummary> {
+  const response = await unwrap(api.POST("/v1/chats/threads", { body: { firstMessageText, ...options } }));
   return response.thread;
 }
 

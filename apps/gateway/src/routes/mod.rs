@@ -140,6 +140,7 @@ mod tests {
             "/v1/projects",
             "/v1/projects/{projectId}",
             "/v1/threads",
+            "/v1/chats/threads",
             "/v1/threads/{threadId}",
             "/v1/threads/{threadId}/resume",
             "/v1/threads/{threadId}/fork",
@@ -219,7 +220,7 @@ mod tests {
     async fn project_create_resolves_relative_cwd_from_home() {
         let (mut state, _) = test_state().await;
         let home = tempdir().unwrap();
-        Arc::make_mut(&mut state.config).projects.home_dir = home.path().to_path_buf();
+        Arc::make_mut(&mut state.config).projects.home_dir = home.path().join(".");
         let cwd = tempfile::Builder::new()
             .prefix("kodex-project-")
             .tempdir_in(home.path())
@@ -425,6 +426,112 @@ mod tests {
         assert_eq!(requests[0].1["approvalsReviewer"], "auto_review");
         assert_eq!(requests[0].1["sandbox"], "workspace-write");
         assert_eq!(requests[0].1["persistExtendedHistory"], true);
+    }
+
+    #[tokio::test]
+    async fn chat_thread_start_creates_dated_slug_cwd_and_maps_to_app_server() {
+        let (mut state, app_server) = test_state().await;
+        let home = tempdir().unwrap();
+        Arc::make_mut(&mut state.config).projects.home_dir = home.path().join(".");
+        let app = build_router(state);
+
+        let body = json!({
+            "firstMessageText": "Build the Chat Sidebar!",
+            "model": "gpt-5.4",
+            "serviceTier": "fast"
+        })
+        .to_string();
+        let response = app
+            .oneshot(
+                Request::post("/v1/chats/threads")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/start");
+        assert!(requests[0].1.get("projectId").is_none());
+        assert_eq!(requests[0].1["model"], "gpt-5.4");
+        assert_eq!(requests[0].1["serviceTier"], "fast");
+        assert_eq!(requests[0].1["persistExtendedHistory"], true);
+        let cwd = requests[0].1["cwd"].as_str().unwrap();
+        let today = chrono::Local::now()
+            .date_naive()
+            .format("%Y-%m-%d")
+            .to_string();
+        assert!(cwd.ends_with(&format!(
+            "Documents{}Codex{}{}{}build-the-chat-sidebar",
+            std::path::MAIN_SEPARATOR,
+            std::path::MAIN_SEPARATOR,
+            today,
+            std::path::MAIN_SEPARATOR
+        )));
+        assert!(std::path::Path::new(cwd).is_dir());
+    }
+
+    #[tokio::test]
+    async fn chat_thread_list_filters_threads_under_chat_root() {
+        let (mut state, app_server) = test_state().await;
+        let home = tempdir().unwrap();
+        Arc::make_mut(&mut state.config).projects.home_dir = home.path().to_path_buf();
+        let chat_cwd = home
+            .path()
+            .join("Documents")
+            .join("Codex")
+            .join("2026-05-05")
+            .join("chat-thread");
+        std::fs::create_dir_all(&chat_cwd).unwrap();
+        let chat_cwd = std::fs::canonicalize(chat_cwd).unwrap();
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "data": [
+                {
+                    "id": "chat-thread",
+                    "cwd": chat_cwd,
+                    "status": {"type": "idle"},
+                    "source": "local",
+                    "preview": "chat",
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_700_i64
+                },
+                {
+                    "id": "project-thread",
+                    "cwd": "/workspace/project",
+                    "status": {"type": "idle"},
+                    "source": "local",
+                    "preview": "project",
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_700_i64
+                }
+            ],
+            "nextCursor": null,
+            "backwardsCursor": null
+        }));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/chats/threads")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["threads"].as_array().unwrap().len(), 1);
+        assert_eq!(body["threads"][0]["id"], "chat-thread");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/list");
+        assert!(requests[0].1["cwd"]
+            .as_array()
+            .unwrap()
+            .contains(&Value::String(chat_cwd.to_string_lossy().to_string())));
+        assert_eq!(requests[0].1["sortKey"], "updated_at");
     }
 
     #[tokio::test]

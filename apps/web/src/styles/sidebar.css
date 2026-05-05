@@ -39,8 +39,14 @@
   min-width: 0;
 }
 
-.kodex-project-section-title {
+.kodex-sidebar-section {
+  margin-top: 18px;
+}
+
+.kodex-sidebar-section-title {
   margin-left: 4px;
+  color: var(--kodex-text-muted);
+  letter-spacing: 0;
 }
 
 .kodex-project-row {
@@ -65,8 +71,8 @@
   width: 100%;
   min-width: 0;
   border-radius: var(--kodex-radius-sm);
-  padding: 4px;
-  color: inherit;
+  padding: 3px 4px;
+  color: var(--kodex-text-muted);
   text-align: left;
   cursor: grab;
 }
@@ -77,14 +83,25 @@
 
 .kodex-project-title:hover {
   background: var(--kodex-bg-button-hover);
+  color: var(--kodex-text-primary);
 }
 
 .kodex-project-title svg {
   color: var(--kodex-text-muted);
 }
 
-.kodex-project-thread-list {
+.kodex-project-thread-list,
+.kodex-chat-thread-list {
   padding-left: 21px;
+}
+
+.kodex-chat-empty {
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+  padding: 3px 4px;
+  color: var(--kodex-text-muted);
 }
 
 .kodex-thread-list-button {

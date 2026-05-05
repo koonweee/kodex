@@ -25,6 +25,11 @@ function clickMenuItem(name: RegExp) {
   return clickMenuItemWithDeps(name, screen, waitFor, fireEvent);
 }
 
+function addProjectSubmitButton() {
+  const buttons = screen.getAllByRole("button", { name: /add project/i });
+  return buttons[buttons.length - 1];
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: unknown) => void;
@@ -77,19 +82,19 @@ describe("MVP shell flows", () => {
     expect(screen.queryByRole("button", { name: /kodex \/home\/example\/kodex/i })).not.toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /new project/i }));
+    await userEvent.click(screen.getByRole("button", { name: /add project/i }));
     expect(screen.queryByLabelText(/project name/i)).not.toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/directory/i), "scratch");
-    await userEvent.click(screen.getByRole("button", { name: /create project/i }));
+    await userEvent.click(addProjectSubmitButton());
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/projects")).toHaveLength(1);
     });
     expect(await screen.findByRole("button", { name: /create ~\/scratch\?/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /cancel directory create/i }));
-    expect(screen.getByRole("button", { name: /create project/i })).toBeInTheDocument();
+    expect(addProjectSubmitButton()).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /create project/i }));
+    await userEvent.click(addProjectSubmitButton());
     expect(await screen.findByRole("button", { name: /create ~\/scratch\?/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /create ~\/scratch\?/i }));
 
@@ -218,6 +223,86 @@ describe("MVP shell flows", () => {
     expect(await screen.findByRole("button", { name: /reference the codex desktop app ui/i })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: /reference the codex desktop app ui/i })).toBeInTheDocument();
     expect(screen.queryByText("019de25f-9ac3-72b1-adf6-a108f82d1fb6")).not.toBeInTheDocument();
+  });
+
+  it("creates chat threads from the first message without a project thread request", async () => {
+    const chatThread = {
+      ...thread,
+      id: "chat-thread-1",
+      name: "New thread",
+      cwd: "/home/example/Documents/Codex/2026-05-05/plan-the-chat-sidebar",
+      preview: "",
+    };
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/chats/threads": { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "POST /v1/chats/threads": { thread: chatThread, rawPayload: {} },
+        "GET /v1/threads/chat-thread-1/queued-inputs": { queuedInputs: [] },
+        "POST /v1/threads/chat-thread-1/turns": { payload: {} },
+        "GET /v1/threads/chat-thread-1": threadDetail(
+          { ...chatThread, preview: "Plan the chat sidebar implementation" },
+          [],
+        ),
+      }),
+    );
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /new chat/i }));
+    expect(gateway.callsFor("POST", "/v1/chats/threads")).toHaveLength(0);
+    expect(screen.getByRole("heading", { name: /new thread/i })).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Plan the chat sidebar implementation");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/chats/threads")).toHaveLength(1);
+    });
+    expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(0);
+    await expect(requestJson(gateway.callsFor("POST", "/v1/chats/threads")[0])).resolves.toMatchObject({
+      firstMessageText: "Plan the chat sidebar implementation",
+    });
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/chat-thread-1/turns")).toHaveLength(1);
+    });
+    expect(
+      await screen.findByRole("button", { name: /plan the chat sidebar implementation/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps a locally created chat when the initial chat list resolves late", async () => {
+    const initialChatThreads = deferred<unknown>();
+    const chatThread = {
+      ...thread,
+      id: "chat-thread-1",
+      name: "New thread",
+      cwd: "/home/example/Documents/Codex/2026-05-05/keep-local-chat",
+      preview: "",
+    };
+    mockGateway(
+      baseRoutes({
+        "GET /v1/chats/threads": () => initialChatThreads.promise,
+        "POST /v1/chats/threads": { thread: chatThread, rawPayload: {} },
+        "GET /v1/threads/chat-thread-1/queued-inputs": { queuedInputs: [] },
+        "POST /v1/threads/chat-thread-1/turns": { payload: {} },
+        "GET /v1/threads/chat-thread-1": threadDetail(
+          { ...chatThread, preview: "Keep local chat" },
+          [],
+        ),
+      }),
+    );
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /new chat/i }));
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Keep local chat");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    expect(await screen.findByRole("button", { name: /keep local chat/i })).toBeInTheDocument();
+    initialChatThreads.resolve({ threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} });
+
+    expect(await screen.findByRole("button", { name: /keep local chat/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /keep local chat/i })).toBeInTheDocument();
   });
 
   it("groups threads under their projects in the sidebar", async () => {
@@ -545,9 +630,9 @@ describe("MVP shell flows", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /new project/i }));
+    await userEvent.click(screen.getByRole("button", { name: /add project/i }));
     await userEvent.type(screen.getByLabelText(/directory/i), "scratch");
-    await userEvent.click(screen.getByRole("button", { name: /create project/i }));
+    await userEvent.click(addProjectSubmitButton());
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/projects")).toHaveLength(1);

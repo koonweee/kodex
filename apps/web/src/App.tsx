@@ -18,6 +18,7 @@ import {
 import { useAccountSession } from "./account/useAccountSession";
 import {
   archiveThread,
+  createChatThread,
   createProject,
   createThread,
   listQueuedInputs,
@@ -51,11 +52,14 @@ import {
   markThreadTitlePending,
   optimisticThreadSummary,
   prependThreadForProject,
+  removeThreadFromList,
   removeThreadFromProjects,
+  replaceThreadInList,
   replaceThreadInProjects,
   sortThreadsForSidebar,
   threadDisplayTitle,
   threadHasDisplayTitle,
+  updateThreadReadStateInList,
   updateThreadReadStateInProjects,
   type ThreadsByProjectId,
 } from "./threads/helpers";
@@ -117,10 +121,12 @@ function KodexShell({
   onColorSchemeChange: (colorSchemeId: KodexColorSchemeId) => void;
 }) {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [chatThreads, setChatThreads] = useState<ThreadSummary[]>([]);
   const [projectOrderIds, setProjectOrderIds] = useState<string[] | null>(() => loadSidebarProjectOrder());
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [threadsByProjectId, setThreadsByProjectId] = useState<ThreadsByProjectId>({});
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [draftChatThreadSelected, setDraftChatThreadSelected] = useState(false);
   const [draftThreadProjectId, setDraftThreadProjectId] = useState<string | null>(null);
   const [pendingTitleThreadIds, setPendingTitleThreadIds] = useState<Set<string>>(new Set());
   const [materializingThreadIds, setMaterializingThreadIds] = useState<Set<string>>(new Set());
@@ -161,7 +167,10 @@ function KodexShell({
 
   const selectedProjectThreads = selectedProjectId ? threadsByProjectId[selectedProjectId] ?? [] : [];
   const orderedProjects = useMemo(() => applySidebarProjectOrder(projects, projectOrderIds), [projectOrderIds, projects]);
-  const selectedThread = selectedProjectThreads.find((thread) => thread.id === selectedThreadId) ?? null;
+  const selectedThread =
+    selectedProjectThreads.find((thread) => thread.id === selectedThreadId) ??
+    chatThreads.find((thread) => thread.id === selectedThreadId) ??
+    null;
   const selectedQueuedInputs = selectedThreadId ? queuedInputsByThreadId[selectedThreadId] ?? [] : [];
   const {
     approvals,
@@ -191,10 +200,17 @@ function KodexShell({
     handleComposerSettingsChange,
     hydrateComposerDefaults,
     models,
-  } = useComposerSettingsState({ onError: reportError, selectedThread });
+  } = useComposerSettingsState({
+    draftChatThreadSelected,
+    onError: reportError,
+    selectedProjectId,
+    selectedThread,
+  });
   const { applyCompletedAgentTurnEvent, markCompletedAgentTurnSeen } = useThreadReadState({
+    chatThreads,
     onError: reportError,
     selectedThreadIdRef,
+    setChatThreads,
     setThreadsByProjectId,
     threadsByProjectId,
   });
@@ -204,6 +220,7 @@ function KodexShell({
     selectedContextUsage,
   } = useThreadMetadata({
     selectedThreadId,
+    setChatThreads,
     setPendingTitleThreadIds,
     setThreadsByProjectId,
   });
@@ -222,7 +239,8 @@ function KodexShell({
   const isSelectedTimelineReady =
     selectedTimelineEntry.phase === "streamingLive" || selectedTimelineEntry.phase === "refreshingSnapshot";
   const activeSelectedTurnId = selectedThread !== null ? timeline.activeTurnId : null;
-  const isDraftThreadSelected = draftThreadProjectId !== null && draftThreadProjectId === selectedProjectId;
+  const isDraftThreadSelected =
+    draftChatThreadSelected || (draftThreadProjectId !== null && draftThreadProjectId === selectedProjectId);
   const canCompose = selectedThread !== null || isDraftThreadSelected;
   const {
     attachmentInputRef,
@@ -247,6 +265,7 @@ function KodexShell({
     activeSelectedTurnId,
     canCompose,
     composerSettings,
+    draftChatThreadSelected,
     draftThreadProjectId,
     isDraftThreadSelected,
     onCreateDraftThread: createDraftThreadFromComposer,
@@ -275,6 +294,10 @@ function KodexShell({
       mergePendingApprovals: (nextApprovals) => {
         mergeFetchedPendingApprovals(nextApprovals);
         setInitialPendingApprovalsLoaded(true);
+      },
+      onChatThreadsLoaded: (nextThreads) => {
+        setChatThreads((current) => mergeLoadedChatThreads(current, nextThreads));
+        setPendingTitleThreadIds((current) => clearAvailableThreadTitles(current, nextThreads));
       },
       onError: reportError,
       onProjectsLoaded: (nextProjects) => {
@@ -588,6 +611,7 @@ function KodexShell({
     selectedThreadIdRef.current = null;
     autoSelectedThreadIdRef.current = null;
     setSelectedThreadId(null);
+    setDraftChatThreadSelected(false);
     setDraftThreadProjectId(null);
     const nextThreads = threadsByProjectId[projectId];
     if (nextThreads) {
@@ -612,7 +636,25 @@ function KodexShell({
     setMobilePanel("chat");
     selectedProjectIdRef.current = projectId;
     setSelectedProjectId(projectId);
+    setDraftChatThreadSelected(false);
     setDraftThreadProjectId(projectId);
+    selectedThreadIdRef.current = null;
+    autoSelectedThreadIdRef.current = null;
+    setSelectedThreadId(null);
+    clearTimelineEntry();
+    resetComposerDraft();
+  }
+
+  function handleCreateChat() {
+    setMobilePanel("chat");
+    draftComposerEditedRef.current = false;
+    if (!draftComposerEditedRef.current) {
+      void hydrateComposerDefaults(null);
+    }
+    selectedProjectIdRef.current = null;
+    setSelectedProjectId(null);
+    setDraftChatThreadSelected(true);
+    setDraftThreadProjectId(null);
     selectedThreadIdRef.current = null;
     autoSelectedThreadIdRef.current = null;
     setSelectedThreadId(null);
@@ -625,15 +667,25 @@ function KodexShell({
     projectId,
   }: {
     firstMessageText: string;
-    projectId: string;
+    projectId?: string;
   }) {
     draftComposerTransitionOriginRef.current = composerShellRef.current?.getBoundingClientRect() ?? null;
+    const threadSettings =
+      projectId || draftComposerEditedRef.current
+        ? composerSettings
+        : (await hydrateComposerDefaults(null)) ?? composerSettings;
     const thread = optimisticThreadSummary(
-      await createThread(projectId, createThreadOptions(composerSettings)),
+      projectId
+        ? await createThread(projectId, createThreadOptions(threadSettings))
+        : await createChatThread(firstMessageText, createThreadOptions(threadSettings)),
       firstMessageText,
     );
     attachedThreadIdsRef.current.add(thread.id);
-    setThreadsByProjectId((current) => prependThreadForProject(current, projectId, thread));
+    if (projectId) {
+      setThreadsByProjectId((current) => prependThreadForProject(current, projectId, thread));
+    } else {
+      setChatThreads((current) => [thread, ...current]);
+    }
     setPendingTitleThreadIds((current) => markThreadTitlePending(current, thread));
     setMaterializingThreadIds((current) => {
       const next = new Set(current);
@@ -641,13 +693,16 @@ function KodexShell({
       return next;
     });
     setIsDraftComposerTransitioning(draftComposerTransitionOriginRef.current !== null);
+    setDraftChatThreadSelected(false);
     setDraftThreadProjectId(null);
+    selectedProjectIdRef.current = projectId ?? null;
+    setSelectedProjectId(projectId ?? null);
     selectedThreadIdRef.current = thread.id;
     autoSelectedThreadIdRef.current = null;
     beginMaterializingTimelineEntry(thread.id);
     setSelectedThreadId(thread.id);
     setDraftComposerTransitionToken((current) => current + 1);
-    return thread.id;
+    return { threadId: thread.id, composerSettings: threadSettings };
   }
 
   function markThreadMaterialized(threadId: string) {
@@ -668,11 +723,21 @@ function KodexShell({
         thread.status === "active" ? {} : { status: "active" },
       ),
     );
+    setChatThreads((current) =>
+      updateThreadReadStateInList(current, threadId, (thread) =>
+        thread.status === "active" ? {} : { status: "active" },
+      ),
+    );
   }
 
   function markThreadIdle(threadId: string) {
     setThreadsByProjectId((current) =>
       updateThreadReadStateInProjects(current, threadId, (thread) =>
+        thread.status === "idle" ? {} : { status: "idle" },
+      ),
+    );
+    setChatThreads((current) =>
+      updateThreadReadStateInList(current, threadId, (thread) =>
         thread.status === "idle" ? {} : { status: "idle" },
       ),
     );
@@ -685,6 +750,26 @@ function KodexShell({
     }
     selectedProjectIdRef.current = projectId;
     setSelectedProjectId(projectId);
+    setDraftChatThreadSelected(false);
+    setDraftThreadProjectId(null);
+    selectedThreadIdRef.current = threadId;
+    autoSelectedThreadIdRef.current = null;
+    beginTimelineEntry(threadId);
+    setSelectedThreadId(threadId);
+  }
+
+  function handleSelectChatThread(threadId: string) {
+    setMobilePanel("chat");
+    if (selectedProjectId === null && threadId === selectedThreadId) {
+      return;
+    }
+    draftComposerEditedRef.current = false;
+    if (!draftComposerEditedRef.current) {
+      void hydrateComposerDefaults(null);
+    }
+    selectedProjectIdRef.current = null;
+    setSelectedProjectId(null);
+    setDraftChatThreadSelected(false);
     setDraftThreadProjectId(null);
     selectedThreadIdRef.current = threadId;
     autoSelectedThreadIdRef.current = null;
@@ -700,6 +785,7 @@ function KodexShell({
     attachedThreadIdsRef.current.delete(threadId);
     attachingThreadIdsRef.current.delete(threadId);
     setThreadsByProjectId((current) => removeThreadFromProjects(current, threadId));
+    setChatThreads((current) => removeThreadFromList(current, threadId));
     if (threadId === selectedThreadId) {
       clearTimelineEntry();
       selectedThreadIdRef.current = null;
@@ -720,6 +806,7 @@ function KodexShell({
   function replaceThread(thread: ThreadSummary) {
     applyThreadComposerSettings(thread);
     setThreadsByProjectId((current) => replaceThreadInProjects(current, thread, selectedProjectId));
+    setChatThreads((current) => replaceThreadInList(current, thread));
     if (threadHasDisplayTitle(thread)) {
       setPendingTitleThreadIds((current) => {
         if (!current.has(thread.id)) {
@@ -797,13 +884,15 @@ function KodexShell({
     }
   });
   const stableHandleCreateProject = useEventCallback(handleCreateProject);
+  const stableHandleCreateChat = useEventCallback(handleCreateChat);
   const stableHandleCreateThread = useEventCallback(handleCreateThread);
+  const stableHandleSelectChatThread = useEventCallback(handleSelectChatThread);
   const stableHandleSelectThread = useEventCallback(handleSelectThread);
 
   return (
     <>
       <KodexShellView
-        composerPanelProps={{
+          composerPanelProps={{
           activeSelectedTurnId, attachmentInputRef, canCompose, composerResetToken, composerSettings, composerSettingsError,
           composerShellRef, contextUsage: selectedContextUsage, isDraftThreadSelected, isDraftComposerTransitioning, isComposerDragActive,
           isComposerSubmitting, isQueuedTurnStartPending, isSelectedTimelineReady, models,
@@ -830,11 +919,11 @@ function KodexShell({
           selectedTimelineEntry, setTimelineScrollElement, showDebugEvents, timeline,
         }}
         workspaceSidebarProps={{
-          account, approvals, hoveredThreadActionId, isSidebarResizing, loginState,
+          account, approvals, chatThreads, hoveredThreadActionId, isSidebarResizing, loginState,
           onArchiveThread: handleArchiveThreadById, onCancelLogin: handleCancelLogin,
-          onCreateProject: stableHandleCreateProject, onCreateThread: stableHandleCreateThread, onLogin: handleLogin, onLogout: handleLogout,
+          onCreateChat: stableHandleCreateChat, onCreateProject: stableHandleCreateProject, onCreateThread: stableHandleCreateThread, onLogin: handleLogin, onLogout: handleLogout,
           onOpenPreferences: handleOpenPreferences, onProjectCwdChange: handleProjectCwdChange, onProjectDirectoryCreateCancel: () => setProjectDirectoryCreateCwd(null),
-          onProjectFormOpenChange: setProjectFormOpen, onReorderProjects: handleReorderProjects, onSelectThread: stableHandleSelectThread,
+          onProjectFormOpenChange: setProjectFormOpen, onReorderProjects: handleReorderProjects, onSelectChatThread: stableHandleSelectChatThread, onSelectThread: stableHandleSelectThread,
           onShowDebugEventsChange: setShowDebugEvents, onSidebarResizeKeyDown: handleSidebarResizeKeyDown,
           onSidebarResizePointerDown: handleSidebarResizePointerDown, onThreadActionHoverChange: setHoveredThreadActionId,
           pendingTitleThreadIds, projectCwd, projectDirectoryCreatePending: projectDirectoryCreateCwd === projectCwd.trim() && projectCwd.trim().length > 0,
@@ -858,4 +947,12 @@ function compareQueuedInputs(left: QueuedInput, right: QueuedInput): number {
     return priorityDelta;
   }
   return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+}
+
+function mergeLoadedChatThreads(current: ThreadSummary[], loaded: ThreadSummary[]): ThreadSummary[] {
+  if (current.length === 0) {
+    return loaded;
+  }
+  const currentIds = new Set(current.map((thread) => thread.id));
+  return [...current, ...loaded.filter((thread) => !currentIds.has(thread.id))];
 }

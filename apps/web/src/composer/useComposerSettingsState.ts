@@ -18,31 +18,48 @@ import {
 
 type UseComposerSettingsStateParams = {
   onError: (error: unknown) => void;
+  draftChatThreadSelected: boolean;
+  selectedProjectId: string | null;
   selectedThread: ThreadSummary | null;
 };
 
-export function useComposerSettingsState({ onError, selectedThread }: UseComposerSettingsStateParams) {
+export function useComposerSettingsState({
+  onError,
+  draftChatThreadSelected,
+  selectedProjectId,
+  selectedThread,
+}: UseComposerSettingsStateParams) {
   const [models, setModels] = useState<ModelSummary[]>([]);
   const [composerDefaults, setComposerDefaults] = useState<ComposerSettings>(DEFAULT_COMPOSER_SETTINGS);
+  const [globalComposerDefaults, setGlobalComposerDefaults] = useState<ComposerSettings>(DEFAULT_COMPOSER_SETTINGS);
   const [draftComposerSettings, setDraftComposerSettings] = useState<ComposerSettings>(DEFAULT_COMPOSER_SETTINGS);
   const [threadComposerSettingsById, setThreadComposerSettingsById] = useState<Record<string, ComposerSettings>>({});
   const [composerSettingsError, setComposerSettingsError] = useState<string | null>(null);
   const draftComposerEditedRef = useRef(false);
 
+  const selectedThreadSettings = selectedThread
+    ? threadComposerSettingsById[selectedThread.id] ?? composerSettingsFromThread(selectedThread)
+    : null;
   const composerSettings = selectedThread
-    ? threadComposerSettingsById[selectedThread.id] ?? composerSettingsFromThread(selectedThread) ?? draftComposerSettings
-    : draftComposerSettings;
+    ? selectedThreadSettings ?? (selectedProjectId === null ? globalComposerDefaults : draftComposerSettings)
+    : draftChatThreadSelected && !draftComposerEditedRef.current
+      ? globalComposerDefaults
+      : draftComposerSettings;
 
-  async function hydrateComposerDefaults(projectId: string | null) {
+  async function hydrateComposerDefaults(projectId: string | null): Promise<ComposerSettings | null> {
     try {
       const nextModels = await listModels();
       setModels(nextModels);
       const settings = await getComposerSettings(projectId);
       const normalized = normalizePersistedComposerSettings(settings, nextModels);
       setComposerDefaults(normalized);
+      if (projectId === null) {
+        setGlobalComposerDefaults(normalized);
+      }
       if (!draftComposerEditedRef.current) {
         setDraftComposerSettings(normalized);
       }
+      return normalized;
     } catch (error) {
       if (models.length === 0) {
         try {
@@ -51,6 +68,7 @@ export function useComposerSettingsState({ onError, selectedThread }: UseCompose
           onError(modelsError);
         }
       }
+      return null;
     }
   }
 

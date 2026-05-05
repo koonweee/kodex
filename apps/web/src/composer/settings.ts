@@ -12,6 +12,7 @@ import { asRecord, numberValue, stringValue } from "../shared/values";
 
 export type ComposerContext = {
   activeSelectedTurnId: string | null;
+  draftChatThreadSelected: boolean;
   draftThreadProjectId: string | null;
   selectedProjectId: string | null;
   selectedThreadId: string | null;
@@ -131,6 +132,7 @@ export function contextUsageFromEvent(event: EventEnvelope): ContextUsage | null
 export function sameComposerContext(left: ComposerContext | null, right: ComposerContext): boolean {
   return (
     left?.activeSelectedTurnId === right.activeSelectedTurnId &&
+    left.draftChatThreadSelected === right.draftChatThreadSelected &&
     left.draftThreadProjectId === right.draftThreadProjectId &&
     left.selectedProjectId === right.selectedProjectId &&
     left.selectedThreadId === right.selectedThreadId

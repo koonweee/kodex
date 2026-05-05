@@ -8,7 +8,7 @@ This plan also polishes the project creation affordance by renaming "New project
 
 ## Status
 
-Proposed
+Complete. Implemented gateway chat endpoints, cwd slugging, generated frontend API types, sidebar Chats UI, project add copy/icon polish, chat draft materialization, tests, and verification.
 
 ## UX Contract
 
@@ -58,7 +58,7 @@ The gateway derives each new chat thread working directory on the gateway machin
 
 ## Milestone 1: Gateway Chat Thread API
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -94,7 +94,7 @@ Exit conditions:
 
 ## Milestone 2: Frontend API Types and Client
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -118,7 +118,7 @@ Exit conditions:
 
 ## Milestone 3: Sidebar Structure and Styling
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -152,7 +152,7 @@ Exit conditions:
 
 ## Milestone 4: Frontend Chat Thread State
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -186,7 +186,7 @@ Exit conditions:
 
 ## Milestone 5: Verification and Documentation
 
-Status: Proposed
+Status: Complete
 
 Implementation:
 
@@ -207,3 +207,13 @@ Exit conditions:
 - OpenAPI and frontend generated types are current.
 - The active implementation status is reflected in `plans/index.md`.
 - An independent review pass finds no major issues, or any major issues are fixed before completion.
+
+## Completion Notes
+
+- Added `GET /v1/chats/threads` and `POST /v1/chats/threads`.
+- Chat creation derives `~/Documents/Codex/<YYYY-MM-DD>/<thread-slug>` on the gateway, creates the directory, canonicalizes cwd, and starts app-server threads without injecting a project id.
+- Chat list returns app-server recent threads filtered to the gateway chat root.
+- Added frontend generated OpenAPI support and typed API wrappers for chat thread list/create.
+- Added a flat Chats section with five-item collapse behavior and project-row/sidebar polish.
+- Chat drafts now materialize from the first message and then use the same turn, timeline, read-state, metadata, queue, approval, and archive flows as project threads.
+- Verified with Rust tests, frontend tests, and frontend build.
