@@ -1,6 +1,6 @@
 import { Badge, Box, Code, Group, Stack, Text } from "@mantine/core";
-import { AlertTriangle, Bot, Check, ChevronRight, ClipboardList, Code2, FileDiff, Globe, ImageIcon, Info, Terminal, Wrench } from "lucide-react";
-import { memo, useEffect, useState } from "react";
+import { AlertTriangle, Bot, Check, ChevronRight, ClipboardList, Code2, Copy, FileDiff, Globe, ImageIcon, Info, Terminal, Wrench } from "lucide-react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -18,8 +18,8 @@ type TimelineRendererOptions = {
 type TimelineRenderer = (item: TimelineItem, options: TimelineRendererOptions) => ReactNode;
 
 const rendererRegistry: Record<string, TimelineRenderer> = {
-  agent_message: (item) => <AssistantMessageMarkdown itemId={item.id} text={item.text || "No assistant content yet"} />,
-  assistant_message: (item) => <AssistantMessageMarkdown itemId={item.id} text={item.text || "No assistant content yet"} />,
+  agent_message: (item) => <AssistantMessageMarkdown item={item} text={item.text || "No assistant content yet"} />,
+  assistant_message: (item) => <AssistantMessageMarkdown item={item} text={item.text || "No assistant content yet"} />,
   user_message: (item, options) => (
     <UserMessageBubble
       item={item}
@@ -349,6 +349,7 @@ function UserMessageBubble({
             {optimisticStatusText(item)}
           </Text>
         ) : null}
+        {item.text ? <MessageCopyToolbar align="end" text={item.text} /> : null}
       </Box>
     </Box>
   );
@@ -368,18 +369,74 @@ function optimisticStatusText(item: TimelineItem): string {
 }
 
 const AssistantMessageMarkdown = memo(
-  function AssistantMessageMarkdown({ text }: { itemId: string; text: string }) {
+  function AssistantMessageMarkdown({ item, text }: { item: TimelineItem; text: string }) {
     return (
-      <Box className="kodex-assistant-markdown">
-        <ReactMarkdown remarkPlugins={assistantMarkdownRemarkPlugins} skipHtml components={assistantMarkdownComponents}>
-          {text}
-        </ReactMarkdown>
+      <Box className="kodex-assistant-message-stack">
+        <Box className="kodex-assistant-markdown">
+          <ReactMarkdown remarkPlugins={assistantMarkdownRemarkPlugins} skipHtml components={assistantMarkdownComponents}>
+            {text}
+          </ReactMarkdown>
+        </Box>
+        {isFinalAssistantMessage(item) ? <MessageCopyToolbar align="start" text={text} /> : null}
       </Box>
     );
   },
-  (prev, next) => prev.itemId === next.itemId && prev.text === next.text,
+  (prev, next) =>
+    prev.item.id === next.item.id &&
+    prev.item.kind === next.item.kind &&
+    prev.item.messagePhase === next.item.messagePhase &&
+    prev.text === next.text,
 );
 AssistantMessageMarkdown.displayName = "AssistantMessageMarkdown";
+
+function MessageCopyToolbar({ align, text }: { align: "end" | "start"; text: string }) {
+  const [copied, setCopied] = useState(false);
+  const resetTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimerRef.current !== null) {
+        window.clearTimeout(resetTimerRef.current);
+      }
+    };
+  }, []);
+
+  async function handleCopy() {
+    if (!navigator.clipboard?.writeText) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      return;
+    }
+    setCopied(true);
+    if (resetTimerRef.current !== null) {
+      window.clearTimeout(resetTimerRef.current);
+    }
+    resetTimerRef.current = window.setTimeout(() => {
+      setCopied(false);
+      resetTimerRef.current = null;
+    }, 1_300);
+  }
+
+  return (
+    <Box className="kodex-message-toolbar" data-align={align}>
+      <button
+        aria-label={copied ? "Copied message" : "Copy message"}
+        className="kodex-ui-button kodex-ui-icon-button kodex-message-copy-button"
+        onClick={handleCopy}
+        type="button"
+      >
+        {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+      </button>
+    </Box>
+  );
+}
+
+function isFinalAssistantMessage(item: TimelineItem): boolean {
+  return item.kind === "assistant_message" && item.messagePhase === "final_answer";
+}
 
 function ReasoningBlock({ item }: { item: TimelineItem }) {
   const summary = item.summary || item.text;

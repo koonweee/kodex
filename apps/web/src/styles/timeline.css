@@ -214,7 +214,7 @@
 .kodex-user-message-stack {
   display: grid;
   justify-items: end;
-  gap: 8px;
+  gap: 6px;
   max-width: min(78%, 680px);
   min-width: 0;
 }
@@ -289,6 +289,41 @@
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  color: var(--kodex-text-primary);
+}
+
+.kodex-assistant-message-stack {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.kodex-message-toolbar {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.kodex-message-toolbar[data-align="end"] {
+  justify-content: flex-end;
+}
+
+.kodex-message-toolbar[data-align="start"] {
+  justify-content: flex-start;
+}
+
+.kodex-message-copy-button {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--kodex-radius-sm);
+  color: var(--kodex-text-muted);
+}
+
+.kodex-message-copy-button:hover {
   color: var(--kodex-text-primary);
 }
 

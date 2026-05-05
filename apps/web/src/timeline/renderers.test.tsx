@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -31,6 +31,15 @@ function item(overrides: Partial<TimelineItem>): TimelineItem {
     debugEvents: [],
     ...overrides,
   };
+}
+
+function mockClipboardWriteText() {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+  return writeText;
 }
 
 describe("timeline renderer registry", () => {
@@ -115,6 +124,27 @@ describe("timeline renderer registry", () => {
       src: "blob:kodex-test",
       title: "/tmp/diagram.png",
     });
+  });
+
+  it("copies user message text from the user-aligned toolbar", async () => {
+    const writeText = mockClipboardWriteText();
+    const { container } = render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "user_message",
+            text: "Inspect this exact text",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(container.querySelector('.kodex-message-toolbar[data-align="end"]')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /copy message/i }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Inspect this exact text"));
+    expect(screen.getByRole("button", { name: /copied message/i })).toBeInTheDocument();
+    expect(container.querySelector(".lucide-check")).toBeInTheDocument();
   });
 
   it("opens displayable image activity thumbnails", () => {
@@ -232,6 +262,45 @@ describe("timeline renderer registry", () => {
     );
     expect(screen.getByRole("link", { name: /open-meteo/i })).toHaveAttribute("rel", "noreferrer");
     expect(screen.queryByText(/alert/i)).not.toBeInTheDocument();
+  });
+
+  it("copies final assistant message markdown from the assistant-aligned toolbar", async () => {
+    const writeText = mockClipboardWriteText();
+    const markdown = "Use **bold** and `code`.\n\n- Keep markdown";
+    const { container } = render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "assistant_message",
+            messagePhase: "final_answer",
+            text: markdown,
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(container.querySelector('.kodex-message-toolbar[data-align="start"]')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /copy message/i }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(markdown));
+    expect(screen.getByRole("button", { name: /copied message/i })).toBeInTheDocument();
+    expect(container.querySelector(".lucide-check")).toBeInTheDocument();
+  });
+
+  it("does not render copy controls for non-final assistant messages", () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "assistant_message",
+            status: "running",
+            text: "Streaming...",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.queryByRole("button", { name: /copy message/i })).not.toBeInTheDocument();
   });
 
   it("keeps assistant markdown output stable for links, code, lists, breaks, and skipped HTML", () => {

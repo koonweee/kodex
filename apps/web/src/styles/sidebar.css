@@ -122,6 +122,11 @@
   cursor: pointer;
 }
 
+.kodex-thread-select-button:hover {
+  background: transparent;
+  color: inherit;
+}
+
 .kodex-thread-select-button:focus-visible,
 .kodex-thread-archive-button:focus-visible,
 .kodex-thread-list-more-button:focus-visible {

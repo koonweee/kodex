@@ -102,11 +102,6 @@ body {
   min-width: 0;
 }
 
-.kodex-settings-menu-icon-spacer {
-  width: 16px;
-  height: 16px;
-}
-
 .mantine-Menu-dropdown [data-menu-item] svg {
   color: currentColor;
 }
