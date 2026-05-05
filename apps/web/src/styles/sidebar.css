@@ -8,6 +8,15 @@
   background: var(--kodex-bg-raised-muted);
 }
 
+.kodex-project-create-confirm {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+}
+
+.kodex-project-create-confirm > * {
+  min-width: 0;
+}
+
 .kodex-list-button {
   width: 100%;
   border: 1px solid var(--kodex-border-subtle);

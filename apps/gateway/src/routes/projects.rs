@@ -1,4 +1,4 @@
-use std::path::Path as FsPath;
+use std::path::{Path as FsPath, PathBuf};
 
 use axum::{
     extract::{Path, State},
@@ -30,6 +30,7 @@ pub struct ProjectListResponse {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateProjectRequest {
+    pub create_directory: Option<bool>,
     pub name: Option<String>,
     pub cwd: String,
 }
@@ -50,18 +51,20 @@ pub async fn create_project(
         return Err(ApiError::BadRequest("cwd is required".to_string()));
     }
 
-    if !FsPath::new(cwd_text).is_absolute() {
-        return Err(ApiError::BadRequest(
-            "cwd must be an absolute directory".to_string(),
-        ));
+    let cwd_candidate = project_cwd_candidate(&state.config.projects.home_dir, cwd_text);
+    if !cwd_candidate.exists() {
+        if request.create_directory == Some(true) {
+            std::fs::create_dir_all(&cwd_candidate)
+                .map_err(|_| ApiError::BadRequest("directory could not be created".to_string()))?;
+        } else {
+            return Err(ApiError::BadRequest("directory does not exist".to_string()));
+        }
     }
 
-    let cwd = std::fs::canonicalize(cwd_text)
-        .map_err(|_| ApiError::BadRequest("cwd must exist".to_string()))?;
+    let cwd = std::fs::canonicalize(cwd_candidate)
+        .map_err(|_| ApiError::BadRequest("directory does not exist".to_string()))?;
     if !cwd.is_absolute() || !cwd.is_dir() {
-        return Err(ApiError::BadRequest(
-            "cwd must be an absolute directory".to_string(),
-        ));
+        return Err(ApiError::BadRequest("cwd must be a directory".to_string()));
     }
 
     let name = request.name.unwrap_or_else(|| {
@@ -75,6 +78,23 @@ pub async fn create_project(
         .create_project(name, cwd.to_string_lossy().to_string())
         .await?;
     Ok((StatusCode::CREATED, Json(project)))
+}
+
+fn project_cwd_candidate(home_dir: &FsPath, cwd_text: &str) -> PathBuf {
+    let cwd = FsPath::new(cwd_text);
+    if cwd.is_absolute() {
+        return cwd.to_path_buf();
+    }
+
+    if cwd_text == "~" {
+        return home_dir.to_path_buf();
+    }
+
+    if let Some(rest) = cwd_text.strip_prefix("~/") {
+        return home_dir.join(rest);
+    }
+
+    home_dir.join(cwd)
 }
 
 #[utoipa::path(get, path = "/v1/projects/{projectId}", responses((status = 200, body = Project)))]

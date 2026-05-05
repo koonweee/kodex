@@ -1,6 +1,5 @@
 import { MantineProvider } from "@mantine/core";
 import {
-  FormEvent,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -129,8 +128,8 @@ function KodexShell({
   const [queuedInputsByThreadId, setQueuedInputsByThreadId] = useState<Record<string, QueuedInput[]>>({});
   const [timelineEntry, setTimelineEntry] = useState<TimelineEntry>(idleTimelineEntry);
   const [projectFormOpen, setProjectFormOpen] = useState(false);
-  const [projectName, setProjectName] = useState("");
   const [projectCwd, setProjectCwd] = useState("");
+  const [projectDirectoryCreateCwd, setProjectDirectoryCreateCwd] = useState<string | null>(null);
   const [showDebugEvents, setShowDebugEvents] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("chat");
@@ -517,15 +516,35 @@ function KodexShell({
     setTimelineEntry({ phase: "streamingLive", threadId });
   }
 
-  async function handleCreateProject(event: FormEvent) {
-    event.preventDefault();
-    const project = await createProject({ name: projectName || null, cwd: projectCwd });
-    setProjects((current) => [project, ...current]);
-    setThreadsByProjectId((current) => ({ ...current, [project.id]: [] }));
-    selectProject(project.id);
-    setProjectName("");
-    setProjectCwd("");
-    setProjectFormOpen(false);
+  async function handleCreateProject(options: { createDirectory?: boolean } = {}) {
+    const cwd = projectCwd.trim();
+    if (!cwd) {
+      return;
+    }
+
+    try {
+      const project = await createProject({
+        ...(options.createDirectory ? { createDirectory: true } : {}),
+        cwd,
+      });
+      setProjects((current) => [project, ...current]);
+      setThreadsByProjectId((current) => ({ ...current, [project.id]: [] }));
+      selectProject(project.id);
+      setProjectCwd("");
+      setProjectDirectoryCreateCwd(null);
+      setProjectFormOpen(false);
+    } catch (error) {
+      if (!options.createDirectory && errorMessageFrom(error) === "directory does not exist") {
+        setProjectDirectoryCreateCwd(cwd);
+        return;
+      }
+      reportError(error);
+    }
+  }
+
+  function handleProjectCwdChange(value: string) {
+    setProjectCwd(value);
+    setProjectDirectoryCreateCwd(null);
   }
 
   function handleReorderProjects(nextProjectIds: string[]) {
@@ -814,11 +833,12 @@ function KodexShell({
           account, approvals, hoveredThreadActionId, isSidebarResizing, loginState,
           onArchiveThread: handleArchiveThreadById, onCancelLogin: handleCancelLogin,
           onCreateProject: stableHandleCreateProject, onCreateThread: stableHandleCreateThread, onLogin: handleLogin, onLogout: handleLogout,
-          onOpenPreferences: handleOpenPreferences, onProjectCwdChange: setProjectCwd, onProjectFormOpenChange: setProjectFormOpen,
-          onProjectNameChange: setProjectName, onReorderProjects: handleReorderProjects, onSelectThread: stableHandleSelectThread,
+          onOpenPreferences: handleOpenPreferences, onProjectCwdChange: handleProjectCwdChange, onProjectDirectoryCreateCancel: () => setProjectDirectoryCreateCwd(null),
+          onProjectFormOpenChange: setProjectFormOpen, onReorderProjects: handleReorderProjects, onSelectThread: stableHandleSelectThread,
           onShowDebugEventsChange: setShowDebugEvents, onSidebarResizeKeyDown: handleSidebarResizeKeyDown,
           onSidebarResizePointerDown: handleSidebarResizePointerDown, onThreadActionHoverChange: setHoveredThreadActionId,
-          pendingTitleThreadIds, projectCwd, projectFormOpen, projectName, projects: orderedProjects, selectedProjectId, selectedThreadId,
+          pendingTitleThreadIds, projectCwd, projectDirectoryCreatePending: projectDirectoryCreateCwd === projectCwd.trim() && projectCwd.trim().length > 0,
+          projectFormOpen, projects: orderedProjects, selectedProjectId, selectedThreadId,
           showDebugEvents, sidebarWidth, threadsByProjectId, usageLimitLines,
         }}
       />

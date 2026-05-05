@@ -216,23 +216,89 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn project_create_rejects_relative_cwd() {
-        let (state, _) = test_state().await;
+    async fn project_create_resolves_relative_cwd_from_home() {
+        let (mut state, _) = test_state().await;
+        let home = tempdir().unwrap();
+        Arc::make_mut(&mut state.config).projects.home_dir = home.path().to_path_buf();
+        let cwd = tempfile::Builder::new()
+            .prefix("kodex-project-")
+            .tempdir_in(home.path())
+            .unwrap();
+        let relative_cwd = cwd
+            .path()
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap()
+            .to_string();
         let app = build_router(state);
 
-        for cwd in ["relative", "."] {
-            let response = app
-                .clone()
-                .oneshot(
-                    Request::post("/v1/projects")
-                        .header("content-type", "application/json")
-                        .body(Body::from(json!({"cwd": cwd}).to_string()))
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        }
+        let response = app
+            .oneshot(
+                Request::post("/v1/projects")
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"cwd": relative_cwd}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let project = response_json(response).await;
+        assert_eq!(
+            project["cwd"],
+            std::fs::canonicalize(cwd.path())
+                .unwrap()
+                .to_string_lossy()
+                .to_string()
+        );
+        assert_eq!(project["name"], relative_cwd);
+    }
+
+    #[tokio::test]
+    async fn project_create_can_create_missing_relative_directory_under_home() {
+        let (mut state, _) = test_state().await;
+        let home = tempdir().unwrap();
+        Arc::make_mut(&mut state.config).projects.home_dir = home.path().to_path_buf();
+        let parent = tempfile::Builder::new()
+            .prefix("kodex-project-")
+            .tempdir_in(home.path())
+            .unwrap();
+        let relative_cwd = format!(
+            "{}/missing-child",
+            parent
+                .path()
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap()
+        );
+        let expected_cwd = parent.path().join("missing-child");
+        let app = build_router(state);
+
+        let missing = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/projects")
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"cwd": relative_cwd}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
+        assert!(!expected_cwd.exists());
+
+        let created = app
+            .oneshot(
+                Request::post("/v1/projects")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"cwd": relative_cwd, "createDirectory": true}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.status(), StatusCode::CREATED);
+        assert!(expected_cwd.is_dir());
     }
 
     #[tokio::test]

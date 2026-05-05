@@ -46,13 +46,22 @@ describe("MVP shell flows", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const gateway = mockGateway(
       baseRoutes({
-        "POST /v1/projects": async (request: Request) => ({
-          ...(await requestJson(request)),
-          id: "project-2",
-          name: "Scratch",
-          createdAt: "2026-04-30T00:00:00Z",
-          updatedAt: "2026-04-30T00:00:00Z",
-        }),
+        "POST /v1/projects": async (request: Request) => {
+          const body = (await requestJson(request)) as { createDirectory?: boolean; cwd: string; name?: string | null };
+          if (!body.createDirectory) {
+            return new Response(JSON.stringify({ message: "directory does not exist" }), {
+              status: 400,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+          return {
+            cwd: "/home/example/scratch",
+            id: "project-2",
+            name: "scratch",
+            createdAt: "2026-04-30T00:00:00Z",
+            updatedAt: "2026-04-30T00:00:00Z",
+          };
+        },
         "POST /v1/threads": { thread: { ...thread, id: "thread-2", name: "New thread", preview: "" }, rawPayload: {} },
         "GET /v1/threads/thread-2": threadDetail(
           { ...thread, id: "thread-2", name: "New thread", preview: "Implement the next milestone for the web client" },
@@ -69,12 +78,28 @@ describe("MVP shell flows", () => {
     expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /new project/i }));
-    await userEvent.type(screen.getByLabelText(/project name/i), "Scratch");
-    await userEvent.type(screen.getByLabelText(/working directory/i), "/tmp/scratch");
+    expect(screen.queryByLabelText(/project name/i)).not.toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/directory/i), "scratch");
     await userEvent.click(screen.getByRole("button", { name: /create project/i }));
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/projects")).toHaveLength(1);
+    });
+    expect(await screen.findByRole("button", { name: /create ~\/scratch\?/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /cancel directory create/i }));
+    expect(screen.getByRole("button", { name: /create project/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /create project/i }));
+    expect(await screen.findByRole("button", { name: /create ~\/scratch\?/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /create ~\/scratch\?/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/projects")).toHaveLength(3);
+    });
+    await expect(requestJson(gateway.callsFor("POST", "/v1/projects")[0])).resolves.toEqual({ cwd: "scratch" });
+    await expect(requestJson(gateway.callsFor("POST", "/v1/projects")[2])).resolves.toEqual({
+      createDirectory: true,
+      cwd: "scratch",
     });
 
     await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
@@ -510,7 +535,7 @@ describe("MVP shell flows", () => {
         "POST /v1/projects": async (request: Request) => ({
           ...(await requestJson(request)),
           id: "project-2",
-          name: "Scratch",
+          name: "scratch",
           createdAt: "2026-04-30T00:00:00Z",
           updatedAt: "2026-04-30T00:00:00Z",
         }),
@@ -521,8 +546,7 @@ describe("MVP shell flows", () => {
 
     expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /new project/i }));
-    await userEvent.type(screen.getByLabelText(/project name/i), "Scratch");
-    await userEvent.type(screen.getByLabelText(/working directory/i), "/tmp/scratch");
+    await userEvent.type(screen.getByLabelText(/directory/i), "scratch");
     await userEvent.click(screen.getByRole("button", { name: /create project/i }));
 
     await waitFor(() => {

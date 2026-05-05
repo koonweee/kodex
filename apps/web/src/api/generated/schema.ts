@@ -578,6 +578,7 @@ export interface components {
             saved: boolean;
         };
         CreateProjectRequest: {
+            createDirectory?: boolean | null;
             cwd: string;
             name?: string | null;
         };

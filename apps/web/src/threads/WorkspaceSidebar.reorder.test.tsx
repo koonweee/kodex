@@ -114,8 +114,8 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
           onLogout={vi.fn()}
           onOpenPreferences={vi.fn()}
           onProjectCwdChange={vi.fn()}
+          onProjectDirectoryCreateCancel={vi.fn()}
           onProjectFormOpenChange={vi.fn()}
-          onProjectNameChange={vi.fn()}
           onReorderProjects={vi.fn()}
           onSelectThread={vi.fn()}
           onShowDebugEventsChange={vi.fn()}
@@ -124,8 +124,8 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
           onThreadActionHoverChange={vi.fn()}
           pendingTitleThreadIds={new Set()}
           projectCwd=""
+          projectDirectoryCreatePending={false}
           projectFormOpen={false}
-          projectName=""
           projects={[]}
           selectedProjectId={null}
           selectedThreadId={null}

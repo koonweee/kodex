@@ -10,7 +10,7 @@ import {
   TextInput,
   Tooltip,
 } from "@mantine/core";
-import { Archive, FolderOpen, GitBranch, Inbox, SquarePen } from "lucide-react";
+import { Archive, FolderOpen, GitBranch, Inbox, SquarePen, X } from "lucide-react";
 import {
   memo,
   useLayoutEffect,
@@ -39,8 +39,7 @@ import { moveProjectInSidebarOrderAt } from "./projectOrder";
 const SIDEBAR_TEXT = {
   cancelLogin: "Cancel login",
   createProject: "Create project",
-  cwd: "Working directory",
-  name: "Project name",
+  cwd: "Directory",
   newProject: "New project",
   newThread: "New thread",
   noProjectsText: "Create a project to begin.",
@@ -70,8 +69,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onLogout,
   onOpenPreferences,
   onProjectCwdChange,
+  onProjectDirectoryCreateCancel,
   onProjectFormOpenChange,
-  onProjectNameChange,
   onReorderProjects,
   onSelectThread,
   onShowDebugEventsChange,
@@ -80,8 +79,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onThreadActionHoverChange,
   pendingTitleThreadIds,
   projectCwd,
+  projectDirectoryCreatePending,
   projectFormOpen,
-  projectName,
   projects,
   selectedProjectId,
   selectedThreadId,
@@ -97,14 +96,14 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   loginState: LoginState;
   onArchiveThread: (threadId: string) => void;
   onCancelLogin: () => void;
-  onCreateProject: (event: FormEvent) => void;
+  onCreateProject: (options?: { createDirectory?: boolean }) => void;
   onCreateThread: (projectId: string) => void;
   onLogin: () => void;
   onLogout: () => void;
   onOpenPreferences: () => void;
   onProjectCwdChange: (value: string) => void;
+  onProjectDirectoryCreateCancel: () => void;
   onProjectFormOpenChange: (open: boolean | ((open: boolean) => boolean)) => void;
-  onProjectNameChange: (value: string) => void;
   onReorderProjects: (projectIds: string[]) => void;
   onSelectThread: (projectId: string, threadId: string) => void;
   onShowDebugEventsChange: (value: boolean) => void;
@@ -113,8 +112,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onThreadActionHoverChange: (threadId: string | null) => void;
   pendingTitleThreadIds: Set<string>;
   projectCwd: string;
+  projectDirectoryCreatePending: boolean;
   projectFormOpen: boolean;
-  projectName: string;
   projects: Project[];
   selectedProjectId: string | null;
   selectedThreadId: string | null;
@@ -232,21 +231,41 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             </Tooltip>
           </Group>
           {projectFormOpen ? (
-            <Box component="form" className="kodex-project-form" onSubmit={onCreateProject}>
-              <TextInput
-                label={SIDEBAR_TEXT.name}
-                value={projectName}
-                onChange={(event) => onProjectNameChange(event.currentTarget.value)}
-              />
+            <Box
+              component="form"
+              className="kodex-project-form"
+              onSubmit={(event: FormEvent) => {
+                event.preventDefault();
+                onCreateProject();
+              }}
+            >
               <TextInput
                 label={SIDEBAR_TEXT.cwd}
                 required
                 value={projectCwd}
                 onChange={(event) => onProjectCwdChange(event.currentTarget.value)}
               />
-              <Button type="submit" size="xs" disabled={!projectCwd.trim()}>
-                {SIDEBAR_TEXT.createProject}
-              </Button>
+              {projectDirectoryCreatePending ? (
+                <Group className="kodex-project-create-confirm" gap="xs" wrap="nowrap">
+                  <Button size="xs" type="button" onClick={() => onCreateProject({ createDirectory: true })}>
+                    {`Create ${projectDirectoryDisplayPath(projectCwd)}?`}
+                  </Button>
+                  <Button
+                    aria-label="Cancel directory create"
+                    color="gray"
+                    onClick={onProjectDirectoryCreateCancel}
+                    size="xs"
+                    type="button"
+                    variant="light"
+                  >
+                    <X size={14} />
+                  </Button>
+                </Group>
+              ) : (
+                <Button type="submit" size="xs" disabled={!projectCwd.trim()}>
+                  {SIDEBAR_TEXT.createProject}
+                </Button>
+              )}
             </Box>
           ) : null}
           <Stack gap="sm" className="kodex-project-tree">
@@ -381,6 +400,14 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     </AppShell.Navbar>
   );
 });
+
+function projectDirectoryDisplayPath(projectCwd: string): string {
+  const cwd = projectCwd.trim();
+  if (cwd === "~" || cwd.startsWith("~/") || cwd.startsWith("/")) {
+    return cwd;
+  }
+  return `~/${cwd}`;
+}
 
 function projectsFromPreviewOrder(projects: Project[], previewProjectIds: string[] | null): Project[] {
   if (!previewProjectIds) {

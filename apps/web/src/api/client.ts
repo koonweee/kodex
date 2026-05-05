@@ -62,7 +62,7 @@ export async function listProjects(): Promise<Project[]> {
   return response.projects;
 }
 
-export async function createProject(input: { name?: string | null; cwd: string }): Promise<Project> {
+export async function createProject(input: { createDirectory?: boolean; cwd: string }): Promise<Project> {
   return unwrap(api.POST("/v1/projects", { body: input }));
 }
 

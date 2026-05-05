@@ -12,6 +12,7 @@ pub struct Config {
     pub codex: CodexConfig,
     pub database: DatabaseConfig,
     pub uploads: UploadsConfig,
+    pub projects: ProjectsConfig,
     pub frontend: FrontendConfig,
 }
 
@@ -35,6 +36,11 @@ pub struct DatabaseConfig {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct UploadsConfig {
     pub dir: PathBuf,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ProjectsConfig {
+    pub home_dir: PathBuf,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -64,6 +70,9 @@ impl Default for Config {
             },
             uploads: UploadsConfig {
                 dir: default_uploads_dir(),
+            },
+            projects: ProjectsConfig {
+                home_dir: home_dir(),
             },
             frontend: FrontendConfig { dist_dir: None },
         }
