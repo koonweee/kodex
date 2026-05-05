@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="apps/web/public/kodex-badge.png" alt="Kodex badge" width="160" />
+</p>
+
 # Kodex
 
 Kodex is a local-first or VPN-only Codex gateway and web app built from scratch in a monorepo.
