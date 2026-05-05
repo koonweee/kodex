@@ -15,6 +15,7 @@ export function useSelectedThreadTimeline({
   isSelectedThreadSnapshotDeferred,
   onApprovalEvent,
   onError,
+  onQueueEvent,
   onSnapshotThread,
   onThreadMetadataEvent,
   selectedThreadId,
@@ -26,6 +27,7 @@ export function useSelectedThreadTimeline({
   isSelectedThreadSnapshotDeferred: boolean;
   onApprovalEvent: (current: Approval[], event: EventEnvelope) => Approval[];
   onError: (error: unknown) => void;
+  onQueueEvent: (event: EventEnvelope) => void;
   onSnapshotThread: (thread: ThreadSummary) => void;
   onThreadMetadataEvent: (event: EventEnvelope) => void;
   selectedThreadId: string | null;
@@ -37,8 +39,8 @@ export function useSelectedThreadTimeline({
   const timelineFlushFrame = useRef<number | null>(null);
   const timelineFlushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedThreadStreamToken = useRef(0);
-  const latestCallbacks = useRef({ onApprovalEvent, onError, onSnapshotThread, onThreadMetadataEvent });
-  latestCallbacks.current = { onApprovalEvent, onError, onSnapshotThread, onThreadMetadataEvent };
+  const latestCallbacks = useRef({ onApprovalEvent, onError, onQueueEvent, onSnapshotThread, onThreadMetadataEvent });
+  latestCallbacks.current = { onApprovalEvent, onError, onQueueEvent, onSnapshotThread, onThreadMetadataEvent };
 
   function clearEntry() {
     setTimelineEntry(idleTimelineEntry);
@@ -175,6 +177,10 @@ export function useSelectedThreadTimeline({
             setApprovals((current) => latestCallbacks.current.onApprovalEvent(current, event));
             return;
           }
+          if (isQueueEvent(event)) {
+            latestCallbacks.current.onQueueEvent(event);
+            return;
+          }
           queuedTimelineEvents.current.push(event);
           scheduleQueuedTimelineFlush();
         },
@@ -216,6 +222,10 @@ export function useSelectedThreadTimeline({
       cancelQueuedTimelineEvents();
     };
   }, [isSelectedThreadNotLoaded, isSelectedThreadSnapshotDeferred, selectedThreadId, setApprovals, setTimeline, setTimelineEntry]);
+}
+
+function isQueueEvent(event: EventEnvelope): boolean {
+  return event.kind === "turn_queue.item_upsert" || event.kind === "turn_queue.item_deleted";
 }
 
 function isThreadMaterializingError(error: unknown): boolean {

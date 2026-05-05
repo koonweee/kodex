@@ -30,6 +30,8 @@ const GATEWAY_SSE_EVENT_TYPES = [
   "timeline.thread_metadata",
   "timeline.thread_status",
   "timeline.turn_upsert",
+  "turn_queue.item_deleted",
+  "turn_queue.item_upsert",
 ];
 
 export function createEventStreamClient({

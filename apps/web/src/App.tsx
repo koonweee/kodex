@@ -21,11 +21,13 @@ import {
   archiveThread,
   createProject,
   createThread,
+  listQueuedInputs,
   listThreads,
   resumeThread,
   type Approval,
   type EventEnvelope,
   type Project,
+  type QueuedInput,
   type RateLimitSnapshot,
   type ThreadSummary,
 } from "./api/client";
@@ -124,6 +126,7 @@ function KodexShell({
   const [pendingTitleThreadIds, setPendingTitleThreadIds] = useState<Set<string>>(new Set());
   const [materializingThreadIds, setMaterializingThreadIds] = useState<Set<string>>(new Set());
   const [timeline, setTimeline] = useState<TimelineState>(createTimelineState());
+  const [queuedInputsByThreadId, setQueuedInputsByThreadId] = useState<Record<string, QueuedInput[]>>({});
   const [timelineEntry, setTimelineEntry] = useState<TimelineEntry>(idleTimelineEntry);
   const [projectFormOpen, setProjectFormOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
@@ -140,6 +143,7 @@ function KodexShell({
   const [composerResetToken, setComposerResetToken] = useState(0);
   const selectedProjectIdRef = useRef<string | null>(null);
   const selectedThreadIdRef = useRef<string | null>(null);
+  const queueRevisionByThreadIdRef = useRef<Record<string, number>>({});
   const autoSelectedThreadIdRef = useRef<string | null>(null);
   const approvalsRef = useRef<Approval[]>([]);
   const attachedThreadIdsRef = useRef<Set<string>>(new Set());
@@ -159,6 +163,7 @@ function KodexShell({
   const selectedProjectThreads = selectedProjectId ? threadsByProjectId[selectedProjectId] ?? [] : [];
   const orderedProjects = useMemo(() => applySidebarProjectOrder(projects, projectOrderIds), [projectOrderIds, projects]);
   const selectedThread = selectedProjectThreads.find((thread) => thread.id === selectedThreadId) ?? null;
+  const selectedQueuedInputs = selectedThreadId ? queuedInputsByThreadId[selectedThreadId] ?? [] : [];
   const {
     approvals,
     applyApprovalEventWithTombstone,
@@ -247,9 +252,12 @@ function KodexShell({
     isDraftThreadSelected,
     onCreateDraftThread: createDraftThreadFromComposer,
     onError: reportError,
+    onQueuedInputDeleted: removeQueuedInput,
+    onQueuedInputUpsert: upsertQueuedInput,
     onThreadMaterialized: markThreadMaterialized,
     onThreadTurnStartFailed: markThreadIdle,
     onThreadTurnStarted: markThreadActive,
+    queuedSteerRows: selectedQueuedInputs,
     selectedProjectId,
     selectedThreadId,
     setTimeline,
@@ -360,6 +368,7 @@ function KodexShell({
   useEffect(() => {
     const client = createEventStreamClient({
       onEvent: (event) => {
+        applyQueueEvent(event);
         applyThreadMetadataEvent(event);
         applyCompletedAgentTurnEvent(event);
         const nextUsageLimitSnapshot = usageLimitSnapshotFromEvent(event);
@@ -376,6 +385,29 @@ function KodexShell({
     return client.close;
   }, []);
 
+  useEffect(() => {
+    if (!selectedThreadId) {
+      return;
+    }
+    let cancelled = false;
+    const threadId = selectedThreadId;
+    const loadRevision = queueRevisionByThreadIdRef.current[threadId] ?? 0;
+    listQueuedInputs(threadId)
+      .then((queuedInputs) => {
+        if (cancelled || (queueRevisionByThreadIdRef.current[threadId] ?? 0) !== loadRevision) {
+          return;
+        }
+        setQueuedInputsByThreadId((current) => ({
+          ...current,
+          [threadId]: [...queuedInputs].sort(compareQueuedInputs),
+        }));
+      })
+      .catch(reportError);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedThreadId]);
+
   useSelectedThreadTimeline({
     isSelectedThreadNotLoaded,
     isSelectedThreadSnapshotDeferred,
@@ -383,6 +415,7 @@ function KodexShell({
     onError: reportError,
     onSnapshotThread: handleSelectedThreadSnapshot,
     onThreadMetadataEvent: applyThreadMetadataEvent,
+    onQueueEvent: applyQueueEvent,
     selectedThreadId,
     setApprovals,
     setTimeline,
@@ -684,6 +717,51 @@ function KodexShell({
     setErrorMessage(errorMessageFrom(error));
   }
 
+  function applyQueueEvent(event: EventEnvelope) {
+    if (event.kind === "turn_queue.item_upsert") {
+      const row = event.payload as QueuedInput;
+      if (!row?.id || !row.threadId) {
+        return;
+      }
+      upsertQueuedInput(row);
+      return;
+    }
+    if (event.kind !== "turn_queue.item_deleted") {
+      return;
+    }
+    const payload = event.payload as { id?: unknown; threadId?: unknown };
+    const id = typeof payload.id === "string" ? payload.id : null;
+    const threadId = typeof payload.threadId === "string" ? payload.threadId : event.threadId;
+    if (!id || !threadId) {
+      return;
+    }
+    removeQueuedInput(threadId, id);
+  }
+
+  function upsertQueuedInput(row: QueuedInput) {
+    bumpQueueRevision(row.threadId);
+    setQueuedInputsByThreadId((current) => {
+      const rows = current[row.threadId] ?? [];
+      const withoutRow = rows.filter((item) => item.id !== row.id);
+      return {
+        ...current,
+        [row.threadId]: [...withoutRow, row].sort(compareQueuedInputs),
+      };
+    });
+  }
+
+  function removeQueuedInput(threadId: string, id: string) {
+    bumpQueueRevision(threadId);
+    setQueuedInputsByThreadId((current) => ({
+      ...current,
+      [threadId]: (current[threadId] ?? []).filter((item) => item.id !== id),
+    }));
+  }
+
+  function bumpQueueRevision(threadId: string) {
+    queueRevisionByThreadIdRef.current[threadId] = (queueRevisionByThreadIdRef.current[threadId] ?? 0) + 1;
+  }
+
   function resetComposerDraft() {
     setComposerResetToken((current) => current + 1);
   }
@@ -751,4 +829,13 @@ function KodexShell({
 
 function selectedThreadShouldAttachLive(thread: ThreadSummary): boolean {
   return thread.status === "notLoaded" || thread.status === "active";
+}
+
+function compareQueuedInputs(left: QueuedInput, right: QueuedInput): number {
+  const priority = (row: QueuedInput) => (row.priority === "rejectedSteer" ? 0 : 1);
+  const priorityDelta = priority(left) - priority(right);
+  if (priorityDelta !== 0) {
+    return priorityDelta;
+  }
+  return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
 }

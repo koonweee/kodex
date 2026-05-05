@@ -91,12 +91,10 @@ describe("MVP composer input flows", () => {
     });
   });
 
-  it("auto-starts queued composer messages when the active turn completes", async () => {
-    vi.stubGlobal("EventSource", FakeEventSource);
+  it("queues active-turn composer messages through the gateway queue", async () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [activeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "POST /v1/threads/thread-1/turns": { payload: {} },
       }),
     );
 
@@ -109,302 +107,227 @@ describe("MVP composer input flows", () => {
     expect(screen.getByLabelText(/queued steer messages/i)).toBeInTheDocument();
     expect(screen.getByText("Queued follow-up")).toBeInTheDocument();
     expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(0);
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs")).toHaveLength(1);
+    });
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs")[0])).resolves.toMatchObject({
+      input: [{ type: "text", text: "Queued follow-up" }],
+    });
+  });
 
+  it("applies queued input SSE upserts and deletes without adding timeline rows", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": { threads: [activeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
     const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
     expect(selectedThreadStream).toBeDefined();
 
     act(() => {
-      selectedThreadStream?.emit({
-        id: "event-active-turn-completed",
+      selectedThreadStream?.emitNamed("turn_queue.item_upsert", {
+        id: "event-queued-upsert",
         seq: 2,
-        kind: "timeline.turn_upsert",
-        codexMethod: "turn/upsert",
+        kind: "turn_queue.item_upsert",
+        codexMethod: null,
         projectId: project.id,
         threadId: thread.id,
-        turnId: "turn-1",
+        turnId: null,
         itemId: null,
-        payload: { threadId: thread.id, turn: { id: "turn-1", status: "completed", items: [] } },
-        receivedAt: "2026-05-02T00:00:02Z",
+        payload: {
+          id: "queue-sse-1",
+          threadId: thread.id,
+          input: [{ type: "text", text: "From SSE" }],
+          options: {},
+          status: "failed",
+          priority: "normal",
+          attemptCount: 1,
+          lastError: "turn failed",
+          createdAt: "2026-05-05T00:00:00Z",
+          updatedAt: "2026-05-05T00:00:01Z",
+        },
+        receivedAt: "2026-05-05T00:00:02Z",
+      });
+    });
+
+    expect(await screen.findByText("From SSE")).toBeInTheDocument();
+    expect(screen.getByText("turn failed")).toBeInTheDocument();
+    expect(screen.queryAllByText("From SSE")).toHaveLength(1);
+
+    act(() => {
+      selectedThreadStream?.emitNamed("turn_queue.item_deleted", {
+        id: "event-queued-delete",
+        seq: 3,
+        kind: "turn_queue.item_deleted",
+        codexMethod: null,
+        projectId: project.id,
+        threadId: thread.id,
+        turnId: null,
+        itemId: null,
+        payload: { id: "queue-sse-1", threadId: thread.id },
+        receivedAt: "2026-05-05T00:00:03Z",
       });
     });
 
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
-    });
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/turns")[0])).resolves.toEqual({
-      input: [{ type: "text", text: "Queued follow-up" }],
-    });
-    await waitFor(() => {
-      expect(screen.queryByLabelText(/queued steer messages/i)).not.toBeInTheDocument();
+      expect(screen.queryByText("From SSE")).not.toBeInTheDocument();
     });
   });
 
-  it("keeps failed auto-started queued composer messages visible without retry looping", async () => {
+  it("does not let a stale queued-input list overwrite newer queue events", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    let failNextTurn = true;
+    let resolveQueuedInputs!: (body: unknown) => void;
+    const queuedInputsResponse = new Promise((resolve) => {
+      resolveQueuedInputs = resolve;
+    });
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [activeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "POST /v1/threads/thread-1/turns": () => {
-          if (failNextTurn) {
-            failNextTurn = false;
-            throw new Error("turn failed");
-          }
-          return { payload: {} };
+        "GET /v1/threads/thread-1/queued-inputs": () => queuedInputsResponse,
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
+    await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/thread-1/queued-inputs")).toHaveLength(1));
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    expect(selectedThreadStream).toBeDefined();
+
+    act(() => {
+      selectedThreadStream?.emitNamed("turn_queue.item_upsert", {
+        id: "event-queued-delete-me-upsert",
+        seq: 2,
+        kind: "turn_queue.item_upsert",
+        codexMethod: null,
+        projectId: project.id,
+        threadId: thread.id,
+        turnId: null,
+        itemId: null,
+        payload: {
+          id: "queue-deleted",
+          threadId: thread.id,
+          input: [{ type: "text", text: "Deleted by SSE" }],
+          options: {},
+          status: "queued",
+          priority: "normal",
+          attemptCount: 0,
+          lastError: null,
+          createdAt: "2026-05-05T00:00:00Z",
+          updatedAt: "2026-05-05T00:00:00Z",
+        },
+        receivedAt: "2026-05-05T00:00:01Z",
+      });
+      selectedThreadStream?.emitNamed("turn_queue.item_deleted", {
+        id: "event-queued-delete-me-delete",
+        seq: 3,
+        kind: "turn_queue.item_deleted",
+        codexMethod: null,
+        projectId: project.id,
+        threadId: thread.id,
+        turnId: null,
+        itemId: null,
+        payload: { id: "queue-deleted", threadId: thread.id },
+        receivedAt: "2026-05-05T00:00:02Z",
+      });
+      selectedThreadStream?.emitNamed("turn_queue.item_upsert", {
+        id: "event-queued-newer-upsert",
+        seq: 4,
+        kind: "turn_queue.item_upsert",
+        codexMethod: null,
+        projectId: project.id,
+        threadId: thread.id,
+        turnId: null,
+        itemId: null,
+        payload: {
+          id: "queue-newer",
+          threadId: thread.id,
+          input: [{ type: "text", text: "Newer from SSE" }],
+          options: {},
+          status: "queued",
+          priority: "normal",
+          attemptCount: 0,
+          lastError: null,
+          createdAt: "2026-05-05T00:00:03Z",
+          updatedAt: "2026-05-05T00:00:03Z",
+        },
+        receivedAt: "2026-05-05T00:00:04Z",
+      });
+    });
+
+    expect(await screen.findByText("Newer from SSE")).toBeInTheDocument();
+    expect(screen.queryByText("Deleted by SSE")).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveQueuedInputs({
+        queuedInputs: [
+          {
+            id: "queue-deleted",
+            threadId: "thread-1",
+            input: [{ type: "text", text: "Deleted by SSE" }],
+            options: {},
+            status: "queued",
+            priority: "normal",
+            attemptCount: 0,
+            lastError: null,
+            createdAt: "2026-05-05T00:00:00Z",
+            updatedAt: "2026-05-05T00:00:00Z",
+          },
+        ],
+      });
+      await queuedInputsResponse;
+    });
+
+    expect(screen.getByText("Newer from SSE")).toBeInTheDocument();
+    expect(screen.queryByText("Deleted by SSE")).not.toBeInTheDocument();
+  });
+
+  it("loads queued inputs for the selected thread and retries failed rows", async () => {
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": { threads: [activeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/threads/thread-1/queued-inputs": {
+          queuedInputs: [
+            {
+              id: "queue-failed",
+              threadId: "thread-1",
+              input: [{ type: "text", text: "Retry later" }],
+              options: {},
+              status: "failed",
+              priority: "normal",
+              attemptCount: 1,
+              lastError: "turn failed",
+              createdAt: "2026-05-05T00:00:00Z",
+              updatedAt: "2026-05-05T00:00:01Z",
+            },
+          ],
         },
       }),
     );
 
     render(<App />);
 
-    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Retry later");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
-
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
-    expect(selectedThreadStream).toBeDefined();
-
-    act(() => {
-      selectedThreadStream?.emit({
-        id: "event-active-turn-completed",
-        seq: 2,
-        kind: "timeline.turn_upsert",
-        codexMethod: "turn/upsert",
-        projectId: project.id,
-        threadId: thread.id,
-        turnId: "turn-1",
-        itemId: null,
-        payload: { threadId: thread.id, turn: { id: "turn-1", status: "completed", items: [] } },
-        receivedAt: "2026-05-02T00:00:02Z",
-      });
-    });
-
-    expect(await screen.findByText(/gateway request failed|turn failed/i)).toBeInTheDocument();
-    expect(screen.getByText("Retry later")).toBeInTheDocument();
-    await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
-    });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
-    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
-
-    const queuedCard = screen.getByRole("region", { name: /queued steer messages/i });
-    expect(within(queuedCard).queryByRole("button", { name: /steer/i })).not.toBeInTheDocument();
-    await userEvent.click(within(queuedCard).getByRole("button", { name: /retry/i }));
+    expect(await screen.findByText("Retry later")).toBeInTheDocument();
+    expect(screen.getByText("turn failed")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
 
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(2);
-      expect(screen.queryByRole("region", { name: /queued steer messages/i })).not.toBeInTheDocument();
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs/queue-failed/retry")).toHaveLength(1);
     });
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/turns")[1])).resolves.toEqual({
-      input: [{ type: "text", text: "Retry later" }],
-    });
-  });
-
-  it("starts only one queued composer message per completed active turn", async () => {
-    vi.stubGlobal("EventSource", FakeEventSource);
-    const gateway = mockGateway(
-      baseRoutes({
-        "GET /v1/threads": { threads: [activeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "POST /v1/threads/thread-1/turns": { payload: {} },
-      }),
-    );
-
-    render(<App />);
-
-    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
-    const composer = screen.getByLabelText(/message composer/i);
-    await userEvent.type(composer, "First queued");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
-    await userEvent.type(composer, "Second queued{Enter}");
-
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
-    expect(selectedThreadStream).toBeDefined();
-
-    act(() => {
-      selectedThreadStream?.emit({
-        id: "event-turn-1-completed",
-        seq: 2,
-        kind: "timeline.turn_upsert",
-        codexMethod: "turn/upsert",
-        projectId: project.id,
-        threadId: thread.id,
-        turnId: "turn-1",
-        itemId: null,
-        payload: { threadId: thread.id, turn: { id: "turn-1", status: "completed", items: [] } },
-        receivedAt: "2026-05-02T00:00:02Z",
-      });
-    });
-
-    await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
-    });
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/turns")[0])).resolves.toEqual({
-      input: [{ type: "text", text: "First queued" }],
-    });
-    expect(screen.getByText("Second queued")).toBeInTheDocument();
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
-    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
-
-    act(() => {
-      selectedThreadStream?.emit({
-        id: "event-turn-2-running",
-        seq: 3,
-        kind: "timeline.turn_upsert",
-        codexMethod: "turn/upsert",
-        projectId: project.id,
-        threadId: thread.id,
-        turnId: "turn-2",
-        itemId: null,
-        payload: { threadId: thread.id, turn: { id: "turn-2", status: "running", items: [] } },
-        receivedAt: "2026-05-02T00:00:03Z",
-      });
-    });
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /stop turn/i })).toBeInTheDocument();
-    });
-    act(() => {
-      selectedThreadStream?.emit({
-        id: "event-turn-2-completed",
-        seq: 4,
-        kind: "timeline.turn_upsert",
-        codexMethod: "turn/upsert",
-        projectId: project.id,
-        threadId: thread.id,
-        turnId: "turn-2",
-        itemId: null,
-        payload: { threadId: thread.id, turn: { id: "turn-2", status: "completed", items: [] } },
-        receivedAt: "2026-05-02T00:00:04Z",
-      });
-    });
-
-    await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(2);
-    });
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/turns")[1])).resolves.toEqual({
-      input: [{ type: "text", text: "Second queued" }],
-    });
-    await waitFor(() => {
-      expect(screen.queryByRole("region", { name: /queued steer messages/i })).not.toBeInTheDocument();
-    });
-  });
-
-  it("hides later queued start actions until the auto-started turn is observed active and completed", async () => {
-    vi.stubGlobal("EventSource", FakeEventSource);
-    let resolveFirstTurn: (value: unknown) => void = () => undefined;
-    const gateway = mockGateway(
-      baseRoutes({
-        "GET /v1/threads": { threads: [activeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "POST /v1/threads/thread-1/turns": () =>
-          new Promise((resolve) => {
-            resolveFirstTurn = resolve;
-          }),
-      }),
-    );
-
-    render(<App />);
-
-    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
-    const composer = screen.getByLabelText(/message composer/i);
-    await userEvent.type(composer, "First queued");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
-    await userEvent.type(composer, "Second queued{Enter}");
-
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
-    expect(selectedThreadStream).toBeDefined();
-
-    act(() => {
-      selectedThreadStream?.emit({
-        id: "event-turn-1-completed",
-        seq: 2,
-        kind: "timeline.turn_upsert",
-        codexMethod: "turn/upsert",
-        projectId: project.id,
-        threadId: thread.id,
-        turnId: "turn-1",
-        itemId: null,
-        payload: { threadId: thread.id, turn: { id: "turn-1", status: "completed", items: [] } },
-        receivedAt: "2026-05-02T00:00:02Z",
-      });
-    });
-
-    await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
-    });
-    expect(screen.getByText("Second queued")).toBeInTheDocument();
-    expect(
-      within(screen.getByRole("region", { name: /queued steer messages/i })).queryByRole("button", { name: /steer/i }),
-    ).not.toBeInTheDocument();
-
-    act(() => resolveFirstTurn({ payload: {} }));
-    await waitFor(() => {
-      expect(
-        within(screen.getByRole("region", { name: /queued steer messages/i })).queryByText("First queued"),
-      ).not.toBeInTheDocument();
-    });
-    expect(
-      within(screen.getByRole("region", { name: /queued steer messages/i })).queryByRole("button", { name: /steer/i }),
-    ).not.toBeInTheDocument();
-    expect(composer).toBeDisabled();
-    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
-
-    act(() => {
-      selectedThreadStream?.emit({
-        id: "event-turn-2-running",
-        seq: 3,
-        kind: "timeline.turn_upsert",
-        codexMethod: "turn/upsert",
-        projectId: project.id,
-        threadId: thread.id,
-        turnId: "turn-2",
-        itemId: null,
-        payload: { threadId: thread.id, turn: { id: "turn-2", status: "running", items: [] } },
-        receivedAt: "2026-05-02T00:00:03Z",
-      });
-    });
-    await waitFor(() => {
-      expect(
-        within(screen.getByRole("region", { name: /queued steer messages/i })).getByRole("button", {
-          name: /steer/i,
-        }),
-      ).toBeInTheDocument();
-    });
-
-    act(() => {
-      selectedThreadStream?.emit({
-        id: "event-turn-2-completed",
-        seq: 4,
-        kind: "timeline.turn_upsert",
-        codexMethod: "turn/upsert",
-        projectId: project.id,
-        threadId: thread.id,
-        turnId: "turn-2",
-        itemId: null,
-        payload: { threadId: thread.id, turn: { id: "turn-2", status: "completed", items: [] } },
-        receivedAt: "2026-05-02T00:00:04Z",
-      });
-    });
-
-    await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(2);
-    });
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/turns")[1])).resolves.toEqual({
-      input: [{ type: "text", text: "Second queued" }],
-    });
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(0);
   });
 
   it("steers queued composer messages into the active turn when requested", async () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [activeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "POST /v1/threads/thread-1/turns/turn-1/steer": { payload: {} },
       }),
     );
 
@@ -416,12 +339,12 @@ describe("MVP composer input flows", () => {
     await userEvent.click(screen.getByRole("button", { name: /^steer$/i }));
 
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/steer")).toHaveLength(1);
-    });
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/steer")[0])).resolves.toEqual({
-      input: [{ type: "text", text: "Steer this turn" }],
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs/queue-1/steer")).toHaveLength(1);
     });
     expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(0);
+    await waitFor(() => {
+      expect(screen.queryByRole("region", { name: /queued steer messages/i })).not.toBeInTheDocument();
+    });
   });
 
   it("optimistically renders text sends before the turn request resolves", async () => {
@@ -1119,7 +1042,6 @@ describe("MVP composer input flows", () => {
           const url = new URL(request.url);
           return url.searchParams.get("threadId") === "thread-2" ? { events: [] } : baseRoutes()["GET /v1/events"];
         },
-        "POST /v1/threads/thread-1/turns/turn-1/steer": { payload: {} },
       }),
     );
 
@@ -1145,14 +1067,10 @@ describe("MVP composer input flows", () => {
 
     await userEvent.click(within(rows[0]).getByRole("button", { name: /steer/i }));
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/steer")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs/queue-1/steer")).toHaveLength(1);
       expect(within(screen.getByRole("region", { name: /queued steer messages/i })).queryByText("Add tests")).not.toBeInTheDocument();
     });
     expect(screen.getByText("Keep scope tight")).toBeInTheDocument();
-
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/steer")[0])).resolves.toEqual({
-      input: [{ type: "text", text: "Add tests" }],
-    });
 
     await userEvent.click(
       within(screen.getByRole("region", { name: /queued steer messages/i })).getByRole("button", {
@@ -1162,7 +1080,7 @@ describe("MVP composer input flows", () => {
     await waitFor(() => {
       expect(screen.queryByRole("region", { name: /queued steer messages/i })).not.toBeInTheDocument();
     });
-    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/steer")).toHaveLength(1);
+    expect(gateway.callsFor("DELETE", "/v1/threads/thread-1/queued-inputs/queue-2")).toHaveLength(1);
 
     await userEvent.type(composer, "Switch clear{Enter}");
     expect(screen.getByText("Switch clear")).toBeInTheDocument();
@@ -1174,16 +1092,24 @@ describe("MVP composer input flows", () => {
   });
 
   it("keeps failed queued steer rows retryable and reports the existing error", async () => {
-    let failNextSteer = true;
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [activeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "POST /v1/threads/thread-1/turns/turn-1/steer": () => {
-          if (failNextSteer) {
-            failNextSteer = false;
-            throw new Error("steer failed");
-          }
-          return { payload: {} };
+        "GET /v1/threads/thread-1/queued-inputs": {
+          queuedInputs: [
+            {
+              id: "queue-failed",
+              threadId: "thread-1",
+              input: [{ type: "text", text: "Retry this" }],
+              options: {},
+              status: "failed",
+              priority: "normal",
+              attemptCount: 1,
+              lastError: "steer failed",
+              createdAt: "2026-05-05T00:00:00Z",
+              updatedAt: "2026-05-05T00:00:01Z",
+            },
+          ],
         },
       }),
     );
@@ -1191,23 +1117,21 @@ describe("MVP composer input flows", () => {
     render(<App />);
 
     expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Retry this{Enter}");
     const queuedCard = screen.getByRole("region", { name: /queued steer messages/i });
     const row = within(queuedCard).getByRole("group");
     const rowId = row.getAttribute("data-steer-row-id");
 
-    await userEvent.click(within(row).getByRole("button", { name: /steer/i }));
-    expect(await screen.findByText(/gateway request failed|steer failed/i)).toBeInTheDocument();
+    expect(screen.getByText("steer failed")).toBeInTheDocument();
     expect(screen.getByText("Retry this")).toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: /queued steer messages/i })).getByRole("group")).toHaveAttribute(
       "data-steer-row-id",
       rowId,
     );
 
-    await userEvent.click(within(screen.getByRole("region", { name: /queued steer messages/i })).getByRole("button", { name: /steer/i }));
+    await userEvent.click(within(screen.getByRole("region", { name: /queued steer messages/i })).getByRole("button", { name: /retry/i }));
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/steer")).toHaveLength(2);
-      expect(screen.queryByRole("region", { name: /queued steer messages/i })).not.toBeInTheDocument();
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs/queue-failed/retry")).toHaveLength(1);
+      expect(screen.getByText("Retry later")).toBeInTheDocument();
     });
   });
 

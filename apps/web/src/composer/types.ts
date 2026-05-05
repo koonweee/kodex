@@ -1,4 +1,4 @@
-import type { ImageUpload } from "../api/client";
+import type { ImageUpload, QueuedInput, UserInput } from "../api/client";
 
 export type PendingAttachment = {
   id: string;
@@ -9,10 +9,19 @@ export type PendingAttachment = {
   error?: string;
 };
 
-export type QueuedSteerRow = {
-  id: string;
-  text: string;
-  attachments: PendingAttachment[];
-  autoStartFailed?: boolean;
-  isSubmitting?: boolean;
-};
+export type QueuedSteerRow = QueuedInput;
+
+export function queuedInputText(row: QueuedInput): string {
+  return row.input
+    .map((input) => (input.type === "text" ? input.text : null))
+    .filter((text): text is string => Boolean(text))
+    .join("\n");
+}
+
+export function queuedInputImageCount(row: QueuedInput): number {
+  return row.input.filter(isImageInput).length;
+}
+
+function isImageInput(input: UserInput): boolean {
+  return input.type === "image" || input.type === "localImage";
+}

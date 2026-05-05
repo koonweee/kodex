@@ -28,8 +28,9 @@ use crate::{
         TimelineThreadStatusPayload, TimelineTurnUpsertPayload, TimelineUpdateSource,
     },
     error::{ApiError, ApiResult},
+    queue,
     schema::is_supported_approval_method,
-    store::{EventEnvelope, NewApproval, NewEvent},
+    store::{EventEnvelope, NewApproval, NewEvent, ThreadRuntimeState},
 };
 
 const SSE_REPLAY_PAGE_SIZE: i64 = 500;
@@ -371,7 +372,11 @@ async fn replay_operational_events(
 fn is_operational_replay_event(event: &EventEnvelope) -> bool {
     matches!(
         event.kind.as_str(),
-        "approval.created" | "approval.resolved" | "gateway.warning"
+        "approval.created"
+            | "approval.resolved"
+            | "gateway.warning"
+            | queue::QUEUE_UPSERT_EVENT
+            | queue::QUEUE_DELETE_EVENT
     )
 }
 
@@ -387,6 +392,8 @@ fn is_normal_live_event(event: &EventEnvelope) -> bool {
                 | "timeline.thread_status"
                 | "timeline.thread_metadata"
                 | SNAPSHOT_REQUIRED_KIND
+                | queue::QUEUE_UPSERT_EVENT
+                | queue::QUEUE_DELETE_EVENT
         )
 }
 
@@ -499,11 +506,11 @@ async fn timeline_item_delta_event(
         delta: string_field(params, &["delta", "text", "content"]).unwrap_or_default(),
         raw_payload: params.clone(),
     };
-    append_timeline_event(
+    let event = append_timeline_event(
         state,
         NewEvent {
             project_id: metadata.project_id.clone(),
-            thread_id: Some(thread_id),
+            thread_id: Some(thread_id.clone()),
             turn_id: metadata.turn_id.clone(),
             item_id: Some(item_id),
             kind: "timeline.item_delta".to_string(),
@@ -511,8 +518,8 @@ async fn timeline_item_delta_event(
             payload: serde_json::to_value(payload)?,
         },
     )
-    .await
-    .map(Some)
+    .await?;
+    Ok(Some(event))
 }
 
 async fn timeline_item_upsert_event(
@@ -540,11 +547,11 @@ async fn timeline_item_upsert_event(
         item: item.clone(),
         item_snapshot,
     };
-    append_timeline_event(
+    let event = append_timeline_event(
         state,
         NewEvent {
             project_id: metadata.project_id.clone(),
-            thread_id: Some(thread_id),
+            thread_id: Some(thread_id.clone()),
             turn_id: Some(turn_id),
             item_id: Some(payload.item_id.clone()),
             kind: "timeline.item_upsert".to_string(),
@@ -552,8 +559,8 @@ async fn timeline_item_upsert_event(
             payload: serde_json::to_value(payload)?,
         },
     )
-    .await
-    .map(Some)
+    .await?;
+    Ok(Some(event))
 }
 
 async fn timeline_turn_upsert_event(
@@ -576,20 +583,39 @@ async fn timeline_turn_upsert_event(
         live_state: live_state_from_turn_status(&turn.status),
         turn: turn.clone(),
     };
-    append_timeline_event(
+    let event = append_timeline_event(
         state,
         NewEvent {
             project_id: metadata.project_id.clone(),
-            thread_id: Some(thread_id),
-            turn_id: Some(turn.id),
+            thread_id: Some(thread_id.clone()),
+            turn_id: Some(turn.id.clone()),
             item_id: None,
             kind: "timeline.turn_upsert".to_string(),
             codex_method: Some("turn/upsert".to_string()),
             payload: serde_json::to_value(payload)?,
         },
     )
-    .await
-    .map(Some)
+    .await?;
+    let runtime = if is_terminal_turn_status(&turn.status) {
+        ThreadRuntimeState {
+            thread_id: metadata.thread_id.clone().unwrap_or_default(),
+            status: "idle".to_string(),
+            active_turn_id: None,
+            updated_at: Utc::now(),
+            last_event_seq: Some(event.seq),
+        }
+    } else {
+        ThreadRuntimeState {
+            thread_id: metadata.thread_id.clone().unwrap_or_default(),
+            status: "active".to_string(),
+            active_turn_id: Some(turn.id),
+            updated_at: Utc::now(),
+            last_event_seq: Some(event.seq),
+        }
+    };
+    let runtime_thread_id = runtime.thread_id.clone();
+    queue::refresh_runtime_and_maybe_drain(state, &runtime_thread_id, runtime).await?;
+    Ok(Some(event))
 }
 
 async fn timeline_thread_metadata_event(
@@ -615,7 +641,7 @@ async fn timeline_thread_metadata_event(
         state,
         NewEvent {
             project_id: metadata.project_id.clone(),
-            thread_id: Some(thread_id),
+            thread_id: Some(thread_id.clone()),
             turn_id: None,
             item_id: None,
             kind: "timeline.thread_metadata".to_string(),
@@ -648,11 +674,11 @@ async fn timeline_thread_status_event(
         live_state: live_state_from_thread_status(status),
         raw_payload: params.clone(),
     };
-    append_timeline_event(
+    let event = append_timeline_event(
         state,
         NewEvent {
             project_id: metadata.project_id.clone(),
-            thread_id: Some(thread_id),
+            thread_id: Some(thread_id.clone()),
             turn_id: None,
             item_id: None,
             kind: "timeline.thread_status".to_string(),
@@ -660,8 +686,37 @@ async fn timeline_thread_status_event(
             payload: serde_json::to_value(payload)?,
         },
     )
-    .await
-    .map(Some)
+    .await?;
+    match status {
+        ThreadStatus::Idle | ThreadStatus::SystemError => {
+            queue::refresh_runtime_and_maybe_drain(
+                state,
+                &thread_id,
+                ThreadRuntimeState {
+                    thread_id: thread_id.clone(),
+                    status: "idle".to_string(),
+                    active_turn_id: None,
+                    updated_at: Utc::now(),
+                    last_event_seq: Some(event.seq),
+                },
+            )
+            .await?;
+        }
+        ThreadStatus::Active => {
+            state
+                .store
+                .upsert_thread_runtime_state(ThreadRuntimeState {
+                    thread_id: thread_id.clone(),
+                    status: "active".to_string(),
+                    active_turn_id: None,
+                    updated_at: Utc::now(),
+                    last_event_seq: Some(event.seq),
+                })
+                .await?;
+        }
+        ThreadStatus::NotLoaded => {}
+    }
+    Ok(Some(event))
 }
 
 async fn append_timeline_event(state: &AppState, event: NewEvent) -> ApiResult<EventEnvelope> {
@@ -752,6 +807,13 @@ fn live_state_from_turn_status(status: &str) -> ThreadLiveState {
         "unknown" => ThreadLiveState::NotLoaded,
         _ => ThreadLiveState::Streaming,
     }
+}
+
+fn is_terminal_turn_status(status: &str) -> bool {
+    matches!(
+        status,
+        "completed" | "failed" | "cancelled" | "canceled" | "interrupted"
+    )
 }
 
 fn status_type(value: Option<&Value>) -> Option<String> {

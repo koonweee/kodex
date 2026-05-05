@@ -6,6 +6,7 @@ use kodex_gateway::{
     build_router,
     config::Config,
     events::run_inbound_ingest,
+    queue::recover_queued_inputs,
     store::Store,
     AppState,
 };
@@ -41,6 +42,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let state = AppState::new(config.clone(), store, app_server);
+    recover_queued_inputs(&state).await?;
     tokio::spawn(run_inbound_ingest(inbound_rx, state.clone()));
 
     let app = build_router(state);

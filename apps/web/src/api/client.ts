@@ -12,6 +12,8 @@ export type EventEnvelope = components["schemas"]["EventEnvelope"];
 export type LoginStartResponse = components["schemas"]["LoginStartResponse"];
 export type ModelSummary = components["schemas"]["ModelSummary"];
 export type Project = components["schemas"]["Project"];
+export type QueuedInput = components["schemas"]["QueuedInput"];
+export type QueuedInputCreateRequest = components["schemas"]["QueuedInputCreateRequest"];
 export type RateLimitSnapshot = components["schemas"]["RateLimitSnapshot"];
 export type RateLimitWindow = components["schemas"]["RateLimitWindow"];
 export type RateLimitsResponse = components["schemas"]["RateLimitsResponse"];
@@ -113,6 +115,52 @@ export async function startTurn(threadId: string, input: UserInput[], options: T
     api.POST("/v1/threads/{threadId}/turns", {
       params: { path: { threadId } },
       body: { input, ...options },
+    }),
+  );
+}
+
+export async function listQueuedInputs(threadId: string): Promise<QueuedInput[]> {
+  const response = await unwrap(
+    api.GET("/v1/threads/{threadId}/queued-inputs", { params: { path: { threadId } } }),
+  );
+  return response.queuedInputs;
+}
+
+export async function createQueuedInput(
+  threadId: string,
+  input: UserInput[],
+  options: TurnStartOptions = {},
+): Promise<QueuedInput> {
+  const response = await unwrap(
+    api.POST("/v1/threads/{threadId}/queued-inputs", {
+      params: { path: { threadId } },
+      body: { input, ...options },
+    }),
+  );
+  return response.queuedInput;
+}
+
+export async function retryQueuedInput(threadId: string, queueId: string): Promise<QueuedInput> {
+  const response = await unwrap(
+    api.POST("/v1/threads/{threadId}/queued-inputs/{queueId}/retry", {
+      params: { path: { threadId, queueId } },
+    }),
+  );
+  return response.queuedInput;
+}
+
+export async function steerQueuedInput(threadId: string, queueId: string): Promise<void> {
+  await unwrap(
+    api.POST("/v1/threads/{threadId}/queued-inputs/{queueId}/steer", {
+      params: { path: { threadId, queueId } },
+    }),
+  );
+}
+
+export async function deleteQueuedInput(threadId: string, queueId: string): Promise<void> {
+  await unwrap(
+    api.DELETE("/v1/threads/{threadId}/queued-inputs/{queueId}", {
+      params: { path: { threadId, queueId } },
     }),
   );
 }

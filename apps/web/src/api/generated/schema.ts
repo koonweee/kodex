@@ -340,6 +340,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads/{threadId}/queued-inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_queued_inputs"];
+        put?: never;
+        post: operations["create_queued_input"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/threads/{threadId}/queued-inputs/{queueId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_queued_input"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/threads/{threadId}/queued-inputs/{queueId}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["retry_queued_input"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/threads/{threadId}/queued-inputs/{queueId}/steer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["steer_queued_input"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/threads/{threadId}/resume": {
         parameters: {
             query?: never;
@@ -620,6 +684,38 @@ export interface components {
         ProjectListResponse: {
             projects: components["schemas"]["Project"][];
         };
+        QueuedInput: {
+            /** Format: int64 */
+            attemptCount: number;
+            /** Format: date-time */
+            createdAt: string;
+            id: string;
+            input: components["schemas"]["UserInput"][];
+            lastError?: string | null;
+            options: components["schemas"]["TurnStartOptions"];
+            priority: components["schemas"]["QueuedInputPriority"];
+            status: components["schemas"]["QueuedInputStatus"];
+            threadId: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        QueuedInputCreateRequest: components["schemas"]["TurnStartOptions"] & {
+            input: components["schemas"]["UserInput"][];
+        };
+        QueuedInputDeleteResponse: {
+            id: string;
+            threadId: string;
+        };
+        QueuedInputListResponse: {
+            queuedInputs: components["schemas"]["QueuedInput"][];
+        };
+        /** @enum {string} */
+        QueuedInputPriority: "normal" | "rejectedSteer";
+        QueuedInputResponse: {
+            queuedInput: components["schemas"]["QueuedInput"];
+        };
+        /** @enum {string} */
+        QueuedInputStatus: "queued" | "submitting" | "steering" | "failed";
         RateLimitSnapshot: {
             credits?: null | components["schemas"]["CreditsSnapshot"];
             limitId?: string | null;
@@ -1326,6 +1422,118 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadCommandResponse"];
+                };
+            };
+        };
+    };
+    list_queued_inputs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueuedInputListResponse"];
+                };
+            };
+        };
+    };
+    create_queued_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueuedInputCreateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueuedInputResponse"];
+                };
+            };
+        };
+    };
+    delete_queued_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+                queueId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueuedInputDeleteResponse"];
+                };
+            };
+        };
+    };
+    retry_queued_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+                queueId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueuedInputResponse"];
+                };
+            };
+        };
+    };
+    steer_queued_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+                queueId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueuedInputDeleteResponse"];
                 };
             };
         };

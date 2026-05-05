@@ -19,6 +19,10 @@ use crate::{
     },
     config::Config,
     error::ApiErrorBody,
+    queue::{
+        QueuedInputCreateRequest, QueuedInputDeleteResponse, QueuedInputListResponse,
+        QueuedInputResponse,
+    },
     routes,
     routes::{
         account::{AccountQuery, LoginRequest},
@@ -34,7 +38,10 @@ use crate::{
         uploads::{ImageUpload, ImageUploadRequest, ImageUploadResponse},
     },
     static_assets,
-    store::{Approval, EventEnvelope, Project, Store, ThreadRead},
+    store::{
+        Approval, EventEnvelope, Project, QueuedInput, QueuedInputPriority, QueuedInputStatus,
+        Store, ThreadRead,
+    },
 };
 
 #[derive(Clone)]
@@ -80,6 +87,11 @@ impl AppState {
         crate::routes::turns::start_turn,
         crate::routes::turns::steer_turn,
         crate::routes::turns::interrupt_turn,
+        crate::queue::list_queued_inputs,
+        crate::queue::create_queued_input,
+        crate::queue::retry_queued_input,
+        crate::queue::steer_queued_input,
+        crate::queue::delete_queued_input,
         crate::routes::uploads::upload_images,
         crate::routes::approvals::list_approvals,
         crate::routes::approvals::get_approval,
@@ -128,6 +140,13 @@ impl AppState {
         UserInput,
         TurnStartRequest,
         TurnSteerRequest,
+        QueuedInput,
+        QueuedInputStatus,
+        QueuedInputPriority,
+        QueuedInputCreateRequest,
+        QueuedInputListResponse,
+        QueuedInputResponse,
+        QueuedInputDeleteResponse,
         ImageUpload,
         ImageUploadRequest,
         ImageUploadResponse,
@@ -154,6 +173,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::projects::router())
         .merge(routes::threads::router())
         .merge(routes::turns::router())
+        .merge(crate::queue::router())
         .merge(routes::uploads::router())
         .merge(routes::approvals::router())
         .merge(routes::account::router())

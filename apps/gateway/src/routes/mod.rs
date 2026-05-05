@@ -31,7 +31,8 @@ mod tests {
         config::Config,
         error::{ApiError, ApiResult},
         events::ingest_inbound,
-        store::{NewApproval, NewEvent, Store},
+        queue,
+        store::{NewApproval, NewEvent, Store, ThreadRuntimeState},
     };
 
     async fn test_state() -> (AppState, Arc<RecordingAppServer>) {
@@ -146,6 +147,10 @@ mod tests {
             "/v1/threads/{threadId}/turns",
             "/v1/threads/{threadId}/turns/{turnId}/steer",
             "/v1/threads/{threadId}/turns/{turnId}/interrupt",
+            "/v1/threads/{threadId}/queued-inputs",
+            "/v1/threads/{threadId}/queued-inputs/{queueId}",
+            "/v1/threads/{threadId}/queued-inputs/{queueId}/retry",
+            "/v1/threads/{threadId}/queued-inputs/{queueId}/steer",
             "/v1/uploads/images",
             "/v1/approvals",
             "/v1/approvals/{approvalId}",
@@ -906,6 +911,432 @@ mod tests {
                 "input": [{"type": "image", "url": "https://example.test/image.png"}],
             })
         );
+    }
+
+    #[tokio::test]
+    async fn queued_input_routes_persist_broadcast_and_replay_operational_events() {
+        let (state, _app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "active".to_string(),
+                active_turn_id: Some("turn-1".to_string()),
+                updated_at: chrono::Utc::now(),
+                last_event_seq: None,
+            })
+            .await
+            .unwrap();
+        let app = build_router(state);
+
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads/thread-1/queued-inputs")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"next"}],"model":"gpt-5.4"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.status(), StatusCode::OK);
+        let created = response_json(created).await;
+        let queue_id = created["queuedInput"]["id"].as_str().unwrap().to_string();
+        assert_eq!(created["queuedInput"]["status"], "queued");
+        assert_eq!(created["queuedInput"]["options"]["model"], "gpt-5.4");
+
+        let listed = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/threads/thread-1/queued-inputs")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let listed = response_json(listed).await;
+        assert_eq!(listed["queuedInputs"].as_array().unwrap().len(), 1);
+        assert_eq!(listed["queuedInputs"][0]["id"], queue_id);
+
+        let replay = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/events?threadId=thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let replay = response_json(replay).await;
+        assert_eq!(replay["events"][0]["kind"], "turn_queue.item_upsert");
+
+        let deleted = app
+            .oneshot(
+                Request::delete(format!("/v1/threads/thread-1/queued-inputs/{queue_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(deleted.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn queued_input_drains_one_row_when_thread_is_idle() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "idle".to_string(),
+                active_turn_id: None,
+                updated_at: chrono::Utc::now(),
+                last_event_seq: None,
+            })
+            .await
+            .unwrap();
+        let app = build_router(state);
+
+        assert_ok(
+            app.oneshot(
+                Request::post("/v1/threads/thread-1/queued-inputs")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"drain me"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+        );
+
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if app_server
+                    .requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|(method, _)| method == "turn/start")
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|(method, _)| method == "turn/start")
+                .count(),
+            1
+        );
+        assert_eq!(
+            requests
+                .iter()
+                .find(|(method, _)| method == "turn/start")
+                .unwrap()
+                .1,
+            json!({
+                "threadId": "thread-1",
+                "input": [{"type": "text", "text": "drain me"}]
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn queued_input_drainer_claims_only_one_row_per_idle_transition() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "idle".to_string(),
+                active_turn_id: None,
+                updated_at: chrono::Utc::now(),
+                last_event_seq: None,
+            })
+            .await
+            .unwrap();
+        let app = build_router(state);
+
+        for text in ["first", "second"] {
+            assert_ok(
+                app.clone()
+                    .oneshot(
+                        Request::post("/v1/threads/thread-1/queued-inputs")
+                            .header("content-type", "application/json")
+                            .body(Body::from(format!(
+                                r#"{{"input":[{{"type":"text","text":"{text}"}}]}}"#
+                            )))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap(),
+            );
+        }
+
+        timeout(Duration::from_secs(2), async {
+            loop {
+                let count = app_server
+                    .requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|(method, _)| method == "turn/start")
+                    .count();
+                if count == 1 {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        tokio::task::yield_now().await;
+        assert_eq!(
+            app_server
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(method, _)| method == "turn/start")
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn active_thread_status_blocks_stale_idle_queue_drain() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "idle".to_string(),
+                active_turn_id: None,
+                updated_at: chrono::Utc::now(),
+                last_event_seq: None,
+            })
+            .await
+            .unwrap();
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "thread/status".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "status": {"type": "active", "activeFlags": []}
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+        let app = build_router(state.clone());
+
+        assert_ok(
+            app.oneshot(
+                Request::post("/v1/threads/thread-1/queued-inputs")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":[{"type":"text","text":"hold"}]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+        );
+        tokio::task::yield_now().await;
+
+        assert!(app_server
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|(method, _)| method != "turn/start"));
+        let runtime = state
+            .store
+            .get_thread_runtime_state("thread-1")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(runtime.status, "active");
+    }
+
+    #[tokio::test]
+    async fn queue_recovery_broadcasts_failed_rows_after_restart() {
+        let (state, _) = test_state().await;
+        let queued = state
+            .store
+            .create_queued_input(
+                "thread-1",
+                vec![crate::app_server_api::UserInput::Text {
+                    text: "recover me".to_string(),
+                    text_elements: vec![],
+                }],
+                crate::app_server_api::TurnStartOptions::default(),
+            )
+            .await
+            .unwrap();
+        state
+            .store
+            .claim_next_queued_input("thread-1")
+            .await
+            .unwrap()
+            .unwrap();
+        let mut receiver = state.events.subscribe();
+
+        queue::recover_queued_inputs(&state).await.unwrap();
+
+        let event = receiver.recv().await.unwrap();
+        assert_eq!(event.kind, queue::QUEUE_UPSERT_EVENT);
+        assert_eq!(event.payload["id"], queued.id);
+        assert_eq!(event.payload["status"], "failed");
+        assert!(event.payload["lastError"]
+            .as_str()
+            .unwrap()
+            .contains("Gateway restarted"));
+    }
+
+    #[tokio::test]
+    async fn queue_recovery_schedules_existing_queued_rows_for_drain() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .create_queued_input(
+                "thread-1",
+                vec![crate::app_server_api::UserInput::Text {
+                    text: "queued before restart".to_string(),
+                    text_elements: vec![],
+                }],
+                crate::app_server_api::TurnStartOptions::default(),
+            )
+            .await
+            .unwrap();
+
+        queue::recover_queued_inputs(&state).await.unwrap();
+
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if app_server
+                    .requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|(method, _)| method == "turn/start")
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let requests = app_server.requests.lock().unwrap();
+        assert!(requests.iter().any(|(method, _)| method == "thread/read"));
+        assert!(requests.iter().any(|(method, _)| method == "turn/start"));
+    }
+
+    #[tokio::test]
+    async fn queue_reconciliation_does_not_overwrite_draining_claim() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "draining".to_string(),
+                active_turn_id: None,
+                updated_at: chrono::Utc::now(),
+                last_event_seq: None,
+            })
+            .await
+            .unwrap();
+        queue::reconcile_thread_runtime_from_app_server(&state, "thread-1")
+            .await
+            .unwrap();
+
+        let runtime = state
+            .store
+            .get_thread_runtime_state("thread-1")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(runtime.status, "draining");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0, "thread/read");
+    }
+
+    #[tokio::test]
+    async fn queued_steer_reconciles_active_runtime_without_turn_id() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "active".to_string(),
+                active_turn_id: None,
+                updated_at: chrono::Utc::now(),
+                last_event_seq: None,
+            })
+            .await
+            .unwrap();
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "thread": {
+                "id": "thread-1",
+                "cliVersion": "0.128.0",
+                "cwd": "/workspace",
+                "ephemeral": false,
+                "modelProvider": "openai",
+                "preview": "hello",
+                "source": "cli",
+                "status": {"type": "active", "activeFlags": []},
+                "turns": [{
+                    "id": "turn-active",
+                    "status": {"type": "running"},
+                    "startedAt": 1_767_225_600_i64,
+                    "items": []
+                }],
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_610_i64
+            }
+        }));
+        let app = build_router(state);
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads/thread-1/queued-inputs")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"steer me"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.status(), StatusCode::OK);
+        let created = response_json(created).await;
+        let queue_id = created["queuedInput"]["id"].as_str().unwrap();
+
+        assert_ok(
+            app.oneshot(
+                Request::post(format!(
+                    "/v1/threads/thread-1/queued-inputs/{queue_id}/steer"
+                ))
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap(),
+        );
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[1].0, "turn/steer");
+        assert_eq!(requests[1].1["expectedTurnId"], "turn-active");
     }
 
     #[tokio::test]

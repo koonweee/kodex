@@ -11,7 +11,17 @@ import {
   type SetStateAction,
 } from "react";
 
-import { interruptTurn, startTurn, steerTurn, uploadImages, type ImageUpload, type UserInput } from "../api/client";
+import {
+  createQueuedInput,
+  deleteQueuedInput,
+  interruptTurn,
+  retryQueuedInput,
+  startTurn,
+  steerQueuedInput,
+  uploadImages,
+  type ImageUpload,
+  type UserInput,
+} from "../api/client";
 import type { ComposerSettings } from "../ComposerFooterControls";
 import { errorMessageFrom } from "../shared/values";
 import {
@@ -43,9 +53,12 @@ type UseComposerOrchestrationParams = {
   isDraftThreadSelected: boolean;
   onCreateDraftThread: (request: DraftThreadCreateRequest) => Promise<string>;
   onError: (error: unknown) => void;
+  onQueuedInputDeleted: (threadId: string, queueId: string) => void;
+  onQueuedInputUpsert: (row: QueuedSteerRow) => void;
   onThreadMaterialized: (threadId: string) => void;
   onThreadTurnStartFailed: (threadId: string) => void;
   onThreadTurnStarted: (threadId: string) => void;
+  queuedSteerRows: QueuedSteerRow[];
   selectedProjectId: string | null;
   selectedThreadId: string | null;
   setTimeline: Dispatch<SetStateAction<TimelineState>>;
@@ -59,9 +72,12 @@ export function useComposerOrchestration({
   isDraftThreadSelected,
   onCreateDraftThread,
   onError,
+  onQueuedInputDeleted,
+  onQueuedInputUpsert,
   onThreadMaterialized,
   onThreadTurnStartFailed,
   onThreadTurnStarted,
+  queuedSteerRows,
   selectedProjectId,
   selectedThreadId,
   setTimeline,
@@ -71,22 +87,15 @@ export function useComposerOrchestration({
   const [isQueuedTurnStartPending, setIsQueuedTurnStartPending] = useState(false);
   const [isComposerDragActive, setIsComposerDragActive] = useState(false);
   const [imagePreviewUrlsByPath, setImagePreviewUrlsByPath] = useState<Record<string, string>>({});
-  const [queuedSteerRows, setQueuedSteerRows] = useState<QueuedSteerRow[]>([]);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const composerContextRef = useRef<ComposerContext | null>(null);
   const latestComposerContextRef = useRef<ComposerContext | null>(null);
   const imagePreviewUrlsByPathRef = useRef<Record<string, string>>({});
-  const autoStartIdleConsumedRef = useRef(false);
   const previousActiveSelectedTurnIdRef = useRef<string | null>(activeSelectedTurnId);
   const nextAttachmentId = useRef(0);
   const nextOptimisticMessageId = useRef(0);
-  const nextQueuedSteerId = useRef(0);
 
   useEffect(() => {
-    const previousActiveSelectedTurnId = previousActiveSelectedTurnIdRef.current;
-    if (activeSelectedTurnId || previousActiveSelectedTurnId) {
-      autoStartIdleConsumedRef.current = false;
-    }
     if (activeSelectedTurnId) {
       setIsQueuedTurnStartPending(false);
     }
@@ -111,29 +120,8 @@ export function useComposerOrchestration({
     }
 
     setIsQueuedTurnStartPending(false);
-    setQueuedSteerRows((current) => {
-      for (const row of current) {
-        for (const attachment of row.attachments) {
-          releaseAttachmentObjectUrl(attachment);
-        }
-      }
-      return [];
-    });
     clearPendingAttachments();
   }, [activeSelectedTurnId, draftThreadProjectId, isComposerSubmitting, selectedProjectId, selectedThreadId]);
-
-  useEffect(() => {
-    if (!selectedThreadId || activeSelectedTurnId || isComposerSubmitting || autoStartIdleConsumedRef.current) {
-      return;
-    }
-    const row = queuedSteerRows.find((item) => !item.isSubmitting && !item.autoStartFailed);
-    if (!row) {
-      return;
-    }
-
-    autoStartIdleConsumedRef.current = true;
-    void submitQueuedTurn(row, selectedThreadId);
-  }, [activeSelectedTurnId, composerSettings, isComposerSubmitting, queuedSteerRows, selectedThreadId]);
 
   async function handleSubmitTurn(event: FormEvent, composerText: string, draftControls: ComposerDraftControls) {
     event.preventDefault();
@@ -149,11 +137,23 @@ export function useComposerOrchestration({
     const text = composerText.trim();
     const attachments = pendingAttachments;
     if (selectedThreadId && activeSelectedTurnId) {
-      const id = `queued-steer-${nextQueuedSteerId.current + 1}`;
-      nextQueuedSteerId.current += 1;
-      setQueuedSteerRows((current) => [...current, { id, text, attachments }]);
-      draftControls.clearText();
-      setPendingAttachments([]);
+      setIsComposerSubmitting(true);
+      setIsQueuedTurnStartPending(true);
+      try {
+        const input = await buildTurnInput(text, attachments);
+        const row = await createQueuedInput(selectedThreadId, input, composerTurnOptions(composerSettings));
+        onQueuedInputUpsert(row);
+        for (const attachment of attachments) {
+          releaseAttachmentObjectUrl(attachment);
+        }
+        draftControls.clearText();
+        setPendingAttachments([]);
+      } catch (error) {
+        onError(error);
+      } finally {
+        setIsQueuedTurnStartPending(false);
+        setIsComposerSubmitting(false);
+      }
       return;
     }
 
@@ -250,102 +250,32 @@ export function useComposerOrchestration({
   }
 
   async function handleSubmitQueuedSteer(row: QueuedSteerRow) {
-    if (!selectedThreadId) {
+    if (isQueuedTurnStartPending || row.status === "submitting" || row.status === "steering") {
       return;
     }
 
-    if (!activeSelectedTurnId) {
-      if (isQueuedTurnStartPending) {
-        return;
-      }
-      await submitQueuedTurn(row, selectedThreadId);
-      return;
-    }
-
-    const optimisticClientRequestId = addOptimisticMessage(
-      row.text,
-      attachmentPreviewImages(row.attachments),
-      activeSelectedTurnId,
-      row.attachments.length > 0 ? "uploading" : "sending",
-    );
-    setQueuedSteerRows((current) =>
-      current.map((item) => (item.id === row.id ? { ...item, isSubmitting: true } : item)),
-    );
-    try {
-      const input = await buildTurnInput(row.text, row.attachments);
-      const uploadedImages = userInputImages(input);
-      if (uploadedImages.length > 0) {
-        updateOptimisticMessage(optimisticClientRequestId, {
-          images: uploadedImages,
-          confirmationState: "sending",
-          error: undefined,
-        });
-      }
-      await steerTurn(selectedThreadId, activeSelectedTurnId, input);
-      updateOptimisticMessage(optimisticClientRequestId, { confirmationState: "sent", error: undefined });
-      for (const attachment of row.attachments) {
-        releaseAttachmentObjectUrl(attachment);
-      }
-      setQueuedSteerRows((current) => current.filter((item) => item.id !== row.id));
-    } catch (error) {
-      setTimeline((current) => removeOptimisticUserMessage(current, optimisticClientRequestId));
-      setQueuedSteerRows((current) =>
-        current.map((item) => (item.id === row.id ? { ...item, isSubmitting: false } : item)),
-      );
-      onError(error);
-    }
-  }
-
-  async function submitQueuedTurn(row: QueuedSteerRow, threadId: string) {
-    const optimisticClientRequestId = addOptimisticMessage(
-      row.text,
-      attachmentPreviewImages(row.attachments),
-      null,
-      row.attachments.length > 0 ? "uploading" : "sending",
-    );
-    setIsComposerSubmitting(true);
     setIsQueuedTurnStartPending(true);
-    setQueuedSteerRows((current) =>
-      current.map((item) => (item.id === row.id ? { ...item, isSubmitting: true } : item)),
-    );
-    onThreadTurnStarted(threadId);
     try {
-      const input = await buildTurnInput(row.text, row.attachments);
-      const uploadedImages = userInputImages(input);
-      if (uploadedImages.length > 0) {
-        updateOptimisticMessage(optimisticClientRequestId, {
-          images: uploadedImages,
-          confirmationState: "sending",
-          error: undefined,
-        });
+      if (row.status === "failed" || !activeSelectedTurnId) {
+        onQueuedInputUpsert(await retryQueuedInput(row.threadId, row.id));
+      } else {
+        await steerQueuedInput(row.threadId, row.id);
+        onQueuedInputDeleted(row.threadId, row.id);
       }
-      await startTurn(threadId, input, composerTurnOptions(composerSettings));
-      onThreadMaterialized(threadId);
-      updateOptimisticMessage(optimisticClientRequestId, { confirmationState: "sent", error: undefined });
-      for (const attachment of row.attachments) {
-        releaseAttachmentObjectUrl(attachment);
-      }
-      setQueuedSteerRows((current) => current.filter((item) => item.id !== row.id));
     } catch (error) {
-      setTimeline((current) => removeOptimisticUserMessage(current, optimisticClientRequestId));
-      onThreadTurnStartFailed(threadId);
-      setIsQueuedTurnStartPending(false);
-      setQueuedSteerRows((current) =>
-        current.map((item) =>
-          item.id === row.id ? { ...item, autoStartFailed: true, isSubmitting: false } : item,
-        ),
-      );
       onError(error);
     } finally {
-      setIsComposerSubmitting(false);
+      setIsQueuedTurnStartPending(false);
     }
   }
 
-  function handleAbortQueuedSteer(row: QueuedSteerRow) {
-    for (const attachment of row.attachments) {
-      releaseAttachmentObjectUrl(attachment);
+  async function handleAbortQueuedSteer(row: QueuedSteerRow) {
+    try {
+      await deleteQueuedInput(row.threadId, row.id);
+      onQueuedInputDeleted(row.threadId, row.id);
+    } catch (error) {
+      onError(error);
     }
-    setQueuedSteerRows((current) => current.filter((item) => item.id !== row.id));
   }
 
   function handleAttachmentInputChange(event: ReactChangeEvent<HTMLInputElement>) {
@@ -519,12 +449,6 @@ export function useComposerOrchestration({
       return update ? { ...attachment, ...update } : attachment;
     };
     setPendingAttachments((current) => current.map(applyUpdates));
-    setQueuedSteerRows((current) =>
-      current.map((row) => ({
-        ...row,
-        attachments: row.attachments.map(applyUpdates),
-      })),
-    );
   }
 
   function rememberImagePreviewUrls(previewUrls: Record<string, string>) {

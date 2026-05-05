@@ -5,6 +5,7 @@ pub mod approvals;
 pub mod config;
 pub mod error;
 pub mod events;
+pub mod queue;
 pub mod routes;
 pub mod schema;
 pub mod static_assets;

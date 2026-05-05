@@ -6,9 +6,9 @@ The MVP target is a Rust gateway that supervises an external `codex app-server` 
 
 ## Current Status
 
-The first Rust gateway implementation exists under `apps/gateway`. It includes the backend scaffold, SQLite project/approval/read-marker storage, diagnostic event replay, a stdio JSON-RPC app-server supervisor, HTTP/SSE API routes, approval brokering, OpenAPI generation, an app-server adapter layer, product-shaped frontend response DTOs, and optional static frontend serving.
+The first Rust gateway implementation exists under `apps/gateway`. It includes the backend scaffold, SQLite project/approval/read-marker/queue storage, diagnostic event replay, a stdio JSON-RPC app-server supervisor, HTTP/SSE API routes, approval brokering, OpenAPI generation, an app-server adapter layer, product-shaped frontend response DTOs, and optional static frontend serving.
 
-The first React web client exists under `apps/web`. It includes the Vite/Mantine scaffold, generated OpenAPI TypeScript types, a typed fetch client, project/thread navigation, stable draggable project ordering, attention-sorted threads, snapshot-first timeline rendering, composer controls, pending approval decisions, and account/model surfaces.
+The first React web client exists under `apps/web`. It includes the Vite/Mantine scaffold, generated OpenAPI TypeScript types, a typed fetch client, project/thread navigation, stable draggable project ordering, attention-sorted threads, snapshot-first timeline rendering, gateway-backed queued composer follow-ups, composer controls, pending approval decisions, and account/model surfaces.
 
 See [plans/index.md](plans/index.md) for the plan directory and status table.
 
@@ -113,12 +113,13 @@ Local routes:
 - `GET /readyz`
 - `GET /openapi.json`
 - `GET /docs`
-- `GET /v1/events` for gateway-owned operational JSON replay and live SSE when `Accept: text/event-stream`. Normal replay is intentionally limited to approvals and gateway warnings; selected-thread timeline history comes from snapshots, not persisted gateway events.
+- `GET /v1/events` for gateway-owned operational JSON replay and live SSE when `Accept: text/event-stream`. Normal replay is intentionally limited to approvals, gateway warnings, and queued composer row updates; selected-thread timeline history comes from snapshots, not persisted gateway events.
 - `GET /v1/debug/events` for raw persisted gateway event replay. This is diagnostic/local-only and should not be used by canonical timeline loading.
 - `POST /v1/uploads/images` for local image uploads used by browser-originated `localImage` turn inputs
+- `GET /v1/threads/{threadId}/queued-inputs`, `POST /v1/threads/{threadId}/queued-inputs`, `POST /v1/threads/{threadId}/queued-inputs/{queueId}/retry`, `POST /v1/threads/{threadId}/queued-inputs/{queueId}/steer`, and `DELETE /v1/threads/{threadId}/queued-inputs/{queueId}` for the same-gateway persisted composer queue.
 - Frontend-critical Codex routes such as `GET /v1/threads`, `GET /v1/threads/{threadId}`, `GET /v1/models`, `GET /v1/account`, `GET /v1/account/rate-limits`, and `POST /v1/account/login` expose typed gateway DTOs with `rawPayload` retained only as an escape hatch for volatile app-server fields. `GET /v1/threads/{threadId}` reads `thread/read includeTurns:true` from app-server and is the canonical selected-thread timeline source. Selected-thread SSE is a live overlay; reconnects or uncertain stream continuity trigger another snapshot read instead of replaying persisted timeline rows.
 
-The gateway has no MVP auth and is intended only for localhost or a trusted VPN. Do not expose it directly to the public internet. ChatGPT/Codex login routes broker Codex/OpenAI auth through app-server APIs; they are not gateway access control. Uploaded image files are local helper assets for app-server input and inherit the same local/trusted-network assumption.
+The gateway has no MVP auth and is intended only for localhost or a trusted VPN. Do not expose it directly to the public internet. ChatGPT/Codex login routes broker Codex/OpenAI auth through app-server APIs; they are not gateway access control. Queued composer rows are shared only between browsers connected to the same gateway process and database; there is no multi-gateway coordination. Uploaded image files are local helper assets for app-server input and inherit the same local/trusted-network assumption.
 
 Image uploads default to the system temp directory so Codex app-server can read `localImage` paths from its sandbox. If you override `KODEX_UPLOADS_DIR`, choose a path that app-server can read from the active sandbox profile, such as a project root or `/tmp`.
 

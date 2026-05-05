@@ -7,7 +7,10 @@ use sqlx::{sqlite::SqlitePoolOptions, Pool, QueryBuilder, Row, Sqlite};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::error::{ApiError, ApiResult};
+use crate::{
+    app_server_api::{TurnStartOptions, UserInput},
+    error::{ApiError, ApiResult},
+};
 
 const EVENT_REPLAY_LIMIT: i64 = 500;
 
@@ -79,6 +82,66 @@ pub struct ThreadRead {
 #[derive(Debug, Clone, Default)]
 pub struct ThreadReadState {
     pub seen_completed_agent_turn_seq: i64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum QueuedInputStatus {
+    Queued,
+    Submitting,
+    Steering,
+    Failed,
+}
+
+impl QueuedInputStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Submitting => "submitting",
+            Self::Steering => "steering",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum QueuedInputPriority {
+    Normal,
+    RejectedSteer,
+}
+
+impl QueuedInputPriority {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::RejectedSteer => "rejectedSteer",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct QueuedInput {
+    pub id: String,
+    pub thread_id: String,
+    pub input: Vec<UserInput>,
+    pub options: TurnStartOptions,
+    pub status: QueuedInputStatus,
+    pub priority: QueuedInputPriority,
+    pub attempt_count: i64,
+    pub last_error: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ThreadRuntimeState {
+    pub thread_id: String,
+    pub status: String,
+    pub active_turn_id: Option<String>,
+    pub updated_at: DateTime<Utc>,
+    pub last_event_seq: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -184,6 +247,43 @@ impl Store {
                 updated_at text not null
             )
             "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
+            create table if not exists queued_turn_inputs (
+                id text primary key,
+                thread_id text not null,
+                input_json text not null,
+                options_json text not null,
+                status text not null,
+                priority text not null default 'normal',
+                attempt_count integer not null default 0,
+                last_error text,
+                created_at text not null,
+                updated_at text not null,
+                deleted_at text
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
+            create table if not exists thread_runtime_state (
+                thread_id text primary key,
+                status text not null,
+                active_turn_id text,
+                updated_at text not null,
+                last_event_seq integer
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "create index if not exists queued_turn_inputs_active_idx on queued_turn_inputs (thread_id, deleted_at, status, priority, created_at)"
         )
         .execute(&self.pool)
         .await?;
@@ -402,6 +502,440 @@ impl Store {
             .ok_or_else(|| ApiError::NotFound(format!("thread read state {thread_id}")))
     }
 
+    pub async fn create_queued_input(
+        &self,
+        thread_id: &str,
+        input: Vec<UserInput>,
+        options: TurnStartOptions,
+    ) -> ApiResult<QueuedInput> {
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now();
+        let input_json = serde_json::to_string(&input)?;
+        let options_json = serde_json::to_string(&options)?;
+        sqlx::query(
+            r#"
+            insert into queued_turn_inputs (
+                id, thread_id, input_json, options_json, status, priority,
+                attempt_count, created_at, updated_at
+            )
+            values (?, ?, ?, ?, 'queued', 'normal', 0, ?, ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(thread_id)
+        .bind(input_json)
+        .bind(options_json)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        self.get_queued_input(thread_id, &id).await
+    }
+
+    pub async fn list_queued_inputs(&self, thread_id: &str) -> ApiResult<Vec<QueuedInput>> {
+        let rows = sqlx::query(
+            r#"
+            select id, thread_id, input_json, options_json, status, priority,
+                   attempt_count, last_error, created_at, updated_at
+            from queued_turn_inputs
+            where thread_id = ? and deleted_at is null
+            order by case priority when 'rejectedSteer' then 0 else 1 end, created_at asc
+            "#,
+        )
+        .bind(thread_id)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter().map(row_to_queued_input).collect()
+    }
+
+    pub async fn queued_thread_ids(&self) -> ApiResult<Vec<String>> {
+        let thread_ids = sqlx::query_scalar::<_, String>(
+            r#"
+            select distinct thread_id from queued_turn_inputs
+            where deleted_at is null and status = 'queued'
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(thread_ids)
+    }
+
+    pub async fn get_queued_input(&self, thread_id: &str, id: &str) -> ApiResult<QueuedInput> {
+        let row = sqlx::query(
+            r#"
+            select id, thread_id, input_json, options_json, status, priority,
+                   attempt_count, last_error, created_at, updated_at
+            from queued_turn_inputs
+            where thread_id = ? and id = ? and deleted_at is null
+            "#,
+        )
+        .bind(thread_id)
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(row_to_queued_input)
+            .transpose()?
+            .ok_or_else(|| ApiError::NotFound(format!("queued input {id}")))
+    }
+
+    pub async fn claim_next_queued_input(&self, thread_id: &str) -> ApiResult<Option<QueuedInput>> {
+        let now = Utc::now();
+        let Some(id) = sqlx::query_scalar::<_, String>(
+            r#"
+            select id from queued_turn_inputs
+            where thread_id = ? and deleted_at is null and status = 'queued'
+            order by case priority when 'rejectedSteer' then 0 else 1 end, created_at asc
+            limit 1
+            "#,
+        )
+        .bind(thread_id)
+        .fetch_optional(&self.pool)
+        .await?
+        else {
+            return Ok(None);
+        };
+
+        let result = sqlx::query(
+            r#"
+            update queued_turn_inputs
+            set status = 'submitting', attempt_count = attempt_count + 1,
+                last_error = null, updated_at = ?
+            where thread_id = ? and id = ? and status = 'queued' and deleted_at is null
+            "#,
+        )
+        .bind(now)
+        .bind(thread_id)
+        .bind(&id)
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Ok(None);
+        }
+
+        self.get_queued_input(thread_id, &id).await.map(Some)
+    }
+
+    pub async fn claim_queued_input_for_steering(
+        &self,
+        thread_id: &str,
+        id: &str,
+    ) -> ApiResult<QueuedInput> {
+        let now = Utc::now();
+        let result = sqlx::query(
+            r#"
+            update queued_turn_inputs
+            set status = 'steering',
+                attempt_count = attempt_count + 1,
+                last_error = null,
+                updated_at = ?
+            where thread_id = ? and id = ? and status = 'queued' and deleted_at is null
+            "#,
+        )
+        .bind(now)
+        .bind(thread_id)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            self.require_existing_queued_input(thread_id, id).await?;
+            return Err(ApiError::BadRequest(format!(
+                "queued input {id} is not ready to steer"
+            )));
+        }
+        self.get_queued_input(thread_id, id).await
+    }
+
+    pub async fn mark_queued_input_failed(
+        &self,
+        thread_id: &str,
+        id: &str,
+        error: String,
+    ) -> ApiResult<QueuedInput> {
+        self.transition_queued_input(
+            thread_id,
+            id,
+            QueuedInputStatus::Failed,
+            Some(QueuedInputPriority::Normal),
+            Some(error),
+        )
+        .await
+    }
+
+    pub async fn mark_queued_input_rejected_steer(
+        &self,
+        thread_id: &str,
+        id: &str,
+        error: String,
+    ) -> ApiResult<QueuedInput> {
+        self.transition_queued_input(
+            thread_id,
+            id,
+            QueuedInputStatus::Queued,
+            Some(QueuedInputPriority::RejectedSteer),
+            Some(error),
+        )
+        .await
+    }
+
+    pub async fn requeue_queued_input(&self, thread_id: &str, id: &str) -> ApiResult<QueuedInput> {
+        let now = Utc::now();
+        let result = sqlx::query(
+            r#"
+            update queued_turn_inputs
+            set status = 'queued',
+                priority = 'normal',
+                last_error = null,
+                updated_at = ?
+            where thread_id = ? and id = ? and status = 'failed' and deleted_at is null
+            "#,
+        )
+        .bind(now)
+        .bind(thread_id)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            self.require_existing_queued_input(thread_id, id).await?;
+            return Err(ApiError::BadRequest(format!(
+                "queued input {id} is not failed"
+            )));
+        }
+        self.get_queued_input(thread_id, id).await
+    }
+
+    async fn transition_queued_input(
+        &self,
+        thread_id: &str,
+        id: &str,
+        status: QueuedInputStatus,
+        priority: Option<QueuedInputPriority>,
+        error: Option<String>,
+    ) -> ApiResult<QueuedInput> {
+        let now = Utc::now();
+        let result = sqlx::query(
+            r#"
+            update queued_turn_inputs
+            set status = ?,
+                priority = coalesce(?, priority),
+                last_error = ?,
+                updated_at = ?
+            where thread_id = ? and id = ? and deleted_at is null
+            "#,
+        )
+        .bind(status.as_str())
+        .bind(priority.map(QueuedInputPriority::as_str))
+        .bind(error)
+        .bind(now)
+        .bind(thread_id)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(ApiError::NotFound(format!("queued input {id}")));
+        }
+        self.get_queued_input(thread_id, id).await
+    }
+
+    pub async fn delete_queued_input(&self, thread_id: &str, id: &str) -> ApiResult<()> {
+        let now = Utc::now();
+        let result = sqlx::query(
+            "update queued_turn_inputs set deleted_at = ?, updated_at = ? where thread_id = ? and id = ? and deleted_at is null",
+        )
+        .bind(now)
+        .bind(now)
+        .bind(thread_id)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            let existing = sqlx::query_scalar::<_, String>(
+                "select id from queued_turn_inputs where thread_id = ? and id = ?",
+            )
+            .bind(thread_id)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+            if existing.is_none() {
+                return Err(ApiError::NotFound(format!("queued input {id}")));
+            }
+        }
+        Ok(())
+    }
+
+    async fn require_existing_queued_input(&self, thread_id: &str, id: &str) -> ApiResult<()> {
+        let existing = sqlx::query_scalar::<_, String>(
+            "select id from queued_turn_inputs where thread_id = ? and id = ? and deleted_at is null",
+        )
+        .bind(thread_id)
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        if existing.is_none() {
+            return Err(ApiError::NotFound(format!("queued input {id}")));
+        }
+        Ok(())
+    }
+
+    pub async fn upsert_thread_runtime_state(&self, state: ThreadRuntimeState) -> ApiResult<()> {
+        sqlx::query(
+            r#"
+            insert into thread_runtime_state (
+                thread_id, status, active_turn_id, updated_at, last_event_seq
+            )
+            values (?, ?, ?, ?, ?)
+            on conflict(thread_id) do update set
+                status = excluded.status,
+                active_turn_id = excluded.active_turn_id,
+                updated_at = excluded.updated_at,
+                last_event_seq = excluded.last_event_seq
+            "#,
+        )
+        .bind(state.thread_id)
+        .bind(state.status)
+        .bind(state.active_turn_id)
+        .bind(state.updated_at)
+        .bind(state.last_event_seq)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn upsert_thread_runtime_state_unless_draining(
+        &self,
+        state: ThreadRuntimeState,
+    ) -> ApiResult<ThreadRuntimeState> {
+        let thread_id = state.thread_id.clone();
+        sqlx::query(
+            r#"
+            insert into thread_runtime_state (
+                thread_id, status, active_turn_id, updated_at, last_event_seq
+            )
+            values (?, ?, ?, ?, ?)
+            on conflict(thread_id) do update set
+                status = excluded.status,
+                active_turn_id = excluded.active_turn_id,
+                updated_at = excluded.updated_at,
+                last_event_seq = excluded.last_event_seq
+            where thread_runtime_state.status != 'draining'
+            "#,
+        )
+        .bind(state.thread_id)
+        .bind(state.status)
+        .bind(state.active_turn_id)
+        .bind(state.updated_at)
+        .bind(state.last_event_seq)
+        .execute(&self.pool)
+        .await?;
+        self.get_thread_runtime_state(&thread_id)
+            .await?
+            .ok_or_else(|| ApiError::NotFound(format!("thread runtime state {thread_id}")))
+    }
+
+    pub async fn set_thread_runtime_pending(&self, thread_id: &str, status: &str) -> ApiResult<()> {
+        self.upsert_thread_runtime_state(ThreadRuntimeState {
+            thread_id: thread_id.to_string(),
+            status: status.to_string(),
+            active_turn_id: None,
+            updated_at: Utc::now(),
+            last_event_seq: None,
+        })
+        .await
+    }
+
+    pub async fn claim_idle_thread_runtime_for_queue_drain(
+        &self,
+        thread_id: &str,
+    ) -> ApiResult<bool> {
+        let now = Utc::now();
+        let result = sqlx::query(
+            r#"
+            update thread_runtime_state
+            set status = 'draining',
+                active_turn_id = null,
+                updated_at = ?
+            where thread_id = ? and status = 'idle'
+            "#,
+        )
+        .bind(now)
+        .bind(thread_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn clear_queue_drain_runtime_claim(&self, thread_id: &str) -> ApiResult<()> {
+        let now = Utc::now();
+        sqlx::query(
+            r#"
+            update thread_runtime_state
+            set status = 'idle',
+                active_turn_id = null,
+                updated_at = ?
+            where thread_id = ? and status = 'draining'
+            "#,
+        )
+        .bind(now)
+        .bind(thread_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_thread_runtime_state(
+        &self,
+        thread_id: &str,
+    ) -> ApiResult<Option<ThreadRuntimeState>> {
+        let row = sqlx::query(
+            "select thread_id, status, active_turn_id, updated_at, last_event_seq from thread_runtime_state where thread_id = ?",
+        )
+        .bind(thread_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(row_to_thread_runtime_state).transpose()
+    }
+
+    pub async fn recover_queued_inputs_after_restart(&self) -> ApiResult<Vec<QueuedInput>> {
+        let now = Utc::now();
+        let rows = sqlx::query(
+            r#"
+            select id, thread_id, input_json, options_json, status, priority,
+                   attempt_count, last_error, created_at, updated_at
+            from queued_turn_inputs
+            where deleted_at is null and status in ('submitting', 'steering')
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        let recovering = rows
+            .into_iter()
+            .map(row_to_queued_input)
+            .collect::<ApiResult<Vec<_>>>()?;
+        sqlx::query(
+            r#"
+            update queued_turn_inputs
+            set status = 'failed',
+                last_error = 'Gateway restarted before this queued input could be confirmed. Retry manually to avoid duplicate sends.',
+                updated_at = ?
+            where deleted_at is null and status in ('submitting', 'steering')
+            "#,
+        )
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "update thread_runtime_state set status = 'unknown', active_turn_id = null, updated_at = ?",
+        )
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        let mut recovered = Vec::with_capacity(recovering.len());
+        for row in recovering {
+            recovered.push(self.get_queued_input(&row.thread_id, &row.id).await?);
+        }
+        Ok(recovered)
+    }
+
     pub async fn insert_approval(&self, approval: NewApproval) -> ApiResult<Approval> {
         let now = Utc::now();
         let id = Uuid::new_v4().to_string();
@@ -558,6 +1092,57 @@ fn row_to_project(row: sqlx::sqlite::SqliteRow) -> ApiResult<Project> {
     })
 }
 
+fn row_to_queued_input(row: sqlx::sqlite::SqliteRow) -> ApiResult<QueuedInput> {
+    let input_json: String = row.try_get("input_json")?;
+    let options_json: String = row.try_get("options_json")?;
+    let status: String = row.try_get("status")?;
+    let priority: String = row.try_get("priority")?;
+    Ok(QueuedInput {
+        id: row.try_get("id")?,
+        thread_id: row.try_get("thread_id")?,
+        input: serde_json::from_str(&input_json)?,
+        options: serde_json::from_str(&options_json)?,
+        status: queued_input_status(&status)?,
+        priority: queued_input_priority(&priority)?,
+        attempt_count: row.try_get("attempt_count")?,
+        last_error: row.try_get("last_error")?,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
+fn queued_input_status(status: &str) -> ApiResult<QueuedInputStatus> {
+    match status {
+        "queued" => Ok(QueuedInputStatus::Queued),
+        "submitting" => Ok(QueuedInputStatus::Submitting),
+        "steering" => Ok(QueuedInputStatus::Steering),
+        "failed" => Ok(QueuedInputStatus::Failed),
+        other => Err(ApiError::BadGateway(format!(
+            "unknown queued input status {other}"
+        ))),
+    }
+}
+
+fn queued_input_priority(priority: &str) -> ApiResult<QueuedInputPriority> {
+    match priority {
+        "normal" => Ok(QueuedInputPriority::Normal),
+        "rejectedSteer" => Ok(QueuedInputPriority::RejectedSteer),
+        other => Err(ApiError::BadGateway(format!(
+            "unknown queued input priority {other}"
+        ))),
+    }
+}
+
+fn row_to_thread_runtime_state(row: sqlx::sqlite::SqliteRow) -> ApiResult<ThreadRuntimeState> {
+    Ok(ThreadRuntimeState {
+        thread_id: row.try_get("thread_id")?,
+        status: row.try_get("status")?,
+        active_turn_id: row.try_get("active_turn_id")?,
+        updated_at: row.try_get("updated_at")?,
+        last_event_seq: row.try_get("last_event_seq")?,
+    })
+}
+
 fn row_to_thread_read(row: sqlx::sqlite::SqliteRow) -> ApiResult<ThreadRead> {
     Ok(ThreadRead {
         thread_id: row.try_get("thread_id")?,
@@ -601,14 +1186,21 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'approvals', 'thread_reads') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'approvals', 'thread_reads', 'queued_turn_inputs', 'thread_runtime_state') order by name",
         )
         .fetch_all(store.pool())
         .await
         .unwrap();
         assert_eq!(
             tables,
-            vec!["approvals", "events", "projects", "thread_reads"]
+            vec![
+                "approvals",
+                "events",
+                "projects",
+                "queued_turn_inputs",
+                "thread_reads",
+                "thread_runtime_state"
+            ]
         );
     }
 
@@ -675,6 +1267,132 @@ mod tests {
         let thread_ids = vec!["thread-1".to_string()];
         let states = store.thread_read_states(&thread_ids).await.unwrap();
         assert!(!states.contains_key("thread-1"));
+    }
+
+    #[tokio::test]
+    async fn queued_inputs_round_trip_order_and_restart_recovery() {
+        let store = Store::in_memory().await.unwrap();
+        let first = store
+            .create_queued_input(
+                "thread-1",
+                vec![UserInput::Text {
+                    text: "normal".to_string(),
+                    text_elements: vec![],
+                }],
+                TurnStartOptions::default(),
+            )
+            .await
+            .unwrap();
+        let second = store
+            .create_queued_input(
+                "thread-1",
+                vec![UserInput::Text {
+                    text: "rejected".to_string(),
+                    text_elements: vec![],
+                }],
+                TurnStartOptions {
+                    model: Some("gpt-5.4".to_string()),
+                    ..TurnStartOptions::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        let rejected = store
+            .mark_queued_input_rejected_steer("thread-1", &second.id, "not steerable".to_string())
+            .await
+            .unwrap();
+        assert_eq!(rejected.priority, QueuedInputPriority::RejectedSteer);
+
+        let listed = store.list_queued_inputs("thread-1").await.unwrap();
+        assert_eq!(
+            listed.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            vec![second.id.as_str(), first.id.as_str()]
+        );
+        assert_eq!(listed[0].options.model.as_deref(), Some("gpt-5.4"));
+
+        let claimed = store
+            .claim_next_queued_input("thread-1")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(claimed.id, second.id);
+        assert_eq!(claimed.status, QueuedInputStatus::Submitting);
+        store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "active".to_string(),
+                active_turn_id: Some("turn-1".to_string()),
+                updated_at: Utc::now(),
+                last_event_seq: Some(10),
+            })
+            .await
+            .unwrap();
+        store.recover_queued_inputs_after_restart().await.unwrap();
+
+        let recovered = store
+            .get_queued_input("thread-1", &second.id)
+            .await
+            .unwrap();
+        assert_eq!(recovered.status, QueuedInputStatus::Failed);
+        assert!(recovered.last_error.unwrap().contains("Gateway restarted"));
+        let runtime = store
+            .get_thread_runtime_state("thread-1")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(runtime.status, "unknown");
+        assert_eq!(runtime.active_turn_id, None);
+
+        let draining = ThreadRuntimeState {
+            thread_id: "thread-1".to_string(),
+            status: "draining".to_string(),
+            active_turn_id: None,
+            updated_at: Utc::now(),
+            last_event_seq: None,
+        };
+        store
+            .upsert_thread_runtime_state(draining.clone())
+            .await
+            .unwrap();
+        let preserved = store
+            .upsert_thread_runtime_state_unless_draining(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "idle".to_string(),
+                active_turn_id: None,
+                updated_at: Utc::now(),
+                last_event_seq: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(preserved.status, "draining");
+
+        let failed = store
+            .mark_queued_input_failed("thread-1", &first.id, "start failed".to_string())
+            .await
+            .unwrap();
+        assert_eq!(failed.status, QueuedInputStatus::Failed);
+        let retried = store
+            .requeue_queued_input("thread-1", &first.id)
+            .await
+            .unwrap();
+        assert_eq!(retried.status, QueuedInputStatus::Queued);
+        assert!(matches!(
+            store.requeue_queued_input("thread-1", &first.id).await,
+            Err(ApiError::BadRequest(_))
+        ));
+        let steered = store
+            .claim_queued_input_for_steering("thread-1", &first.id)
+            .await
+            .unwrap();
+        assert_eq!(steered.status, QueuedInputStatus::Steering);
+        assert_eq!(steered.attempt_count, 1);
+        assert!(matches!(
+            store
+                .claim_queued_input_for_steering("thread-1", &first.id)
+                .await,
+            Err(ApiError::BadRequest(_))
+        ));
     }
 
     #[tokio::test]

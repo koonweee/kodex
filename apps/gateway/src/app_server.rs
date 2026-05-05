@@ -282,7 +282,14 @@ impl AppServer for JsonRpcAppServer {
             Ok(Ok(value)) => Ok(value),
             Ok(Err(error)) if error.code == -32001 => Err(ApiError::Retryable(error.message)),
             Ok(Err(error)) => {
-                let message = format!("app-server error {}: {}", error.code, error.message);
+                let message = if let Some(data) = error.data {
+                    format!(
+                        "app-server error {}: {}; data: {}",
+                        error.code, error.message, data
+                    )
+                } else {
+                    format!("app-server error {}: {}", error.code, error.message)
+                };
                 if message.contains("persistExtendedHistory") {
                     self.mark_persist_extended_history_incompatible();
                 }

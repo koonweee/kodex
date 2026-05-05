@@ -8,7 +8,7 @@ This is a same-gateway, single-user feature. Desktop and iPad browser sessions c
 
 ## Status
 
-Proposed.
+Complete.
 
 ## Current Problem
 
@@ -23,8 +23,9 @@ The gateway already owns the app-server connection, SQLite store, event broadcas
 - Drain exactly one queued row per idle transition for a thread.
 - Preserve local/VPN-only assumptions. Do not imply the gateway is safe to expose publicly.
 - Keep generated OpenAPI as the public contract. Frontend types must come from regenerated OpenAPI artifacts.
-- Store app-server-shaped `UserInput[]` and turn options. Do not invent duplicate prompt DTOs.
+- Store app-server-shaped `UserInput[]` and turn options. Reuse the current flattened `TurnStartRequest` shape (`{ input, ...turnOptions }`) unless the implementation proves a nested internal shape is clearer behind the public DTO.
 - Avoid duplicate sends. If gateway recovery cannot prove whether an in-flight row was submitted, leave it failed and require user retry.
+- Preserve the snapshot-first timeline architecture. Queue state is gateway-owned operational state carried by `/v1/events`; it must not reintroduce persisted timeline replay as canonical thread history.
 
 ## Non-Goals
 
@@ -42,7 +43,7 @@ Routes:
 - `GET /v1/threads/{threadId}/queued-inputs`
   - Returns active queue rows for the thread, ordered by `priority`, then `createdAt`.
 - `POST /v1/threads/{threadId}/queued-inputs`
-  - Body: `{ input: UserInput[], options?: TurnStartOptions }`.
+  - Body: the generated `QueuedInputCreateRequest`, matching the current flattened turn-start public shape: `{ input: UserInput[], model?, effort?, serviceTier?, approvalPolicy?, approvalsReviewer?, sandboxPolicy? }`.
   - Creates a queued follow-up row and broadcasts it.
 - `POST /v1/threads/{threadId}/queued-inputs/{queueId}/steer`
   - Attempts to submit the row to the currently active turn for that thread.
@@ -79,15 +80,22 @@ SSE event kinds:
 
 Queue event replay should be operational replay, like approval events, so reconnecting clients catch up without needing a full page reload.
 
+Current architecture notes:
+
+- `/v1/events` now replays only gateway-owned operational events such as approvals and warnings. Queue upsert/delete events must be added to that operational replay allowlist and to the live event allowlist.
+- Raw or normalized timeline events must remain diagnostic/live-only and must not be required to reconstruct queue state.
+- The frontend currently has both a global operational SSE subscription and a selected-thread timeline SSE subscription. Queue state should be applied through one idempotent queue reducer keyed by queue row id, and selected-thread events must not double-apply rows already handled by the global stream.
+- App-server snapshots remain the canonical source for turns/items. Gateway queue runtime state may be derived from normalized live events and reconciliation snapshots, but queue implementation must not depend on persisted timeline replay.
+
 ## Milestone 1: Public Contract And Store Model
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
 - Store migration creates `queued_turn_inputs` and `thread_runtime_state`.
 - Queue rows round-trip `UserInput[]` and `TurnStartOptions` without shape drift.
-- Listing a thread queue excludes deleted/submitted rows and orders rejected steers before normal rows.
+- Listing a thread queue excludes soft-deleted terminal rows and orders rejected steers before normal rows.
 - OpenAPI includes the queued-input routes and DTOs.
 
 Implementation:
@@ -111,6 +119,7 @@ Implementation:
   - `updated_at text not null`
   - `last_event_seq integer`
 - Add typed store methods for create, list, mark submitting, mark steering, mark failed, requeue, delete, and claim-next.
+- Keep public create request generation aligned with `TurnStartRequest`; store options internally as a `TurnStartOptions` JSON object after splitting `input` from the flattened request body.
 - Add index coverage for active thread queue reads and first-row claims.
 - Add public Rust DTOs with `utoipa` schemas.
 
@@ -123,7 +132,7 @@ Exit conditions:
 
 ## Milestone 2: Queue Routes And SSE Synchronization
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -133,6 +142,7 @@ Failing tests first:
 - Retry changes a failed row back to queued and broadcasts an upsert.
 - Cross-thread queue IDs cannot be read, steered, retried, or deleted through the wrong thread path.
 - Queue events replay through `/v1/events` after reconnect.
+- Queue event kinds are included in backend operational replay/live filters and in the frontend `GATEWAY_SSE_EVENT_TYPES` list.
 
 Implementation:
 
@@ -146,11 +156,12 @@ Exit conditions:
 
 - Route tests cover list, create, retry, delete, wrong-thread rejection, and SSE replay.
 - Queue events appear live in thread-filtered and global `/v1/events` streams.
+- Frontend queue reducers are idempotent by row id and tolerate receiving the same row from global and selected-thread streams.
 - Generated `/openapi.json` contains every queued-input route.
 
 ## Milestone 3: Gateway Queue Drainer
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -165,7 +176,9 @@ Implementation:
 
 - Update runtime state from normalized app-server events:
   - Active/running turn upserts set `status = active` and `activeTurnId`.
-  - Terminal turn upserts and thread status idle clear `activeTurnId` and set `status = idle`.
+  - Terminal turn upserts clear `activeTurnId` and set `status = idle` only for that thread.
+  - Thread status idle can clear `activeTurnId`; thread status active without a turn id can mark the thread active but must not invent an `activeTurnId`.
+  - Snapshot/reconciliation reads should refresh both status and active turn id when live events are insufficient.
 - Trigger drain after:
   - enqueue when runtime state is idle,
   - retry when runtime state is idle,
@@ -180,6 +193,7 @@ Implementation:
 - Add a small recovery step at startup:
   - `submitting` and `steering` rows become `failed` with a restart message.
   - queued rows remain queued.
+  - stale `thread_runtime_state` rows are marked `unknown` or reconciled before any queued rows drain, so a pre-restart active state cannot block the queue forever.
 
 Exit conditions:
 
@@ -191,7 +205,7 @@ Exit conditions:
 
 ## Milestone 4: Persisted Steering Semantics
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -210,6 +224,7 @@ Implementation:
 - On successful `turn/steer`, remove the row.
 - On app-server non-steerable errors, requeue with rejected-steer priority so it drains before normal follow-ups.
 - On generic errors, mark failed.
+- Preserve enough JSON-RPC error detail before gateway error conversion to distinguish no-active-turn or active-turn-not-steerable responses from generic `BadGateway` failures.
 
 Exit conditions:
 
@@ -218,7 +233,7 @@ Exit conditions:
 
 ## Milestone 5: Frontend Queue Migration
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -236,7 +251,7 @@ Implementation:
 - Add generated-client-backed queue API wrappers.
 - Replace `queuedSteerRows` local ownership with gateway-owned queue state keyed by `threadId`.
 - Load selected thread queue with `GET /queued-inputs` when a thread is selected.
-- Apply `turn_queue.item_upsert` and `turn_queue.item_deleted` events from global and selected-thread SSE streams.
+- Apply `turn_queue.item_upsert` and `turn_queue.item_deleted` through an idempotent queue reducer. Prefer the global operational SSE stream as the owner of cross-thread queue updates; selected-thread SSE may deliver the same event and must be safe to ignore or merge.
 - On active-turn composer submit:
   - Upload pending images first.
   - Build app-server-shaped `UserInput[]`.
@@ -254,7 +269,7 @@ Exit conditions:
 
 ## Milestone 6: Documentation, Verification, And Review
 
-Status: Proposed
+Status: Complete
 
 Implementation:
 
