@@ -52,6 +52,9 @@ export function ThreadPanel({
   showDebugEvents: boolean;
   timeline: TimelineState;
 }) {
+  const selectedThreadTitleIsPending = selectedThread ? pendingTitleThreadIds.has(selectedThread.id) : false;
+  const shouldShowThreadTitle = selectedThread !== null && !selectedThreadTitleIsPending;
+
   return (
     <>
       {errorMessage ? (
@@ -66,20 +69,17 @@ export function ThreadPanel({
       ) : null}
       {selectedThread || isDraftThreadSelected ? (
         <>
-          <Group justify="space-between" wrap="nowrap" className="kodex-thread-header">
-            <Box className="kodex-thread-heading">
-              <Title
-                className="kodex-thread-title"
-                c={selectedThread && pendingTitleThreadIds.has(selectedThread.id) ? "dimmed" : undefined}
-                data-placeholder-title={selectedThread && pendingTitleThreadIds.has(selectedThread.id) ? "true" : undefined}
-                order={3}
-                size="h5"
-                title={selectedThreadTitle}
-              >
-                {selectedThreadTitle}
-              </Title>
-            </Box>
-            {selectedThread ? (
+          {selectedThread ? (
+            <Group justify="space-between" wrap="nowrap" className="kodex-thread-header">
+              {shouldShowThreadTitle ? (
+                <Box className="kodex-thread-heading">
+                  <Title className="kodex-thread-title" order={3} size="h5" title={selectedThreadTitle}>
+                    {selectedThreadTitle}
+                  </Title>
+                </Box>
+              ) : (
+                <Box className="kodex-thread-heading" />
+              )}
               <Menu position="bottom-end" withinPortal>
                 <Menu.Target>
                   <ActionIcon aria-label={THREAD_PANEL_TEXT.actions} variant="subtle">
@@ -92,8 +92,8 @@ export function ThreadPanel({
                   </Menu.Item>
                 </Menu.Dropdown>
               </Menu>
-            ) : null}
-          </Group>
+            </Group>
+          ) : null}
           {selectedThread ? (
             <Box
               className="kodex-timeline-scroll"

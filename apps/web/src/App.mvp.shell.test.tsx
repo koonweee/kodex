@@ -110,7 +110,7 @@ describe("MVP shell flows", () => {
     await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
     expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(0);
     expect(screen.getAllByRole("button", { name: /new thread/i })).toHaveLength(1);
-    expect(screen.getByRole("heading", { name: /new thread/i })).toBeInTheDocument();
+    expect(within(screen.getByRole("main", { name: /thread/i })).queryByRole("heading", { name: /new thread/i })).not.toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
     const main = screen.getByRole("main", { name: /thread/i });
     expect(within(main).getByText(/good (morning|afternoon|evening)|burning the midnight oil\?/i)).toBeInTheDocument();
@@ -250,7 +250,7 @@ describe("MVP shell flows", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: /new chat/i }));
     expect(gateway.callsFor("POST", "/v1/chats/threads")).toHaveLength(0);
-    expect(screen.getByRole("heading", { name: /new thread/i })).toBeInTheDocument();
+    expect(within(screen.getByRole("main", { name: /thread/i })).queryByRole("heading", { name: /new thread/i })).not.toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText(/message composer/i), "Plan the chat sidebar implementation");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));

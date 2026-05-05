@@ -653,7 +653,7 @@ describe("MVP composer input flows", () => {
 
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
-    expect(screen.getByRole("heading", { name: /new thread/i })).toBeInTheDocument();
+    expect(within(screen.getByRole("main", { name: /thread/i })).queryByRole("heading", { name: /new thread/i })).not.toBeInTheDocument();
 
     const input = container.querySelector<HTMLInputElement>('input[type="file"]');
     expect(input).not.toBeNull();
