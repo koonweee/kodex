@@ -142,6 +142,8 @@ function KodexShell({
   const selectedThreadIdRef = useRef<string | null>(null);
   const autoSelectedThreadIdRef = useRef<string | null>(null);
   const approvalsRef = useRef<Approval[]>([]);
+  const attachedThreadIdsRef = useRef<Set<string>>(new Set());
+  const attachingThreadIdsRef = useRef<Set<string>>(new Set());
   const pendingTitleThreadIdsRef = useRef<Set<string>>(new Set());
   const threadsByProjectIdRef = useRef<ThreadsByProjectId>({});
   const composerShellRef = useRef<HTMLDivElement | null>(null);
@@ -388,18 +390,28 @@ function KodexShell({
   });
 
   useEffect(() => {
-    if (!selectedThread || selectedThread.status !== "notLoaded") {
+    if (isSelectedThreadSnapshotDeferred) {
+      return;
+    }
+    if (!selectedThread || !selectedThreadShouldAttachLive(selectedThread)) {
+      return;
+    }
+    if (attachedThreadIdsRef.current.has(selectedThread.id) || attachingThreadIdsRef.current.has(selectedThread.id)) {
       return;
     }
 
     let cancelled = false;
+    attachingThreadIdsRef.current.add(selectedThread.id);
     resumeThread(selectedThread.id)
       .then((thread) => {
+        attachingThreadIdsRef.current.delete(selectedThread.id);
+        attachedThreadIdsRef.current.add(thread.id);
         if (!cancelled) {
           replaceThread(thread);
         }
       })
       .catch((error) => {
+        attachingThreadIdsRef.current.delete(selectedThread.id);
         if (!cancelled) {
           reportError(error);
         }
@@ -408,7 +420,7 @@ function KodexShell({
     return () => {
       cancelled = true;
     };
-  }, [selectedThread?.id, selectedThread?.status]);
+  }, [isSelectedThreadSnapshotDeferred, selectedThread?.id, selectedThread?.status]);
 
   async function loadProjectThreads(projectId: string, options: { selectWhenLoaded?: boolean } = {}) {
     const requestId = nextThreadRequestId.current + 1;
@@ -568,6 +580,7 @@ function KodexShell({
       await createThread(projectId, createThreadOptions(composerSettings)),
       firstMessageText,
     );
+    attachedThreadIdsRef.current.add(thread.id);
     setThreadsByProjectId((current) => prependThreadForProject(current, projectId, thread));
     setPendingTitleThreadIds((current) => markThreadTitlePending(current, thread));
     setMaterializingThreadIds((current) => {
@@ -597,6 +610,7 @@ function KodexShell({
   }
 
   function markThreadActive(threadId: string) {
+    attachedThreadIdsRef.current.add(threadId);
     setThreadsByProjectId((current) =>
       updateThreadReadStateInProjects(current, threadId, (thread) =>
         thread.status === "active" ? {} : { status: "active" },
@@ -631,6 +645,8 @@ function KodexShell({
       return;
     }
     await archiveThread(threadId);
+    attachedThreadIdsRef.current.delete(threadId);
+    attachingThreadIdsRef.current.delete(threadId);
     setThreadsByProjectId((current) => removeThreadFromProjects(current, threadId));
     if (threadId === selectedThreadId) {
       clearTimelineEntry();
@@ -731,4 +747,8 @@ function KodexShell({
       <ImageLightbox image={lightboxImage} onClose={handleCloseLightbox} />
     </>
   );
+}
+
+function selectedThreadShouldAttachLive(thread: ThreadSummary): boolean {
+  return thread.status === "notLoaded" || thread.status === "active";
 }

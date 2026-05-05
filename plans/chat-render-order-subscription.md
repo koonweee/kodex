@@ -28,7 +28,7 @@ This plan is based on the agent-browser repro in `dogfood-output/chat-order/` an
 
 ## Milestone 1: Stable Timeline Item Display Order
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -71,7 +71,7 @@ Agent-browser verification:
 
 ## Milestone 2: Selected Active Thread Live Attach Parity
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -116,7 +116,7 @@ Agent-browser verification:
 
 ## Milestone 3: Reconnect and Snapshot Refresh Stability
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -151,7 +151,7 @@ Agent-browser verification:
 
 ## Milestone 4: End-to-End Regression Browser Pass
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 

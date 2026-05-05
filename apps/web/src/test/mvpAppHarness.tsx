@@ -129,6 +129,8 @@ function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
     "GET /v1/composer-settings": { model: null, effort: null, serviceTier: null, permissionsPreset: null },
     ...overrides,
   };
+  routes["POST /v1/threads/thread-1/resume"] ??= () => threadCommandFromList(routes, thread);
+  routes["POST /v1/threads/thread-2/resume"] ??= () => threadCommandFromList(routes, secondThread);
   routes["GET /v1/threads/thread-1"] ??= (request: Request) =>
     threadDetailFromSnapshot(routes, request, thread, [
       snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "Hello from Codex" })]),
@@ -146,15 +148,7 @@ async function threadDetailFromSnapshot(
   sourceThread: TestThreadSummary,
   turns = [] as Array<{ id: string; status: string; items: unknown[]; rawPayload: unknown }>,
 ) {
-  const threadsRoute = routes["GET /v1/threads"];
-  const threadsBody =
-    typeof threadsRoute === "function"
-      ? await threadsRoute(new Request("http://localhost/v1/threads"))
-      : threadsRoute;
-  const listedThread = (threadsBody as { threads?: Array<typeof thread> } | undefined)?.threads?.find(
-    (candidate) => candidate.id === sourceThread.id,
-  );
-  sourceThread = listedThread ?? sourceThread;
+  sourceThread = await listedThreadFor(routes, sourceThread);
   if (sourceThread.status === "active") {
     const activeTurn = [...turns].reverse().find((turn) => turn.items.length > 0);
     if (activeTurn) {
@@ -167,6 +161,25 @@ async function threadDetailFromSnapshot(
     liveState: sourceThread.status === "active" ? "streaming" : "idle",
     rawPayload: {},
   };
+}
+
+async function threadCommandFromList(routes: GatewayRouteMap, sourceThread: TestThreadSummary) {
+  return {
+    thread: await listedThreadFor(routes, sourceThread),
+    rawPayload: {},
+  };
+}
+
+async function listedThreadFor(routes: GatewayRouteMap, sourceThread: TestThreadSummary) {
+  const threadsRoute = routes["GET /v1/threads"];
+  const threadsBody =
+    typeof threadsRoute === "function"
+      ? await threadsRoute(new Request("http://localhost/v1/threads"))
+      : threadsRoute;
+  const listedThread = (threadsBody as { threads?: Array<typeof thread> } | undefined)?.threads?.find(
+    (candidate) => candidate.id === sourceThread.id,
+  );
+  return listedThread ?? sourceThread;
 }
 
 function snapshotTurn(id: string, items: unknown[], status = "completed") {

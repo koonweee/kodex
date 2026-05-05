@@ -483,14 +483,21 @@ function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event
     images: mergeImages(existing.images, incoming.images),
     payload: event.payload,
     resultSummary: incoming.resultSummary || existing.resultSummary,
-    seq: Math.min(existing.seq, incoming.seq),
+    seq: mergeTimelineDisplaySeq(existing),
     status: mergeTimelineStatus(existing, incoming, event),
     toolName: incoming.toolName || existing.toolName,
     text,
   };
 }
 
+function mergeTimelineDisplaySeq(existing: TimelineItem): number {
+  return existing.seq;
+}
+
 function mergeTimelineText(existing: TimelineItem, incoming: TimelineItem, event: EventEnvelope): string {
+  if (shouldPreserveCompletedTextFromStaleLiveStart(existing, incoming, event)) {
+    return existing.text;
+  }
   if (!event.codexMethod?.endsWith("/delta")) {
     return incoming.text || existing.text;
   }
@@ -501,6 +508,19 @@ function mergeTimelineText(existing: TimelineItem, incoming: TimelineItem, event
     return existing.text;
   }
   return existing.text + incoming.text;
+}
+
+function shouldPreserveCompletedTextFromStaleLiveStart(
+  existing: TimelineItem,
+  incoming: TimelineItem,
+  event: EventEnvelope,
+): boolean {
+  return (
+    existing.status === "completed" &&
+    incoming.seq < existing.seq &&
+    event.codexMethod !== "item/completed" &&
+    !event.codexMethod?.endsWith("/delta")
+  );
 }
 
 function mergeTimelineStatus(existing: TimelineItem, incoming: TimelineItem, event: EventEnvelope) {

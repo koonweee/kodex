@@ -276,6 +276,46 @@ describe("timeline reducer snapshots", () => {
     });
   });
 
+  it("keeps snapshot row order when a stale lower-seq live item replays after refresh", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("Old answer", "agent-1"));
+    state = applyTimelineEvent(state, liveAgentEvent(20, "agent-2", "Streaming answer"));
+
+    state = applyTimelineSnapshot(state, snapshotWithSecondUser("New question", "Streaming answer"));
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.text)).toEqual([
+      "Hello",
+      "Previous answer",
+      "New question",
+      "Streaming answer",
+    ]);
+
+    state = applyTimelineEvent(state, liveAgentEvent(10, "agent-2", "Streaming answer"));
+
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.text)).toEqual([
+      "Hello",
+      "Previous answer",
+      "New question",
+      "Streaming answer",
+    ]);
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+      "user-1",
+      "agent-1",
+      "user-2",
+      "agent-2",
+    ]);
+  });
+
+  it("does not let stale non-delta live starts regress completed snapshot text", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshotWithSecondUser("New question", "Streaming answer"));
+
+    state = applyTimelineEvent(state, liveAgentEvent(1, "agent-2", "Partial answer"));
+
+    const agent = sortedVisibleTimelineItems(state, false).find((item) => item.id === "agent-2");
+    expect(agent).toMatchObject({
+      status: "completed",
+      text: "Streaming answer",
+    });
+  });
+
   it("keeps a newer same-text local user message when a stale direct server event replays", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot("Previous answer", "agent-1"));
     state = addOptimisticUserMessage(state, {
@@ -797,5 +837,20 @@ function snapshotWithUserOnlyTurn(userText: string): ThreadDetailResponse {
         ],
       },
     ],
+  };
+}
+
+function liveAgentEvent(seq: number, itemId: string, text: string) {
+  return {
+    id: `live-agent-${seq}-${itemId}`,
+    seq,
+    kind: "timeline.item_upsert",
+    codexMethod: "item/started",
+    threadId: "thread-1",
+    turnId: "turn-2",
+    itemId,
+    projectId: "project-1",
+    payload: { item: { id: itemId, type: "agentMessage", text } },
+    receivedAt: "2026-04-30T00:00:00Z",
   };
 }

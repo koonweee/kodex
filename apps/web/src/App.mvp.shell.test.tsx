@@ -25,6 +25,16 @@ function clickMenuItem(name: RegExp) {
   return clickMenuItemWithDeps(name, screen, waitFor, fireEvent);
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, reject, resolve };
+}
+
 describe("MVP shell flows", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -338,6 +348,107 @@ describe("MVP shell flows", () => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-2/resume")).toHaveLength(1);
     });
     expect(await screen.findByText(/snapshot after resume/i)).toBeInTheDocument();
+  });
+
+  it("attaches active selected threads once while keeping live updates on the selected stream", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const runningThread = { ...secondThread, status: "active" };
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, runningThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "POST /v1/threads/thread-2/resume": {
+          thread: runningThread,
+          rawPayload: {},
+        },
+        "GET /v1/threads/thread-2": threadDetail(runningThread, [
+          snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Running snapshot" })]),
+        ]),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/running snapshot/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/resume")).toHaveLength(1);
+    });
+
+    let selectedStream: FakeEventSource | undefined;
+    await waitFor(() => {
+      selectedStream = FakeEventSource.instances.find(
+        (instance) => instance.url.includes("threadId=thread-2") && !instance.closed,
+      );
+      expect(selectedStream).toBeDefined();
+    });
+    act(() => {
+      selectedStream?.emitNamed("timeline.item_upsert", {
+        id: "event-live-agent",
+        seq: 10,
+        kind: "timeline.item_upsert",
+        codexMethod: "item/started",
+        threadId: "thread-2",
+        turnId: "turn-2",
+        itemId: "agent-live",
+        projectId: project.id,
+        payload: { item: { id: "agent-live", type: "agentMessage", text: "Live active update" } },
+        receivedAt: "2026-04-30T00:00:01Z",
+      });
+    });
+    expect(await screen.findByText(/live active update/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /implement frontend/i }));
+    await screen.findByText(/hello from codex/i);
+    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    await screen.findByText(/running snapshot/i);
+
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/resume")).toHaveLength(1);
+  });
+
+  it("remembers active thread attach success when selection changes before resume resolves", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const runningThread = { ...secondThread, status: "active" };
+    const resumeDeferred = deferred<{ thread: typeof runningThread; rawPayload: Record<string, never> }>();
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, runningThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "POST /v1/threads/thread-2/resume": () => resumeDeferred.promise,
+        "GET /v1/threads/thread-2": threadDetail(runningThread, [
+          snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Running snapshot" })]),
+        ]),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/running snapshot/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/resume")).toHaveLength(1);
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /implement frontend/i }));
+    await screen.findByText(/hello from codex/i);
+
+    await act(async () => {
+      resumeDeferred.resolve({ thread: runningThread, rawPayload: {} });
+      await resumeDeferred.promise;
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    await screen.findByText(/running snapshot/i);
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/resume")).toHaveLength(1);
+    });
   });
 
   it("provides a compact panel switcher for narrow viewports", async () => {
