@@ -33,6 +33,7 @@ This file is the directory of record for Kodex plans. Keep the status column cur
 | [Sidebar ordering plan](sidebar-ordering.md) | Complete | Stable project ordering, manual project reorder, and attention-first thread ordering | Implemented persisted project drag order, newest-created defaults, and attention-first thread sorting. |
 | [UI standardization plan](ui-standardization.md) | Complete | Shared frontend UI tokens, menu/button/selectable primitives, semantic tones, surfaces, responsive QA | Implemented shared tokens, menu/selectable/button/tone styling, responsive fixes, agent-browser pass, and review-fix loop. |
 | [Gateway queue persistence plan](gateway-queue-persistence.md) | Complete | Gateway-owned persistent per-thread composer queue for same-gateway multi-client use | Implemented queued-input API, SQLite persistence, drainer, frontend migration, generated OpenAPI types, and automated verification; desktop/iPad agent-browser scenarios remain as manual smoke coverage. |
+| [Chat sidebar plan](chat-sidebar.md) | Proposed | First-class chat threads with gateway-owned dated cwd creation plus sidebar project/chats polish | Concrete plan for Add project copy/icon, subtle project styling, flat Chats list, chat cwd slugging, backend chat endpoints, generated frontend types, and verification. |
 | [Future extensions overview](future-extensions.md) | Proposed | Non-MVP feature map linked to app-server APIs | Overview only, not an implementation plan. |
 
 ## Maintenance Rules
