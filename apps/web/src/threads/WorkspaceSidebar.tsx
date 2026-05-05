@@ -228,7 +228,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       <Stack gap="lg" h="100%">
         <Box className="kodex-sidebar-scroll">
           <Group justify="space-between" align="center" mb="sm">
-            <Text className="kodex-sidebar-section-title" fw={700} size="sm">
+            <Text className="kodex-sidebar-section-title" fw={400} size="xs">
               {SIDEBAR_TEXT.projects}
             </Text>
             <Tooltip label={SIDEBAR_TEXT.newProject}>
@@ -237,9 +237,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 aria-label={SIDEBAR_TEXT.newProject}
                 color="gray"
                 onClick={() => onProjectFormOpenChange((open) => !open)}
-                size="sm"
+                size="xs"
               >
-                <FolderPlus size={15} />
+                <FolderPlus size={14} />
               </ActionIcon>
             </Tooltip>
           </Group>
@@ -330,10 +330,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                           aria-label={newThreadLabel}
                           color="gray"
                           onClick={() => onCreateThread(project.id)}
-                          size="sm"
+                          size="xs"
                           variant="subtle"
                         >
-                          <SquarePen size={16} />
+                          <SquarePen size={14} />
                         </ActionIcon>
                       </Tooltip>
                     </Box>
@@ -369,7 +369,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           </Stack>
           <Box className="kodex-sidebar-section">
             <Group justify="space-between" align="center" mb="sm">
-              <Text className="kodex-sidebar-section-title" fw={700} size="sm">
+              <Text className="kodex-sidebar-section-title" fw={400} size="xs">
                 {SIDEBAR_TEXT.chats}
               </Text>
               <Tooltip label={SIDEBAR_TEXT.newChat}>
@@ -377,10 +377,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                   aria-label={SIDEBAR_TEXT.newChat}
                   color="gray"
                   onClick={onCreateChat}
-                  size="sm"
+                  size="xs"
                   variant="subtle"
                 >
-                  <SquarePen size={16} />
+                  <SquarePen size={14} />
                 </ActionIcon>
               </Tooltip>
             </Group>

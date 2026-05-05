@@ -92,7 +92,7 @@
 
 .kodex-project-thread-list,
 .kodex-chat-thread-list {
-  padding-left: 21px;
+  padding-left: 0;
 }
 
 .kodex-chat-empty {
@@ -201,7 +201,7 @@
 .kodex-thread-list-action-slot {
   position: absolute;
   top: 50%;
-  right: 8px;
+  right: 0;
   display: grid;
   width: 18px;
   height: 18px;
@@ -304,6 +304,7 @@
   overflow-x: hidden;
   overflow-y: auto;
   margin-right: calc(var(--app-shell-padding) * -1);
+  padding-left: 6px;
   padding-right: calc(var(--app-shell-padding) + 6px);
 }
 
