@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -17,8 +17,27 @@ function threadDetail(thread: Record<string, unknown>, turns: ReturnType<typeof 
   return { thread, turns, liveState: thread.status === "active" ? "streaming" : "idle", rawPayload: {} };
 }
 
+class FakeEventSource {
+  static instances: FakeEventSource[] = [];
+
+  onmessage: ((event: MessageEvent<string>) => void) | null = null;
+
+  constructor(public readonly url: string) {
+    FakeEventSource.instances.push(this);
+  }
+
+  close() {
+    return undefined;
+  }
+
+  emit(payload: unknown) {
+    this.onmessage?.({ data: JSON.stringify(payload) } as MessageEvent<string>);
+  }
+}
+
 describe("App shell", () => {
   afterEach(() => {
+    FakeEventSource.instances = [];
     window.localStorage.clear();
     document.documentElement.removeAttribute("data-kodex-color-scheme");
     document.documentElement.removeAttribute("data-mantine-color-scheme");
@@ -46,8 +65,8 @@ describe("App shell", () => {
 
     expect(screen.queryByRole("button", { name: /status/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /debug options/i })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /account settings/i }));
-    expect(await screen.findByRole("menuitemcheckbox", { name: /show debug events/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /account settings/i }));
+    expect(await screen.findByRole("menuitemcheckbox", { name: /show debug events/i })).toHaveAttribute("aria-checked", "false");
     expect(screen.queryByText(/gateway/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/app-server/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/trusted network/i)).not.toBeInTheDocument();
@@ -66,7 +85,7 @@ describe("App shell", () => {
       expect(document.documentElement).toHaveAttribute("data-kodex-color-scheme", "oled-black");
     });
 
-    await userEvent.click(screen.getByRole("button", { name: /account settings/i }));
+    fireEvent.click(screen.getByRole("button", { name: /account settings/i }));
     await userEvent.click(await screen.findByRole("menuitem", { name: /preferences/i }));
 
     expect(await screen.findByRole("dialog", { name: /preferences/i })).toBeInTheDocument();
@@ -97,7 +116,7 @@ describe("App shell", () => {
       expect(document.documentElement).toHaveAttribute("data-mantine-color-scheme", "light");
     });
 
-    await userEvent.click(screen.getByRole("button", { name: /account settings/i }));
+    fireEvent.click(screen.getByRole("button", { name: /account settings/i }));
     await userEvent.click(await screen.findByRole("menuitem", { name: /preferences/i }));
 
     const colorSchemeGroup = await screen.findByRole("radiogroup", { name: /color scheme/i });
@@ -113,7 +132,7 @@ describe("App shell", () => {
 
     render(<App />);
 
-    await userEvent.click(screen.getByRole("button", { name: /account settings/i }));
+    fireEvent.click(screen.getByRole("button", { name: /account settings/i }));
     await userEvent.click(await screen.findByRole("menuitem", { name: /preferences/i }));
 
     const colorSchemeGroup = await screen.findByRole("radiogroup", { name: /color scheme/i });
@@ -216,7 +235,7 @@ describe("App shell", () => {
     expect(within(thread).queryByText(/event stream/i)).not.toBeInTheDocument();
     expect(within(thread).queryByText(/turn\/started/i)).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /account settings/i }));
+    fireEvent.click(screen.getByRole("button", { name: /account settings/i }));
     await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /show debug events/i }));
 
     expect(await within(thread).findAllByText(/item\/completed/i)).not.toHaveLength(0);
@@ -380,8 +399,8 @@ describe("App shell", () => {
     });
   });
 
-  it("returns to the live edge when the user sends while scrolled up", async () => {
-    mockGateway({
+  it("keeps the user's scroll position when sending while scrolled up", async () => {
+    const gateway = mockGateway({
       "GET /v1/projects": {
         projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
       },
@@ -444,11 +463,97 @@ describe("App shell", () => {
     await userEvent.type(screen.getByLabelText(/message composer/i), "Follow live after send");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
+    expect(scrollRegion.scrollTop).toBe(600);
+    expect(screen.getByRole("button", { name: /scroll to bottom/i })).toBeInTheDocument();
     await waitFor(() => {
-      expect(scrollRegion.scrollTop).toBe(3200);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
     });
-    expect(screen.queryByRole("button", { name: /scroll to bottom/i })).not.toBeInTheDocument();
-    expect(await screen.findByText("Follow live after send")).toBeInTheDocument();
+  });
+
+  it("keeps the user's scroll position when selected-thread stream messages arrive while scrolled up", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway({
+      "GET /v1/projects": {
+        projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
+      },
+      "GET /v1/threads": {
+        threads: [
+          {
+            id: "thread-1",
+            name: "Large thread",
+            cwd: "/home/example/kodex",
+            status: "idle",
+            source: "local",
+            preview: "",
+            rawPayload: {},
+            createdAt: 1777500000,
+            updatedAt: 1777501200,
+          },
+        ],
+        nextCursor: null,
+        backwardsCursor: null,
+        rawPayload: {},
+      },
+      "GET /v1/threads/thread-1": threadDetail(
+        {
+          id: "thread-1",
+          name: "Large thread",
+          cwd: "/home/example/kodex",
+          status: "idle",
+          source: "local",
+          preview: "",
+          rawPayload: {},
+          createdAt: 1777500000,
+          updatedAt: 1777501200,
+        },
+        [
+          snapshotTurn(
+            "turn-1",
+            Array.from({ length: 30 }, (_, index) =>
+              snapshotItem(`answer-${index}`, "agentMessage", { text: `Large answer ${index}` }),
+            ),
+          ),
+        ],
+      ),
+      "GET /v1/approvals": { approvals: [] },
+      "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Large answer 29")).toBeInTheDocument();
+    await waitFor(() => expect(FakeEventSource.instances.some((instance) => instance.url.includes("threadId=thread-1"))).toBe(true));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    const scrollRegion = document.querySelector(".kodex-timeline-scroll") as HTMLElement;
+    Object.defineProperties(scrollRegion, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 3600 },
+      scrollTop: { configurable: true, writable: true, value: 600 },
+    });
+    fireEvent.scroll(scrollRegion);
+    expect(await screen.findByRole("button", { name: /scroll to bottom/i })).toBeInTheDocument();
+
+    act(() => {
+      selectedThreadStream?.emit({
+        id: "live-message-1",
+        seq: 1,
+        kind: "timeline.item_upsert",
+        codexMethod: "item/upsert",
+        projectId: "project-1",
+        threadId: "thread-1",
+        turnId: "turn-2",
+        itemId: "live-agent-1",
+        payload: {
+          source: "gatewayStream",
+          item: { id: "live-agent-1", type: "agentMessage", text: "Live update while reading history" },
+        },
+        receivedAt: "2026-04-30T00:00:00Z",
+      });
+    });
+
+    expect(await screen.findByText(/live update while reading history/i)).toBeInTheDocument();
+    expect(scrollRegion.scrollTop).toBe(600);
+    expect(screen.getByRole("button", { name: /scroll to bottom/i })).toBeInTheDocument();
   });
 
   it("bounds mounted nested activity items in activity-heavy timelines", async () => {

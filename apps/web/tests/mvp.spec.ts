@@ -44,13 +44,13 @@ test.beforeEach(async ({ page }) => {
 test("creates and selects a project", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("button", { name: /kodex \/home\/example\/kodex/i })).toBeVisible();
+  await expect(page.locator(".kodex-project-title").filter({ hasText: "Kodex" })).toBeVisible();
   await page.getByRole("button", { name: /new project/i }).click();
   await page.getByLabel(/project name/i).fill("Scratch");
   await page.getByLabel(/working directory/i).fill("/tmp/scratch");
   await page.getByRole("button", { name: /create project/i }).click();
 
-  await expect(page.getByRole("button", { name: /scratch \/tmp\/scratch/i })).toBeVisible();
+  await expect(page.locator(".kodex-project-title").filter({ hasText: "Scratch" })).toBeVisible();
 });
 
 test("creates a thread and submits a turn", async ({ page }) => {

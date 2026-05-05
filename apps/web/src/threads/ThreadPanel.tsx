@@ -33,7 +33,6 @@ export function ThreadPanel({
   setTimelineScrollElement,
   showDebugEvents,
   timeline,
-  timelineFollowLiveToken,
 }: {
   errorMessage: string | null;
   imagePreviewUrlsByPath: Record<string, string>;
@@ -52,12 +51,16 @@ export function ThreadPanel({
   setTimelineScrollElement: (element: HTMLDivElement | null) => void;
   showDebugEvents: boolean;
   timeline: TimelineState;
-  timelineFollowLiveToken: number;
 }) {
   return (
     <>
       {errorMessage ? (
-        <Badge className="kodex-main-column" color="red" variant="light" leftSection={<AlertCircle size={12} />}>
+        <Badge
+          className="kodex-main-column kodex-ui-badge"
+          data-tone="danger"
+          variant="light"
+          leftSection={<AlertCircle size={12} />}
+        >
           {errorMessage}
         </Badge>
       ) : null}
@@ -110,7 +113,6 @@ export function ThreadPanel({
                   scrollParentElement={scrollParentElement}
                   showDebug={showDebugEvents}
                   timeline={timeline}
-                  followLiveToken={timelineFollowLiveToken}
                 />
               )}
             </Box>

@@ -1,0 +1,137 @@
+:root {
+  --kodex-bg-sidebar: var(--kodex-bg-shell);
+  --kodex-bg-panel: var(--kodex-bg-thread-surface);
+  --kodex-bg-raised: var(--kodex-bg-composer);
+  --kodex-bg-raised-muted: var(--kodex-bg-composer-muted);
+  --kodex-bg-raised-alt: var(--kodex-bg-composer-alt);
+  --kodex-radius-xs: 4px;
+  --kodex-radius-sm: 6px;
+  --kodex-radius-md: 8px;
+  --kodex-radius-lg: 10px;
+  --kodex-radius-xl: 16px;
+  --kodex-radius-menu: 18px;
+  --kodex-radius-composer: 24px;
+  --kodex-radius-shell: 28px;
+  --kodex-radius-round: 999px;
+  --kodex-focus-outline: 2px solid var(--kodex-border-accent-soft);
+  --kodex-focus-offset: 2px;
+  --kodex-divider-subtle: color-mix(in srgb, var(--kodex-text-primary) 8%, transparent);
+  --kodex-shadow-menu: var(--kodex-shadow-floating);
+  --kodex-shadow-modal: var(--kodex-shadow-floating);
+  --kodex-shadow-swatch: inset 0 1px 2px rgb(255 255 255 / 12%);
+  --kodex-unread-pulse-start: color-mix(in srgb, var(--kodex-accent) 55%, transparent);
+  --kodex-unread-pulse-end: color-mix(in srgb, var(--kodex-accent) 0%, transparent);
+}
+
+.kodex-ui-button {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: var(--kodex-radius-sm);
+  background: transparent;
+  color: var(--kodex-text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.kodex-ui-button:hover {
+  background: var(--kodex-bg-button-hover);
+  color: var(--kodex-text-primary);
+}
+
+.kodex-ui-button:focus-visible,
+.kodex-ui-selectable:focus-visible,
+.kodex-ui-icon-button:focus-visible {
+  outline: var(--kodex-focus-outline);
+  outline-offset: var(--kodex-focus-offset);
+}
+
+.kodex-ui-button:disabled,
+.kodex-ui-button[aria-disabled="true"],
+.kodex-ui-button[data-disabled="true"] {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.kodex-ui-icon-button {
+  display: grid;
+  place-items: center;
+  border-radius: var(--kodex-radius-sm);
+  color: var(--kodex-text-muted);
+}
+
+.kodex-ui-selectable {
+  border: 1px solid transparent;
+  border-radius: var(--kodex-radius-md);
+  color: var(--kodex-text-secondary);
+}
+
+.kodex-ui-selectable:hover {
+  background: var(--kodex-bg-button-hover);
+  color: var(--kodex-text-primary);
+}
+
+.kodex-ui-selectable[data-active="true"],
+.kodex-ui-selectable[aria-selected="true"],
+.kodex-ui-selectable[aria-checked="true"] {
+  background: var(--kodex-bg-selected);
+  color: var(--kodex-text-primary);
+}
+
+.kodex-ui-selectable[data-active="true"]:hover,
+.kodex-ui-selectable[aria-selected="true"]:hover,
+.kodex-ui-selectable[aria-checked="true"]:hover {
+  background: var(--kodex-bg-selected-strong);
+}
+
+.kodex-ui-badge {
+  border: 1px solid var(--kodex-tone-border, transparent);
+  background: var(--kodex-tone-bg, var(--kodex-bg-selected));
+  color: var(--kodex-tone-text, var(--kodex-text-primary));
+}
+
+.kodex-ui-badge[data-tone="accent"],
+.kodex-ui-text[data-tone="accent"] {
+  --kodex-tone-bg: var(--kodex-bg-selected);
+  --kodex-tone-border: var(--kodex-border-accent-soft);
+  --kodex-tone-text: var(--kodex-text-accent-soft);
+}
+
+.kodex-ui-badge[data-tone="success"],
+.kodex-ui-text[data-tone="success"] {
+  --kodex-tone-bg: var(--kodex-bg-success);
+  --kodex-tone-border: var(--kodex-border-success);
+  --kodex-tone-text: var(--kodex-text-success);
+}
+
+.kodex-ui-badge[data-tone="warning"],
+.kodex-ui-text[data-tone="warning"] {
+  --kodex-tone-bg: var(--kodex-bg-warning);
+  --kodex-tone-border: var(--kodex-border-warning);
+  --kodex-tone-text: var(--kodex-text-warning);
+}
+
+.kodex-ui-badge[data-tone="danger"],
+.kodex-ui-text[data-tone="danger"] {
+  --kodex-tone-bg: var(--kodex-bg-danger);
+  --kodex-tone-border: var(--kodex-border-danger);
+  --kodex-tone-text: var(--kodex-text-danger);
+}
+
+.kodex-ui-badge[data-tone="info"],
+.kodex-ui-text[data-tone="info"] {
+  --kodex-tone-bg: var(--kodex-bg-info);
+  --kodex-tone-border: var(--kodex-border-info);
+  --kodex-tone-text: var(--kodex-text-info);
+}
+
+.kodex-ui-badge[data-tone="neutral"],
+.kodex-ui-text[data-tone="neutral"] {
+  --kodex-tone-bg: var(--kodex-bg-raised-muted);
+  --kodex-tone-border: var(--kodex-border-subtle);
+  --kodex-tone-text: var(--kodex-text-secondary);
+}
+
+.kodex-ui-text {
+  color: var(--kodex-tone-text, var(--kodex-text-secondary));
+}

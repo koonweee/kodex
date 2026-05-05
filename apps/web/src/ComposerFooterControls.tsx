@@ -1,9 +1,10 @@
-import { ActionIcon, Box, Button, Group, Menu, Switch, Text, Tooltip } from "@mantine/core";
+import { ActionIcon, Box, Button, Group, Menu, Text, Tooltip } from "@mantine/core";
 import { AlertCircle, Check, Gauge, Shield } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useState } from "react";
 
 import type { ModelSummary } from "./api/client";
+import { CheckboxMenuItem } from "./ui/CheckboxMenuItem";
 
 export type PermissionPresetId = "default" | "autoReview" | "fullAccess";
 
@@ -71,15 +72,23 @@ export function ComposerFooterControls({
   const permissionLabel = selectedPermission?.label ?? "Default permissions";
   const supportedEfforts = selectedModel?.supportedReasoningEfforts ?? [];
   const [confirmingFullAccess, setConfirmingFullAccess] = useState(false);
+  const [permissionMenuOpened, setPermissionMenuOpened] = useState(false);
+  const [modelMenuOpened, setModelMenuOpened] = useState(false);
 
   function updateSettings(next: Partial<ComposerSettings>) {
     onSettingsChange({ ...settings, ...next });
+  }
+
+  function toggleFast() {
+    updateSettings({ fast: !settings.fast });
+    setModelMenuOpened(false);
   }
 
   function selectPermissionPreset(preset: PermissionPresetId) {
     if (preset !== "fullAccess") {
       setConfirmingFullAccess(false);
       updateSettings({ permissionPreset: preset });
+      setPermissionMenuOpened(false);
       return;
     }
 
@@ -90,12 +99,19 @@ export function ComposerFooterControls({
 
     setConfirmingFullAccess(false);
     updateSettings({ permissionPreset: preset });
+    setPermissionMenuOpened(false);
   }
 
   return (
     <Group className="kodex-composer-footer-controls" gap={6} wrap="nowrap">
       <Group className="kodex-composer-footer-left" gap={6} wrap="nowrap">
-        <Menu position="top-start" withinPortal onClose={() => setConfirmingFullAccess(false)}>
+        <Menu
+          position="top-start"
+          withinPortal
+          opened={permissionMenuOpened}
+          onChange={setPermissionMenuOpened}
+          onClose={() => setConfirmingFullAccess(false)}
+        >
           <Menu.Target>
             <Button
               aria-label={`Permissions: ${permissionLabel}`}
@@ -153,7 +169,7 @@ export function ComposerFooterControls({
           </Tooltip>
         ) : null}
 
-        <Menu position="top-start" withinPortal>
+        <Menu position="top-start" withinPortal opened={modelMenuOpened} onChange={setModelMenuOpened}>
           <Menu.Target>
             <Button
               aria-label={`Model: ${selectedModelLabel}${selectedEffort ? `, ${selectedEffort}` : ""}`}
@@ -179,7 +195,7 @@ export function ComposerFooterControls({
                 key={model.id}
                 data-active={selectedModel?.id === model.id ? "true" : undefined}
                 leftSection={selectedModel?.id === model.id ? <Check size={14} /> : undefined}
-                onClick={() =>
+                onClick={() => {
                   updateSettings({
                     model: model.id,
                     effort: model.supportedReasoningEfforts.some(
@@ -187,8 +203,9 @@ export function ComposerFooterControls({
                     )
                       ? settings.effort
                       : undefined,
-                  })
-                }
+                  });
+                  setModelMenuOpened(false);
+                }}
               >
                 {model.model}
               </Menu.Item>
@@ -202,7 +219,10 @@ export function ComposerFooterControls({
                     key={effort.reasoningEffort}
                     data-active={selectedEffort === effort.reasoningEffort ? "true" : undefined}
                     leftSection={selectedEffort === effort.reasoningEffort ? <Check size={14} /> : <Gauge size={14} />}
-                    onClick={() => updateSettings({ model: selectedModel?.id, effort: effort.reasoningEffort })}
+                    onClick={() => {
+                      updateSettings({ model: selectedModel?.id, effort: effort.reasoningEffort });
+                      setModelMenuOpened(false);
+                    }}
                   >
                     {reasoningEffortLabel(effort.reasoningEffort)}
                   </Menu.Item>
@@ -210,23 +230,15 @@ export function ComposerFooterControls({
               </>
             ) : null}
             <Menu.Divider />
-            <Menu.Item
+            <CheckboxMenuItem
+              checked={settings.fast}
               className="kodex-composer-fast-row"
-              closeMenuOnClick={false}
-              component="div"
               leftSection={<SolidBoltIcon />}
-              rightSection={
-                <Switch
-                  aria-label="Fast responses"
-                  checked={settings.fast}
-                  onChange={(event) => updateSettings({ fast: event.currentTarget.checked })}
-                  onClick={(event) => event.stopPropagation()}
-                  size="xs"
-                />
-              }
+              onChange={toggleFast}
+              rightSection={<span aria-hidden="true" className="kodex-fast-menu-switch" data-checked={settings.fast} />}
             >
               Fast
-            </Menu.Item>
+            </CheckboxMenuItem>
           </Menu.Dropdown>
         </Menu>
       </Group>

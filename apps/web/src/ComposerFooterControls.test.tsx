@@ -51,7 +51,7 @@ describe("ComposerFooterControls", () => {
     expect(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i })).toHaveTextContent("5.4 Medium");
   });
 
-  it("uses model ids in the menu, compact reasoning labels, and a non-dismissing fast switch", async () => {
+  it("uses model ids in the menu, compact reasoning labels, and toggles Fast from the row", async () => {
     const onSettingsChange = vi.fn();
     const { rerender } = renderWithProvider(
       <ComposerFooterControls models={[reasoningModel]} settings={settings} onSettingsChange={onSettingsChange} />,
@@ -67,13 +67,16 @@ describe("ComposerFooterControls", () => {
     });
     expect(screen.getByRole("menuitem", { name: /^xhigh$/i, hidden: true })).toHaveTextContent("xHigh");
 
-    const fastItem = screen.getByRole("menuitem", { name: /fast/i, hidden: true });
+    const fastItem = screen.getByRole("menuitemcheckbox", { name: /fast/i, hidden: true });
     expect(fastItem).not.toHaveAttribute("data-disabled");
+    expect(fastItem).toHaveAttribute("aria-checked", "false");
     expect(fastItem).toHaveClass("kodex-composer-fast-row");
-    await userEvent.click(fastItem);
-    expect(onSettingsChange).not.toHaveBeenCalled();
-
-    await userEvent.click(screen.getByRole("switch", { name: /fast responses/i, hidden: true }));
+    fastItem.focus();
+    expect(fastItem).toHaveFocus();
+    await userEvent.keyboard("{ArrowUp}");
+    expect(screen.getByRole("menuitem", { name: /^xhigh$/i, hidden: true })).toHaveFocus();
+    fastItem.focus();
+    await userEvent.keyboard("{Enter}");
     expect(onSettingsChange).toHaveBeenCalledWith({ fast: true });
 
     rerender(
@@ -87,7 +90,8 @@ describe("ComposerFooterControls", () => {
     );
     expect(screen.getByRole("img", { name: /fast responses enabled/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /fast responses/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: /fast/i, hidden: true })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
+    expect(screen.getByRole("menuitemcheckbox", { name: /fast/i, hidden: true })).toHaveAttribute("aria-checked", "true");
   });
 
   it("requires a second confirmation click before applying full access", async () => {

@@ -59,9 +59,9 @@
   max-width: 100%;
   min-height: 0;
   min-width: 0;
-  border-radius: 28px;
+  border-radius: var(--kodex-radius-shell);
   padding: 12px 16px 16px;
-  background: var(--kodex-bg-thread-surface);
+  background: var(--kodex-bg-panel);
   box-shadow: none;
   overflow: hidden;
 }
@@ -156,7 +156,7 @@
     border-color 120ms ease,
     color 120ms ease,
     box-shadow 120ms ease;
-  box-shadow: var(--kodex-shadow-floating);
+  box-shadow: var(--kodex-shadow-menu);
 }
 
 .kodex-scroll-to-bottom:active {

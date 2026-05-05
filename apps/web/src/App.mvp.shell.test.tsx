@@ -571,14 +571,15 @@ describe("MVP shell flows", () => {
       }),
     );
 
-    render(<App />);
+    const { container } = render(<App />);
+    const view = within(container);
 
-    const avatar = await screen.findByRole("img", { name: /dev@example\.com/i });
+    const avatar = await view.findByRole("img", { name: /dev@example\.com/i });
     expect(avatar).toHaveTextContent("D");
-    await userEvent.click(screen.getByRole("button", { name: /account settings/i }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: /logout/i }));
+    fireEvent.click(view.getByRole("button", { name: /account settings/i }));
+    await userEvent.click(await view.findByRole("menuitem", { name: /logout/i }));
     expect(gateway.callsFor("POST", "/v1/account/logout")).toHaveLength(1);
-    expect(await screen.findByRole("button", { name: /connect chatgpt/i })).toBeInTheDocument();
+    expect(await view.findByRole("button", { name: /connect chatgpt/i })).toBeInTheDocument();
   });
 
 });

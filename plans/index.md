@@ -30,6 +30,7 @@ This file is the directory of record for Kodex plans. Keep the status column cur
 | [App-server read-through thread sync plan](app-server-read-through-sync.md) | Complete | App-server-canonical thread history, gateway reconciliation, unified timeline updates, and experimental schema hard cut | Implemented experimental schema generation, required extended app-server history, app-server snapshot thread detail, snapshot-first frontend timeline loading, and snapshot refresh over the selected-thread SSE stream. |
 | [Timeline replay removal plan](timeline-replay-removal.md) | Complete | Remove persisted timeline event replay from canonical thread loading and recovery | Implemented snapshot-first selected-thread loading, operational-only `/v1/events`, diagnostic raw replay at `/v1/debug/events`, and snapshot refresh on stream uncertainty. |
 | [Sidebar ordering plan](sidebar-ordering.md) | Complete | Stable project ordering, manual project reorder, and attention-first thread ordering | Implemented persisted project drag order, newest-created defaults, and attention-first thread sorting. |
+| [UI standardization plan](ui-standardization.md) | Complete | Shared frontend UI tokens, menu/button/selectable primitives, semantic tones, surfaces, responsive QA | Implemented shared tokens, menu/selectable/button/tone styling, responsive fixes, agent-browser pass, and review-fix loop. |
 | [Future extensions overview](future-extensions.md) | Proposed | Non-MVP feature map linked to app-server APIs | Overview only, not an implementation plan. |
 
 ## Maintenance Rules

@@ -1,0 +1,89 @@
+.kodex-approval-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--kodex-border-strong);
+  border-radius: var(--kodex-radius-md);
+  padding: 12px;
+  background: var(--kodex-bg-raised-muted);
+}
+
+.kodex-approval-card > * {
+  min-width: 0;
+}
+
+.kodex-approval-command {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  max-height: 132px;
+  overflow: auto;
+  border: 1px solid var(--kodex-border-strong);
+  border-radius: var(--kodex-radius-md);
+  padding: 10px;
+  background: var(--kodex-bg-shell);
+  color: var(--kodex-text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.kodex-approval-actions {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.kodex-approval-action {
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid transparent;
+  color: var(--kodex-text-primary);
+  white-space: normal;
+}
+
+.kodex-approval-action[data-approval-tone="positive"] {
+  border-color: var(--kodex-border-accent-soft);
+}
+
+.kodex-approval-action[data-approval-tone="positive"][data-variant="filled"] {
+  background: var(--kodex-bg-selected-strong);
+}
+
+.kodex-approval-action[data-approval-tone="positive"][data-variant="light"] {
+  background: var(--kodex-bg-selected);
+}
+
+.kodex-approval-action[data-approval-tone="danger"] {
+  border-color: var(--kodex-border-danger);
+  background: var(--kodex-bg-danger);
+}
+
+.kodex-approval-action[data-approval-tone="neutral"] {
+  color: var(--kodex-text-secondary);
+}
+
+.kodex-approval-action:hover {
+  background: var(--kodex-bg-button-hover);
+  color: var(--kodex-text-primary);
+}
+
+.kodex-approval-action .mantine-Button-section {
+  color: currentColor;
+}
+
+.kodex-approval-action .mantine-Button-inner,
+.kodex-approval-action .mantine-Button-label {
+  min-width: 0;
+}
+
+.kodex-approval-action .mantine-Button-label {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}

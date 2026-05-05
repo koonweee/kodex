@@ -1,7 +1,9 @@
 @import "./styles/base.css";
+@import "./styles/ui.css";
 @import "./styles/shell.css";
 @import "./styles/composer.css";
 @import "./styles/sidebar.css";
+@import "./styles/approvals.css";
 @import "./styles/timeline.css";
 @import "./styles/images.css";
 @import "./styles/preferences.css";

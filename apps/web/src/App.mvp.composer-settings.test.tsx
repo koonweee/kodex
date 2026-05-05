@@ -23,7 +23,7 @@ function clickMenuItem(name: RegExp) {
 }
 
 async function clickFastSwitch() {
-  await userEvent.click(screen.getByRole("switch", { name: /fast responses/i, hidden: true }));
+  await userEvent.click(screen.getByRole("menuitemcheckbox", { name: /fast/i, hidden: true }));
 }
 
 describe("MVP composer settings flows", () => {
@@ -79,9 +79,14 @@ describe("MVP composer settings flows", () => {
     await clickMenuItem(/full access/i);
     expect(screen.getByRole("button", { name: /permissions: default permissions/i })).toBeInTheDocument();
     await clickMenuItem(/confirm full access/i);
+    expect(await screen.findByRole("button", { name: /permissions: full access/i })).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText(/message composer/i), "Use the selected controls");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    const sendButton = screen.getByRole("button", { name: /send message/i });
+    await waitFor(() => {
+      expect(sendButton).toBeEnabled();
+    });
+    await userEvent.click(sendButton);
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
     });
@@ -241,7 +246,7 @@ describe("MVP composer settings flows", () => {
 
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /account settings/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /account settings/i }));
     expect(await screen.findByText("5h 82% left - 2:14 PM")).toBeInTheDocument();
     expect(screen.getByText("7d 64% left - 9:00 AM (May 07)")).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: /5h 82% left/i })).not.toBeInTheDocument();
@@ -314,7 +319,7 @@ describe("MVP composer settings flows", () => {
       });
     });
 
-    await userEvent.click(screen.getByRole("button", { name: /account settings/i }));
+    fireEvent.click(screen.getByRole("button", { name: /account settings/i }));
     expect(await screen.findByText("5h 93% left - 3:30 PM")).toBeInTheDocument();
 
     await act(async () => {
@@ -357,9 +362,14 @@ describe("MVP composer settings flows", () => {
     await clickFastSwitch();
     await userEvent.click(screen.getByRole("button", { name: /permissions: default permissions/i }));
     await clickMenuItem(/auto review/i);
+    expect(await screen.findByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText(/message composer/i), "Start with toolbar settings");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    const sendButton = screen.getByRole("button", { name: /send message/i });
+    await waitFor(() => {
+      expect(sendButton).toBeEnabled();
+    });
+    await userEvent.click(sendButton);
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
       expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(1);

@@ -1,8 +1,9 @@
-import { ActionIcon, Box, Button, Group, Tooltip } from "@mantine/core";
-import { LogIn, Settings } from "lucide-react";
+import { ActionIcon, Box, Button, Group, Menu, Tooltip } from "@mantine/core";
+import { Check, LogIn, Settings } from "lucide-react";
 import { useState } from "react";
 
 import type { AccountResponse } from "../api/client";
+import { CheckboxMenuItem } from "../ui/CheckboxMenuItem";
 import type { UsageLimitLines } from "./rateLimits";
 
 export type LoginState = {
@@ -106,18 +107,13 @@ function SettingsMenu({
   const [opened, setOpened] = useState(false);
 
   return (
-    <Box className="kodex-settings-menu">
-      <ActionIcon
-        aria-label={ACCOUNT_TEXT.settings}
-        aria-expanded={opened}
-        className="kodex-settings-button"
-        variant="subtle"
-        onClick={() => setOpened((current) => !current)}
-      >
-        <Settings size={17} />
-      </ActionIcon>
-      {opened ? (
-        <Box className="kodex-settings-dropdown" role="menu">
+    <Menu opened={opened} onChange={setOpened} position="top-end" withinPortal={false}>
+      <Menu.Target>
+        <ActionIcon aria-label={ACCOUNT_TEXT.settings} className="kodex-settings-button" variant="subtle">
+          <Settings size={17} />
+        </ActionIcon>
+      </Menu.Target>
+      <Menu.Dropdown aria-label={ACCOUNT_TEXT.settings} className="kodex-settings-dropdown">
           {usageLimitLines ? (
             <Box
               aria-label="Usage limits"
@@ -129,42 +125,36 @@ function SettingsMenu({
               {usageLimitLines.secondary ? <span>{usageLimitLines.secondary}</span> : null}
             </Box>
           ) : null}
-          <button
+          <Menu.Item
             className="kodex-settings-menu-item"
-            type="button"
-            role="menuitem"
             onClick={() => {
               setOpened(false);
               onOpenPreferences();
             }}
           >
             {ACCOUNT_TEXT.preferences}
-          </button>
+          </Menu.Item>
           {isAuthenticated ? (
-            <button
+            <Menu.Item
               className="kodex-settings-menu-item"
-              type="button"
-              role="menuitem"
               onClick={() => {
                 setOpened(false);
                 onLogout();
               }}
             >
               {ACCOUNT_TEXT.logout}
-            </button>
+            </Menu.Item>
           ) : null}
-          <button
+          <CheckboxMenuItem
+            checked={showDebugEvents}
             className="kodex-debug-toggle"
-            type="button"
-            role="menuitemcheckbox"
-            aria-checked={showDebugEvents}
-            onClick={() => onShowDebugEventsChange(!showDebugEvents)}
+            leftSection={showDebugEvents ? <Check size={14} /> : <span aria-hidden="true" className="kodex-settings-menu-icon-spacer" />}
+            onChange={onShowDebugEventsChange}
           >
             {ACCOUNT_TEXT.debugEvents}
-          </button>
-        </Box>
-      ) : null}
-    </Box>
+          </CheckboxMenuItem>
+      </Menu.Dropdown>
+    </Menu>
   );
 }
 

@@ -290,7 +290,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                     >
                       <Box
                         aria-label={`${project.name} ${project.cwd}`}
-                        className="kodex-project-title"
+                        className="kodex-ui-selectable kodex-project-title"
                         data-active={project.id === selectedProjectId}
                       >
                         <FolderOpen size={15} />
@@ -328,7 +328,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                         ))}
                         {hasHiddenProjectThreads ? (
                           <button
-                            className="kodex-thread-list-more-button"
+                            className="kodex-ui-button kodex-thread-list-more-button"
                             onClick={() => {
                               setExpandedThreadProjectIds((current) => {
                                 const next = new Set(current);
@@ -437,7 +437,7 @@ export const ThreadListRow = memo(function ThreadListRow({
 
   return (
     <Box
-      className="kodex-list-button kodex-thread-list-button"
+      className="kodex-ui-selectable kodex-list-button kodex-thread-list-button"
       data-active={isSelected}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) {
@@ -448,7 +448,7 @@ export const ThreadListRow = memo(function ThreadListRow({
       onMouseEnter={() => onThreadActionHoverChange(thread.id)}
       onMouseLeave={() => onThreadActionHoverChange(null)}
     >
-      <button className="kodex-thread-select-button" onClick={() => onSelectThread(projectId, thread.id)} type="button">
+      <button className="kodex-ui-button kodex-thread-select-button" onClick={() => onSelectThread(projectId, thread.id)} type="button">
         <Group
           align="flex-start"
           className="kodex-thread-list-row"
@@ -468,7 +468,7 @@ export const ThreadListRow = memo(function ThreadListRow({
             {displayTitle}
           </Text>
           {needsApproval ? (
-            <Badge className="kodex-thread-approval-badge" color="orange" size="xs" variant="light">
+            <Badge className="kodex-thread-approval-badge kodex-ui-badge" data-tone="warning" size="xs" variant="light">
               Needs approval
             </Badge>
           ) : null}
@@ -499,7 +499,7 @@ export const ThreadListRow = memo(function ThreadListRow({
           <Tooltip label="Archive thread">
             <button
               aria-label={`Archive ${displayTitle}`}
-              className="kodex-thread-archive-button"
+              className="kodex-ui-button kodex-ui-icon-button kodex-thread-archive-button"
               onClick={() => onArchiveThread(thread.id)}
               type="button"
             >

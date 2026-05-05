@@ -25,7 +25,7 @@ export function MobilePanelSwitcher({
       {tabs.map((tab) => (
         <button
           aria-selected={activePanel === tab.panel}
-          className="kodex-mobile-tab"
+          className="kodex-ui-button kodex-ui-selectable kodex-mobile-tab"
           data-active={activePanel === tab.panel}
           key={tab.panel}
           onClick={() => onChange(tab.panel)}

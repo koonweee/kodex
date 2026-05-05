@@ -68,7 +68,7 @@ export function PreferencesModal({
       <Box className="kodex-preferences-layout">
         <Stack className="kodex-preferences-sections" gap={4}>
           <button
-            className="kodex-preferences-section-button"
+            className="kodex-ui-button kodex-ui-selectable kodex-preferences-section-button"
             data-active={activeSection === "appearance" ? "true" : undefined}
             onClick={() => onSectionChange("appearance")}
             type="button"
@@ -93,7 +93,7 @@ export function PreferencesModal({
               {KODEX_COLOR_SCHEMES.map((scheme, index) => (
                 <button
                   aria-checked={scheme.id === colorSchemeId}
-                  className="kodex-scheme-option"
+                  className="kodex-ui-button kodex-ui-selectable kodex-scheme-option"
                   data-active={scheme.id === colorSchemeId ? "true" : undefined}
                   key={scheme.id}
                   onClick={() => onColorSchemeChange(scheme.id)}

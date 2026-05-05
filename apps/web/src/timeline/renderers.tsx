@@ -42,12 +42,12 @@ const rendererRegistry: Record<string, TimelineRenderer> = {
   review_mode_finished: (item) => <StatusMarker item={item} />,
   context_compaction: (item) => <StatusMarker item={item} />,
   warning: (item) => (
-    <Text size="sm" c="yellow.4">
+    <Text size="sm" className="kodex-ui-text" data-tone="warning">
       {item.text || "Warning"}
     </Text>
   ),
   error: (item) => (
-    <Text size="sm" c="red.4">
+    <Text size="sm" className="kodex-ui-text" data-tone="danger">
       {item.text || "Error"}
     </Text>
   ),
@@ -133,7 +133,7 @@ function TimelineItemRendererImpl({
             </>
           ) : null}
           {showStatus ? (
-            <Badge size="xs" variant="light" color={statusColor(item.status)}>
+            <Badge className="kodex-ui-badge" data-tone={statusTone(item.status)} size="xs" variant="light">
               {statusLabel(item.status)}
             </Badge>
           ) : null}
@@ -485,7 +485,11 @@ function FileChangeBlock({ item }: { item: TimelineItem }) {
   const path = item.path || payloadValue(item.payload, "path");
   return (
     <Group gap="xs" wrap="wrap" className="kodex-timeline-inline-row">
-      {action ? <Badge size="xs" variant="light">{action}</Badge> : null}
+      {action ? (
+        <Badge className="kodex-ui-badge" data-tone="neutral" size="xs" variant="light">
+          {action}
+        </Badge>
+      ) : null}
       <Text size="sm">{path || item.text || "File change"}</Text>
     </Group>
   );
@@ -731,15 +735,18 @@ function statusLabel(status: TimelineItem["status"]): string {
   return status;
 }
 
-function statusColor(status: TimelineItem["status"]): string {
+function statusTone(status: TimelineItem["status"]): "danger" | "info" | "neutral" | "success" | "warning" {
   if (status === "failed") {
-    return "red";
+    return "danger";
+  }
+  if (status === "running") {
+    return "info";
   }
   if (status === "waiting" || status === "approval_required") {
-    return "yellow";
+    return "warning";
   }
   if (status === "cancelled") {
-    return "gray";
+    return "neutral";
   }
-  return "teal";
+  return "success";
 }

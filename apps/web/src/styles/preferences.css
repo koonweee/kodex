@@ -5,9 +5,9 @@
   align-content: center;
   justify-items: center;
   border: 1px dashed var(--kodex-border-strong);
-  border-radius: 8px;
+  border-radius: var(--kodex-radius-md);
   padding: 16px;
-  background: var(--kodex-bg-composer-muted);
+  background: var(--kodex-bg-raised-muted);
   text-align: center;
 }
 
@@ -16,7 +16,7 @@
   width: 32px;
   height: 32px;
   place-items: center;
-  border-radius: 8px;
+  border-radius: var(--kodex-radius-md);
   background: var(--kodex-bg-empty-icon);
   color: var(--kodex-text-accent);
 }
@@ -27,9 +27,9 @@
 
 .kodex-mobile-tab {
   min-width: 0;
-  border: 0;
-  border-radius: 7px;
-  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--kodex-radius-sm);
+  padding: 7px 10px;
   background: transparent;
   color: var(--kodex-text-muted);
   font: inherit;
@@ -38,100 +38,8 @@
 }
 
 .kodex-mobile-tab[data-active="true"] {
-  background: var(--kodex-bg-button-hover);
-  color: var(--kodex-text-primary);
-}
-
-.kodex-debug-toggle {
-  border: 0;
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.kodex-debug-toggle[aria-checked="true"]::before {
-  content: "✓ ";
-}
-
-.kodex-approval-card {
-  overflow-wrap: anywhere;
-}
-
-.kodex-approval-card > * {
-  min-width: 0;
-}
-
-.kodex-approval-command {
-  box-sizing: border-box;
-  display: block;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  max-height: 132px;
-  overflow: auto;
-  border: 1px solid var(--kodex-border-strong);
-  border-radius: 8px;
-  padding: 10px;
-  background: var(--kodex-bg-shell);
-  color: var(--kodex-text-primary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.kodex-approval-actions {
-  min-width: 0;
-  max-width: 100%;
-}
-
-.kodex-approval-action {
-  max-width: 100%;
-  min-width: 0;
-  border: 1px solid transparent;
-  color: var(--kodex-text-primary);
-  white-space: normal;
-}
-
-.kodex-approval-action[data-approval-tone="positive"] {
-  border-color: var(--kodex-border-accent-soft);
-}
-
-.kodex-approval-action[data-approval-tone="positive"][data-variant="filled"] {
-  background: var(--kodex-bg-selected-strong);
-}
-
-.kodex-approval-action[data-approval-tone="positive"][data-variant="light"] {
   background: var(--kodex-bg-selected);
-}
-
-.kodex-approval-action[data-approval-tone="danger"] {
-  border-color: color-mix(in srgb, var(--kodex-danger) 42%, transparent);
-  background: color-mix(in srgb, var(--kodex-danger) 12%, transparent);
-}
-
-.kodex-approval-action[data-approval-tone="neutral"] {
-  color: var(--kodex-text-secondary);
-}
-
-.kodex-approval-action:hover {
-  background: var(--kodex-bg-button-hover);
   color: var(--kodex-text-primary);
-}
-
-.kodex-approval-action .mantine-Button-section {
-  color: currentColor;
-}
-
-.kodex-approval-action .mantine-Button-inner,
-.kodex-approval-action .mantine-Button-label {
-  min-width: 0;
-}
-
-.kodex-approval-action .mantine-Button-label {
-  overflow-wrap: anywhere;
-  white-space: normal;
 }
 
 .kodex-preferences-modal-body {
@@ -154,7 +62,7 @@
 .kodex-preferences-section-button {
   width: 100%;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--kodex-radius-md);
   padding: 7px 9px;
   background: transparent;
   color: var(--kodex-text-secondary);
@@ -168,10 +76,6 @@
 
 .kodex-preferences-section-button:hover {
   background: var(--kodex-bg-button-hover);
-}
-
-.kodex-preferences-section-button[data-active="true"] {
-  border-color: var(--kodex-border-accent-soft);
 }
 
 .kodex-preferences-panel,
@@ -208,9 +112,9 @@
   align-items: center;
   width: 100%;
   border: 1px solid var(--kodex-border-subtle);
-  border-radius: 10px;
+  border-radius: var(--kodex-radius-lg);
   padding: 9px 10px;
-  background: var(--kodex-bg-composer-alt);
+  background: var(--kodex-bg-raised-alt);
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -226,12 +130,8 @@
 }
 
 .kodex-scheme-option:focus-visible {
-  outline: 2px solid var(--kodex-border-accent-soft);
-  outline-offset: 2px;
-}
-
-.kodex-scheme-option[role="radio"][aria-checked="true"] {
-  box-shadow: inset 0 0 0 1px var(--kodex-border-accent-soft);
+  outline: var(--kodex-focus-outline);
+  outline-offset: var(--kodex-focus-offset);
 }
 
 .kodex-scheme-label {
@@ -250,8 +150,8 @@
   width: 16px;
   height: 16px;
   border: 1px solid color-mix(in srgb, var(--kodex-text-primary) 14%, transparent);
-  border-radius: 999px;
-  box-shadow: inset 0 1px 2px rgb(255 255 255 / 12%);
+  border-radius: var(--kodex-radius-round);
+  box-shadow: var(--kodex-shadow-swatch);
 }
 
 @media (max-width: 900px) {
