@@ -28,7 +28,6 @@ const TIMELINE_TEXT = {
 
 export function TimelineView({
   approvals,
-  followLiveToken,
   imagePreviewUrlsByPath,
   onApprovalDecision,
   onImageOpen,
@@ -38,7 +37,6 @@ export function TimelineView({
   timeline,
 }: {
   approvals: Approval[];
-  followLiveToken: number;
   imagePreviewUrlsByPath: Record<string, string>;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
   onImageOpen: (image: ImageLightboxImage) => void;
@@ -63,7 +61,6 @@ export function TimelineView({
     showScrollToBottom,
   } = useBottomPinnedVirtualTimeline({
     onReady,
-    followLiveToken,
     rows,
     scrollParentElement,
     timelineLastSeq: timeline.lastSeq,
@@ -134,13 +131,11 @@ export function TimelineView({
 
 function useBottomPinnedVirtualTimeline({
   onReady,
-  followLiveToken,
   rows,
   scrollParentElement,
   timelineLastSeq,
 }: {
   onReady: () => void;
-  followLiveToken: number;
   rows: TimelineRow[];
   scrollParentElement: HTMLDivElement | null;
   timelineLastSeq: number;
@@ -305,29 +300,6 @@ function useBottomPinnedVirtualTimeline({
     rowCount,
     scrollToTimelineBottom,
     timelineLastSeq,
-    updateNearBottom,
-  ]);
-
-  useLayoutEffect(() => {
-    if (!initialBottomAligned || rowCount === 0 || followLiveToken === 0) {
-      return;
-    }
-
-    nearBottomRef.current = true;
-    setShowScrollToBottom(false);
-    scrollToTimelineBottom();
-    const frameId = requestAnimationFrame(() => {
-      if (nearBottomRef.current) {
-        scrollToTimelineBottom();
-      }
-      updateNearBottom();
-    });
-    return () => cancelAnimationFrame(frameId);
-  }, [
-    followLiveToken,
-    initialBottomAligned,
-    rowCount,
-    scrollToTimelineBottom,
     updateNearBottom,
   ]);
 

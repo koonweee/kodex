@@ -125,7 +125,6 @@ function KodexShell({
   const [materializingThreadIds, setMaterializingThreadIds] = useState<Set<string>>(new Set());
   const [timeline, setTimeline] = useState<TimelineState>(createTimelineState());
   const [timelineEntry, setTimelineEntry] = useState<TimelineEntry>(idleTimelineEntry);
-  const [timelineFollowLiveToken, setTimelineFollowLiveToken] = useState(0);
   const [projectFormOpen, setProjectFormOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [projectCwd, setProjectCwd] = useState("");
@@ -247,7 +246,6 @@ function KodexShell({
     onCreateDraftThread: createDraftThreadFromComposer,
     onError: reportError,
     onThreadMaterialized: markThreadMaterialized,
-    onThreadLocalInputSubmitted: requestSelectedThreadFollowLive,
     onThreadTurnStartFailed: markThreadIdle,
     onThreadTurnStarted: markThreadActive,
     selectedProjectId,
@@ -646,12 +644,6 @@ function KodexShell({
     setTimelineEntry((current) => (current.threadId === threadId ? { phase: "streamingLive", threadId } : current));
   }
 
-  function requestSelectedThreadFollowLive(threadId: string) {
-    if (selectedThreadIdRef.current === threadId) {
-      setTimelineFollowLiveToken((current) => current + 1);
-    }
-  }
-
   function handleSelectedThreadSnapshot(thread: ThreadSummary) {
     replaceThread(thread);
     markCompletedAgentTurnSeen(thread.id, thread.lastCompletedAgentTurnSeq);
@@ -722,7 +714,7 @@ function KodexShell({
           onArchiveThread: handleArchiveSelectedThread, onApprovalDecision: handleApprovalDecision, onImageOpen: setLightboxImage,
           onTimelineReady: handleTimelineReadyForSelectedThread, pendingTitleThreadIds,
           scrollParentElement: timelineScrollElement, selectedThread, selectedThreadApprovals, selectedThreadTitle,
-          selectedTimelineEntry, setTimelineScrollElement, showDebugEvents, timeline, timelineFollowLiveToken,
+          selectedTimelineEntry, setTimelineScrollElement, showDebugEvents, timeline,
         }}
         workspaceSidebarProps={{
           account, approvals, hoveredThreadActionId, isSidebarResizing, loginState,

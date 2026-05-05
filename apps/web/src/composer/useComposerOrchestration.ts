@@ -44,7 +44,6 @@ type UseComposerOrchestrationParams = {
   onCreateDraftThread: (request: DraftThreadCreateRequest) => Promise<string>;
   onError: (error: unknown) => void;
   onThreadMaterialized: (threadId: string) => void;
-  onThreadLocalInputSubmitted: (threadId: string) => void;
   onThreadTurnStartFailed: (threadId: string) => void;
   onThreadTurnStarted: (threadId: string) => void;
   selectedProjectId: string | null;
@@ -61,7 +60,6 @@ export function useComposerOrchestration({
   onCreateDraftThread,
   onError,
   onThreadMaterialized,
-  onThreadLocalInputSubmitted,
   onThreadTurnStartFailed,
   onThreadTurnStarted,
   selectedProjectId,
@@ -173,7 +171,6 @@ export function useComposerOrchestration({
     try {
       if (selectedThreadId) {
         optimisticClientRequestId = addOptimisticMessage(text, optimisticImages, null, initialConfirmationState);
-        onThreadLocalInputSubmitted(selectedThreadId);
         startedThreadId = selectedThreadId;
         onThreadTurnStarted(selectedThreadId);
         draftControls.clearText();
@@ -209,7 +206,6 @@ export function useComposerOrchestration({
       latestComposerContextRef.current = retryRestoreContext;
       composerContextRef.current = retryRestoreContext;
       optimisticClientRequestId = addOptimisticMessage(text, optimisticImages, null, initialConfirmationState);
-      onThreadLocalInputSubmitted(threadId);
       startedThreadId = threadId;
       onThreadTurnStarted(threadId);
       draftControls.clearText();
@@ -272,7 +268,6 @@ export function useComposerOrchestration({
       activeSelectedTurnId,
       row.attachments.length > 0 ? "uploading" : "sending",
     );
-    onThreadLocalInputSubmitted(selectedThreadId);
     setQueuedSteerRows((current) =>
       current.map((item) => (item.id === row.id ? { ...item, isSubmitting: true } : item)),
     );
@@ -308,7 +303,6 @@ export function useComposerOrchestration({
       null,
       row.attachments.length > 0 ? "uploading" : "sending",
     );
-    onThreadLocalInputSubmitted(threadId);
     setIsComposerSubmitting(true);
     setIsQueuedTurnStartPending(true);
     setQueuedSteerRows((current) =>
