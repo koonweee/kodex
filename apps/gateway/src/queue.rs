@@ -80,6 +80,10 @@ pub async fn create_queued_input(
     Path(thread_id): Path<String>,
     Json(request): Json<QueuedInputCreateRequest>,
 ) -> ApiResult<Json<QueuedInputResponse>> {
+    state
+        .store
+        .save_thread_turn_options(&thread_id, &request.options)
+        .await?;
     let queued_input = state
         .store
         .create_queued_input(&thread_id, request.input, request.options)

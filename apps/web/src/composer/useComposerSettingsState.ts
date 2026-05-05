@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   getComposerSettings,
@@ -33,15 +33,27 @@ export function useComposerSettingsState({
   const [composerDefaults, setComposerDefaults] = useState<ComposerSettings>(DEFAULT_COMPOSER_SETTINGS);
   const [globalComposerDefaults, setGlobalComposerDefaults] = useState<ComposerSettings>(DEFAULT_COMPOSER_SETTINGS);
   const [draftComposerSettings, setDraftComposerSettings] = useState<ComposerSettings>(DEFAULT_COMPOSER_SETTINGS);
-  const [threadComposerSettingsById, setThreadComposerSettingsById] = useState<Record<string, ComposerSettings>>({});
+  const [selectedThreadComposerOverride, setSelectedThreadComposerOverride] = useState<ComposerSettings | null>(null);
   const [composerSettingsError, setComposerSettingsError] = useState<string | null>(null);
   const draftComposerEditedRef = useRef(false);
 
-  const selectedThreadSettings = selectedThread
-    ? threadComposerSettingsById[selectedThread.id] ?? composerSettingsFromThread(selectedThread)
-    : null;
+  useEffect(() => {
+    setSelectedThreadComposerOverride(null);
+  }, [
+    selectedThread?.id,
+    selectedThread?.model,
+    selectedThread?.reasoningEffort,
+    selectedThread?.serviceTier,
+    selectedThread?.approvalPolicy,
+    selectedThread?.approvalsReviewer,
+    selectedThread?.sandbox,
+  ]);
+
+  const selectedThreadSettings = selectedThread ? composerSettingsFromThread(selectedThread) : null;
   const composerSettings = selectedThread
-    ? selectedThreadSettings ?? (selectedProjectId === null ? globalComposerDefaults : draftComposerSettings)
+    ? selectedThreadComposerOverride ??
+      selectedThreadSettings ??
+      (selectedProjectId === null ? globalComposerDefaults : composerDefaults)
     : draftChatThreadSelected && !draftComposerEditedRef.current
       ? globalComposerDefaults
       : draftComposerSettings;
@@ -75,19 +87,12 @@ export function useComposerSettingsState({
   function handleComposerSettingsChange(nextSettings: ComposerSettings) {
     const previousSettings = composerSettings;
     if (selectedThread) {
-      setThreadComposerSettingsById((current) => ({ ...current, [selectedThread.id]: nextSettings }));
+      setSelectedThreadComposerOverride(nextSettings);
     } else {
       draftComposerEditedRef.current = true;
       setDraftComposerSettings(nextSettings);
     }
     persistDurableComposerSettings(previousSettings, nextSettings);
-  }
-
-  function applyThreadComposerSettings(thread: ThreadSummary) {
-    const threadSettings = composerSettingsFromThread(thread);
-    if (threadSettings) {
-      setThreadComposerSettingsById((current) => ({ ...current, [thread.id]: threadSettings }));
-    }
   }
 
   function persistDurableComposerSettings(previousSettings: ComposerSettings, nextSettings: ComposerSettings) {
@@ -117,7 +122,6 @@ export function useComposerSettingsState({
   }
 
   return {
-    applyThreadComposerSettings,
     composerSettings,
     composerSettingsError,
     draftComposerEditedRef,

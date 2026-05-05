@@ -1,5 +1,6 @@
-import { ActionIcon, Badge, Box, Group, Menu, Title } from "@mantine/core";
-import { AlertCircle, Archive, MoreHorizontal, PanelRightOpen } from "lucide-react";
+import { ActionIcon, Badge, Box, Button, Group, Menu, Title } from "@mantine/core";
+import { AlertCircle, Archive, MoreHorizontal, PanelLeftOpen, PanelRightOpen } from "lucide-react";
+import type { ReactNode } from "react";
 
 import type { Approval, ApprovalResponse, ThreadSummary } from "../api/client";
 import type { ImageLightboxImage } from "../images/types";
@@ -11,6 +12,8 @@ import type { TimelineState } from "../timeline/reducer";
 const THREAD_PANEL_TEXT = {
   actions: "Thread actions",
   archive: "Archive thread",
+  browseThreads: "Browse threads",
+  showSidebar: "Show sidebar",
   threadTimelineText: "Select or create a thread to view events, messages, tool calls, and warnings.",
   threadTimelineTitle: "Thread timeline",
 };
@@ -23,6 +26,7 @@ export function ThreadPanel({
   onArchiveThread,
   onApprovalDecision,
   onImageOpen,
+  onShowMobileSidebar,
   onTimelineReady,
   pendingTitleThreadIds,
   scrollParentElement,
@@ -41,6 +45,7 @@ export function ThreadPanel({
   onArchiveThread: () => void;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
   onImageOpen: (image: ImageLightboxImage) => void;
+  onShowMobileSidebar: () => void;
   onTimelineReady: () => void;
   pendingTitleThreadIds: Set<string>;
   scrollParentElement: HTMLDivElement | null;
@@ -69,17 +74,11 @@ export function ThreadPanel({
       ) : null}
       {selectedThread || isDraftThreadSelected ? (
         <>
-          {selectedThread ? (
-            <Group justify="space-between" wrap="nowrap" className="kodex-thread-header">
-              {shouldShowThreadTitle ? (
-                <Box className="kodex-thread-heading">
-                  <Title className="kodex-thread-title" order={3} size="h5" title={selectedThreadTitle}>
-                    {selectedThreadTitle}
-                  </Title>
-                </Box>
-              ) : (
-                <Box className="kodex-thread-heading" />
-              )}
+          <ThreadHeader
+            onShowMobileSidebar={onShowMobileSidebar}
+            title={shouldShowThreadTitle ? selectedThreadTitle : null}
+          >
+            {selectedThread ? (
               <Menu position="bottom-end" withinPortal>
                 <Menu.Target>
                   <ActionIcon aria-label={THREAD_PANEL_TEXT.actions} variant="subtle">
@@ -92,8 +91,8 @@ export function ThreadPanel({
                   </Menu.Item>
                 </Menu.Dropdown>
               </Menu>
-            </Group>
-          ) : null}
+            ) : null}
+          </ThreadHeader>
           {selectedThread ? (
             <Box
               className="kodex-timeline-scroll"
@@ -119,14 +118,62 @@ export function ThreadPanel({
           ) : null}
         </>
       ) : (
-        <Box className="kodex-thread-empty kodex-main-column">
-          <EmptyPanel
-            icon={<PanelRightOpen size={22} />}
+        <>
+          <ThreadHeader
+            onShowMobileSidebar={onShowMobileSidebar}
             title={THREAD_PANEL_TEXT.threadTimelineTitle}
-            text={THREAD_PANEL_TEXT.threadTimelineText}
           />
-        </Box>
+          <Box className="kodex-thread-empty kodex-main-column">
+            <EmptyPanel
+              icon={<PanelRightOpen size={22} />}
+              title="No thread selected"
+              text={THREAD_PANEL_TEXT.threadTimelineText}
+            />
+            <Group className="kodex-thread-empty-actions" justify="center" gap="xs" wrap="nowrap">
+              <Button
+                className="kodex-thread-empty-action"
+                onClick={onShowMobileSidebar}
+                size="compact-sm"
+                type="button"
+                variant="light"
+              >
+                {THREAD_PANEL_TEXT.browseThreads}
+              </Button>
+            </Group>
+          </Box>
+        </>
       )}
     </>
+  );
+}
+
+function ThreadHeader({
+  children,
+  onShowMobileSidebar,
+  title,
+}: {
+  children?: ReactNode;
+  onShowMobileSidebar: () => void;
+  title: string | null;
+}) {
+  return (
+    <Group justify="space-between" wrap="nowrap" className="kodex-thread-header">
+      <Group gap="xs" wrap="nowrap" className="kodex-thread-heading">
+        <ActionIcon
+          aria-label={THREAD_PANEL_TEXT.showSidebar}
+          className="kodex-thread-sidebar-button"
+          onClick={onShowMobileSidebar}
+          variant="subtle"
+        >
+          <PanelLeftOpen size={17} />
+        </ActionIcon>
+        {title ? (
+          <Title className="kodex-thread-title" order={3} size="h5" title={title}>
+            {title}
+          </Title>
+        ) : null}
+      </Group>
+      {children}
+    </Group>
   );
 }

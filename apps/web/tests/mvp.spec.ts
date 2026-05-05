@@ -327,6 +327,256 @@ test("opens preferences from the settings menu and switches between dark and lig
   await expect(page.locator("html")).toHaveAttribute("data-mantine-color-scheme", "light");
 });
 
+test("restores selected thread model settings when switching threads", async ({ page }) => {
+  await page.unroute("**/v1/**");
+
+  const threadsById: Record<string, { id: string; name: string; model: string }> = {};
+  const miniThreadId = "thread-mini";
+  const sparkThreadId = "thread-spark";
+  let createCount = 0;
+
+  await page.route("**/v1/**", async (route) => {
+    const request = route.request();
+    const method = request.method();
+    const url = new URL(request.url());
+    const key = `${method} ${url.pathname}`;
+
+    if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+        body: "",
+      });
+      return;
+    }
+
+    if (key === "GET /v1/events") {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ events: [] }),
+      });
+      return;
+    }
+
+    if (key === "GET /v1/capabilities") {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gateway: {
+            version: "0.1.0",
+            sse: true,
+            approvals: true,
+            gatewayAuth: false,
+            trustedNetworkOnly: true,
+          },
+          appServer: { ready: true, experimentalApi: true },
+        }),
+      });
+      return;
+    }
+
+    if (key === "GET /v1/projects") {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projects: [{ id: "project-1", name: "Kodex", cwd: "/tmp", createdAt: "2026-05-05T00:00:00Z", updatedAt: "2026-05-05T00:00:00Z" }],
+        }),
+      });
+      return;
+    }
+
+    if (key === "GET /v1/account") {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requiresOpenaiAuth: true, account: null, rawPayload: {} }),
+      });
+      return;
+    }
+
+    if (key === "GET /v1/account/rate-limits") {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rateLimits: null, rateLimitsByLimitId: null, rawPayload: {} }),
+      });
+      return;
+    }
+
+    if (key === "GET /v1/models") {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          models: [
+            {
+              id: "gpt-5.4mini",
+              model: "gpt-5.4mini",
+              displayName: "GPT-5.4 Mini",
+              description: "Fast coding model",
+              defaultReasoningEffort: "medium",
+              hidden: false,
+              inputModalities: ["text"],
+              isDefault: true,
+              rawPayload: {},
+              supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }],
+              upgrade: null,
+            },
+            {
+              id: "gpt-5.3spark",
+              model: "gpt-5.3spark",
+              displayName: "GPT-5.3 Spark",
+              description: "Balanced coding model",
+              defaultReasoningEffort: "medium",
+              hidden: false,
+              inputModalities: ["text"],
+              isDefault: false,
+              rawPayload: {},
+              supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }],
+              upgrade: null,
+            },
+          ],
+          nextCursor: null,
+          rawPayload: {},
+        }),
+      });
+      return;
+    }
+
+    if (key === "GET /v1/composer-settings") {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: null, effort: null, serviceTier: null, permissionsPreset: null }),
+      });
+      return;
+    }
+
+    if (key === "GET /v1/threads") {
+      const threads = Object.values(threadsById).map((thread) => ({
+        id: thread.id,
+        name: thread.name,
+        cwd: "/tmp",
+        status: "idle",
+        source: "local",
+        preview: `Thread ${thread.name}`,
+        lastCompletedAgentTurnSeq: null,
+        seenCompletedAgentTurnSeq: 0,
+        unreadCompletedAgentTurn: false,
+        rawPayload: { model: thread.model, reasoningEffort: null, serviceTier: null },
+        createdAt: 1777500000,
+        updatedAt: 1777501000,
+      }));
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threads, nextCursor: null, backwardsCursor: null, rawPayload: {} }),
+      });
+      return;
+    }
+
+    if (key.startsWith("GET /v1/threads/") && !key.endsWith("/resume") && !key.endsWith("/queued-inputs")) {
+      const threadId = url.pathname.split("/").at(-1);
+      const thread = threadId ? threadsById[threadId] : null;
+      if (!thread) {
+        await route.fulfill({ status: 404, headers: { "Content-Type": "application/json" }, body: "{}" });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          thread: {
+            id: thread.id,
+            name: thread.name,
+            cwd: "/tmp",
+            status: "idle",
+            source: "local",
+            preview: `Thread ${thread.name}`,
+            lastCompletedAgentTurnSeq: null,
+            seenCompletedAgentTurnSeq: 0,
+            unreadCompletedAgentTurn: false,
+            rawPayload: { model: thread.model },
+            createdAt: 1777500000,
+            updatedAt: 1777501000,
+          },
+          turns: [],
+          liveState: "idle",
+          rawPayload: {},
+        }),
+      });
+      return;
+    }
+
+    if (key === "POST /v1/chats/threads") {
+      const nextName = createCount === 0 ? "mini" : "spark";
+      const threadId = createCount === 0 ? miniThreadId : sparkThreadId;
+      const model = createCount === 0 ? "gpt-5.4mini" : "gpt-5.3spark";
+      createCount += 1;
+      const modelEffort = "medium";
+      threadsById[threadId] = { id: threadId, name: nextName, model };
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          thread: {
+            id: threadId,
+            name: nextName,
+            model,
+            reasoningEffort: modelEffort,
+            cwd: "/tmp",
+            status: "idle",
+            source: "local",
+            preview: `Thread ${nextName}`,
+            lastCompletedAgentTurnSeq: null,
+            seenCompletedAgentTurnSeq: 0,
+            unreadCompletedAgentTurn: false,
+            rawPayload: {},
+            createdAt: 1777500000,
+            updatedAt: 1777501000,
+          },
+          rawPayload: {},
+        }),
+      });
+      return;
+    }
+
+    if (key.startsWith("POST /v1/threads/") && key.endsWith("/turns")) {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payload: {} }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 404,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "not_found", message: key, retryable: false }),
+    });
+  });
+
+  await page.goto("/");
+
+  await page.getByRole("button", { name: /new thread/i }).click();
+  await expect(page.getByRole("heading", { name: /new thread/i })).toBeVisible();
+  await page.getByLabel(/message composer/i).fill("mini thread message");
+  await page.getByRole("button", { name: /send message/i }).click();
+  await expect(await page.getByRole("button", { name: /model: gpt-5\.4mini/i })).toBeVisible();
+
+  await page.getByRole("button", { name: /new thread/i }).click();
+  await page.getByLabel(/message composer/i).fill("spark thread message");
+  await page.getByRole("button", { name: /send message/i }).click();
+  await expect(await page.getByRole("button", { name: /model: gpt-5\.3spark/i })).toBeVisible();
+
+  await page.getByRole("button", { name: /mini/i }).click();
+  await expect(await page.getByRole("button", { name: /model: gpt-5\.4mini/i })).toBeVisible();
+});
+
 async function mockGateway(page: Page) {
   await page.route("**/v1/**", async (route) => {
     const request = route.request();

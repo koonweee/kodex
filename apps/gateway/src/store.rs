@@ -84,6 +84,38 @@ pub struct ThreadReadState {
     pub seen_completed_agent_turn_seq: i64,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct ThreadComposerSettings {
+    pub model: Option<String>,
+    pub reasoning_effort: Option<String>,
+    pub service_tier: Option<String>,
+    pub approval_policy: Option<String>,
+    pub approvals_reviewer: Option<String>,
+    pub sandbox: Option<Value>,
+}
+
+impl ThreadComposerSettings {
+    pub fn has_any_setting(&self) -> bool {
+        self.model.is_some()
+            || self.reasoning_effort.is_some()
+            || self.service_tier.is_some()
+            || self.approval_policy.is_some()
+            || self.approvals_reviewer.is_some()
+            || self.sandbox.is_some()
+    }
+
+    pub fn from_turn_options(options: &TurnStartOptions) -> Self {
+        Self {
+            model: options.model.clone(),
+            reasoning_effort: options.effort.clone(),
+            service_tier: options.service_tier.clone(),
+            approval_policy: options.approval_policy.clone(),
+            approvals_reviewer: options.approvals_reviewer.clone(),
+            sandbox: options.sandbox_policy.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum QueuedInputStatus {
@@ -244,6 +276,23 @@ impl Store {
             create table if not exists thread_reads (
                 thread_id text primary key,
                 seen_completed_agent_turn_seq integer not null default 0,
+                updated_at text not null
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
+            create table if not exists thread_composer_settings (
+                thread_id text primary key,
+                model text,
+                reasoning_effort text,
+                service_tier text,
+                approval_policy text,
+                approvals_reviewer text,
+                sandbox_json text,
+                created_at text not null,
                 updated_at text not null
             )
             "#,
@@ -460,6 +509,102 @@ impl Store {
         }
 
         Ok(states)
+    }
+
+    pub async fn save_thread_composer_settings(
+        &self,
+        thread_id: &str,
+        settings: &ThreadComposerSettings,
+    ) -> ApiResult<()> {
+        let now = Utc::now();
+        let sandbox_json = settings
+            .sandbox
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?;
+        sqlx::query(
+            r#"
+            insert into thread_composer_settings (
+                thread_id, model, reasoning_effort, service_tier, approval_policy,
+                approvals_reviewer, sandbox_json, created_at, updated_at
+            )
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            on conflict(thread_id) do update set
+                model = excluded.model,
+                reasoning_effort = excluded.reasoning_effort,
+                service_tier = excluded.service_tier,
+                approval_policy = excluded.approval_policy,
+                approvals_reviewer = excluded.approvals_reviewer,
+                sandbox_json = excluded.sandbox_json,
+                updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(thread_id)
+        .bind(&settings.model)
+        .bind(&settings.reasoning_effort)
+        .bind(&settings.service_tier)
+        .bind(&settings.approval_policy)
+        .bind(&settings.approvals_reviewer)
+        .bind(sandbox_json)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn save_thread_turn_options(
+        &self,
+        thread_id: &str,
+        options: &TurnStartOptions,
+    ) -> ApiResult<()> {
+        self.save_thread_composer_settings(
+            thread_id,
+            &ThreadComposerSettings::from_turn_options(options),
+        )
+        .await
+    }
+
+    pub async fn thread_composer_settings(
+        &self,
+        thread_ids: &[String],
+    ) -> ApiResult<HashMap<String, ThreadComposerSettings>> {
+        if thread_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut builder = QueryBuilder::<Sqlite>::new(
+            "select thread_id, model, reasoning_effort, service_tier, approval_policy, approvals_reviewer, sandbox_json from thread_composer_settings where thread_id in (",
+        );
+        {
+            let mut separated = builder.separated(", ");
+            for thread_id in thread_ids {
+                separated.push_bind(thread_id);
+            }
+        }
+        builder.push(")");
+
+        let mut settings = HashMap::new();
+        for row in builder.build().fetch_all(&self.pool).await? {
+            let thread_id: String = row.try_get("thread_id")?;
+            let sandbox_json: Option<String> = row.try_get("sandbox_json")?;
+            settings.insert(
+                thread_id,
+                ThreadComposerSettings {
+                    model: row.try_get("model")?,
+                    reasoning_effort: row.try_get("reasoning_effort")?,
+                    service_tier: row.try_get("service_tier")?,
+                    approval_policy: row.try_get("approval_policy")?,
+                    approvals_reviewer: row.try_get("approvals_reviewer")?,
+                    sandbox: sandbox_json
+                        .map(|value| serde_json::from_str(&value))
+                        .transpose()?,
+                },
+            );
+        }
+
+        Ok(settings)
     }
 
     pub async fn mark_thread_seen_completed_agent_turns(
@@ -1186,7 +1331,7 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'approvals', 'thread_reads', 'queued_turn_inputs', 'thread_runtime_state') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'approvals', 'thread_reads', 'thread_composer_settings', 'queued_turn_inputs', 'thread_runtime_state') order by name",
         )
         .fetch_all(store.pool())
         .await
@@ -1198,6 +1343,7 @@ mod tests {
                 "events",
                 "projects",
                 "queued_turn_inputs",
+                "thread_composer_settings",
                 "thread_reads",
                 "thread_runtime_state"
             ]
@@ -1267,6 +1413,50 @@ mod tests {
         let thread_ids = vec!["thread-1".to_string()];
         let states = store.thread_read_states(&thread_ids).await.unwrap();
         assert!(!states.contains_key("thread-1"));
+    }
+
+    #[tokio::test]
+    async fn thread_composer_settings_round_trip_by_thread_id() {
+        let store = Store::in_memory().await.unwrap();
+        store
+            .save_thread_composer_settings(
+                "thread-1",
+                &ThreadComposerSettings {
+                    model: Some("gpt-5.4-mini".to_string()),
+                    reasoning_effort: Some("high".to_string()),
+                    service_tier: Some("fast".to_string()),
+                    approval_policy: Some("on-request".to_string()),
+                    approvals_reviewer: Some("auto_review".to_string()),
+                    sandbox: Some(json!("workspace-write")),
+                },
+            )
+            .await
+            .unwrap();
+
+        let thread_ids = vec!["thread-1".to_string(), "missing-thread".to_string()];
+        let settings = store.thread_composer_settings(&thread_ids).await.unwrap();
+        let settings = settings.get("thread-1").unwrap();
+
+        assert_eq!(settings.model.as_deref(), Some("gpt-5.4-mini"));
+        assert_eq!(settings.reasoning_effort.as_deref(), Some("high"));
+        assert_eq!(settings.service_tier.as_deref(), Some("fast"));
+        assert_eq!(settings.approval_policy.as_deref(), Some("on-request"));
+        assert_eq!(settings.approvals_reviewer.as_deref(), Some("auto_review"));
+        assert_eq!(settings.sandbox.as_ref(), Some(&json!("workspace-write")));
+
+        store
+            .save_thread_turn_options("thread-1", &TurnStartOptions::default())
+            .await
+            .unwrap();
+        let settings = store.thread_composer_settings(&thread_ids).await.unwrap();
+        let settings = settings.get("thread-1").unwrap();
+
+        assert!(settings.model.is_none());
+        assert!(settings.reasoning_effort.is_none());
+        assert!(settings.service_tier.is_none());
+        assert!(settings.approval_policy.is_none());
+        assert!(settings.approvals_reviewer.is_none());
+        assert!(settings.sandbox.is_none());
     }
 
     #[tokio::test]

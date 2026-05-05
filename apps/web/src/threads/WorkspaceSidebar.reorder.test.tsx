@@ -103,7 +103,7 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(screen.queryByRole("button", { name: "Thread 2" })).not.toBeInTheDocument();
   });
 
-  it("does not collapse a project when its title row is clicked", () => {
+  it("collapses a project when its title row is clicked", () => {
     renderSidebar({
       projects: [projectSummary("project-1", "Project")],
       selectedProjectId: "project-1",
@@ -112,9 +112,62 @@ describe("WorkspaceSidebar project reorder", () => {
       },
     });
 
-    fireEvent.click(screen.getByText("Project"));
+    const projectToggle = screen.getByRole("button", { name: "Collapse Project" });
+    expect(projectToggle.querySelector(".lucide-folder-open")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Thread 1" })).toBeInTheDocument();
 
-    expect(screen.queryByRole("button", { name: /project \/workspace\/project-1/i })).not.toBeInTheDocument();
+    fireEvent.click(projectToggle);
+
+    expect(projectToggle).toHaveAttribute("aria-expanded", "false");
+    expect(projectToggle.querySelector(".lucide-folder")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Thread 1" })).not.toBeInTheDocument();
+
+    fireEvent.click(projectToggle);
+
+    expect(projectToggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Thread 1" })).toBeInTheDocument();
+  });
+
+  it("collapses and expands the Projects section from the section row", () => {
+    renderSidebar({
+      projects: [projectSummary("project-1", "Project")],
+      projectFormOpen: true,
+      threadsByProjectId: {
+        "project-1": [threadSummary(1)],
+      },
+    });
+
+    const projectsToggle = screen.getByRole("button", { name: "Collapse Projects section" });
+    expect(screen.getByText("Directory")).toBeInTheDocument();
+    expect(screen.getByText("Project")).toBeInTheDocument();
+
+    fireEvent.click(projectsToggle);
+
+    expect(projectsToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Directory")).not.toBeInTheDocument();
+    expect(screen.queryByText("Project")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand Projects section" }));
+
+    expect(screen.getByText("Directory")).toBeInTheDocument();
+    expect(screen.getByText("Project")).toBeInTheDocument();
+  });
+
+  it("collapses and expands the Chats section from the section row", () => {
+    renderSidebar({
+      chatThreads: [threadSummary(1)],
+    });
+
+    const chatsToggle = screen.getByRole("button", { name: "Collapse Chats section" });
+    expect(screen.getByRole("button", { name: "Thread 1" })).toBeInTheDocument();
+
+    fireEvent.click(chatsToggle);
+
+    expect(chatsToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Thread 1" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand Chats section" }));
+
     expect(screen.getByRole("button", { name: "Thread 1" })).toBeInTheDocument();
   });
 

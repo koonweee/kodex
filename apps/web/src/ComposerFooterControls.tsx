@@ -1,5 +1,5 @@
 import { ActionIcon, Box, Button, Group, Menu, Text, Tooltip } from "@mantine/core";
-import { AlertCircle, Check, Gauge, Shield } from "lucide-react";
+import { AlertCircle, Check, Gauge, Shield, X } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useState } from "react";
 
@@ -125,28 +125,33 @@ export function ComposerFooterControls({
               {permissionLabel}
             </Button>
           </Menu.Target>
-          <Menu.Dropdown aria-label="Permissions presets" className="kodex-composer-menu">
-            {PERMISSION_PRESETS.map((preset) => (
-              <Menu.Item
-                key={preset.id}
-                closeMenuOnClick={preset.id !== "fullAccess" || confirmingFullAccess}
-                color={preset.tone === "danger" ? "red" : undefined}
-                data-active={settings.permissionPreset === preset.id ? "true" : undefined}
-                leftSection={settings.permissionPreset === preset.id ? <Check size={14} /> : <Shield size={14} />}
-                onClick={() => selectPermissionPreset(preset.id)}
-              >
-                <Box className="kodex-composer-menu-item">
-                  <Text size="sm" fw={600}>
-                    {preset.id === "fullAccess" && confirmingFullAccess ? "Confirm full access" : preset.label}
-                  </Text>
-                  <Text size="xs" c={preset.tone === "danger" ? "red.3" : "dimmed"}>
-                    {preset.id === "fullAccess" && confirmingFullAccess
-                      ? "Click again to run without sandbox restrictions."
-                      : preset.description}
-                  </Text>
-                </Box>
-              </Menu.Item>
-            ))}
+          <Menu.Dropdown aria-label="Permissions presets" className="kodex-composer-menu kodex-permissions-menu">
+            <MobileMenuHeader title="Permissions" onClose={() => setPermissionMenuOpened(false)} />
+            <Box className="kodex-permissions-row-list">
+              {PERMISSION_PRESETS.map((preset) => (
+                <Menu.Item
+                  className="kodex-permission-row"
+                  key={preset.id}
+                  closeMenuOnClick={preset.id !== "fullAccess" || confirmingFullAccess}
+                  color={preset.tone === "danger" ? "red" : undefined}
+                  data-active={settings.permissionPreset === preset.id ? "true" : undefined}
+                  data-tone={preset.tone}
+                  leftSection={settings.permissionPreset === preset.id ? <Check size={14} /> : <Shield size={14} />}
+                  onClick={() => selectPermissionPreset(preset.id)}
+                >
+                  <Box className="kodex-composer-menu-item">
+                    <Text size="sm" fw={600}>
+                      {preset.id === "fullAccess" && confirmingFullAccess ? "Confirm full access" : preset.label}
+                    </Text>
+                    <Text size="xs" c={preset.tone === "danger" ? "red.3" : "dimmed"}>
+                      {preset.id === "fullAccess" && confirmingFullAccess
+                        ? "Click again to run without sandbox restrictions."
+                        : preset.description}
+                    </Text>
+                  </Box>
+                </Menu.Item>
+              ))}
+            </Box>
           </Menu.Dropdown>
         </Menu>
 
@@ -188,45 +193,52 @@ export function ComposerFooterControls({
               ) : null}
             </Button>
           </Menu.Target>
-          <Menu.Dropdown aria-label="Model and speed controls" className="kodex-composer-menu">
+          <Menu.Dropdown aria-label="Model and speed controls" className="kodex-composer-menu kodex-run-settings-menu">
+            <MobileMenuHeader title="Run settings" onClose={() => setModelMenuOpened(false)} />
             <Menu.Label>Model</Menu.Label>
-            {models.map((model) => (
-              <Menu.Item
-                key={model.id}
-                data-active={selectedModel?.id === model.id ? "true" : undefined}
-                leftSection={selectedModel?.id === model.id ? <Check size={14} /> : undefined}
-                onClick={() => {
-                  updateSettings({
-                    model: model.id,
-                    effort: model.supportedReasoningEfforts.some(
-                      (effort) => effort.reasoningEffort === settings.effort,
-                    )
-                      ? settings.effort
-                      : undefined,
-                  });
-                  setModelMenuOpened(false);
-                }}
-              >
-                {model.model}
-              </Menu.Item>
-            ))}
+            <Box className="kodex-run-settings-chip-row" data-section="model">
+              {models.map((model) => (
+                <Menu.Item
+                  className="kodex-run-settings-chip"
+                  key={model.id}
+                  data-active={selectedModel?.id === model.id ? "true" : undefined}
+                  leftSection={selectedModel?.id === model.id ? <Check size={14} /> : undefined}
+                  onClick={() => {
+                    updateSettings({
+                      model: model.id,
+                      effort: model.supportedReasoningEfforts.some(
+                        (effort) => effort.reasoningEffort === settings.effort,
+                      )
+                        ? settings.effort
+                        : undefined,
+                    });
+                    setModelMenuOpened(false);
+                  }}
+                >
+                  {model.model}
+                </Menu.Item>
+              ))}
+            </Box>
             {supportedEfforts.length > 0 ? (
               <>
                 <Menu.Divider />
                 <Menu.Label>Reasoning</Menu.Label>
-                {supportedEfforts.map((effort) => (
-                  <Menu.Item
-                    key={effort.reasoningEffort}
-                    data-active={selectedEffort === effort.reasoningEffort ? "true" : undefined}
-                    leftSection={selectedEffort === effort.reasoningEffort ? <Check size={14} /> : <Gauge size={14} />}
-                    onClick={() => {
-                      updateSettings({ model: selectedModel?.id, effort: effort.reasoningEffort });
-                      setModelMenuOpened(false);
-                    }}
-                  >
-                    {reasoningEffortLabel(effort.reasoningEffort)}
-                  </Menu.Item>
-                ))}
+                <Box className="kodex-run-settings-chip-row" data-section="reasoning">
+                  {supportedEfforts.map((effort) => (
+                    <Menu.Item
+                      className="kodex-run-settings-chip"
+                      key={effort.reasoningEffort}
+                      data-active={selectedEffort === effort.reasoningEffort ? "true" : undefined}
+                      leftSection={selectedEffort === effort.reasoningEffort ? <Check size={14} /> : <Gauge size={14} />}
+                      onClick={() => {
+                        updateSettings({ model: selectedModel?.id, effort: effort.reasoningEffort });
+                        setModelMenuOpened(false);
+                      }}
+                    >
+                      {reasoningEffortLabel(effort.reasoningEffort)}
+                    </Menu.Item>
+                  ))}
+                </Box>
               </>
             ) : null}
             <Menu.Divider />
@@ -242,6 +254,19 @@ export function ComposerFooterControls({
           </Menu.Dropdown>
         </Menu>
       </Group>
+    </Group>
+  );
+}
+
+function MobileMenuHeader({ onClose, title }: { onClose: () => void; title: string }) {
+  return (
+    <Group className="kodex-run-settings-header" justify="space-between" wrap="nowrap">
+      <Text fw={700} size="sm">
+        {title}
+      </Text>
+      <ActionIcon aria-label={`Close ${title}`} onClick={onClose} size="sm" type="button" variant="subtle">
+        <X size={15} />
+      </ActionIcon>
     </Group>
   );
 }

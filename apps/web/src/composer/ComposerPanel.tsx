@@ -1,5 +1,5 @@
 import { ActionIcon, Box, Group, Menu, Textarea, Tooltip } from "@mantine/core";
-import { ArrowUp, Paperclip, Plus, Square } from "lucide-react";
+import { ArrowUp, Folder, Paperclip, Plus, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import type {
   ClipboardEvent as ReactClipboardEvent,
@@ -46,6 +46,7 @@ export function ComposerPanel({
   composerResetToken,
   composerShellRef,
   contextUsage,
+  currentProjectName,
   isDraftThreadSelected,
   isDraftComposerTransitioning,
   isComposerDragActive,
@@ -78,6 +79,7 @@ export function ComposerPanel({
   composerResetToken: number;
   composerShellRef?: RefObject<HTMLDivElement | null>;
   contextUsage?: ContextUsage | null;
+  currentProjectName?: string | null;
   isDraftThreadSelected: boolean;
   isDraftComposerTransitioning: boolean;
   isComposerDragActive: boolean;
@@ -105,6 +107,8 @@ export function ComposerPanel({
   const [composerText, setComposerText] = useState("");
   const draftHeroText = greetingForDate(new Date());
   const shouldShowDraftHero = isDraftThreadSelected || isDraftComposerTransitioning;
+  const draftProjectToolbarName =
+    isDraftThreadSelected && currentProjectName ? currentProjectName : null;
   const isComposerBusy = isComposerSubmitting || Boolean(isQueuedTurnStartPending);
   const canSubmitComposer =
     canCompose && !isComposerBusy && (Boolean(composerText.trim()) || pendingAttachments.length > 0);
@@ -145,7 +149,7 @@ export function ComposerPanel({
       ) : null}
       <Box
         component="form"
-        className="kodex-composer"
+        className={`kodex-composer${draftProjectToolbarName ? " kodex-composer-with-underbar" : ""}`}
         onSubmit={(event) =>
           onSubmitTurn(event, composerText, {
             clearText: () => setComposerText(""),
@@ -253,6 +257,14 @@ export function ComposerPanel({
           </Tooltip>
         </Group>
       </Box>
+      {draftProjectToolbarName ? (
+        <Box className="kodex-composer-underbar" aria-label="Draft thread toolbar" role="toolbar">
+          <Group className="kodex-composer-underbar-left" gap={8} wrap="nowrap">
+            <Folder size={15} />
+            <span>{draftProjectToolbarName}</span>
+          </Group>
+        </Box>
+      ) : null}
     </Box>
   );
 }

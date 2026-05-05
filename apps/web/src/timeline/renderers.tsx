@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 
 import { ImageThumbnail } from "../images/ImageThumbnail";
 import type { ImageLightboxImage } from "../images/types";
+import { copyTextToClipboard } from "./clipboard";
 import type { TimelineActivityRow, TimelineItemRow, TimelineWorkRow } from "./derive";
 import type { TimelineItem, WebSearchAction } from "./reducer";
 
@@ -402,12 +403,8 @@ function MessageCopyToolbar({ align, text }: { align: "end" | "start"; text: str
   }, []);
 
   async function handleCopy() {
-    if (!navigator.clipboard?.writeText) {
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
+    const copied = await copyTextToClipboard(text);
+    if (!copied) {
       return;
     }
     setCopied(true);

@@ -231,5 +231,5 @@ function isQueueEvent(event: EventEnvelope): boolean {
 function isThreadMaterializingError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();
-  return normalized.includes("not materialized yet") && normalized.includes("includeturns");
+  return normalized.includes("not materialized yet");
 }

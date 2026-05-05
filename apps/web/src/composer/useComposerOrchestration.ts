@@ -345,6 +345,9 @@ export function useComposerOrchestration({
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
       return;
     }
+    if (usesMobileComposerInput()) {
+      return;
+    }
 
     event.preventDefault();
     event.currentTarget.form?.requestSubmit();
@@ -517,4 +520,8 @@ export function useComposerOrchestration({
     queuedSteerRows,
     removePendingAttachment,
   };
+}
+
+function usesMobileComposerInput(): boolean {
+  return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 700px)").matches;
 }

@@ -17,7 +17,7 @@ use crate::{
         ThreadListResponse, ThreadSummary,
     },
     error::ApiResult,
-    store::ThreadRead,
+    store::{ThreadComposerSettings, ThreadRead},
 };
 
 pub fn router() -> Router<AppState> {
@@ -49,6 +49,8 @@ pub struct CreateThreadRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service_tier: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<String>,
@@ -66,6 +68,8 @@ pub struct CreateChatThreadRequest {
     pub first_message_text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service_tier: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -100,7 +104,7 @@ pub async fn list_threads(
     let mut response = app_server_api::client(&state.app_server)
         .thread_list(cwd, query.cursor, query.limit)
         .await?;
-    apply_thread_read_state(&state, &mut response.threads).await?;
+    apply_thread_list_response_state(&state, &mut response).await?;
     Ok(Json(response))
 }
 
@@ -110,18 +114,22 @@ pub async fn create_thread(
     Json(request): Json<CreateThreadRequest>,
 ) -> ApiResult<Json<ThreadCommandResponse>> {
     let project = state.store.get_project(&request.project_id).await?;
-    let payload = create_thread_payload(ThreadCreationOptions {
+    let options = ThreadCreationOptions {
         model: request.model,
+        effort: request.effort,
         service_tier: request.service_tier,
         approval_policy: request.approval_policy,
         approvals_reviewer: request.approvals_reviewer,
         sandbox: request.sandbox,
         payload: request.payload,
-    });
+    };
+    let payload = create_thread_payload(&options);
     let mut response = app_server_api::client(&state.app_server)
         .thread_start(project.id, project.cwd, payload)
         .await?;
-    apply_thread_read_state(&state, std::slice::from_mut(&mut response.thread)).await?;
+    save_thread_creation_options(&state, &response.thread.id, &options).await?;
+    overlay_thread_creation_options(&mut response.thread, &options);
+    apply_thread_command_response_state(&state, &mut response).await?;
     Ok(Json(response))
 }
 
@@ -141,7 +149,7 @@ pub async fn list_chat_threads(
         .threads
         .retain(|thread| thread_is_under_canonical_root(thread, &chat_root));
     response.next_cursor = None;
-    apply_thread_read_state(&state, &mut response.threads).await?;
+    apply_thread_list_response_state(&state, &mut response).await?;
     Ok(Json(response))
 }
 
@@ -155,23 +163,28 @@ pub async fn create_chat_thread(
         &request.first_message_text,
         Local::now().date_naive(),
     )?;
-    let payload = create_thread_payload(ThreadCreationOptions {
+    let options = ThreadCreationOptions {
         model: request.model,
+        effort: request.effort,
         service_tier: request.service_tier,
         approval_policy: request.approval_policy,
         approvals_reviewer: request.approvals_reviewer,
         sandbox: request.sandbox,
         payload: request.payload,
-    });
+    };
+    let payload = create_thread_payload(&options);
     let mut response = app_server_api::client(&state.app_server)
         .thread_start_in_cwd(cwd, payload)
         .await?;
-    apply_thread_read_state(&state, std::slice::from_mut(&mut response.thread)).await?;
+    save_thread_creation_options(&state, &response.thread.id, &options).await?;
+    overlay_thread_creation_options(&mut response.thread, &options);
+    apply_thread_command_response_state(&state, &mut response).await?;
     Ok(Json(response))
 }
 
 struct ThreadCreationOptions {
     model: Option<String>,
+    effort: Option<String>,
     service_tier: Option<String>,
     approval_policy: Option<String>,
     approvals_reviewer: Option<String>,
@@ -179,24 +192,78 @@ struct ThreadCreationOptions {
     payload: Value,
 }
 
-fn create_thread_payload(options: ThreadCreationOptions) -> Value {
-    let mut payload = options.payload;
-    if let Some(model) = options.model {
-        payload["model"] = Value::String(model);
+fn create_thread_payload(options: &ThreadCreationOptions) -> Value {
+    let mut payload = options.payload.clone();
+    if let Some(object) = payload.as_object_mut() {
+        object.remove("effort");
+        object.remove("reasoningEffort");
     }
-    if let Some(service_tier) = options.service_tier {
-        payload["serviceTier"] = Value::String(service_tier);
+    if let Some(model) = options.model.as_ref() {
+        payload["model"] = Value::String(model.clone());
     }
-    if let Some(approval_policy) = options.approval_policy {
-        payload["approvalPolicy"] = Value::String(approval_policy);
+    if let Some(service_tier) = options.service_tier.as_ref() {
+        payload["serviceTier"] = Value::String(service_tier.clone());
     }
-    if let Some(approvals_reviewer) = options.approvals_reviewer {
-        payload["approvalsReviewer"] = Value::String(approvals_reviewer);
+    if let Some(approval_policy) = options.approval_policy.as_ref() {
+        payload["approvalPolicy"] = Value::String(approval_policy.clone());
     }
-    if let Some(sandbox) = options.sandbox {
-        payload["sandbox"] = Value::String(sandbox);
+    if let Some(approvals_reviewer) = options.approvals_reviewer.as_ref() {
+        payload["approvalsReviewer"] = Value::String(approvals_reviewer.clone());
+    }
+    if let Some(sandbox) = options.sandbox.as_ref() {
+        payload["sandbox"] = Value::String(sandbox.clone());
     }
     payload
+}
+
+fn overlay_thread_creation_options(thread: &mut ThreadSummary, options: &ThreadCreationOptions) {
+    if thread.model.is_none() {
+        thread.model = options.model.clone();
+    }
+    if thread.reasoning_effort.is_none() {
+        thread.reasoning_effort = options.effort.clone();
+    }
+    if thread.service_tier.is_none() {
+        thread.service_tier = options.service_tier.clone();
+    }
+    if thread.approval_policy.is_none() {
+        thread.approval_policy = options.approval_policy.clone();
+    }
+    if thread.approvals_reviewer.is_none() {
+        thread.approvals_reviewer = options.approvals_reviewer.clone();
+    }
+    if thread.sandbox.is_none() {
+        thread.sandbox = options
+            .sandbox
+            .as_ref()
+            .map(|sandbox| Value::String(sandbox.clone()));
+    }
+}
+
+async fn save_thread_creation_options(
+    state: &AppState,
+    thread_id: &str,
+    options: &ThreadCreationOptions,
+) -> ApiResult<()> {
+    let settings = ThreadComposerSettings {
+        model: options.model.clone(),
+        reasoning_effort: options.effort.clone(),
+        service_tier: options.service_tier.clone(),
+        approval_policy: options.approval_policy.clone(),
+        approvals_reviewer: options.approvals_reviewer.clone(),
+        sandbox: options
+            .sandbox
+            .as_ref()
+            .map(|sandbox| Value::String(sandbox.clone())),
+    };
+    if !settings.has_any_setting() {
+        return Ok(());
+    }
+
+    state
+        .store
+        .save_thread_composer_settings(thread_id, &settings)
+        .await
 }
 
 fn dated_chat_cwd(
@@ -474,7 +541,7 @@ pub async fn get_thread(
     let mut response = app_server_api::client(&state.app_server)
         .thread_read(thread_id)
         .await?;
-    apply_thread_read_state(&state, std::slice::from_mut(&mut response.thread)).await?;
+    apply_thread_detail_response_state(&state, &mut response).await?;
     Ok(Json(response))
 }
 
@@ -487,7 +554,7 @@ pub async fn resume_thread(
     let mut response = app_server_api::client(&state.app_server)
         .thread_resume(thread_id, payload)
         .await?;
-    apply_thread_read_state(&state, std::slice::from_mut(&mut response.thread)).await?;
+    apply_thread_command_response_state(&state, &mut response).await?;
     Ok(Json(response))
 }
 
@@ -498,9 +565,10 @@ pub async fn fork_thread(
     Json(payload): Json<Value>,
 ) -> ApiResult<Json<ThreadCommandResponse>> {
     let mut response = app_server_api::client(&state.app_server)
-        .thread_fork(thread_id, payload)
+        .thread_fork(thread_id.clone(), payload)
         .await?;
-    apply_thread_read_state(&state, std::slice::from_mut(&mut response.thread)).await?;
+    save_forked_thread_composer_settings(&state, &thread_id, &response.thread.id).await?;
+    apply_thread_command_response_state(&state, &mut response).await?;
     Ok(Json(response))
 }
 
@@ -538,6 +606,184 @@ pub async fn mark_thread_seen(
             .mark_thread_seen_completed_agent_turns(&thread_id, seen_seq)
             .await?,
     ))
+}
+
+async fn apply_thread_list_response_state(
+    state: &AppState,
+    response: &mut ThreadListResponse,
+) -> ApiResult<()> {
+    apply_thread_summary_state(state, &mut response.threads).await?;
+    sync_thread_list_raw_payload(response);
+    Ok(())
+}
+
+async fn apply_thread_command_response_state(
+    state: &AppState,
+    response: &mut ThreadCommandResponse,
+) -> ApiResult<()> {
+    apply_thread_summary_state(state, std::slice::from_mut(&mut response.thread)).await?;
+    sync_thread_command_response(response);
+    Ok(())
+}
+
+async fn apply_thread_detail_response_state(
+    state: &AppState,
+    response: &mut ThreadDetailResponse,
+) -> ApiResult<()> {
+    apply_thread_summary_state(state, std::slice::from_mut(&mut response.thread)).await?;
+    sync_raw_response_thread(&mut response.raw_payload, &response.thread);
+    Ok(())
+}
+
+async fn apply_thread_summary_state(
+    state: &AppState,
+    threads: &mut [ThreadSummary],
+) -> ApiResult<()> {
+    apply_thread_composer_settings(state, threads).await?;
+    apply_thread_read_state(state, threads).await
+}
+
+fn sync_thread_list_raw_payload(response: &mut ThreadListResponse) {
+    let Some(data) = response
+        .raw_payload
+        .get_mut("data")
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+
+    for thread in &response.threads {
+        let Some(raw_thread) = data.iter_mut().find(|raw_thread| {
+            raw_thread
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| id == thread.id)
+        }) else {
+            continue;
+        };
+        *raw_thread = thread.raw_payload.clone();
+    }
+}
+
+fn sync_thread_command_response(response: &mut ThreadCommandResponse) {
+    response.model = response.thread.model.clone();
+    response.reasoning_effort = response.thread.reasoning_effort.clone();
+    response.service_tier = response.thread.service_tier.clone();
+    response.approval_policy = response.thread.approval_policy.clone();
+    response.approvals_reviewer = response.thread.approvals_reviewer.clone();
+    response.sandbox = response.thread.sandbox.clone();
+
+    sync_raw_response_thread(&mut response.raw_payload, &response.thread);
+    let settings = ThreadComposerSettings {
+        model: response.thread.model.clone(),
+        reasoning_effort: response.thread.reasoning_effort.clone(),
+        service_tier: response.thread.service_tier.clone(),
+        approval_policy: response.thread.approval_policy.clone(),
+        approvals_reviewer: response.thread.approvals_reviewer.clone(),
+        sandbox: response.thread.sandbox.clone(),
+    };
+    sync_raw_thread_composer_settings(&mut response.raw_payload, &settings);
+}
+
+fn sync_raw_response_thread(raw_payload: &mut Value, thread: &ThreadSummary) {
+    let Some(raw_payload) = raw_payload.as_object_mut() else {
+        return;
+    };
+    raw_payload.insert("thread".to_string(), thread.raw_payload.clone());
+}
+
+async fn apply_thread_composer_settings(
+    state: &AppState,
+    threads: &mut [ThreadSummary],
+) -> ApiResult<()> {
+    if threads.is_empty() {
+        return Ok(());
+    }
+
+    let thread_ids = threads
+        .iter()
+        .map(|thread| thread.id.clone())
+        .collect::<Vec<_>>();
+    let settings = state.store.thread_composer_settings(&thread_ids).await?;
+    for thread in threads {
+        let Some(settings) = settings.get(&thread.id) else {
+            continue;
+        };
+        overlay_stored_thread_composer_settings(thread, settings);
+    }
+
+    Ok(())
+}
+
+fn overlay_stored_thread_composer_settings(
+    thread: &mut ThreadSummary,
+    settings: &ThreadComposerSettings,
+) {
+    thread.model = settings.model.clone();
+    thread.reasoning_effort = settings.reasoning_effort.clone();
+    thread.service_tier = settings.service_tier.clone();
+    thread.approval_policy = settings.approval_policy.clone();
+    thread.approvals_reviewer = settings.approvals_reviewer.clone();
+    thread.sandbox = settings.sandbox.clone();
+    sync_raw_thread_composer_settings(&mut thread.raw_payload, settings);
+}
+
+fn sync_raw_thread_composer_settings(raw_payload: &mut Value, settings: &ThreadComposerSettings) {
+    let Some(raw_payload) = raw_payload.as_object_mut() else {
+        return;
+    };
+
+    sync_raw_optional_string(raw_payload, "model", &settings.model);
+    sync_raw_optional_string(raw_payload, "reasoningEffort", &settings.reasoning_effort);
+    sync_raw_optional_string(raw_payload, "serviceTier", &settings.service_tier);
+    sync_raw_optional_string(raw_payload, "approvalPolicy", &settings.approval_policy);
+    sync_raw_optional_string(
+        raw_payload,
+        "approvalsReviewer",
+        &settings.approvals_reviewer,
+    );
+    if let Some(sandbox) = settings.sandbox.as_ref() {
+        raw_payload.insert("sandbox".to_string(), sandbox.clone());
+    } else {
+        raw_payload.remove("sandbox");
+    }
+}
+
+fn sync_raw_optional_string(
+    raw_payload: &mut serde_json::Map<String, Value>,
+    key: &str,
+    value: &Option<String>,
+) {
+    if let Some(value) = value.as_ref() {
+        raw_payload.insert(key.to_string(), Value::String(value.clone()));
+    } else {
+        raw_payload.remove(key);
+    }
+}
+
+async fn save_forked_thread_composer_settings(
+    state: &AppState,
+    source_thread_id: &str,
+    forked_thread_id: &str,
+) -> ApiResult<()> {
+    if source_thread_id == forked_thread_id {
+        return Ok(());
+    }
+
+    let source_ids = vec![source_thread_id.to_string()];
+    if let Some(settings) = state
+        .store
+        .thread_composer_settings(&source_ids)
+        .await?
+        .remove(source_thread_id)
+    {
+        state
+            .store
+            .save_thread_composer_settings(forked_thread_id, &settings)
+            .await?;
+    }
+
+    Ok(())
 }
 
 async fn apply_thread_read_state(state: &AppState, threads: &mut [ThreadSummary]) -> ApiResult<()> {

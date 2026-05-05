@@ -21,27 +21,6 @@
   color: var(--kodex-text-accent);
 }
 
-.kodex-mobile-switcher {
-  display: none;
-}
-
-.kodex-mobile-tab {
-  min-width: 0;
-  border: 1px solid transparent;
-  border-radius: var(--kodex-radius-sm);
-  padding: 7px 10px;
-  background: transparent;
-  color: var(--kodex-text-muted);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.kodex-mobile-tab[data-active="true"] {
-  background: var(--kodex-bg-selected);
-  color: var(--kodex-text-primary);
-}
-
 .kodex-preferences-modal-body {
   padding: 0;
 }
@@ -155,25 +134,11 @@
 }
 
 @media (max-width: 900px) {
-  .kodex-mobile-switcher {
-    position: fixed;
-    z-index: 99;
-    top: 0;
-    right: 0;
-    left: 0;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px;
-    padding: 8px;
-    border-bottom: 1px solid var(--kodex-border-subtle);
-    background: var(--kodex-bg-mobile);
-  }
-
   .kodex-sidebar,
   .kodex-main {
     box-sizing: border-box;
     position: fixed !important;
-    inset: 49px 0 0 0 !important;
+    inset: 0 !important;
     display: none !important;
     width: auto !important;
     height: auto !important;
@@ -204,7 +169,14 @@
   }
 
   .kodex-main-stack {
-    height: calc(100dvh - 73px) !important;
+    height: calc(100dvh - 24px) !important;
+  }
+
+  .kodex-thread-sidebar-button {
+    display: inline-flex;
+    width: 32px;
+    height: 32px;
+    margin-left: -4px;
   }
 
   .kodex-queued-steer-row {

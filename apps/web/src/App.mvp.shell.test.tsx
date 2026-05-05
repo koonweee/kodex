@@ -114,6 +114,9 @@ describe("MVP shell flows", () => {
     expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
     const main = screen.getByRole("main", { name: /thread/i });
     expect(within(main).getByText(/good (morning|afternoon|evening)|burning the midnight oil\?/i)).toBeInTheDocument();
+    const draftToolbar = within(main).getByRole("toolbar", { name: /draft thread toolbar/i });
+    expect(within(draftToolbar).getByText("scratch")).toBeInTheDocument();
+    expect(draftToolbar.querySelector(".lucide-folder")).toBeInTheDocument();
     const mainStack = main.querySelector(".kodex-main-stack");
     expect(mainStack).toHaveAttribute("data-draft-thread", "true");
     expect(main.querySelector(".kodex-timeline-scroll")).not.toBeInTheDocument();
@@ -125,6 +128,7 @@ describe("MVP shell flows", () => {
       /\.kodex-main-stack\[data-draft-thread="true"\]\s+\.kodex-composer-shell\s*\{[^}]*margin-bottom:\s*auto;/s,
     );
     expect(appCss).toMatch(/\.kodex-composer-hero-stage\[data-transitioning="true"\]\s*\{[^}]*opacity:\s*0;/s);
+    expect(appCss).toMatch(/\.kodex-composer-underbar\s*\{[^}]*border-bottom-left-radius:\s*var\(--kodex-radius-composer\);/s);
 
     await userEvent.type(screen.getByLabelText(/message composer/i), "Implement the next milestone for the web client");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
@@ -561,21 +565,119 @@ describe("MVP shell flows", () => {
     });
   });
 
-  it("provides a compact panel switcher for narrow viewports", async () => {
+  it("provides compact narrow viewport navigation without a panel switcher", async () => {
     mockGateway(baseRoutes());
 
     render(<App />);
 
-    const panelSwitcher = await screen.findByRole("tablist", { name: /mobile panels/i });
-    expect(within(panelSwitcher).getByRole("tab", { name: /threads/i })).toHaveAttribute("aria-selected", "false");
-    expect(within(panelSwitcher).getByRole("tab", { name: /chat/i })).toHaveAttribute("aria-selected", "true");
-    expect(within(panelSwitcher).queryByRole("tab", { name: /approvals/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(screen.queryByRole("tablist", { name: /mobile panels/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /show sidebar/i })).toBeInTheDocument();
 
-    await userEvent.click(within(panelSwitcher).getByRole("tab", { name: /threads/i }));
-    expect(within(panelSwitcher).getByRole("tab", { name: /threads/i })).toHaveAttribute("aria-selected", "true");
+    await userEvent.click(screen.getByRole("button", { name: /show sidebar/i }));
+    expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "threads");
     expect(appCss).toMatch(/html,\s*body\s*\{[^}]*overflow:\s*hidden;/s);
     expect(appCss).toMatch(/\.kodex-shell\s*\{[^}]*height:\s*100dvh;[^}]*overflow:\s*hidden;/s);
     expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-main\s*\{[^}]*overflow:\s*hidden;/s);
+    expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-thread-sidebar-button\s*\{[^}]*display:\s*inline-flex;/s);
+  });
+
+  it("keeps a sidebar escape hatch in the empty thread pane", async () => {
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    const main = await screen.findByRole("main", { name: /thread/i });
+    expect(await within(main).findByText(/thread timeline/i)).toBeInTheDocument();
+    expect(within(main).getByRole("button", { name: /show sidebar/i })).toBeInTheDocument();
+    expect(within(main).getByRole("button", { name: /browse threads/i })).toBeInTheDocument();
+
+    await userEvent.click(within(main).getByRole("button", { name: /browse threads/i }));
+    expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "threads");
+  });
+
+  it("can close the narrow viewport sidebar without selecting a thread", async () => {
+    mockGateway(baseRoutes());
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /show sidebar/i }));
+    expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "threads");
+
+    await userEvent.click(screen.getByRole("button", { name: /show thread/i }));
+    expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
+  });
+
+  it("creates a chat from the narrow viewport Chats scope create action", async () => {
+    const chatThread = {
+      ...thread,
+      id: "chat-thread-1",
+      name: "New thread",
+      cwd: "/home/example/Documents/Codex/2026-05-05/mobile-chat",
+      preview: "",
+    };
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/chats/threads": { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "POST /v1/chats/threads": { thread: chatThread, rawPayload: {} },
+        "GET /v1/threads/chat-thread-1/queued-inputs": { queuedInputs: [] },
+        "GET /v1/threads/chat-thread-1": threadDetail(
+          { ...chatThread, preview: "Start from mobile chats" },
+          [],
+        ),
+        "POST /v1/threads/chat-thread-1/turns": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /show sidebar/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^chats$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /create thread/i }));
+    expect(appCss).toMatch(/\.kodex-sidebar-create-menu\s*\{[^}]*width:\s*min\(270px,\s*calc\(100vw - 24px\)\)\s*!important;/s);
+    await userEvent.click(await screen.findByRole("menuitem", { name: /no project/i }));
+
+    expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Start from mobile chats");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/chats/threads")).toHaveLength(1);
+    });
+    expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(0);
+  });
+
+  it("creates a project draft from the narrow viewport create menu project choice", async () => {
+    const gateway = mockGateway(
+      baseRoutes({
+        "POST /v1/threads": { thread: { ...thread, id: "thread-2", name: "New thread", preview: "" }, rawPayload: {} },
+        "GET /v1/threads/thread-2/queued-inputs": { queuedInputs: [] },
+        "GET /v1/threads/thread-2": threadDetail({ ...thread, id: "thread-2", preview: "Start in project" }, []),
+        "POST /v1/threads/thread-2/turns": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /show sidebar/i }));
+    await userEvent.click(screen.getByRole("button", { name: /create thread/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: new RegExp(project.name, "i") }));
+
+    expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Start in project");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
+    });
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads")[0])).resolves.toMatchObject({
+      projectId: project.id,
+    });
+    expect(gateway.callsFor("POST", "/v1/chats/threads")).toHaveLength(0);
   });
 
   it("returns narrow viewport navigation to chat after selecting or creating a thread", async () => {
@@ -587,21 +689,17 @@ describe("MVP shell flows", () => {
 
     render(<App />);
 
-    const panelSwitcher = await screen.findByRole("tablist", { name: /mobile panels/i });
-    const threadsTab = within(panelSwitcher).getByRole("tab", { name: /threads/i });
-    const chatTab = within(panelSwitcher).getByRole("tab", { name: /chat/i });
-
-    await userEvent.click(threadsTab);
-    expect(threadsTab).toHaveAttribute("aria-selected", "true");
+    await userEvent.click(await screen.findByRole("button", { name: /show sidebar/i }));
+    expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "threads");
 
     await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
-    expect(chatTab).toHaveAttribute("aria-selected", "true");
+    expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
 
-    await userEvent.click(threadsTab);
-    expect(threadsTab).toHaveAttribute("aria-selected", "true");
+    await userEvent.click(screen.getByRole("button", { name: /show sidebar/i }));
+    expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "threads");
 
     await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
-    expect(chatTab).toHaveAttribute("aria-selected", "true");
+    expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
   });
 
   it("clears the old active thread immediately after creating a project", async () => {

@@ -596,6 +596,7 @@ export interface components {
         CreateChatThreadRequest: {
             approvalPolicy?: string | null;
             approvalsReviewer?: string | null;
+            effort?: string | null;
             firstMessageText: string;
             model?: string | null;
             payload?: unknown;
@@ -610,6 +611,7 @@ export interface components {
         CreateThreadRequest: {
             approvalPolicy?: string | null;
             approvalsReviewer?: string | null;
+            effort?: string | null;
             model?: string | null;
             payload?: unknown;
             projectId: string;

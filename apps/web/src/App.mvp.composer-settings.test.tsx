@@ -37,6 +37,15 @@ async function clickFastSwitch() {
   await userEvent.click(screen.getByRole("menuitemcheckbox", { name: /fast/i, hidden: true }));
 }
 
+function rateLimitResetDate(daysFromToday: number, hour: number, minute: number) {
+  const today = new Date();
+  return new Date(today.getFullYear(), today.getMonth(), today.getDate() + daysFromToday, hour, minute);
+}
+
+function resetDateLabel(date: Date) {
+  return new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short" }).format(date);
+}
+
 describe("MVP composer settings flows", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -136,6 +145,12 @@ describe("MVP composer settings flows", () => {
     expect(appCss).toMatch(/\.kodex-composer-model-control\s*\{[^}]*width:\s*fit-content;/s);
     expect(appCss).toMatch(/\.kodex-composer-model-control\s*\{[^}]*max-width:\s*none;/s);
     expect(appCss).toMatch(/\.kodex-composer-control\s+\.mantine-Button-label\s*\{[^}]*overflow:\s*visible;/s);
+    expect(appCss).toMatch(/@media \(max-width: 700px\)\s*\{[\s\S]*?\.kodex-run-settings-menu\s*\{[^}]*position:\s*fixed/s);
+    expect(appCss).toMatch(/@media \(max-width: 700px\)\s*\{[\s\S]*?\.kodex-run-settings-menu\s*\{[^}]*top:\s*auto\s*!important;/s);
+    expect(appCss).toMatch(/@media \(max-width: 700px\)\s*\{[\s\S]*?\.kodex-run-settings-chip-row\s*\{[^}]*display:\s*flex/s);
+    expect(appCss).toMatch(/@media \(max-width: 700px\)\s*\{[\s\S]*?\.kodex-permissions-row-list\s*\{[^}]*display:\s*grid/s);
+    expect(appCss).toMatch(/@media \(max-width: 700px\)\s*\{[\s\S]*?\.kodex-permission-row\s*\{[^}]*width:\s*100%/s);
+    expect(appCss).toMatch(/@media \(max-width: 700px\)\s*\{[\s\S]*?\.kodex-run-settings-menu\s+\.mantine-Menu-label\s*\{[^}]*padding:/s);
 
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, high/i }));
     await clickMenuItem(/^medium$/i);
@@ -237,9 +252,10 @@ describe("MVP composer settings flows", () => {
 
   it("shows initial usage limits and updates them from account rate-limit notifications", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    const initialPrimaryReset = new Date(2026, 4, 4, 14, 14);
-    const initialSecondaryReset = new Date(2026, 4, 7, 9, 0);
-    const updatedPrimaryReset = new Date(2026, 4, 4, 15, 30);
+    const initialPrimaryReset = rateLimitResetDate(0, 14, 14);
+    const initialSecondaryReset = rateLimitResetDate(3, 9, 0);
+    const updatedPrimaryReset = rateLimitResetDate(0, 15, 30);
+    const secondaryResetLabel = resetDateLabel(initialSecondaryReset);
     mockGateway(
       baseRoutes({
         "GET /v1/account/rate-limits": {
@@ -259,7 +275,7 @@ describe("MVP composer settings flows", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /account settings/i }));
     expect(await screen.findByText("5h 82% left - 2:14 PM")).toBeInTheDocument();
-    expect(screen.getByText("7d 64% left - 9:00 AM (May 07)")).toBeInTheDocument();
+    expect(screen.getByText(`7d 64% left - 9:00 AM (${secondaryResetLabel})`)).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: /5h 82% left/i })).not.toBeInTheDocument();
 
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
@@ -284,14 +300,15 @@ describe("MVP composer settings flows", () => {
     });
 
     expect(await screen.findByText("5h 93% left - 3:30 PM")).toBeInTheDocument();
-    expect(screen.getByText("7d 79% left - 9:00 AM (May 07)")).toBeInTheDocument();
+    expect(screen.getByText(`7d 79% left - 9:00 AM (${secondaryResetLabel})`)).toBeInTheDocument();
   });
 
   it("keeps live account rate-limit updates when the initial rate-limit snapshot resolves later", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    const stalePrimaryReset = new Date(2026, 4, 4, 14, 14);
-    const staleSecondaryReset = new Date(2026, 4, 7, 9, 0);
-    const livePrimaryReset = new Date(2026, 4, 4, 15, 30);
+    const stalePrimaryReset = rateLimitResetDate(0, 14, 14);
+    const staleSecondaryReset = rateLimitResetDate(3, 9, 0);
+    const livePrimaryReset = rateLimitResetDate(0, 15, 30);
+    const secondaryResetLabel = resetDateLabel(staleSecondaryReset);
     let resolveRateLimits!: (response: unknown) => void;
     const delayedRateLimits = new Promise<unknown>((resolve) => {
       resolveRateLimits = resolve;
@@ -348,7 +365,7 @@ describe("MVP composer settings flows", () => {
 
     await waitFor(() => {
       expect(screen.getByText("5h 93% left - 3:30 PM")).toBeInTheDocument();
-      expect(screen.getByText("7d 79% left - 9:00 AM (May 07)")).toBeInTheDocument();
+      expect(screen.getByText(`7d 79% left - 9:00 AM (${secondaryResetLabel})`)).toBeInTheDocument();
       expect(screen.queryByText("5h 82% left - 2:14 PM")).not.toBeInTheDocument();
     });
   });
@@ -565,6 +582,12 @@ describe("MVP composer settings flows", () => {
           },
           rawPayload: {},
         },
+        "GET /v1/threads/thread-1": threadDetail({
+          ...thread,
+          reasoningEffort: "high",
+          serviceTier: "fast",
+          approvalsReviewer: "auto_review",
+        }),
       }),
     );
 
@@ -572,6 +595,290 @@ describe("MVP composer settings flows", () => {
 
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+  });
+
+  it("restores thread-specific model settings when switching between threads", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(
+      baseRoutes({
+        "GET /v1/models": {
+          models: [
+            {
+              id: "gpt-5.4mini",
+              model: "gpt-5.4mini",
+              displayName: "GPT-5.4 Mini",
+              description: "Fast coding model",
+              defaultReasoningEffort: "medium",
+              hidden: false,
+              inputModalities: ["text"],
+              isDefault: true,
+              rawPayload: {},
+              supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }],
+              upgrade: null,
+            },
+            {
+              id: "gpt-5.3spark",
+              model: "gpt-5.3spark",
+              displayName: "GPT-5.3 Spark",
+              description: "Balanced coding model",
+              defaultReasoningEffort: "medium",
+              hidden: false,
+              inputModalities: ["text"],
+              isDefault: false,
+              rawPayload: {},
+              supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }],
+              upgrade: null,
+            },
+          ],
+          nextCursor: null,
+          rawPayload: {},
+        },
+        "GET /v1/threads": {
+          threads: [
+            {
+              ...thread,
+              name: "mini",
+              model: "gpt-5.4mini",
+              reasoningEffort: "medium",
+              serviceTier: null,
+              rawPayload: {},
+            },
+            {
+              ...secondThread,
+              name: "spark",
+              model: "gpt-5.3spark",
+              reasoningEffort: "medium",
+              serviceTier: null,
+              rawPayload: {},
+            },
+          ],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4mini, medium/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /spark/i }));
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.3spark, medium/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /mini/i }));
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4mini, medium/i })).toBeInTheDocument();
+  });
+
+  it("falls back to durable defaults when the selected thread has no model metadata", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(
+      baseRoutes({
+        "GET /v1/models": {
+          models: [
+            highReasoningModel,
+            {
+              id: "gpt-5.4-mini",
+              model: "gpt-5.4-mini",
+              displayName: "GPT-5.4 Mini",
+              description: "Fast coding model",
+              defaultReasoningEffort: "medium",
+              hidden: false,
+              inputModalities: ["text"],
+              isDefault: false,
+              rawPayload: {},
+              supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }],
+              upgrade: null,
+            },
+          ],
+          nextCursor: null,
+          rawPayload: {},
+        },
+        "GET /v1/threads": {
+          threads: [
+            {
+              ...thread,
+              name: "mini",
+              model: "gpt-5.4-mini",
+              reasoningEffort: "medium",
+              serviceTier: null,
+              rawPayload: {},
+            },
+            {
+              ...secondThread,
+              name: "plain",
+              model: undefined,
+              reasoningEffort: undefined,
+              serviceTier: undefined,
+              rawPayload: {},
+            },
+          ],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4-mini, medium/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /plain/i }));
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i })).toBeInTheDocument();
+  });
+
+  it("restores model settings for newly created threads from gateway create metadata", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const miniThread = {
+      ...thread,
+      id: "thread-mini",
+      name: "mini",
+      preview: null,
+      model: "gpt-5.4-mini",
+      reasoningEffort: "medium",
+      rawPayload: {},
+    };
+    const sparkThread = {
+      ...thread,
+      id: "thread-spark",
+      name: "spark",
+      preview: null,
+      model: "gpt-5.3-codex-spark",
+      reasoningEffort: "medium",
+      rawPayload: {},
+    };
+    const createdThreads = [miniThread, sparkThread];
+    const serverThreads: typeof createdThreads = [];
+    let createThreadIndex = 0;
+    const modelRoutes = {
+      models: [
+        highReasoningModel,
+        {
+          id: "gpt-5.4-mini",
+          model: "gpt-5.4-mini",
+          displayName: "GPT-5.4 Mini",
+          description: "Fast coding model",
+          defaultReasoningEffort: "medium",
+          hidden: false,
+          inputModalities: ["text"],
+          isDefault: false,
+          rawPayload: {},
+          supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }],
+          upgrade: null,
+        },
+        {
+          id: "gpt-5.3-codex-spark",
+          model: "gpt-5.3-codex-spark",
+          displayName: "GPT-5.3 Spark",
+          description: "Small coding model",
+          defaultReasoningEffort: "medium",
+          hidden: false,
+          inputModalities: ["text"],
+          isDefault: false,
+          rawPayload: {},
+          supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }],
+          upgrade: null,
+        },
+      ],
+      nextCursor: null,
+      rawPayload: {},
+    };
+    mockGateway(
+      baseRoutes({
+        "GET /v1/models": modelRoutes,
+        "GET /v1/threads": () => ({
+          threads: serverThreads,
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        }),
+        "POST /v1/threads": () => {
+          const createdThread = createdThreads[createThreadIndex++];
+          serverThreads.unshift(createdThread);
+          return { thread: createdThread, rawPayload: {} };
+        },
+        "POST /v1/threads/thread-mini/turns": { payload: {} },
+        "POST /v1/threads/thread-spark/turns": { payload: {} },
+      }),
+    );
+
+    const { unmount } = render(<App />);
+
+    await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
+    await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
+    await clickMenuItem(/^gpt-5\.4-mini$/i);
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4-mini, medium/i })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/message composer/i), "mini");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    expect(await screen.findByRole("heading", { name: /^mini$/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4-mini, medium/i }));
+    await clickMenuItem(/^gpt-5\.3-codex-spark$/i);
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.3-codex-spark, medium/i })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/message composer/i), "spark");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    expect(await screen.findByRole("heading", { name: /^spark$/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /^mini$/i }));
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4-mini, medium/i })).toBeInTheDocument();
+
+    unmount();
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /^spark$/i }));
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.3-codex-spark, medium/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^mini$/i }));
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4-mini, medium/i })).toBeInTheDocument();
+  });
+
+  it("does not preserve missing existing-thread metadata in a client thread cache", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(
+      baseRoutes({
+        "GET /v1/models": {
+          models: [
+            highReasoningModel,
+            {
+              id: "gpt-5.4-mini",
+              model: "gpt-5.4-mini",
+              displayName: "GPT-5.4 Mini",
+              description: "Fast coding model",
+              defaultReasoningEffort: "medium",
+              hidden: false,
+              inputModalities: ["text"],
+              isDefault: false,
+              rawPayload: {},
+              supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }],
+              upgrade: null,
+            },
+          ],
+          nextCursor: null,
+          rawPayload: {},
+        },
+        "GET /v1/threads": {
+          threads: [
+            { ...thread, name: "plain one", model: undefined, reasoningEffort: undefined, rawPayload: {} },
+            { ...secondThread, name: "plain two", model: undefined, reasoningEffort: undefined, rawPayload: {} },
+          ],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+      }),
+    );
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
+    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
+    await clickMenuItem(/^gpt-5\.4-mini$/i);
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4-mini, medium/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /plain two/i }));
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /plain one/i }));
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i })).toBeInTheDocument();
   });
 
   it("shows sidebar login without model or status summaries", async () => {

@@ -78,6 +78,9 @@ export function createThreadOptions(settings: ComposerSettings): CreateThreadOpt
   if (settings.model) {
     options.model = settings.model;
   }
+  if (settings.effort) {
+    options.effort = settings.effort;
+  }
   if (settings.fast) {
     options.serviceTier = "fast";
   }

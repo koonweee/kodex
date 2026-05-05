@@ -77,7 +77,7 @@ import {
 import { errorMessageFrom } from "./shared/values";
 import { loadInitialKodexState } from "./shell/initialLoad";
 import { KodexShellView } from "./shell/KodexShellView";
-import type { MobilePanel } from "./shell/MobilePanelSwitcher";
+import type { MobilePanel } from "./shell/KodexShellView";
 import { useSidebarResize } from "./shell/useSidebarResize";
 import "./App.css";
 
@@ -167,6 +167,7 @@ function KodexShell({
 
   const selectedProjectThreads = selectedProjectId ? threadsByProjectId[selectedProjectId] ?? [] : [];
   const orderedProjects = useMemo(() => applySidebarProjectOrder(projects, projectOrderIds), [projectOrderIds, projects]);
+  const selectedProject = selectedProjectId ? orderedProjects.find((project) => project.id === selectedProjectId) ?? null : null;
   const selectedThread =
     selectedProjectThreads.find((thread) => thread.id === selectedThreadId) ??
     chatThreads.find((thread) => thread.id === selectedThreadId) ??
@@ -193,7 +194,6 @@ function KodexShell({
     setAccount,
   } = useAccountSession({ onError: reportError });
   const {
-    applyThreadComposerSettings,
     composerSettings,
     composerSettingsError,
     draftComposerEditedRef,
@@ -804,7 +804,6 @@ function KodexShell({
   }
 
   function replaceThread(thread: ThreadSummary) {
-    applyThreadComposerSettings(thread);
     setThreadsByProjectId((current) => replaceThreadInProjects(current, thread, selectedProjectId));
     setChatThreads((current) => replaceThreadInList(current, thread));
     if (threadHasDisplayTitle(thread)) {
@@ -888,13 +887,15 @@ function KodexShell({
   const stableHandleCreateThread = useEventCallback(handleCreateThread);
   const stableHandleSelectChatThread = useEventCallback(handleSelectChatThread);
   const stableHandleSelectThread = useEventCallback(handleSelectThread);
+  const handleShowMobileSidebar = useEventCallback(() => setMobilePanel("threads"));
+  const handleShowMobileThread = useEventCallback(() => setMobilePanel("chat"));
 
   return (
     <>
       <KodexShellView
           composerPanelProps={{
           activeSelectedTurnId, attachmentInputRef, canCompose, composerResetToken, composerSettings, composerSettingsError,
-          composerShellRef, contextUsage: selectedContextUsage, isDraftThreadSelected, isDraftComposerTransitioning, isComposerDragActive,
+          composerShellRef, contextUsage: selectedContextUsage, currentProjectName: selectedProject?.name ?? null, isDraftThreadSelected, isDraftComposerTransitioning, isComposerDragActive,
           isComposerSubmitting, isQueuedTurnStartPending, isSelectedTimelineReady, models,
           onAbortQueuedSteer: handleAbortQueuedSteer, onAttachmentInputChange: handleAttachmentInputChange,
           onComposerDragLeave: handleComposerDragLeave, onComposerDragOver: handleComposerDragOver, onComposerDrop: handleComposerDrop,
@@ -905,7 +906,6 @@ function KodexShell({
         }}
         isSidebarResizing={isSidebarResizing}
         mobilePanel={mobilePanel}
-        onMobilePanelChange={setMobilePanel}
         preferencesProps={{
           activeSection: preferencesSection, colorSchemeId, onClose: handleClosePreferences, onColorSchemeChange,
           onSectionChange: setPreferencesSection, opened: preferencesOpen,
@@ -914,7 +914,7 @@ function KodexShell({
         threadPanelProps={{
           errorMessage, imagePreviewUrlsByPath, isDraftThreadSelected, isSelectedTimelineLoading,
           onArchiveThread: handleArchiveSelectedThread, onApprovalDecision: handleApprovalDecision, onImageOpen: setLightboxImage,
-          onTimelineReady: handleTimelineReadyForSelectedThread, pendingTitleThreadIds,
+          onShowMobileSidebar: handleShowMobileSidebar, onTimelineReady: handleTimelineReadyForSelectedThread, pendingTitleThreadIds,
           scrollParentElement: timelineScrollElement, selectedThread, selectedThreadApprovals, selectedThreadTitle,
           selectedTimelineEntry, setTimelineScrollElement, showDebugEvents, timeline,
         }}
@@ -924,7 +924,7 @@ function KodexShell({
           onCreateChat: stableHandleCreateChat, onCreateProject: stableHandleCreateProject, onCreateThread: stableHandleCreateThread, onLogin: handleLogin, onLogout: handleLogout,
           onOpenPreferences: handleOpenPreferences, onProjectCwdChange: handleProjectCwdChange, onProjectDirectoryCreateCancel: () => setProjectDirectoryCreateCwd(null),
           onProjectFormOpenChange: setProjectFormOpen, onReorderProjects: handleReorderProjects, onSelectChatThread: stableHandleSelectChatThread, onSelectThread: stableHandleSelectThread,
-          onShowDebugEventsChange: setShowDebugEvents, onSidebarResizeKeyDown: handleSidebarResizeKeyDown,
+          onShowThread: handleShowMobileThread, onShowDebugEventsChange: setShowDebugEvents, onSidebarResizeKeyDown: handleSidebarResizeKeyDown,
           onSidebarResizePointerDown: handleSidebarResizePointerDown, onThreadActionHoverChange: setHoveredThreadActionId,
           pendingTitleThreadIds, projectCwd, projectDirectoryCreatePending: projectDirectoryCreateCwd === projectCwd.trim() && projectCwd.trim().length > 0,
           projectFormOpen, projects: orderedProjects, selectedProjectId, selectedThreadId,

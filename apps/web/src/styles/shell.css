@@ -79,6 +79,13 @@
   max-width: min(100%, 56ch);
 }
 
+.kodex-thread-sidebar-button {
+  display: none;
+  flex: 0 0 auto;
+  min-width: 32px;
+  min-height: 32px;
+}
+
 .kodex-thread-title {
   max-width: 100%;
   font-size: var(--mantine-font-size-md);
@@ -164,9 +171,25 @@
 }
 
 .kodex-thread-empty {
+  display: grid;
+  align-content: center;
+  gap: 10px;
   min-height: 0;
   min-width: 0;
   flex: 1;
+}
+
+.kodex-thread-empty .kodex-empty {
+  border-style: solid;
+  background: transparent;
+}
+
+.kodex-thread-empty-actions {
+  min-width: 0;
+}
+
+.kodex-thread-empty-action {
+  border-radius: var(--kodex-radius-round);
 }
 
 @media (max-width: 900px) {

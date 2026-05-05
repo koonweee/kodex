@@ -45,11 +45,14 @@ pub async fn start_turn(
     Path(thread_id): Path<String>,
     Json(request): Json<TurnStartRequest>,
 ) -> ApiResult<Json<RawAppServerResponse>> {
-    Ok(Json(
-        app_server_api::client(&state.app_server)
-            .turn_start(thread_id, request.input, request.options)
-            .await?,
-    ))
+    let response = app_server_api::client(&state.app_server)
+        .turn_start(thread_id.clone(), request.input, request.options.clone())
+        .await?;
+    state
+        .store
+        .save_thread_turn_options(&thread_id, &request.options)
+        .await?;
+    Ok(Json(response))
 }
 
 #[utoipa::path(post, path = "/v1/threads/{threadId}/turns/{turnId}/steer", request_body = TurnSteerRequest, responses((status = 200, body = RawAppServerResponse)))]

@@ -32,7 +32,7 @@ mod tests {
         error::{ApiError, ApiResult},
         events::ingest_inbound,
         queue,
-        store::{NewApproval, NewEvent, Store, ThreadRuntimeState},
+        store::{NewApproval, NewEvent, Store, ThreadComposerSettings, ThreadRuntimeState},
     };
 
     async fn test_state() -> (AppState, Arc<RecordingAppServer>) {
@@ -369,6 +369,7 @@ mod tests {
 
         let body = json!({"projectId": project.id, "payload": {"prompt": "hi"}}).to_string();
         let response = app
+            .clone()
             .oneshot(
                 Request::post("/v1/threads")
                     .header("content-type", "application/json")
@@ -396,18 +397,37 @@ mod tests {
             )
             .await
             .unwrap();
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "thread": {
+                "id": "thread-1",
+                "cwd": "/workspace",
+                "status": {"type": "idle"},
+                "source": "cli",
+                "preview": "hello",
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_600_i64
+            },
+            "cwd": "/workspace"
+        }));
         let app = build_router(state);
 
         let body = json!({
             "projectId": project.id,
             "model": "gpt-5.4",
+            "effort": "high",
             "serviceTier": "fast",
             "approvalPolicy": "on-request",
             "approvalsReviewer": "auto_review",
-            "sandbox": "workspace-write"
+            "sandbox": "workspace-write",
+            "payload": {
+                "prompt": "hi",
+                "effort": "xhigh",
+                "reasoningEffort": "xhigh"
+            }
         })
         .to_string();
         let response = app
+            .clone()
             .oneshot(
                 Request::post("/v1/threads")
                     .header("content-type", "application/json")
@@ -418,9 +438,50 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["thread"]["model"], "gpt-5.4");
+        assert_eq!(body["thread"]["reasoningEffort"], "high");
+        assert_eq!(body["thread"]["serviceTier"], "fast");
+        assert_eq!(body["thread"]["approvalPolicy"], "on-request");
+        assert_eq!(body["thread"]["approvalsReviewer"], "auto_review");
+        assert_eq!(body["thread"]["sandbox"], "workspace-write");
+
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "data": [{
+                "id": "thread-1",
+                "cwd": "/workspace",
+                "status": {"type": "idle"},
+                "source": "cli",
+                "preview": "hello",
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_600_i64
+            }],
+            "nextCursor": null,
+            "backwardsCursor": null
+        }));
+        let listed = app
+            .oneshot(
+                Request::get(format!("/v1/threads?projectId={}", project.id))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(listed.status(), StatusCode::OK);
+        let listed = response_json(listed).await;
+        assert_eq!(listed["threads"][0]["model"], "gpt-5.4");
+        assert_eq!(listed["threads"][0]["reasoningEffort"], "high");
+        assert_eq!(listed["threads"][0]["serviceTier"], "fast");
+        assert_eq!(listed["threads"][0]["approvalPolicy"], "on-request");
+        assert_eq!(listed["threads"][0]["approvalsReviewer"], "auto_review");
+        assert_eq!(listed["threads"][0]["sandbox"], "workspace-write");
+
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "thread/start");
+        assert_eq!(requests[0].1["prompt"], "hi");
         assert_eq!(requests[0].1["model"], "gpt-5.4");
+        assert!(requests[0].1.get("effort").is_none());
+        assert!(requests[0].1.get("reasoningEffort").is_none());
         assert_eq!(requests[0].1["serviceTier"], "fast");
         assert_eq!(requests[0].1["approvalPolicy"], "on-request");
         assert_eq!(requests[0].1["approvalsReviewer"], "auto_review");
@@ -433,12 +494,28 @@ mod tests {
         let (mut state, app_server) = test_state().await;
         let home = tempdir().unwrap();
         Arc::make_mut(&mut state.config).projects.home_dir = home.path().join(".");
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "thread": {
+                "id": "chat-thread-1",
+                "cwd": "/workspace/chat",
+                "status": {"type": "idle"},
+                "source": "cli",
+                "preview": "chat",
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_600_i64
+            },
+            "cwd": "/workspace/chat"
+        }));
         let app = build_router(state);
 
         let body = json!({
             "firstMessageText": "Build the Chat Sidebar!",
             "model": "gpt-5.4",
-            "serviceTier": "fast"
+            "effort": "high",
+            "serviceTier": "fast",
+            "approvalPolicy": "on-request",
+            "approvalsReviewer": "auto_review",
+            "sandbox": "workspace-write"
         })
         .to_string();
         let response = app
@@ -452,11 +529,22 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["thread"]["model"], "gpt-5.4");
+        assert_eq!(body["thread"]["reasoningEffort"], "high");
+        assert_eq!(body["thread"]["serviceTier"], "fast");
+        assert_eq!(body["thread"]["approvalPolicy"], "on-request");
+        assert_eq!(body["thread"]["approvalsReviewer"], "auto_review");
+        assert_eq!(body["thread"]["sandbox"], "workspace-write");
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "thread/start");
         assert!(requests[0].1.get("projectId").is_none());
         assert_eq!(requests[0].1["model"], "gpt-5.4");
+        assert!(requests[0].1.get("effort").is_none());
         assert_eq!(requests[0].1["serviceTier"], "fast");
+        assert_eq!(requests[0].1["approvalPolicy"], "on-request");
+        assert_eq!(requests[0].1["approvalsReviewer"], "auto_review");
+        assert_eq!(requests[0].1["sandbox"], "workspace-write");
         assert_eq!(requests[0].1["persistExtendedHistory"], true);
         let cwd = requests[0].1["cwd"].as_str().unwrap();
         let today = chrono::Local::now()
@@ -698,6 +786,91 @@ mod tests {
         assert_eq!(requests[2].1["persistExtendedHistory"], true);
         assert_eq!(requests[3].0, "thread/archive");
         assert_eq!(requests[3].1["threadId"], "thread-1");
+    }
+
+    #[tokio::test]
+    async fn fork_thread_copies_gateway_owned_composer_settings() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .save_thread_composer_settings(
+                "thread-1",
+                &ThreadComposerSettings {
+                    model: Some("gpt-5.4-mini".to_string()),
+                    reasoning_effort: Some("high".to_string()),
+                    service_tier: Some("fast".to_string()),
+                    approval_policy: Some("on-request".to_string()),
+                    approvals_reviewer: Some("auto_review".to_string()),
+                    sandbox: Some(json!({"type": "workspaceWrite", "networkAccess": false, "writableRoots": []})),
+                },
+            )
+            .await
+            .unwrap();
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "thread": {
+                "id": "thread-fork",
+                "cwd": "/workspace",
+                "status": {"type": "idle"},
+                "source": "cli",
+                "preview": "hello",
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_600_i64
+            },
+            "cwd": "/workspace"
+        }));
+        let app = build_router(state);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads/thread-1/fork")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"fromItemId":"item-1"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["thread"]["id"], "thread-fork");
+        assert_eq!(body["thread"]["model"], "gpt-5.4-mini");
+        assert_eq!(body["thread"]["reasoningEffort"], "high");
+        assert_eq!(body["thread"]["serviceTier"], "fast");
+        assert_eq!(body["thread"]["approvalPolicy"], "on-request");
+        assert_eq!(body["thread"]["approvalsReviewer"], "auto_review");
+        assert_eq!(
+            body["thread"]["sandbox"],
+            json!({"type": "workspaceWrite", "networkAccess": false, "writableRoots": []})
+        );
+
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "data": [{
+                "id": "thread-fork",
+                "cwd": "/workspace",
+                "status": {"type": "idle"},
+                "source": "cli",
+                "preview": "hello",
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_600_i64
+            }],
+            "nextCursor": null,
+            "backwardsCursor": null
+        }));
+        let listed = app
+            .oneshot(Request::get("/v1/threads").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(listed.status(), StatusCode::OK);
+        let listed = response_json(listed).await;
+        assert_eq!(listed["threads"][0]["model"], "gpt-5.4-mini");
+        assert_eq!(listed["threads"][0]["reasoningEffort"], "high");
+        assert_eq!(listed["threads"][0]["serviceTier"], "fast");
+        assert_eq!(listed["threads"][0]["approvalPolicy"], "on-request");
+        assert_eq!(listed["threads"][0]["approvalsReviewer"], "auto_review");
+        assert_eq!(
+            listed["threads"][0]["sandbox"],
+            json!({"type": "workspaceWrite", "networkAccess": false, "writableRoots": []})
+        );
     }
 
     #[tokio::test]
@@ -989,17 +1162,149 @@ mod tests {
                 .unwrap(),
         );
         assert_ok(
-            app.oneshot(
-                Request::post("/v1/threads/thread-1/turns")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{"input":[{"type":"text","text":"default"}]}"#,
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap(),
+            app.clone()
+                .oneshot(
+                    Request::post("/v1/threads/thread-1/turns")
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            r#"{
+                                "input":[{"type":"text","text":"changed"}],
+                                "model":"gpt-5.4-mini",
+                                "effort":"medium",
+                                "approvalPolicy":"on-request",
+                                "approvalsReviewer":"auto_review",
+                                "sandboxPolicy":{"type":"workspaceWrite","networkAccess":false,"writableRoots":[]}
+                            }"#,
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
         );
+
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "data": [{
+                "id": "thread-1",
+                "cwd": "/workspace",
+                "status": {"type": "idle"},
+                "source": "cli",
+                "model": "gpt-5.4",
+                "reasoningEffort": "high",
+                "serviceTier": "fast",
+                "approvalPolicy": "never",
+                "approvalsReviewer": "user",
+                "sandbox": {"type": "dangerFullAccess"},
+                "preview": "hello",
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_600_i64
+            }],
+            "nextCursor": null,
+            "backwardsCursor": null
+        }));
+        let listed = app
+            .clone()
+            .oneshot(Request::get("/v1/threads").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(listed.status(), StatusCode::OK);
+        let listed = response_json(listed).await;
+        assert_eq!(listed["threads"][0]["model"], "gpt-5.4-mini");
+        assert_eq!(listed["threads"][0]["reasoningEffort"], "medium");
+        assert!(listed["threads"][0]["serviceTier"].is_null());
+        assert_eq!(listed["threads"][0]["approvalPolicy"], "on-request");
+        assert_eq!(listed["threads"][0]["approvalsReviewer"], "auto_review");
+        assert_eq!(
+            listed["threads"][0]["sandbox"],
+            json!({"type":"workspaceWrite","networkAccess":false,"writableRoots":[]})
+        );
+        assert_eq!(listed["threads"][0]["rawPayload"]["model"], "gpt-5.4-mini");
+        assert_eq!(
+            listed["threads"][0]["rawPayload"]["reasoningEffort"],
+            "medium"
+        );
+        assert!(listed["threads"][0]["rawPayload"]["serviceTier"].is_null());
+        assert_eq!(
+            listed["threads"][0]["rawPayload"]["approvalPolicy"],
+            "on-request"
+        );
+        assert_eq!(
+            listed["threads"][0]["rawPayload"]["approvalsReviewer"],
+            "auto_review"
+        );
+        assert_eq!(
+            listed["threads"][0]["rawPayload"]["sandbox"],
+            json!({"type":"workspaceWrite","networkAccess":false,"writableRoots":[]})
+        );
+        assert_eq!(
+            listed["rawPayload"]["data"][0]["model"],
+            listed["threads"][0]["rawPayload"]["model"]
+        );
+        assert_eq!(
+            listed["rawPayload"]["data"][0]["reasoningEffort"],
+            listed["threads"][0]["rawPayload"]["reasoningEffort"]
+        );
+        assert_eq!(
+            listed["rawPayload"]["data"][0]["sandbox"],
+            listed["threads"][0]["rawPayload"]["sandbox"]
+        );
+
+        assert_ok(
+            app.clone()
+                .oneshot(
+                    Request::post("/v1/threads/thread-1/turns")
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            r#"{"input":[{"type":"text","text":"default"}]}"#,
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "data": [{
+                "id": "thread-1",
+                "cwd": "/workspace",
+                "status": {"type": "idle"},
+                "source": "cli",
+                "model": "gpt-5.4-mini",
+                "reasoningEffort": "medium",
+                "serviceTier": "fast",
+                "approvalPolicy": "on-request",
+                "approvalsReviewer": "auto_review",
+                "sandbox": {"type":"workspaceWrite","networkAccess":false,"writableRoots":[]},
+                "preview": "hello",
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_600_i64
+            }],
+            "nextCursor": null,
+            "backwardsCursor": null
+        }));
+        let listed = app
+            .oneshot(Request::get("/v1/threads").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(listed.status(), StatusCode::OK);
+        let listed = response_json(listed).await;
+        assert!(listed["threads"][0]["model"].is_null());
+        assert!(listed["threads"][0]["reasoningEffort"].is_null());
+        assert!(listed["threads"][0]["serviceTier"].is_null());
+        assert!(listed["threads"][0]["approvalPolicy"].is_null());
+        assert!(listed["threads"][0]["approvalsReviewer"].is_null());
+        assert!(listed["threads"][0]["sandbox"].is_null());
+        assert!(listed["threads"][0]["rawPayload"]["model"].is_null());
+        assert!(listed["threads"][0]["rawPayload"]["reasoningEffort"].is_null());
+        assert!(listed["threads"][0]["rawPayload"]["serviceTier"].is_null());
+        assert!(listed["threads"][0]["rawPayload"]["approvalPolicy"].is_null());
+        assert!(listed["threads"][0]["rawPayload"]["approvalsReviewer"].is_null());
+        assert!(listed["threads"][0]["rawPayload"]["sandbox"].is_null());
+        assert!(listed["rawPayload"]["data"][0]["model"].is_null());
+        assert!(listed["rawPayload"]["data"][0]["reasoningEffort"].is_null());
+        assert!(listed["rawPayload"]["data"][0]["serviceTier"].is_null());
+        assert!(listed["rawPayload"]["data"][0]["approvalPolicy"].is_null());
+        assert!(listed["rawPayload"]["data"][0]["approvalsReviewer"].is_null());
+        assert!(listed["rawPayload"]["data"][0]["sandbox"].is_null());
 
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(
@@ -1017,8 +1322,72 @@ mod tests {
         );
         assert_eq!(
             requests[1].1,
+            json!({
+                "threadId": "thread-1",
+                "input": [{"type": "text", "text": "changed"}],
+                "model": "gpt-5.4-mini",
+                "effort": "medium",
+                "approvalPolicy": "on-request",
+                "approvalsReviewer": "auto_review",
+                "sandboxPolicy": {"type":"workspaceWrite","networkAccess":false,"writableRoots":[]}
+            })
+        );
+        assert_eq!(requests[2].0, "thread/list");
+        assert_eq!(
+            requests[3].1,
             json!({"threadId": "thread-1", "input": [{"type": "text", "text": "default"}]})
         );
+        assert_eq!(requests[4].0, "thread/list");
+    }
+
+    #[tokio::test]
+    async fn rejected_turn_start_does_not_persist_thread_composer_settings() {
+        let (state, app_server) = test_state().await;
+        let app = build_router(state);
+
+        let rejected = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads/thread-1/turns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{
+                            "input":[{"type":"text","text":"hi"}],
+                            "model":"gpt-5.4",
+                            "sandboxPolicy":{"type":"unsupported"}
+                        }"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(!rejected.status().is_success());
+
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "data": [{
+                "id": "thread-1",
+                "cwd": "/workspace",
+                "status": {"type": "idle"},
+                "source": "cli",
+                "preview": "hello",
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_600_i64
+            }],
+            "nextCursor": null,
+            "backwardsCursor": null
+        }));
+        let listed = app
+            .oneshot(Request::get("/v1/threads").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(listed.status(), StatusCode::OK);
+        let listed = response_json(listed).await;
+        assert!(listed["threads"][0]["model"].is_null());
+        assert!(listed["threads"][0]["sandbox"].is_null());
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0, "thread/list");
     }
 
     #[tokio::test]

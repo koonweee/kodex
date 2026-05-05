@@ -5,12 +5,24 @@ import {
   Box,
   Button,
   Group,
+  Menu,
   Stack,
   Text,
   TextInput,
   Tooltip,
 } from "@mantine/core";
-import { Archive, FolderOpen, FolderPlus, Inbox, MessageSquare, SquarePen, X } from "lucide-react";
+import {
+  Archive,
+  ChevronRight,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  Inbox,
+  MessageSquare,
+  Search,
+  SquarePen,
+  X,
+} from "lucide-react";
 import {
   memo,
   useLayoutEffect,
@@ -48,6 +60,11 @@ const SIDEBAR_TEXT = {
   noProjectsTitle: "No projects",
   projects: "Projects",
   resizeSidebarLabel: "Resize workspace sidebar",
+  search: "Search",
+  createThread: "Create thread",
+  createThreadIn: "Create in",
+  noProject: "No project",
+  showThread: "Show thread",
   showLessThreads: "Show less",
   showMoreThreads: "Show more",
   threadInProgress: "Thread in progress",
@@ -78,6 +95,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onReorderProjects,
   onSelectChatThread,
   onSelectThread,
+  onShowThread = () => undefined,
   onShowDebugEventsChange,
   onSidebarResizeKeyDown,
   onSidebarResizePointerDown,
@@ -114,6 +132,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onReorderProjects: (projectIds: string[]) => void;
   onSelectChatThread: (threadId: string) => void;
   onSelectThread: (projectId: string, threadId: string) => void;
+  onShowThread?: () => void;
   onShowDebugEventsChange: (value: boolean) => void;
   onSidebarResizeKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => void;
   onSidebarResizePointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void;
@@ -132,8 +151,13 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
 }) {
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
   const [chatThreadsExpanded, setChatThreadsExpanded] = useState(false);
+  const [chatsSectionCollapsed, setChatsSectionCollapsed] = useState(false);
+  const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => new Set());
   const [expandedThreadProjectIds, setExpandedThreadProjectIds] = useState<Set<string>>(() => new Set());
+  const [mobileSidebarScope, setMobileSidebarScope] = useState<"projects" | "chats">("projects");
   const [previewProjectIds, setPreviewProjectIds] = useState<string[] | null>(null);
+  const [projectsSectionCollapsed, setProjectsSectionCollapsed] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const projectGroupRefs = useRef<Map<string, HTMLElement>>(new Map());
   const pendingProjectAnimationRects = useRef<Map<string, DOMRect> | null>(null);
   const displayedProjects = useMemo(
@@ -144,6 +168,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     () => sortThreadsForSidebar(chatThreads, approvals, pendingTitleThreadIds),
     [approvals, chatThreads, pendingTitleThreadIds],
   );
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const visibleChatThreads = normalizedSearchQuery
+    ? sortedChatThreads.filter((thread) => threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds))
+    : sortedChatThreads;
 
   useLayoutEffect(() => {
     const beforeRects = pendingProjectAnimationRects.current;
@@ -218,19 +246,146 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     setPreviewProjectIds(null);
   }
 
+  function handleProjectCollapseToggle(projectId: string) {
+    setCollapsedProjectIds((current) => {
+      const next = new Set(current);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      return next;
+    });
+  }
+
+  function handleMobileCreateChat() {
+    onCreateChat();
+  }
+
+  function handleMobileCreateProjectThread(projectId: string) {
+    onCreateThread(projectId);
+  }
+
   return (
     <AppShell.Navbar
       aria-label={SIDEBAR_TEXT.workspaceLabel}
       p="sm"
       className="kodex-sidebar"
+      data-mobile-scope={mobileSidebarScope}
       style={{ width: sidebarWidth }}
     >
       <Stack gap="lg" h="100%">
+        <Box className="kodex-sidebar-mobile-header">
+          <Text component="div" className="kodex-sidebar-mobile-title" fw={700} size="sm">
+            {SIDEBAR_TEXT.workspaceLabel}
+          </Text>
+          <Tooltip label={SIDEBAR_TEXT.search}>
+            <ActionIcon
+              aria-label={SIDEBAR_TEXT.search}
+              className="kodex-sidebar-mobile-action"
+              color="gray"
+              onClick={() => document.getElementById("kodex-sidebar-search")?.focus()}
+              size="md"
+              type="button"
+              variant="subtle"
+            >
+              <Search size={17} />
+            </ActionIcon>
+          </Tooltip>
+          <Menu position="bottom-end" withinPortal>
+            <Menu.Target>
+              <ActionIcon
+                aria-label={SIDEBAR_TEXT.createThread}
+                className="kodex-sidebar-mobile-action"
+                color="gray"
+                size="md"
+                type="button"
+                variant="subtle"
+              >
+                <SquarePen size={17} />
+              </ActionIcon>
+            </Menu.Target>
+            <Menu.Dropdown aria-label={SIDEBAR_TEXT.createThread} className="kodex-sidebar-create-menu">
+              <Menu.Label>{SIDEBAR_TEXT.createThreadIn}</Menu.Label>
+              <Menu.Item leftSection={<MessageSquare size={14} />} onClick={handleMobileCreateChat}>
+                <Box className="kodex-sidebar-create-menu-item">
+                  <Text size="sm" fw={600}>
+                    {SIDEBAR_TEXT.noProject}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    {SIDEBAR_TEXT.chats}
+                  </Text>
+                </Box>
+              </Menu.Item>
+              {displayedProjects.length > 0 ? <Menu.Divider /> : null}
+              {displayedProjects.map((project) => (
+                <Menu.Item
+                  key={project.id}
+                  leftSection={<Folder size={14} />}
+                  onClick={() => handleMobileCreateProjectThread(project.id)}
+                >
+                  <Box className="kodex-sidebar-create-menu-item">
+                    <Text size="sm" fw={600} lineClamp={1}>
+                      {project.name}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {SIDEBAR_TEXT.projects}
+                    </Text>
+                  </Box>
+                </Menu.Item>
+              ))}
+            </Menu.Dropdown>
+          </Menu>
+          <Tooltip label={SIDEBAR_TEXT.showThread}>
+            <ActionIcon
+              aria-label={SIDEBAR_TEXT.showThread}
+              className="kodex-sidebar-mobile-action"
+              color="gray"
+              onClick={onShowThread}
+              size="md"
+              type="button"
+              variant="subtle"
+            >
+              <X size={17} />
+            </ActionIcon>
+          </Tooltip>
+        </Box>
+        <Box className="kodex-sidebar-mobile-filter">
+          <button
+            className="kodex-ui-button kodex-sidebar-filter-pill"
+            data-active={mobileSidebarScope === "projects" ? "true" : undefined}
+            onClick={() => setMobileSidebarScope("projects")}
+            type="button"
+          >
+            {SIDEBAR_TEXT.projects}
+          </button>
+          <button
+            className="kodex-ui-button kodex-sidebar-filter-pill"
+            data-active={mobileSidebarScope === "chats" ? "true" : undefined}
+            onClick={() => setMobileSidebarScope("chats")}
+            type="button"
+          >
+            {SIDEBAR_TEXT.chats}
+          </button>
+          <TextInput
+            aria-label={SIDEBAR_TEXT.search}
+            className="kodex-sidebar-search"
+            id="kodex-sidebar-search"
+            leftSection={<Search size={13} />}
+            onChange={(event) => setSearchQuery(event.currentTarget.value)}
+            placeholder={SIDEBAR_TEXT.search}
+            size="xs"
+            value={searchQuery}
+            variant="unstyled"
+          />
+        </Box>
         <Box className="kodex-sidebar-scroll">
-          <Group justify="space-between" align="center" mb="sm">
-            <Text className="kodex-sidebar-section-title" fw={400} size="xs">
-              {SIDEBAR_TEXT.projects}
-            </Text>
+          <Group className="kodex-sidebar-section-row kodex-projects-section-row" justify="space-between" align="center" mb="sm">
+            <SectionToggle
+              collapsed={projectsSectionCollapsed}
+              label={SIDEBAR_TEXT.projects}
+              onToggle={() => setProjectsSectionCollapsed((collapsed) => !collapsed)}
+            />
             <Tooltip label={SIDEBAR_TEXT.newProject}>
               <ActionIcon
                 variant="subtle"
@@ -243,7 +398,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
               </ActionIcon>
             </Tooltip>
           </Group>
-          {projectFormOpen ? (
+          {!projectsSectionCollapsed && projectFormOpen ? (
             <Box
               component="form"
               className="kodex-project-form"
@@ -281,97 +436,120 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
               )}
             </Box>
           ) : null}
-          <Stack gap="sm" className="kodex-project-tree">
-            {projects.length === 0 ? (
-              <EmptyPanel icon={<Inbox size={20} />} title={SIDEBAR_TEXT.noProjectsTitle} text={SIDEBAR_TEXT.noProjectsText} />
-            ) : (
-              displayedProjects.map((project) => {
-                const projectThreads = sortThreadsForSidebar(
-                  threadsByProjectId[project.id] ?? [],
-                  approvals,
-                  pendingTitleThreadIds,
-                );
-                const showAllProjectThreads = expandedThreadProjectIds.has(project.id);
-                const newThreadLabel =
-                  project.id === selectedProjectId ? SIDEBAR_TEXT.newThread : `Create thread in ${project.name}`;
-                return (
-                  <Box
-                    className="kodex-project-group"
-                    key={project.id}
-                    ref={(element: HTMLDivElement | null) => {
-                      if (element) {
-                        projectGroupRefs.current.set(project.id, element);
-                      } else {
-                        projectGroupRefs.current.delete(project.id);
-                      }
-                    }}
-                    role="group"
-                    aria-label={project.name}
-                    onDrop={(event) => handleProjectDrop(event, project.id)}
-                  >
+          {!projectsSectionCollapsed ? (
+            <Stack gap="sm" className="kodex-project-tree">
+              {projects.length === 0 ? (
+                <EmptyPanel icon={<Inbox size={20} />} title={SIDEBAR_TEXT.noProjectsTitle} text={SIDEBAR_TEXT.noProjectsText} />
+              ) : (
+                displayedProjects.map((project) => {
+                  const projectThreads = sortThreadsForSidebar(
+                    threadsByProjectId[project.id] ?? [],
+                    approvals,
+                    pendingTitleThreadIds,
+                  );
+                  const visibleProjectThreads = normalizedSearchQuery
+                    ? projectThreads.filter((thread) =>
+                        threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds),
+                      )
+                    : projectThreads;
+                  const projectMatchesSearch = project.name.toLowerCase().includes(normalizedSearchQuery);
+                  if (
+                    normalizedSearchQuery &&
+                    !projectMatchesSearch &&
+                    visibleProjectThreads.length === 0
+                  ) {
+                    return null;
+                  }
+                  const projectCollapsed = collapsedProjectIds.has(project.id);
+                  const showAllProjectThreads = expandedThreadProjectIds.has(project.id);
+                  const newThreadLabel =
+                    project.id === selectedProjectId ? SIDEBAR_TEXT.newThread : `Create thread in ${project.name}`;
+                  return (
                     <Box
-                      className="kodex-project-row"
-                      draggable
-                      onDragEnd={handleProjectDragEnd}
-                      onDragOver={(event) => handleProjectDragOver(event, project.id)}
-                      onDragStart={(event) => handleProjectDragStart(event, project.id)}
+                      className="kodex-project-group"
+                      key={project.id}
+                      ref={(element: HTMLDivElement | null) => {
+                        if (element) {
+                          projectGroupRefs.current.set(project.id, element);
+                        } else {
+                          projectGroupRefs.current.delete(project.id);
+                        }
+                      }}
+                      role="group"
+                      aria-label={project.name}
+                      onDrop={(event) => handleProjectDrop(event, project.id)}
                     >
                       <Box
-                        aria-label={`${project.name} ${project.cwd}`}
-                        className="kodex-ui-selectable kodex-project-title"
+                        className="kodex-project-row"
+                        draggable
+                        onDragEnd={handleProjectDragEnd}
+                        onDragOver={(event) => handleProjectDragOver(event, project.id)}
+                        onDragStart={(event) => handleProjectDragStart(event, project.id)}
                       >
-                        <FolderOpen size={15} />
-                        <Text fw={400} size="xs" lineClamp={1}>
-                          {project.name}
-                        </Text>
-                      </Box>
-                      <Tooltip label={SIDEBAR_TEXT.newThread}>
-                        <ActionIcon
-                          aria-label={newThreadLabel}
-                          color="gray"
-                          onClick={() => onCreateThread(project.id)}
-                          size="xs"
-                          variant="subtle"
+                        <button
+                          aria-expanded={!projectCollapsed}
+                          aria-label={`${projectCollapsed ? "Expand" : "Collapse"} ${project.name}`}
+                          className="kodex-ui-button kodex-ui-selectable kodex-project-title"
+                          onClick={() => handleProjectCollapseToggle(project.id)}
+                          type="button"
                         >
-                          <SquarePen size={14} />
-                        </ActionIcon>
-                      </Tooltip>
+                          <span className="kodex-project-folder-icon" data-collapsed={projectCollapsed ? "true" : undefined}>
+                            {projectCollapsed ? <Folder size={15} /> : <FolderOpen size={15} />}
+                          </span>
+                          <Text component="span" fw={400} size="xs" lineClamp={1}>
+                            {project.name}
+                          </Text>
+                        </button>
+                        <Tooltip label={SIDEBAR_TEXT.newThread}>
+                          <ActionIcon
+                            aria-label={newThreadLabel}
+                            color="gray"
+                            onClick={() => onCreateThread(project.id)}
+                            size="xs"
+                            variant="subtle"
+                          >
+                            <SquarePen size={14} />
+                          </ActionIcon>
+                        </Tooltip>
+                      </Box>
+                      {!projectCollapsed && projectThreads.length > 0 ? (
+                        <ThreadList
+                          approvals={approvals}
+                          className="kodex-project-thread-list"
+                          expanded={showAllProjectThreads}
+                          hoveredThreadActionId={hoveredThreadActionId}
+                          onArchiveThread={onArchiveThread}
+                          onSelectThread={(threadId) => onSelectThread(project.id, threadId)}
+                          onThreadActionHoverChange={onThreadActionHoverChange}
+                          onToggleExpanded={() => {
+                            setExpandedThreadProjectIds((current) => {
+                              const next = new Set(current);
+                              if (next.has(project.id)) {
+                                next.delete(project.id);
+                              } else {
+                                next.add(project.id);
+                              }
+                              return next;
+                            });
+                          }}
+                          pendingTitleThreadIds={pendingTitleThreadIds}
+                          selectedThreadId={selectedThreadId}
+                          threads={projectMatchesSearch ? projectThreads : visibleProjectThreads}
+                        />
+                      ) : null}
                     </Box>
-                    {projectThreads.length > 0 ? (
-                      <ThreadList
-                        approvals={approvals}
-                        className="kodex-project-thread-list"
-                        expanded={showAllProjectThreads}
-                        hoveredThreadActionId={hoveredThreadActionId}
-                        onArchiveThread={onArchiveThread}
-                        onSelectThread={(threadId) => onSelectThread(project.id, threadId)}
-                        onThreadActionHoverChange={onThreadActionHoverChange}
-                        onToggleExpanded={() => {
-                          setExpandedThreadProjectIds((current) => {
-                            const next = new Set(current);
-                            if (next.has(project.id)) {
-                              next.delete(project.id);
-                            } else {
-                              next.add(project.id);
-                            }
-                            return next;
-                          });
-                        }}
-                        pendingTitleThreadIds={pendingTitleThreadIds}
-                        selectedThreadId={selectedThreadId}
-                        threads={projectThreads}
-                      />
-                    ) : null}
-                  </Box>
-                );
-              })
-            )}
-          </Stack>
+                  );
+                })
+              )}
+            </Stack>
+          ) : null}
           <Box className="kodex-sidebar-section">
-            <Group justify="space-between" align="center" mb="sm">
-              <Text className="kodex-sidebar-section-title" fw={400} size="xs">
-                {SIDEBAR_TEXT.chats}
-              </Text>
+            <Group className="kodex-sidebar-section-row kodex-chats-section-row" justify="space-between" align="center" mb="sm">
+              <SectionToggle
+                collapsed={chatsSectionCollapsed}
+                label={SIDEBAR_TEXT.chats}
+                onToggle={() => setChatsSectionCollapsed((collapsed) => !collapsed)}
+              />
               <Tooltip label={SIDEBAR_TEXT.newChat}>
                 <ActionIcon
                   aria-label={SIDEBAR_TEXT.newChat}
@@ -384,7 +562,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 </ActionIcon>
               </Tooltip>
             </Group>
-            {sortedChatThreads.length > 0 ? (
+            {!chatsSectionCollapsed && visibleChatThreads.length > 0 ? (
               <ThreadList
                 approvals={approvals}
                 className="kodex-chat-thread-list"
@@ -396,16 +574,16 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 onToggleExpanded={() => setChatThreadsExpanded((expanded) => !expanded)}
                 pendingTitleThreadIds={pendingTitleThreadIds}
                 selectedThreadId={selectedThreadId}
-                threads={sortedChatThreads}
+                threads={visibleChatThreads}
               />
-            ) : (
+            ) : !chatsSectionCollapsed ? (
               <Box className="kodex-chat-empty">
                 <MessageSquare size={14} />
                 <Text c="dimmed" size="xs">
                   No chats
                 </Text>
               </Box>
-            )}
+            ) : null}
           </Box>
         </Box>
         <SidebarAccountFooter
@@ -470,6 +648,40 @@ function sameOrder(left: string[] | null, right: string[]): boolean {
   return left !== null && left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
+function threadMatchesSearch(thread: ThreadSummary, query: string, pendingTitleThreadIds: Set<string>): boolean {
+  return threadDisplayTitleWithPending(thread, pendingTitleThreadIds).toLowerCase().includes(query);
+}
+
+function threadDisplayTitleWithPending(thread: ThreadSummary, pendingTitleThreadIds: Set<string>): string {
+  return pendingTitleThreadIds.has(thread.id) ? SIDEBAR_TEXT.newThread : threadDisplayTitle(thread);
+}
+
+function SectionToggle({
+  collapsed,
+  label,
+  onToggle,
+}: {
+  collapsed: boolean;
+  label: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      aria-expanded={!collapsed}
+      aria-label={`${collapsed ? "Expand" : "Collapse"} ${label} section`}
+      className="kodex-ui-button kodex-sidebar-section-toggle"
+      data-collapsed={collapsed ? "true" : undefined}
+      onClick={onToggle}
+      type="button"
+    >
+      <Text component="span" className="kodex-sidebar-section-title" fw={400} size="xs">
+        {label}
+      </Text>
+      <ChevronRight className="kodex-sidebar-section-chevron" size={13} aria-hidden="true" />
+    </button>
+  );
+}
+
 export type ThreadListRowProps = {
   approvals: Approval[];
   isSelected: boolean;
@@ -494,7 +706,7 @@ export const ThreadListRow = memo(function ThreadListRow({
   const needsApproval = threadNeedsApproval(thread, approvals);
   const isThreadInProgress = threadInProgress(thread);
   const hasUnreadAgentTurn = thread.unreadCompletedAgentTurn === true;
-  const displayTitle = pendingTitleThreadIds.has(thread.id) ? SIDEBAR_TEXT.newThread : threadDisplayTitle(thread);
+  const displayTitle = threadDisplayTitleWithPending(thread, pendingTitleThreadIds);
 
   return (
     <Box

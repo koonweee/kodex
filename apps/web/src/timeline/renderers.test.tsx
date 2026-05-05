@@ -42,6 +42,13 @@ function mockClipboardWriteText() {
   return writeText;
 }
 
+function mockMissingClipboardWriteText() {
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: undefined,
+  });
+}
+
 describe("timeline renderer registry", () => {
   beforeEach(() => {
     reactMarkdownRenderSpy.mockClear();
@@ -143,6 +150,34 @@ describe("timeline renderer registry", () => {
     fireEvent.click(screen.getByRole("button", { name: /copy message/i }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Inspect this exact text"));
+    expect(screen.getByRole("button", { name: /copied message/i })).toBeInTheDocument();
+    expect(container.querySelector(".lucide-check")).toBeInTheDocument();
+  });
+
+  it("falls back to selection copy when the async Clipboard API is unavailable", async () => {
+    mockMissingClipboardWriteText();
+    const execCommand = vi.fn().mockReturnValue(true);
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: execCommand,
+    });
+    const message = "Copy on iPhone over HTTP";
+
+    const { container } = render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "user_message",
+            text: message,
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /copy message/i }));
+
+    await waitFor(() => expect(execCommand).toHaveBeenCalledWith("copy"));
+    expect(document.querySelector("textarea[readonly]")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /copied message/i })).toBeInTheDocument();
     expect(container.querySelector(".lucide-check")).toBeInTheDocument();
   });
