@@ -411,6 +411,34 @@
   font-size: 12px;
 }
 
+.kodex-code-block-shell {
+  position: relative;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.kodex-code-block-shell .kodex-timeline-code {
+  padding-right: 44px;
+}
+
+.kodex-code-copy-button {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: var(--kodex-radius-sm);
+  background: transparent;
+  color: var(--kodex-text-muted);
+  line-height: 0;
+}
+
+.kodex-code-copy-button:hover {
+  background: transparent;
+  color: var(--kodex-text-primary);
+}
+
 .kodex-timeline-disclosure,
 .kodex-timeline-debug {
   min-width: 0;

@@ -382,6 +382,38 @@ describe("timeline renderer registry", () => {
     expect(screen.queryByText(/NOTES\.markdown content/i)).not.toBeInTheDocument();
   });
 
+  it("opens local assistant markdown image links in the image viewer through the thread file preview endpoint", () => {
+    const onImageOpen = vi.fn();
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          onImageOpen={onImageOpen}
+          threadId="thread-1"
+          item={item({
+            kind: "assistant_message",
+            text:
+              "Evidence: [03-inline-review-toast.png](/Users/example/reference-project/dogfood-output/transaction-review/screenshots/03-inline-review-toast.png).",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    const expectedHref =
+      "http://localhost:3000/v1/threads/thread-1/files/preview?path=%2FUsers%2Fexample%2Freference-project%2Fdogfood-output%2Ftransaction-review%2Fscreenshots%2F03-inline-review-toast.png";
+    const link = screen.getByRole("link", { name: "03-inline-review-toast.png" });
+    expect(link).toHaveAttribute("href", expectedHref);
+    expect(link).not.toHaveAttribute("download");
+
+    fireEvent.click(link);
+
+    expect(onImageOpen).toHaveBeenCalledWith({
+      alt: "",
+      src: expectedHref,
+      title:
+        "/Users/example/reference-project/dogfood-output/transaction-review/screenshots/03-inline-review-toast.png",
+    });
+  });
+
   it("copies final assistant message markdown from the assistant-aligned toolbar", async () => {
     const writeText = mockClipboardWriteText();
     const markdown = "Use **bold** and `code`.\n\n- Keep markdown";
@@ -474,6 +506,26 @@ describe("timeline renderer registry", () => {
     const codeBlock = container.querySelector(".kodex-timeline-code");
     expect(codeBlock).toHaveTextContent("npm test");
     expect(container.querySelector(".kodex-assistant-inline-code")).not.toBeInTheDocument();
+  });
+
+  it("copies fenced code block text from the block copy button", async () => {
+    const writeText = mockClipboardWriteText();
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "assistant_message",
+            text: "Use `inline` first.\n\n```sh\nnpm test\n```",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /copy code/i }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("npm test"));
+    expect(screen.getByRole("button", { name: /copied code/i })).toBeInTheDocument();
+    expect(screen.getByText("inline").closest("button")).not.toBeInTheDocument();
   });
 
   it("does not reparse completed assistant markdown on unrelated parent rerenders", () => {

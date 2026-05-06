@@ -1,6 +1,6 @@
 import { Badge, Box, Code, Group, Stack, Text } from "@mantine/core";
 import { AlertTriangle, Bot, Check, ChevronRight, ClipboardList, Code2, Copy, FileDiff, Globe, ImageIcon, Info, Terminal, Wrench } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { Children, isValidElement, memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -22,10 +22,20 @@ type TimelineRenderer = (item: TimelineItem, options: TimelineRendererOptions) =
 
 const rendererRegistry: Record<string, TimelineRenderer> = {
   agent_message: (item, options) => (
-    <AssistantMessageMarkdown item={item} text={item.text || "No assistant content yet"} threadId={options.threadId} />
+    <AssistantMessageMarkdown
+      item={item}
+      onImageOpen={options.onImageOpen}
+      text={item.text || "No assistant content yet"}
+      threadId={options.threadId}
+    />
   ),
   assistant_message: (item, options) => (
-    <AssistantMessageMarkdown item={item} text={item.text || "No assistant content yet"} threadId={options.threadId} />
+    <AssistantMessageMarkdown
+      item={item}
+      onImageOpen={options.onImageOpen}
+      text={item.text || "No assistant content yet"}
+      threadId={options.threadId}
+    />
   ),
   user_message: (item, options) => (
     <UserMessageBubble
@@ -90,10 +100,29 @@ const labels: Record<string, string> = {
 
 const assistantMarkdownRemarkPlugins = [remarkGfm, remarkBreaks];
 
-function assistantMarkdownComponents(threadId?: string): Components {
+function assistantMarkdownComponents(threadId?: string, onImageOpen?: (image: ImageLightboxImage) => void): Components {
   return {
-    a: ({ children, href }) => {
+    a: ({ children, href, title }) => {
+      const imagePreview = localImagePreviewHref(threadId, href);
       const markdownPreview = localMarkdownPreviewHref(threadId, href);
+      if (imagePreview) {
+        return (
+          <a
+            href={imagePreview.href}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => {
+              if (!onImageOpen || event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                return;
+              }
+              event.preventDefault();
+              onImageOpen({ alt: "", src: imagePreview.href, title: title ?? imagePreview.path });
+            }}
+          >
+            {children}
+          </a>
+        );
+      }
       return (
         <a
           href={markdownPreview?.href ?? href}
@@ -108,9 +137,7 @@ function assistantMarkdownComponents(threadId?: string): Components {
     code: ({ children, className }) => {
       const isBlock = Boolean(className) || String(children).includes("\n");
       return isBlock ? (
-        <Code block className="kodex-timeline-code">
-          {children}
-        </Code>
+        <AssistantCodeBlock>{children}</AssistantCodeBlock>
       ) : (
         <Code className="kodex-assistant-inline-code">{children}</Code>
       );
@@ -122,6 +149,71 @@ function assistantMarkdownComponents(threadId?: string): Components {
     ),
     pre: ({ children }) => <>{children}</>,
   };
+}
+
+function AssistantCodeBlock({ children }: { children: ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  const resetTimerRef = useRef<number | null>(null);
+  const copyText = useMemo(() => codeBlockClipboardText(children), [children]);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimerRef.current !== null) {
+        window.clearTimeout(resetTimerRef.current);
+      }
+    };
+  }, []);
+
+  async function handleCopy() {
+    const copied = await copyTextToClipboard(copyText);
+    if (!copied) {
+      return;
+    }
+    setCopied(true);
+    if (resetTimerRef.current !== null) {
+      window.clearTimeout(resetTimerRef.current);
+    }
+    resetTimerRef.current = window.setTimeout(() => {
+      setCopied(false);
+      resetTimerRef.current = null;
+    }, 1_300);
+  }
+
+  return (
+    <Box className="kodex-code-block-shell">
+      <Code block className="kodex-timeline-code">
+        {children}
+      </Code>
+      <button
+        aria-label={copied ? "Copied code" : "Copy code"}
+        className="kodex-ui-button kodex-ui-icon-button kodex-code-copy-button"
+        onClick={handleCopy}
+        title={copied ? "Copied code" : "Copy code"}
+        type="button"
+      >
+        {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+      </button>
+    </Box>
+  );
+}
+
+function codeBlockClipboardText(children: ReactNode): string {
+  const text = reactNodeText(children);
+  return text.endsWith("\n") ? text.slice(0, -1) : text;
+}
+
+function reactNodeText(children: ReactNode): string {
+  return Children.toArray(children)
+    .map((child) => {
+      if (typeof child === "string" || typeof child === "number") {
+        return String(child);
+      }
+      if (isValidElement<{ children?: ReactNode }>(child)) {
+        return reactNodeText(child.props.children);
+      }
+      return "";
+    })
+    .join("");
 }
 
 type TimelineItemRendererProps = {
@@ -426,8 +518,18 @@ function optimisticStatusText(item: TimelineItem): string {
 }
 
 const AssistantMessageMarkdown = memo(
-  function AssistantMessageMarkdown({ item, text, threadId }: { item: TimelineItem; text: string; threadId?: string }) {
-    const components = useMemo(() => assistantMarkdownComponents(threadId), [threadId]);
+  function AssistantMessageMarkdown({
+    item,
+    onImageOpen,
+    text,
+    threadId,
+  }: {
+    item: TimelineItem;
+    onImageOpen?: (image: ImageLightboxImage) => void;
+    text: string;
+    threadId?: string;
+  }) {
+    const components = useMemo(() => assistantMarkdownComponents(threadId, onImageOpen), [onImageOpen, threadId]);
     return (
       <Box className="kodex-assistant-message-stack">
         <Box className="kodex-assistant-markdown">
@@ -443,6 +545,7 @@ const AssistantMessageMarkdown = memo(
     prev.item.id === next.item.id &&
     prev.item.kind === next.item.kind &&
     prev.item.messagePhase === next.item.messagePhase &&
+    prev.onImageOpen === next.onImageOpen &&
     prev.threadId === next.threadId &&
     prev.text === next.text,
 );
@@ -805,20 +908,48 @@ function localMarkdownPreviewHref(threadId?: string, href?: string): { download:
   };
 }
 
+function localImagePreviewHref(threadId?: string, href?: string): { href: string; path: string } | null {
+  const target = href ? localImagePreviewTarget(href) : null;
+  if (!threadId || !target) {
+    return null;
+  }
+  return {
+    href: filePreviewUrl(threadId, target.path),
+    path: target.path,
+  };
+}
+
 function localMarkdownPreviewTarget(href: string): { fragment: string; path: string } | null {
-  const hashIndex = href.indexOf("#");
-  const pathWithQuery = hashIndex >= 0 ? href.slice(0, hashIndex) : href;
-  const fragment = hashIndex >= 0 ? href.slice(hashIndex) : "";
-  const queryIndex = pathWithQuery.indexOf("?");
-  const path = queryIndex >= 0 ? pathWithQuery.slice(0, queryIndex) : pathWithQuery;
+  const { fragment, path } = localFilePreviewTarget(href);
   if (!isLocalMarkdownPath(path)) {
     return null;
   }
   return { fragment, path };
 }
 
+function localImagePreviewTarget(href: string): { path: string } | null {
+  const { path } = localFilePreviewTarget(href);
+  if (!isLocalImagePath(path)) {
+    return null;
+  }
+  return { path };
+}
+
+function localFilePreviewTarget(href: string): { fragment: string; path: string } {
+  const hashIndex = href.indexOf("#");
+  const pathWithQuery = hashIndex >= 0 ? href.slice(0, hashIndex) : href;
+  const fragment = hashIndex >= 0 ? href.slice(hashIndex) : "";
+  const queryIndex = pathWithQuery.indexOf("?");
+  const path = queryIndex >= 0 ? pathWithQuery.slice(0, queryIndex) : pathWithQuery;
+  return { fragment, path };
+}
+
 function isLocalMarkdownPath(path: string): boolean {
   return isLocalAbsolutePath(path) && /\.(?:md|markdown)$/i.test(path);
+}
+
+function isLocalImagePath(path: string): boolean {
+  return isLocalAbsolutePath(path) && /\.(?:png|jpe?g|gif|webp)$/i.test(path);
 }
 
 function isLocalAbsolutePath(path: string): boolean {
