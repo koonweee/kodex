@@ -1,5 +1,5 @@
 import { ActionIcon, Badge, Box, Button, Group, Menu, Title } from "@mantine/core";
-import { AlertCircle, Archive, MoreHorizontal, PanelLeftOpen, PanelRightOpen } from "lucide-react";
+import { AlertCircle, Archive, MoreHorizontal, PanelLeftOpen, PanelRightOpen, Pin, PinOff } from "lucide-react";
 import type { ReactNode } from "react";
 
 import type { Approval, ApprovalResponse, ThreadSummary } from "../api/client";
@@ -14,11 +14,13 @@ const THREAD_PANEL_TEXT = {
   actions: "Thread actions",
   archive: "Archive thread",
   browseThreads: "Browse threads",
+  pin: "Pin thread",
   showSidebar: "Show sidebar",
   threadUnavailableText: "This thread could not be loaded. It may have been archived, deleted, or unavailable from this gateway.",
   threadUnavailableTitle: "Thread not found or unavailable",
   threadTimelineText: "Select or create a thread to view events, messages, tool calls, and warnings.",
   threadTimelineTitle: "Thread timeline",
+  unpin: "Unpin thread",
 };
 
 export function ThreadPanel({
@@ -30,8 +32,10 @@ export function ThreadPanel({
   onApprovalDecision,
   onImageOpen,
   onMarkdownOpen,
+  onPinThread,
   onShowMobileSidebar,
   onTimelineReady,
+  onUnpinThread,
   pendingTitleThreadIds,
   scrollParentElement,
   selectedThread,
@@ -51,8 +55,10 @@ export function ThreadPanel({
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
   onImageOpen: (image: ImageLightboxImage) => void;
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
+  onPinThread: (threadId: string) => void;
   onShowMobileSidebar: () => void;
   onTimelineReady: () => void;
+  onUnpinThread: (threadId: string) => void;
   pendingTitleThreadIds: Set<string>;
   scrollParentElement: HTMLDivElement | null;
   selectedThread: ThreadSummary | null;
@@ -118,6 +124,18 @@ export function ThreadPanel({
                   </ActionIcon>
                 </Menu.Target>
                 <Menu.Dropdown>
+                  <Menu.Item
+                    leftSection={selectedThread.pinnedAt ? <PinOff size={14} /> : <Pin size={14} />}
+                    onClick={() => {
+                      if (selectedThread.pinnedAt) {
+                        onUnpinThread(selectedThread.id);
+                        return;
+                      }
+                      onPinThread(selectedThread.id);
+                    }}
+                  >
+                    {selectedThread.pinnedAt ? THREAD_PANEL_TEXT.unpin : THREAD_PANEL_TEXT.pin}
+                  </Menu.Item>
                   <Menu.Item leftSection={<Archive size={14} />} onClick={onArchiveThread}>
                     {THREAD_PANEL_TEXT.archive}
                   </Menu.Item>

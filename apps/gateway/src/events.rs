@@ -29,6 +29,7 @@ use crate::{
     },
     error::{ApiError, ApiResult},
     queue,
+    routes::threads::THREAD_PIN_UPDATED_EVENT,
     schema::is_supported_approval_method,
     store::{EventEnvelope, NewApproval, NewEvent, ThreadRuntimeState},
 };
@@ -378,6 +379,7 @@ fn is_operational_replay_event(event: &EventEnvelope) -> bool {
         "approval.created"
             | "approval.resolved"
             | "gateway.warning"
+            | THREAD_PIN_UPDATED_EVENT
             | queue::QUEUE_UPSERT_EVENT
             | queue::QUEUE_DELETE_EVENT
     )
@@ -846,6 +848,7 @@ fn thread_summary_from_value(thread: &Value) -> ApiResult<ThreadSummary> {
             .filter(|value| !value.is_null())
             .cloned(),
         git_info: app_server_api::optional_git_info(thread)?,
+        pinned_at: None,
         preview: thread.get("preview").cloned(),
         last_completed_agent_turn_seq: None,
         seen_completed_agent_turn_seq: 0,

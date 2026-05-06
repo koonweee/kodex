@@ -3,6 +3,19 @@ import { asRecord, stringValue } from "../shared/values";
 
 type ThreadRuntimeStatus = "active" | "idle";
 
+export function threadPinUpdateFromEvent(event: EventEnvelope): { threadId: string; pinnedAt: string | null } | null {
+  if (event.kind !== "thread.pin_updated") {
+    return null;
+  }
+  const payload = asRecord(event.payload);
+  const threadId = event.threadId ?? stringValue(payload.threadId) ?? stringValue(payload.thread_id);
+  if (!threadId) {
+    return null;
+  }
+  const pinnedAt = stringValue(payload.pinnedAt) ?? stringValue(payload.pinned_at);
+  return { threadId, pinnedAt };
+}
+
 export function completedAgentTurnEvent(event: EventEnvelope): { threadId: string; seq: number } | null {
   if (event.kind !== "timeline.turn_upsert") {
     return null;

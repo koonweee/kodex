@@ -27,6 +27,7 @@ const GATEWAY_SSE_EVENT_TYPES = [
   "timeline.item_upsert",
   "timeline.snapshot",
   "timeline.snapshot_required",
+  "thread.pin_updated",
   "timeline.thread_metadata",
   "timeline.thread_status",
   "timeline.turn_upsert",

@@ -106,6 +106,12 @@
   margin-top: 18px;
 }
 
+.kodex-pinned-section {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
 .kodex-sidebar-section-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -241,6 +247,7 @@
 
 .kodex-thread-list-button {
   --kodex-thread-action-space: 30px;
+  --kodex-thread-pin-space: 0px;
 
   position: relative;
   display: grid;
@@ -264,6 +271,12 @@
   background: var(--kodex-bg-selected);
 }
 
+.kodex-thread-list-button:hover,
+.kodex-thread-list-button:focus-within,
+.kodex-thread-list-button[data-pinned="true"] {
+  --kodex-thread-pin-space: 22px;
+}
+
 .kodex-thread-select-button {
   appearance: none;
   display: grid;
@@ -271,7 +284,7 @@
   width: 100%;
   min-width: 0;
   border: 0;
-  padding: 0 var(--kodex-thread-action-space) 0 0;
+  padding: 0 var(--kodex-thread-action-space) 0 var(--kodex-thread-pin-space);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -285,6 +298,7 @@
 }
 
 .kodex-thread-select-button:focus-visible,
+.kodex-thread-pin-button:focus-visible,
 .kodex-thread-archive-button:focus-visible,
 .kodex-thread-list-more-button:focus-visible {
   outline: var(--kodex-focus-outline);
@@ -343,6 +357,39 @@
   flex: 0 0 18px;
   place-items: center;
   transform: translateY(-50%);
+}
+
+.kodex-thread-pin-button {
+  appearance: none;
+  position: absolute;
+  top: 50%;
+  left: 0;
+  z-index: 1;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--kodex-radius-xs);
+  padding: 0;
+  background: transparent;
+  color: var(--kodex-text-muted);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.kodex-thread-pin-button:hover {
+  background: var(--kodex-bg-button-hover);
+  color: var(--kodex-text-primary);
+}
+
+.kodex-thread-list-button:hover .kodex-thread-pin-button,
+.kodex-thread-list-button:focus-within .kodex-thread-pin-button,
+.kodex-thread-list-button[data-pinned="true"] .kodex-thread-pin-button {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .kodex-thread-unread-agent-turn-indicator {
@@ -484,6 +531,7 @@
 
   .kodex-project-tree,
   .kodex-project-thread-list,
+  .kodex-pinned-thread-list,
   .kodex-chat-thread-list {
     gap: 4px !important;
   }
@@ -493,8 +541,15 @@
   }
 
   .kodex-thread-list-button {
+    --kodex-thread-pin-space: 24px;
+
     min-height: 32px;
     padding: 5px 8px;
+  }
+
+  .kodex-thread-pin-button {
+    opacity: 1;
+    pointer-events: auto;
   }
 }
 

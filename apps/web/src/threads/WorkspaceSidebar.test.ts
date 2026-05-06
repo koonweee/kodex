@@ -6,8 +6,10 @@ import { areThreadListRowPropsEqual, type ThreadListRowProps } from "./Workspace
 const approvals: Approval[] = [];
 const pendingTitleThreadIds = new Set<string>();
 const onArchiveThread = vi.fn();
+const onPinThread = vi.fn();
 const onSelectThread = vi.fn();
 const onThreadActionHoverChange = vi.fn();
+const onUnpinThread = vi.fn();
 const thread = threadSummary("thread-1");
 
 function threadSummary(id: string): ThreadSummary {
@@ -29,8 +31,10 @@ function rowProps(overrides: Partial<ThreadListRowProps> = {}): ThreadListRowPro
     approvals,
     isSelected: false,
     onArchiveThread,
+    onPinThread,
     onSelectThread,
     onThreadActionHoverChange,
+    onUnpinThread,
     pendingTitleThreadIds,
     showThreadArchiveAction: false,
     thread,
@@ -43,9 +47,11 @@ describe("ThreadListRow memo comparison", () => {
     const unchangedRow = rowProps();
     const previouslySelectedRow = rowProps({ isSelected: true });
     const newlyHoveredRow = rowProps({ showThreadArchiveAction: true });
+    const newlyPinnedRow = rowProps({ thread: { ...thread, pinnedAt: "2026-05-06T00:00:00Z" } });
 
     expect(areThreadListRowPropsEqual(unchangedRow, { ...unchangedRow })).toBe(true);
     expect(areThreadListRowPropsEqual(unchangedRow, previouslySelectedRow)).toBe(false);
     expect(areThreadListRowPropsEqual(unchangedRow, newlyHoveredRow)).toBe(false);
+    expect(areThreadListRowPropsEqual(unchangedRow, newlyPinnedRow)).toBe(false);
   });
 });

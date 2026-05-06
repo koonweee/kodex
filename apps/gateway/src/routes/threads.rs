@@ -5,6 +5,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use chrono::{DateTime, Utc};
 use chrono::{Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -16,9 +17,11 @@ use crate::{
         self, RawAppServerResponse, ThreadCommandResponse, ThreadDetailResponse,
         ThreadListResponse, ThreadSummary,
     },
-    error::ApiResult,
-    store::{ThreadComposerSettings, ThreadRead},
+    error::{ApiError, ApiResult},
+    store::{EventEnvelope, NewEvent, ThreadComposerSettings, ThreadRead},
 };
+
+pub const THREAD_PIN_UPDATED_EVENT: &str = "thread.pin_updated";
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -27,10 +30,15 @@ pub fn router() -> Router<AppState> {
             "/v1/chats/threads",
             get(list_chat_threads).post(create_chat_thread),
         )
+        .route("/v1/threads/pinned", get(list_pinned_threads))
         .route("/v1/threads/{thread_id}", get(get_thread))
         .route("/v1/threads/{thread_id}/resume", post(resume_thread))
         .route("/v1/threads/{thread_id}/fork", post(fork_thread))
         .route("/v1/threads/{thread_id}/archive", post(archive_thread))
+        .route(
+            "/v1/threads/{thread_id}/pin",
+            post(pin_thread).delete(unpin_thread),
+        )
         .route("/v1/threads/{thread_id}/seen", post(mark_thread_seen))
 }
 
@@ -90,6 +98,13 @@ pub struct MarkThreadSeenRequest {
 }
 
 pub type MarkThreadSeenResponse = ThreadRead;
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadPinResponse {
+    pub thread_id: String,
+    pub pinned_at: Option<DateTime<Utc>>,
+}
 
 #[utoipa::path(get, path = "/v1/threads", params(ThreadListQuery), responses((status = 200, body = ThreadListResponse)))]
 pub async fn list_threads(
@@ -151,6 +166,63 @@ pub async fn list_chat_threads(
     response.next_cursor = None;
     apply_thread_list_response_state(&state, &mut response).await?;
     Ok(Json(response))
+}
+
+#[utoipa::path(get, path = "/v1/threads/pinned", responses((status = 200, body = ThreadListResponse)))]
+pub async fn list_pinned_threads(
+    State(state): State<AppState>,
+) -> ApiResult<Json<ThreadListResponse>> {
+    let client = app_server_api::client(&state.app_server);
+    let mut threads = Vec::new();
+    for pin in state.store.list_thread_pins().await? {
+        let detail = match client.thread_read(pin.thread_id.clone()).await {
+            Ok(detail) => detail,
+            Err(ApiError::NotFound(_)) => continue,
+            Err(error) => return Err(error),
+        };
+        if thread_is_archived(&detail.thread) {
+            continue;
+        }
+        threads.push(detail.thread);
+    }
+    let mut response = ThreadListResponse {
+        raw_payload: json!({
+            "data": threads.iter().map(|thread| thread.raw_payload.clone()).collect::<Vec<_>>(),
+            "nextCursor": null,
+            "backwardsCursor": null,
+        }),
+        threads,
+        next_cursor: None,
+        backwards_cursor: None,
+    };
+    apply_thread_list_response_state(&state, &mut response).await?;
+    Ok(Json(response))
+}
+
+#[utoipa::path(post, path = "/v1/threads/{threadId}/pin", responses((status = 200, body = ThreadPinResponse)))]
+pub async fn pin_thread(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+) -> ApiResult<Json<ThreadPinResponse>> {
+    let pin = state.store.pin_thread(&thread_id).await?;
+    broadcast_thread_pin_update(&state, &thread_id, Some(pin.pinned_at)).await?;
+    Ok(Json(ThreadPinResponse {
+        thread_id,
+        pinned_at: Some(pin.pinned_at),
+    }))
+}
+
+#[utoipa::path(delete, path = "/v1/threads/{threadId}/pin", responses((status = 200, body = ThreadPinResponse)))]
+pub async fn unpin_thread(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+) -> ApiResult<Json<ThreadPinResponse>> {
+    state.store.unpin_thread(&thread_id).await?;
+    broadcast_thread_pin_update(&state, &thread_id, None).await?;
+    Ok(Json(ThreadPinResponse {
+        thread_id,
+        pinned_at: None,
+    }))
 }
 
 #[utoipa::path(post, path = "/v1/chats/threads", request_body = CreateChatThreadRequest, responses((status = 200, body = ThreadCommandResponse)))]
@@ -639,6 +711,7 @@ async fn apply_thread_summary_state(
     state: &AppState,
     threads: &mut [ThreadSummary],
 ) -> ApiResult<()> {
+    apply_thread_pin_state(state, threads).await?;
     apply_thread_composer_settings(state, threads).await?;
     apply_thread_read_state(state, threads).await
 }
@@ -692,6 +765,38 @@ fn sync_raw_response_thread(raw_payload: &mut Value, thread: &ThreadSummary) {
     raw_payload.insert("thread".to_string(), thread.raw_payload.clone());
 }
 
+async fn apply_thread_pin_state(state: &AppState, threads: &mut [ThreadSummary]) -> ApiResult<()> {
+    if threads.is_empty() {
+        return Ok(());
+    }
+
+    let thread_ids = threads
+        .iter()
+        .map(|thread| thread.id.clone())
+        .collect::<Vec<_>>();
+    let pins = state.store.pinned_at_for_thread_ids(&thread_ids).await?;
+    for thread in threads {
+        thread.pinned_at = pins.get(&thread.id).copied();
+        sync_raw_thread_pin_state(&mut thread.raw_payload, thread.pinned_at);
+    }
+
+    Ok(())
+}
+
+fn sync_raw_thread_pin_state(raw_payload: &mut Value, pinned_at: Option<DateTime<Utc>>) {
+    let Some(raw_payload) = raw_payload.as_object_mut() else {
+        return;
+    };
+    match pinned_at {
+        Some(pinned_at) => {
+            raw_payload.insert("pinnedAt".to_string(), json!(pinned_at));
+        }
+        None => {
+            raw_payload.insert("pinnedAt".to_string(), Value::Null);
+        }
+    }
+}
+
 async fn apply_thread_composer_settings(
     state: &AppState,
     threads: &mut [ThreadSummary],
@@ -713,6 +818,30 @@ async fn apply_thread_composer_settings(
     }
 
     Ok(())
+}
+
+async fn broadcast_thread_pin_update(
+    state: &AppState,
+    thread_id: &str,
+    pinned_at: Option<DateTime<Utc>>,
+) -> ApiResult<EventEnvelope> {
+    let event = state
+        .store
+        .append_event(NewEvent {
+            project_id: None,
+            thread_id: Some(thread_id.to_string()),
+            turn_id: None,
+            item_id: None,
+            kind: THREAD_PIN_UPDATED_EVENT.to_string(),
+            codex_method: None,
+            payload: json!({
+                "threadId": thread_id,
+                "pinnedAt": pinned_at,
+            }),
+        })
+        .await?;
+    let _ = state.events.send(event.clone());
+    Ok(event)
 }
 
 fn overlay_stored_thread_composer_settings(
@@ -759,6 +888,14 @@ fn sync_raw_optional_string(
     } else {
         raw_payload.remove(key);
     }
+}
+
+fn thread_is_archived(thread: &ThreadSummary) -> bool {
+    thread
+        .raw_payload
+        .get("archived")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
 }
 
 async fn save_forked_thread_composer_settings(

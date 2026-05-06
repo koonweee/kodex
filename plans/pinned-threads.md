@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Complete. Implemented gateway-owned SQLite pin state, pin/unpin and pinned-list API routes, generated OpenAPI/frontend types, `thread.pin_updated` live events, pinned sidebar rendering, pin controls, and focused backend/frontend verification.
 
 ## Goal
 
@@ -240,7 +240,7 @@ Mobile:
 
 ## Milestone 1: Gateway Contract And Storage
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -265,7 +265,7 @@ Exit conditions:
 
 ## Milestone 2: Pinned Thread Listing And Events
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -287,7 +287,7 @@ Exit conditions:
 
 ## Milestone 3: Frontend State And API Wiring
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -312,7 +312,7 @@ Exit conditions:
 
 ## Milestone 4: Sidebar UI
 
-Status: Proposed
+Status: Complete
 
 Failing tests first:
 
@@ -338,7 +338,7 @@ Exit conditions:
 
 ## Milestone 5: Verification And Review
 
-Status: Proposed
+Status: Complete
 
 Verification:
 

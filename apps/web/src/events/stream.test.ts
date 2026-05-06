@@ -131,4 +131,30 @@ describe("event stream client", () => {
     expect(received).toEqual(["timeline.item_delta"]);
     client.close();
   });
+
+  it("receives gateway thread pin update events", () => {
+    const received: string[] = [];
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      threadId: "thread-1",
+      onEvent: (event) => received.push(event.kind),
+    });
+
+    client.connect();
+    FakeEventSource.instances[0].emitNamed("thread.pin_updated", {
+      id: "event-9",
+      seq: 9,
+      kind: "thread.pin_updated",
+      codexMethod: null,
+      itemId: null,
+      threadId: "thread-1",
+      turnId: null,
+      projectId: null,
+      payload: { threadId: "thread-1", pinnedAt: "2026-05-06T12:00:00Z" },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(received).toEqual(["thread.pin_updated"]);
+    client.close();
+  });
 });

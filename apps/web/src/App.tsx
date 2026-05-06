@@ -22,8 +22,11 @@ import {
   createProject,
   createThread,
   listQueuedInputs,
+  listPinnedThreads,
   listThreads,
+  pinThread,
   resumeThread,
+  unpinThread,
   type Approval,
   type EventEnvelope,
   type Project,
@@ -62,8 +65,11 @@ import {
   threadHasDisplayTitle,
   updateThreadReadStateInList,
   updateThreadReadStateInProjects,
+  withoutPinnedProjectThreads,
+  withoutPinnedThreads,
   type ThreadsByProjectId,
 } from "./threads/helpers";
+import { threadPinUpdateFromEvent } from "./threads/events";
 import {
   applySidebarProjectOrder,
   loadSidebarProjectOrder,
@@ -125,6 +131,7 @@ function KodexShell({
   const [initialRoute] = useState(() => currentKodexRoute());
   const [projects, setProjects] = useState<Project[]>([]);
   const [chatThreads, setChatThreads] = useState<ThreadSummary[]>([]);
+  const [pinnedThreads, setPinnedThreads] = useState<ThreadSummary[]>([]);
   const [projectOrderIds, setProjectOrderIds] = useState<string[] | null>(() => loadSidebarProjectOrder());
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [threadsByProjectId, setThreadsByProjectId] = useState<ThreadsByProjectId>({});
@@ -137,7 +144,9 @@ function KodexShell({
   const [materializingThreadIds, setMaterializingThreadIds] = useState<Set<string>>(new Set());
   const [timeline, setTimeline] = useState<TimelineState>(createTimelineState());
   const [queuedInputsByThreadId, setQueuedInputsByThreadId] = useState<Record<string, QueuedInput[]>>({});
-  const [timelineEntry, setTimelineEntry] = useState<TimelineEntry>(idleTimelineEntry);
+  const [timelineEntry, setTimelineEntry] = useState<TimelineEntry>(() =>
+    initialRoute.threadId ? { phase: "loadingSnapshot", threadId: initialRoute.threadId } : idleTimelineEntry,
+  );
   const [projectFormOpen, setProjectFormOpen] = useState(false);
   const [projectCwd, setProjectCwd] = useState("");
   const [projectDirectoryCreateCwd, setProjectDirectoryCreateCwd] = useState<string | null>(null);
@@ -159,6 +168,7 @@ function KodexShell({
   const attachedThreadIdsRef = useRef<Set<string>>(new Set());
   const attachingThreadIdsRef = useRef<Set<string>>(new Set());
   const chatThreadsRef = useRef<ThreadSummary[]>([]);
+  const pinnedThreadsRef = useRef<ThreadSummary[]>([]);
   const routeSelectedThreadRef = useRef<ThreadSummary | null>(null);
   const pendingTitleThreadIdsRef = useRef<Set<string>>(new Set());
   const threadsByProjectIdRef = useRef<ThreadsByProjectId>({});
@@ -179,6 +189,7 @@ function KodexShell({
   const selectedThread =
     selectedProjectThreads.find((thread) => thread.id === selectedThreadId) ??
     chatThreads.find((thread) => thread.id === selectedThreadId) ??
+    pinnedThreads.find((thread) => thread.id === selectedThreadId) ??
     (routeSelectedThread?.id === selectedThreadId ? routeSelectedThread : null) ??
     null;
   const selectedQueuedInputs = selectedThreadId ? queuedInputsByThreadId[selectedThreadId] ?? [] : [];
@@ -193,6 +204,7 @@ function KodexShell({
   } = useApprovalsState({ selectedThreadId });
   approvalsRef.current = approvals;
   chatThreadsRef.current = chatThreads;
+  pinnedThreadsRef.current = pinnedThreads;
   pendingTitleThreadIdsRef.current = pendingTitleThreadIds;
   threadsByProjectIdRef.current = threadsByProjectId;
   const {
@@ -221,8 +233,10 @@ function KodexShell({
     onError: reportError,
     selectedThreadIdRef,
     setChatThreads,
+    setPinnedThreads,
     setThreadsByProjectId,
     threadsByProjectId,
+    pinnedThreads,
   });
   const {
     applyThreadMetadataEvent,
@@ -232,6 +246,7 @@ function KodexShell({
     selectedThreadId,
     setChatThreads,
     setPendingTitleThreadIds,
+    setPinnedThreads,
     setThreadsByProjectId,
   });
   const {
@@ -313,6 +328,10 @@ function KodexShell({
         );
         setChatThreads((current) => mergeLoadedChatThreads(current, hydratedThreads));
         setPendingTitleThreadIds((current) => clearAvailableThreadTitles(current, hydratedThreads));
+      },
+      onPinnedThreadsLoaded: (nextThreads) => {
+        setPinnedThreads(nextThreads);
+        setPendingTitleThreadIds((current) => clearAvailableThreadTitles(current, nextThreads));
       },
       onError: reportError,
       onProjectsLoaded: (nextProjects) => {
@@ -432,6 +451,7 @@ function KodexShell({
     const client = createEventStreamClient({
       onEvent: (event) => {
         applyQueueEvent(event);
+        applyThreadPinEvent(event);
         applyThreadMetadataEvent(event);
         applyCompletedAgentTurnEvent(event);
         const nextUsageLimitSnapshot = usageLimitSnapshotFromEvent(event);
@@ -758,6 +778,11 @@ function KodexShell({
         thread.status === "active" ? {} : { status: "active" },
       ),
     );
+    setPinnedThreads((current) =>
+      updateThreadReadStateInList(current, threadId, (thread) =>
+        thread.status === "active" ? {} : { status: "active" },
+      ),
+    );
   }
 
   function markThreadIdle(threadId: string) {
@@ -767,6 +792,11 @@ function KodexShell({
       ),
     );
     setChatThreads((current) =>
+      updateThreadReadStateInList(current, threadId, (thread) =>
+        thread.status === "idle" ? {} : { status: "idle" },
+      ),
+    );
+    setPinnedThreads((current) =>
       updateThreadReadStateInList(current, threadId, (thread) =>
         thread.status === "idle" ? {} : { status: "idle" },
       ),
@@ -781,6 +811,11 @@ function KodexShell({
   function handleSelectChatThread(threadId: string) {
     pushKodexRoute({ panel: null, threadId });
     selectKnownChatThread(threadId);
+  }
+
+  function handleSelectPinnedThread(threadId: string) {
+    pushKodexRoute({ panel: null, threadId });
+    selectKnownPinnedThread(threadId);
   }
 
   function selectKnownProjectThread(projectId: string, threadId: string) {
@@ -819,6 +854,22 @@ function KodexShell({
     setSelectedThreadId(threadId);
   }
 
+  function selectKnownPinnedThread(threadId: string) {
+    setMobilePanel("chat");
+    if (selectedProjectIdRef.current === null && threadId === selectedThreadIdRef.current) {
+      return;
+    }
+    selectedProjectIdRef.current = null;
+    setSelectedProjectId(null);
+    setDraftChatThreadSelected(false);
+    setDraftThreadProjectId(null);
+    setUnavailableThreadId(null);
+    setRouteSelectedThreadState(null);
+    selectedThreadIdRef.current = threadId;
+    beginTimelineEntry(threadId);
+    setSelectedThreadId(threadId);
+  }
+
   function selectRouteThread(threadId: string) {
     const knownSelection = findKnownThreadSelection(threadId);
     if (knownSelection?.kind === "project") {
@@ -827,6 +878,10 @@ function KodexShell({
     }
     if (knownSelection?.kind === "chat") {
       selectKnownChatThread(threadId);
+      return;
+    }
+    if (knownSelection?.kind === "pinned") {
+      selectKnownPinnedThread(threadId);
       return;
     }
     setMobilePanel("chat");
@@ -844,7 +899,9 @@ function KodexShell({
     setSelectedThreadId(threadId);
   }
 
-  function findKnownThreadSelection(threadId: string): { kind: "chat" } | { kind: "project"; projectId: string } | null {
+  function findKnownThreadSelection(
+    threadId: string,
+  ): { kind: "chat" } | { kind: "pinned" } | { kind: "project"; projectId: string } | null {
     for (const [projectId, threads] of Object.entries(threadsByProjectIdRef.current)) {
       if (threads.some((thread) => thread.id === threadId)) {
         return { kind: "project", projectId };
@@ -852,6 +909,9 @@ function KodexShell({
     }
     if (chatThreadsRef.current.some((thread) => thread.id === threadId)) {
       return { kind: "chat" };
+    }
+    if (pinnedThreadsRef.current.some((thread) => thread.id === threadId)) {
+      return { kind: "pinned" };
     }
     return null;
   }
@@ -865,6 +925,7 @@ function KodexShell({
     attachingThreadIdsRef.current.delete(threadId);
     setThreadsByProjectId((current) => removeThreadFromProjects(current, threadId));
     setChatThreads((current) => removeThreadFromList(current, threadId));
+    setPinnedThreads((current) => removeThreadFromList(current, threadId));
     if (threadId === selectedThreadId) {
       clearTimelineEntry();
       selectedThreadIdRef.current = null;
@@ -904,6 +965,13 @@ function KodexShell({
   function replaceThread(thread: ThreadSummary) {
     setThreadsByProjectId((current) => replaceThreadInProjects(current, thread, selectedProjectId));
     setChatThreads((current) => replaceThreadInList(current, thread));
+    setPinnedThreads((current) => {
+      if (!thread.pinnedAt) {
+        return removeThreadFromList(current, thread.id);
+      }
+      const replaced = replaceThreadInList(current, thread);
+      return replaced === current ? [thread, ...current] : replaced;
+    });
     if (threadHasDisplayTitle(thread)) {
       setPendingTitleThreadIds((current) => {
         if (!current.has(thread.id)) {
@@ -914,6 +982,76 @@ function KodexShell({
         return next;
       });
     }
+  }
+
+  async function handlePinThread(threadId: string) {
+    try {
+      const pinnedAt = await pinThread(threadId);
+      applyThreadPinState(threadId, pinnedAt);
+    } catch (error) {
+      reportError(error);
+    }
+  }
+
+  async function handleUnpinThread(threadId: string) {
+    try {
+      const pinnedAt = await unpinThread(threadId);
+      applyThreadPinState(threadId, pinnedAt);
+    } catch (error) {
+      reportError(error);
+    }
+  }
+
+  function applyThreadPinEvent(event: EventEnvelope) {
+    const update = threadPinUpdateFromEvent(event);
+    if (!update) {
+      return;
+    }
+    applyThreadPinState(update.threadId, update.pinnedAt);
+  }
+
+  function applyThreadPinState(threadId: string, pinnedAt: string | null) {
+    const knownThread = findKnownThread(threadId);
+    setThreadsByProjectId((current) =>
+      updateThreadReadStateInProjects(current, threadId, (thread) => ({ pinnedAt })),
+    );
+    setChatThreads((current) => updateThreadReadStateInList(current, threadId, () => ({ pinnedAt })));
+    setRouteSelectedThreadState(
+      routeSelectedThreadRef.current?.id === threadId
+        ? withThreadPinnedAt(routeSelectedThreadRef.current, pinnedAt)
+        : routeSelectedThreadRef.current,
+    );
+    if (!pinnedAt) {
+      setPinnedThreads((current) => removeThreadFromList(current, threadId));
+      return;
+    }
+
+    if (knownThread) {
+      const pinnedThread = withThreadPinnedAt(knownThread, pinnedAt);
+      setPinnedThreads((current) => {
+        const replaced = replaceThreadInList(current, pinnedThread);
+        return replaced === current ? [pinnedThread, ...current] : replaced;
+      });
+      return;
+    }
+
+    void listPinnedThreads()
+      .then((threads) => setPinnedThreads(threads))
+      .catch(reportError);
+  }
+
+  function findKnownThread(threadId: string): ThreadSummary | null {
+    for (const threads of Object.values(threadsByProjectIdRef.current)) {
+      const thread = threads.find((item) => item.id === threadId);
+      if (thread) {
+        return thread;
+      }
+    }
+    return (
+      chatThreadsRef.current.find((thread) => thread.id === threadId) ??
+      pinnedThreadsRef.current.find((thread) => thread.id === threadId) ??
+      (routeSelectedThreadRef.current?.id === threadId ? routeSelectedThreadRef.current : null)
+    );
   }
 
   function reportError(error: unknown) {
@@ -1023,8 +1161,11 @@ function KodexShell({
   const stableHandleCreateChat = useEventCallback(handleCreateChat);
   const stableHandleCreateThread = useEventCallback(handleCreateThread);
   const stableHandleDraftProjectChange = useEventCallback(handleDraftProjectChange);
+  const stableHandlePinThread = useEventCallback((threadId: string) => void handlePinThread(threadId));
   const stableHandleSelectChatThread = useEventCallback(handleSelectChatThread);
+  const stableHandleSelectPinnedThread = useEventCallback(handleSelectPinnedThread);
   const stableHandleSelectThread = useEventCallback(handleSelectThread);
+  const stableHandleUnpinThread = useEventCallback((threadId: string) => void handleUnpinThread(threadId));
   const handleShowMobileSidebar = useEventCallback(() => {
     pushKodexRoute({ panel: "threads", threadId: selectedThreadIdRef.current });
     setMobilePanel("threads");
@@ -1033,6 +1174,11 @@ function KodexShell({
     pushKodexRoute({ panel: null, threadId: selectedThreadIdRef.current });
     setMobilePanel("chat");
   });
+  const sidebarChatThreads = useMemo(() => withoutPinnedThreads(chatThreads), [chatThreads]);
+  const sidebarThreadsByProjectId = useMemo(
+    () => withoutPinnedProjectThreads(threadsByProjectId),
+    [threadsByProjectId],
+  );
 
   return (
     <>
@@ -1067,22 +1213,27 @@ function KodexShell({
           errorMessage, imagePreviewUrlsByPath, isDraftThreadSelected, isSelectedTimelineLoading,
           onArchiveThread: handleArchiveSelectedThread, onApprovalDecision: handleApprovalDecision, onImageOpen: setLightboxImage,
           onMarkdownOpen: setMarkdownPreview,
-          onShowMobileSidebar: handleShowMobileSidebar, onTimelineReady: handleTimelineReadyForSelectedThread, pendingTitleThreadIds,
+          onPinThread: stableHandlePinThread,
+          onShowMobileSidebar: handleShowMobileSidebar, onTimelineReady: handleTimelineReadyForSelectedThread,
+          onUnpinThread: stableHandleUnpinThread, pendingTitleThreadIds,
           scrollParentElement: timelineScrollElement, selectedThread, selectedThreadApprovals, selectedThreadTitle,
           selectedThreadUnavailableId: unavailableThreadId,
           selectedTimelineEntry, setTimelineScrollElement, showDebugEvents, timeline,
         }}
         workspaceSidebarProps={{
-          account, approvals, chatThreads, hoveredThreadActionId, isSidebarResizing, loginState,
+          account, approvals, chatThreads: sidebarChatThreads, hoveredThreadActionId, isSidebarResizing, loginState,
           onArchiveThread: handleArchiveThreadById, onCancelLogin: handleCancelLogin,
           onCreateChat: stableHandleCreateChat, onCreateProject: stableHandleCreateProject, onCreateThread: stableHandleCreateThread, onLogin: handleLogin, onLogout: handleLogout,
+          onPinThread: stableHandlePinThread,
           onOpenPreferences: handleOpenPreferences, onProjectCwdChange: handleProjectCwdChange, onProjectDirectoryCreateCancel: () => setProjectDirectoryCreateCwd(null),
-          onProjectFormOpenChange: setProjectFormOpen, onReorderProjects: handleReorderProjects, onSelectChatThread: stableHandleSelectChatThread, onSelectThread: stableHandleSelectThread,
+          onProjectFormOpenChange: setProjectFormOpen, onReorderProjects: handleReorderProjects, onSelectChatThread: stableHandleSelectChatThread,
+          onSelectPinnedThread: stableHandleSelectPinnedThread, onSelectThread: stableHandleSelectThread, onUnpinThread: stableHandleUnpinThread,
           onShowThread: handleShowMobileThread, onShowDebugEventsChange: setShowDebugEvents, onSidebarResizeKeyDown: handleSidebarResizeKeyDown,
           onSidebarResizePointerDown: handleSidebarResizePointerDown, onThreadActionHoverChange: setHoveredThreadActionId,
+          pinnedThreads,
           pendingTitleThreadIds, projectCwd, projectDirectoryCreatePending: projectDirectoryCreateCwd === projectCwd.trim() && projectCwd.trim().length > 0,
           projectFormOpen, projects: orderedProjects, selectedProjectId, selectedThreadId,
-          showDebugEvents, sidebarWidth, threadsByProjectId, usageLimitLines,
+          showDebugEvents, sidebarWidth, threadsByProjectId: sidebarThreadsByProjectId, usageLimitLines,
         }}
       />
       <ImageLightbox image={lightboxImage} onClose={handleCloseLightbox} />
@@ -1142,4 +1293,8 @@ function mergeRouteSelectedThreadIntoList(
     return threads;
   }
   return threads.map((thread) => (thread.id === routeSelectedThread.id ? routeSelectedThread : thread));
+}
+
+function withThreadPinnedAt(thread: ThreadSummary, pinnedAt: string | null): ThreadSummary {
+  return { ...thread, pinnedAt };
 }

@@ -103,6 +103,32 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(screen.queryByRole("button", { name: "Thread 2" })).not.toBeInTheDocument();
   });
 
+  it("renders pinned threads above projects with pin controls", () => {
+    const onSelectPinnedThread = vi.fn();
+    const onUnpinThread = vi.fn();
+    const pinnedThread = threadSummary(1, { id: "thread-pinned", name: "Pinned thread", pinnedAt: "2026-05-06T12:00:00Z" });
+    const { container } = renderSidebar({
+      onSelectPinnedThread,
+      onUnpinThread,
+      pinnedThreads: [pinnedThread],
+      projects: [projectSummary("project-1", "Project")],
+      threadsByProjectId: {
+        "project-1": [threadSummary(2)],
+      },
+    });
+
+    const pinnedSection = container.querySelector(".kodex-pinned-section");
+    const projectsSection = container.querySelector(".kodex-projects-section-row");
+    expect(pinnedSection).toBeInTheDocument();
+    expect(projectsSection).toBeInTheDocument();
+    expect(pinnedSection!.compareDocumentPosition(projectsSection!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Pinned thread" }));
+    expect(onSelectPinnedThread).toHaveBeenCalledWith("thread-pinned");
+
+    fireEvent.click(screen.getByRole("button", { name: "Unpin thread" }));
+    expect(onUnpinThread).toHaveBeenCalledWith("thread-pinned");
+  });
+
   it("collapses a project when its title row is clicked", () => {
     renderSidebar({
       projects: [projectSummary("project-1", "Project")],
@@ -216,17 +242,21 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
           onLogin={vi.fn()}
           onLogout={vi.fn()}
           onOpenPreferences={vi.fn()}
+          onPinThread={vi.fn()}
           onProjectCwdChange={vi.fn()}
           onProjectDirectoryCreateCancel={vi.fn()}
           onProjectFormOpenChange={vi.fn()}
           onReorderProjects={vi.fn()}
           onSelectChatThread={vi.fn()}
+          onSelectPinnedThread={vi.fn()}
           onSelectThread={vi.fn()}
           onShowDebugEventsChange={vi.fn()}
           onSidebarResizeKeyDown={vi.fn()}
           onSidebarResizePointerDown={vi.fn()}
           onThreadActionHoverChange={vi.fn()}
+          onUnpinThread={vi.fn()}
           pendingTitleThreadIds={new Set()}
+          pinnedThreads={[]}
           projectCwd=""
           projectDirectoryCreatePending={false}
           projectFormOpen={false}
@@ -271,7 +301,7 @@ function projectSummary(id: string, name: string): Project {
   };
 }
 
-function threadSummary(index: number): ThreadSummary {
+function threadSummary(index: number, overrides: Partial<ThreadSummary> = {}): ThreadSummary {
   return {
     createdAt: index,
     cwd: "/workspace/project-1",
@@ -282,5 +312,6 @@ function threadSummary(index: number): ThreadSummary {
     status: "idle",
     unreadCompletedAgentTurn: false,
     updatedAt: index,
+    ...overrides,
   };
 }

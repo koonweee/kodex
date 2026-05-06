@@ -19,6 +19,8 @@ import {
   FolderPlus,
   Inbox,
   MessageSquare,
+  Pin,
+  PinOff,
   Search,
   SquarePen,
   X,
@@ -43,6 +45,7 @@ import {
   threadDisplayTitle,
   threadInProgress,
   threadNeedsApproval,
+  sortPinnedThreadsForSidebar,
   sortThreadsForSidebar,
   type ThreadsByProjectId,
 } from "./helpers";
@@ -58,6 +61,8 @@ const SIDEBAR_TEXT = {
   newThread: "New thread",
   noProjectsText: "Create a project to begin.",
   noProjectsTitle: "No projects",
+  pinned: "Pinned",
+  pinThread: "Pin thread",
   projects: "Projects",
   resizeSidebarLabel: "Resize workspace sidebar",
   search: "Search",
@@ -68,6 +73,7 @@ const SIDEBAR_TEXT = {
   showMoreThreads: "Show more",
   threadInProgress: "Thread in progress",
   unreadAgentTurn: "Unread completed agent turn",
+  unpinThread: "Unpin thread",
   workspaceLabel: "Workspace",
 };
 
@@ -88,17 +94,21 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onLogin,
   onLogout,
   onOpenPreferences,
+  onPinThread,
   onProjectCwdChange,
   onProjectDirectoryCreateCancel,
   onProjectFormOpenChange,
   onReorderProjects,
   onSelectChatThread,
+  onSelectPinnedThread,
   onSelectThread,
   onShowThread = () => undefined,
   onShowDebugEventsChange,
   onSidebarResizeKeyDown,
   onSidebarResizePointerDown,
   onThreadActionHoverChange,
+  onUnpinThread,
+  pinnedThreads,
   pendingTitleThreadIds,
   projectCwd,
   projectDirectoryCreatePending,
@@ -125,18 +135,22 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onLogin: () => void;
   onLogout: () => void;
   onOpenPreferences: () => void;
+  onPinThread: (threadId: string) => void;
   onProjectCwdChange: (value: string) => void;
   onProjectDirectoryCreateCancel: () => void;
   onProjectFormOpenChange: (open: boolean | ((open: boolean) => boolean)) => void;
   onReorderProjects: (projectIds: string[]) => void;
   onSelectChatThread: (threadId: string) => void;
+  onSelectPinnedThread: (threadId: string) => void;
   onSelectThread: (projectId: string, threadId: string) => void;
   onShowThread?: () => void;
   onShowDebugEventsChange: (value: boolean) => void;
   onSidebarResizeKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => void;
   onSidebarResizePointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onThreadActionHoverChange: (threadId: string | null) => void;
+  onUnpinThread: (threadId: string) => void;
   pendingTitleThreadIds: Set<string>;
+  pinnedThreads: ThreadSummary[];
   projectCwd: string;
   projectDirectoryCreatePending: boolean;
   projectFormOpen: boolean;
@@ -168,7 +182,14 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     () => sortThreadsForSidebar(chatThreads, approvals, pendingTitleThreadIds),
     [approvals, chatThreads, pendingTitleThreadIds],
   );
+  const sortedPinnedThreads = useMemo(
+    () => sortPinnedThreadsForSidebar(pinnedThreads, approvals, pendingTitleThreadIds),
+    [approvals, pendingTitleThreadIds, pinnedThreads],
+  );
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const visiblePinnedThreads = normalizedSearchQuery
+    ? sortedPinnedThreads.filter((thread) => threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds))
+    : sortedPinnedThreads;
   const visibleChatThreads = normalizedSearchQuery
     ? sortedChatThreads.filter((thread) => threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds))
     : sortedChatThreads;
@@ -355,6 +376,30 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           </button>
         </Box>
         <Box className="kodex-sidebar-scroll">
+          {visiblePinnedThreads.length > 0 ? (
+            <Box className="kodex-pinned-section">
+              <Group className="kodex-sidebar-section-row kodex-pinned-section-row" justify="space-between" align="center" mb="sm">
+                <Text component="span" className="kodex-sidebar-section-title" fw={400} size="xs">
+                  {SIDEBAR_TEXT.pinned}
+                </Text>
+              </Group>
+              <ThreadList
+                approvals={approvals}
+                className="kodex-pinned-thread-list"
+                expanded
+                hoveredThreadActionId={hoveredThreadActionId}
+                onArchiveThread={onArchiveThread}
+                onPinThread={onPinThread}
+                onSelectThread={onSelectPinnedThread}
+                onThreadActionHoverChange={onThreadActionHoverChange}
+                onToggleExpanded={() => undefined}
+                onUnpinThread={onUnpinThread}
+                pendingTitleThreadIds={pendingTitleThreadIds}
+                selectedThreadId={selectedThreadId}
+                threads={visiblePinnedThreads}
+              />
+            </Box>
+          ) : null}
           <Group className="kodex-sidebar-section-row kodex-projects-section-row" justify="space-between" align="center" mb="sm">
             <SectionToggle
               collapsed={projectsSectionCollapsed}
@@ -494,6 +539,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                           expanded={showAllProjectThreads}
                           hoveredThreadActionId={hoveredThreadActionId}
                           onArchiveThread={onArchiveThread}
+                          onPinThread={onPinThread}
                           onSelectThread={(threadId) => onSelectThread(project.id, threadId)}
                           onThreadActionHoverChange={onThreadActionHoverChange}
                           onToggleExpanded={() => {
@@ -507,6 +553,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                               return next;
                             });
                           }}
+                          onUnpinThread={onUnpinThread}
                           pendingTitleThreadIds={pendingTitleThreadIds}
                           selectedThreadId={selectedThreadId}
                           threads={projectMatchesSearch ? projectThreads : visibleProjectThreads}
@@ -544,9 +591,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 expanded={chatThreadsExpanded}
                 hoveredThreadActionId={hoveredThreadActionId}
                 onArchiveThread={onArchiveThread}
+                onPinThread={onPinThread}
                 onSelectThread={onSelectChatThread}
                 onThreadActionHoverChange={onThreadActionHoverChange}
                 onToggleExpanded={() => setChatThreadsExpanded((expanded) => !expanded)}
+                onUnpinThread={onUnpinThread}
                 pendingTitleThreadIds={pendingTitleThreadIds}
                 selectedThreadId={selectedThreadId}
                 threads={visibleChatThreads}
@@ -661,8 +710,10 @@ export type ThreadListRowProps = {
   approvals: Approval[];
   isSelected: boolean;
   onArchiveThread: (threadId: string) => void;
+  onPinThread: (threadId: string) => void;
   onSelectThread: (threadId: string) => void;
   onThreadActionHoverChange: (threadId: string | null) => void;
+  onUnpinThread: (threadId: string) => void;
   pendingTitleThreadIds: Set<string>;
   showThreadArchiveAction: boolean;
   thread: ThreadSummary;
@@ -672,8 +723,10 @@ export const ThreadListRow = memo(function ThreadListRow({
   approvals,
   isSelected,
   onArchiveThread,
+  onPinThread,
   onSelectThread,
   onThreadActionHoverChange,
+  onUnpinThread,
   pendingTitleThreadIds,
   showThreadArchiveAction,
   thread,
@@ -682,11 +735,15 @@ export const ThreadListRow = memo(function ThreadListRow({
   const isThreadInProgress = threadInProgress(thread);
   const hasUnreadAgentTurn = thread.unreadCompletedAgentTurn === true;
   const displayTitle = threadDisplayTitleWithPending(thread, pendingTitleThreadIds);
+  const pinnedAt = thread.pinnedAt ?? null;
+  const isPinned = Boolean(pinnedAt);
+  const pinLabel = isPinned ? SIDEBAR_TEXT.unpinThread : SIDEBAR_TEXT.pinThread;
 
   return (
     <Box
       className="kodex-ui-selectable kodex-list-button kodex-thread-list-button"
       data-active={isSelected}
+      data-pinned={isPinned ? "true" : undefined}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) {
           onThreadActionHoverChange(null);
@@ -696,6 +753,23 @@ export const ThreadListRow = memo(function ThreadListRow({
       onMouseEnter={() => onThreadActionHoverChange(thread.id)}
       onMouseLeave={() => onThreadActionHoverChange(null)}
     >
+      <Tooltip label={pinLabel}>
+        <button
+          aria-label={pinLabel}
+          className="kodex-ui-button kodex-ui-icon-button kodex-thread-pin-button"
+          onClick={(event) => {
+            event.stopPropagation();
+            if (isPinned) {
+              onUnpinThread(thread.id);
+            } else {
+              onPinThread(thread.id);
+            }
+          }}
+          type="button"
+        >
+          {isPinned ? <PinOff size={13} /> : <Pin size={13} />}
+        </button>
+      </Tooltip>
       <button className="kodex-ui-button kodex-thread-select-button" onClick={() => onSelectThread(thread.id)} type="button">
         <Group
           align="flex-start"
@@ -765,8 +839,10 @@ export function areThreadListRowPropsEqual(previous: ThreadListRowProps, next: T
     previous.approvals === next.approvals &&
     previous.isSelected === next.isSelected &&
     previous.onArchiveThread === next.onArchiveThread &&
+    previous.onPinThread === next.onPinThread &&
     previous.onSelectThread === next.onSelectThread &&
     previous.onThreadActionHoverChange === next.onThreadActionHoverChange &&
+    previous.onUnpinThread === next.onUnpinThread &&
     previous.pendingTitleThreadIds === next.pendingTitleThreadIds &&
     previous.showThreadArchiveAction === next.showThreadArchiveAction &&
     previous.thread === next.thread
@@ -779,9 +855,11 @@ function ThreadList({
   expanded,
   hoveredThreadActionId,
   onArchiveThread,
+  onPinThread,
   onSelectThread,
   onThreadActionHoverChange,
   onToggleExpanded,
+  onUnpinThread,
   pendingTitleThreadIds,
   selectedThreadId,
   threads,
@@ -791,9 +869,11 @@ function ThreadList({
   expanded: boolean;
   hoveredThreadActionId: string | null;
   onArchiveThread: (threadId: string) => void;
+  onPinThread: (threadId: string) => void;
   onSelectThread: (threadId: string) => void;
   onThreadActionHoverChange: (threadId: string | null) => void;
   onToggleExpanded: () => void;
+  onUnpinThread: (threadId: string) => void;
   pendingTitleThreadIds: Set<string>;
   selectedThreadId: string | null;
   threads: ThreadSummary[];
@@ -809,8 +889,10 @@ function ThreadList({
           isSelected={thread.id === selectedThreadId}
           key={thread.id}
           onArchiveThread={onArchiveThread}
+          onPinThread={onPinThread}
           onSelectThread={onSelectThread}
           onThreadActionHoverChange={onThreadActionHoverChange}
+          onUnpinThread={onUnpinThread}
           pendingTitleThreadIds={pendingTitleThreadIds}
           showThreadArchiveAction={hoveredThreadActionId === thread.id}
           thread={thread}

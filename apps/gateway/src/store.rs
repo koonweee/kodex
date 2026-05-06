@@ -79,6 +79,14 @@ pub struct ThreadRead {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadPin {
+    pub thread_id: String,
+    pub pinned_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ThreadReadState {
     pub seen_completed_agent_turn_seq: i64,
@@ -306,6 +314,17 @@ impl Store {
         .await?;
         sqlx::query(
             r#"
+            create table if not exists thread_pins (
+                thread_id text primary key,
+                pinned_at text not null,
+                updated_at text not null
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
             create table if not exists queued_turn_inputs (
                 id text primary key,
                 thread_id text not null,
@@ -347,6 +366,11 @@ impl Store {
         .await?;
         sqlx::query(
             "create index if not exists queued_turn_inputs_active_idx on queued_turn_inputs (thread_id, deleted_at, status, priority, created_at)"
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "create index if not exists thread_pins_pinned_at_idx on thread_pins (pinned_at desc, thread_id)",
         )
         .execute(&self.pool)
         .await?;
@@ -638,6 +662,85 @@ impl Store {
         }
 
         Ok(settings)
+    }
+
+    pub async fn pin_thread(&self, thread_id: &str) -> ApiResult<ThreadPin> {
+        let now = Utc::now();
+        sqlx::query(
+            r#"
+            insert into thread_pins (thread_id, pinned_at, updated_at)
+            values (?, ?, ?)
+            on conflict(thread_id) do update set
+                pinned_at = thread_pins.pinned_at,
+                updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(thread_id)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_thread_pin(thread_id).await
+    }
+
+    pub async fn unpin_thread(&self, thread_id: &str) -> ApiResult<()> {
+        sqlx::query("delete from thread_pins where thread_id = ?")
+            .bind(thread_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_thread_pin(&self, thread_id: &str) -> ApiResult<ThreadPin> {
+        let row = sqlx::query(
+            "select thread_id, pinned_at, updated_at from thread_pins where thread_id = ?",
+        )
+        .bind(thread_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.map(row_to_thread_pin)
+            .transpose()?
+            .ok_or_else(|| ApiError::NotFound(format!("thread pin {thread_id}")))
+    }
+
+    pub async fn list_thread_pins(&self) -> ApiResult<Vec<ThreadPin>> {
+        let rows = sqlx::query(
+            "select thread_id, pinned_at, updated_at from thread_pins order by pinned_at desc, thread_id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter().map(row_to_thread_pin).collect()
+    }
+
+    pub async fn pinned_at_for_thread_ids(
+        &self,
+        thread_ids: &[String],
+    ) -> ApiResult<HashMap<String, DateTime<Utc>>> {
+        if thread_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut builder = QueryBuilder::<Sqlite>::new(
+            "select thread_id, pinned_at from thread_pins where thread_id in (",
+        );
+        {
+            let mut separated = builder.separated(", ");
+            for thread_id in thread_ids {
+                separated.push_bind(thread_id);
+            }
+        }
+        builder.push(")");
+
+        let mut pins = HashMap::new();
+        for row in builder.build().fetch_all(&self.pool).await? {
+            let thread_id: String = row.try_get("thread_id")?;
+            let pinned_at: DateTime<Utc> = row.try_get("pinned_at")?;
+            pins.insert(thread_id, pinned_at);
+        }
+
+        Ok(pins)
     }
 
     pub async fn mark_thread_seen_completed_agent_turns(
@@ -1541,6 +1644,14 @@ fn row_to_thread_read(row: sqlx::sqlite::SqliteRow) -> ApiResult<ThreadRead> {
     })
 }
 
+fn row_to_thread_pin(row: sqlx::sqlite::SqliteRow) -> ApiResult<ThreadPin> {
+    Ok(ThreadPin {
+        thread_id: row.try_get("thread_id")?,
+        pinned_at: row.try_get("pinned_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
 fn row_to_approval(row: sqlx::sqlite::SqliteRow) -> ApiResult<Approval> {
     let payload_json: String = row.try_get("payload_json")?;
     let response_json: Option<String> = row.try_get("response_json")?;
@@ -1576,7 +1687,7 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'approvals', 'thread_reads', 'thread_composer_settings', 'queued_turn_inputs', 'thread_runtime_state') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'approvals', 'thread_reads', 'thread_composer_settings', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state') order by name",
         )
         .fetch_all(store.pool())
         .await
@@ -1589,6 +1700,7 @@ mod tests {
                 "projects",
                 "queued_turn_inputs",
                 "thread_composer_settings",
+                "thread_pins",
                 "thread_reads",
                 "thread_runtime_state"
             ]
@@ -1702,6 +1814,36 @@ mod tests {
         assert!(settings.approval_policy.is_none());
         assert!(settings.approvals_reviewer.is_none());
         assert!(settings.sandbox.is_none());
+    }
+
+    #[tokio::test]
+    async fn thread_pins_round_trip_idempotently_and_order_by_pinned_at() {
+        let store = Store::in_memory().await.unwrap();
+
+        let first = store.pin_thread("thread-1").await.unwrap();
+        let second = store.pin_thread("thread-2").await.unwrap();
+        let repinned_first = store.pin_thread("thread-1").await.unwrap();
+
+        assert_eq!(repinned_first.pinned_at, first.pinned_at);
+        assert!(repinned_first.updated_at >= first.updated_at);
+
+        let listed = store.list_thread_pins().await.unwrap();
+        assert_eq!(
+            listed
+                .iter()
+                .map(|pin| pin.thread_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["thread-2", "thread-1"]
+        );
+        assert!(listed[0].pinned_at >= second.pinned_at);
+
+        let thread_ids = vec!["thread-1".to_string(), "missing".to_string()];
+        let pinned_at = store.pinned_at_for_thread_ids(&thread_ids).await.unwrap();
+        assert_eq!(pinned_at.get("thread-1"), Some(&first.pinned_at));
+        assert!(!pinned_at.contains_key("missing"));
+
+        store.unpin_thread("thread-1").await.unwrap();
+        assert!(store.get_thread_pin("thread-1").await.is_err());
     }
 
     #[tokio::test]

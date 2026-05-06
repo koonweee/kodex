@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 use utoipa::ToSchema;
@@ -479,6 +480,7 @@ pub struct ThreadSummary {
     pub approvals_reviewer: Option<String>,
     pub sandbox: Option<Value>,
     pub git_info: Option<GitInfo>,
+    pub pinned_at: Option<DateTime<Utc>>,
     pub preview: Option<Value>,
     pub last_completed_agent_turn_seq: Option<i64>,
     pub seen_completed_agent_turn_seq: i64,
@@ -522,6 +524,7 @@ impl ThreadSummary {
             approvals_reviewer: optional_string(payload, "approvalsReviewer"),
             sandbox: optional_value(payload, "sandbox"),
             git_info: optional_git_info(payload)?,
+            pinned_at: None,
             preview: payload.get("preview").cloned(),
             last_completed_agent_turn_seq: None,
             seen_completed_agent_turn_seq: 0,

@@ -2,6 +2,7 @@ import {
   getAccount,
   getRateLimits,
   listChatThreads,
+  listPinnedThreads,
   listPendingApprovals,
   listProjects,
   type AccountResponse,
@@ -17,6 +18,7 @@ type LoadInitialKodexStateParams = {
   mergePendingApprovals: (approvals: Approval[]) => void;
   onError: (error: unknown) => void;
   onChatThreadsLoaded: (threads: ThreadSummary[]) => void;
+  onPinnedThreadsLoaded: (threads: ThreadSummary[]) => void;
   onProjectsLoaded: (projects: Project[]) => void;
   setAccount: (account: AccountResponse) => void;
   setRateLimits: (rateLimits: RateLimitsResponse) => void;
@@ -28,6 +30,7 @@ export async function loadInitialKodexState({
   mergePendingApprovals,
   onError,
   onChatThreadsLoaded,
+  onPinnedThreadsLoaded,
   onProjectsLoaded,
   setAccount,
   setRateLimits,
@@ -47,6 +50,7 @@ export async function loadInitialKodexState({
 
   void listPendingApprovals().then(mergePendingApprovals).catch(onError);
   void listChatThreads().then(onChatThreadsLoaded).catch(onError);
+  void listPinnedThreads().then(onPinnedThreadsLoaded).catch(onError);
   void getAccount().then(setAccount).catch(onError);
   void getRateLimits().then(setRateLimits).catch(() => undefined);
 

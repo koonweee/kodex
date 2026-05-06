@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Approval, ThreadSummary } from "../api/client";
-import { sortThreadsForSidebar } from "./helpers";
+import { sortPinnedThreadsForSidebar, sortThreadsForSidebar, withoutPinnedThreads } from "./helpers";
 
 function threadSummary(
   id: string,
@@ -49,5 +49,29 @@ describe("sidebar thread ordering", () => {
         new Set(["draft"]),
       ).map((thread) => thread.id),
     ).toEqual(["draft", "active", "approval", "unread", "recent", "older"]);
+  });
+
+  it("sorts pinned threads by attention first, then pin time and recency", () => {
+    expect(
+      sortPinnedThreadsForSidebar(
+        [
+          threadSummary("older-pin", { pinnedAt: "2026-05-05T00:00:00Z", updatedAt: 100 }),
+          threadSummary("newer-pin", { pinnedAt: "2026-05-06T00:00:00Z", updatedAt: 10 }),
+          threadSummary("active-pin", { pinnedAt: "2026-05-04T00:00:00Z", status: "active", updatedAt: 1 }),
+          threadSummary("same-pin-recent", { pinnedAt: "2026-05-05T00:00:00Z", updatedAt: 200 }),
+        ],
+        [],
+        new Set(),
+      ).map((thread) => thread.id),
+    ).toEqual(["active-pin", "newer-pin", "same-pin-recent", "older-pin"]);
+  });
+
+  it("filters pinned threads out of normal sidebar lists", () => {
+    expect(
+      withoutPinnedThreads([
+        threadSummary("normal"),
+        threadSummary("pinned", { pinnedAt: "2026-05-06T00:00:00Z" }),
+      ]).map((thread) => thread.id),
+    ).toEqual(["normal"]);
   });
 });

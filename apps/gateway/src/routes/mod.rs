@@ -142,10 +142,12 @@ mod tests {
             "/v1/projects/{projectId}",
             "/v1/threads",
             "/v1/chats/threads",
+            "/v1/threads/pinned",
             "/v1/threads/{threadId}",
             "/v1/threads/{threadId}/resume",
             "/v1/threads/{threadId}/fork",
             "/v1/threads/{threadId}/archive",
+            "/v1/threads/{threadId}/pin",
             "/v1/threads/{threadId}/turns",
             "/v1/threads/{threadId}/turns/{turnId}/steer",
             "/v1/threads/{threadId}/turns/{turnId}/interrupt",
@@ -1069,6 +1071,132 @@ mod tests {
         assert_eq!(body["threads"][0]["seenCompletedAgentTurnSeq"], json!(1));
         assert_eq!(body["threads"][0]["unreadCompletedAgentTurn"], json!(false));
         assert_eq!(body["threads"][0]["lastCompletedAgentTurnSeq"], Value::Null);
+    }
+
+    #[tokio::test]
+    async fn thread_list_and_detail_overlay_gateway_owned_pin_state() {
+        let (state, app_server) = test_state().await;
+        let pin = state.store.pin_thread("thread-1").await.unwrap();
+        let app = build_router(state);
+
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "data": [thread_summary("thread-1"), thread_summary("thread-2")],
+            "nextCursor": null,
+            "backwardsCursor": null
+        }));
+        let response = app
+            .clone()
+            .oneshot(Request::get("/v1/threads").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["threads"][0]["pinnedAt"], json!(pin.pinned_at));
+        assert_eq!(body["threads"][1]["pinnedAt"], Value::Null);
+        assert_eq!(
+            body["rawPayload"]["data"][0]["pinnedAt"],
+            json!(pin.pinned_at)
+        );
+
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "thread": thread_summary("thread-1")
+        }));
+        let response = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["thread"]["pinnedAt"], json!(pin.pinned_at));
+        assert_eq!(
+            body["rawPayload"]["thread"]["pinnedAt"],
+            json!(pin.pinned_at)
+        );
+    }
+
+    #[tokio::test]
+    async fn pin_routes_persist_broadcast_and_list_pinned_threads() {
+        let (state, app_server) = test_state().await;
+        let mut receiver = state.events.subscribe();
+        let app = build_router(state);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads/thread-1/pin")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["threadId"], "thread-1");
+        assert!(body["pinnedAt"].is_string());
+        let pinned_at = body["pinnedAt"].clone();
+
+        let event = receiver.recv().await.unwrap();
+        assert_eq!(event.kind, "thread.pin_updated");
+        assert_eq!(event.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(event.payload["threadId"], "thread-1");
+        assert_eq!(event.payload["pinnedAt"], pinned_at);
+
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "thread": thread_summary("thread-1")
+        }));
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/threads/pinned")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["threads"].as_array().unwrap().len(), 1);
+        assert_eq!(body["threads"][0]["id"], "thread-1");
+        assert_eq!(body["threads"][0]["pinnedAt"], pinned_at);
+
+        let mut archived_thread = thread_summary("thread-1");
+        archived_thread["archived"] = json!(true);
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "thread": archived_thread
+        }));
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/threads/pinned")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["threads"].as_array().unwrap().len(), 0);
+
+        let response = app
+            .oneshot(
+                Request::delete("/v1/threads/thread-1/pin")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["threadId"], "thread-1");
+        assert_eq!(body["pinnedAt"], Value::Null);
+
+        let event = receiver.recv().await.unwrap();
+        assert_eq!(event.kind, "thread.pin_updated");
+        assert_eq!(event.payload["pinnedAt"], Value::Null);
     }
 
     #[tokio::test]

@@ -16,6 +16,7 @@ type UseThreadMetadataParams = {
   selectedThreadId: string | null;
   setPendingTitleThreadIds: Dispatch<SetStateAction<Set<string>>>;
   setChatThreads: Dispatch<SetStateAction<ThreadSummary[]>>;
+  setPinnedThreads: Dispatch<SetStateAction<ThreadSummary[]>>;
   setThreadsByProjectId: Dispatch<SetStateAction<ThreadsByProjectId>>;
 };
 
@@ -23,6 +24,7 @@ export function useThreadMetadata({
   selectedThreadId,
   setPendingTitleThreadIds,
   setChatThreads,
+  setPinnedThreads,
   setThreadsByProjectId,
 }: UseThreadMetadataParams) {
   const [contextUsageByThreadId, setContextUsageByThreadId] = useState<Record<string, ContextUsage>>({});
@@ -46,6 +48,11 @@ export function useThreadMetadata({
           thread.status === statusUpdate.status ? {} : { status: statusUpdate.status },
         ),
       );
+      setPinnedThreads((current) =>
+        updateThreadReadStateInList(current, statusUpdate.threadId, (thread) =>
+          thread.status === statusUpdate.status ? {} : { status: statusUpdate.status },
+        ),
+      );
     }
 
     const metadataThread = threadMetadataFromEvent(event);
@@ -56,6 +63,11 @@ export function useThreadMetadata({
         })),
       );
       setChatThreads((current) =>
+        updateThreadReadStateInList(current, metadataThread.id, () => ({
+          gitInfo: metadataThread.gitInfo,
+        })),
+      );
+      setPinnedThreads((current) =>
         updateThreadReadStateInList(current, metadataThread.id, () => ({
           gitInfo: metadataThread.gitInfo,
         })),
@@ -73,6 +85,11 @@ export function useThreadMetadata({
           gitInfo: mergeGitInfoPatch(thread.gitInfo, metadataGitInfo.gitInfo),
         })),
       );
+      setPinnedThreads((current) =>
+        updateThreadReadStateInList(current, metadataGitInfo.threadId, (thread) => ({
+          gitInfo: mergeGitInfoPatch(thread.gitInfo, metadataGitInfo.gitInfo),
+        })),
+      );
     }
 
     const update = threadNameUpdateFromEvent(event);
@@ -84,6 +101,7 @@ export function useThreadMetadata({
     if (name) {
       setThreadsByProjectId((current) => updateThreadNameInProjects(current, update.threadId, name));
       setChatThreads((current) => updateThreadNameInList(current, update.threadId, name));
+      setPinnedThreads((current) => updateThreadNameInList(current, update.threadId, name));
       setPendingTitleThreadIds((current) => {
         if (!current.has(update.threadId)) {
           return current;

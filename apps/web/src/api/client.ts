@@ -92,6 +92,11 @@ export async function listChatThreads(): Promise<ThreadSummary[]> {
   return response.threads;
 }
 
+export async function listPinnedThreads(): Promise<ThreadSummary[]> {
+  const response = await unwrap(api.GET("/v1/threads/pinned"));
+  return response.threads;
+}
+
 export async function createThread(projectId: string, options: CreateThreadOptions = {}): Promise<ThreadSummary> {
   const response = await unwrap(api.POST("/v1/threads", { body: { projectId, ...options } }));
   return response.thread;
@@ -125,6 +130,16 @@ export async function getThreadDetail(threadId: string): Promise<ThreadDetailRes
 
 export async function archiveThread(threadId: string): Promise<void> {
   await unwrap(api.POST("/v1/threads/{threadId}/archive", { params: { path: { threadId } } }));
+}
+
+export async function pinThread(threadId: string): Promise<string | null> {
+  const response = await unwrap(api.POST("/v1/threads/{threadId}/pin", { params: { path: { threadId } } }));
+  return response.pinnedAt ?? null;
+}
+
+export async function unpinThread(threadId: string): Promise<string | null> {
+  const response = await unwrap(api.DELETE("/v1/threads/{threadId}/pin", { params: { path: { threadId } } }));
+  return response.pinnedAt ?? null;
 }
 
 export async function markThreadSeen(threadId: string, seenCompletedAgentTurnSeq?: number): Promise<ThreadRead> {

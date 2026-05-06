@@ -308,6 +308,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads/pinned": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_pinned_threads"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/threads/{threadId}": {
         parameters: {
             query?: never;
@@ -371,6 +387,22 @@ export interface paths {
         put?: never;
         post: operations["fork_thread"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/threads/{threadId}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["pin_thread"];
+        delete: operations["unpin_thread"];
         options?: never;
         head?: never;
         patch?: never;
@@ -858,6 +890,11 @@ export interface components {
         };
         /** @enum {string} */
         ThreadLiveState: "idle" | "streaming" | "syncing" | "notLoaded";
+        ThreadPinResponse: {
+            /** Format: date-time */
+            pinnedAt?: string | null;
+            threadId: string;
+        };
         ThreadRead: {
             /** Format: int64 */
             seenCompletedAgentTurnSeq: number;
@@ -879,6 +916,8 @@ export interface components {
             lastCompletedAgentTurnSeq?: number | null;
             model?: string | null;
             name?: string | null;
+            /** Format: date-time */
+            pinnedAt?: string | null;
             preview?: unknown;
             rawPayload: unknown;
             reasoningEffort?: string | null;
@@ -1470,6 +1509,25 @@ export interface operations {
             };
         };
     };
+    list_pinned_threads: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadListResponse"];
+                };
+            };
+        };
+    };
     get_thread: {
         parameters: {
             query?: never;
@@ -1570,6 +1628,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadCommandResponse"];
+                };
+            };
+        };
+    };
+    pin_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadPinResponse"];
+                };
+            };
+        };
+    };
+    unpin_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadPinResponse"];
                 };
             };
         };

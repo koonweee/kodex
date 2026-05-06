@@ -199,14 +199,39 @@ export function sortThreadsForSidebar(
   return [...threads].sort((left, right) => compareSidebarThreads(left, right, approvals, pendingTitleThreadIds));
 }
 
+export function sortPinnedThreadsForSidebar(
+  threads: ThreadSummary[],
+  approvals: Approval[],
+  pendingTitleThreadIds: Set<string>,
+): ThreadSummary[] {
+  return [...threads].sort((left, right) => compareSidebarThreads(left, right, approvals, pendingTitleThreadIds, true));
+}
+
+export function withoutPinnedThreads(threads: ThreadSummary[]): ThreadSummary[] {
+  return threads.filter((thread) => !threadPinnedAt(thread));
+}
+
+export function withoutPinnedProjectThreads(current: ThreadsByProjectId): ThreadsByProjectId {
+  let changed = false;
+  const next: ThreadsByProjectId = {};
+  for (const [projectId, threads] of Object.entries(current)) {
+    const filtered = withoutPinnedThreads(threads);
+    next[projectId] = filtered;
+    changed ||= filtered.length !== threads.length;
+  }
+  return changed ? next : current;
+}
+
 function compareSidebarThreads(
   left: ThreadSummary,
   right: ThreadSummary,
   approvals: Approval[],
   pendingTitleThreadIds: Set<string>,
+  pinnedTieBreaker = false,
 ): number {
   return (
     threadPriority(left, approvals, pendingTitleThreadIds) - threadPriority(right, approvals, pendingTitleThreadIds) ||
+    (pinnedTieBreaker ? comparePinnedAt(left, right) : 0) ||
     right.updatedAt - left.updatedAt ||
     right.createdAt - left.createdAt ||
     threadDisplayTitle(left).localeCompare(threadDisplayTitle(right)) ||
@@ -232,6 +257,26 @@ function threadPriority(
     return 3;
   }
   return 4;
+}
+
+function comparePinnedAt(left: ThreadSummary, right: ThreadSummary): number {
+  const leftPinnedAt = threadPinnedAt(left);
+  const rightPinnedAt = threadPinnedAt(right);
+  if (leftPinnedAt === rightPinnedAt) {
+    return 0;
+  }
+  if (!leftPinnedAt) {
+    return 1;
+  }
+  if (!rightPinnedAt) {
+    return -1;
+  }
+  return Date.parse(rightPinnedAt) - Date.parse(leftPinnedAt);
+}
+
+function threadPinnedAt(thread: ThreadSummary): string | null {
+  const value = (thread as { pinnedAt?: unknown }).pinnedAt;
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function threadStatusNeedsApproval(thread: ThreadSummary): boolean {

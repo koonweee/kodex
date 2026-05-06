@@ -485,6 +485,24 @@ describe("MVP shell flows", () => {
     expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
   });
 
+  it("loads pinned threads from the gateway and filters them out of normal project lists", async () => {
+    const pinnedThread = { ...thread, pinnedAt: "2026-05-06T12:00:00Z" };
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": { threads: [pinnedThread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/threads/pinned": { threads: [pinnedThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText("Pinned")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+    const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
+    expect(within(kodexGroup).queryByRole("button", { name: /implement frontend/i })).not.toBeInTheDocument();
+    expect(within(kodexGroup).getByRole("button", { name: /second thread/i })).toBeInTheDocument();
+  });
+
   it("shows compact thread actions without fork or path subtitle", async () => {
     const gateway = mockGateway(
       baseRoutes({
@@ -505,6 +523,37 @@ describe("MVP shell flows", () => {
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/archive")).toHaveLength(1);
+    });
+  });
+
+  it("pins and unpins the selected thread from the thread actions menu", async () => {
+    const gateway = mockGateway(
+      baseRoutes({
+        "POST /v1/threads/thread-1/pin": { threadId: "thread-1", pinnedAt: "2026-05-06T12:00:00Z" },
+        "DELETE /v1/threads/thread-1/pin": { threadId: "thread-1", pinnedAt: null },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /thread actions/i }));
+    await clickMenuItem(/pin thread/i);
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/pin")).toHaveLength(1);
+    });
+    expect(await screen.findByText("Pinned")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /thread actions/i }));
+    await clickMenuItem(/unpin thread/i);
+
+    await waitFor(() => {
+      expect(gateway.callsFor("DELETE", "/v1/threads/thread-1/pin")).toHaveLength(1);
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Pinned")).not.toBeInTheDocument();
     });
   });
 
