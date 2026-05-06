@@ -38,6 +38,7 @@ This file is the directory of record for Kodex plans. Keep the status column cur
 | [Git branch underflow plan](git-branch-underflow.md) | Complete | Selected-thread Git branch metadata in the composer underflow | Implemented typed app-server `gitInfo.branch` flow, composer underflow rendering, focused tests, review loop, and agent-browser smoke coverage. |
 | [File preview serving plan](file-preview-serving.md) | Complete | Gateway-served previews for app-server generated images, image views, Markdown files, and future supported file content | Implemented thread-scoped `/files/preview` serving with image and Markdown support first; initial endpoint intentionally trusts localhost/VPN deployment instead of root-scoping paths. |
 | [Timeline rendering feedback fixes plan](timeline-rendering-feedback-fixes.md) | Complete | File-change diff viewing, failed command status, and local Markdown side-pane preview | Excludes native plan rendering and fixture/dev QA pages by request. |
+| [Pinned threads plan](pinned-threads.md) | Proposed | Gateway-owned pinned thread state, pin/unpin API, Pinned sidebar section, and responsive pin controls | App-server has no native pin contract; plan keeps durable pin state in gateway SQLite and treats frontend as a projection. |
 | [Future extensions overview](future-extensions.md) | Proposed | Non-MVP feature map linked to app-server APIs | Overview only, not an implementation plan. |
 
 ## Maintenance Rules
