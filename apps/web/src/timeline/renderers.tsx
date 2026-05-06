@@ -79,7 +79,7 @@ const labels: Record<string, string> = {
   collab_agent_tool_call: "Agent",
   plan: "Plan",
   image_view: "Image",
-  image_generation: "Image",
+  image_generation: "Generated image",
   review_mode_started: "Review",
   review_mode_finished: "Review",
   context_compaction: "Context",
@@ -240,6 +240,7 @@ function TimelineWorkRowRendererImpl({
         <Text size="sm" c="dimmed">
           {label}
         </Text>
+        <WorkHeaderDivider />
       </Box>
     );
   }
@@ -250,6 +251,7 @@ function TimelineWorkRowRendererImpl({
         <Text size="sm" c="dimmed">
           {label}
         </Text>
+        <WorkHeaderDivider />
       </Box>
     );
   }
@@ -257,10 +259,13 @@ function TimelineWorkRowRendererImpl({
   return (
     <details className="kodex-work-row" data-state="completed">
       <summary>
-        <Text size="sm" c="dimmed">
-          {label}
-        </Text>
-        <ChevronRight size={16} className="kodex-work-caret" aria-hidden="true" />
+        <Box className="kodex-work-summary-content">
+          <Text size="sm" c="dimmed">
+            {label}
+          </Text>
+          <ChevronRight size={16} className="kodex-work-caret" aria-hidden="true" />
+        </Box>
+        <WorkHeaderDivider />
       </summary>
       <Stack gap={8} mt={8} className="kodex-work-collapsed-rows">
         {row.collapsedRows.map((collapsedRow) => (
@@ -280,6 +285,10 @@ function TimelineWorkRowRendererImpl({
 
 export const TimelineWorkRowRenderer = memo(TimelineWorkRowRendererImpl);
 TimelineWorkRowRenderer.displayName = "TimelineWorkRowRenderer";
+
+function WorkHeaderDivider() {
+  return <Box aria-hidden="true" className="kodex-timeline-final-response-divider kodex-work-header-divider" />;
+}
 
 function CollapsedWorkRowRenderer({
   imagePreviewUrlsByPath,
@@ -655,6 +664,7 @@ function ImageActivityBlock({
   const previewPath = localPreviewPath(item.path) ?? localPreviewPath(item.imageSrc);
   const src = directSrc ?? (threadId && previewPath ? filePreviewUrl(threadId, previewPath) : null);
   const title = item.imageSrc ? item.path || item.text : item.path;
+  const metadata = imageActivityMetadata(item);
   return (
     <Stack gap={4}>
       {src ? (
@@ -667,22 +677,58 @@ function ImageActivityBlock({
           title={item.text || "Image activity"}
         />
       )}
-      {item.path ? (
-        <Text size="xs" c="dimmed" className="kodex-timeline-inline-row">
-          Path: {item.path}
-        </Text>
-      ) : null}
-      {item.resultSummary ? (
-        <Text size="xs" c="dimmed" className="kodex-timeline-inline-row">
-          Prompt: {item.resultSummary}
-        </Text>
-      ) : null}
-      {item.output ? (
-        <Text size="xs" c="dimmed" className="kodex-timeline-inline-row">
-          Result: {item.output}
-        </Text>
-      ) : null}
+      {item.kind === "image_generation" ? (
+        <ImageActivityDetails metadata={metadata} />
+      ) : (
+        <ImageActivityInlineMetadata metadata={metadata} />
+      )}
     </Stack>
+  );
+}
+
+function imageActivityMetadata(item: TimelineItem): Array<{ label: string; value: string }> {
+  return [
+    item.path ? { label: "Path", value: item.path } : null,
+    item.resultSummary ? { label: "Prompt", value: item.resultSummary } : null,
+    item.output ? { label: "Result", value: item.output } : null,
+  ].filter((entry): entry is { label: string; value: string } => entry !== null);
+}
+
+function ImageActivityInlineMetadata({ metadata }: { metadata: Array<{ label: string; value: string }> }) {
+  if (metadata.length === 0) {
+    return null;
+  }
+  return (
+    <>
+      {metadata.map((entry) => (
+        <Text size="xs" c="dimmed" className="kodex-timeline-inline-row" key={entry.label}>
+          {entry.label}: {entry.value}
+        </Text>
+      ))}
+    </>
+  );
+}
+
+function ImageActivityDetails({ metadata }: { metadata: Array<{ label: string; value: string }> }) {
+  if (metadata.length === 0) {
+    return null;
+  }
+  return (
+    <details className="kodex-image-activity-details">
+      <summary>
+        <Text size="xs" c="dimmed">
+          Details
+        </Text>
+        <ChevronRight size={14} className="kodex-image-activity-details-caret" aria-hidden="true" />
+      </summary>
+      <Stack gap={4} mt={4}>
+        {metadata.map((entry) => (
+          <Text size="xs" c="dimmed" className="kodex-timeline-inline-row" key={entry.label}>
+            {entry.label}: {entry.value}
+          </Text>
+        ))}
+      </Stack>
+    </details>
   );
 }
 

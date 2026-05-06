@@ -192,7 +192,53 @@ describe("timeline derivation", () => {
         { type: "activity", items: [{ id: "cmd-1" }] },
       ],
     });
-    expect(rows[2]).toMatchObject({ dividerBefore: "final_response" });
+    expect(rows[2]).not.toHaveProperty("dividerBefore");
+  });
+
+  it("keeps generated images visible outside completed turn work", () => {
+    const rows = deriveTimelineRows(
+      timelineState({
+        turns: [
+          {
+            turnId: "turn-1",
+            itemIds: ["user-1", "cmd-1", "image-1", "answer-1"],
+            status: "completed",
+            startedAtMs: 1_000,
+            completedAtMs: 6_000,
+          },
+        ],
+        items: [
+          timelineItem({ id: "user-1", kind: "user_message", seq: 1, text: "Generate an image." }),
+          timelineItem({ id: "cmd-1", kind: "command_execution", seq: 2, command: "open image tool" }),
+          timelineItem({
+            id: "image-1",
+            kind: "image_generation",
+            seq: 3,
+            imageSrc: "data:image/png;base64,iVBORw0KGgo=",
+            path: "/tmp/generated.png",
+            text: "Generated image",
+          }),
+          timelineItem({
+            id: "answer-1",
+            kind: "assistant_message",
+            messagePhase: "final_answer",
+            seq: 4,
+            text: "Done.",
+          }),
+        ],
+      }),
+    );
+
+    expect(rows.map((row) => row.key)).toEqual(["item-user-1", "work-turn-1", "item-image-1", "item-answer-1"]);
+    expect(rows[1]).toMatchObject({
+      type: "work",
+      collapsedRows: [{ type: "activity", items: [{ id: "cmd-1" }] }],
+    });
+    expect(rows[2]).toMatchObject({
+      type: "item",
+      item: { id: "image-1", kind: "image_generation" },
+    });
+    expect(rows[3]).not.toHaveProperty("dividerBefore");
   });
 
   it("keeps activity row keys stable as groups grow and chunks large activity runs", () => {

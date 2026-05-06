@@ -263,6 +263,7 @@ describe("timeline renderer registry", () => {
             kind: "image_generation",
             imageSrc: "data:image/png;base64,iVBORw0KGgo=",
             path: "/tmp/generated.png",
+            resultSummary: "A diagram",
             text: "Generated image",
           })}
         />
@@ -270,7 +271,13 @@ describe("timeline renderer registry", () => {
     );
 
     expect(screen.queryByText(/iVBORw0KGgo=/)).not.toBeInTheDocument();
-    expect(screen.queryByText("Generated image")).not.toBeInTheDocument();
+    expect(screen.getByText("Generated image")).toBeInTheDocument();
+    const details = document.querySelector(".kodex-image-activity-details");
+    expect(details).toBeInTheDocument();
+    expect(details).not.toHaveAttribute("open");
+    expect(screen.getByText("Details")).toBeInTheDocument();
+    expect(screen.getByText(/Path: \/tmp\/generated\.png/)).toBeInTheDocument();
+    expect(screen.getByText(/Prompt: A diagram/)).toBeInTheDocument();
     expect(document.querySelector(".kodex-activity-image-preview img")).toHaveAttribute(
       "src",
       "data:image/png;base64,iVBORw0KGgo=",
@@ -663,6 +670,8 @@ describe("timeline renderer registry", () => {
     const details = container.querySelector("details.kodex-work-row");
     expect(details).toBeInTheDocument();
     expect(details).not.toHaveAttribute("open");
+    expect(details?.querySelector(".kodex-work-header-divider")).toBeInTheDocument();
+    expect(details?.querySelector("summary > .kodex-work-header-divider")).toBeInTheDocument();
     expect(screen.getByText("Worked for 1m 04s")).toBeInTheDocument();
     expect(screen.getByText("Need context.")).toBeInTheDocument();
   });
@@ -689,7 +698,31 @@ describe("timeline renderer registry", () => {
 
     expect(container.querySelector("details.kodex-work-row")).not.toBeInTheDocument();
     expect(container.querySelector(".kodex-work-caret")).not.toBeInTheDocument();
+    expect(container.querySelector(".kodex-work-header-divider")).toBeInTheDocument();
     expect(screen.getByText("Worked for 5s")).toBeInTheDocument();
+  });
+
+  it("renders running work rows with the header divider", () => {
+    const { container } = render(
+      <MantineProvider>
+        <TimelineWorkRowRenderer
+          imagePreviewUrlsByPath={{}}
+          row={{
+            type: "work",
+            key: "work-turn-1",
+            turnKey: "turn-turn-1",
+            turnId: "turn-1",
+            state: "running",
+            startedAtMs: Date.now(),
+            seq: 1.1,
+            collapsedRows: [],
+          }}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText(/Working for/)).toBeInTheDocument();
+    expect(container.querySelector(".kodex-work-header-divider")).toBeInTheDocument();
   });
 
   it("renders plan, review mode, and context compaction timeline markers", () => {

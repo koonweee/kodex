@@ -50,7 +50,6 @@ const timelineActivityKinds = new Set([
   "command_execution",
   "dynamic_tool_call",
   "file_change",
-  "image_generation",
   "image_view",
   "mcp_tool_call",
   "web_search_group",
@@ -258,14 +257,18 @@ function rowsForTurnWithWorkRow(rows: TimelineContentRow[], workRow: TimelineWor
   const finalIndex = rows.findIndex((row, index) => index > firstWorkIndex && rowIsFinalResponse(row));
   if (workRow.state === "completed" && finalIndex !== -1) {
     const seq = firstRowSeq(rows[firstWorkIndex]) + 0.1;
+    const intermediateRows = rows.slice(firstWorkIndex + 1, finalIndex);
+    const collapsedRows = intermediateRows.filter((row) => !rowIsProminentTurnResult(row));
+    const prominentRows = intermediateRows.filter(rowIsProminentTurnResult);
     return [
       ...rows.slice(0, firstWorkIndex + 1),
       {
         ...workRow,
-        collapsedRows: rows.slice(firstWorkIndex + 1, finalIndex),
+        collapsedRows,
         seq,
       },
-      withFinalResponseDivider(rows[finalIndex]),
+      ...prominentRows,
+      withoutFinalResponseDivider(rows[finalIndex]),
       ...rows.slice(finalIndex + 1),
     ];
   }
@@ -284,8 +287,17 @@ function rowIsFinalResponse(row: TimelineContentRow): boolean {
   return row.type === "item" && isFinalResponse(row.item);
 }
 
+function rowIsProminentTurnResult(row: TimelineContentRow): boolean {
+  return row.type === "item" && row.item.kind === "image_generation";
+}
+
 function withFinalResponseDivider(row: TimelineContentRow): TimelineContentRow {
   return { ...row, dividerBefore: "final_response" };
+}
+
+function withoutFinalResponseDivider(row: TimelineContentRow): TimelineContentRow {
+  const { dividerBefore: _dividerBefore, ...rest } = row;
+  return rest;
 }
 
 function firstRowSeq(row: TimelineRow): number {
