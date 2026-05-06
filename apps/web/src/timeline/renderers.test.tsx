@@ -955,6 +955,24 @@ describe("timeline renderer registry", () => {
     expect(screen.queryByText(/Unsupported item/i)).not.toBeInTheDocument();
   });
 
+  it("renders context compaction markers without a row header", () => {
+    const { container } = render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            id: "compact-1",
+            kind: "context_compaction",
+            text: "Context compacted",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("Context compacted")).toBeInTheDocument();
+    expect(screen.queryByText("Context")).not.toBeInTheDocument();
+    expect(container.querySelector(".kodex-timeline-item-header")).not.toBeInTheDocument();
+  });
+
   it("keeps long command summaries truncatable while showing the full command in the shell block", () => {
     const command = "/usr/bin/zsh -lc \"sed -n '960,1140p' apps/web/src/App.tsx\"";
     const { container } = render(

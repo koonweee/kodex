@@ -230,7 +230,7 @@ export function createPresentationItem(
     return {
       item: {
         ...base,
-        text: "Context compacted",
+        text: contextCompactionText(status),
       },
     };
   }
@@ -270,6 +270,16 @@ export function createPresentationItem(
 
 function imageDataUrl(result: string): string {
   return result.startsWith("data:image/") ? result : `data:image/png;base64,${result}`;
+}
+
+function contextCompactionText(status: TimelineItem["status"]): string {
+  if (status === "completed") {
+    return "Context compacted";
+  }
+  if (status === "failed") {
+    return "Context compaction failed";
+  }
+  return "Context compacting";
 }
 
 export function createDiagnosticItem(event: EventEnvelope): TimelineItem {

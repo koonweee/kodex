@@ -241,6 +241,51 @@ describe("timeline derivation", () => {
     expect(rows[3]).not.toHaveProperty("dividerBefore");
   });
 
+  it("keeps context compaction markers visible outside completed turn work", () => {
+    const rows = deriveTimelineRows(
+      timelineState({
+        turns: [
+          {
+            turnId: "turn-1",
+            itemIds: ["user-1", "cmd-1", "compact-1", "answer-1"],
+            status: "completed",
+            startedAtMs: 1_000,
+            completedAtMs: 6_000,
+          },
+        ],
+        items: [
+          timelineItem({ id: "user-1", kind: "user_message", seq: 1, text: "Compact context." }),
+          timelineItem({ id: "cmd-1", kind: "command_execution", seq: 2, command: "prepare context" }),
+          timelineItem({
+            id: "compact-1",
+            kind: "context_compaction",
+            seq: 3,
+            status: "completed",
+            text: "Context compacted",
+          }),
+          timelineItem({
+            id: "answer-1",
+            kind: "assistant_message",
+            messagePhase: "final_answer",
+            seq: 4,
+            text: "Done.",
+          }),
+        ],
+      }),
+    );
+
+    expect(rows.map((row) => row.key)).toEqual(["item-user-1", "work-turn-1", "item-compact-1", "item-answer-1"]);
+    expect(rows[1]).toMatchObject({
+      type: "work",
+      collapsedRows: [{ type: "activity", items: [{ id: "cmd-1" }] }],
+    });
+    expect(rows[2]).toMatchObject({
+      type: "item",
+      item: { id: "compact-1", kind: "context_compaction", text: "Context compacted" },
+    });
+    expect(rows[3]).not.toHaveProperty("dividerBefore");
+  });
+
   it("keeps activity row keys stable as groups grow and chunks large activity runs", () => {
     const initialRows = deriveTimelineRows(
       timelineState({

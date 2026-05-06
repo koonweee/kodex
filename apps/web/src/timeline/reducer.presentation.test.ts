@@ -312,7 +312,7 @@ describe("timeline reducer presentation", () => {
       "1. Inspect\n2. Patch",
       "Code review started: Review image support",
       "Code review finished",
-      "Context compacted",
+      "Context compacting",
       "Viewed image",
       "Generated image",
     ]);
@@ -322,6 +322,36 @@ describe("timeline reducer presentation", () => {
       path: "/tmp/generated.png",
       resultSummary: "A diagram",
     });
+  });
+
+  it("labels context compaction markers by normalized status", () => {
+    const state = replayTimeline([
+      event({
+        id: "compact-running",
+        seq: 1,
+        itemId: "compact-running",
+        payload: { item: { id: "compact-running", type: "contextCompaction" } },
+      }),
+      event({
+        id: "compact-completed",
+        seq: 2,
+        codexMethod: "item/completed",
+        itemId: "compact-completed",
+        payload: { item: { id: "compact-completed", type: "contextCompaction", status: "completed" } },
+      }),
+      event({
+        id: "compact-failed",
+        seq: 3,
+        itemId: "compact-failed",
+        payload: { item: { id: "compact-failed", type: "contextCompaction", status: "failed" } },
+      }),
+    ]);
+
+    expect(state.items.map((item) => ({ id: item.id, status: item.status, text: item.text }))).toEqual([
+      { id: "compact-running", status: "running", text: "Context compacting" },
+      { id: "compact-completed", status: "completed", text: "Context compacted" },
+      { id: "compact-failed", status: "failed", text: "Context compaction failed" },
+    ]);
   });
 
   it("normalizes raw image_generation_call response items into generated image timeline items", () => {

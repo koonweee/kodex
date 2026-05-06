@@ -257,12 +257,13 @@ function TimelineItemRendererImpl({
   const render = rendererRegistry[item.kind] ?? unknownRenderer;
   const label = labels[item.kind] ?? "Unsupported item";
   const isMessage = isTimelineMessage(item.kind);
-  const showStatus = !isMessage && item.status !== "completed";
+  const isHeaderlessMarker = item.kind === "context_compaction";
+  const showStatus = !isMessage && !isHeaderlessMarker && item.status !== "completed";
   return (
     <Box className={`kodex-timeline-item kodex-timeline-item-${item.kind}`}>
-      {!isMessage || showStatus ? (
+      {(!isMessage && !isHeaderlessMarker) || showStatus ? (
         <Group gap="xs" wrap="nowrap" className="kodex-timeline-item-header" data-message-status={isMessage ? "true" : undefined}>
-          {!isMessage ? (
+          {!isMessage && !isHeaderlessMarker ? (
             <>
               <TimelineIcon kind={item.kind} />
               <Text size="xs" fw={700} className="kodex-timeline-label">

@@ -288,7 +288,7 @@ function rowIsFinalResponse(row: TimelineContentRow): boolean {
 }
 
 function rowIsProminentTurnResult(row: TimelineContentRow): boolean {
-  return row.type === "item" && row.item.kind === "image_generation";
+  return row.type === "item" && (row.item.kind === "image_generation" || row.item.kind === "context_compaction");
 }
 
 function withFinalResponseDivider(row: TimelineContentRow): TimelineContentRow {
