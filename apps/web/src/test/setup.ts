@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import { beforeEach } from "vitest";
 
 const localStorageState = new Map<string, string>();
 
@@ -49,3 +50,7 @@ if (typeof URL.createObjectURL !== "function") {
 if (typeof URL.revokeObjectURL !== "function") {
   URL.revokeObjectURL = () => undefined;
 }
+
+beforeEach(() => {
+  window.history.replaceState(null, "", "/threads/thread-1");
+});

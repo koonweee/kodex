@@ -15,6 +15,8 @@ const THREAD_PANEL_TEXT = {
   archive: "Archive thread",
   browseThreads: "Browse threads",
   showSidebar: "Show sidebar",
+  threadUnavailableText: "This thread could not be loaded. It may have been archived, deleted, or unavailable from this gateway.",
+  threadUnavailableTitle: "Thread not found or unavailable",
   threadTimelineText: "Select or create a thread to view events, messages, tool calls, and warnings.",
   threadTimelineTitle: "Thread timeline",
 };
@@ -33,6 +35,7 @@ export function ThreadPanel({
   pendingTitleThreadIds,
   scrollParentElement,
   selectedThread,
+  selectedThreadUnavailableId,
   selectedThreadApprovals,
   selectedThreadTitle,
   selectedTimelineEntry,
@@ -53,6 +56,7 @@ export function ThreadPanel({
   pendingTitleThreadIds: Set<string>;
   scrollParentElement: HTMLDivElement | null;
   selectedThread: ThreadSummary | null;
+  selectedThreadUnavailableId?: string | null;
   selectedThreadApprovals: Approval[];
   selectedThreadTitle: string;
   selectedTimelineEntry: TimelineEntry;
@@ -75,7 +79,32 @@ export function ThreadPanel({
           {errorMessage}
         </Badge>
       ) : null}
-      {selectedThread || isDraftThreadSelected ? (
+      {selectedThreadUnavailableId && !selectedThread ? (
+        <>
+          <ThreadHeader
+            onShowMobileSidebar={onShowMobileSidebar}
+            title={THREAD_PANEL_TEXT.threadUnavailableTitle}
+          />
+          <Box className="kodex-thread-empty kodex-main-column">
+            <EmptyPanel
+              icon={<AlertCircle size={22} />}
+              title={THREAD_PANEL_TEXT.threadUnavailableTitle}
+              text={THREAD_PANEL_TEXT.threadUnavailableText}
+            />
+            <Group className="kodex-thread-empty-actions" justify="center" gap="xs" wrap="nowrap">
+              <Button
+                className="kodex-thread-empty-action"
+                onClick={onShowMobileSidebar}
+                size="compact-sm"
+                type="button"
+                variant="light"
+              >
+                {THREAD_PANEL_TEXT.browseThreads}
+              </Button>
+            </Group>
+          </Box>
+        </>
+      ) : selectedThread || isDraftThreadSelected ? (
         <>
           <ThreadHeader
             onShowMobileSidebar={onShowMobileSidebar}

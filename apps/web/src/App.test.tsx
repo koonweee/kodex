@@ -46,6 +46,7 @@ describe("App shell", () => {
   });
 
   it("renders the MVP shell with debug menu in the sidebar footer", async () => {
+    window.history.replaceState(null, "", "/");
     mockGateway({
       "GET /v1/projects": { projects: [] },
       "GET /v1/approvals": { approvals: [] },
@@ -61,7 +62,8 @@ describe("App shell", () => {
     expect(screen.getByRole("navigation", { name: /workspace/i })).toBeInTheDocument();
     expect(screen.getByRole("main", { name: /thread/i })).toBeInTheDocument();
     expect(screen.queryByRole("complementary", { name: /approvals/i })).not.toBeInTheDocument();
-    expect(screen.getByLabelText(/message composer/i)).toBeDisabled();
+    expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
+    expect(screen.getByRole("button", { name: /project: no project/i })).toBeInTheDocument();
 
     expect(screen.queryByRole("button", { name: /status/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /debug options/i })).not.toBeInTheDocument();

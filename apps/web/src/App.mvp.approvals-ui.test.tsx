@@ -101,7 +101,7 @@ describe("MVP approvals UI flows", () => {
     expect(within(threadView).getByText(/reason: verify changes/i)).toBeInTheDocument();
   });
 
-  it("selects the displayed first thread when initial pending approvals reorder loaded threads", async () => {
+  it("keeps the route-selected thread when initial pending approvals reorder loaded threads", async () => {
     let resolveApprovals: (value: unknown) => void = () => undefined;
     const delayedApprovals = new Promise((resolve) => {
       resolveApprovals = resolve;
@@ -131,6 +131,7 @@ describe("MVP approvals UI flows", () => {
       createdAt: "2026-04-30T00:00:00Z",
       resolvedAt: null,
     };
+    window.history.replaceState(null, "", "/threads/thread-recent-idle");
     mockGateway(
       baseRoutes({
         "GET /v1/threads": {
@@ -156,9 +157,9 @@ describe("MVP approvals UI flows", () => {
     await waitFor(() => {
       const threadButtons = Array.from(container.querySelectorAll<HTMLElement>(".kodex-thread-select-button"));
       expect(threadButtons[0]).toHaveTextContent(/older approval thread/i);
-      expect(threadButtons[0].closest(".kodex-list-button")).toHaveAttribute("data-active", "true");
+      expect(threadButtons[0].closest(".kodex-list-button")).not.toHaveAttribute("data-active", "true");
     });
-    expect(await within(threadView).findByRole("heading", { name: /older approval thread/i })).toBeInTheDocument();
+    expect(await within(threadView).findByRole("heading", { name: /recent idle thread/i })).toBeInTheDocument();
   });
 
   it("posts schema-shaped command, file, permission, MCP, and tool-user-input approval responses", async () => {

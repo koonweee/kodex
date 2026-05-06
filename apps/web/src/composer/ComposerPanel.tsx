@@ -1,5 +1,5 @@
 import { ActionIcon, Box, Group, Menu, Textarea, Tooltip } from "@mantine/core";
-import { ArrowUp, Folder, GitGraph, Paperclip, Plus, Square } from "lucide-react";
+import { ArrowUp, ChevronDown, Folder, GitGraph, MessageSquare, Paperclip, Plus, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import type {
   ClipboardEvent as ReactClipboardEvent,
@@ -28,6 +28,8 @@ const COMPOSER_TEXT = {
   dropImages: "Drop images to attach",
   openAttachments: "Open attachment menu",
   placeholder: "type clever thing here",
+  projectSelector: "Project",
+  noProject: "No project",
   send: "Send message",
   stop: "Stop turn",
 };
@@ -35,6 +37,11 @@ const COMPOSER_TEXT = {
 export type ComposerDraftControls = {
   clearText: () => void;
   restoreText: (text: string) => void;
+};
+
+export type ComposerProjectOption = {
+  id: string;
+  name: string;
 };
 
 export function ComposerPanel({
@@ -47,6 +54,7 @@ export function ComposerPanel({
   composerShellRef,
   contextUsage,
   currentProjectName,
+  draftProjectSelector,
   selectedGitBranch,
   isDraftThreadSelected,
   isDraftComposerTransitioning,
@@ -81,6 +89,11 @@ export function ComposerPanel({
   composerShellRef?: RefObject<HTMLDivElement | null>;
   contextUsage?: ContextUsage | null;
   currentProjectName?: string | null;
+  draftProjectSelector?: {
+    onChange: (projectId: string | null) => void;
+    projects: ComposerProjectOption[];
+    value: string | null;
+  };
   selectedGitBranch?: string | null;
   isDraftThreadSelected: boolean;
   isDraftComposerTransitioning: boolean;
@@ -109,8 +122,11 @@ export function ComposerPanel({
   const [composerText, setComposerText] = useState("");
   const draftHeroText = greetingForDate(new Date());
   const shouldShowDraftHero = isDraftThreadSelected || isDraftComposerTransitioning;
+  const selectedDraftProject =
+    draftProjectSelector?.projects.find((project) => project.id === draftProjectSelector.value) ?? null;
+  const draftProjectSelectorLabel = selectedDraftProject?.name ?? COMPOSER_TEXT.noProject;
   const draftProjectToolbarName =
-    isDraftThreadSelected && currentProjectName ? currentProjectName : null;
+    isDraftThreadSelected && !draftProjectSelector && currentProjectName ? currentProjectName : null;
   const selectedGitBranchName = normalizeUnderbarText(selectedGitBranch);
   const underbarItems = [
     draftProjectToolbarName
@@ -120,7 +136,8 @@ export function ComposerPanel({
       ? { icon: "branch" as const, label: selectedGitBranchName, title: selectedGitBranchName }
       : null,
   ].filter((item): item is { icon: "project" | "branch"; label: string; title: string } => item !== null);
-  const hasUnderbar = underbarItems.length > 0;
+  const hasProjectSelector = draftProjectSelector !== undefined;
+  const hasUnderbar = hasProjectSelector || underbarItems.length > 0;
   const underbarLabel = selectedGitBranchName ? "Composer context" : "Draft thread toolbar";
   const isComposerBusy = isComposerSubmitting || Boolean(isQueuedTurnStartPending);
   const canSubmitComposer =
@@ -273,6 +290,39 @@ export function ComposerPanel({
       {hasUnderbar ? (
         <Box className="kodex-composer-underbar" aria-label={underbarLabel} role="toolbar">
           <Group className="kodex-composer-underbar-left" gap={10} wrap="nowrap">
+            {draftProjectSelector ? (
+              <Menu position="top-start" withinPortal>
+                <Menu.Target>
+                  <button
+                    aria-label={`${COMPOSER_TEXT.projectSelector}: ${draftProjectSelectorLabel}`}
+                    className="kodex-composer-underbar-item kodex-composer-underbar-button"
+                    type="button"
+                  >
+                    {selectedDraftProject ? <Folder size={15} /> : <MessageSquare size={15} />}
+                    <span title={draftProjectSelectorLabel}>{draftProjectSelectorLabel}</span>
+                    <ChevronDown className="kodex-composer-underbar-chevron" size={14} />
+                  </button>
+                </Menu.Target>
+                <Menu.Dropdown aria-label={COMPOSER_TEXT.projectSelector}>
+                  <Menu.Item
+                    leftSection={<MessageSquare size={14} />}
+                    onClick={() => draftProjectSelector.onChange(null)}
+                  >
+                    {COMPOSER_TEXT.noProject}
+                  </Menu.Item>
+                  {draftProjectSelector.projects.length > 0 ? <Menu.Divider /> : null}
+                  {draftProjectSelector.projects.map((project) => (
+                    <Menu.Item
+                      key={project.id}
+                      leftSection={<Folder size={14} />}
+                      onClick={() => draftProjectSelector.onChange(project.id)}
+                    >
+                      {project.name}
+                    </Menu.Item>
+                  ))}
+                </Menu.Dropdown>
+              </Menu>
+            ) : null}
             {underbarItems.map((item) => (
               <Group key={`${item.icon}:${item.label}`} className="kodex-composer-underbar-item" gap={8} wrap="nowrap">
                 {item.icon === "project" ? <Folder size={15} /> : <GitGraph size={15} />}

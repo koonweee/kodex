@@ -173,6 +173,7 @@ describe("MVP composer settings flows", () => {
 
   it("does not show a global error banner when composer settings are unavailable on first load", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
+    window.history.replaceState(null, "", "/");
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
@@ -447,7 +448,7 @@ describe("MVP composer settings flows", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /new chat/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^new chat$/i }));
     await userEvent.type(screen.getByLabelText(/message composer/i), "Use global defaults");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
@@ -804,7 +805,7 @@ describe("MVP composer settings flows", () => {
     const { unmount } = render(<App />);
 
     await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
-    await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+    await userEvent.click(screen.getByRole("button", { name: /create thread in kodex/i }));
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
     await clickMenuItem(/^gpt-5\.4-mini$/i);
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4-mini, medium/i })).toBeInTheDocument();

@@ -327,6 +327,7 @@ describe("MVP shell flows", () => {
       name: null,
       preview: "reference the Codex desktop app UI and identify improvements",
     };
+    window.history.replaceState(null, "", "/threads/019de25f-9ac3-72b1-adf6-a108f82d1fb6");
     mockGateway(
       baseRoutes({
         "GET /v1/threads": {
@@ -368,7 +369,7 @@ describe("MVP shell flows", () => {
 
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /new chat/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /^new chat$/i }));
     expect(gateway.callsFor("POST", "/v1/chats/threads")).toHaveLength(0);
     expect(within(screen.getByRole("main", { name: /thread/i })).queryByRole("heading", { name: /new thread/i })).not.toBeInTheDocument();
 
@@ -388,6 +389,20 @@ describe("MVP shell flows", () => {
     expect(
       await screen.findByRole("button", { name: /plan the chat sidebar implementation/i }),
     ).toBeInTheDocument();
+  });
+
+  it("opens the root draft chat page from the desktop sidebar header", async () => {
+    window.history.replaceState(null, "", "/threads/thread-1");
+    mockGateway(baseRoutes());
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /start new chat from desktop header/i }));
+
+    expect(window.location.pathname).toBe("/");
+    expect(screen.getByRole("button", { name: /project: no project/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
   });
 
   it("keeps a locally created chat when the initial chat list resolves late", async () => {
@@ -414,7 +429,7 @@ describe("MVP shell flows", () => {
 
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /new chat/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /^new chat$/i }));
     await userEvent.type(screen.getByLabelText(/message composer/i), "Keep local chat");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
@@ -588,6 +603,7 @@ describe("MVP shell flows", () => {
   it("attaches active selected threads once while keeping live updates on the selected stream", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const runningThread = { ...secondThread, status: "active" };
+    window.history.replaceState(null, "", "/threads/thread-2");
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": {
@@ -648,6 +664,7 @@ describe("MVP shell flows", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const runningThread = { ...secondThread, status: "active" };
     const resumeDeferred = deferred<{ thread: typeof runningThread; rawPayload: Record<string, never> }>();
+    window.history.replaceState(null, "", "/threads/thread-2");
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": {
@@ -701,9 +718,12 @@ describe("MVP shell flows", () => {
     expect(appCss).toMatch(/\.kodex-shell\s*\{[^}]*height:\s*100dvh;[^}]*overflow:\s*hidden;/s);
     expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-main\s*\{[^}]*overflow:\s*hidden;/s);
     expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-thread-sidebar-button\s*\{[^}]*display:\s*inline-flex;/s);
+    expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-sidebar-mobile-header\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*32px\s*32px;/s);
+    expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-sidebar-mobile-filter\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(0,\s*1fr\);/s);
   });
 
-  it("keeps a sidebar escape hatch in the empty thread pane", async () => {
+  it("keeps a sidebar escape hatch on the root draft chat pane", async () => {
+    window.history.replaceState(null, "", "/");
     mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
@@ -712,12 +732,11 @@ describe("MVP shell flows", () => {
 
     render(<App />);
 
-    const main = await screen.findByRole("main", { name: /thread/i });
-    expect(await within(main).findByText(/thread timeline/i)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /project: no project/i })).toBeInTheDocument();
+    const main = screen.getByRole("main", { name: /thread/i });
     expect(within(main).getByRole("button", { name: /show sidebar/i })).toBeInTheDocument();
-    expect(within(main).getByRole("button", { name: /browse threads/i })).toBeInTheDocument();
 
-    await userEvent.click(within(main).getByRole("button", { name: /browse threads/i }));
+    await userEvent.click(within(main).getByRole("button", { name: /show sidebar/i }));
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "threads");
   });
 
@@ -758,11 +777,12 @@ describe("MVP shell flows", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: /show sidebar/i }));
     await userEvent.click(screen.getByRole("button", { name: /^chats$/i }));
-    await userEvent.click(screen.getByRole("button", { name: /create thread/i }));
-    expect(appCss).toMatch(/\.kodex-sidebar-create-menu\s*\{[^}]*width:\s*min\(270px,\s*calc\(100vw - 24px\)\)\s*!important;/s);
-    await userEvent.click(await screen.findByRole("menuitem", { name: /no project/i }));
+    await userEvent.click(screen.getByRole("button", { name: /start new chat from mobile header/i }));
 
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
+    expect(window.location.pathname).toBe("/");
+    expect(screen.getByRole("button", { name: /project: no project/i })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /no project/i })).not.toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/message composer/i), "Start from mobile chats");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
@@ -772,7 +792,7 @@ describe("MVP shell flows", () => {
     expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(0);
   });
 
-  it("creates a project draft from the narrow viewport create menu project choice", async () => {
+  it("creates a project draft from the narrow viewport root project selector", async () => {
     const gateway = mockGateway(
       baseRoutes({
         "POST /v1/threads": { thread: { ...thread, id: "thread-2", name: "New thread", preview: "" }, rawPayload: {} },
@@ -785,10 +805,12 @@ describe("MVP shell flows", () => {
     render(<App />);
 
     await userEvent.click(await screen.findByRole("button", { name: /show sidebar/i }));
-    await userEvent.click(screen.getByRole("button", { name: /create thread/i }));
+    await userEvent.click(screen.getByRole("button", { name: /start new chat from mobile header/i }));
+    await userEvent.click(screen.getByRole("button", { name: /project: no project/i }));
     await userEvent.click(await screen.findByRole("menuitem", { name: new RegExp(project.name, "i") }));
 
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
+    expect(screen.getByRole("button", { name: new RegExp(`project: ${project.name}`, "i") })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/message composer/i), "Start in project");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 

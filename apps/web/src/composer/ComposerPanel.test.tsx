@@ -261,6 +261,57 @@ describe("ComposerPanel", () => {
     expect(document.querySelector(".kodex-composer-underbar-left svg")).toBeInTheDocument();
   });
 
+  it("lets draft composers choose between chats and projects from the underbar", async () => {
+    const attachmentInputRef = { current: null } as RefObject<HTMLInputElement | null>;
+    const onProjectChange = vi.fn();
+
+    render(
+      <MantineProvider>
+        <ComposerPanel
+          activeSelectedTurnId={null}
+          attachmentInputRef={attachmentInputRef}
+          canCompose
+          composerResetToken={0}
+          composerSettings={composerSettings}
+          composerSettingsError={null}
+          contextUsage={null}
+          draftProjectSelector={{
+            onChange: onProjectChange,
+            projects: [{ id: "project-1", name: "Kodex" }],
+            value: null,
+          }}
+          isDraftThreadSelected
+          isDraftComposerTransitioning={false}
+          isComposerDragActive={false}
+          isComposerSubmitting={false}
+          isSelectedTimelineReady
+          models={[]}
+          onAbortQueuedSteer={vi.fn()}
+          onAttachmentInputChange={vi.fn()}
+          onComposerDragLeave={vi.fn()}
+          onComposerDragOver={vi.fn()}
+          onComposerDrop={vi.fn()}
+          onComposerKeyDown={vi.fn()}
+          onComposerPaste={vi.fn()}
+          onComposerSettingsChange={vi.fn()}
+          onImageOpen={vi.fn()}
+          onRemovePendingAttachment={vi.fn()}
+          onStopTurn={vi.fn()}
+          onSubmitQueuedSteer={vi.fn()}
+          onSubmitTurn={noopSubmit}
+          pendingAttachments={[]}
+          queuedSteerRows={[]}
+          selectedThreadPresent={false}
+        />
+      </MantineProvider>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /project: no project/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /kodex/i }));
+
+    expect(onProjectChange).toHaveBeenCalledWith("project-1");
+  });
+
   it.each([undefined, null, "", "   "])(
     "omits the git branch underflow when the selected branch is unavailable",
     (selectedGitBranch) => {

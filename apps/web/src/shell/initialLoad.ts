@@ -13,11 +13,11 @@ import {
 
 type LoadInitialKodexStateParams = {
   hydrateComposerDefaults: (projectId: string | null) => Promise<unknown>;
-  loadProjectThreads: (projectId: string, options?: { selectWhenLoaded?: boolean }) => void;
+  loadProjectThreads: (projectId: string) => void;
   mergePendingApprovals: (approvals: Approval[]) => void;
   onError: (error: unknown) => void;
   onChatThreadsLoaded: (threads: ThreadSummary[]) => void;
-  onProjectsLoaded: (projects: Project[]) => string | null;
+  onProjectsLoaded: (projects: Project[]) => void;
   setAccount: (account: AccountResponse) => void;
   setRateLimits: (rateLimits: RateLimitsResponse) => void;
 };
@@ -35,11 +35,11 @@ export async function loadInitialKodexState({
   let composerDefaultsRequested = false;
   try {
     const projects = await listProjects();
-    const firstProjectId = onProjectsLoaded(projects);
-    hydrateComposerDefaults(firstProjectId);
+    onProjectsLoaded(projects);
+    hydrateComposerDefaults(null);
     composerDefaultsRequested = true;
     projects.forEach((project) => {
-      loadProjectThreads(project.id, { selectWhenLoaded: project.id === firstProjectId });
+      loadProjectThreads(project.id);
     });
   } catch (error) {
     onError(error);

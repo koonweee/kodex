@@ -17,6 +17,7 @@ export function useSelectedThreadTimeline({
   onError,
   onQueueEvent,
   onSnapshotThread,
+  onThreadLoadFailed,
   onThreadMetadataEvent,
   selectedThreadId,
   setApprovals,
@@ -29,6 +30,7 @@ export function useSelectedThreadTimeline({
   onError: (error: unknown) => void;
   onQueueEvent: (event: EventEnvelope) => void;
   onSnapshotThread: (thread: ThreadSummary) => void;
+  onThreadLoadFailed?: (threadId: string, error: unknown) => void;
   onThreadMetadataEvent: (event: EventEnvelope) => void;
   selectedThreadId: string | null;
   setApprovals: Dispatch<SetStateAction<Approval[]>>;
@@ -39,8 +41,22 @@ export function useSelectedThreadTimeline({
   const timelineFlushFrame = useRef<number | null>(null);
   const timelineFlushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedThreadStreamToken = useRef(0);
-  const latestCallbacks = useRef({ onApprovalEvent, onError, onQueueEvent, onSnapshotThread, onThreadMetadataEvent });
-  latestCallbacks.current = { onApprovalEvent, onError, onQueueEvent, onSnapshotThread, onThreadMetadataEvent };
+  const latestCallbacks = useRef({
+    onApprovalEvent,
+    onError,
+    onQueueEvent,
+    onSnapshotThread,
+    onThreadLoadFailed,
+    onThreadMetadataEvent,
+  });
+  latestCallbacks.current = {
+    onApprovalEvent,
+    onError,
+    onQueueEvent,
+    onSnapshotThread,
+    onThreadLoadFailed,
+    onThreadMetadataEvent,
+  };
 
   function clearEntry() {
     setTimelineEntry(idleTimelineEntry);
@@ -206,6 +222,7 @@ export function useSelectedThreadTimeline({
             return;
           }
           clearEntryForThread(threadId);
+          latestCallbacks.current.onThreadLoadFailed?.(threadId, error);
           latestCallbacks.current.onError(error);
         });
     };

@@ -80,8 +80,29 @@
 }
 
 .kodex-composer-underbar-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
   max-width: 100%;
+}
+
+.kodex-composer-underbar-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.kodex-composer-underbar-button:hover,
+.kodex-composer-underbar-button:focus-visible {
+  color: var(--kodex-text-primary);
+}
+
+.kodex-composer-underbar-chevron {
+  opacity: 0.72;
 }
 
 .kodex-composer-underbar-left svg {

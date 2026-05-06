@@ -5,12 +5,12 @@ import {
   Box,
   Button,
   Group,
-  Menu,
   Stack,
   Text,
   TextInput,
   Tooltip,
 } from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 import {
   Archive,
   ChevronRight,
@@ -61,9 +61,8 @@ const SIDEBAR_TEXT = {
   projects: "Projects",
   resizeSidebarLabel: "Resize workspace sidebar",
   search: "Search",
-  createThread: "Create thread",
-  createThreadIn: "Create in",
-  noProject: "No project",
+  startNewChatDesktop: "Start new chat from desktop header",
+  startNewChatMobile: "Start new chat from mobile header",
   showThread: "Show thread",
   showLessThreads: "Show less",
   showMoreThreads: "Show more",
@@ -158,6 +157,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const [previewProjectIds, setPreviewProjectIds] = useState<string[] | null>(null);
   const [projectsSectionCollapsed, setProjectsSectionCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const isMobileSidebar = useMediaQuery("(max-width: 900px)", false);
   const projectGroupRefs = useRef<Map<string, HTMLElement>>(new Map());
   const pendingProjectAnimationRects = useRef<Map<string, DOMRect> | null>(null);
   const displayedProjects = useMemo(
@@ -258,12 +258,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     });
   }
 
-  function handleMobileCreateChat() {
+  function handleHeaderCreateChat() {
     onCreateChat();
-  }
-
-  function handleMobileCreateProjectThread(projectId: string) {
-    onCreateThread(projectId);
   }
 
   return (
@@ -274,68 +270,58 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       data-mobile-scope={mobileSidebarScope}
       style={{ width: sidebarWidth }}
     >
-      <Stack gap="lg" h="100%">
-        <Box className="kodex-sidebar-mobile-header">
-          <Text component="div" className="kodex-sidebar-mobile-title" fw={700} size="sm">
-            {SIDEBAR_TEXT.workspaceLabel}
-          </Text>
-          <Tooltip label={SIDEBAR_TEXT.search}>
+      <Stack gap={isMobileSidebar ? "md" : "lg"} h="100%">
+        <Box className="kodex-sidebar-desktop-header">
+          <TextInput
+            aria-label={SIDEBAR_TEXT.search}
+            className="kodex-sidebar-search"
+            id="kodex-sidebar-search-desktop"
+            leftSection={<Search size={13} />}
+            onChange={(event) => setSearchQuery(event.currentTarget.value)}
+            placeholder={SIDEBAR_TEXT.search}
+            size="xs"
+            value={searchQuery}
+            variant="unstyled"
+          />
+          <Tooltip label={SIDEBAR_TEXT.newChat}>
             <ActionIcon
-              aria-label={SIDEBAR_TEXT.search}
+              aria-label={SIDEBAR_TEXT.startNewChatDesktop}
+              className="kodex-sidebar-desktop-action"
+              color="gray"
+              onClick={handleHeaderCreateChat}
+              size="xs"
+              type="button"
+              variant="subtle"
+            >
+              <SquarePen size={14} />
+            </ActionIcon>
+          </Tooltip>
+        </Box>
+        <Box className="kodex-sidebar-mobile-header">
+          <TextInput
+            aria-label={SIDEBAR_TEXT.search}
+            className="kodex-sidebar-search"
+            id="kodex-sidebar-search-mobile"
+            leftSection={<Search size={13} />}
+            onChange={(event) => setSearchQuery(event.currentTarget.value)}
+            placeholder={SIDEBAR_TEXT.search}
+            size="xs"
+            value={searchQuery}
+            variant="unstyled"
+          />
+          <Tooltip label={SIDEBAR_TEXT.newChat}>
+            <ActionIcon
+              aria-label={SIDEBAR_TEXT.startNewChatMobile}
               className="kodex-sidebar-mobile-action"
               color="gray"
-              onClick={() => document.getElementById("kodex-sidebar-search")?.focus()}
+              onClick={handleHeaderCreateChat}
               size="md"
               type="button"
               variant="subtle"
             >
-              <Search size={17} />
+              <SquarePen size={17} />
             </ActionIcon>
           </Tooltip>
-          <Menu position="bottom-end" withinPortal>
-            <Menu.Target>
-              <ActionIcon
-                aria-label={SIDEBAR_TEXT.createThread}
-                className="kodex-sidebar-mobile-action"
-                color="gray"
-                size="md"
-                type="button"
-                variant="subtle"
-              >
-                <SquarePen size={17} />
-              </ActionIcon>
-            </Menu.Target>
-            <Menu.Dropdown aria-label={SIDEBAR_TEXT.createThread} className="kodex-sidebar-create-menu">
-              <Menu.Label>{SIDEBAR_TEXT.createThreadIn}</Menu.Label>
-              <Menu.Item leftSection={<MessageSquare size={14} />} onClick={handleMobileCreateChat}>
-                <Box className="kodex-sidebar-create-menu-item">
-                  <Text size="sm" fw={600}>
-                    {SIDEBAR_TEXT.noProject}
-                  </Text>
-                  <Text size="xs" c="dimmed">
-                    {SIDEBAR_TEXT.chats}
-                  </Text>
-                </Box>
-              </Menu.Item>
-              {displayedProjects.length > 0 ? <Menu.Divider /> : null}
-              {displayedProjects.map((project) => (
-                <Menu.Item
-                  key={project.id}
-                  leftSection={<Folder size={14} />}
-                  onClick={() => handleMobileCreateProjectThread(project.id)}
-                >
-                  <Box className="kodex-sidebar-create-menu-item">
-                    <Text size="sm" fw={600} lineClamp={1}>
-                      {project.name}
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      {SIDEBAR_TEXT.projects}
-                    </Text>
-                  </Box>
-                </Menu.Item>
-              ))}
-            </Menu.Dropdown>
-          </Menu>
           <Tooltip label={SIDEBAR_TEXT.showThread}>
             <ActionIcon
               aria-label={SIDEBAR_TEXT.showThread}
@@ -367,17 +353,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           >
             {SIDEBAR_TEXT.chats}
           </button>
-          <TextInput
-            aria-label={SIDEBAR_TEXT.search}
-            className="kodex-sidebar-search"
-            id="kodex-sidebar-search"
-            leftSection={<Search size={13} />}
-            onChange={(event) => setSearchQuery(event.currentTarget.value)}
-            placeholder={SIDEBAR_TEXT.search}
-            size="xs"
-            value={searchQuery}
-            variant="unstyled"
-          />
         </Box>
         <Box className="kodex-sidebar-scroll">
           <Group className="kodex-sidebar-section-row kodex-projects-section-row" justify="space-between" align="center" mb="sm">
