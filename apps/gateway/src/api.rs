@@ -30,6 +30,7 @@ use crate::{
         capabilities::{AppServerCapabilities, CapabilitiesResponse, GatewayCapabilities},
         composer_settings::ComposerSettingsQuery,
         events::EventListResponse,
+        file_preview::FilePreviewQuery,
         health::{HealthResponse, ReadyResponse},
         models::ModelsQuery,
         projects::{CreateProjectRequest, ProjectListResponse},
@@ -96,6 +97,7 @@ impl AppState {
         crate::queue::retry_queued_input,
         crate::queue::steer_queued_input,
         crate::queue::delete_queued_input,
+        crate::routes::file_preview::preview_thread_file,
         crate::routes::uploads::upload_images,
         crate::routes::approvals::list_approvals,
         crate::routes::approvals::get_approval,
@@ -152,6 +154,7 @@ impl AppState {
         QueuedInputListResponse,
         QueuedInputResponse,
         QueuedInputDeleteResponse,
+        FilePreviewQuery,
         ImageUpload,
         ImageUploadRequest,
         ImageUploadResponse,
@@ -179,6 +182,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::threads::router())
         .merge(routes::turns::router())
         .merge(crate::queue::router())
+        .merge(routes::file_preview::router())
         .merge(routes::uploads::router())
         .merge(routes::approvals::router())
         .merge(routes::account::router())

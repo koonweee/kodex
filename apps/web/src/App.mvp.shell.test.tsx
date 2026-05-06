@@ -462,6 +462,11 @@ describe("MVP shell flows", () => {
 
     await userEvent.click(kodexProjectTitle);
 
+    expect(within(kodexGroup).getByRole("button", { name: /expand kodex/i })).toHaveAttribute("aria-expanded", "false");
+    expect(within(kodexGroup).queryByRole("button", { name: /implement frontend/i })).not.toBeInTheDocument();
+
+    await userEvent.click(within(kodexGroup).getByRole("button", { name: /expand kodex/i }));
+
     expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
   });
 
@@ -936,6 +941,8 @@ describe("MVP shell flows", () => {
       backwardsCursor: null,
       rawPayload: {},
     });
+    expect(screen.getByRole("button", { name: /expand scratch/i })).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(screen.getByRole("button", { name: /expand scratch/i }));
     expect(await screen.findByRole("button", { name: /second thread/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
   });

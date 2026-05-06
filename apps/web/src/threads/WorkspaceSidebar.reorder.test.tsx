@@ -91,7 +91,7 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "New chat" }));
     expect(onCreateChat).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Chats")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Collapse Chats section" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Add project" })).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Thread 7" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Thread 3" })).toBeInTheDocument();

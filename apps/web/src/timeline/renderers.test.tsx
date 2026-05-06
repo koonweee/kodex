@@ -205,11 +205,59 @@ describe("timeline renderer registry", () => {
     });
   });
 
+  it("routes local image activity paths through the thread file preview endpoint", () => {
+    const onImageOpen = vi.fn();
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          onImageOpen={onImageOpen}
+          threadId="thread/with spaces"
+          item={item({
+            kind: "image_view",
+            path: "/Users/example/kodex/preview image.png",
+            text: "Viewed image",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    const expectedSrc =
+      "http://localhost:3000/v1/threads/thread%2Fwith%20spaces/files/preview?path=%2FUsers%2Fexample%2Fkodex%2Fpreview%20image.png";
+    expect(document.querySelector(".kodex-activity-image-preview img")).toHaveAttribute("src", expectedSrc);
+    fireEvent.click(screen.getByRole("button", { name: /open \/users\/example\/kodex\/preview image\.png/i }));
+    expect(onImageOpen).toHaveBeenCalledWith({
+      alt: "",
+      src: expectedSrc,
+      title: "/Users/example/kodex/preview image.png",
+    });
+  });
+
+  it("shows a local image preview fallback when the gateway preview cannot load", () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          threadId="thread-1"
+          item={item({
+            kind: "image_view",
+            path: "/Users/example/kodex/missing.png",
+            text: "Viewed image",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    fireEvent.error(document.querySelector(".kodex-activity-image-preview img") as HTMLImageElement);
+
+    expect(screen.getByText("Preview unavailable")).toBeInTheDocument();
+    expect(screen.getByText(/\/Users\/example\/kodex\/missing\.png/)).toBeInTheDocument();
+  });
+
   it("renders generated image data URLs without showing raw base64 output", () => {
     const onImageOpen = vi.fn();
     render(
       <MantineProvider>
         <TimelineItemRenderer
+          threadId="thread-1"
           onImageOpen={onImageOpen}
           item={item({
             kind: "image_generation",
@@ -297,6 +345,34 @@ describe("timeline renderer registry", () => {
     );
     expect(screen.getByRole("link", { name: /open-meteo/i })).toHaveAttribute("rel", "noreferrer");
     expect(screen.queryByText(/alert/i)).not.toBeInTheDocument();
+  });
+
+  it("rewrites local markdown links to the thread file preview endpoint", () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          threadId="thread-1"
+          item={item({
+            kind: "assistant_message",
+            text:
+              "Read [notes](/Users/example/kodex/NOTES.markdown), [section](/Users/example/kodex/Guide.md#intro), and [web](https://example.com/readme.md).",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByRole("link", { name: "notes" })).toHaveAttribute(
+      "href",
+      "http://localhost:3000/v1/threads/thread-1/files/preview?path=%2FUsers%2Fexample%2Fkodex%2FNOTES.markdown",
+    );
+    expect(screen.getByRole("link", { name: "notes" })).toHaveAttribute("download", "NOTES.markdown");
+    expect(screen.getByRole("link", { name: "section" })).toHaveAttribute(
+      "href",
+      "http://localhost:3000/v1/threads/thread-1/files/preview?path=%2FUsers%2Fexample%2Fkodex%2FGuide.md#intro",
+    );
+    expect(screen.getByRole("link", { name: "section" })).toHaveAttribute("download", "Guide.md");
+    expect(screen.getByRole("link", { name: "web" })).toHaveAttribute("href", "https://example.com/readme.md");
+    expect(screen.queryByText(/NOTES\.markdown content/i)).not.toBeInTheDocument();
   });
 
   it("copies final assistant message markdown from the assistant-aligned toolbar", async () => {

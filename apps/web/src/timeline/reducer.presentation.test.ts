@@ -324,6 +324,39 @@ describe("timeline reducer presentation", () => {
     });
   });
 
+  it("normalizes raw image_generation_call response items into generated image timeline items", () => {
+    const state = replayTimeline([
+      event({
+        id: "raw-image-generation-completed",
+        seq: 1,
+        codexMethod: "raw_response_item/completed",
+        itemId: null,
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            id: "raw-image-generation-1",
+            type: "image_generation_call",
+            status: "completed",
+            result: "iVBORw0KGgo=",
+            revised_prompt: "A schema-shaped diagram",
+          },
+        },
+      }),
+    ]);
+
+    expect(state.hiddenItems).toHaveLength(0);
+    expect(state.items).toHaveLength(1);
+    expect(state.items[0]).toMatchObject({
+      id: "raw-image-generation-1",
+      kind: "image_generation",
+      status: "completed",
+      text: "Generated image",
+      imageSrc: "data:image/png;base64,iVBORw0KGgo=",
+      resultSummary: "A schema-shaped diagram",
+    });
+  });
+
   it("does not revive completed turns from hidden thread metadata events", () => {
     const state = replayTimeline([
       event({

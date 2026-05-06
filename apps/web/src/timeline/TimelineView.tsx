@@ -34,6 +34,7 @@ export function TimelineView({
   onReady,
   scrollParentElement,
   showDebug,
+  threadId,
   timeline,
 }: {
   approvals: Approval[];
@@ -43,6 +44,7 @@ export function TimelineView({
   onReady: () => void;
   scrollParentElement: HTMLDivElement | null;
   showDebug: boolean;
+  threadId?: string;
   timeline: TimelineState;
 }) {
   const rows = useMemo(() => deriveTimelineRows(timeline, { showDebug }), [showDebug, timeline]);
@@ -102,6 +104,7 @@ export function TimelineView({
                 onImageOpen={onImageOpen}
                 row={row}
                 showDebug={showDebug}
+                threadId={threadId}
               />
             </Box>
           );
@@ -319,6 +322,7 @@ const TimelineRowView = memo(function TimelineRowView({
   onImageOpen,
   row,
   showDebug,
+  threadId,
 }: {
   approvals: Approval[];
   imagePreviewUrlsByPath: Record<string, string>;
@@ -326,6 +330,7 @@ const TimelineRowView = memo(function TimelineRowView({
   onImageOpen: (image: ImageLightboxImage) => void;
   row: TimelineRow;
   showDebug: boolean;
+  threadId?: string;
 }) {
   return (
     <Box className="kodex-turn-group">
@@ -338,15 +343,23 @@ const TimelineRowView = memo(function TimelineRowView({
           onImageOpen={onImageOpen}
           row={row}
           showDebug={showDebug}
+          threadId={threadId}
         />
       ) : row.type === "activity" ? (
-        <TimelineActivityGroupRenderer items={row.items} onImageOpen={onImageOpen} showDebug={showDebug} />
+        <TimelineActivityGroupRenderer
+          imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+          items={row.items}
+          onImageOpen={onImageOpen}
+          showDebug={showDebug}
+          threadId={threadId}
+        />
       ) : (
         <TimelineItemRenderer
           item={row.item}
           imagePreviewUrlsByPath={imagePreviewUrlsByPath}
           onImageOpen={onImageOpen}
           showDebug={showDebug}
+          threadId={threadId}
         />
       )}
       {approvals.length > 0 ? (

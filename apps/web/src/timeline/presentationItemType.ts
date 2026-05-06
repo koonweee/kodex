@@ -34,6 +34,7 @@ export function normalizedItemType(event: EventEnvelope): string {
     case "hookprompt":
       return "hook_prompt";
     case "imagegeneration":
+    case "image_generation_call":
       return "image_generation";
     case "imageview":
       return "image_view";

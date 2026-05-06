@@ -1,11 +1,12 @@
 import { Badge, Box, Code, Group, Stack, Text } from "@mantine/core";
 import { AlertTriangle, Bot, Check, ChevronRight, ClipboardList, Code2, Copy, FileDiff, Globe, ImageIcon, Info, Terminal, Wrench } from "lucide-react";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
+import { filePreviewUrl } from "../api/client";
 import { ImageThumbnail } from "../images/ImageThumbnail";
 import type { ImageLightboxImage } from "../images/types";
 import { copyTextToClipboard } from "./clipboard";
@@ -15,12 +16,17 @@ import type { TimelineItem, WebSearchAction } from "./reducer";
 type TimelineRendererOptions = {
   imagePreviewUrlsByPath: Record<string, string>;
   onImageOpen?: (image: ImageLightboxImage) => void;
+  threadId?: string;
 };
 type TimelineRenderer = (item: TimelineItem, options: TimelineRendererOptions) => ReactNode;
 
 const rendererRegistry: Record<string, TimelineRenderer> = {
-  agent_message: (item) => <AssistantMessageMarkdown item={item} text={item.text || "No assistant content yet"} />,
-  assistant_message: (item) => <AssistantMessageMarkdown item={item} text={item.text || "No assistant content yet"} />,
+  agent_message: (item, options) => (
+    <AssistantMessageMarkdown item={item} text={item.text || "No assistant content yet"} threadId={options.threadId} />
+  ),
+  assistant_message: (item, options) => (
+    <AssistantMessageMarkdown item={item} text={item.text || "No assistant content yet"} threadId={options.threadId} />
+  ),
   user_message: (item, options) => (
     <UserMessageBubble
       item={item}
@@ -37,8 +43,12 @@ const rendererRegistry: Record<string, TimelineRenderer> = {
   collab_agent_tool_call: (item) => <CollabAgentBlock item={item} />,
   web_search_group: (item) => <WebSearchBlock actions={item.actions ?? []} />,
   plan: (item) => <PlanBlock item={item} />,
-  image_view: (item, options) => <ImageActivityBlock item={item} onImageOpen={options.onImageOpen} />,
-  image_generation: (item, options) => <ImageActivityBlock item={item} onImageOpen={options.onImageOpen} />,
+  image_view: (item, options) => (
+    <ImageActivityBlock item={item} onImageOpen={options.onImageOpen} threadId={options.threadId} />
+  ),
+  image_generation: (item, options) => (
+    <ImageActivityBlock item={item} onImageOpen={options.onImageOpen} threadId={options.threadId} />
+  ),
   review_mode_started: (item) => <StatusMarker item={item} />,
   review_mode_finished: (item) => <StatusMarker item={item} />,
   context_compaction: (item) => <StatusMarker item={item} />,
@@ -80,35 +90,46 @@ const labels: Record<string, string> = {
 
 const assistantMarkdownRemarkPlugins = [remarkGfm, remarkBreaks];
 
-const assistantMarkdownComponents: Components = {
-  a: ({ children, href }) => (
-    <a href={href} target="_blank" rel="noreferrer">
-      {children}
-    </a>
-  ),
-  code: ({ children, className }) => {
-    const isBlock = Boolean(className) || String(children).includes("\n");
-    return isBlock ? (
-      <Code block className="kodex-timeline-code">
+function assistantMarkdownComponents(threadId?: string): Components {
+  return {
+    a: ({ children, href }) => {
+      const markdownPreview = localMarkdownPreviewHref(threadId, href);
+      return (
+        <a
+          href={markdownPreview?.href ?? href}
+          target="_blank"
+          rel="noreferrer"
+          download={markdownPreview?.download}
+        >
+          {children}
+        </a>
+      );
+    },
+    code: ({ children, className }) => {
+      const isBlock = Boolean(className) || String(children).includes("\n");
+      return isBlock ? (
+        <Code block className="kodex-timeline-code">
+          {children}
+        </Code>
+      ) : (
+        <Code className="kodex-assistant-inline-code">{children}</Code>
+      );
+    },
+    p: ({ children }) => (
+      <Text component="p" size="sm" className="kodex-assistant-markdown-paragraph">
         {children}
-      </Code>
-    ) : (
-      <Code className="kodex-assistant-inline-code">{children}</Code>
-    );
-  },
-  p: ({ children }) => (
-    <Text component="p" size="sm" className="kodex-assistant-markdown-paragraph">
-      {children}
-    </Text>
-  ),
-  pre: ({ children }) => <>{children}</>,
-};
+      </Text>
+    ),
+    pre: ({ children }) => <>{children}</>,
+  };
+}
 
 type TimelineItemRendererProps = {
   item: TimelineItem;
   imagePreviewUrlsByPath?: Record<string, string>;
   onImageOpen?: (image: ImageLightboxImage) => void;
   showDebug?: boolean;
+  threadId?: string;
 };
 
 function TimelineItemRendererImpl({
@@ -116,6 +137,7 @@ function TimelineItemRendererImpl({
   imagePreviewUrlsByPath = {},
   onImageOpen,
   showDebug = false,
+  threadId,
 }: TimelineItemRendererProps) {
   const render = rendererRegistry[item.kind] ?? unknownRenderer;
   const label = labels[item.kind] ?? "Unsupported item";
@@ -140,7 +162,7 @@ function TimelineItemRendererImpl({
           ) : null}
         </Group>
       ) : null}
-      {render(item, { imagePreviewUrlsByPath, onImageOpen })}
+      {render(item, { imagePreviewUrlsByPath, onImageOpen, threadId })}
       {showDebug ? <DebugDisclosure item={item} /> : null}
     </Box>
   );
@@ -150,15 +172,19 @@ export const TimelineItemRenderer = memo(TimelineItemRendererImpl);
 TimelineItemRenderer.displayName = "TimelineItemRenderer";
 
 type TimelineActivityGroupRendererProps = {
+  imagePreviewUrlsByPath?: Record<string, string>;
   items: TimelineItem[];
   onImageOpen?: (image: ImageLightboxImage) => void;
   showDebug?: boolean;
+  threadId?: string;
 };
 
 function TimelineActivityGroupRendererImpl({
+  imagePreviewUrlsByPath = {},
   items,
   onImageOpen,
   showDebug = false,
+  threadId,
 }: TimelineActivityGroupRendererProps) {
   return (
     <details className="kodex-activity-group">
@@ -173,7 +199,14 @@ function TimelineActivityGroupRendererImpl({
       </summary>
       <Stack gap={8} mt={8}>
         {items.map((item) => (
-          <ActivityItemRenderer item={item} key={item.id} onImageOpen={onImageOpen} showDebug={showDebug} />
+          <ActivityItemRenderer
+            imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+            item={item}
+            key={item.id}
+            onImageOpen={onImageOpen}
+            showDebug={showDebug}
+            threadId={threadId}
+          />
         ))}
       </Stack>
     </details>
@@ -188,6 +221,7 @@ type TimelineWorkRowRendererProps = {
   onImageOpen?: (image: ImageLightboxImage) => void;
   row: TimelineWorkRow;
   showDebug?: boolean;
+  threadId?: string;
 };
 
 function TimelineWorkRowRendererImpl({
@@ -195,6 +229,7 @@ function TimelineWorkRowRendererImpl({
   onImageOpen,
   row,
   showDebug = false,
+  threadId,
 }: TimelineWorkRowRendererProps) {
   const elapsedMs = useWorkElapsedMs(row);
   const label = `${row.state === "running" ? "Working" : "Worked"} for ${fmtElapsedCompact(Math.floor(elapsedMs / 1_000))}`;
@@ -235,6 +270,7 @@ function TimelineWorkRowRendererImpl({
             onImageOpen={onImageOpen}
             row={collapsedRow}
             showDebug={showDebug}
+            threadId={threadId}
           />
         ))}
       </Stack>
@@ -250,14 +286,24 @@ function CollapsedWorkRowRenderer({
   onImageOpen,
   row,
   showDebug,
+  threadId,
 }: {
   imagePreviewUrlsByPath: Record<string, string>;
   onImageOpen?: (image: ImageLightboxImage) => void;
   row: TimelineItemRow | TimelineActivityRow;
   showDebug: boolean;
+  threadId?: string;
 }) {
   if (row.type === "activity") {
-    return <TimelineActivityGroupRenderer items={row.items} onImageOpen={onImageOpen} showDebug={showDebug} />;
+    return (
+      <TimelineActivityGroupRenderer
+        imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+        items={row.items}
+        onImageOpen={onImageOpen}
+        showDebug={showDebug}
+        threadId={threadId}
+      />
+    );
   }
   return (
     <TimelineItemRenderer
@@ -265,6 +311,7 @@ function CollapsedWorkRowRenderer({
       imagePreviewUrlsByPath={imagePreviewUrlsByPath}
       onImageOpen={onImageOpen}
       showDebug={showDebug}
+      threadId={threadId}
     />
   );
 }
@@ -370,11 +417,12 @@ function optimisticStatusText(item: TimelineItem): string {
 }
 
 const AssistantMessageMarkdown = memo(
-  function AssistantMessageMarkdown({ item, text }: { item: TimelineItem; text: string }) {
+  function AssistantMessageMarkdown({ item, text, threadId }: { item: TimelineItem; text: string; threadId?: string }) {
+    const components = useMemo(() => assistantMarkdownComponents(threadId), [threadId]);
     return (
       <Box className="kodex-assistant-message-stack">
         <Box className="kodex-assistant-markdown">
-          <ReactMarkdown remarkPlugins={assistantMarkdownRemarkPlugins} skipHtml components={assistantMarkdownComponents}>
+          <ReactMarkdown remarkPlugins={assistantMarkdownRemarkPlugins} skipHtml components={components}>
             {text}
           </ReactMarkdown>
         </Box>
@@ -386,6 +434,7 @@ const AssistantMessageMarkdown = memo(
     prev.item.id === next.item.id &&
     prev.item.kind === next.item.kind &&
     prev.item.messagePhase === next.item.messagePhase &&
+    prev.threadId === next.threadId &&
     prev.text === next.text,
 );
 AssistantMessageMarkdown.displayName = "AssistantMessageMarkdown";
@@ -461,13 +510,17 @@ function WebSearchBlock({ actions }: { actions: WebSearchAction[] }) {
 }
 
 const ActivityItemRenderer = memo(function ActivityItemRenderer({
+  imagePreviewUrlsByPath,
   item,
   onImageOpen,
   showDebug,
+  threadId,
 }: {
+  imagePreviewUrlsByPath: Record<string, string>;
   item: TimelineItem;
   onImageOpen?: (image: ImageLightboxImage) => void;
   showDebug: boolean;
+  threadId?: string;
 }) {
   const render = rendererRegistry[item.kind] ?? unknownRenderer;
   if (item.kind === "command_execution") {
@@ -498,7 +551,7 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
         </Group>
         <ChevronRight size={16} className="kodex-activity-caret" aria-hidden="true" />
       </summary>
-      <Box className="kodex-activity-body">{render(item, { imagePreviewUrlsByPath: {}, onImageOpen })}</Box>
+      <Box className="kodex-activity-body">{render(item, { imagePreviewUrlsByPath, onImageOpen, threadId })}</Box>
       {showDebug ? <DebugDisclosure item={item} /> : null}
     </details>
   );
@@ -592,20 +645,28 @@ function PlanBlock({ item }: { item: TimelineItem }) {
 function ImageActivityBlock({
   item,
   onImageOpen,
+  threadId,
 }: {
   item: TimelineItem;
   onImageOpen?: (image: ImageLightboxImage) => void;
+  threadId?: string;
 }) {
-  const src = item.imageSrc || displayableImageSrc(item.path);
+  const directSrc = displayableImageSrc(item.imageSrc) ?? displayableImageSrc(item.path);
+  const previewPath = localPreviewPath(item.path) ?? localPreviewPath(item.imageSrc);
+  const src = directSrc ?? (threadId && previewPath ? filePreviewUrl(threadId, previewPath) : null);
   const title = item.imageSrc ? item.path || item.text : item.path;
   return (
     <Stack gap={4}>
-      {!src ? <Text size="sm">{item.text || "Image activity"}</Text> : null}
       {src ? (
         <Box className="kodex-activity-image-preview">
-          <ImageThumbnail alt="" src={src} title={title} onOpen={onImageOpen} />
+          <ImageActivityThumbnail src={src} title={title} onImageOpen={onImageOpen} />
         </Box>
-      ) : null}
+      ) : (
+        <ImagePreviewUnavailable
+          path={item.path ? undefined : previewPath ?? undefined}
+          title={item.text || "Image activity"}
+        />
+      )}
       {item.path ? (
         <Text size="xs" c="dimmed" className="kodex-timeline-inline-row">
           Path: {item.path}
@@ -625,11 +686,102 @@ function ImageActivityBlock({
   );
 }
 
+function ImageActivityThumbnail({
+  onImageOpen,
+  src,
+  title,
+}: {
+  onImageOpen?: (image: ImageLightboxImage) => void;
+  src: string;
+  title?: string;
+}) {
+  const [loadFailed, setLoadFailed] = useState(false);
+
+  useEffect(() => {
+    setLoadFailed(false);
+  }, [src]);
+
+  if (loadFailed) {
+    return <ImagePreviewUnavailable title="Preview unavailable" />;
+  }
+
+  const content = <img alt="" src={src} title={title} onError={() => setLoadFailed(true)} />;
+  return (
+    <Box className="kodex-image-thumbnail">
+      {onImageOpen ? (
+        <button
+          aria-label={title ? `Open ${title}` : "Open image"}
+          className="kodex-image-thumbnail-button"
+          type="button"
+          onClick={() => onImageOpen({ alt: "", src, title })}
+        >
+          {content}
+        </button>
+      ) : (
+        content
+      )}
+    </Box>
+  );
+}
+
+function ImagePreviewUnavailable({ path, title }: { path?: string; title: string }) {
+  return (
+    <Stack gap={2} className="kodex-activity-image-unavailable">
+      <Text size="sm">{title}</Text>
+      {path ? (
+        <Text size="xs" c="dimmed" className="kodex-timeline-inline-row">
+          {path}
+        </Text>
+      ) : null}
+    </Stack>
+  );
+}
+
 function displayableImageSrc(path?: string): string | null {
   if (!path) {
     return null;
   }
   return /^(?:https?:|blob:|data:image\/)/.test(path) ? path : null;
+}
+
+function localPreviewPath(path?: string): string | null {
+  return path && isLocalAbsolutePath(path) ? path : null;
+}
+
+function localMarkdownPreviewHref(threadId?: string, href?: string): { download: string; href: string } | null {
+  const target = href ? localMarkdownPreviewTarget(href) : null;
+  if (!threadId || !target) {
+    return null;
+  }
+  return {
+    download: markdownFileName(target.path),
+    href: `${filePreviewUrl(threadId, target.path)}${target.fragment}`,
+  };
+}
+
+function localMarkdownPreviewTarget(href: string): { fragment: string; path: string } | null {
+  const hashIndex = href.indexOf("#");
+  const pathWithQuery = hashIndex >= 0 ? href.slice(0, hashIndex) : href;
+  const fragment = hashIndex >= 0 ? href.slice(hashIndex) : "";
+  const queryIndex = pathWithQuery.indexOf("?");
+  const path = queryIndex >= 0 ? pathWithQuery.slice(0, queryIndex) : pathWithQuery;
+  if (!isLocalMarkdownPath(path)) {
+    return null;
+  }
+  return { fragment, path };
+}
+
+function isLocalMarkdownPath(path: string): boolean {
+  return isLocalAbsolutePath(path) && /\.(?:md|markdown)$/i.test(path);
+}
+
+function isLocalAbsolutePath(path: string): boolean {
+  return /^(?:\/(?!\/)|[A-Za-z]:[\\/])/.test(path);
+}
+
+function markdownFileName(path: string): string {
+  const parts = path.split(/[\\/]/);
+  return parts[parts.length - 1] || "preview.md";
 }
 
 function StatusMarker({ item }: { item: TimelineItem }) {

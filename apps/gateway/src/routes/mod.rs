@@ -3,6 +3,7 @@ pub mod approvals;
 pub mod capabilities;
 pub mod composer_settings;
 pub mod events;
+pub mod file_preview;
 pub mod health;
 pub mod models;
 pub mod projects;
@@ -152,6 +153,7 @@ mod tests {
             "/v1/threads/{threadId}/queued-inputs/{queueId}",
             "/v1/threads/{threadId}/queued-inputs/{queueId}/retry",
             "/v1/threads/{threadId}/queued-inputs/{queueId}/steer",
+            "/v1/threads/{threadId}/files/preview",
             "/v1/uploads/images",
             "/v1/approvals",
             "/v1/approvals/{approvalId}",
@@ -1072,6 +1074,167 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         assert!(app_server.requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn file_preview_serves_sniffed_images_and_markdown() {
+        let (state, app_server) = test_state().await;
+        let dir = tempdir().unwrap();
+        let images = [
+            (
+                dir.path().join("preview-png.local"),
+                b"\x89PNG\r\n\x1a\npreview image".as_slice(),
+                "image/png",
+            ),
+            (
+                dir.path().join("preview-jpeg.local"),
+                b"\xff\xd8\xff\xe0preview image".as_slice(),
+                "image/jpeg",
+            ),
+            (
+                dir.path().join("preview-gif.local"),
+                b"GIF89apreview image".as_slice(),
+                "image/gif",
+            ),
+            (
+                dir.path().join("preview-webp.local"),
+                b"RIFF0000WEBPpreview image".as_slice(),
+                "image/webp",
+            ),
+        ];
+        for (path, bytes, _) in &images {
+            std::fs::write(path, bytes).unwrap();
+        }
+        let markdown = dir.path().join("notes.md");
+        std::fs::write(&markdown, "# Notes\n\nhello").unwrap();
+        let markdown_long = dir.path().join("notes.markdown");
+        std::fs::write(&markdown_long, "## More\n\nworld").unwrap();
+        let app = build_router(state);
+
+        for (path, bytes, content_type) in &images {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::get(file_preview_url("thread-1", path))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(
+                response.headers().get("content-type").unwrap(),
+                *content_type
+            );
+            assert_eq!(response.headers().get("cache-control").unwrap(), "private");
+            assert_eq!(
+                response.headers().get("content-length").unwrap(),
+                bytes.len().to_string().as_str()
+            );
+            let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            assert_eq!(&body[..], *bytes);
+        }
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get(file_preview_url("thread-1", &markdown))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "text/markdown; charset=utf-8"
+        );
+        assert_eq!(
+            response.headers().get("content-disposition").unwrap(),
+            "attachment; filename=\"notes.md\""
+        );
+        assert_eq!(response.headers().get("cache-control").unwrap(), "private");
+        assert_eq!(response_text(response).await, "# Notes\n\nhello");
+
+        let response = app
+            .oneshot(
+                Request::get(file_preview_url("thread-1", &markdown_long))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "text/markdown; charset=utf-8"
+        );
+
+        let requests = app_server.requests.lock().unwrap();
+        assert!(requests.iter().all(|(method, _)| method == "thread/read"));
+    }
+
+    #[tokio::test]
+    async fn file_preview_rejects_unknown_unavailable_and_unsupported_targets() {
+        let (state, _app_server) = test_state().await;
+        let dir = tempdir().unwrap();
+        let image = dir.path().join("preview.local");
+        std::fs::write(&image, b"\x89PNG\r\n\x1a\npreview image").unwrap();
+        let missing = dir.path().join("missing.png");
+        let unsupported = dir.path().join("notes.txt");
+        std::fs::write(&unsupported, "plain text").unwrap();
+        let invalid_markdown = dir.path().join("bad.md");
+        std::fs::write(&invalid_markdown, b"\xff\xfe\xfd").unwrap();
+        let app = build_router(state);
+
+        for (thread_id, path, expected_status) in [
+            ("thread-missing", image.as_path(), StatusCode::NOT_FOUND),
+            ("thread-1", missing.as_path(), StatusCode::NOT_FOUND),
+            ("thread-1", dir.path(), StatusCode::NOT_FOUND),
+            (
+                "thread-1",
+                unsupported.as_path(),
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            ),
+            (
+                "thread-1",
+                invalid_markdown.as_path(),
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            ),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::get(file_preview_url(thread_id, path))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected_status, "{path:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn file_preview_maps_rollout_missing_thread_app_server_error_to_not_found() {
+        let store = Store::in_memory().await.unwrap();
+        let app_server = Arc::new(MissingRolloutAppServer);
+        let state = AppState::new(Config::default(), store, app_server);
+        let dir = tempdir().unwrap();
+        let image = dir.path().join("preview.local");
+        std::fs::write(&image, b"\x89PNG\r\n\x1a\npreview image").unwrap();
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get(file_preview_url("thread-missing", &image))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
@@ -3032,6 +3195,13 @@ mod tests {
         body
     }
 
+    fn file_preview_url(thread_id: &str, path: &std::path::Path) -> String {
+        format!(
+            "/v1/threads/{thread_id}/files/preview?path={}",
+            path.display()
+        )
+    }
+
     async fn response_text(response: axum::response::Response) -> String {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         String::from_utf8(body.to_vec()).unwrap()
@@ -3053,6 +3223,8 @@ mod tests {
 
     struct RetryableAppServer;
 
+    struct MissingRolloutAppServer;
+
     #[derive(Default)]
     struct BlockingRespondAppServer {
         ready: std::sync::atomic::AtomicBool,
@@ -3073,6 +3245,28 @@ mod tests {
 
         async fn request(&self, _method: &str, _params: Value) -> ApiResult<Value> {
             Err(ApiError::Retryable("server overloaded".to_string()))
+        }
+
+        async fn respond(&self, _request_id: &str, _result: Value) -> ApiResult<()> {
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl AppServer for MissingRolloutAppServer {
+        fn is_ready(&self) -> bool {
+            true
+        }
+
+        fn readiness_error(&self) -> Option<String> {
+            None
+        }
+
+        async fn request(&self, _method: &str, _params: Value) -> ApiResult<Value> {
+            Err(ApiError::BadGateway(
+                "app-server error -32602: no rollout found for thread id thread-missing"
+                    .to_string(),
+            ))
         }
 
         async fn respond(&self, _request_id: &str, _result: Value) -> ApiResult<()> {

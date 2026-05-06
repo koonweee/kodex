@@ -30,6 +30,9 @@ export function eventStatus(event: EventEnvelope): TimelineStatus {
   if (status.includes("approval")) {
     return "approval_required";
   }
+  if (status === "completed" || status === "complete") {
+    return "completed";
+  }
   if (event.codexMethod === "item/completed" || event.codexMethod === "turn/completed") {
     return "completed";
   }

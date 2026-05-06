@@ -53,6 +53,12 @@ function getApiBaseUrl(): string {
   return "";
 }
 
+export function filePreviewUrl(threadId: string, path: string): string {
+  const route = `/v1/threads/${encodeURIComponent(threadId)}/files/preview?path=${encodeURIComponent(path)}`;
+  const apiBaseUrl = getApiBaseUrl();
+  return apiBaseUrl ? `${apiBaseUrl}${route}` : route;
+}
+
 export async function getCapabilities(): Promise<Capabilities> {
   return unwrap(api.GET("/v1/capabilities"));
 }

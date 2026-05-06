@@ -111,6 +111,7 @@ export function ThreadPanel({
                   imagePreviewUrlsByPath={imagePreviewUrlsByPath}
                   scrollParentElement={scrollParentElement}
                   showDebug={showDebugEvents}
+                  threadId={selectedThread.id}
                   timeline={timeline}
                 />
               )}

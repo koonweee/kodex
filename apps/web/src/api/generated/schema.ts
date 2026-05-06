@@ -340,6 +340,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads/{threadId}/files/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview a local image or Markdown file
+         * @description Serves supported readable local files for localhost or trusted VPN deployments; this endpoint is not a public-safe filesystem authorization model.
+         */
+        get: operations["preview_thread_file"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/threads/{threadId}/fork": {
         parameters: {
             query?: never;
@@ -639,6 +659,9 @@ export interface components {
         };
         EventListResponse: {
             events: components["schemas"]["EventEnvelope"][];
+        };
+        FilePreviewQuery: {
+            path: string;
         };
         GatewayCapabilities: {
             approvals: boolean;
@@ -1481,6 +1504,43 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RawAppServerResponse"];
                 };
+            };
+        };
+    };
+    preview_thread_file: {
+        parameters: {
+            query: {
+                path: string;
+            };
+            header?: never;
+            path: {
+                /** @description Thread id that owns the preview context */
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Local image or Markdown preview bytes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Thread or preview path was not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Preview path exists but is not a supported preview type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
