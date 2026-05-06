@@ -142,7 +142,9 @@ function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
   routes["POST /v1/threads/thread-1/queued-inputs/queue-1/retry"] ??= {
     queuedInput: queuedInput("queue-1", "thread-1", "Retry later", "queued"),
   };
-  routes["POST /v1/threads/thread-1/queued-inputs/queue-1/steer"] ??= { id: "queue-1", threadId: "thread-1" };
+  routes["POST /v1/threads/thread-1/queued-inputs/queue-1/steer"] ??= {
+    queuedInput: queuedInput("queue-1", "thread-1", "Add tests", "pendingCommit"),
+  };
   routes["DELETE /v1/threads/thread-1/queued-inputs/queue-1"] ??= { id: "queue-1", threadId: "thread-1" };
   routes["GET /v1/threads/thread-1"] ??= (request: Request) =>
     threadDetailFromSnapshot(routes, request, thread, [

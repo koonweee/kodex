@@ -241,6 +241,45 @@ describe("timeline derivation", () => {
     expect(rows[3]).not.toHaveProperty("dividerBefore");
   });
 
+  it("keeps steered user messages visible outside completed turn work", () => {
+    const rows = deriveTimelineRows(
+      timelineState({
+        turns: [
+          {
+            turnId: "turn-1",
+            itemIds: ["user-1", "cmd-1", "user-2", "answer-1"],
+            status: "completed",
+            startedAtMs: 1_000,
+            completedAtMs: 6_000,
+          },
+        ],
+        items: [
+          timelineItem({ id: "user-1", kind: "user_message", seq: 1, text: "Inspect this." }),
+          timelineItem({ id: "cmd-1", kind: "command_execution", seq: 2, command: "rg issue" }),
+          timelineItem({ id: "user-2", kind: "user_message", seq: 3, text: "Also check the UI." }),
+          timelineItem({
+            id: "answer-1",
+            kind: "assistant_message",
+            messagePhase: "final_answer",
+            seq: 4,
+            text: "Done.",
+          }),
+        ],
+      }),
+    );
+
+    expect(rows.map((row) => row.key)).toEqual(["item-user-1", "work-turn-1", "item-user-2", "item-answer-1"]);
+    expect(rows[1]).toMatchObject({
+      type: "work",
+      collapsedRows: [{ type: "activity", items: [{ id: "cmd-1" }] }],
+    });
+    expect(rows[2]).toMatchObject({
+      type: "item",
+      item: { id: "user-2", kind: "user_message", text: "Also check the UI." },
+    });
+    expect(rows[3]).not.toHaveProperty("dividerBefore");
+  });
+
   it("keeps context compaction markers visible outside completed turn work", () => {
     const rows = deriveTimelineRows(
       timelineState({

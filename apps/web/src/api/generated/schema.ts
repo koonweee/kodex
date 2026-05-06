@@ -746,6 +746,11 @@ export interface components {
             projects: components["schemas"]["Project"][];
         };
         QueuedInput: {
+            /** Format: date-time */
+            acceptedAt?: string | null;
+            /** Format: int64 */
+            acceptedEventSeq?: number | null;
+            acceptedTurnId?: string | null;
             /** Format: int64 */
             attemptCount: number;
             /** Format: date-time */
@@ -776,7 +781,7 @@ export interface components {
             queuedInput: components["schemas"]["QueuedInput"];
         };
         /** @enum {string} */
-        QueuedInputStatus: "queued" | "submitting" | "steering" | "failed";
+        QueuedInputStatus: "queued" | "submitting" | "steering" | "pendingCommit" | "failed";
         RateLimitSnapshot: {
             credits?: null | components["schemas"]["CreditsSnapshot"];
             limitId?: string | null;
@@ -1676,7 +1681,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["QueuedInputDeleteResponse"];
+                    "application/json": components["schemas"]["QueuedInputResponse"];
                 };
             };
         };

@@ -30,11 +30,13 @@ export function QueuedSteerCard({
   return (
     <Box aria-label={QUEUE_LABEL} className="kodex-queued-steer" role="region">
       {visibleRows.map((row) => {
-        const isBusy = row.status === "submitting" || row.status === "steering";
+        const isPendingCommit = row.status === "pendingCommit";
+        const isBusy = row.status === "submitting" || row.status === "steering" || isPendingCommit;
         const imageCount = queuedInputImageCount(row);
         const text = queuedInputText(row);
         const submitLabel = row.status === "failed" ? RETRY_BUTTON_LABEL : STEER_BUTTON_LABEL;
-        const shouldShowSubmitAction = row.status === "failed" || (hasActiveTurn && !blockIdleStartActions);
+        const shouldShowSubmitAction =
+          !isPendingCommit && (row.status === "failed" || (hasActiveTurn && !blockIdleStartActions));
         return (
           <Box
             aria-label={QUEUE_ROW_LABEL}
@@ -50,6 +52,11 @@ export function QueuedSteerCard({
               {row.lastError ? (
                 <Text c="var(--kodex-color-danger-text)" size="xs">
                   {row.lastError}
+                </Text>
+              ) : null}
+              {isPendingCommit ? (
+                <Text c="var(--kodex-text-muted)" size="xs">
+                  Steering...
                 </Text>
               ) : null}
             </Box>

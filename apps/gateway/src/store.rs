@@ -122,6 +122,7 @@ pub enum QueuedInputStatus {
     Queued,
     Submitting,
     Steering,
+    PendingCommit,
     Failed,
 }
 
@@ -131,6 +132,7 @@ impl QueuedInputStatus {
             Self::Queued => "queued",
             Self::Submitting => "submitting",
             Self::Steering => "steering",
+            Self::PendingCommit => "pendingCommit",
             Self::Failed => "failed",
         }
     }
@@ -163,6 +165,9 @@ pub struct QueuedInput {
     pub priority: QueuedInputPriority,
     pub attempt_count: i64,
     pub last_error: Option<String>,
+    pub accepted_turn_id: Option<String>,
+    pub accepted_at: Option<DateTime<Utc>>,
+    pub accepted_event_seq: Option<i64>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -310,6 +315,9 @@ impl Store {
                 priority text not null default 'normal',
                 attempt_count integer not null default 0,
                 last_error text,
+                accepted_turn_id text,
+                accepted_at text,
+                accepted_event_seq integer,
                 created_at text not null,
                 updated_at text not null,
                 deleted_at text
@@ -318,6 +326,12 @@ impl Store {
         )
         .execute(&self.pool)
         .await?;
+        self.add_column_if_missing("queued_turn_inputs", "accepted_turn_id", "text")
+            .await?;
+        self.add_column_if_missing("queued_turn_inputs", "accepted_at", "text")
+            .await?;
+        self.add_column_if_missing("queued_turn_inputs", "accepted_event_seq", "integer")
+            .await?;
         sqlx::query(
             r#"
             create table if not exists thread_runtime_state (
@@ -336,6 +350,25 @@ impl Store {
         )
         .execute(&self.pool)
         .await?;
+        Ok(())
+    }
+
+    async fn add_column_if_missing(
+        &self,
+        table: &str,
+        column: &str,
+        definition: &str,
+    ) -> ApiResult<()> {
+        let pragma = format!("pragma table_info({table})");
+        let columns = sqlx::query(&pragma).fetch_all(&self.pool).await?;
+        let exists = columns.iter().any(|row| {
+            row.try_get::<String, _>("name")
+                .is_ok_and(|name| name == column)
+        });
+        if !exists {
+            let statement = format!("alter table {table} add column {column} {definition}");
+            sqlx::query(&statement).execute(&self.pool).await?;
+        }
         Ok(())
     }
 
@@ -681,7 +714,8 @@ impl Store {
         let rows = sqlx::query(
             r#"
             select id, thread_id, input_json, options_json, status, priority,
-                   attempt_count, last_error, created_at, updated_at
+                   attempt_count, last_error, accepted_turn_id, accepted_at,
+                   accepted_event_seq, created_at, updated_at
             from queued_turn_inputs
             where thread_id = ? and deleted_at is null
             order by case priority when 'rejectedSteer' then 0 else 1 end, created_at asc
@@ -709,7 +743,8 @@ impl Store {
         let row = sqlx::query(
             r#"
             select id, thread_id, input_json, options_json, status, priority,
-                   attempt_count, last_error, created_at, updated_at
+                   attempt_count, last_error, accepted_turn_id, accepted_at,
+                   accepted_event_seq, created_at, updated_at
             from queued_turn_inputs
             where thread_id = ? and id = ? and deleted_at is null
             "#,
@@ -773,6 +808,9 @@ impl Store {
             set status = 'steering',
                 attempt_count = attempt_count + 1,
                 last_error = null,
+                accepted_turn_id = null,
+                accepted_at = null,
+                accepted_event_seq = null,
                 updated_at = ?
             where thread_id = ? and id = ? and status = 'queued' and deleted_at is null
             "#,
@@ -786,6 +824,44 @@ impl Store {
             self.require_existing_queued_input(thread_id, id).await?;
             return Err(ApiError::BadRequest(format!(
                 "queued input {id} is not ready to steer"
+            )));
+        }
+        self.get_queued_input(thread_id, id).await
+    }
+
+    pub async fn mark_queued_input_pending_commit(
+        &self,
+        thread_id: &str,
+        id: &str,
+        accepted_turn_id: &str,
+        accepted_event_seq: Option<i64>,
+    ) -> ApiResult<QueuedInput> {
+        let now = Utc::now();
+        let result = sqlx::query(
+            r#"
+            update queued_turn_inputs
+            set status = 'pendingCommit',
+                priority = 'normal',
+                last_error = null,
+                accepted_turn_id = ?,
+                accepted_at = ?,
+                accepted_event_seq = ?,
+                updated_at = ?
+            where thread_id = ? and id = ? and status = 'steering' and deleted_at is null
+            "#,
+        )
+        .bind(accepted_turn_id)
+        .bind(now)
+        .bind(accepted_event_seq)
+        .bind(now)
+        .bind(thread_id)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            self.require_existing_queued_input(thread_id, id).await?;
+            return Err(ApiError::BadRequest(format!(
+                "queued input {id} is not waiting for steer acceptance"
             )));
         }
         self.get_queued_input(thread_id, id).await
@@ -831,6 +907,9 @@ impl Store {
             set status = 'queued',
                 priority = 'normal',
                 last_error = null,
+                accepted_turn_id = null,
+                accepted_at = null,
+                accepted_event_seq = null,
                 updated_at = ?
             where thread_id = ? and id = ? and status = 'failed' and deleted_at is null
             "#,
@@ -849,6 +928,112 @@ impl Store {
         self.get_queued_input(thread_id, id).await
     }
 
+    pub async fn oldest_pending_commit_input(
+        &self,
+        thread_id: &str,
+        accepted_turn_id: &str,
+    ) -> ApiResult<Option<QueuedInput>> {
+        let row = sqlx::query(
+            r#"
+            select id, thread_id, input_json, options_json, status, priority,
+                   attempt_count, last_error, accepted_turn_id, accepted_at,
+                   accepted_event_seq, created_at, updated_at
+            from queued_turn_inputs
+            where thread_id = ?
+              and accepted_turn_id = ?
+              and deleted_at is null
+              and status = 'pendingCommit'
+            order by updated_at asc, created_at asc
+            limit 1
+            "#,
+        )
+        .bind(thread_id)
+        .bind(accepted_turn_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(row_to_queued_input).transpose()
+    }
+
+    pub async fn requeue_pending_commit_inputs_for_turn(
+        &self,
+        thread_id: &str,
+        accepted_turn_id: &str,
+        error: &str,
+    ) -> ApiResult<Vec<QueuedInput>> {
+        self.requeue_pending_commit_inputs(
+            "thread_id = ? and accepted_turn_id = ?",
+            &[thread_id, accepted_turn_id],
+            error,
+        )
+        .await
+    }
+
+    pub async fn requeue_pending_commit_inputs_for_thread(
+        &self,
+        thread_id: &str,
+        error: &str,
+    ) -> ApiResult<Vec<QueuedInput>> {
+        self.requeue_pending_commit_inputs("thread_id = ?", &[thread_id], error)
+            .await
+    }
+
+    async fn requeue_pending_commit_inputs(
+        &self,
+        predicate: &str,
+        binds: &[&str],
+        error: &str,
+    ) -> ApiResult<Vec<QueuedInput>> {
+        let select = format!(
+            r#"
+            select id, thread_id, input_json, options_json, status, priority,
+                   attempt_count, last_error, accepted_turn_id, accepted_at,
+                   accepted_event_seq, created_at, updated_at
+            from queued_turn_inputs
+            where deleted_at is null and status = 'pendingCommit' and {predicate}
+            order by updated_at asc, created_at asc
+            "#
+        );
+        let mut query = sqlx::query(&select);
+        for bind in binds {
+            query = query.bind(*bind);
+        }
+        let pending = query
+            .fetch_all(&self.pool)
+            .await?
+            .into_iter()
+            .map(row_to_queued_input)
+            .collect::<ApiResult<Vec<_>>>()?;
+        if pending.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let now = Utc::now();
+        let update = format!(
+            r#"
+            update queued_turn_inputs
+            set status = 'queued',
+                priority = 'rejectedSteer',
+                last_error = ?,
+                accepted_turn_id = null,
+                accepted_at = null,
+                accepted_event_seq = null,
+                updated_at = ?
+            where deleted_at is null and status = 'pendingCommit' and {predicate}
+            "#
+        );
+        let mut query = sqlx::query(&update).bind(error).bind(now);
+        for bind in binds {
+            query = query.bind(*bind);
+        }
+        query.execute(&self.pool).await?;
+
+        let mut requeued = Vec::with_capacity(pending.len());
+        for row in pending {
+            requeued.push(self.get_queued_input(&row.thread_id, &row.id).await?);
+        }
+        Ok(requeued)
+    }
+
     async fn transition_queued_input(
         &self,
         thread_id: &str,
@@ -864,6 +1049,9 @@ impl Store {
             set status = ?,
                 priority = coalesce(?, priority),
                 last_error = ?,
+                accepted_turn_id = null,
+                accepted_at = null,
+                accepted_event_seq = null,
                 updated_at = ?
             where thread_id = ? and id = ? and deleted_at is null
             "#,
@@ -885,6 +1073,49 @@ impl Store {
     pub async fn delete_queued_input(&self, thread_id: &str, id: &str) -> ApiResult<()> {
         let now = Utc::now();
         let result = sqlx::query(
+            r#"
+            update queued_turn_inputs
+            set deleted_at = ?, updated_at = ?
+            where thread_id = ?
+                and id = ?
+                and deleted_at is null
+                and status not in ('submitting', 'steering', 'pendingCommit')
+            "#,
+        )
+        .bind(now)
+        .bind(now)
+        .bind(thread_id)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            let existing = sqlx::query_scalar::<_, String>(
+                "select status from queued_turn_inputs where thread_id = ? and id = ? and deleted_at is null",
+            )
+            .bind(thread_id)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+            match existing.as_deref() {
+                Some("submitting" | "steering" | "pendingCommit") => {
+                    return Err(ApiError::BadRequest(
+                        "in-flight queued inputs cannot be deleted".to_string(),
+                    ));
+                }
+                Some(_) => {}
+                None => return Err(ApiError::NotFound(format!("queued input {id}"))),
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn delete_queued_input_for_gateway(
+        &self,
+        thread_id: &str,
+        id: &str,
+    ) -> ApiResult<()> {
+        let now = Utc::now();
+        let result = sqlx::query(
             "update queued_turn_inputs set deleted_at = ?, updated_at = ? where thread_id = ? and id = ? and deleted_at is null",
         )
         .bind(now)
@@ -895,7 +1126,7 @@ impl Store {
         .await?;
         if result.rows_affected() == 0 {
             let existing = sqlx::query_scalar::<_, String>(
-                "select id from queued_turn_inputs where thread_id = ? and id = ?",
+                "select id from queued_turn_inputs where thread_id = ? and id = ? and deleted_at is null",
             )
             .bind(thread_id)
             .bind(id)
@@ -1045,9 +1276,10 @@ impl Store {
         let rows = sqlx::query(
             r#"
             select id, thread_id, input_json, options_json, status, priority,
-                   attempt_count, last_error, created_at, updated_at
+                   attempt_count, last_error, accepted_turn_id, accepted_at,
+                   accepted_event_seq, created_at, updated_at
             from queued_turn_inputs
-            where deleted_at is null and status in ('submitting', 'steering')
+            where deleted_at is null and status in ('submitting', 'steering', 'pendingCommit')
             "#,
         )
         .fetch_all(&self.pool)
@@ -1061,8 +1293,11 @@ impl Store {
             update queued_turn_inputs
             set status = 'failed',
                 last_error = 'Gateway restarted before this queued input could be confirmed. Retry manually to avoid duplicate sends.',
+                accepted_turn_id = null,
+                accepted_at = null,
+                accepted_event_seq = null,
                 updated_at = ?
-            where deleted_at is null and status in ('submitting', 'steering')
+            where deleted_at is null and status in ('submitting', 'steering', 'pendingCommit')
             "#,
         )
         .bind(now)
@@ -1242,6 +1477,7 @@ fn row_to_queued_input(row: sqlx::sqlite::SqliteRow) -> ApiResult<QueuedInput> {
     let options_json: String = row.try_get("options_json")?;
     let status: String = row.try_get("status")?;
     let priority: String = row.try_get("priority")?;
+    let accepted_at: Option<String> = row.try_get("accepted_at")?;
     Ok(QueuedInput {
         id: row.try_get("id")?,
         thread_id: row.try_get("thread_id")?,
@@ -1251,6 +1487,14 @@ fn row_to_queued_input(row: sqlx::sqlite::SqliteRow) -> ApiResult<QueuedInput> {
         priority: queued_input_priority(&priority)?,
         attempt_count: row.try_get("attempt_count")?,
         last_error: row.try_get("last_error")?,
+        accepted_turn_id: row.try_get("accepted_turn_id")?,
+        accepted_at: accepted_at
+            .map(|value| value.parse::<DateTime<Utc>>())
+            .transpose()
+            .map_err(|error| {
+                ApiError::BadGateway(format!("invalid queued input accepted_at: {error}"))
+            })?,
+        accepted_event_seq: row.try_get("accepted_event_seq")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })
@@ -1261,6 +1505,7 @@ fn queued_input_status(status: &str) -> ApiResult<QueuedInputStatus> {
         "queued" => Ok(QueuedInputStatus::Queued),
         "submitting" => Ok(QueuedInputStatus::Submitting),
         "steering" => Ok(QueuedInputStatus::Steering),
+        "pendingCommit" => Ok(QueuedInputStatus::PendingCommit),
         "failed" => Ok(QueuedInputStatus::Failed),
         other => Err(ApiError::BadGateway(format!(
             "unknown queued input status {other}"
@@ -1583,6 +1828,40 @@ mod tests {
                 .await,
             Err(ApiError::BadRequest(_))
         ));
+
+        let pending = store
+            .create_queued_input(
+                "thread-1",
+                vec![UserInput::Text {
+                    text: "pending".to_string(),
+                    text_elements: vec![],
+                }],
+                TurnStartOptions::default(),
+            )
+            .await
+            .unwrap();
+        store
+            .claim_queued_input_for_steering("thread-1", &pending.id)
+            .await
+            .unwrap();
+        store
+            .mark_queued_input_pending_commit("thread-1", &pending.id, "turn-1", Some(42))
+            .await
+            .unwrap();
+        let recovered = store.recover_queued_inputs_after_restart().await.unwrap();
+        let recovered_pending = recovered
+            .iter()
+            .find(|row| row.id == pending.id)
+            .expect("pendingCommit row should be recovered");
+        assert_eq!(recovered_pending.status, QueuedInputStatus::Failed);
+        assert!(recovered_pending.accepted_turn_id.is_none());
+        assert!(recovered_pending.accepted_at.is_none());
+        assert!(recovered_pending.accepted_event_seq.is_none());
+        assert!(recovered_pending
+            .last_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Gateway restarted"));
     }
 
     #[tokio::test]

@@ -80,8 +80,27 @@ async function fallbackQueuedInput(request: Request, nextQueueId: () => string) 
   const threadId = decodeURIComponent(actionMatch[1]);
   const queueId = decodeURIComponent(actionMatch[2]);
   const action = actionMatch[3];
-  if (request.method === "DELETE" || (request.method === "POST" && action === "steer")) {
+  if (request.method === "DELETE") {
     return { id: queueId, threadId };
+  }
+  if (request.method === "POST" && action === "steer") {
+    return {
+      queuedInput: {
+        id: queueId,
+        threadId,
+        input: [{ type: "text", text: "Pending steer" }],
+        options: {},
+        status: "pendingCommit",
+        priority: "normal",
+        attemptCount: 1,
+        lastError: null,
+        acceptedTurnId: "turn-1",
+        acceptedAt: "2026-05-05T00:00:01Z",
+        acceptedEventSeq: null,
+        createdAt: "2026-05-05T00:00:00Z",
+        updatedAt: "2026-05-05T00:00:01Z",
+      },
+    };
   }
   if (request.method === "POST" && action === "retry") {
     return {

@@ -106,16 +106,19 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                 })
                 .await?;
             let _ = state.events.send(event);
-            for normalized in normalized_timeline_events(
+            let normalized = normalized_timeline_events(
                 state,
                 &method,
                 &params,
                 &metadata,
                 TimelineUpdateSource::GatewayStream,
             )
-            .await?
-            {
+            .await?;
+            for normalized in normalized.events {
                 let _ = state.events.send(normalized);
+            }
+            for thread_id in normalized.drain_thread_ids {
+                queue::trigger_queue_drain(state.clone(), thread_id);
             }
         }
         InboundMessage::ServerRequest {
@@ -460,29 +463,48 @@ async fn normalized_timeline_events(
     params: &Value,
     metadata: &EventMetadata,
     source: TimelineUpdateSource,
-) -> ApiResult<Vec<EventEnvelope>> {
+) -> ApiResult<NormalizedTimelineEvents> {
     let mut events = Vec::new();
+    let mut drain_thread_ids = Vec::new();
     if metadata.thread_id.is_none() {
-        return Ok(events);
+        return Ok(NormalizedTimelineEvents {
+            events,
+            drain_thread_ids,
+        });
     }
 
     if let Some(event) = timeline_item_delta_event(state, method, params, metadata, source).await? {
         events.push(event);
     }
-    if let Some(event) = timeline_item_upsert_event(state, params, metadata, source).await? {
-        events.push(event);
-    }
-    if let Some(event) = timeline_turn_upsert_event(state, params, metadata, source).await? {
-        events.push(event);
-    }
+    events.extend(timeline_item_upsert_event(state, params, metadata, source).await?);
+    let turn_upsert = timeline_turn_upsert_event(state, params, metadata, source).await?;
+    events.extend(turn_upsert.events);
+    drain_thread_ids.extend(turn_upsert.drain_thread_ids);
     if let Some(event) = timeline_thread_metadata_event(state, params, metadata, source).await? {
         events.push(event);
     }
-    if let Some(event) = timeline_thread_status_event(state, params, metadata, source).await? {
-        events.push(event);
-    }
+    let thread_status = timeline_thread_status_event(state, params, metadata, source).await?;
+    events.extend(thread_status.events);
+    drain_thread_ids.extend(thread_status.drain_thread_ids);
 
-    Ok(events)
+    Ok(NormalizedTimelineEvents {
+        events,
+        drain_thread_ids,
+    })
+}
+
+struct NormalizedTimelineEvents {
+    events: Vec<EventEnvelope>,
+    drain_thread_ids: Vec<String>,
+}
+
+impl Default for NormalizedTimelineEvents {
+    fn default() -> Self {
+        Self {
+            events: Vec::new(),
+            drain_thread_ids: Vec::new(),
+        }
+    }
 }
 
 async fn timeline_item_delta_event(
@@ -527,18 +549,18 @@ async fn timeline_item_upsert_event(
     params: &Value,
     metadata: &EventMetadata,
     source: TimelineUpdateSource,
-) -> ApiResult<Option<EventEnvelope>> {
+) -> ApiResult<Vec<EventEnvelope>> {
     let Some(thread_id) = metadata.thread_id.clone() else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let Some(turn_id) = metadata.turn_id.clone() else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let Some(item) = params.get("item").filter(|item| item.is_object()) else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let Ok(item_snapshot) = item_snapshot_from_value(item) else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let payload = TimelineItemUpsertPayload {
         source,
@@ -552,7 +574,7 @@ async fn timeline_item_upsert_event(
         NewEvent {
             project_id: metadata.project_id.clone(),
             thread_id: Some(thread_id.clone()),
-            turn_id: Some(turn_id),
+            turn_id: Some(turn_id.clone()),
             item_id: Some(payload.item_id.clone()),
             kind: "timeline.item_upsert".to_string(),
             codex_method: Some("item/upsert".to_string()),
@@ -560,7 +582,13 @@ async fn timeline_item_upsert_event(
         },
     )
     .await?;
-    Ok(Some(event))
+    let mut events = vec![event];
+    if let Some(event) =
+        queue::reconcile_pending_steer_commit_event(state, &thread_id, &turn_id, item).await?
+    {
+        events.push(event);
+    }
+    Ok(events)
 }
 
 async fn timeline_turn_upsert_event(
@@ -568,15 +596,15 @@ async fn timeline_turn_upsert_event(
     params: &Value,
     metadata: &EventMetadata,
     source: TimelineUpdateSource,
-) -> ApiResult<Option<EventEnvelope>> {
+) -> ApiResult<NormalizedTimelineEvents> {
     let Some(thread_id) = metadata.thread_id.clone() else {
-        return Ok(None);
+        return Ok(NormalizedTimelineEvents::default());
     };
     let Some(turn) = params.get("turn").filter(|turn| turn.is_object()) else {
-        return Ok(None);
+        return Ok(NormalizedTimelineEvents::default());
     };
     let Ok(turn) = turn_snapshot_from_value(turn) else {
-        return Ok(None);
+        return Ok(NormalizedTimelineEvents::default());
     };
     let payload = TimelineTurnUpsertPayload {
         source,
@@ -596,7 +624,17 @@ async fn timeline_turn_upsert_event(
         },
     )
     .await?;
-    let runtime = if is_terminal_turn_status(&turn.status) {
+    let mut events = vec![event.clone()];
+    let terminal = is_terminal_turn_status(&turn.status);
+    if terminal {
+        events.extend(
+            queue::requeue_unmatched_pending_commit_input_events_for_turn(
+                state, &thread_id, &turn.id,
+            )
+            .await?,
+        );
+    }
+    let runtime = if terminal {
         ThreadRuntimeState {
             thread_id: metadata.thread_id.clone().unwrap_or_default(),
             status: "idle".to_string(),
@@ -614,8 +652,15 @@ async fn timeline_turn_upsert_event(
         }
     };
     let runtime_thread_id = runtime.thread_id.clone();
-    queue::refresh_runtime_and_maybe_drain(state, &runtime_thread_id, runtime).await?;
-    Ok(Some(event))
+    queue::refresh_runtime_state(state, runtime).await?;
+    Ok(NormalizedTimelineEvents {
+        events,
+        drain_thread_ids: if terminal {
+            vec![runtime_thread_id]
+        } else {
+            Vec::new()
+        },
+    })
 }
 
 async fn timeline_thread_metadata_event(
@@ -673,15 +718,15 @@ async fn timeline_thread_status_event(
     params: &Value,
     metadata: &EventMetadata,
     source: TimelineUpdateSource,
-) -> ApiResult<Option<EventEnvelope>> {
+) -> ApiResult<NormalizedTimelineEvents> {
     let Some(thread_id) = metadata.thread_id.clone() else {
-        return Ok(None);
+        return Ok(NormalizedTimelineEvents::default());
     };
     let status_value = params
         .get("status")
         .or_else(|| params.get("thread").and_then(|thread| thread.get("status")));
     let Some(status) = status_value.and_then(thread_status_from_value) else {
-        return Ok(None);
+        return Ok(NormalizedTimelineEvents::default());
     };
     let payload = TimelineThreadStatusPayload {
         source,
@@ -702,20 +747,27 @@ async fn timeline_thread_status_event(
         },
     )
     .await?;
+    let mut events = vec![event.clone()];
     match status {
         ThreadStatus::Idle | ThreadStatus::SystemError => {
-            queue::refresh_runtime_and_maybe_drain(
-                state,
-                &thread_id,
-                ThreadRuntimeState {
+            state
+                .store
+                .upsert_thread_runtime_state(ThreadRuntimeState {
                     thread_id: thread_id.clone(),
                     status: "idle".to_string(),
                     active_turn_id: None,
                     updated_at: Utc::now(),
                     last_event_seq: Some(event.seq),
-                },
-            )
-            .await?;
+                })
+                .await?;
+            events.extend(
+                queue::requeue_unmatched_pending_commit_input_events_for_thread(state, &thread_id)
+                    .await?,
+            );
+            return Ok(NormalizedTimelineEvents {
+                events,
+                drain_thread_ids: vec![thread_id],
+            });
         }
         ThreadStatus::Active => {
             state
@@ -731,7 +783,10 @@ async fn timeline_thread_status_event(
         }
         ThreadStatus::NotLoaded => {}
     }
-    Ok(Some(event))
+    Ok(NormalizedTimelineEvents {
+        events,
+        drain_thread_ids: Vec::new(),
+    })
 }
 
 async fn append_timeline_event(state: &AppState, event: NewEvent) -> ApiResult<EventEnvelope> {

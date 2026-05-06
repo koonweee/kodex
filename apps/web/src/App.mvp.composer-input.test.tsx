@@ -343,7 +343,7 @@ describe("MVP composer input flows", () => {
     });
     expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(0);
     await waitFor(() => {
-      expect(screen.queryByRole("region", { name: /queued steer messages/i })).not.toBeInTheDocument();
+      expect(screen.getByRole("region", { name: /queued steer messages/i })).toHaveTextContent("Steering...");
     });
   });
 
@@ -1076,6 +1076,7 @@ describe("MVP composer input flows", () => {
   });
 
   it("queues active-turn composer text, steers selected rows, and removes only successful rows", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [activeThread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
@@ -1089,6 +1090,7 @@ describe("MVP composer input flows", () => {
     render(<App />);
 
     expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
     const composer = screen.getByLabelText(/message composer/i);
     expect(screen.getByRole("button", { name: /stop turn/i })).toBeInTheDocument();
     await userEvent.type(composer, "Add tests");
@@ -1109,6 +1111,24 @@ describe("MVP composer input flows", () => {
     await userEvent.click(within(rows[0]).getByRole("button", { name: /steer/i }));
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs/queue-1/steer")).toHaveLength(1);
+      expect(within(screen.getByRole("region", { name: /queued steer messages/i })).getByText("Add tests")).toBeInTheDocument();
+      expect(within(screen.getByRole("region", { name: /queued steer messages/i })).getByText("Steering...")).toBeInTheDocument();
+    });
+    act(() => {
+      for (const source of FakeEventSource.instances) {
+        const event = {
+          seq: 10_000,
+          id: "queue-delete-1",
+          receivedAt: "2026-05-05T00:00:02Z",
+          kind: "turn_queue.item_deleted",
+          threadId: "thread-1",
+          payload: { id: "queue-1", threadId: "thread-1" },
+        };
+        source.emit(event);
+        source.emitNamed("turn_queue.item_deleted", event);
+      }
+    });
+    await waitFor(() => {
       expect(within(screen.getByRole("region", { name: /queued steer messages/i })).queryByText("Add tests")).not.toBeInTheDocument();
     });
     expect(screen.getByText("Keep scope tight")).toBeInTheDocument();

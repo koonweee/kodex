@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+log_step() {
+  printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
+}
+
+trap 'status=$?; log_step "ERROR exit=$status line=$LINENO command=$BASH_COMMAND" >&2; exit "$status"' ERR
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 script_path="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 session_name="${KODEX_PROD_SESSION:-kodex-prod}"
@@ -20,6 +26,7 @@ if [[ "${KODEX_PROD_RESTART_PHASE:-}" != "child" ]]; then
   : >"$log_path"
 
   if tmux has-session -t "$restart_session" 2>/dev/null; then
+    log_step "Removing stale helper session $restart_session"
     tmux kill-session -t "$restart_session"
   fi
 
@@ -38,7 +45,7 @@ if [[ "${KODEX_PROD_RESTART_PHASE:-}" != "child" ]]; then
     printf ' >>%q 2>&1' "$log_path"
   )
 
-  tmux new-session -d -s "$restart_session" -c "$repo_root" "$child_command"
+  tmux new-session -d -s "$restart_session" -c "$repo_root" "bash -lc $(printf '%q' "$child_command")"
 
   echo "Restart handed off to tmux session $restart_session."
   echo "Log: $log_path"
@@ -46,29 +53,35 @@ if [[ "${KODEX_PROD_RESTART_PHASE:-}" != "child" ]]; then
   exit 0
 fi
 
-echo "Restarting $session_name from $repo_root"
-echo "Endpoint: $endpoint"
+log_step "Restarting $session_name from $repo_root"
+log_step "Endpoint: $endpoint"
 
 cd "$repo_root/apps/web"
+log_step "Building frontend bundle"
 npm run build
+log_step "Frontend build finished"
 
 if tmux has-session -t "$session_name" 2>/dev/null; then
+  log_step "Stopping existing tmux session $session_name"
   tmux kill-session -t "$session_name"
 fi
 
+log_step "Starting tmux session $session_name"
 tmux new-session -d -s "$session_name" \
   -c "$repo_root" \
   "KODEX_FRONTEND_DIST=apps/web/dist cargo run -p kodex-gateway"
 
+log_step "Waiting for $endpoint"
 for _ in $(seq 1 30); do
   if curl -I --max-time 2 "$endpoint" >"$curl_out" 2>"$curl_err"; then
+    log_step "Endpoint is healthy"
     cat "$curl_out"
     exit 0
   fi
   sleep 1
 done
 
-echo "Timed out waiting for $endpoint" >&2
+log_step "Timed out waiting for $endpoint" >&2
 tmux capture-pane -pt "$session_name:0.0" -S -120 >&2 || true
 cat "$curl_err" >&2 || true
 exit 1

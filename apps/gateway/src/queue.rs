@@ -5,14 +5,17 @@ use axum::{
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use utoipa::ToSchema;
 
 use crate::{
     api::AppState,
     app_server_api::{self, TurnStartOptions, UserInput},
     error::{ApiError, ApiResult},
-    store::{NewEvent, QueuedInput, QueuedInputPriority, QueuedInputStatus, ThreadRuntimeState},
+    store::{
+        EventEnvelope, NewEvent, QueuedInput, QueuedInputPriority, QueuedInputStatus,
+        ThreadRuntimeState,
+    },
 };
 
 pub const QUEUE_UPSERT_EVENT: &str = "turn_queue.item_upsert";
@@ -107,11 +110,11 @@ pub async fn retry_queued_input(
     Ok(Json(QueuedInputResponse { queued_input }))
 }
 
-#[utoipa::path(post, path = "/v1/threads/{threadId}/queued-inputs/{queueId}/steer", responses((status = 200, body = QueuedInputDeleteResponse)))]
+#[utoipa::path(post, path = "/v1/threads/{threadId}/queued-inputs/{queueId}/steer", responses((status = 200, body = QueuedInputResponse)))]
 pub async fn steer_queued_input(
     State(state): State<AppState>,
     Path((thread_id, queue_id)): Path<(String, String)>,
-) -> ApiResult<Json<QueuedInputDeleteResponse>> {
+) -> ApiResult<Json<QueuedInputResponse>> {
     let runtime = state.store.get_thread_runtime_state(&thread_id).await?;
     let runtime = match runtime {
         Some(runtime) if runtime.status == "active" && runtime.active_turn_id.is_none() => {
@@ -134,21 +137,18 @@ pub async fn steer_queued_input(
     let result = app_server_api::client(&state.app_server)
         .turn_steer(
             thread_id.clone(),
-            active_turn_id,
+            active_turn_id.clone(),
             queued_input.input.clone(),
         )
         .await;
     match result {
         Ok(_) => {
-            state
+            let queued_input = state
                 .store
-                .delete_queued_input(&thread_id, &queue_id)
+                .mark_queued_input_pending_commit(&thread_id, &queue_id, &active_turn_id, None)
                 .await?;
-            broadcast_queue_delete(&state, &thread_id, &queue_id).await?;
-            Ok(Json(QueuedInputDeleteResponse {
-                id: queue_id,
-                thread_id,
-            }))
+            broadcast_queue_upsert(&state, &queued_input).await?;
+            Ok(Json(QueuedInputResponse { queued_input }))
         }
         Err(error) if is_non_steerable_error(&error) => {
             let queued_input = state
@@ -205,21 +205,82 @@ pub fn trigger_queue_drain(state: AppState, thread_id: String) {
     });
 }
 
-pub async fn refresh_runtime_and_maybe_drain(
+pub async fn refresh_runtime_state(state: &AppState, runtime: ThreadRuntimeState) -> ApiResult<()> {
+    state.store.upsert_thread_runtime_state(runtime).await?;
+    Ok(())
+}
+
+pub async fn reconcile_pending_steer_commit_event(
     state: &AppState,
     thread_id: &str,
-    runtime: ThreadRuntimeState,
-) -> ApiResult<()> {
-    state.store.upsert_thread_runtime_state(runtime).await?;
-    if state
-        .store
-        .get_thread_runtime_state(thread_id)
-        .await?
-        .is_some_and(|runtime| runtime.status == "idle")
-    {
-        trigger_queue_drain(state.clone(), thread_id.to_string());
+    turn_id: &str,
+    item: &Value,
+) -> ApiResult<Option<EventEnvelope>> {
+    if !is_user_message_item(item) {
+        return Ok(None);
     }
-    Ok(())
+    let committed_key = pending_steer_compare_key_from_item(item);
+    let Some(pending) = state
+        .store
+        .oldest_pending_commit_input(thread_id, turn_id)
+        .await?
+    else {
+        return Ok(None);
+    };
+    if pending_steer_compare_key_from_inputs(&pending.input) != committed_key {
+        tracing::debug!(
+            thread_id,
+            turn_id,
+            queue_id = pending.id,
+            "committed user message did not match front pending steer"
+        );
+        return Ok(None);
+    }
+    state
+        .store
+        .delete_queued_input_for_gateway(thread_id, &pending.id)
+        .await?;
+    append_queue_delete_event(state, thread_id, &pending.id)
+        .await
+        .map(Some)
+}
+
+pub async fn requeue_unmatched_pending_commit_input_events_for_turn(
+    state: &AppState,
+    thread_id: &str,
+    turn_id: &str,
+) -> ApiResult<Vec<EventEnvelope>> {
+    let rows = state
+        .store
+        .requeue_pending_commit_inputs_for_turn(
+            thread_id,
+            turn_id,
+            "Steer was accepted but not confirmed in committed history before the turn ended.",
+        )
+        .await?;
+    let mut events = Vec::new();
+    for row in rows {
+        events.push(append_queue_upsert_event(state, &row).await?);
+    }
+    Ok(events)
+}
+
+pub async fn requeue_unmatched_pending_commit_input_events_for_thread(
+    state: &AppState,
+    thread_id: &str,
+) -> ApiResult<Vec<EventEnvelope>> {
+    let rows = state
+        .store
+        .requeue_pending_commit_inputs_for_thread(
+            thread_id,
+            "Steer was accepted but not confirmed in committed history before the thread became idle.",
+        )
+        .await?;
+    let mut events = Vec::new();
+    for row in rows {
+        events.push(append_queue_upsert_event(state, &row).await?);
+    }
+    Ok(events)
 }
 
 async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<()> {
@@ -261,7 +322,7 @@ async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<
         Ok(_) => {
             state
                 .store
-                .delete_queued_input(thread_id, &queued_input.id)
+                .delete_queued_input_for_gateway(thread_id, &queued_input.id)
                 .await?;
             broadcast_queue_delete(state, thread_id, &queued_input.id).await?;
         }
@@ -318,7 +379,16 @@ fn is_terminal_turn_status(status: &str) -> bool {
 }
 
 async fn broadcast_queue_upsert(state: &AppState, queued_input: &QueuedInput) -> ApiResult<()> {
-    let event = state
+    let event = append_queue_upsert_event(state, queued_input).await?;
+    let _ = state.events.send(event);
+    Ok(())
+}
+
+async fn append_queue_upsert_event(
+    state: &AppState,
+    queued_input: &QueuedInput,
+) -> ApiResult<EventEnvelope> {
+    state
         .store
         .append_event(NewEvent {
             project_id: None,
@@ -329,9 +399,7 @@ async fn broadcast_queue_upsert(state: &AppState, queued_input: &QueuedInput) ->
             codex_method: None,
             payload: serde_json::to_value(queued_input)?,
         })
-        .await?;
-    let _ = state.events.send(event);
-    Ok(())
+        .await
 }
 
 async fn broadcast_queue_delete(
@@ -339,7 +407,17 @@ async fn broadcast_queue_delete(
     thread_id: &str,
     queue_id: &str,
 ) -> ApiResult<()> {
-    let event = state
+    let event = append_queue_delete_event(state, thread_id, queue_id).await?;
+    let _ = state.events.send(event);
+    Ok(())
+}
+
+async fn append_queue_delete_event(
+    state: &AppState,
+    thread_id: &str,
+    queue_id: &str,
+) -> ApiResult<EventEnvelope> {
+    state
         .store
         .append_event(NewEvent {
             project_id: None,
@@ -353,9 +431,66 @@ async fn broadcast_queue_delete(
                 "threadId": thread_id,
             }),
         })
-        .await?;
-    let _ = state.events.send(event);
-    Ok(())
+        .await
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct PendingSteerCompareKey {
+    text: String,
+    image_count: usize,
+}
+
+fn pending_steer_compare_key_from_inputs(input: &[UserInput]) -> PendingSteerCompareKey {
+    let mut text = String::new();
+    let mut image_count = 0;
+    for item in input {
+        match item {
+            UserInput::Text {
+                text: item_text, ..
+            } => text.push_str(item_text),
+            UserInput::Image { .. } | UserInput::LocalImage { .. } => image_count += 1,
+            UserInput::Skill { .. } | UserInput::Mention { .. } => {}
+        }
+    }
+    PendingSteerCompareKey { text, image_count }
+}
+
+fn pending_steer_compare_key_from_item(item: &Value) -> PendingSteerCompareKey {
+    let content = item
+        .get("content")
+        .or_else(|| item.get("input"))
+        .and_then(Value::as_array);
+    let Some(content) = content else {
+        return PendingSteerCompareKey {
+            text: item
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            image_count: 0,
+        };
+    };
+    let mut text = String::new();
+    let mut image_count = 0;
+    for part in content {
+        match part.get("type").and_then(Value::as_str) {
+            Some("text") => {
+                if let Some(part_text) = part.get("text").and_then(Value::as_str) {
+                    text.push_str(part_text);
+                }
+            }
+            Some("image") | Some("localImage") => image_count += 1,
+            _ => {}
+        }
+    }
+    PendingSteerCompareKey { text, image_count }
+}
+
+fn is_user_message_item(item: &Value) -> bool {
+    item.get("type")
+        .or_else(|| item.get("itemType"))
+        .and_then(Value::as_str)
+        .is_some_and(|item_type| item_type == "userMessage")
 }
 
 fn is_non_steerable_error(error: &ApiError) -> bool {
@@ -393,11 +528,12 @@ impl QueuedInput {
     }
 }
 
-pub fn queued_input_status_schema_values() -> [QueuedInputStatus; 4] {
+pub fn queued_input_status_schema_values() -> [QueuedInputStatus; 5] {
     [
         QueuedInputStatus::Queued,
         QueuedInputStatus::Submitting,
         QueuedInputStatus::Steering,
+        QueuedInputStatus::PendingCommit,
         QueuedInputStatus::Failed,
     ]
 }

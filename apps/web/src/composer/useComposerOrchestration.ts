@@ -269,8 +269,7 @@ export function useComposerOrchestration({
       if (row.status === "failed" || !activeSelectedTurnId) {
         onQueuedInputUpsert(await retryQueuedInput(row.threadId, row.id));
       } else {
-        await steerQueuedInput(row.threadId, row.id);
-        onQueuedInputDeleted(row.threadId, row.id);
+        onQueuedInputUpsert(await steerQueuedInput(row.threadId, row.id));
       }
     } catch (error) {
       onError(error);

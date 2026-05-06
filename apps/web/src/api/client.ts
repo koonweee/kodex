@@ -176,12 +176,13 @@ export async function retryQueuedInput(threadId: string, queueId: string): Promi
   return response.queuedInput;
 }
 
-export async function steerQueuedInput(threadId: string, queueId: string): Promise<void> {
-  await unwrap(
+export async function steerQueuedInput(threadId: string, queueId: string): Promise<QueuedInput> {
+  const response = await unwrap(
     api.POST("/v1/threads/{threadId}/queued-inputs/{queueId}/steer", {
       params: { path: { threadId, queueId } },
     }),
   );
+  return response.queuedInput;
 }
 
 export async function deleteQueuedInput(threadId: string, queueId: string): Promise<void> {

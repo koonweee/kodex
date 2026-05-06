@@ -54,6 +54,18 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - New frontend behavior should add or update the closest domain test. Avoid growing broad app-level MVP tests unless the behavior genuinely spans multiple domains.
 - When a feature needs app-server raw payload interpretation, isolate it in a named normalization helper and cover it with focused tests.
 
+## Multi-Client State Ownership
+
+- Design the web client as a thin projection of gateway-owned state. Any state that must be correct across two browser tabs, reloads, reconnects, or future clients must live in the gateway or upstream app-server, not only in React state.
+- Browser-local state is appropriate for drafts, focus, hover, modals, scroll, drag interactions, unsent attachments, and other purely visual or per-tab UI concerns.
+- The gateway must own shared lifecycle decisions: active or pending turn state, queued or pending submitted input, interrupt and steer routing, read receipts, thread completion counters, approval state, account/session state, thread settings, archive/fork/title metadata, and sidebar ordering when ordering affects selection or read state.
+- Do not make the browser decide shared command routing from stale local state. Prefer gateway commands that atomically inspect current gateway/app-server state, then return or emit the authoritative result.
+- Optimistic UI is allowed only as a temporary projection of a gateway-owned pending record, or when incorrect cross-client visibility is harmless. If another tab should know about it, create a gateway row/event for it.
+- Do not derive durable counters, lifecycle status, or ordering from client-observed event order unless the gateway provides a monotonic sequence or watermark that makes the derivation safe.
+- Snapshot and SSE reconciliation must have a gateway-owned source of truth. Snapshots that can overwrite live state should carry a comparable sequence/runtime watermark, or the gateway should emit ordered canonical snapshot events.
+- Thread/session settings that affect future turns must be versioned or merged by the gateway. A stale tab must not be able to silently overwrite newer shared settings by submitting a full local options object.
+- Any behavior-changing feature that touches shared thread/project/session state should include a same-user, two-tab test shape: one client mutates or misses events, and the other must converge through gateway state/SSE without reload.
+
 ## Parallel Work
 
 - Use subagents for independent, parallelizable work when the active environment and instructions permit it.
@@ -68,6 +80,7 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - Prefer a review subagent when available and permitted.
 - If no review subagent is available, perform a self-review and document what was checked.
 - Iterate until tests pass, docs are updated, and the active milestone exit conditions are satisfied.
+- Before marking frontend lifecycle work complete, check whether the behavior remains correct with two tabs open on the same gateway. If correctness depends on one tab's React state, move the source of truth to the gateway or document why the state is intentionally per-tab.
 - Do not mark work complete while tests, docs, generated OpenAPI artifacts, generated frontend API types, or exit conditions are failing.
 
 ## Documentation Discipline

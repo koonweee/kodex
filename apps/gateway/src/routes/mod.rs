@@ -49,7 +49,7 @@ mod tests {
     #[tokio::test]
     async fn health_and_openapi_routes_exist() {
         let (state, _) = test_state().await;
-        let app = build_router(state);
+        let app = build_router(state.clone());
 
         let health = app
             .clone()
@@ -68,7 +68,7 @@ mod tests {
     #[tokio::test]
     async fn default_routes_do_not_emit_wildcard_cors() {
         let (state, _) = test_state().await;
-        let app = build_router(state);
+        let app = build_router(state.clone());
 
         let response = app
             .oneshot(
@@ -193,6 +193,21 @@ mod tests {
         assert!(upload_request_schema["required"]
             .as_array()
             .is_some_and(|required| required.iter().any(|value| value == "images")));
+        assert!(
+            openapi["components"]["schemas"]["QueuedInputStatus"]["enum"]
+                .as_array()
+                .is_some_and(|values| values.iter().any(|value| value == "pendingCommit"))
+        );
+        assert_eq!(
+            openapi["paths"]["/v1/threads/{threadId}/queued-inputs/{queueId}/steer"]["post"]
+                ["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/QueuedInputResponse"
+        );
+        assert_eq!(
+            openapi["paths"]["/v1/threads/{threadId}/queued-inputs/{queueId}"]["delete"]
+                ["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/QueuedInputDeleteResponse"
+        );
     }
 
     #[tokio::test]
@@ -411,7 +426,7 @@ mod tests {
             },
             "cwd": "/workspace"
         }));
-        let app = build_router(state);
+        let app = build_router(state.clone());
 
         let body = json!({
             "projectId": project.id,
@@ -2009,7 +2024,7 @@ mod tests {
                 "updatedAt": 1_767_225_610_i64
             }
         }));
-        let app = build_router(state);
+        let app = build_router(state.clone());
         let created = app
             .clone()
             .oneshot(
@@ -2025,9 +2040,10 @@ mod tests {
         assert_eq!(created.status(), StatusCode::OK);
         let created = response_json(created).await;
         let queue_id = created["queuedInput"]["id"].as_str().unwrap();
-
-        assert_ok(
-            app.oneshot(
+        let mut receiver = state.events.subscribe();
+        let steered = app
+            .clone()
+            .oneshot(
                 Request::post(format!(
                     "/v1/threads/thread-1/queued-inputs/{queue_id}/steer"
                 ))
@@ -2035,13 +2051,604 @@ mod tests {
                 .unwrap(),
             )
             .await
-            .unwrap(),
-        );
+            .unwrap();
+        assert_eq!(steered.status(), StatusCode::OK);
+        let steered = response_json(steered).await;
+        assert_eq!(steered["queuedInput"]["id"], queue_id);
+        assert_eq!(steered["queuedInput"]["status"], "pendingCommit");
+        assert_eq!(steered["queuedInput"]["acceptedTurnId"], "turn-active");
 
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "thread/read");
         assert_eq!(requests[1].0, "turn/steer");
         assert_eq!(requests[1].1["expectedTurnId"], "turn-active");
+
+        timeout(Duration::from_secs(2), async {
+            let mut saw_steering = false;
+            let mut saw_pending_commit = false;
+            loop {
+                let event = receiver.recv().await.unwrap();
+                if event.kind == queue::QUEUE_DELETE_EVENT && event.payload["id"] == queue_id {
+                    panic!("successful steer acceptance must not broadcast queue delete");
+                }
+                if event.kind == queue::QUEUE_UPSERT_EVENT && event.payload["id"] == queue_id {
+                    match event.payload["status"].as_str() {
+                        Some("steering") => saw_steering = true,
+                        Some("pendingCommit") => {
+                            assert!(saw_steering);
+                            saw_pending_commit = true;
+                        }
+                        _ => {}
+                    }
+                }
+                if saw_pending_commit {
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn committed_user_message_deletes_matching_pending_steer() {
+        let (state, _app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "active".to_string(),
+                active_turn_id: Some("turn-1".to_string()),
+                updated_at: chrono::Utc::now(),
+                last_event_seq: None,
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads/thread-1/queued-inputs")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"after tool"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let created = response_json(created).await;
+        let queue_id = created["queuedInput"]["id"].as_str().unwrap().to_string();
+        let mut receiver = state.events.subscribe();
+
+        let steered = app
+            .clone()
+            .oneshot(
+                Request::post(format!(
+                    "/v1/threads/thread-1/queued-inputs/{queue_id}/steer"
+                ))
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response_json(steered).await["queuedInput"]["status"],
+            "pendingCommit"
+        );
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "item/completed".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "item-user-1",
+                    "item": {
+                        "id": "item-user-1",
+                        "type": "userMessage",
+                        "content": [{"type": "text", "text": "after tool"}]
+                    }
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        timeout(Duration::from_secs(2), async {
+            loop {
+                let event = receiver.recv().await.unwrap();
+                if event.kind == queue::QUEUE_DELETE_EVENT && event.payload["id"] == queue_id {
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        let listed = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1/queued-inputs")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(response_json(listed).await["queuedInputs"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn accepted_steer_cannot_be_deleted_by_stale_client() {
+        let (state, _app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "active".to_string(),
+                active_turn_id: Some("turn-1".to_string()),
+                updated_at: chrono::Utc::now(),
+                last_event_seq: None,
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads/thread-1/queued-inputs")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"after tool"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let created = response_json(created).await;
+        let queue_id = created["queuedInput"]["id"].as_str().unwrap().to_string();
+        assert_ok(
+            app.clone()
+                .oneshot(
+                    Request::post(format!(
+                        "/v1/threads/thread-1/queued-inputs/{queue_id}/steer"
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+
+        let deleted = app
+            .clone()
+            .oneshot(
+                Request::delete(format!("/v1/threads/thread-1/queued-inputs/{queue_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(deleted.status(), StatusCode::BAD_REQUEST);
+        let listed = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1/queued-inputs")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let listed = response_json(listed).await;
+        assert_eq!(listed["queuedInputs"][0]["id"], queue_id);
+        assert_eq!(listed["queuedInputs"][0]["status"], "pendingCommit");
+    }
+
+    #[tokio::test]
+    async fn in_flight_steer_cannot_be_deleted_by_stale_client() {
+        let (state, _app_server) = test_state().await;
+        let queued_input = state
+            .store
+            .create_queued_input(
+                "thread-1",
+                vec![crate::app_server_api::UserInput::Text {
+                    text: "after tool".to_string(),
+                    text_elements: vec![],
+                }],
+                crate::app_server_api::TurnStartOptions::default(),
+            )
+            .await
+            .unwrap();
+        state
+            .store
+            .claim_queued_input_for_steering("thread-1", &queued_input.id)
+            .await
+            .unwrap();
+        state
+            .store
+            .delete_queued_input("thread-1", &queued_input.id)
+            .await
+            .unwrap_err();
+        let app = build_router(state.clone());
+
+        let deleted = app
+            .oneshot(
+                Request::delete(format!(
+                    "/v1/threads/thread-1/queued-inputs/{}",
+                    queued_input.id
+                ))
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(deleted.status(), StatusCode::BAD_REQUEST);
+        let queued_input = state
+            .store
+            .get_queued_input("thread-1", &queued_input.id)
+            .await
+            .unwrap();
+        assert_eq!(
+            queued_input.status,
+            crate::store::QueuedInputStatus::Steering
+        );
+    }
+
+    #[tokio::test]
+    async fn committed_user_message_broadcasts_before_pending_steer_delete() {
+        let (state, _app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "active".to_string(),
+                active_turn_id: Some("turn-1".to_string()),
+                updated_at: chrono::Utc::now(),
+                last_event_seq: None,
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads/thread-1/queued-inputs")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"after tool"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let created = response_json(created).await;
+        let queue_id = created["queuedInput"]["id"].as_str().unwrap().to_string();
+        assert_ok(
+            app.clone()
+                .oneshot(
+                    Request::post(format!(
+                        "/v1/threads/thread-1/queued-inputs/{queue_id}/steer"
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+        let mut receiver = state.events.subscribe();
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "item/completed".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "item-user-1",
+                    "item": {
+                        "id": "item-user-1",
+                        "type": "userMessage",
+                        "content": [{"type": "text", "text": "after tool"}]
+                    }
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let (timeline_event, delete_event) = timeout(Duration::from_secs(2), async {
+            let mut timeline_event = None;
+            let mut delete_event = None;
+            loop {
+                let event = receiver.recv().await.unwrap();
+                if event.kind == "timeline.item_upsert"
+                    && event.item_id.as_deref() == Some("item-user-1")
+                {
+                    timeline_event = Some(event);
+                } else if event.kind == queue::QUEUE_DELETE_EVENT && event.payload["id"] == queue_id
+                {
+                    assert!(
+                        timeline_event.is_some(),
+                        "queue delete was broadcast before its committed timeline item"
+                    );
+                    delete_event = Some(event);
+                }
+                if let (Some(timeline_event), Some(delete_event)) = (&timeline_event, &delete_event)
+                {
+                    break (timeline_event.clone(), delete_event.clone());
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert!(
+            timeline_event.seq < delete_event.seq,
+            "timeline event should be broadcast before the queue delete that depends on it"
+        );
+    }
+
+    #[tokio::test]
+    async fn idle_thread_status_requeues_unmatched_pending_steer() {
+        let (state, _app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "active".to_string(),
+                active_turn_id: Some("turn-1".to_string()),
+                updated_at: chrono::Utc::now(),
+                last_event_seq: None,
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads/thread-1/queued-inputs")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"after tool"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let created = response_json(created).await;
+        let queue_id = created["queuedInput"]["id"].as_str().unwrap().to_string();
+        assert_ok(
+            app.clone()
+                .oneshot(
+                    Request::post(format!(
+                        "/v1/threads/thread-1/queued-inputs/{queue_id}/steer"
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+        let mut receiver = state.events.subscribe();
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "thread/status".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "status": {"type": "idle"}
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        timeout(Duration::from_secs(2), async {
+            let mut saw_thread_status = false;
+            loop {
+                let event = receiver.recv().await.unwrap();
+                if event.kind == "timeline.thread_status" {
+                    saw_thread_status = true;
+                }
+                if event.kind == queue::QUEUE_UPSERT_EVENT && event.payload["id"] == queue_id {
+                    assert!(
+                        saw_thread_status,
+                        "thread status should broadcast before requeued pending steer"
+                    );
+                    assert_eq!(event.payload["status"], "queued");
+                    assert_eq!(event.payload["priority"], "rejectedSteer");
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        let listed = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1/queued-inputs")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let listed = response_json(listed).await;
+        assert_eq!(listed["queuedInputs"][0]["id"], queue_id);
+        assert_eq!(listed["queuedInputs"][0]["status"], "queued");
+        assert_eq!(listed["queuedInputs"][0]["priority"], "rejectedSteer");
+    }
+
+    #[tokio::test]
+    async fn completed_turn_broadcasts_before_pending_steer_requeue_and_drain() {
+        let (state, _app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "active".to_string(),
+                active_turn_id: Some("turn-1".to_string()),
+                updated_at: chrono::Utc::now(),
+                last_event_seq: None,
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads/thread-1/queued-inputs")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"after tool"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let created = response_json(created).await;
+        let queue_id = created["queuedInput"]["id"].as_str().unwrap().to_string();
+        assert_ok(
+            app.clone()
+                .oneshot(
+                    Request::post(format!(
+                        "/v1/threads/thread-1/queued-inputs/{queue_id}/steer"
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+        let mut receiver = state.events.subscribe();
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "turn/completed".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "turn": {
+                        "id": "turn-1",
+                        "status": {"type": "completed"},
+                        "items": []
+                    }
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        timeout(Duration::from_secs(2), async {
+            let mut saw_turn_upsert = false;
+            loop {
+                let event = receiver.recv().await.unwrap();
+                if event.kind == "timeline.turn_upsert" {
+                    saw_turn_upsert = true;
+                }
+                if event.kind == queue::QUEUE_UPSERT_EVENT && event.payload["id"] == queue_id {
+                    assert!(
+                        saw_turn_upsert,
+                        "turn completion should broadcast before requeued pending steer"
+                    );
+                    assert_eq!(event.payload["status"], "queued");
+                    assert_eq!(event.payload["priority"], "rejectedSteer");
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn committed_user_message_matches_only_front_pending_steer() {
+        let (state, _app_server) = test_state().await;
+        let first = state
+            .store
+            .create_queued_input(
+                "thread-1",
+                vec![crate::app_server_api::UserInput::Text {
+                    text: "first".to_string(),
+                    text_elements: vec![],
+                }],
+                crate::app_server_api::TurnStartOptions::default(),
+            )
+            .await
+            .unwrap();
+        let second = state
+            .store
+            .create_queued_input(
+                "thread-1",
+                vec![crate::app_server_api::UserInput::Text {
+                    text: "second".to_string(),
+                    text_elements: vec![],
+                }],
+                crate::app_server_api::TurnStartOptions::default(),
+            )
+            .await
+            .unwrap();
+        for row in [&first, &second] {
+            state
+                .store
+                .claim_queued_input_for_steering("thread-1", &row.id)
+                .await
+                .unwrap();
+            state
+                .store
+                .mark_queued_input_pending_commit("thread-1", &row.id, "turn-1", None)
+                .await
+                .unwrap();
+        }
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "item/completed".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "item-user-second",
+                    "item": {
+                        "id": "item-user-second",
+                        "type": "userMessage",
+                        "content": [{"type": "text", "text": "second"}]
+                    }
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+        let listed = state.store.list_queued_inputs("thread-1").await.unwrap();
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0].id, first.id);
+        assert_eq!(listed[1].id, second.id);
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "item/completed".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "item-user-first",
+                    "item": {
+                        "id": "item-user-first",
+                        "type": "userMessage",
+                        "content": [{"type": "text", "text": "first"}]
+                    }
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+        let listed = state.store.list_queued_inputs("thread-1").await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, second.id);
+        assert_eq!(
+            listed[0].status,
+            crate::store::QueuedInputStatus::PendingCommit
+        );
     }
 
     #[tokio::test]
