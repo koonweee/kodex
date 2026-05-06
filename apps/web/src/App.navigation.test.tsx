@@ -64,6 +64,12 @@ describe("deep link navigation", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByLabelText(/message composer/i).closest(".kodex-composer-shell")).toHaveAttribute(
+        "data-entry-ready",
+        "true",
+      );
+    });
     expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(1);
   });
 
