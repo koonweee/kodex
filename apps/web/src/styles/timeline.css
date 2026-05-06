@@ -143,6 +143,15 @@
   max-width: 100%;
 }
 
+.kodex-activity-heading > svg {
+  flex: 0 0 auto;
+}
+
+.kodex-activity-heading .kodex-ui-badge {
+  flex: 0 0 auto;
+  min-width: max-content;
+}
+
 .kodex-activity-group-title,
 .kodex-activity-title,
 .kodex-activity-status {
@@ -152,6 +161,7 @@
 .kodex-activity-group-title,
 .kodex-activity-title {
   min-width: 0;
+  flex: 1 1 auto;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -221,19 +231,6 @@
 
 .kodex-file-diff-file {
   min-width: 0;
-}
-
-.kodex-file-diff-path {
-  padding: 8px 10px 0;
-}
-
-.kodex-file-diff-hunks {
-  padding: 4px 10px 6px;
-}
-
-.kodex-file-diff-hunk {
-  font-family: var(--mantine-font-family-monospace);
-  color: var(--kodex-text-secondary);
 }
 
 .kodex-file-diff-viewer .diff {

@@ -763,19 +763,13 @@ function CommandBlock({ item }: { item: TimelineItem }) {
 }
 
 function FileChangeBlock({ item }: { item: TimelineItem }) {
-  const action = item.action || payloadValue(item.payload, "action");
   const path = item.path || payloadValue(item.payload, "path");
+  if (item.output) {
+    return <FileDiffViewer diff={item.output} path={path || undefined} />;
+  }
   return (
     <Stack gap={6} className="kodex-file-change-block">
-      <Group gap="xs" wrap="wrap" className="kodex-timeline-inline-row">
-        {action ? (
-          <Badge className="kodex-ui-badge" data-tone="neutral" size="xs" variant="light">
-            {action}
-          </Badge>
-        ) : null}
-        <Text size="sm">{path || item.text || "File change"}</Text>
-      </Group>
-      {item.output ? <FileDiffViewer diff={item.output} path={path || undefined} /> : null}
+      <Text size="sm">File change</Text>
     </Stack>
   );
 }

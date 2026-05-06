@@ -72,7 +72,8 @@ describe("timeline renderer registry", () => {
     );
 
     expect(screen.getByText(/cargo test/i)).toBeInTheDocument();
-    expect(screen.getByText(/src\/app\.tsx/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/file change/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/src\/app\.tsx/i)).not.toBeInTheDocument();
     expect(screen.getByText(/low trust/i)).toBeInTheDocument();
     expect(screen.getByText(/boom/i)).toBeInTheDocument();
     expect(screen.getByText(/future_item/i)).toBeInTheDocument();
@@ -115,7 +116,8 @@ describe("timeline renderer registry", () => {
     );
 
     expect(screen.getByLabelText(/file diff for timeline-rendering-feedback\.md/i)).toBeInTheDocument();
-    expect(screen.getByText("@@ -1 +1 @@")).toBeInTheDocument();
+    expect(screen.queryByText("update")).not.toBeInTheDocument();
+    expect(screen.queryByText("timeline-rendering-feedback.md")).not.toBeInTheDocument();
     expect(screen.getByText("old")).toBeInTheDocument();
     expect(screen.getByText("new")).toBeInTheDocument();
   });
@@ -160,7 +162,6 @@ describe("timeline renderer registry", () => {
     openDetails(activityDetails);
 
     expect(screen.getByLabelText(/file diff for timeline-rendering-feedback\.md/i)).toBeInTheDocument();
-    expect(screen.getByText("@@ -1 +1 @@")).toBeInTheDocument();
     expect(screen.getByText(/item\/completed/i)).toBeInTheDocument();
   });
 

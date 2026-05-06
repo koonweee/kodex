@@ -1,4 +1,4 @@
-import { Box, Code, Stack, Text } from "@mantine/core";
+import { Box, Code, Stack } from "@mantine/core";
 import { Diff, Hunk, parseDiff } from "react-diff-view";
 import type { FileData } from "react-diff-view";
 
@@ -31,16 +31,6 @@ export function FileDiffViewer({ diff, path }: FileDiffViewerProps) {
     <Stack gap={6} aria-label={label} className="kodex-file-diff-viewer">
       {files.map((file) => (
         <Box className="kodex-file-diff-file" key={`${file.oldPath}-${file.newPath}`}>
-          <Text size="xs" c="dimmed" className="kodex-file-diff-path">
-            {file.newPath || file.oldPath}
-          </Text>
-          <Stack gap={2} className="kodex-file-diff-hunks">
-            {file.hunks.map((hunk) => (
-              <Text size="xs" className="kodex-file-diff-hunk" key={hunk.content}>
-                {hunk.content}
-              </Text>
-            ))}
-          </Stack>
           <Diff diffType={file.type} hunks={file.hunks} viewType="unified">
             {(hunks) => hunks.map((hunk) => <Hunk hunk={hunk} key={`${hunk.oldStart}-${hunk.newStart}-${hunk.content}`} />)}
           </Diff>
