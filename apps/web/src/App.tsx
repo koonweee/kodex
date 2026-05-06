@@ -35,6 +35,8 @@ import { createThreadOptions } from "./composer/settings";
 import { useComposerSettingsState } from "./composer/useComposerSettingsState";
 import { useComposerOrchestration } from "./composer/useComposerOrchestration";
 import { createEventStreamClient } from "./events/stream";
+import { MarkdownPreviewPane } from "./files/MarkdownPreviewPane";
+import type { MarkdownPreviewRequest } from "./files/types";
 import { ImageLightbox } from "./images/ImageLightbox";
 import type { ImageLightboxImage } from "./images/types";
 import {
@@ -140,6 +142,7 @@ function KodexShell({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("chat");
   const [lightboxImage, setLightboxImage] = useState<ImageLightboxImage | null>(null);
+  const [markdownPreview, setMarkdownPreview] = useState<MarkdownPreviewRequest | null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesSection, setPreferencesSection] = useState<"appearance">("appearance");
   const [usageLimitSnapshot, setUsageLimitSnapshot] = useState<RateLimitSnapshot | null>(null);
@@ -874,6 +877,7 @@ function KodexShell({
   const handleArchiveSelectedThread = useEventCallback(() => void handleArchiveThread());
   const handleArchiveThreadById = useEventCallback((threadId: string) => void handleArchiveThread(threadId));
   const handleCloseLightbox = useEventCallback(() => setLightboxImage(null));
+  const handleCloseMarkdownPreview = useEventCallback(() => setMarkdownPreview(null));
   const handleClosePreferences = useEventCallback(() => setPreferencesOpen(false));
   const handleOpenPreferences = useEventCallback(() => setPreferencesOpen(true));
   const handleTimelineReadyForSelectedThread = useEventCallback(() => {
@@ -914,6 +918,7 @@ function KodexShell({
         threadPanelProps={{
           errorMessage, imagePreviewUrlsByPath, isDraftThreadSelected, isSelectedTimelineLoading,
           onArchiveThread: handleArchiveSelectedThread, onApprovalDecision: handleApprovalDecision, onImageOpen: setLightboxImage,
+          onMarkdownOpen: setMarkdownPreview,
           onShowMobileSidebar: handleShowMobileSidebar, onTimelineReady: handleTimelineReadyForSelectedThread, pendingTitleThreadIds,
           scrollParentElement: timelineScrollElement, selectedThread, selectedThreadApprovals, selectedThreadTitle,
           selectedTimelineEntry, setTimelineScrollElement, showDebugEvents, timeline,
@@ -932,6 +937,7 @@ function KodexShell({
         }}
       />
       <ImageLightbox image={lightboxImage} onClose={handleCloseLightbox} />
+      <MarkdownPreviewPane preview={markdownPreview} threadId={selectedThreadId ?? undefined} onClose={handleCloseMarkdownPreview} />
     </>
   );
 }

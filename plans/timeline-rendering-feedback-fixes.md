@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+Complete.
 
 ## Scope
 
@@ -64,7 +64,7 @@ Avoid for this milestone:
 
 ## Milestone 1: Failed Command Status
 
-Status: Proposed.
+Status: Complete.
 
 Failing tests first:
 
@@ -93,7 +93,7 @@ Exit conditions:
 
 ## Milestone 2: File Change Diff Viewer
 
-Status: Proposed.
+Status: Complete.
 
 Failing tests first:
 
@@ -129,7 +129,7 @@ Exit conditions:
 
 ## Milestone 3: Markdown Side Pane
 
-Status: Proposed.
+Status: Complete.
 
 Failing tests first:
 

@@ -166,6 +166,18 @@
   margin-left: auto;
 }
 
+.kodex-activity-status[data-tone="danger"] {
+  color: var(--kodex-text-danger);
+}
+
+.kodex-activity-status[data-tone="warning"] {
+  color: var(--kodex-text-warning);
+}
+
+.kodex-activity-status[data-tone="success"] {
+  color: var(--kodex-text-success);
+}
+
 .kodex-command-panel {
   box-sizing: border-box;
   width: 100%;
@@ -191,6 +203,110 @@
   overflow-x: auto;
   overflow-y: hidden;
   overflow-wrap: normal;
+}
+
+.kodex-file-change-block {
+  min-width: 0;
+  width: 100%;
+}
+
+.kodex-file-diff-viewer {
+  max-width: 100%;
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid var(--kodex-border-subtle);
+  border-radius: var(--kodex-radius-md);
+  background: var(--kodex-bg-command);
+}
+
+.kodex-file-diff-file {
+  min-width: 0;
+}
+
+.kodex-file-diff-path {
+  padding: 8px 10px 0;
+}
+
+.kodex-file-diff-hunks {
+  padding: 4px 10px 6px;
+}
+
+.kodex-file-diff-hunk {
+  font-family: var(--mantine-font-family-monospace);
+  color: var(--kodex-text-secondary);
+}
+
+.kodex-file-diff-viewer .diff {
+  min-width: 100%;
+  width: max-content;
+  margin: 0;
+  border-collapse: collapse;
+  table-layout: auto;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 12px;
+  line-height: 1.45;
+  background: transparent;
+  color: var(--kodex-text-primary);
+}
+
+.kodex-file-diff-viewer .diff td {
+  padding-top: 0;
+  padding-bottom: 0;
+  vertical-align: top;
+}
+
+.kodex-file-diff-viewer .diff-line {
+  font-family: var(--mantine-font-family-monospace);
+  line-height: 1.45;
+}
+
+.kodex-file-diff-viewer .diff-gutter-col {
+  width: 7ch;
+}
+
+.kodex-file-diff-viewer .diff-gutter {
+  box-sizing: border-box;
+  min-width: 7ch;
+  width: 7ch;
+  padding: 0 1ch;
+  font-family: var(--mantine-font-family-monospace);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: pre;
+  user-select: none;
+  color: var(--kodex-text-muted);
+  background: transparent;
+}
+
+.kodex-file-diff-viewer .diff-gutter > a {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.kodex-file-diff-viewer .diff-code {
+  padding: 0 1ch;
+  font-family: var(--mantine-font-family-monospace);
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+  word-wrap: normal;
+  color: var(--kodex-text-primary);
+}
+
+.kodex-file-diff-viewer .diff-code-insert,
+.kodex-file-diff-viewer .diff-gutter-insert {
+  background: var(--kodex-bg-success);
+}
+
+.kodex-file-diff-viewer .diff-code-delete,
+.kodex-file-diff-viewer .diff-gutter-delete {
+  background: var(--kodex-bg-danger);
+}
+
+.kodex-file-diff-viewer .diff-hunk {
+  color: var(--kodex-text-secondary);
+  background: var(--kodex-bg-muted);
 }
 
 .kodex-timeline-item-assistant_message,
@@ -437,6 +553,31 @@
 .kodex-code-copy-button:hover {
   background: transparent;
   color: var(--kodex-text-primary);
+}
+
+.kodex-markdown-preview-pane .mantine-Drawer-content {
+  background: var(--kodex-bg-app);
+  color: var(--kodex-text-primary);
+}
+
+.kodex-markdown-preview-rendered {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kodex-markdown-preview-rendered :is(h1, h2, h3) {
+  margin: 0 0 8px;
+  color: var(--kodex-text-primary);
+}
+
+.kodex-markdown-preview-rendered p {
+  margin: 0 0 8px;
+}
+
+.kodex-markdown-preview-source {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
 }
 
 .kodex-timeline-disclosure,

@@ -4,6 +4,7 @@ import { ArrowDownToLine } from "lucide-react";
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, useEffect } from "react";
 
 import type { Approval, ApprovalResponse } from "../api/client";
+import type { MarkdownPreviewRequest } from "../files/types";
 import { ApprovalCard, ThreadApprovalStack } from "../approvals/ApprovalCard";
 import type { ImageLightboxImage } from "../images/types";
 import {
@@ -31,6 +32,7 @@ export function TimelineView({
   imagePreviewUrlsByPath,
   onApprovalDecision,
   onImageOpen,
+  onMarkdownOpen,
   onReady,
   scrollParentElement,
   showDebug,
@@ -41,6 +43,7 @@ export function TimelineView({
   imagePreviewUrlsByPath: Record<string, string>;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
   onImageOpen: (image: ImageLightboxImage) => void;
+  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   onReady: () => void;
   scrollParentElement: HTMLDivElement | null;
   showDebug: boolean;
@@ -102,6 +105,7 @@ export function TimelineView({
                 imagePreviewUrlsByPath={imagePreviewUrlsByPath}
                 onApprovalDecision={onApprovalDecision}
                 onImageOpen={onImageOpen}
+                onMarkdownOpen={onMarkdownOpen}
                 row={row}
                 showDebug={showDebug}
                 threadId={threadId}
@@ -320,6 +324,7 @@ const TimelineRowView = memo(function TimelineRowView({
   imagePreviewUrlsByPath,
   onApprovalDecision,
   onImageOpen,
+  onMarkdownOpen,
   row,
   showDebug,
   threadId,
@@ -328,6 +333,7 @@ const TimelineRowView = memo(function TimelineRowView({
   imagePreviewUrlsByPath: Record<string, string>;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
   onImageOpen: (image: ImageLightboxImage) => void;
+  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   row: TimelineRow;
   showDebug: boolean;
   threadId?: string;
@@ -341,6 +347,7 @@ const TimelineRowView = memo(function TimelineRowView({
         <TimelineWorkRowRenderer
           imagePreviewUrlsByPath={imagePreviewUrlsByPath}
           onImageOpen={onImageOpen}
+          onMarkdownOpen={onMarkdownOpen}
           row={row}
           showDebug={showDebug}
           threadId={threadId}
@@ -350,6 +357,7 @@ const TimelineRowView = memo(function TimelineRowView({
           imagePreviewUrlsByPath={imagePreviewUrlsByPath}
           items={row.items}
           onImageOpen={onImageOpen}
+          onMarkdownOpen={onMarkdownOpen}
           showDebug={showDebug}
           threadId={threadId}
         />
@@ -358,6 +366,7 @@ const TimelineRowView = memo(function TimelineRowView({
           item={row.item}
           imagePreviewUrlsByPath={imagePreviewUrlsByPath}
           onImageOpen={onImageOpen}
+          onMarkdownOpen={onMarkdownOpen}
           showDebug={showDebug}
           threadId={threadId}
         />

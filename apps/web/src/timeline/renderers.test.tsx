@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -17,6 +17,7 @@ vi.mock("react-markdown", async (importOriginal) => {
 });
 
 import { TimelineActivityGroupRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
+import type { MarkdownPreviewRequest } from "../files/types";
 import type { TimelineItem } from "./reducer";
 
 function item(overrides: Partial<TimelineItem>): TimelineItem {
@@ -49,6 +50,11 @@ function mockMissingClipboardWriteText() {
   });
 }
 
+function openDetails(details: HTMLDetailsElement) {
+  details.open = true;
+  fireEvent(details, new Event("toggle"));
+}
+
 describe("timeline renderer registry", () => {
   beforeEach(() => {
     reactMarkdownRenderSpy.mockClear();
@@ -70,6 +76,92 @@ describe("timeline renderer registry", () => {
     expect(screen.getByText(/low trust/i)).toBeInTheDocument();
     expect(screen.getByText(/boom/i)).toBeInTheDocument();
     expect(screen.getByText(/future_item/i)).toBeInTheDocument();
+  });
+
+  it("marks failed command activity in collapsed and expanded command renderings", () => {
+    render(
+      <MantineProvider>
+        <TimelineActivityGroupRenderer
+          items={[
+            item({
+              command: "ls missing-file",
+              kind: "command_execution",
+              output: "ls: missing-file: No such file or directory",
+              status: "failed",
+            }),
+          ]}
+        />
+      </MantineProvider>,
+    );
+
+    const commandDetails = document.querySelector("details.kodex-activity-item");
+    expect(commandDetails).toBeInTheDocument();
+    expect(within(commandDetails as HTMLElement).getAllByText(/failed/i)).not.toHaveLength(0);
+    expect(within(commandDetails as HTMLElement).queryByText(/success/i)).not.toBeInTheDocument();
+  });
+
+  it("renders file change output as an inspectable unified diff", () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            action: "update",
+            kind: "file_change",
+            output: "@@ -1 +1 @@\n-old\n+new",
+            path: "timeline-rendering-feedback.md",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByLabelText(/file diff for timeline-rendering-feedback\.md/i)).toBeInTheDocument();
+    expect(screen.getByText("@@ -1 +1 @@")).toBeInTheDocument();
+    expect(screen.getByText("old")).toBeInTheDocument();
+    expect(screen.getByText("new")).toBeInTheDocument();
+  });
+
+  it("defers activity item body rendering until the row is opened", () => {
+    const { container } = render(
+      <MantineProvider>
+        <TimelineActivityGroupRenderer
+          showDebug
+          items={[
+            item({
+              action: "update",
+              debugEvents: [
+                {
+                  id: "event-1",
+                  seq: 1,
+                  kind: "codex.notification",
+                  codexMethod: "item/completed",
+                  threadId: "thread-1",
+                  turnId: "turn-1",
+                  itemId: "file-1",
+                  projectId: "project-1",
+                  payload: { output: "diff body" },
+                  receivedAt: "2026-04-30T00:00:00Z",
+                },
+              ],
+              id: "file-1",
+              kind: "file_change",
+              output: "@@ -1 +1 @@\n-old\n+new",
+              path: "timeline-rendering-feedback.md",
+            }),
+          ]}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("Changed timeline-rendering-feedback.md")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/file diff for timeline-rendering-feedback\.md/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/item\/completed/i)).not.toBeInTheDocument();
+
+    const activityDetails = container.querySelector("details.kodex-activity-item") as HTMLDetailsElement;
+    openDetails(activityDetails);
+
+    expect(screen.getByLabelText(/file diff for timeline-rendering-feedback\.md/i)).toBeInTheDocument();
+    expect(screen.getByText("@@ -1 +1 @@")).toBeInTheDocument();
+    expect(screen.getByText(/item\/completed/i)).toBeInTheDocument();
   });
 
   it("hides message headings, hides normal completed status, and keeps raw payloads out of the default view", () => {
@@ -382,6 +474,52 @@ describe("timeline renderer registry", () => {
     expect(screen.queryByText(/NOTES\.markdown content/i)).not.toBeInTheDocument();
   });
 
+  it("opens local markdown links through the markdown preview callback on normal click", () => {
+    const onMarkdownOpen = vi.fn<(request: MarkdownPreviewRequest) => void>();
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          onMarkdownOpen={onMarkdownOpen}
+          threadId="thread-1"
+          item={item({
+            kind: "assistant_message",
+            text: "Read [feedback](/Users/example/kodex/timeline-rendering-feedback.md#notes).",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    const link = screen.getByRole("link", { name: "feedback" });
+    fireEvent.click(link);
+
+    expect(onMarkdownOpen).toHaveBeenCalledWith({
+      fragment: "#notes",
+      href: "http://localhost:3000/v1/threads/thread-1/files/preview?path=%2FUsers%2Fexample%2Fkodex%2Ftimeline-rendering-feedback.md#notes",
+      path: "/Users/example/kodex/timeline-rendering-feedback.md",
+      title: "timeline-rendering-feedback.md",
+    });
+  });
+
+  it("preserves browser-native modifier-click behavior for local markdown links", () => {
+    const onMarkdownOpen = vi.fn<(request: MarkdownPreviewRequest) => void>();
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          onMarkdownOpen={onMarkdownOpen}
+          threadId="thread-1"
+          item={item({
+            kind: "assistant_message",
+            text: "Read [feedback](/Users/example/kodex/timeline-rendering-feedback.md).",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: "feedback" }), { metaKey: true });
+
+    expect(onMarkdownOpen).not.toHaveBeenCalled();
+  });
+
   it("opens local assistant markdown image links in the image viewer through the thread file preview endpoint", () => {
     const onImageOpen = vi.fn();
     render(
@@ -677,6 +815,10 @@ describe("timeline renderer registry", () => {
     expect(screen.getByText("Listed files")).toBeInTheDocument();
     expect(screen.getAllByText("Finished waiting").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Generated image").length).toBeGreaterThan(0);
+
+    const activityItems = Array.from(container.querySelectorAll("details.kodex-activity-item")) as HTMLDetailsElement[];
+    activityItems.forEach(openDetails);
+
     expect(screen.getByText(/no major issues remain/i)).toBeInTheDocument();
     expect(screen.getByText(/\/tmp\/generated\.png/i)).toBeInTheDocument();
     expect(screen.getByText(/Result: completed/i)).toBeInTheDocument();
@@ -815,7 +957,7 @@ describe("timeline renderer registry", () => {
 
   it("keeps long command summaries truncatable while showing the full command in the shell block", () => {
     const command = "/usr/bin/zsh -lc \"sed -n '960,1140p' apps/web/src/App.tsx\"";
-    render(
+    const { container } = render(
       <MantineProvider>
         <TimelineActivityGroupRenderer
           items={[
@@ -835,6 +977,9 @@ describe("timeline renderer registry", () => {
       "title",
       "Ran sed -n '960,1140p' apps/web/src/App.tsx",
     );
+
+    openDetails(container.querySelector("details.kodex-activity-item") as HTMLDetailsElement);
+
     expect(screen.getByText("$ sed -n '960,1140p' apps/web/src/App.tsx")).toBeInTheDocument();
     expect(screen.queryByText("/home/example/kodex")).not.toBeInTheDocument();
   });

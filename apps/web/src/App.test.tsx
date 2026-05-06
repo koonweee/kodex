@@ -242,6 +242,65 @@ describe("App shell", () => {
     expect(within(thread).getByText(/"text": "Visible answer"/i)).toBeInTheDocument();
   });
 
+  it("opens local markdown links in a right-side preview pane", async () => {
+    mockGateway({
+      "GET /v1/projects": {
+        projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
+      },
+      "GET /v1/threads": {
+        threads: [
+          {
+            id: "thread-1",
+            name: "Timeline QA",
+            cwd: "/home/example/kodex",
+            status: "idle",
+            source: "local",
+            preview: "",
+            rawPayload: {},
+            createdAt: 1777500000,
+            updatedAt: 1777501200,
+          },
+        ],
+        nextCursor: null,
+        backwardsCursor: null,
+        rawPayload: {},
+      },
+      "GET /v1/threads/thread-1": threadDetail(
+        {
+          id: "thread-1",
+          name: "Timeline QA",
+          cwd: "/home/example/kodex",
+          status: "idle",
+          source: "local",
+          preview: "",
+          rawPayload: {},
+          createdAt: 1777500000,
+          updatedAt: 1777501200,
+        },
+        [
+          snapshotTurn("turn-1", [
+            snapshotItem("answer-1", "agentMessage", {
+              text: "Open [feedback](/Users/example/kodex/timeline-rendering-feedback.md).",
+            }),
+          ]),
+        ],
+      ),
+      "GET /v1/threads/thread-1/files/preview": new Response("# Timeline Feedback\n\nPane body", {
+        headers: { "content-type": "text/markdown" },
+      }),
+      "GET /v1/approvals": { approvals: [] },
+      "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
+    });
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("link", { name: "feedback" }));
+
+    const pane = await screen.findByRole("dialog", { name: /timeline-rendering-feedback\.md/i });
+    expect(within(pane).getByRole("heading", { name: /timeline feedback/i })).toBeInTheDocument();
+    expect(within(pane).getByText(/pane body/i)).toBeInTheDocument();
+  });
+
   it("mounts a bounded row window for large timelines", async () => {
     const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
     const scrollTo = vi.fn(function (this: HTMLElement, _options?: ScrollToOptions) {
@@ -611,6 +670,6 @@ describe("App shell", () => {
 
     expect(await screen.findByText("Ran echo command-299")).toBeInTheDocument();
     expect(screen.queryByText("Ran echo command-0")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Shell").length).toBeLessThanOrEqual(144);
+    expect(screen.queryAllByText("Shell")).toHaveLength(0);
   });
 });

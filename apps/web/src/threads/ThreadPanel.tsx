@@ -3,6 +3,7 @@ import { AlertCircle, Archive, MoreHorizontal, PanelLeftOpen, PanelRightOpen } f
 import type { ReactNode } from "react";
 
 import type { Approval, ApprovalResponse, ThreadSummary } from "../api/client";
+import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
 import { EmptyPanel } from "../ui/EmptyPanel";
 import { TimelineView } from "../timeline/TimelineView";
@@ -26,6 +27,7 @@ export function ThreadPanel({
   onArchiveThread,
   onApprovalDecision,
   onImageOpen,
+  onMarkdownOpen,
   onShowMobileSidebar,
   onTimelineReady,
   pendingTitleThreadIds,
@@ -45,6 +47,7 @@ export function ThreadPanel({
   onArchiveThread: () => void;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
   onImageOpen: (image: ImageLightboxImage) => void;
+  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   onShowMobileSidebar: () => void;
   onTimelineReady: () => void;
   pendingTitleThreadIds: Set<string>;
@@ -108,6 +111,7 @@ export function ThreadPanel({
                   onReady={onTimelineReady}
                   onApprovalDecision={onApprovalDecision}
                   onImageOpen={onImageOpen}
+                  onMarkdownOpen={onMarkdownOpen}
                   imagePreviewUrlsByPath={imagePreviewUrlsByPath}
                   scrollParentElement={scrollParentElement}
                   showDebug={showDebugEvents}

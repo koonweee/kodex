@@ -1,21 +1,24 @@
 import { Badge, Box, Code, Group, Stack, Text } from "@mantine/core";
 import { AlertTriangle, Bot, Check, ChevronRight, ClipboardList, Code2, Copy, FileDiff, Globe, ImageIcon, Info, Terminal, Wrench } from "lucide-react";
 import { Children, isValidElement, memo, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode, SyntheticEvent } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
 import { filePreviewUrl } from "../api/client";
+import type { MarkdownPreviewRequest } from "../files/types";
 import { ImageThumbnail } from "../images/ImageThumbnail";
 import type { ImageLightboxImage } from "../images/types";
 import { copyTextToClipboard } from "./clipboard";
 import type { TimelineActivityRow, TimelineItemRow, TimelineWorkRow } from "./derive";
+import { FileDiffViewer } from "./FileDiffViewer";
 import type { TimelineItem, WebSearchAction } from "./reducer";
 
 type TimelineRendererOptions = {
   imagePreviewUrlsByPath: Record<string, string>;
   onImageOpen?: (image: ImageLightboxImage) => void;
+  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   threadId?: string;
 };
 type TimelineRenderer = (item: TimelineItem, options: TimelineRendererOptions) => ReactNode;
@@ -25,6 +28,7 @@ const rendererRegistry: Record<string, TimelineRenderer> = {
     <AssistantMessageMarkdown
       item={item}
       onImageOpen={options.onImageOpen}
+      onMarkdownOpen={options.onMarkdownOpen}
       text={item.text || "No assistant content yet"}
       threadId={options.threadId}
     />
@@ -33,6 +37,7 @@ const rendererRegistry: Record<string, TimelineRenderer> = {
     <AssistantMessageMarkdown
       item={item}
       onImageOpen={options.onImageOpen}
+      onMarkdownOpen={options.onMarkdownOpen}
       text={item.text || "No assistant content yet"}
       threadId={options.threadId}
     />
@@ -100,7 +105,11 @@ const labels: Record<string, string> = {
 
 const assistantMarkdownRemarkPlugins = [remarkGfm, remarkBreaks];
 
-function assistantMarkdownComponents(threadId?: string, onImageOpen?: (image: ImageLightboxImage) => void): Components {
+function assistantMarkdownComponents(
+  threadId?: string,
+  onImageOpen?: (image: ImageLightboxImage) => void,
+  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void,
+): Components {
   return {
     a: ({ children, href, title }) => {
       const imagePreview = localImagePreviewHref(threadId, href);
@@ -128,7 +137,19 @@ function assistantMarkdownComponents(threadId?: string, onImageOpen?: (image: Im
           href={markdownPreview?.href ?? href}
           target="_blank"
           rel="noreferrer"
-          download={markdownPreview?.download}
+          download={onMarkdownOpen ? undefined : markdownPreview?.download}
+          onClick={(event) => {
+            if (!markdownPreview || !onMarkdownOpen || shouldUseNativeLinkClick(event)) {
+              return;
+            }
+            event.preventDefault();
+            onMarkdownOpen({
+              fragment: markdownPreview.fragment,
+              href: markdownPreview.href,
+              path: markdownPreview.path,
+              title: title ?? markdownPreview.download,
+            });
+          }}
         >
           {children}
         </a>
@@ -220,6 +241,7 @@ type TimelineItemRendererProps = {
   item: TimelineItem;
   imagePreviewUrlsByPath?: Record<string, string>;
   onImageOpen?: (image: ImageLightboxImage) => void;
+  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   showDebug?: boolean;
   threadId?: string;
 };
@@ -228,6 +250,7 @@ function TimelineItemRendererImpl({
   item,
   imagePreviewUrlsByPath = {},
   onImageOpen,
+  onMarkdownOpen,
   showDebug = false,
   threadId,
 }: TimelineItemRendererProps) {
@@ -254,7 +277,7 @@ function TimelineItemRendererImpl({
           ) : null}
         </Group>
       ) : null}
-      {render(item, { imagePreviewUrlsByPath, onImageOpen, threadId })}
+      {render(item, { imagePreviewUrlsByPath, onImageOpen, onMarkdownOpen, threadId })}
       {showDebug ? <DebugDisclosure item={item} /> : null}
     </Box>
   );
@@ -267,6 +290,7 @@ type TimelineActivityGroupRendererProps = {
   imagePreviewUrlsByPath?: Record<string, string>;
   items: TimelineItem[];
   onImageOpen?: (image: ImageLightboxImage) => void;
+  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   showDebug?: boolean;
   threadId?: string;
 };
@@ -275,6 +299,7 @@ function TimelineActivityGroupRendererImpl({
   imagePreviewUrlsByPath = {},
   items,
   onImageOpen,
+  onMarkdownOpen,
   showDebug = false,
   threadId,
 }: TimelineActivityGroupRendererProps) {
@@ -296,6 +321,7 @@ function TimelineActivityGroupRendererImpl({
             item={item}
             key={item.id}
             onImageOpen={onImageOpen}
+            onMarkdownOpen={onMarkdownOpen}
             showDebug={showDebug}
             threadId={threadId}
           />
@@ -311,6 +337,7 @@ TimelineActivityGroupRenderer.displayName = "TimelineActivityGroupRenderer";
 type TimelineWorkRowRendererProps = {
   imagePreviewUrlsByPath: Record<string, string>;
   onImageOpen?: (image: ImageLightboxImage) => void;
+  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   row: TimelineWorkRow;
   showDebug?: boolean;
   threadId?: string;
@@ -319,6 +346,7 @@ type TimelineWorkRowRendererProps = {
 function TimelineWorkRowRendererImpl({
   imagePreviewUrlsByPath,
   onImageOpen,
+  onMarkdownOpen,
   row,
   showDebug = false,
   threadId,
@@ -365,6 +393,7 @@ function TimelineWorkRowRendererImpl({
             imagePreviewUrlsByPath={imagePreviewUrlsByPath}
             key={collapsedRow.key}
             onImageOpen={onImageOpen}
+            onMarkdownOpen={onMarkdownOpen}
             row={collapsedRow}
             showDebug={showDebug}
             threadId={threadId}
@@ -385,12 +414,14 @@ function WorkHeaderDivider() {
 function CollapsedWorkRowRenderer({
   imagePreviewUrlsByPath,
   onImageOpen,
+  onMarkdownOpen,
   row,
   showDebug,
   threadId,
 }: {
   imagePreviewUrlsByPath: Record<string, string>;
   onImageOpen?: (image: ImageLightboxImage) => void;
+  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   row: TimelineItemRow | TimelineActivityRow;
   showDebug: boolean;
   threadId?: string;
@@ -401,6 +432,7 @@ function CollapsedWorkRowRenderer({
         imagePreviewUrlsByPath={imagePreviewUrlsByPath}
         items={row.items}
         onImageOpen={onImageOpen}
+        onMarkdownOpen={onMarkdownOpen}
         showDebug={showDebug}
         threadId={threadId}
       />
@@ -411,6 +443,7 @@ function CollapsedWorkRowRenderer({
       item={row.item}
       imagePreviewUrlsByPath={imagePreviewUrlsByPath}
       onImageOpen={onImageOpen}
+      onMarkdownOpen={onMarkdownOpen}
       showDebug={showDebug}
       threadId={threadId}
     />
@@ -521,15 +554,20 @@ const AssistantMessageMarkdown = memo(
   function AssistantMessageMarkdown({
     item,
     onImageOpen,
+    onMarkdownOpen,
     text,
     threadId,
   }: {
     item: TimelineItem;
     onImageOpen?: (image: ImageLightboxImage) => void;
+    onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
     text: string;
     threadId?: string;
   }) {
-    const components = useMemo(() => assistantMarkdownComponents(threadId, onImageOpen), [onImageOpen, threadId]);
+    const components = useMemo(
+      () => assistantMarkdownComponents(threadId, onImageOpen, onMarkdownOpen),
+      [onImageOpen, onMarkdownOpen, threadId],
+    );
     return (
       <Box className="kodex-assistant-message-stack">
         <Box className="kodex-assistant-markdown">
@@ -546,6 +584,7 @@ const AssistantMessageMarkdown = memo(
     prev.item.kind === next.item.kind &&
     prev.item.messagePhase === next.item.messagePhase &&
     prev.onImageOpen === next.onImageOpen &&
+    prev.onMarkdownOpen === next.onMarkdownOpen &&
     prev.threadId === next.threadId &&
     prev.text === next.text,
 );
@@ -625,35 +664,53 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
   imagePreviewUrlsByPath,
   item,
   onImageOpen,
+  onMarkdownOpen,
   showDebug,
   threadId,
 }: {
   imagePreviewUrlsByPath: Record<string, string>;
   item: TimelineItem;
   onImageOpen?: (image: ImageLightboxImage) => void;
+  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   showDebug: boolean;
   threadId?: string;
 }) {
   const render = rendererRegistry[item.kind] ?? unknownRenderer;
+  const [isOpen, setIsOpen] = useState(false);
+  const handleToggle = (event: SyntheticEvent<HTMLDetailsElement>) => {
+    setIsOpen(event.currentTarget.open);
+  };
+
   if (item.kind === "command_execution") {
+    const status = commandStatusMeta(item.status);
     return (
-      <details className="kodex-activity-item">
+      <details className="kodex-activity-item" onToggle={handleToggle}>
         <summary>
           <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
+            <Terminal size={15} />
             <Text size="sm" className="kodex-activity-title" title={commandSummary(item)}>
               {commandSummary(item)}
             </Text>
+            {status ? (
+              <Badge className="kodex-ui-badge" data-tone={status.tone} size="xs" variant="light">
+                {status.label}
+              </Badge>
+            ) : null}
           </Group>
           <ChevronRight size={16} className="kodex-activity-caret" aria-hidden="true" />
         </summary>
-        <CommandBlock item={item} />
-        {showDebug ? <DebugDisclosure item={item} /> : null}
+        {isOpen ? (
+          <>
+            <CommandBlock item={item} />
+            {showDebug ? <DebugDisclosure item={item} /> : null}
+          </>
+        ) : null}
       </details>
     );
   }
 
   return (
-    <details className="kodex-activity-item">
+    <details className="kodex-activity-item" onToggle={handleToggle}>
       <summary>
         <Group gap="xs" wrap="nowrap" className="kodex-activity-heading">
           <TimelineIcon kind={item.kind} />
@@ -663,8 +720,12 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
         </Group>
         <ChevronRight size={16} className="kodex-activity-caret" aria-hidden="true" />
       </summary>
-      <Box className="kodex-activity-body">{render(item, { imagePreviewUrlsByPath, onImageOpen, threadId })}</Box>
-      {showDebug ? <DebugDisclosure item={item} /> : null}
+      {isOpen ? (
+        <>
+          <Box className="kodex-activity-body">{render(item, { imagePreviewUrlsByPath, onImageOpen, onMarkdownOpen, threadId })}</Box>
+          {showDebug ? <DebugDisclosure item={item} /> : null}
+        </>
+      ) : null}
     </details>
   );
 });
@@ -673,6 +734,7 @@ ActivityItemRenderer.displayName = "ActivityItemRenderer";
 function CommandBlock({ item }: { item: TimelineItem }) {
   const command = item.command || payloadValue(item.payload, "command");
   const output = item.output || payloadValue(item.payload, "output") || payloadValue(item.payload, "stdout") || payloadValue(item.payload, "stderr");
+  const status = commandStatusMeta(item.status);
   return (
     <Stack gap={6} className="kodex-command-panel">
       <Text size="xs" className="kodex-command-shell">
@@ -690,9 +752,9 @@ function CommandBlock({ item }: { item: TimelineItem }) {
           {output}
         </Code>
       ) : null}
-      {item.status === "completed" ? (
-        <Text size="xs" c="dimmed" className="kodex-activity-status">
-          <Check size={13} /> Success
+      {status ? (
+        <Text size="xs" c="dimmed" className="kodex-activity-status" data-tone={status.tone}>
+          <status.Icon size={13} /> {status.label}
         </Text>
       ) : null}
     </Stack>
@@ -703,14 +765,17 @@ function FileChangeBlock({ item }: { item: TimelineItem }) {
   const action = item.action || payloadValue(item.payload, "action");
   const path = item.path || payloadValue(item.payload, "path");
   return (
-    <Group gap="xs" wrap="wrap" className="kodex-timeline-inline-row">
-      {action ? (
-        <Badge className="kodex-ui-badge" data-tone="neutral" size="xs" variant="light">
-          {action}
-        </Badge>
-      ) : null}
-      <Text size="sm">{path || item.text || "File change"}</Text>
-    </Group>
+    <Stack gap={6} className="kodex-file-change-block">
+      <Group gap="xs" wrap="wrap" className="kodex-timeline-inline-row">
+        {action ? (
+          <Badge className="kodex-ui-badge" data-tone="neutral" size="xs" variant="light">
+            {action}
+          </Badge>
+        ) : null}
+        <Text size="sm">{path || item.text || "File change"}</Text>
+      </Group>
+      {item.output ? <FileDiffViewer diff={item.output} path={path || undefined} /> : null}
+    </Stack>
   );
 }
 
@@ -897,14 +962,19 @@ function localPreviewPath(path?: string): string | null {
   return path && isLocalAbsolutePath(path) ? path : null;
 }
 
-function localMarkdownPreviewHref(threadId?: string, href?: string): { download: string; href: string } | null {
+function localMarkdownPreviewHref(
+  threadId?: string,
+  href?: string,
+): { download: string; fragment: string; href: string; path: string } | null {
   const target = href ? localMarkdownPreviewTarget(href) : null;
   if (!threadId || !target) {
     return null;
   }
   return {
     download: markdownFileName(target.path),
+    fragment: target.fragment,
     href: `${filePreviewUrl(threadId, target.path)}${target.fragment}`,
+    path: target.path,
   };
 }
 
@@ -959,6 +1029,10 @@ function isLocalAbsolutePath(path: string): boolean {
 function markdownFileName(path: string): string {
   const parts = path.split(/[\\/]/);
   return parts[parts.length - 1] || "preview.md";
+}
+
+function shouldUseNativeLinkClick(event: MouseEvent<HTMLAnchorElement>) {
+  return event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0;
 }
 
 function StatusMarker({ item }: { item: TimelineItem }) {
@@ -1132,4 +1206,26 @@ function statusTone(status: TimelineItem["status"]): "danger" | "info" | "neutra
     return "neutral";
   }
   return "success";
+}
+
+function commandStatusMeta(status: TimelineItem["status"]):
+  | { Icon: typeof AlertTriangle; label: string; tone: ReturnType<typeof statusTone> }
+  | { Icon: typeof Check; label: string; tone: ReturnType<typeof statusTone> }
+  | null {
+  if (status === "completed") {
+    return { Icon: Check, label: "Success", tone: "success" };
+  }
+  if (status === "failed") {
+    return { Icon: AlertTriangle, label: "Failed", tone: "danger" };
+  }
+  if (status === "cancelled") {
+    return { Icon: AlertTriangle, label: "Cancelled", tone: "neutral" };
+  }
+  if (status === "approval_required") {
+    return { Icon: AlertTriangle, label: "Approval required", tone: "warning" };
+  }
+  if (status === "waiting") {
+    return { Icon: AlertTriangle, label: "Waiting", tone: "warning" };
+  }
+  return null;
 }
