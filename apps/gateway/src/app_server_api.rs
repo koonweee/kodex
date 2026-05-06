@@ -478,11 +478,31 @@ pub struct ThreadSummary {
     pub approval_policy: Option<String>,
     pub approvals_reviewer: Option<String>,
     pub sandbox: Option<Value>,
+    pub git_info: Option<GitInfo>,
     pub preview: Option<Value>,
     pub last_completed_agent_turn_seq: Option<i64>,
     pub seen_completed_agent_turn_seq: i64,
     pub unread_completed_agent_turn: bool,
     pub raw_payload: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GitInfo {
+    pub branch: Option<String>,
+    pub origin_url: Option<String>,
+    pub sha: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GitInfoPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin_url: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sha: Option<Option<String>>,
 }
 
 impl ThreadSummary {
@@ -501,6 +521,7 @@ impl ThreadSummary {
             approval_policy: optional_string(payload, "approvalPolicy"),
             approvals_reviewer: optional_string(payload, "approvalsReviewer"),
             sandbox: optional_value(payload, "sandbox"),
+            git_info: optional_git_info(payload)?,
             preview: payload.get("preview").cloned(),
             last_completed_agent_turn_seq: None,
             seen_completed_agent_turn_seq: 0,
@@ -519,6 +540,65 @@ impl ThreadSummary {
         self.unread_completed_agent_turn = last_completed_agent_turn_seq
             .is_some_and(|seq| seq > self.seen_completed_agent_turn_seq);
     }
+}
+
+pub(crate) fn optional_git_info(payload: &Value) -> ApiResult<Option<GitInfo>> {
+    let Some(value) = payload.get("gitInfo") else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let object = value
+        .as_object()
+        .ok_or_else(|| bad_gateway("thread gitInfo field is not an object"))?;
+    Ok(Some(GitInfo {
+        branch: object
+            .get("branch")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        origin_url: object
+            .get("originUrl")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+        sha: object
+            .get("sha")
+            .and_then(Value::as_str)
+            .map(ToString::to_string),
+    }))
+}
+
+pub(crate) fn optional_git_info_patch(payload: &Value) -> ApiResult<Option<GitInfoPatch>> {
+    let Some(value) = payload.get("gitInfo") else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let object = value
+        .as_object()
+        .ok_or_else(|| bad_gateway("thread gitInfo field is not an object"))?;
+    Ok(Some(GitInfoPatch {
+        branch: optional_patch_string(object, "branch")?,
+        origin_url: optional_patch_string(object, "originUrl")?,
+        sha: optional_patch_string(object, "sha")?,
+    }))
+}
+
+fn optional_patch_string(
+    object: &serde_json::Map<String, Value>,
+    key: &str,
+) -> ApiResult<Option<Option<String>>> {
+    let Some(value) = object.get(key) else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(Some(None));
+    }
+    let value = value
+        .as_str()
+        .ok_or_else(|| bad_gateway("thread gitInfo patch field is not a string"))?;
+    Ok(Some(Some(value.to_string())))
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
@@ -659,7 +739,9 @@ pub struct TimelineThreadStatusPayload {
 #[serde(rename_all = "camelCase")]
 pub struct TimelineThreadMetadataPayload {
     pub source: TimelineUpdateSource,
-    pub thread: ThreadSummary,
+    pub thread_id: String,
+    pub thread: Option<ThreadSummary>,
+    pub git_info: Option<GitInfoPatch>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
@@ -1579,6 +1661,11 @@ mod tests {
                 "cliVersion": "0.128.0",
                 "cwd": "/workspace",
                 "ephemeral": false,
+                "gitInfo": {
+                    "branch": "feature/git-underflow",
+                    "originUrl": "git@github.com:example/kodex.git",
+                    "sha": "abc123"
+                },
                 "modelProvider": "openai",
                 "preview": "hello",
                 "source": "cli",
@@ -1594,6 +1681,13 @@ mod tests {
         assert_eq!(thread.status, ThreadStatus::Active);
         assert_eq!(thread.created_at, 1_767_225_600);
         assert_eq!(thread.updated_at, 1_767_225_660);
+        assert_eq!(
+            thread
+                .git_info
+                .as_ref()
+                .and_then(|git_info| git_info.branch.as_deref()),
+            Some("feature/git-underflow")
+        );
     }
 
     #[test]

@@ -214,4 +214,97 @@ describe("ComposerPanel", () => {
 
     expect(screen.queryByLabelText(/context/i)).not.toBeInTheDocument();
   });
+
+  it("shows the selected thread git branch in the composer underflow", () => {
+    const attachmentInputRef = { current: null } as RefObject<HTMLInputElement | null>;
+
+    render(
+      <MantineProvider>
+        <ComposerPanel
+          activeSelectedTurnId={null}
+          attachmentInputRef={attachmentInputRef}
+          canCompose
+          composerResetToken={0}
+          composerSettings={composerSettings}
+          composerSettingsError={null}
+          contextUsage={null}
+          isDraftThreadSelected={false}
+          isDraftComposerTransitioning={false}
+          isComposerDragActive={false}
+          isComposerSubmitting={false}
+          isSelectedTimelineReady
+          models={[]}
+          onAbortQueuedSteer={vi.fn()}
+          onAttachmentInputChange={vi.fn()}
+          onComposerDragLeave={vi.fn()}
+          onComposerDragOver={vi.fn()}
+          onComposerDrop={vi.fn()}
+          onComposerKeyDown={vi.fn()}
+          onComposerPaste={vi.fn()}
+          onComposerSettingsChange={vi.fn()}
+          onImageOpen={vi.fn()}
+          onRemovePendingAttachment={vi.fn()}
+          onStopTurn={vi.fn()}
+          onSubmitQueuedSteer={vi.fn()}
+          onSubmitTurn={noopSubmit}
+          pendingAttachments={[]}
+          queuedSteerRows={[]}
+          selectedGitBranch="feature/very-long-branch-name-that-should-truncate"
+          selectedThreadPresent
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByLabelText("Composer context")).toBeInTheDocument();
+    const branch = screen.getByText("feature/very-long-branch-name-that-should-truncate");
+    expect(branch).toHaveAttribute("title", "feature/very-long-branch-name-that-should-truncate");
+    expect(document.querySelector(".kodex-composer-underbar-left svg")).toBeInTheDocument();
+  });
+
+  it.each([undefined, null, "", "   "])(
+    "omits the git branch underflow when the selected branch is unavailable",
+    (selectedGitBranch) => {
+      const attachmentInputRef = { current: null } as RefObject<HTMLInputElement | null>;
+
+      render(
+        <MantineProvider>
+          <ComposerPanel
+            activeSelectedTurnId={null}
+            attachmentInputRef={attachmentInputRef}
+            canCompose
+            composerResetToken={0}
+            composerSettings={composerSettings}
+            composerSettingsError={null}
+            contextUsage={null}
+            isDraftThreadSelected={false}
+            isDraftComposerTransitioning={false}
+            isComposerDragActive={false}
+            isComposerSubmitting={false}
+            isSelectedTimelineReady
+            models={[]}
+            onAbortQueuedSteer={vi.fn()}
+            onAttachmentInputChange={vi.fn()}
+            onComposerDragLeave={vi.fn()}
+            onComposerDragOver={vi.fn()}
+            onComposerDrop={vi.fn()}
+            onComposerKeyDown={vi.fn()}
+            onComposerPaste={vi.fn()}
+            onComposerSettingsChange={vi.fn()}
+            onImageOpen={vi.fn()}
+            onRemovePendingAttachment={vi.fn()}
+            onStopTurn={vi.fn()}
+            onSubmitQueuedSteer={vi.fn()}
+            onSubmitTurn={noopSubmit}
+            pendingAttachments={[]}
+            queuedSteerRows={[]}
+            selectedGitBranch={selectedGitBranch}
+            selectedThreadPresent
+          />
+        </MantineProvider>,
+      );
+
+      expect(screen.queryByLabelText("Composer context")).not.toBeInTheDocument();
+      expect(document.querySelector(".kodex-composer-underbar")).not.toBeInTheDocument();
+    },
+  );
 });

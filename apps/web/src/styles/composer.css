@@ -79,6 +79,11 @@
   line-height: 1;
 }
 
+.kodex-composer-underbar-item {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .kodex-composer-underbar-left svg {
   flex: 0 0 auto;
 }

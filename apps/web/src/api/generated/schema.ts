@@ -647,6 +647,16 @@ export interface components {
             trustedNetworkOnly: boolean;
             version: string;
         };
+        GitInfo: {
+            branch?: string | null;
+            originUrl?: string | null;
+            sha?: string | null;
+        };
+        GitInfoPatch: {
+            branch?: string | null;
+            originUrl?: string | null;
+            sha?: string | null;
+        };
         HealthResponse: {
             status: string;
         };
@@ -835,6 +845,7 @@ export interface components {
             /** Format: int64 */
             createdAt: number;
             cwd: string;
+            gitInfo?: null | components["schemas"]["GitInfo"];
             id: string;
             /** Format: int64 */
             lastCompletedAgentTurnSeq?: number | null;
@@ -876,8 +887,10 @@ export interface components {
             turnId: string;
         };
         TimelineThreadMetadataPayload: {
+            gitInfo?: null | components["schemas"]["GitInfoPatch"];
             source: components["schemas"]["TimelineUpdateSource"];
-            thread: components["schemas"]["ThreadSummary"];
+            thread?: null | components["schemas"]["ThreadSummary"];
+            threadId: string;
         };
         TimelineThreadStatusPayload: {
             liveState: components["schemas"]["ThreadLiveState"];

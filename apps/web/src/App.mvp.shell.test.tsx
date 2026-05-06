@@ -204,6 +204,122 @@ describe("MVP shell flows", () => {
     expect(await screen.findByRole("button", { name: /permissions: full access/i })).toBeInTheDocument();
   });
 
+  it("shows the selected thread git branch under the composer and updates from thread metadata", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [{ ...thread, gitInfo: { branch: "feature/old-branch", originUrl: null, sha: null } }],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText("feature/old-branch")).toBeInTheDocument();
+
+    let selectedThreadStream: FakeEventSource | undefined;
+    await waitFor(() => {
+      selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+      expect(selectedThreadStream).toBeDefined();
+    });
+    act(() => {
+      selectedThreadStream?.emitNamed("timeline.thread_metadata", {
+        id: "event-thread-metadata",
+        seq: 10,
+        kind: "timeline.thread_metadata",
+        codexMethod: "thread/metadata",
+        threadId: "thread-1",
+        turnId: null,
+        itemId: null,
+        projectId: project.id,
+        payload: {
+          source: "gatewayStream",
+          thread: {
+            ...thread,
+            gitInfo: { branch: "feature/new-branch", originUrl: null, sha: null },
+          },
+        },
+        receivedAt: "2026-04-30T00:00:01Z",
+      });
+    });
+
+    expect(await screen.findByText("feature/new-branch")).toBeInTheDocument();
+    expect(screen.queryByText("feature/old-branch")).not.toBeInTheDocument();
+  });
+
+  it("preserves and clears git branch underflow from metadata patches", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [{ ...thread, gitInfo: { branch: "feature/old-branch", originUrl: null, sha: null } }],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText("feature/old-branch")).toBeInTheDocument();
+
+    let selectedThreadStream: FakeEventSource | undefined;
+    await waitFor(() => {
+      selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+      expect(selectedThreadStream).toBeDefined();
+    });
+    act(() => {
+      selectedThreadStream?.emitNamed("timeline.thread_metadata", {
+        id: "event-thread-metadata-sha",
+        seq: 10,
+        kind: "timeline.thread_metadata",
+        codexMethod: "thread/metadata",
+        threadId: "thread-1",
+        turnId: null,
+        itemId: null,
+        projectId: project.id,
+        payload: {
+          source: "gatewayStream",
+          threadId: "thread-1",
+          thread: null,
+          gitInfo: { sha: "abc123" },
+        },
+        receivedAt: "2026-04-30T00:00:01Z",
+      });
+    });
+
+    expect(await screen.findByText("feature/old-branch")).toBeInTheDocument();
+
+    act(() => {
+      selectedThreadStream?.emitNamed("timeline.thread_metadata", {
+        id: "event-thread-metadata-clear",
+        seq: 11,
+        kind: "timeline.thread_metadata",
+        codexMethod: "thread/metadata",
+        threadId: "thread-1",
+        turnId: null,
+        itemId: null,
+        projectId: project.id,
+        payload: {
+          source: "gatewayStream",
+          threadId: "thread-1",
+          thread: null,
+          gitInfo: { branch: null },
+        },
+        receivedAt: "2026-04-30T00:00:02Z",
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("feature/old-branch")).not.toBeInTheDocument();
+    });
+  });
+
   it("uses preview text as the display title for unnamed threads", async () => {
     const unnamedThread = {
       ...thread,

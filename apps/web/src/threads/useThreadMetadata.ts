@@ -48,6 +48,33 @@ export function useThreadMetadata({
       );
     }
 
+    const metadataThread = threadMetadataFromEvent(event);
+    if (metadataThread) {
+      setThreadsByProjectId((current) =>
+        updateThreadReadStateInProjects(current, metadataThread.id, () => ({
+          gitInfo: metadataThread.gitInfo,
+        })),
+      );
+      setChatThreads((current) =>
+        updateThreadReadStateInList(current, metadataThread.id, () => ({
+          gitInfo: metadataThread.gitInfo,
+        })),
+      );
+    }
+    const metadataGitInfo = threadMetadataGitInfoFromEvent(event);
+    if (metadataGitInfo) {
+      setThreadsByProjectId((current) =>
+        updateThreadReadStateInProjects(current, metadataGitInfo.threadId, (thread) => ({
+          gitInfo: mergeGitInfoPatch(thread.gitInfo, metadataGitInfo.gitInfo),
+        })),
+      );
+      setChatThreads((current) =>
+        updateThreadReadStateInList(current, metadataGitInfo.threadId, (thread) => ({
+          gitInfo: mergeGitInfoPatch(thread.gitInfo, metadataGitInfo.gitInfo),
+        })),
+      );
+    }
+
     const update = threadNameUpdateFromEvent(event);
     if (!update) {
       return;
@@ -79,4 +106,49 @@ export function useThreadMetadata({
     applyThreadMetadataEvents,
     selectedContextUsage,
   };
+}
+
+function threadMetadataFromEvent(event: EventEnvelope): ThreadSummary | null {
+  if (event.kind !== "timeline.thread_metadata") {
+    return null;
+  }
+  const payload = event.payload as { thread?: ThreadSummary };
+  return payload.thread?.id ? payload.thread : null;
+}
+
+function threadMetadataGitInfoFromEvent(
+  event: EventEnvelope,
+): { threadId: string; gitInfo: GitInfoPatch | null } | null {
+  if (event.kind !== "timeline.thread_metadata") {
+    return null;
+  }
+  const payload = event.payload as { gitInfo?: GitInfoPatch | null; thread?: ThreadSummary | null; threadId?: unknown };
+  if (payload.thread?.id) {
+    return null;
+  }
+  const threadId = typeof payload.threadId === "string" ? payload.threadId : event.threadId;
+  if (!threadId || !("gitInfo" in payload)) {
+    return null;
+  }
+  return { threadId, gitInfo: payload.gitInfo ?? null };
+}
+
+type GitInfo = NonNullable<ThreadSummary["gitInfo"]>;
+type GitInfoPatch = Partial<Record<keyof GitInfo, string | null>>;
+
+function mergeGitInfoPatch(current: ThreadSummary["gitInfo"], patch: GitInfoPatch | null): ThreadSummary["gitInfo"] {
+  if (patch === null) {
+    return null;
+  }
+  const next: GitInfo = { ...(current ?? {}) };
+  if ("branch" in patch) {
+    next.branch = patch.branch;
+  }
+  if ("originUrl" in patch) {
+    next.originUrl = patch.originUrl;
+  }
+  if ("sha" in patch) {
+    next.sha = patch.sha;
+  }
+  return next;
 }

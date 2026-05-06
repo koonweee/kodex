@@ -1,5 +1,5 @@
 import { ActionIcon, Box, Group, Menu, Textarea, Tooltip } from "@mantine/core";
-import { ArrowUp, Folder, Paperclip, Plus, Square } from "lucide-react";
+import { ArrowUp, Folder, GitGraph, Paperclip, Plus, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import type {
   ClipboardEvent as ReactClipboardEvent,
@@ -47,6 +47,7 @@ export function ComposerPanel({
   composerShellRef,
   contextUsage,
   currentProjectName,
+  selectedGitBranch,
   isDraftThreadSelected,
   isDraftComposerTransitioning,
   isComposerDragActive,
@@ -80,6 +81,7 @@ export function ComposerPanel({
   composerShellRef?: RefObject<HTMLDivElement | null>;
   contextUsage?: ContextUsage | null;
   currentProjectName?: string | null;
+  selectedGitBranch?: string | null;
   isDraftThreadSelected: boolean;
   isDraftComposerTransitioning: boolean;
   isComposerDragActive: boolean;
@@ -109,6 +111,17 @@ export function ComposerPanel({
   const shouldShowDraftHero = isDraftThreadSelected || isDraftComposerTransitioning;
   const draftProjectToolbarName =
     isDraftThreadSelected && currentProjectName ? currentProjectName : null;
+  const selectedGitBranchName = normalizeUnderbarText(selectedGitBranch);
+  const underbarItems = [
+    draftProjectToolbarName
+      ? { icon: "project" as const, label: draftProjectToolbarName, title: draftProjectToolbarName }
+      : null,
+    selectedGitBranchName
+      ? { icon: "branch" as const, label: selectedGitBranchName, title: selectedGitBranchName }
+      : null,
+  ].filter((item): item is { icon: "project" | "branch"; label: string; title: string } => item !== null);
+  const hasUnderbar = underbarItems.length > 0;
+  const underbarLabel = selectedGitBranchName ? "Composer context" : "Draft thread toolbar";
   const isComposerBusy = isComposerSubmitting || Boolean(isQueuedTurnStartPending);
   const canSubmitComposer =
     canCompose && !isComposerBusy && (Boolean(composerText.trim()) || pendingAttachments.length > 0);
@@ -149,7 +162,7 @@ export function ComposerPanel({
       ) : null}
       <Box
         component="form"
-        className={`kodex-composer${draftProjectToolbarName ? " kodex-composer-with-underbar" : ""}`}
+        className={`kodex-composer${hasUnderbar ? " kodex-composer-with-underbar" : ""}`}
         onSubmit={(event) =>
           onSubmitTurn(event, composerText, {
             clearText: () => setComposerText(""),
@@ -257,16 +270,25 @@ export function ComposerPanel({
           </Tooltip>
         </Group>
       </Box>
-      {draftProjectToolbarName ? (
-        <Box className="kodex-composer-underbar" aria-label="Draft thread toolbar" role="toolbar">
-          <Group className="kodex-composer-underbar-left" gap={8} wrap="nowrap">
-            <Folder size={15} />
-            <span>{draftProjectToolbarName}</span>
+      {hasUnderbar ? (
+        <Box className="kodex-composer-underbar" aria-label={underbarLabel} role="toolbar">
+          <Group className="kodex-composer-underbar-left" gap={10} wrap="nowrap">
+            {underbarItems.map((item) => (
+              <Group key={`${item.icon}:${item.label}`} className="kodex-composer-underbar-item" gap={8} wrap="nowrap">
+                {item.icon === "project" ? <Folder size={15} /> : <GitGraph size={15} />}
+                <span title={item.title}>{item.label}</span>
+              </Group>
+            ))}
           </Group>
         </Box>
       ) : null}
     </Box>
   );
+}
+
+function normalizeUnderbarText(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
 function greetingForDate(date: Date) {

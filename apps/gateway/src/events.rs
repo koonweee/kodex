@@ -627,21 +627,36 @@ async fn timeline_thread_metadata_event(
     let Some(thread_id) = metadata.thread_id.clone() else {
         return Ok(None);
     };
-    let Some(thread) = params.get("thread").filter(|thread| thread.is_object()) else {
-        return Ok(None);
+    let thread = params.get("thread").filter(|thread| thread.is_object());
+    let thread = match thread {
+        Some(thread) => match thread_summary_from_value(thread) {
+            Ok(thread) => Some(thread),
+            Err(_) => return Ok(None),
+        },
+        None => None,
+    };
+    let git_info = if thread.is_none() {
+        if !params.get("gitInfo").is_some() {
+            return Ok(None);
+        }
+        app_server_api::optional_git_info_patch(params)?
+    } else {
+        None
     };
     let payload = TimelineThreadMetadataPayload {
         source,
-        thread: match thread_summary_from_value(thread) {
-            Ok(thread) => thread,
-            Err(_) => return Ok(None),
-        },
+        thread_id: thread
+            .as_ref()
+            .map(|thread| thread.id.clone())
+            .unwrap_or(thread_id),
+        thread,
+        git_info,
     };
     append_timeline_event(
         state,
         NewEvent {
             project_id: metadata.project_id.clone(),
-            thread_id: Some(thread_id.clone()),
+            thread_id: Some(payload.thread_id.clone()),
             turn_id: None,
             item_id: None,
             kind: "timeline.thread_metadata".to_string(),
@@ -775,6 +790,7 @@ fn thread_summary_from_value(thread: &Value) -> ApiResult<ThreadSummary> {
             .get("sandbox")
             .filter(|value| !value.is_null())
             .cloned(),
+        git_info: app_server_api::optional_git_info(thread)?,
         preview: thread.get("preview").cloned(),
         last_completed_agent_turn_seq: None,
         seen_completed_agent_turn_seq: 0,
@@ -984,6 +1000,100 @@ mod tests {
         assert_eq!(event.kind, SNAPSHOT_REQUIRED_KIND);
         assert_eq!(event.thread_id.as_deref(), Some("thread-1"));
         assert_eq!(event.payload["reason"], "lagged");
+    }
+
+    #[test]
+    fn thread_metadata_summary_preserves_git_branch() {
+        let thread = thread_summary_from_value(&json!({
+            "id": "thread-1",
+            "cliVersion": "0.128.0",
+            "cwd": "/workspace",
+            "ephemeral": false,
+            "gitInfo": {
+                "branch": "feature/git-underflow",
+                "originUrl": null,
+                "sha": "abc123"
+            },
+            "modelProvider": "openai",
+            "preview": "hello",
+            "source": "cli",
+            "status": {"type": "idle"},
+            "turns": [],
+            "createdAt": 1_i64,
+            "updatedAt": 2_i64
+        }))
+        .unwrap();
+
+        assert_eq!(
+            thread
+                .git_info
+                .as_ref()
+                .and_then(|git_info| git_info.branch.as_deref()),
+            Some("feature/git-underflow")
+        );
+    }
+
+    #[tokio::test]
+    async fn thread_metadata_patch_emits_git_info_update() {
+        let state = test_state().await;
+        let mut receiver = state.events.subscribe();
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "thread/metadata/update".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "gitInfo": {
+                        "branch": "feature/git-underflow",
+                        "originUrl": null,
+                        "sha": "abc123"
+                    }
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let raw = receiver.recv().await.unwrap();
+        let normalized = receiver.recv().await.unwrap();
+        assert_eq!(raw.kind, "codex.notification");
+        assert_eq!(normalized.kind, "timeline.thread_metadata");
+        assert_eq!(normalized.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(normalized.payload["threadId"], "thread-1");
+        assert_eq!(normalized.payload["thread"], Value::Null);
+        assert_eq!(
+            normalized.payload["gitInfo"]["branch"],
+            "feature/git-underflow"
+        );
+    }
+
+    #[tokio::test]
+    async fn thread_metadata_patch_preserves_omitted_git_info_fields() {
+        let state = test_state().await;
+        let mut receiver = state.events.subscribe();
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "thread/metadata/update".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "gitInfo": {
+                        "sha": "abc123"
+                    }
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let _raw = receiver.recv().await.unwrap();
+        let normalized = receiver.recv().await.unwrap();
+        assert_eq!(normalized.kind, "timeline.thread_metadata");
+        assert_eq!(normalized.payload["threadId"], "thread-1");
+        assert!(normalized.payload["gitInfo"].get("branch").is_none());
+        assert_eq!(normalized.payload["gitInfo"]["sha"], "abc123");
     }
 
     #[tokio::test]

@@ -895,7 +895,7 @@ function KodexShell({
       <KodexShellView
           composerPanelProps={{
           activeSelectedTurnId, attachmentInputRef, canCompose, composerResetToken, composerSettings, composerSettingsError,
-          composerShellRef, contextUsage: selectedContextUsage, currentProjectName: selectedProject?.name ?? null, isDraftThreadSelected, isDraftComposerTransitioning, isComposerDragActive,
+          composerShellRef, contextUsage: selectedContextUsage, currentProjectName: selectedProject?.name ?? null, selectedGitBranch: selectedThread?.gitInfo?.branch ?? null, isDraftThreadSelected, isDraftComposerTransitioning, isComposerDragActive,
           isComposerSubmitting, isQueuedTurnStartPending, isSelectedTimelineReady, models,
           onAbortQueuedSteer: handleAbortQueuedSteer, onAttachmentInputChange: handleAttachmentInputChange,
           onComposerDragLeave: handleComposerDragLeave, onComposerDragOver: handleComposerDragOver, onComposerDrop: handleComposerDrop,
