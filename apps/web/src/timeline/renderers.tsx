@@ -146,8 +146,10 @@ function assistantMarkdownComponents(
             onMarkdownOpen({
               fragment: markdownPreview.fragment,
               href: markdownPreview.href,
+              column: markdownPreview.column,
+              line: markdownPreview.line,
               path: markdownPreview.path,
-              title: title ?? markdownPreview.download,
+              title: title ?? markdownPreview.title,
             });
           }}
         >
@@ -960,16 +962,28 @@ function localPreviewPath(path?: string): string | null {
 function localMarkdownPreviewHref(
   threadId?: string,
   href?: string,
-): { download: string; fragment: string; href: string; path: string } | null {
+): {
+  column?: number;
+  download: string;
+  fragment: string;
+  href: string;
+  line?: number;
+  path: string;
+  title: string;
+} | null {
   const target = href ? localMarkdownPreviewTarget(href) : null;
   if (!threadId || !target) {
     return null;
   }
+  const download = markdownFileName(target.path);
   return {
-    download: markdownFileName(target.path),
+    column: target.column,
+    download,
     fragment: target.fragment,
     href: `${filePreviewUrl(threadId, target.path)}${target.fragment}`,
+    line: target.line,
     path: target.path,
+    title: markdownLocationTitle(download, target.line, target.column),
   };
 }
 
@@ -984,12 +998,13 @@ function localImagePreviewHref(threadId?: string, href?: string): { href: string
   };
 }
 
-function localMarkdownPreviewTarget(href: string): { fragment: string; path: string } | null {
+function localMarkdownPreviewTarget(href: string): { column?: number; fragment: string; line?: number; path: string } | null {
   const { fragment, path } = localFilePreviewTarget(href);
-  if (!isLocalMarkdownPath(path)) {
+  const target = localMarkdownPathWithLocation(path);
+  if (!target) {
     return null;
   }
-  return { fragment, path };
+  return { ...target, fragment };
 }
 
 function localImagePreviewTarget(href: string): { path: string } | null {
@@ -1013,6 +1028,21 @@ function isLocalMarkdownPath(path: string): boolean {
   return isLocalAbsolutePath(path) && /\.(?:md|markdown)$/i.test(path);
 }
 
+function localMarkdownPathWithLocation(path: string): { column?: number; line?: number; path: string } | null {
+  if (isLocalMarkdownPath(path)) {
+    return { path };
+  }
+  const match = path.match(/^(.+\.(?:md|markdown)):([1-9]\d*)(?::([1-9]\d*))?$/i);
+  if (!match || !isLocalMarkdownPath(match[1])) {
+    return null;
+  }
+  return {
+    column: match[3] ? Number(match[3]) : undefined,
+    line: Number(match[2]),
+    path: match[1],
+  };
+}
+
 function isLocalImagePath(path: string): boolean {
   return isLocalAbsolutePath(path) && /\.(?:png|jpe?g|gif|webp)$/i.test(path);
 }
@@ -1024,6 +1054,13 @@ function isLocalAbsolutePath(path: string): boolean {
 function markdownFileName(path: string): string {
   const parts = path.split(/[\\/]/);
   return parts[parts.length - 1] || "preview.md";
+}
+
+function markdownLocationTitle(fileName: string, line?: number, column?: number): string {
+  if (!line) {
+    return fileName;
+  }
+  return column ? `${fileName}:${line}:${column}` : `${fileName}:${line}`;
 }
 
 function shouldUseNativeLinkClick(event: MouseEvent<HTMLAnchorElement>) {

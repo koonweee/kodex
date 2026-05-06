@@ -572,9 +572,39 @@
 }
 
 .kodex-markdown-preview-source {
+  border: 1px solid var(--kodex-border-subtle);
+  border-radius: 8px;
+  background: var(--kodex-bg-code);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 12px;
+  line-height: 1.55;
   max-width: 100%;
   overflow-x: auto;
+  padding: 8px 0;
+}
+
+.kodex-markdown-preview-source-line {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  min-width: max-content;
+  padding: 0 12px 0 0;
+  scroll-margin-block: 40%;
   white-space: pre;
+}
+
+.kodex-markdown-preview-source-line[data-line-target="true"] {
+  background: color-mix(in srgb, var(--mantine-color-yellow-4), transparent 78%);
+}
+
+.kodex-markdown-preview-source-line-number {
+  color: var(--kodex-text-muted);
+  padding-right: 12px;
+  text-align: right;
+  user-select: none;
+}
+
+.kodex-markdown-preview-source-line-content {
+  min-width: 0;
 }
 
 .kodex-timeline-disclosure,

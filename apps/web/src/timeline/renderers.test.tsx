@@ -475,6 +475,44 @@ describe("timeline renderer registry", () => {
     expect(screen.queryByText(/NOTES\.markdown content/i)).not.toBeInTheDocument();
   });
 
+  it("rewrites line-suffixed local markdown links and keeps the source location for preview callbacks", () => {
+    const onMarkdownOpen = vi.fn<(request: MarkdownPreviewRequest) => void>();
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          onMarkdownOpen={onMarkdownOpen}
+          threadId="thread-1"
+          item={item({
+            kind: "assistant_message",
+            text:
+              "Read [indexed](/Users/example/kodex/plans/index.md:42), [column](/Users/example/kodex/plans/index.md:42:7), and [web](https://example.com/readme.md:42).",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByRole("link", { name: "indexed" })).toHaveAttribute(
+      "href",
+      "http://localhost:3000/v1/threads/thread-1/files/preview?path=%2FUsers%2Fexample%2Fkodex%2Fplans%2Findex.md",
+    );
+    expect(screen.getByRole("link", { name: "column" })).toHaveAttribute(
+      "href",
+      "http://localhost:3000/v1/threads/thread-1/files/preview?path=%2FUsers%2Fexample%2Fkodex%2Fplans%2Findex.md",
+    );
+    expect(screen.getByRole("link", { name: "web" })).toHaveAttribute("href", "https://example.com/readme.md:42");
+
+    fireEvent.click(screen.getByRole("link", { name: "column" }));
+
+    expect(onMarkdownOpen).toHaveBeenCalledWith({
+      column: 7,
+      fragment: "",
+      href: "http://localhost:3000/v1/threads/thread-1/files/preview?path=%2FUsers%2Fexample%2Fkodex%2Fplans%2Findex.md",
+      line: 42,
+      path: "/Users/example/kodex/plans/index.md",
+      title: "index.md:42:7",
+    });
+  });
+
   it("opens local markdown links through the markdown preview callback on normal click", () => {
     const onMarkdownOpen = vi.fn<(request: MarkdownPreviewRequest) => void>();
     render(
