@@ -9,6 +9,7 @@ import {
   isWarningEvent,
   mergeImages,
 } from "./presentation";
+import type { CollabAgentNameMap } from "./presentationCollab";
 import {
   compactTimelineStores,
   createTimelineState,
@@ -23,6 +24,8 @@ import {
   type OptimisticUserMessageUpdate,
   type TimelineDraft,
   type TimelineIndexes,
+  type TimelineCollabAgent,
+  type TimelineCollabAgentPresentation,
   type TimelineImage,
   type TimelineItem,
   type TimelineState,
@@ -35,6 +38,8 @@ export type {
   OptimisticUserMessageInput,
   OptimisticUserMessageUpdate,
   TimelineConfirmationState,
+  TimelineCollabAgent,
+  TimelineCollabAgentPresentation,
   TimelineImage,
   TimelineItem,
   TimelineItemSource,
@@ -121,7 +126,9 @@ function applyTimelineEventInternal(
   }
 
   const existingItem = event.itemId ? timelineItemById(next.indexes, event.itemId) : undefined;
-  const presentation = createPresentationItem(event, existingItem);
+  const presentation = createPresentationItem(event, existingItem, {
+    collabAgentNames: collabAgentNameMap(next.indexes),
+  });
   if (!presentation) {
     addHiddenDebugItem(next, event);
     return createTimelineStateFromDraft(next);
@@ -472,6 +479,7 @@ function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event
     ...incoming,
     actions: mergeActions(existing.actions, incoming.actions),
     argsSummary: incoming.argsSummary || existing.argsSummary,
+    collab: mergeCollabPresentation(existing.collab, incoming.collab),
     command: incoming.command || existing.command,
     cwd: incoming.cwd || existing.cwd,
     debugEvents: [...existing.debugEvents, event],
@@ -487,6 +495,62 @@ function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event
     status: mergeTimelineStatus(existing, incoming, event),
     toolName: incoming.toolName || existing.toolName,
     text,
+  };
+}
+
+function collabAgentNameMap(indexes: TimelineIndexes): CollabAgentNameMap {
+  const names: CollabAgentNameMap = new Map();
+  for (const item of timelineItems(indexes)) {
+    if (item.kind !== "collab_agent_tool_call" || !item.collab) {
+      continue;
+    }
+    for (const agent of item.collab.agents) {
+      const prior = names.get(agent.threadId);
+      names.set(agent.threadId, mergeCollabAgentName(prior, agent));
+    }
+  }
+  return names;
+}
+
+function mergeCollabAgentName(
+  prior: TimelineCollabAgent | undefined,
+  incoming: TimelineCollabAgent,
+): TimelineCollabAgent {
+  if (!prior) {
+    return incoming;
+  }
+  if (incoming.nickname || (!prior.nickname && incoming.role && incoming.nameSource !== "ordinal")) {
+    return { ...prior, ...incoming };
+  }
+  return {
+    ...incoming,
+    displayName: prior.displayName,
+    nameSource: prior.nameSource,
+    nickname: prior.nickname,
+    role: incoming.role || prior.role,
+  };
+}
+
+function mergeCollabPresentation(
+  existing: TimelineCollabAgentPresentation | undefined,
+  incoming: TimelineCollabAgentPresentation | undefined,
+): TimelineCollabAgentPresentation | undefined {
+  if (!existing) {
+    return incoming;
+  }
+  if (!incoming) {
+    return existing;
+  }
+  const agentsByThreadId = new Map(existing.agents.map((agent) => [agent.threadId, agent]));
+  for (const agent of incoming.agents) {
+    const prior = agentsByThreadId.get(agent.threadId);
+    agentsByThreadId.set(agent.threadId, prior ? { ...prior, ...agent } : agent);
+  }
+  return {
+    agents: [...agentsByThreadId.values()],
+    prompt: incoming.prompt || existing.prompt,
+    model: incoming.model || existing.model,
+    reasoningEffort: incoming.reasoningEffort || existing.reasoningEffort,
   };
 }
 

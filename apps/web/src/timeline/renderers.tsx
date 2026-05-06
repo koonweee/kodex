@@ -55,7 +55,9 @@ const rendererRegistry: Record<string, TimelineRenderer> = {
   file_change: (item) => <FileChangeBlock item={item} />,
   mcp_tool_call: (item) => <ToolCallBlock item={item} />,
   dynamic_tool_call: (item) => <ToolCallBlock item={item} />,
-  collab_agent_tool_call: (item) => <CollabAgentBlock item={item} />,
+  collab_agent_tool_call: (item, options) => (
+    <CollabAgentBlock item={item} onMarkdownOpen={options.onMarkdownOpen} threadId={options.threadId} />
+  ),
   web_search_group: (item) => <WebSearchBlock actions={item.actions ?? []} />,
   plan: (item) => <PlanBlock item={item} />,
   image_view: (item, options) => (
@@ -794,7 +796,57 @@ function ToolCallBlock({ item }: { item: TimelineItem }) {
   );
 }
 
-function CollabAgentBlock({ item }: { item: TimelineItem }) {
+function CollabAgentBlock({
+  item,
+  onMarkdownOpen,
+  threadId,
+}: {
+  item: TimelineItem;
+  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
+  threadId?: string;
+}) {
+  const collab = item.collab;
+  if (collab) {
+    return (
+      <Stack gap={6} className="kodex-collab-agent-block">
+        <Text size="sm" className="kodex-collab-agent-title">
+          {item.text || "Agent activity"}
+        </Text>
+        <CollabAgentChips item={item} />
+        {collab.prompt ? (
+          <Text size="xs" c="dimmed" className="kodex-collab-agent-preview">
+            {collab.prompt}
+          </Text>
+        ) : null}
+        {shouldRenderCollabAgentRows(item) ? (
+          <Stack gap={6} className="kodex-collab-agent-list">
+            {collab.agents.map((agent) => (
+              <Box key={agent.threadId} className="kodex-collab-agent-row">
+                <Group gap={6} wrap="nowrap" className="kodex-collab-agent-row-heading">
+                  <Text size="xs" fw={700} className="kodex-collab-agent-name">
+                    {agent.displayName}
+                  </Text>
+                  {agent.status ? (
+                    <Badge
+                      className="kodex-ui-badge kodex-collab-agent-status"
+                      data-tone={collabStatusTone(agent.rawStatus)}
+                      size="xs"
+                      variant="light"
+                    >
+                      {agent.status}
+                    </Badge>
+                  ) : null}
+                </Group>
+                {agent.message ? (
+                  <CollabAgentMarkdownPreview text={agent.message} threadId={threadId} onMarkdownOpen={onMarkdownOpen} />
+                ) : null}
+              </Box>
+            ))}
+          </Stack>
+        ) : null}
+      </Stack>
+    );
+  }
   return (
     <Stack gap={4}>
       <Text size="sm">{item.text || "Agent activity"}</Text>
@@ -809,6 +861,51 @@ function CollabAgentBlock({ item }: { item: TimelineItem }) {
         </Text>
       ) : null}
     </Stack>
+  );
+}
+
+function CollabAgentChips({ item }: { item: TimelineItem }) {
+  const collab = item.collab;
+  const chips = [
+    collab?.model,
+    collab?.reasoningEffort ? titleCase(collab.reasoningEffort) : "",
+    item.status === "running" ? "Running" : item.status === "failed" ? "Failed" : "",
+  ].filter(Boolean);
+  if (chips.length === 0) {
+    return null;
+  }
+  return (
+    <Group gap={4} wrap="wrap" className="kodex-collab-agent-chips">
+      {chips.map((chip) => (
+        <Badge key={chip} className="kodex-ui-badge" data-tone={chip === "Failed" ? "danger" : "neutral"} size="xs" variant="light">
+          {chip}
+        </Badge>
+      ))}
+    </Group>
+  );
+}
+
+function shouldRenderCollabAgentRows(item: TimelineItem): boolean {
+  const agents = item.collab?.agents ?? [];
+  return agents.some((agent) => agent.status || agent.message) || (item.toolName === "wait" && agents.length > 0);
+}
+
+function CollabAgentMarkdownPreview({
+  onMarkdownOpen,
+  text,
+  threadId,
+}: {
+  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
+  text: string;
+  threadId?: string;
+}) {
+  const components = useMemo(() => assistantMarkdownComponents(threadId, undefined, onMarkdownOpen), [onMarkdownOpen, threadId]);
+  return (
+    <Box className="kodex-collab-agent-markdown kodex-assistant-markdown">
+      <ReactMarkdown remarkPlugins={assistantMarkdownRemarkPlugins} skipHtml components={components}>
+        {text}
+      </ReactMarkdown>
+    </Box>
   );
 }
 
@@ -1151,7 +1248,7 @@ function activityGroupSummary(items: TimelineItem[]): string {
   const fileCount = items.filter((item) => item.kind === "file_change").length;
   const webCount = items.filter((item) => item.kind === "web_search_group").length;
   const toolCount = items.filter((item) => item.kind === "mcp_tool_call" || item.kind === "dynamic_tool_call").length;
-  const agentCount = items.filter((item) => item.kind === "collab_agent_tool_call").length;
+  const agentCount = collabAgentCount(items);
   const generatedImageCount = items.filter((item) => item.kind === "image_generation").length;
   const viewedImageCount = items.filter((item) => item.kind === "image_view").length;
   const parts = [
@@ -1190,7 +1287,7 @@ function activityItemSummary(item: TimelineItem): string {
     return item.toolName ? `Used ${item.toolName}` : "Used tool";
   }
   if (item.kind === "collab_agent_tool_call") {
-    return item.text || "Agent activity";
+    return collabActivitySummary(item);
   }
   if (item.kind === "image_view" || item.kind === "image_generation") {
     return item.text || "Image activity";
@@ -1206,6 +1303,53 @@ function displayCommand(command: string): string {
 
 function sentenceCase(value: string): string {
   return value ? `${value[0].toUpperCase()}${value.slice(1)}` : value;
+}
+
+function collabActivitySummary(item: TimelineItem): string {
+  if (item.toolName === "wait" && item.status === "running" && item.collab && item.collab.agents.length > 1) {
+    return `Waiting for ${item.collab.agents.length} agents`;
+  }
+  if (item.text) {
+    return item.text;
+  }
+  return "Agent activity";
+}
+
+function collabAgentCount(items: TimelineItem[]): number {
+  const agentIds = new Set<string>();
+  let fallbackRows = 0;
+  for (const item of items) {
+    if (item.kind !== "collab_agent_tool_call") {
+      continue;
+    }
+    if (!item.collab?.agents.length) {
+      fallbackRows += 1;
+      continue;
+    }
+    for (const agent of item.collab.agents) {
+      agentIds.add(agent.threadId);
+    }
+  }
+  return agentIds.size || fallbackRows;
+}
+
+function collabStatusTone(status?: string): "danger" | "neutral" | "success" | "warning" {
+  const normalized = (status ?? "").toLowerCase();
+  if (normalized === "completed") {
+    return "success";
+  }
+  if (normalized === "errored" || normalized === "notfound") {
+    return "danger";
+  }
+  if (normalized === "interrupted" || normalized === "shutdown") {
+    return "warning";
+  }
+  return "neutral";
+}
+
+function titleCase(value: string): string {
+  const spaced = value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ");
+  return spaced.replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
 function payloadValue(payload: unknown, key: string): string {

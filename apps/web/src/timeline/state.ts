@@ -9,6 +9,24 @@ export type WebSearchAction =
   | { kind: "open"; title?: string; url?: string }
   | { kind: "other"; label: string };
 
+export type TimelineCollabAgent = {
+  threadId: string;
+  displayName: string;
+  nickname?: string;
+  role?: string;
+  status?: string;
+  rawStatus?: string;
+  message?: string;
+  nameSource?: "metadata" | "role" | "ordinal";
+};
+
+export type TimelineCollabAgentPresentation = {
+  agents: TimelineCollabAgent[];
+  prompt?: string;
+  model?: string;
+  reasoningEffort?: string;
+};
+
 export type TimelineItem = {
   id: string;
   serverItemId?: string;
@@ -36,6 +54,7 @@ export type TimelineItem = {
   clientRequestId?: string;
   confirmationState?: TimelineConfirmationState;
   error?: string;
+  collab?: TimelineCollabAgentPresentation;
 };
 
 export type TimelineImage = {

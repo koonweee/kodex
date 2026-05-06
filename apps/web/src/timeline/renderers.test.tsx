@@ -866,6 +866,99 @@ describe("timeline renderer registry", () => {
     expect(screen.getAllByText("Shell")).not.toHaveLength(0);
   });
 
+  it("renders structured collaboration activity with Markdown result previews", () => {
+    const { container } = render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            id: "collab-spawn",
+            kind: "collab_agent_tool_call",
+            text: "Spawned Lorentz [explorer]",
+            toolName: "spawnAgent",
+            collab: {
+              agents: [{ threadId: "thread-lorentz", displayName: "Lorentz [explorer]", nickname: "Lorentz", role: "explorer" }],
+              model: "gpt-5.5",
+              reasoningEffort: "high",
+              prompt: "Inspect the renderer behavior and summarize the result.",
+            },
+          })}
+        />
+        <TimelineItemRenderer
+          item={item({
+            id: "collab-wait",
+            kind: "collab_agent_tool_call",
+            text: "Finished waiting",
+            toolName: "wait",
+            collab: {
+              agents: [
+                {
+                  threadId: "thread-lorentz",
+                  displayName: "Lorentz [explorer]",
+                  status: "Completed",
+                  rawStatus: "completed",
+                  message: "**Done**\n\n- checked `renderers.tsx`\n- see [plan](plans/collab-agent-timeline-rendering.md)",
+                },
+              ],
+            },
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("Spawned Lorentz [explorer]")).toBeInTheDocument();
+    expect(screen.getByText("gpt-5.5")).toBeInTheDocument();
+    expect(screen.getByText("High")).toBeInTheDocument();
+    expect(screen.getByText("Inspect the renderer behavior and summarize the result.")).toBeInTheDocument();
+    expect(screen.getAllByText("Lorentz [explorer]").length).toBeGreaterThan(0);
+    expect(screen.getByText("Completed")).toBeInTheDocument();
+    expect(screen.getByText("Done")).toBeInTheDocument();
+    expect(screen.getByText("renderers.tsx")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "plan" })).toHaveAttribute(
+      "href",
+      "plans/collab-agent-timeline-rendering.md",
+    );
+    expect(reactMarkdownRenderSpy).toHaveBeenCalledWith(expect.stringContaining("**Done**"));
+    expect(container).not.toHaveTextContent("thread-lorentz");
+  });
+
+  it("summarizes grouped collaboration rows with friendly names and counts", () => {
+    const { container } = render(
+      <MantineProvider>
+        <TimelineActivityGroupRenderer
+          items={[
+            item({
+              id: "collab-spawn",
+              kind: "collab_agent_tool_call",
+              text: "Spawned Lorentz [explorer]",
+              toolName: "spawnAgent",
+              collab: {
+                agents: [{ threadId: "thread-lorentz", displayName: "Lorentz [explorer]" }],
+              },
+            }),
+            item({
+              id: "collab-wait",
+              kind: "collab_agent_tool_call",
+              text: "Finished waiting",
+              toolName: "wait",
+              collab: {
+                agents: [
+                  { threadId: "thread-lorentz", displayName: "Lorentz [explorer]", status: "Completed" },
+                  { threadId: "thread-mill", displayName: "Mill", status: "Running" },
+                ],
+              },
+            }),
+          ]}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("Used 2 agents")).toBeInTheDocument();
+    expect(screen.getByText("Spawned Lorentz [explorer]")).toBeInTheDocument();
+    expect(screen.getByText("Finished waiting")).toBeInTheDocument();
+    expect(container).not.toHaveTextContent("thread-lorentz");
+    expect(container).not.toHaveTextContent("thread-mill");
+  });
+
   it("renders completed work rows collapsed with elapsed time", () => {
     const { container } = render(
       <MantineProvider>

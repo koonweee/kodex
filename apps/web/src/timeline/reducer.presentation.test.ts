@@ -251,6 +251,185 @@ describe("timeline reducer presentation", () => {
     });
   });
 
+  it("builds structured collaboration presentation with friendly agent names", () => {
+    const state = replayTimeline([
+      event({
+        id: "spawn-lorentz",
+        seq: 1,
+        itemId: "collab-spawn-lorentz",
+        payload: {
+          item: {
+            id: "collab-spawn-lorentz",
+            type: "collabAgentToolCall",
+            tool: "spawnAgent",
+            status: "completed",
+            receiverThreadIds: ["thread-lorentz"],
+            senderThreadId: "thread-main",
+            agentsStates: {},
+            agent_nickname: "Lorentz",
+            agent_role: "explorer",
+            model: "gpt-5.5",
+            reasoningEffort: "high",
+            prompt: "Inspect the renderer behavior.",
+          },
+        },
+      }),
+      event({
+        id: "spawn-agent-1",
+        seq: 2,
+        itemId: "collab-spawn-agent-1",
+        payload: {
+          item: {
+            id: "collab-spawn-agent-1",
+            type: "collabAgentToolCall",
+            tool: "spawnAgent",
+            status: "completed",
+            receiverThreadIds: ["4f6a9a77-7e46-493a-aee3-b7818e44c146"],
+            senderThreadId: "thread-main",
+            agentsStates: {},
+          },
+        },
+      }),
+      event({
+        id: "spawn-agent-2",
+        seq: 3,
+        itemId: "collab-spawn-agent-2",
+        payload: {
+          item: {
+            id: "collab-spawn-agent-2",
+            type: "collabAgentToolCall",
+            tool: "spawnAgent",
+            status: "completed",
+            receiverThreadIds: ["6c9faac1-02cc-4a7c-95cd-f9f2d5e0b6cc"],
+            senderThreadId: "thread-main",
+            agentsStates: {},
+          },
+        },
+      }),
+      event({
+        id: "wait-complete",
+        seq: 4,
+        itemId: "collab-wait",
+        payload: {
+          item: {
+            id: "collab-wait",
+            type: "collabAgentToolCall",
+            tool: "wait",
+            status: "completed",
+            receiverThreadIds: [
+              "thread-lorentz",
+              "4f6a9a77-7e46-493a-aee3-b7818e44c146",
+              "6c9faac1-02cc-4a7c-95cd-f9f2d5e0b6cc",
+            ],
+            senderThreadId: "thread-main",
+            agentsStates: {
+              "thread-lorentz": { status: "completed", message: "No major issues remain." },
+              "4f6a9a77-7e46-493a-aee3-b7818e44c146": { status: "running" },
+              "6c9faac1-02cc-4a7c-95cd-f9f2d5e0b6cc": { status: "pendingInit" },
+            },
+          },
+        },
+      }),
+    ]);
+
+    expect(state.items[0]).toMatchObject({
+      text: "Spawned Lorentz [explorer]",
+      collab: {
+        prompt: "Inspect the renderer behavior.",
+        model: "gpt-5.5",
+        reasoningEffort: "high",
+        agents: [{ threadId: "thread-lorentz", displayName: "Lorentz [explorer]", nickname: "Lorentz", role: "explorer" }],
+      },
+    });
+    expect(state.items[1].collab?.agents[0]?.displayName).toBe("Agent 1");
+    expect(state.items[2].collab?.agents[0]?.displayName).toBe("Agent 2");
+    expect(state.items[3]).toMatchObject({
+      text: "Finished waiting",
+      collab: {
+        agents: [
+          { threadId: "thread-lorentz", displayName: "Lorentz [explorer]", status: "Completed", rawStatus: "completed" },
+          { threadId: "4f6a9a77-7e46-493a-aee3-b7818e44c146", displayName: "Agent 1", status: "Running" },
+          { threadId: "6c9faac1-02cc-4a7c-95cd-f9f2d5e0b6cc", displayName: "Agent 2", status: "Pending init" },
+        ],
+      },
+    });
+    expect(state.items[3].text).not.toContain("4f6a9a77");
+    expect(state.items[3].resultSummary).toBe("Lorentz [explorer]: Completed: No major issues remain.; Agent 1: Running; Agent 2: Pending init");
+    expect(JSON.stringify(state.items[3].debugEvents)).toContain("4f6a9a77-7e46-493a-aee3-b7818e44c146");
+  });
+
+  it("preserves spawn metadata across collaboration item updates and assigns distinct cold ordinals", () => {
+    const state = replayTimeline([
+      event({
+        id: "spawn-start",
+        seq: 1,
+        itemId: "collab-spawn",
+        payload: {
+          item: {
+            id: "collab-spawn",
+            type: "collabAgentToolCall",
+            tool: "spawnAgent",
+            status: "inProgress",
+            receiverThreadIds: ["thread-worker"],
+            senderThreadId: "thread-main",
+            agentsStates: {},
+            model: "gpt-5.5",
+            reasoningEffort: "high",
+            prompt: "Implement the renderer.",
+          },
+        },
+      }),
+      event({
+        id: "spawn-complete",
+        seq: 2,
+        codexMethod: "item/completed",
+        itemId: "collab-spawn",
+        payload: {
+          item: {
+            id: "collab-spawn",
+            type: "collabAgentToolCall",
+            tool: "spawnAgent",
+            status: "completed",
+            receiverThreadIds: ["thread-worker"],
+            senderThreadId: "thread-main",
+            agentsStates: {
+              "thread-worker": { status: "running" },
+            },
+          },
+        },
+      }),
+      event({
+        id: "wait-cold",
+        seq: 3,
+        itemId: "collab-wait-cold",
+        payload: {
+          item: {
+            id: "collab-wait-cold",
+            type: "collabAgentToolCall",
+            tool: "wait",
+            status: "inProgress",
+            receiverThreadIds: ["thread-cold-a", "thread-cold-b"],
+            senderThreadId: "thread-main",
+            agentsStates: {
+              "thread-cold-a": { status: "running" },
+              "thread-cold-b": { status: "pendingInit" },
+            },
+          },
+        },
+      }),
+    ]);
+
+    expect(state.items[0]).toMatchObject({
+      collab: {
+        model: "gpt-5.5",
+        reasoningEffort: "high",
+        prompt: "Implement the renderer.",
+        agents: [{ threadId: "thread-worker", displayName: "Agent 1", status: "Running" }],
+      },
+    });
+    expect(state.items[1].collab?.agents.map((agent) => agent.displayName)).toEqual(["Agent 2", "Agent 3"]);
+  });
+
   it("reduces plan, review, compaction, and image app-server items into stable timeline kinds", () => {
     const state = replayTimeline([
       event({

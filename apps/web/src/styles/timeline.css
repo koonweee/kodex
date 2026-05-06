@@ -220,6 +220,62 @@
   width: 100%;
 }
 
+.kodex-collab-agent-block,
+.kodex-collab-agent-list,
+.kodex-collab-agent-row {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.kodex-collab-agent-title,
+.kodex-collab-agent-name {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.kodex-collab-agent-preview {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.kodex-collab-agent-chips .kodex-ui-badge,
+.kodex-collab-agent-status {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
+.kodex-collab-agent-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+
+.kodex-collab-agent-row-heading {
+  min-width: 0;
+}
+
+.kodex-collab-agent-markdown {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--kodex-text-secondary);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.kodex-collab-agent-markdown .kodex-assistant-markdown-paragraph,
+.kodex-collab-agent-markdown ul,
+.kodex-collab-agent-markdown ol {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
 .kodex-file-diff-viewer {
   max-width: 100%;
   min-width: 0;

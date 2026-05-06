@@ -2,8 +2,10 @@ import type { EventEnvelope } from "../api/client";
 import type { TimelineItem } from "./state";
 import {
   collabAgentArgsSummary,
+  collabAgentPresentation,
   collabAgentResultSummary,
   collabAgentToolCallLabel,
+  type CollabAgentNameMap,
 } from "./presentationCollab";
 import { fileChangeSummary } from "./presentationFile";
 import { mergeImages, payloadImages } from "./presentationImages";
@@ -23,12 +25,14 @@ import { payloadText, reasoningSummary } from "./presentationText";
 import { actionLabel, webSearchAction } from "./presentationWeb";
 
 export type TimelinePresentationItem = { item: TimelineItem; hidden?: boolean; text?: string };
+export type TimelinePresentationOptions = { collabAgentNames?: CollabAgentNameMap };
 
 export { createBaseItem, eventStatus, isErrorEvent, isLifecycleEvent, isWarningEvent, mergeImages };
 
 export function createPresentationItem(
   event: EventEnvelope,
   existingItem?: TimelineItem,
+  options: TimelinePresentationOptions = {},
 ): TimelinePresentationItem | null {
   const item = eventItem(event);
   const itemType = normalizedItemType(event);
@@ -155,12 +159,14 @@ export function createPresentationItem(
 
   if (itemType === "collab_agent_tool_call") {
     const tool = stringValue(item.tool);
+    const collab = collabAgentPresentation(item, options.collabAgentNames);
     return {
       item: {
         ...base,
-        argsSummary: collabAgentArgsSummary(item),
-        resultSummary: collabAgentResultSummary(item),
-        text: collabAgentToolCallLabel(item, status),
+        argsSummary: collabAgentArgsSummary(item, collab),
+        collab,
+        resultSummary: collabAgentResultSummary(item, collab),
+        text: collabAgentToolCallLabel(item, status, collab),
         toolName: tool,
       },
       hidden: !tool,
