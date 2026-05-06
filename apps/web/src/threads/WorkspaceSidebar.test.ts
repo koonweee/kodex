@@ -1,7 +1,10 @@
+import { MantineProvider } from "@mantine/core";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { createElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Approval, ThreadSummary } from "../api/client";
-import { areThreadListRowPropsEqual, type ThreadListRowProps } from "./WorkspaceSidebar";
+import { areThreadListRowPropsEqual, ThreadListRow, type ThreadListRowProps } from "./WorkspaceSidebar";
 
 const approvals: Approval[] = [];
 const pendingTitleThreadIds = new Set<string>();
@@ -55,3 +58,46 @@ describe("ThreadListRow memo comparison", () => {
     expect(areThreadListRowPropsEqual(unchangedRow, newlyPinnedRow)).toBe(false);
   });
 });
+
+describe("ThreadListRow layout and actions", () => {
+  it("reserves shared leading and trailing rails for unpinned thread rows", () => {
+    renderThreadRow();
+
+    const row = screen.getByRole("button", { name: "thread-1" }).closest(".kodex-thread-list-button");
+
+    expect(row).toHaveClass("kodex-sidebar-row");
+    expect(row?.querySelector(".kodex-sidebar-row-leading")).toBeInTheDocument();
+    expect(row?.querySelector(".kodex-sidebar-row-trailing")).toBeInTheDocument();
+    expect(row?.querySelector(".kodex-sidebar-row-leading [aria-label='Pin thread']")).toBeInTheDocument();
+  });
+
+  it("keeps select, pin, and archive actions separate inside the shared row frame", () => {
+    const onArchive = vi.fn();
+    const onPin = vi.fn();
+    const onSelect = vi.fn();
+
+    renderThreadRow({
+      onArchiveThread: onArchive,
+      onPinThread: onPin,
+      onSelectThread: onSelect,
+      showThreadArchiveAction: true,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Pin thread" }));
+    expect(onPin).toHaveBeenCalledWith("thread-1");
+    expect(onSelect).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Archive thread-1" }));
+    expect(onArchive).toHaveBeenCalledWith("thread-1");
+    expect(onSelect).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "thread-1" }));
+    expect(onSelect).toHaveBeenCalledWith("thread-1");
+  });
+});
+
+function renderThreadRow(overrides: Partial<ThreadListRowProps> = {}) {
+  return render(
+    createElement(MantineProvider, null, createElement(ThreadListRow, rowProps(overrides))),
+  );
+}

@@ -139,13 +139,13 @@ describe("WorkspaceSidebar project reorder", () => {
     });
 
     const projectToggle = screen.getByRole("button", { name: "Collapse Project" });
-    expect(projectToggle.querySelector(".lucide-folder-open")).toBeInTheDocument();
+    expect(projectToggle.closest(".kodex-project-row")?.querySelector(".kodex-sidebar-row-leading .lucide-folder-open")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Thread 1" })).toBeInTheDocument();
 
     fireEvent.click(projectToggle);
 
     expect(projectToggle).toHaveAttribute("aria-expanded", "false");
-    expect(projectToggle.querySelector(".lucide-folder")).toBeInTheDocument();
+    expect(projectToggle.closest(".kodex-project-row")?.querySelector(".kodex-sidebar-row-leading .lucide-folder")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Thread 1" })).not.toBeInTheDocument();
 
     fireEvent.click(projectToggle);
@@ -177,6 +177,24 @@ describe("WorkspaceSidebar project reorder", () => {
 
     expect(screen.getByText("Directory")).toBeInTheDocument();
     expect(screen.getByText("Project")).toBeInTheDocument();
+  });
+
+  it("collapses and expands the Pinned section from the section row", () => {
+    renderSidebar({
+      pinnedThreads: [threadSummary(1, { id: "thread-pinned", name: "Pinned thread", pinnedAt: "2026-05-06T12:00:00Z" })],
+    });
+
+    const pinnedToggle = screen.getByRole("button", { name: "Collapse Pinned section" });
+    expect(screen.getByRole("button", { name: "Pinned thread" })).toBeInTheDocument();
+
+    fireEvent.click(pinnedToggle);
+
+    expect(pinnedToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Pinned thread" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand Pinned section" }));
+
+    expect(screen.getByRole("button", { name: "Pinned thread" })).toBeInTheDocument();
   });
 
   it("collapses and expands the Chats section from the section row", () => {

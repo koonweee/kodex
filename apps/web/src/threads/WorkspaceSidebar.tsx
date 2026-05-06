@@ -13,7 +13,6 @@ import {
 import { useMediaQuery } from "@mantine/hooks";
 import {
   Archive,
-  ChevronRight,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -50,6 +49,7 @@ import {
   type ThreadsByProjectId,
 } from "./helpers";
 import { moveProjectInSidebarOrderAt } from "./projectOrder";
+import { SidebarActionDisclosureRow, SidebarRowFrame, SidebarSectionDisclosureRow } from "./sidebarRows";
 
 const SIDEBAR_TEXT = {
   cancelLogin: "Cancel login",
@@ -168,6 +168,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => new Set());
   const [expandedThreadProjectIds, setExpandedThreadProjectIds] = useState<Set<string>>(() => new Set());
   const [mobileSidebarScope, setMobileSidebarScope] = useState<"projects" | "chats">("projects");
+  const [pinnedSectionCollapsed, setPinnedSectionCollapsed] = useState(false);
   const [previewProjectIds, setPreviewProjectIds] = useState<string[] | null>(null);
   const [projectsSectionCollapsed, setProjectsSectionCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -378,46 +379,44 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
         <Box className="kodex-sidebar-scroll">
           {visiblePinnedThreads.length > 0 ? (
             <Box className="kodex-pinned-section">
-              <Group className="kodex-sidebar-section-row kodex-pinned-section-row" justify="space-between" align="center" mb="sm">
-                <Text component="span" className="kodex-sidebar-section-title" fw={400} size="xs">
-                  {SIDEBAR_TEXT.pinned}
-                </Text>
-              </Group>
-              <ThreadList
-                approvals={approvals}
-                className="kodex-pinned-thread-list"
-                expanded
-                hoveredThreadActionId={hoveredThreadActionId}
-                onArchiveThread={onArchiveThread}
-                onPinThread={onPinThread}
-                onSelectThread={onSelectPinnedThread}
-                onThreadActionHoverChange={onThreadActionHoverChange}
-                onToggleExpanded={() => undefined}
-                onUnpinThread={onUnpinThread}
-                pendingTitleThreadIds={pendingTitleThreadIds}
-                selectedThreadId={selectedThreadId}
-                threads={visiblePinnedThreads}
+              <SidebarSectionDisclosureRow
+                className="kodex-pinned-section-row"
+                collapsed={pinnedSectionCollapsed}
+                label={SIDEBAR_TEXT.pinned}
+                onToggle={() => setPinnedSectionCollapsed((collapsed) => !collapsed)}
               />
+              {!pinnedSectionCollapsed ? (
+                <ThreadList
+                  approvals={approvals}
+                  className="kodex-pinned-thread-list"
+                  expanded
+                  hoveredThreadActionId={hoveredThreadActionId}
+                  onArchiveThread={onArchiveThread}
+                  onPinThread={onPinThread}
+                  onSelectThread={onSelectPinnedThread}
+                  onThreadActionHoverChange={onThreadActionHoverChange}
+                  onToggleExpanded={() => undefined}
+                  onUnpinThread={onUnpinThread}
+                  pendingTitleThreadIds={pendingTitleThreadIds}
+                  selectedThreadId={selectedThreadId}
+                  threads={visiblePinnedThreads}
+                />
+              ) : null}
             </Box>
           ) : null}
-          <Group className="kodex-sidebar-section-row kodex-projects-section-row" justify="space-between" align="center" mb="sm">
-            <SectionToggle
-              collapsed={projectsSectionCollapsed}
-              label={SIDEBAR_TEXT.projects}
-              onToggle={() => setProjectsSectionCollapsed((collapsed) => !collapsed)}
-            />
-            <Tooltip label={SIDEBAR_TEXT.newProject}>
-              <ActionIcon
-                variant="subtle"
-                aria-label={SIDEBAR_TEXT.newProject}
-                color="gray"
-                onClick={() => onProjectFormOpenChange((open) => !open)}
-                size="xs"
-              >
-                <FolderPlus size={14} />
-              </ActionIcon>
-            </Tooltip>
-          </Group>
+          <SidebarSectionDisclosureRow
+            className="kodex-projects-section-row"
+            collapsed={projectsSectionCollapsed}
+            label={SIDEBAR_TEXT.projects}
+            onToggle={() => setProjectsSectionCollapsed((collapsed) => !collapsed)}
+            trailingActions={[
+              {
+                icon: <FolderPlus />,
+                label: SIDEBAR_TEXT.newProject,
+                onClick: () => onProjectFormOpenChange((open) => !open),
+              },
+            ]}
+          />
           {!projectsSectionCollapsed && projectFormOpen ? (
             <Box
               component="form"
@@ -499,39 +498,34 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                       aria-label={project.name}
                       onDrop={(event) => handleProjectDrop(event, project.id)}
                     >
-                      <Box
+                      <SidebarActionDisclosureRow
                         className="kodex-project-row"
-                        draggable
-                        onDragEnd={handleProjectDragEnd}
-                        onDragOver={(event) => handleProjectDragOver(event, project.id)}
-                        onDragStart={(event) => handleProjectDragStart(event, project.id)}
-                      >
-                        <button
-                          aria-expanded={!projectCollapsed}
-                          aria-label={`${projectCollapsed ? "Expand" : "Collapse"} ${project.name}`}
-                          className="kodex-ui-button kodex-ui-selectable kodex-project-title"
-                          onClick={() => handleProjectCollapseToggle(project.id)}
-                          type="button"
-                        >
-                          <span className="kodex-project-folder-icon" data-collapsed={projectCollapsed ? "true" : undefined}>
-                            {projectCollapsed ? <Folder size={15} /> : <FolderOpen size={15} />}
-                          </span>
-                          <Text component="span" fw={400} size="xs" lineClamp={1}>
-                            {project.name}
-                          </Text>
-                        </button>
-                        <Tooltip label={SIDEBAR_TEXT.newThread}>
-                          <ActionIcon
-                            aria-label={newThreadLabel}
-                            color="gray"
-                            onClick={() => onCreateThread(project.id)}
-                            size="xs"
-                            variant="subtle"
-                          >
-                            <SquarePen size={14} />
-                          </ActionIcon>
-                        </Tooltip>
-                      </Box>
+                        collapsed={projectCollapsed}
+                        disclosureLabel={`${projectCollapsed ? "Expand" : "Collapse"} ${project.name}`}
+                        label={project.name}
+                        leadingIcon={
+                          projectCollapsed ? (
+                            <Folder className="kodex-project-folder-icon" data-collapsed="true" />
+                          ) : (
+                            <FolderOpen className="kodex-project-folder-icon" />
+                          )
+                        }
+                        mainClassName="kodex-ui-selectable kodex-project-title"
+                        onToggle={() => handleProjectCollapseToggle(project.id)}
+                        rootProps={{
+                          draggable: true,
+                          onDragEnd: handleProjectDragEnd,
+                          onDragOver: (event) => handleProjectDragOver(event, project.id),
+                          onDragStart: (event) => handleProjectDragStart(event, project.id),
+                        }}
+                        trailingActions={[
+                          {
+                            icon: <SquarePen />,
+                            label: newThreadLabel,
+                            onClick: () => onCreateThread(project.id),
+                          },
+                        ]}
+                      />
                       {!projectCollapsed && projectThreads.length > 0 ? (
                         <ThreadList
                           approvals={approvals}
@@ -566,24 +560,13 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             </Stack>
           ) : null}
           <Box className="kodex-sidebar-section">
-            <Group className="kodex-sidebar-section-row kodex-chats-section-row" justify="space-between" align="center" mb="sm">
-              <SectionToggle
-                collapsed={chatsSectionCollapsed}
-                label={SIDEBAR_TEXT.chats}
-                onToggle={() => setChatsSectionCollapsed((collapsed) => !collapsed)}
-              />
-              <Tooltip label={SIDEBAR_TEXT.newChat}>
-                <ActionIcon
-                  aria-label={SIDEBAR_TEXT.newChat}
-                  color="gray"
-                  onClick={onCreateChat}
-                  size="xs"
-                  variant="subtle"
-                >
-                  <SquarePen size={14} />
-                </ActionIcon>
-              </Tooltip>
-            </Group>
+            <SidebarSectionDisclosureRow
+              className="kodex-chats-section-row"
+              collapsed={chatsSectionCollapsed}
+              label={SIDEBAR_TEXT.chats}
+              onToggle={() => setChatsSectionCollapsed((collapsed) => !collapsed)}
+              trailingActions={[{ icon: <SquarePen />, label: SIDEBAR_TEXT.newChat, onClick: onCreateChat }]}
+            />
             {!chatsSectionCollapsed && visibleChatThreads.length > 0 ? (
               <ThreadList
                 approvals={approvals}
@@ -680,32 +663,6 @@ function threadDisplayTitleWithPending(thread: ThreadSummary, pendingTitleThread
   return pendingTitleThreadIds.has(thread.id) ? SIDEBAR_TEXT.newThread : threadDisplayTitle(thread);
 }
 
-function SectionToggle({
-  collapsed,
-  label,
-  onToggle,
-}: {
-  collapsed: boolean;
-  label: string;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      aria-expanded={!collapsed}
-      aria-label={`${collapsed ? "Expand" : "Collapse"} ${label} section`}
-      className="kodex-ui-button kodex-sidebar-section-toggle"
-      data-collapsed={collapsed ? "true" : undefined}
-      onClick={onToggle}
-      type="button"
-    >
-      <Text component="span" className="kodex-sidebar-section-title" fw={400} size="xs">
-        {label}
-      </Text>
-      <ChevronRight className="kodex-sidebar-section-chevron" size={13} aria-hidden="true" />
-    </button>
-  );
-}
-
 export type ThreadListRowProps = {
   approvals: Approval[];
   isSelected: boolean;
@@ -740,36 +697,76 @@ export const ThreadListRow = memo(function ThreadListRow({
   const pinLabel = isPinned ? SIDEBAR_TEXT.unpinThread : SIDEBAR_TEXT.pinThread;
 
   return (
-    <Box
+    <SidebarRowFrame
       className="kodex-ui-selectable kodex-list-button kodex-thread-list-button"
-      data-active={isSelected}
-      data-pinned={isPinned ? "true" : undefined}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) {
-          onThreadActionHoverChange(null);
-        }
+      leadingContent={
+        <Tooltip label={pinLabel}>
+          <button
+            aria-label={pinLabel}
+            className="kodex-ui-button kodex-ui-icon-button kodex-thread-pin-button"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (isPinned) {
+                onUnpinThread(thread.id);
+              } else {
+                onPinThread(thread.id);
+              }
+            }}
+            type="button"
+          >
+            {isPinned ? <PinOff /> : <Pin />}
+          </button>
+        </Tooltip>
+      }
+      rootProps={{
+        "data-active": isSelected ? "true" : undefined,
+        "data-pinned": isPinned ? "true" : undefined,
+        onBlur: (event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) {
+            onThreadActionHoverChange(null);
+          }
+        },
+        onFocus: () => onThreadActionHoverChange(thread.id),
+        onMouseEnter: () => onThreadActionHoverChange(thread.id),
+        onMouseLeave: () => onThreadActionHoverChange(null),
       }}
-      onFocus={() => onThreadActionHoverChange(thread.id)}
-      onMouseEnter={() => onThreadActionHoverChange(thread.id)}
-      onMouseLeave={() => onThreadActionHoverChange(null)}
+      trailingContent={
+        <>
+          {isThreadInProgress && !showThreadArchiveAction ? (
+            <Tooltip label={SIDEBAR_TEXT.threadInProgress}>
+              <Box
+                aria-label={SIDEBAR_TEXT.threadInProgress}
+                className="kodex-thread-progress-indicator"
+                component="span"
+                role="status"
+              />
+            </Tooltip>
+          ) : null}
+          {hasUnreadAgentTurn && !isThreadInProgress && !showThreadArchiveAction ? (
+            <Tooltip label={SIDEBAR_TEXT.unreadAgentTurn}>
+              <Box
+                aria-label={SIDEBAR_TEXT.unreadAgentTurn}
+                className="kodex-thread-unread-agent-turn-indicator"
+                component="span"
+                role="img"
+              />
+            </Tooltip>
+          ) : null}
+          {showThreadArchiveAction ? (
+            <Tooltip label="Archive thread">
+              <button
+                aria-label={`Archive ${displayTitle}`}
+                className="kodex-ui-button kodex-ui-icon-button kodex-thread-archive-button"
+                onClick={() => onArchiveThread(thread.id)}
+                type="button"
+              >
+                <Archive />
+              </button>
+            </Tooltip>
+          ) : null}
+        </>
+      }
     >
-      <Tooltip label={pinLabel}>
-        <button
-          aria-label={pinLabel}
-          className="kodex-ui-button kodex-ui-icon-button kodex-thread-pin-button"
-          onClick={(event) => {
-            event.stopPropagation();
-            if (isPinned) {
-              onUnpinThread(thread.id);
-            } else {
-              onPinThread(thread.id);
-            }
-          }}
-          type="button"
-        >
-          {isPinned ? <PinOff size={13} /> : <Pin size={13} />}
-        </button>
-      </Tooltip>
       <button className="kodex-ui-button kodex-thread-select-button" onClick={() => onSelectThread(thread.id)} type="button">
         <Group
           align="flex-start"
@@ -796,41 +793,7 @@ export const ThreadListRow = memo(function ThreadListRow({
           ) : null}
         </Group>
       </button>
-      <Box className="kodex-thread-list-action-slot">
-        {isThreadInProgress && !showThreadArchiveAction ? (
-          <Tooltip label={SIDEBAR_TEXT.threadInProgress}>
-            <Box
-              aria-label={SIDEBAR_TEXT.threadInProgress}
-              className="kodex-thread-progress-indicator"
-              component="span"
-              role="status"
-            />
-          </Tooltip>
-        ) : null}
-        {hasUnreadAgentTurn && !isThreadInProgress && !showThreadArchiveAction ? (
-          <Tooltip label={SIDEBAR_TEXT.unreadAgentTurn}>
-            <Box
-              aria-label={SIDEBAR_TEXT.unreadAgentTurn}
-              className="kodex-thread-unread-agent-turn-indicator"
-              component="span"
-              role="img"
-            />
-          </Tooltip>
-        ) : null}
-        {showThreadArchiveAction ? (
-          <Tooltip label="Archive thread">
-            <button
-              aria-label={`Archive ${displayTitle}`}
-              className="kodex-ui-button kodex-ui-icon-button kodex-thread-archive-button"
-              onClick={() => onArchiveThread(thread.id)}
-              type="button"
-            >
-              <Archive size={13} />
-            </button>
-          </Tooltip>
-        ) : null}
-      </Box>
-    </Box>
+    </SidebarRowFrame>
   );
 }, areThreadListRowPropsEqual);
 
