@@ -1,7 +1,6 @@
 import {
   ActionIcon,
   Alert,
-  ComboboxItem,
   Group,
   Modal,
   NumberInput,
@@ -171,14 +170,33 @@ export function AutomationEditorModal({
         value={values.name}
       />
       <Select
-        className="kodex-automation-mobile-input kodex-automation-thread-select"
+        className="kodex-automation-mobile-input"
+        comboboxProps={{ width: "target" }}
         data={targetThreadOptions}
-        comboboxProps={{ classNames: { dropdown: "kodex-automation-thread-select-dropdown" } }}
         label="Target thread"
         onChange={(value) => patchValues({ targetThreadId: value })}
-        renderOption={({ option }) => <ThreadSelectOption option={option} />}
+        renderOption={({ option }) => (
+          <Text
+            component="span"
+            truncate="end"
+            title={option.label}
+            style={{ display: "block", flex: "1 1 0", minWidth: 0, width: "100%" }}
+          >
+            {option.label}
+          </Text>
+        )}
         required
+        scrollAreaProps={{
+          scrollbars: "y",
+          styles: {
+            content: { display: "block", minWidth: 0, width: "100%" },
+            viewport: { overflowX: "hidden" },
+          },
+        }}
         searchable
+        styles={{
+          option: { minWidth: 0, width: "100%", maxWidth: "100%", overflow: "hidden" },
+        }}
         value={values.targetThreadId}
       />
       <TextInput
@@ -321,13 +339,5 @@ export function AutomationEditorModal({
         </Group>
       </Stack>
     </Modal>
-  );
-}
-
-function ThreadSelectOption({ option }: { option: ComboboxItem }) {
-  return (
-    <Text className="kodex-automation-thread-select-option" component="span" title={option.label}>
-      {option.label}
-    </Text>
   );
 }
