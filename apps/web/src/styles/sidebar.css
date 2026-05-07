@@ -113,6 +113,27 @@
   gap: 6px;
 }
 
+.kodex-automations-sidebar-row {
+  margin-bottom: 10px;
+}
+
+.kodex-automations-sidebar-button {
+  display: grid;
+  width: 100%;
+  min-height: 100%;
+  align-content: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.kodex-automations-sidebar-button:hover {
+  background: transparent;
+  color: inherit;
+}
+
 .kodex-sidebar-row {
   --kodex-sidebar-disclosure-icon-size: 13px;
   --kodex-sidebar-icon-size: 15px;
@@ -527,6 +548,14 @@
     --kodex-sidebar-disclosure-icon-size: 14px;
     --kodex-sidebar-icon-size: 16px;
     --kodex-sidebar-row-height: 36px;
+  }
+
+  .kodex-automations-sidebar-row {
+    min-height: 44px;
+  }
+
+  .kodex-automations-sidebar-button {
+    min-height: 44px;
   }
 
   .kodex-thread-list-button {

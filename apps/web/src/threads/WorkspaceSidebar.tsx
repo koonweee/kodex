@@ -13,6 +13,7 @@ import {
 import { useMediaQuery } from "@mantine/hooks";
 import {
   Archive,
+  Clock,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -61,6 +62,7 @@ const SIDEBAR_TEXT = {
   newThread: "New thread",
   noProjectsText: "Create a project to begin.",
   noProjectsTitle: "No projects",
+  automations: "Automations",
   pinned: "Pinned",
   pinThread: "Pin thread",
   projects: "Projects",
@@ -99,6 +101,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onProjectDirectoryCreateCancel,
   onProjectFormOpenChange,
   onReorderProjects,
+  onSelectAutomations,
   onSelectChatThread,
   onSelectPinnedThread,
   onSelectThread,
@@ -115,6 +118,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   projectFormOpen,
   projects,
   selectedProjectId,
+  selectedMainPane,
   selectedThreadId,
   showDebugEvents,
   sidebarWidth,
@@ -140,6 +144,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onProjectDirectoryCreateCancel: () => void;
   onProjectFormOpenChange: (open: boolean | ((open: boolean) => boolean)) => void;
   onReorderProjects: (projectIds: string[]) => void;
+  onSelectAutomations: () => void;
   onSelectChatThread: (threadId: string) => void;
   onSelectPinnedThread: (threadId: string) => void;
   onSelectThread: (projectId: string, threadId: string) => void;
@@ -156,6 +161,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   projectFormOpen: boolean;
   projects: Project[];
   selectedProjectId: string | null;
+  selectedMainPane: "thread" | "automations";
   selectedThreadId: string | null;
   showDebugEvents: boolean;
   sidebarWidth: number;
@@ -377,6 +383,21 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           </button>
         </Box>
         <Box className="kodex-sidebar-scroll">
+          <SidebarRowFrame
+            className="kodex-automations-sidebar-row kodex-ui-selectable"
+            leadingIcon={<Clock />}
+            rootProps={{ "data-active": selectedMainPane === "automations" ? "true" : undefined }}
+          >
+            <button
+              className="kodex-ui-button kodex-automations-sidebar-button"
+              onClick={onSelectAutomations}
+              type="button"
+            >
+              <Text component="span" fw={400} size="xs">
+                {SIDEBAR_TEXT.automations}
+              </Text>
+            </button>
+          </SidebarRowFrame>
           {visiblePinnedThreads.length > 0 ? (
             <Box className="kodex-pinned-section">
               <SidebarSectionDisclosureRow

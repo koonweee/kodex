@@ -1,6 +1,7 @@
-import { AppShell, Stack } from "@mantine/core";
-import type { ComponentProps } from "react";
+import { AppShell, Button, Group, Stack, Title } from "@mantine/core";
+import { lazy, Suspense, type ComponentProps } from "react";
 
+import type { AutomationsPane as AutomationsPaneComponent } from "../automations/AutomationsPane";
 import { ComposerPanel } from "../composer/ComposerPanel";
 import { PreferencesModal } from "../PreferencesModal";
 import { ThreadPanel } from "../threads/ThreadPanel";
@@ -8,9 +9,15 @@ import { WorkspaceSidebar } from "../threads/WorkspaceSidebar";
 
 export type MobilePanel = "threads" | "chat";
 
+const AutomationsPane = lazy(() =>
+  import("../automations/AutomationsPane").then((module) => ({ default: module.AutomationsPane })),
+);
+
 type KodexShellViewProps = {
+  automationsPaneProps: ComponentProps<typeof AutomationsPaneComponent>;
   composerPanelProps: ComponentProps<typeof ComposerPanel>;
   isSidebarResizing: boolean;
+  mainPane: "thread" | "automations";
   mobilePanel: MobilePanel;
   preferencesProps: ComponentProps<typeof PreferencesModal>;
   sidebarWidth: number;
@@ -18,9 +25,27 @@ type KodexShellViewProps = {
   workspaceSidebarProps: ComponentProps<typeof WorkspaceSidebar>;
 };
 
+function AutomationsPaneFallback() {
+  return (
+    <>
+      <Group justify="space-between" wrap="nowrap" className="kodex-thread-header kodex-automations-header">
+        <Title className="kodex-thread-title" order={3} size="h5">
+          Automations
+        </Title>
+        <Button disabled loading size="xs">
+          Add automation
+        </Button>
+      </Group>
+      <div className="kodex-automations-pane" aria-busy="true" />
+    </>
+  );
+}
+
 export function KodexShellView({
+  automationsPaneProps,
   composerPanelProps,
   isSidebarResizing,
+  mainPane,
   mobilePanel,
   preferencesProps,
   sidebarWidth,
@@ -43,8 +68,16 @@ export function KodexShellView({
           className="kodex-main-stack"
           data-draft-thread={threadPanelProps.isDraftThreadSelected ? "true" : undefined}
         >
-          <ThreadPanel {...threadPanelProps} />
-          <ComposerPanel {...composerPanelProps} />
+          {mainPane === "automations" ? (
+            <Suspense fallback={<AutomationsPaneFallback />}>
+              <AutomationsPane {...automationsPaneProps} />
+            </Suspense>
+          ) : (
+            <>
+              <ThreadPanel {...threadPanelProps} />
+              <ComposerPanel {...composerPanelProps} />
+            </>
+          )}
         </Stack>
       </AppShell.Main>
       <PreferencesModal {...preferencesProps} />

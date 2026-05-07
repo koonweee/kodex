@@ -265,6 +265,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
           onProjectDirectoryCreateCancel={vi.fn()}
           onProjectFormOpenChange={vi.fn()}
           onReorderProjects={vi.fn()}
+          onSelectAutomations={vi.fn()}
           onSelectChatThread={vi.fn()}
           onSelectPinnedThread={vi.fn()}
           onSelectThread={vi.fn()}
@@ -279,6 +280,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
           projectDirectoryCreatePending={false}
           projectFormOpen={false}
           projects={[]}
+          selectedMainPane="thread"
           selectedProjectId={null}
           selectedThreadId={null}
           showDebugEvents={false}

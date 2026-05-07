@@ -47,6 +47,7 @@ This file is the directory of record for Kodex plans. Keep the status column cur
 | [Deep link navigation plan](deep-link-navigation.md) | Complete | URL-owned thread selection, empty default pane, mobile Back to thread selector, and desktop Back/Forward selection | Implemented URL-owned selection, empty default pane, mobile Back to selector, not-found pane, and SPA fallback verification. |
 | [Sidebar row primitives plan](sidebar-row-primitives.md) | Complete | Shared sidebar row layout primitives for section, project, and thread row alignment | Implemented shared section/project/thread rows, collapsible Pinned, fixed rails, and mobile touch/hover validation. |
 | [Gateway automations plan](automations.md) | Complete | Gateway-owned recurring prompts into target threads using queued-input execution | Implemented scheduler, source-labeled queue rows, automation API/OpenAPI, generated frontend types, and backend verification; no frontend UI in v1. |
+| [Automations frontend plan](automations-frontend.md) | Complete | Sidebar Automations pane, table, modal editor, markdown prompts, responsive mobile UX, and SSE-backed frontend state | Implemented with generated mockup references; builds on the completed gateway automations API without changing scheduler behavior. |
 | [Future extensions overview](future-extensions.md) | Proposed | Non-MVP feature map linked to app-server APIs | Overview only, not an implementation plan. |
 
 ## Maintenance Rules

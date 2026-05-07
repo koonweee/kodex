@@ -519,7 +519,7 @@ describe("MVP shell flows", () => {
     expect(screen.queryByRole("button", { name: /archive thread/i })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /thread actions/i }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: /archive thread/i }));
+    await clickMenuItem(/archive thread/i);
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/archive")).toHaveLength(1);
