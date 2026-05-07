@@ -27,6 +27,7 @@ use crate::{
         TimelineItemDeltaPayload, TimelineItemUpsertPayload, TimelineThreadMetadataPayload,
         TimelineThreadStatusPayload, TimelineTurnUpsertPayload, TimelineUpdateSource,
     },
+    automations,
     error::{ApiError, ApiResult},
     queue,
     routes::threads::THREAD_PIN_UPDATED_EVENT,
@@ -385,6 +386,8 @@ fn is_operational_replay_event(event: &EventEnvelope) -> bool {
             | "gateway.warning"
             | skills::SKILLS_CHANGED_EVENT
             | THREAD_PIN_UPDATED_EVENT
+            | automations::AUTOMATION_UPSERT_EVENT
+            | automations::AUTOMATION_DELETE_EVENT
             | queue::QUEUE_UPSERT_EVENT
             | queue::QUEUE_DELETE_EVENT
     )

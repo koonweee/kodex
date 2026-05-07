@@ -1,5 +1,6 @@
 pub mod account;
 pub mod approvals;
+pub mod automations;
 pub mod capabilities;
 pub mod composer_settings;
 pub mod events;
@@ -20,6 +21,7 @@ mod tests {
         body::{to_bytes, Body},
         http::{Request, StatusCode},
     };
+    use chrono::TimeZone;
     use http_body_util::BodyExt;
     use serde_json::{json, Value};
     use tempfile::tempdir;
@@ -30,6 +32,7 @@ mod tests {
     use crate::{
         api::{build_router, AppState},
         app_server::{tests::RecordingAppServer, AppServer, InboundMessage},
+        automations,
         config::Config,
         error::{ApiError, ApiResult},
         events::ingest_inbound,
@@ -161,6 +164,10 @@ mod tests {
             "/v1/approvals",
             "/v1/approvals/{approvalId}",
             "/v1/approvals/{approvalId}/decision",
+            "/v1/automations",
+            "/v1/automations/{automationId}",
+            "/v1/automations/{automationId}/pause",
+            "/v1/automations/{automationId}/resume",
             "/v1/account",
             "/v1/account/login",
             "/v1/account/login/{loginId}/cancel",
@@ -2404,6 +2411,222 @@ mod tests {
         let requests = app_server.requests.lock().unwrap();
         assert!(requests.iter().any(|(method, _)| method == "thread/read"));
         assert!(requests.iter().any(|(method, _)| method == "turn/start"));
+    }
+
+    #[tokio::test]
+    async fn automation_routes_validate_persist_and_broadcast_state() {
+        let (state, app_server) = test_state().await;
+        let app = build_router(state.clone());
+
+        let invalid = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/automations")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{
+                            "name":" ",
+                            "prompt":"check",
+                            "targetThreadId":"thread-1",
+                            "schedule":{
+                                "startAt":"2026-05-07T09:00:00Z",
+                                "repeatEvery":{"value":29,"unit":"seconds"}
+                            }
+                        }"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+
+        let mut receiver = state.events.subscribe();
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/automations")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{
+                            "name":"Status",
+                            "prompt":"Summarize status",
+                            "targetThreadId":"thread-1",
+                            "schedule":{
+                                "startAt":"2026-05-07T09:00:00Z",
+                                "repeatEvery":{"value":30,"unit":"seconds"}
+                            }
+                        }"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.status(), StatusCode::OK);
+        let created_body = response_json(created).await;
+        let automation_id = created_body["automation"]["id"].as_str().unwrap();
+        assert_eq!(created_body["automation"]["name"], "Status");
+        assert_eq!(
+            created_body["automation"]["schedule"]["repeatEvery"]["value"],
+            30
+        );
+
+        let event = receiver.recv().await.unwrap();
+        assert_eq!(event.kind, automations::AUTOMATION_UPSERT_EVENT);
+        assert_eq!(event.payload["id"], automation_id);
+        assert_eq!(event.payload["schedule"]["repeatEvery"]["value"], 30);
+        assert!(event.payload.get("repeatEverySeconds").is_none());
+
+        let listed = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/automations?threadId=thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(listed.status(), StatusCode::OK);
+        let listed_body = response_json(listed).await;
+        assert_eq!(listed_body["automations"].as_array().unwrap().len(), 1);
+
+        let paused = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/automations/{automation_id}/pause"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(paused.status(), StatusCode::OK);
+        let paused_body = response_json(paused).await;
+        assert_eq!(paused_body["automation"]["status"], "paused");
+
+        let deleted = app
+            .oneshot(
+                Request::delete(format!("/v1/automations/{automation_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_ok(deleted);
+
+        let requests = app_server.requests.lock().unwrap();
+        assert!(requests.iter().any(|(method, _)| method == "thread/read"));
+    }
+
+    #[tokio::test]
+    async fn due_automation_queues_source_labeled_input_with_latest_thread_options() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .save_thread_composer_settings(
+                "thread-1",
+                &ThreadComposerSettings {
+                    model: Some("gpt-5.4".to_string()),
+                    reasoning_effort: Some("high".to_string()),
+                    service_tier: Some("fast".to_string()),
+                    approval_policy: Some("on-request".to_string()),
+                    approvals_reviewer: Some("auto_review".to_string()),
+                    sandbox: Some(json!({"type": "workspaceWrite"})),
+                },
+            )
+            .await
+            .unwrap();
+        let start_at = chrono::Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+        state
+            .store
+            .create_automation(crate::store::NewAutomation {
+                name: "Status".to_string(),
+                prompt: "Summarize status".to_string(),
+                target_thread_id: "thread-1".to_string(),
+                start_at,
+                repeat_every_seconds: 30,
+                next_run_at: start_at,
+            })
+            .await
+            .unwrap();
+        let mut receiver = state.events.subscribe();
+
+        let processed = automations::process_due_automations(&state, start_at)
+            .await
+            .unwrap();
+        assert_eq!(processed, 1);
+
+        let queue_event = timeout(Duration::from_secs(2), async {
+            loop {
+                let event = receiver.recv().await.unwrap();
+                if event.kind == queue::QUEUE_UPSERT_EVENT {
+                    break event;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(queue_event.payload["sourceType"], "automation");
+        assert!(queue_event.payload["sourceId"].as_str().is_some());
+
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if app_server
+                    .requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|(method, _)| method == "turn/start")
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let requests = app_server.requests.lock().unwrap();
+        let turn_start = requests
+            .iter()
+            .find(|(method, _)| method == "turn/start")
+            .unwrap();
+        assert_eq!(turn_start.1["threadId"], "thread-1");
+        assert_eq!(turn_start.1["input"][0]["text"], "Summarize status");
+        assert_eq!(turn_start.1["model"], "gpt-5.4");
+        assert_eq!(turn_start.1["effort"], "high");
+        assert_eq!(turn_start.1["serviceTier"], "fast");
+        assert_eq!(turn_start.1["approvalPolicy"], "on-request");
+        assert_eq!(turn_start.1["approvalsReviewer"], "auto_review");
+        assert_eq!(
+            turn_start.1["sandboxPolicy"],
+            json!({"type": "workspaceWrite"})
+        );
+    }
+
+    #[tokio::test]
+    async fn due_automation_waits_when_app_server_is_unready() {
+        let (state, app_server) = test_state().await;
+        app_server.ready.store(false, Ordering::SeqCst);
+        let start_at = chrono::Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+        let automation = state
+            .store
+            .create_automation(crate::store::NewAutomation {
+                name: "Status".to_string(),
+                prompt: "Summarize status".to_string(),
+                target_thread_id: "thread-1".to_string(),
+                start_at,
+                repeat_every_seconds: 30,
+                next_run_at: start_at,
+            })
+            .await
+            .unwrap();
+
+        let processed = automations::process_due_automations(&state, start_at)
+            .await
+            .unwrap();
+        assert_eq!(processed, 0);
+        let automation = state.store.get_automation(&automation.id).await.unwrap();
+        assert_eq!(automation.next_run_at, start_at);
+        assert_eq!(automation.consecutive_failure_count, 0);
+        assert!(app_server.requests.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

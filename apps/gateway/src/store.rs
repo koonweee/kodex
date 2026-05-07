@@ -122,6 +122,17 @@ impl ThreadComposerSettings {
             sandbox: options.sandbox_policy.clone(),
         }
     }
+
+    pub fn to_turn_options(&self) -> TurnStartOptions {
+        TurnStartOptions {
+            model: self.model.clone(),
+            effort: self.reasoning_effort.clone(),
+            service_tier: self.service_tier.clone(),
+            approval_policy: self.approval_policy.clone(),
+            approvals_reviewer: self.approvals_reviewer.clone(),
+            sandbox_policy: self.sandbox.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
@@ -169,6 +180,8 @@ pub struct QueuedInput {
     pub thread_id: String,
     pub input: Vec<UserInput>,
     pub options: TurnStartOptions,
+    pub source_type: Option<String>,
+    pub source_id: Option<String>,
     pub status: QueuedInputStatus,
     pub priority: QueuedInputPriority,
     pub attempt_count: i64,
@@ -176,6 +189,65 @@ pub struct QueuedInput {
     pub accepted_turn_id: Option<String>,
     pub accepted_at: Option<DateTime<Utc>>,
     pub accepted_event_seq: Option<i64>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum AutomationStatus {
+    Active,
+    Paused,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Automation {
+    pub id: String,
+    pub name: String,
+    pub prompt: String,
+    pub target_thread_id: String,
+    pub start_at: DateTime<Utc>,
+    pub repeat_every_seconds: i64,
+    pub next_run_at: DateTime<Utc>,
+    pub status: AutomationStatus,
+    pub paused_reason: Option<String>,
+    pub last_run_at: Option<DateTime<Utc>>,
+    pub last_queued_input_id: Option<String>,
+    pub last_error: Option<String>,
+    pub consecutive_failure_count: i64,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewAutomation {
+    pub name: String,
+    pub prompt: String,
+    pub target_thread_id: String,
+    pub start_at: DateTime<Utc>,
+    pub repeat_every_seconds: i64,
+    pub next_run_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AutomationUpdate {
+    pub name: Option<String>,
+    pub prompt: Option<String>,
+    pub target_thread_id: Option<String>,
+    pub start_at: Option<DateTime<Utc>>,
+    pub repeat_every_seconds: Option<i64>,
+    pub next_run_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AutomationRun {
+    pub id: String,
+    pub automation_id: String,
+    pub scheduled_for: DateTime<Utc>,
+    pub status: String,
+    pub queued_input_id: Option<String>,
+    pub error: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -351,6 +423,10 @@ impl Store {
             .await?;
         self.add_column_if_missing("queued_turn_inputs", "accepted_event_seq", "integer")
             .await?;
+        self.add_column_if_missing("queued_turn_inputs", "source_type", "text")
+            .await?;
+        self.add_column_if_missing("queued_turn_inputs", "source_id", "text")
+            .await?;
         sqlx::query(
             r#"
             create table if not exists thread_runtime_state (
@@ -365,7 +441,63 @@ impl Store {
         .execute(&self.pool)
         .await?;
         sqlx::query(
+            r#"
+            create table if not exists automations (
+                id text primary key,
+                name text not null,
+                prompt text not null,
+                target_thread_id text not null,
+                start_at text not null,
+                repeat_every_seconds integer not null,
+                next_run_at text not null,
+                status text not null,
+                paused_reason text,
+                last_run_at text,
+                last_queued_input_id text,
+                last_error text,
+                consecutive_failure_count integer not null default 0,
+                created_at text not null,
+                updated_at text not null,
+                deleted_at text
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
+            create table if not exists automation_runs (
+                id text primary key,
+                automation_id text not null,
+                scheduled_for text not null,
+                status text not null,
+                queued_input_id text,
+                error text,
+                created_at text not null,
+                updated_at text not null,
+                unique (automation_id, scheduled_for)
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
             "create index if not exists queued_turn_inputs_active_idx on queued_turn_inputs (thread_id, deleted_at, status, priority, created_at)"
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "create index if not exists queued_turn_inputs_source_idx on queued_turn_inputs (source_type, source_id)"
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "create index if not exists automations_due_idx on automations (status, deleted_at, next_run_at)",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "create index if not exists automation_runs_pending_idx on automation_runs (automation_id, status, created_at)",
         )
         .execute(&self.pool)
         .await?;
@@ -789,6 +921,18 @@ impl Store {
         input: Vec<UserInput>,
         options: TurnStartOptions,
     ) -> ApiResult<QueuedInput> {
+        self.create_queued_input_with_source(thread_id, input, options, None, None)
+            .await
+    }
+
+    pub async fn create_queued_input_with_source(
+        &self,
+        thread_id: &str,
+        input: Vec<UserInput>,
+        options: TurnStartOptions,
+        source_type: Option<&str>,
+        source_id: Option<&str>,
+    ) -> ApiResult<QueuedInput> {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
         let input_json = serde_json::to_string(&input)?;
@@ -797,15 +941,17 @@ impl Store {
             r#"
             insert into queued_turn_inputs (
                 id, thread_id, input_json, options_json, status, priority,
-                attempt_count, created_at, updated_at
+                attempt_count, source_type, source_id, created_at, updated_at
             )
-            values (?, ?, ?, ?, 'queued', 'normal', 0, ?, ?)
+            values (?, ?, ?, ?, 'queued', 'normal', 0, ?, ?, ?, ?)
             "#,
         )
         .bind(&id)
         .bind(thread_id)
         .bind(input_json)
         .bind(options_json)
+        .bind(source_type)
+        .bind(source_id)
         .bind(now)
         .bind(now)
         .execute(&self.pool)
@@ -816,7 +962,7 @@ impl Store {
     pub async fn list_queued_inputs(&self, thread_id: &str) -> ApiResult<Vec<QueuedInput>> {
         let rows = sqlx::query(
             r#"
-            select id, thread_id, input_json, options_json, status, priority,
+            select id, thread_id, input_json, options_json, source_type, source_id, status, priority,
                    attempt_count, last_error, accepted_turn_id, accepted_at,
                    accepted_event_seq, created_at, updated_at
             from queued_turn_inputs
@@ -845,7 +991,7 @@ impl Store {
     pub async fn get_queued_input(&self, thread_id: &str, id: &str) -> ApiResult<QueuedInput> {
         let row = sqlx::query(
             r#"
-            select id, thread_id, input_json, options_json, status, priority,
+            select id, thread_id, input_json, options_json, source_type, source_id, status, priority,
                    attempt_count, last_error, accepted_turn_id, accepted_at,
                    accepted_event_seq, created_at, updated_at
             from queued_turn_inputs
@@ -859,6 +1005,30 @@ impl Store {
         row.map(row_to_queued_input)
             .transpose()?
             .ok_or_else(|| ApiError::NotFound(format!("queued input {id}")))
+    }
+
+    pub async fn find_queued_input_by_source(
+        &self,
+        source_type: &str,
+        source_id: &str,
+    ) -> ApiResult<Option<QueuedInput>> {
+        let row = sqlx::query(
+            r#"
+            select id, thread_id, input_json, options_json, source_type, source_id, status, priority,
+                   attempt_count, last_error, accepted_turn_id, accepted_at,
+                   accepted_event_seq, created_at, updated_at
+            from queued_turn_inputs
+            where source_type = ?
+              and source_id = ?
+            order by created_at asc
+            limit 1
+            "#,
+        )
+        .bind(source_type)
+        .bind(source_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(row_to_queued_input).transpose()
     }
 
     pub async fn claim_next_queued_input(&self, thread_id: &str) -> ApiResult<Option<QueuedInput>> {
@@ -1038,7 +1208,7 @@ impl Store {
     ) -> ApiResult<Option<QueuedInput>> {
         let row = sqlx::query(
             r#"
-            select id, thread_id, input_json, options_json, status, priority,
+            select id, thread_id, input_json, options_json, source_type, source_id, status, priority,
                    attempt_count, last_error, accepted_turn_id, accepted_at,
                    accepted_event_seq, created_at, updated_at
             from queued_turn_inputs
@@ -1088,7 +1258,7 @@ impl Store {
     ) -> ApiResult<Vec<QueuedInput>> {
         let select = format!(
             r#"
-            select id, thread_id, input_json, options_json, status, priority,
+            select id, thread_id, input_json, options_json, source_type, source_id, status, priority,
                    attempt_count, last_error, accepted_turn_id, accepted_at,
                    accepted_event_seq, created_at, updated_at
             from queued_turn_inputs
@@ -1378,7 +1548,7 @@ impl Store {
         let now = Utc::now();
         let rows = sqlx::query(
             r#"
-            select id, thread_id, input_json, options_json, status, priority,
+            select id, thread_id, input_json, options_json, source_type, source_id, status, priority,
                    attempt_count, last_error, accepted_turn_id, accepted_at,
                    accepted_event_seq, created_at, updated_at
             from queued_turn_inputs
@@ -1417,6 +1587,423 @@ impl Store {
             recovered.push(self.get_queued_input(&row.thread_id, &row.id).await?);
         }
         Ok(recovered)
+    }
+
+    pub async fn create_automation(&self, automation: NewAutomation) -> ApiResult<Automation> {
+        let now = Utc::now();
+        let id = Uuid::new_v4().to_string();
+        sqlx::query(
+            r#"
+            insert into automations (
+                id, name, prompt, target_thread_id, start_at, repeat_every_seconds,
+                next_run_at, status, consecutive_failure_count, created_at, updated_at
+            )
+            values (?, ?, ?, ?, ?, ?, ?, 'active', 0, ?, ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(automation.name)
+        .bind(automation.prompt)
+        .bind(automation.target_thread_id)
+        .bind(automation.start_at)
+        .bind(automation.repeat_every_seconds)
+        .bind(automation.next_run_at)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        self.get_automation(&id).await
+    }
+
+    pub async fn list_automations(
+        &self,
+        target_thread_id: Option<&str>,
+    ) -> ApiResult<Vec<Automation>> {
+        let mut builder = QueryBuilder::<Sqlite>::new(
+            "select id, name, prompt, target_thread_id, start_at, repeat_every_seconds, next_run_at, status, paused_reason, last_run_at, last_queued_input_id, last_error, consecutive_failure_count, created_at, updated_at from automations where deleted_at is null",
+        );
+        if let Some(target_thread_id) = target_thread_id {
+            builder.push(" and target_thread_id = ");
+            builder.push_bind(target_thread_id);
+        }
+        builder.push(" order by created_at desc, id");
+        let rows = builder.build().fetch_all(&self.pool).await?;
+        rows.into_iter().map(row_to_automation).collect()
+    }
+
+    pub async fn get_automation(&self, id: &str) -> ApiResult<Automation> {
+        let row = sqlx::query(
+            r#"
+            select id, name, prompt, target_thread_id, start_at, repeat_every_seconds,
+                   next_run_at, status, paused_reason, last_run_at, last_queued_input_id,
+                   last_error, consecutive_failure_count, created_at, updated_at
+            from automations
+            where id = ? and deleted_at is null
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(row_to_automation)
+            .transpose()?
+            .ok_or_else(|| ApiError::NotFound(format!("automation {id}")))
+    }
+
+    pub async fn update_automation(
+        &self,
+        id: &str,
+        update: AutomationUpdate,
+    ) -> ApiResult<Automation> {
+        let existing = self.get_automation(id).await?;
+        let now = Utc::now();
+        sqlx::query(
+            r#"
+            update automations
+            set name = ?,
+                prompt = ?,
+                target_thread_id = ?,
+                start_at = ?,
+                repeat_every_seconds = ?,
+                next_run_at = ?,
+                updated_at = ?
+            where id = ? and deleted_at is null
+            "#,
+        )
+        .bind(update.name.unwrap_or(existing.name))
+        .bind(update.prompt.unwrap_or(existing.prompt))
+        .bind(update.target_thread_id.unwrap_or(existing.target_thread_id))
+        .bind(update.start_at.unwrap_or(existing.start_at))
+        .bind(
+            update
+                .repeat_every_seconds
+                .unwrap_or(existing.repeat_every_seconds),
+        )
+        .bind(update.next_run_at.unwrap_or(existing.next_run_at))
+        .bind(now)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        self.get_automation(id).await
+    }
+
+    pub async fn pause_automation(
+        &self,
+        id: &str,
+        paused_reason: Option<&str>,
+    ) -> ApiResult<Automation> {
+        let now = Utc::now();
+        let result = sqlx::query(
+            r#"
+            update automations
+            set status = 'paused', paused_reason = ?, updated_at = ?
+            where id = ? and deleted_at is null
+            "#,
+        )
+        .bind(paused_reason)
+        .bind(now)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(ApiError::NotFound(format!("automation {id}")));
+        }
+        self.get_automation(id).await
+    }
+
+    pub async fn resume_automation(&self, id: &str) -> ApiResult<Automation> {
+        let now = Utc::now();
+        let result = sqlx::query(
+            r#"
+            update automations
+            set status = 'active', paused_reason = null, updated_at = ?
+            where id = ? and deleted_at is null
+            "#,
+        )
+        .bind(now)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(ApiError::NotFound(format!("automation {id}")));
+        }
+        self.get_automation(id).await
+    }
+
+    pub async fn delete_automation(&self, id: &str) -> ApiResult<()> {
+        let now = Utc::now();
+        let result = sqlx::query(
+            "update automations set deleted_at = ?, updated_at = ? where id = ? and deleted_at is null",
+        )
+        .bind(now)
+        .bind(now)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(ApiError::NotFound(format!("automation {id}")));
+        }
+        Ok(())
+    }
+
+    pub async fn claim_due_automation_runs(
+        &self,
+        now: DateTime<Utc>,
+        limit: i64,
+    ) -> ApiResult<Vec<AutomationRun>> {
+        let rows = sqlx::query(
+            r#"
+            select id, name, prompt, target_thread_id, start_at, repeat_every_seconds,
+                   next_run_at, status, paused_reason, last_run_at, last_queued_input_id,
+                   last_error, consecutive_failure_count, created_at, updated_at
+            from automations
+            where deleted_at is null and status = 'active' and next_run_at <= ?
+            order by next_run_at asc, created_at asc
+            limit ?
+            "#,
+        )
+        .bind(now)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut claimed = Vec::new();
+        for row in rows {
+            let automation = row_to_automation(row)?;
+            let scheduled_for = automation.next_run_at;
+            let next_run_at = next_automation_run_after(
+                automation.start_at,
+                automation.repeat_every_seconds,
+                now,
+            );
+            let mut tx = self.pool.begin().await?;
+
+            let pending_count: i64 = sqlx::query_scalar(
+                r#"
+                select count(*)
+                from automation_runs runs
+                left join queued_turn_inputs queue on queue.id = runs.queued_input_id
+                where runs.automation_id = ?
+                  and (
+                    runs.status = 'pending'
+                    or (
+                      runs.status = 'queued'
+                      and queue.deleted_at is null
+                      and queue.status in ('queued', 'submitting', 'steering', 'pendingCommit')
+                    )
+                  )
+                "#,
+            )
+            .bind(&automation.id)
+            .fetch_one(&mut *tx)
+            .await?;
+
+            let update = sqlx::query(
+                r#"
+                update automations
+                set next_run_at = ?, updated_at = ?
+                where id = ?
+                  and deleted_at is null
+                  and status = 'active'
+                  and next_run_at = ?
+                "#,
+            )
+            .bind(next_run_at)
+            .bind(now)
+            .bind(&automation.id)
+            .bind(scheduled_for)
+            .execute(&mut *tx)
+            .await?;
+
+            if update.rows_affected() == 0 {
+                tx.rollback().await?;
+                continue;
+            }
+
+            if pending_count > 0 {
+                tx.commit().await?;
+                continue;
+            }
+
+            let run_id = Uuid::new_v4().to_string();
+            let result = sqlx::query(
+                r#"
+                insert or ignore into automation_runs (
+                    id, automation_id, scheduled_for, status, created_at, updated_at
+                )
+                values (?, ?, ?, 'pending', ?, ?)
+                "#,
+            )
+            .bind(&run_id)
+            .bind(&automation.id)
+            .bind(scheduled_for)
+            .bind(now)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
+            tx.commit().await?;
+            if result.rows_affected() > 0 {
+                claimed.push(self.get_automation_run(&run_id).await?);
+            }
+        }
+        Ok(claimed)
+    }
+
+    pub async fn get_automation_run(&self, id: &str) -> ApiResult<AutomationRun> {
+        let row = sqlx::query(
+            r#"
+            select id, automation_id, scheduled_for, status, queued_input_id,
+                   error, created_at, updated_at
+            from automation_runs
+            where id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(row_to_automation_run)
+            .transpose()?
+            .ok_or_else(|| ApiError::NotFound(format!("automation run {id}")))
+    }
+
+    pub async fn automation_for_run(&self, run_id: &str) -> ApiResult<Automation> {
+        let automation_id: String =
+            sqlx::query_scalar("select automation_id from automation_runs where id = ?")
+                .bind(run_id)
+                .fetch_optional(&self.pool)
+                .await?
+                .ok_or_else(|| ApiError::NotFound(format!("automation run {run_id}")))?;
+        self.get_automation(&automation_id).await
+    }
+
+    pub async fn mark_automation_run_queued(
+        &self,
+        run_id: &str,
+        queued_input_id: &str,
+    ) -> ApiResult<Automation> {
+        let now = Utc::now();
+        let run = self.get_automation_run(run_id).await?;
+        let result = sqlx::query(
+            r#"
+            update automation_runs
+            set status = 'queued', queued_input_id = ?, error = null, updated_at = ?
+            where id = ? and status = 'pending'
+            "#,
+        )
+        .bind(queued_input_id)
+        .bind(now)
+        .bind(run_id)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(ApiError::BadRequest(format!(
+                "automation run {run_id} is not pending"
+            )));
+        }
+        sqlx::query(
+            r#"
+            update automations
+            set last_run_at = ?,
+                last_queued_input_id = ?,
+                last_error = null,
+                consecutive_failure_count = 0,
+                updated_at = ?
+            where id = ? and deleted_at is null
+            "#,
+        )
+        .bind(run.scheduled_for)
+        .bind(queued_input_id)
+        .bind(now)
+        .bind(&run.automation_id)
+        .execute(&self.pool)
+        .await?;
+        self.get_automation(&run.automation_id).await
+    }
+
+    pub async fn mark_automation_run_failed(
+        &self,
+        run_id: &str,
+        error: String,
+        auto_pause_after_failures: i64,
+    ) -> ApiResult<Automation> {
+        let now = Utc::now();
+        let run = self.get_automation_run(run_id).await?;
+        let result = sqlx::query(
+            r#"
+            update automation_runs
+            set status = 'failed', error = ?, updated_at = ?
+            where id = ? and status = 'pending'
+            "#,
+        )
+        .bind(&error)
+        .bind(now)
+        .bind(run_id)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(ApiError::BadRequest(format!(
+                "automation run {run_id} is not pending"
+            )));
+        }
+        sqlx::query(
+            r#"
+            update automations
+            set last_run_at = ?,
+                last_error = ?,
+                consecutive_failure_count = consecutive_failure_count + 1,
+                updated_at = ?
+            where id = ? and deleted_at is null
+            "#,
+        )
+        .bind(run.scheduled_for)
+        .bind(&error)
+        .bind(now)
+        .bind(&run.automation_id)
+        .execute(&self.pool)
+        .await?;
+        let automation = self.get_automation(&run.automation_id).await?;
+        if automation.consecutive_failure_count >= auto_pause_after_failures
+            && automation.status == AutomationStatus::Active
+        {
+            return self
+                .pause_automation(&run.automation_id, Some("tooManyFailures"))
+                .await;
+        }
+        Ok(automation)
+    }
+
+    pub async fn recover_pending_automation_runs_after_restart(
+        &self,
+        source_type: &str,
+        auto_pause_after_failures: i64,
+    ) -> ApiResult<Vec<Automation>> {
+        let run_ids = sqlx::query_scalar::<_, String>(
+            "select id from automation_runs where status = 'pending' order by created_at asc",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        let mut automations = Vec::with_capacity(run_ids.len());
+        for run_id in run_ids {
+            if let Some(queued_input) = self
+                .find_queued_input_by_source(source_type, &run_id)
+                .await?
+            {
+                automations.push(
+                    self.mark_automation_run_queued(&run_id, &queued_input.id)
+                        .await?,
+                );
+            } else {
+                automations.push(
+                    self.mark_automation_run_failed(
+                        &run_id,
+                        "Gateway restarted before this automation run could queue input."
+                            .to_string(),
+                        auto_pause_after_failures,
+                    )
+                    .await?,
+                );
+            }
+        }
+        Ok(automations)
     }
 
     pub async fn insert_approval(&self, approval: NewApproval) -> ApiResult<Approval> {
@@ -1575,6 +2162,40 @@ fn row_to_project(row: sqlx::sqlite::SqliteRow) -> ApiResult<Project> {
     })
 }
 
+fn row_to_automation(row: sqlx::sqlite::SqliteRow) -> ApiResult<Automation> {
+    let status: String = row.try_get("status")?;
+    Ok(Automation {
+        id: row.try_get("id")?,
+        name: row.try_get("name")?,
+        prompt: row.try_get("prompt")?,
+        target_thread_id: row.try_get("target_thread_id")?,
+        start_at: row.try_get("start_at")?,
+        repeat_every_seconds: row.try_get("repeat_every_seconds")?,
+        next_run_at: row.try_get("next_run_at")?,
+        status: automation_status(&status)?,
+        paused_reason: row.try_get("paused_reason")?,
+        last_run_at: row.try_get("last_run_at")?,
+        last_queued_input_id: row.try_get("last_queued_input_id")?,
+        last_error: row.try_get("last_error")?,
+        consecutive_failure_count: row.try_get("consecutive_failure_count")?,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
+fn row_to_automation_run(row: sqlx::sqlite::SqliteRow) -> ApiResult<AutomationRun> {
+    Ok(AutomationRun {
+        id: row.try_get("id")?,
+        automation_id: row.try_get("automation_id")?,
+        scheduled_for: row.try_get("scheduled_for")?,
+        status: row.try_get("status")?,
+        queued_input_id: row.try_get("queued_input_id")?,
+        error: row.try_get("error")?,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
 fn row_to_queued_input(row: sqlx::sqlite::SqliteRow) -> ApiResult<QueuedInput> {
     let input_json: String = row.try_get("input_json")?;
     let options_json: String = row.try_get("options_json")?;
@@ -1586,6 +2207,8 @@ fn row_to_queued_input(row: sqlx::sqlite::SqliteRow) -> ApiResult<QueuedInput> {
         thread_id: row.try_get("thread_id")?,
         input: serde_json::from_str(&input_json)?,
         options: serde_json::from_str(&options_json)?,
+        source_type: row.try_get("source_type")?,
+        source_id: row.try_get("source_id")?,
         status: queued_input_status(&status)?,
         priority: queued_input_priority(&priority)?,
         attempt_count: row.try_get("attempt_count")?,
@@ -1624,6 +2247,30 @@ fn queued_input_priority(priority: &str) -> ApiResult<QueuedInputPriority> {
             "unknown queued input priority {other}"
         ))),
     }
+}
+
+fn automation_status(status: &str) -> ApiResult<AutomationStatus> {
+    match status {
+        "active" => Ok(AutomationStatus::Active),
+        "paused" => Ok(AutomationStatus::Paused),
+        other => Err(ApiError::BadGateway(format!(
+            "unknown automation status {other}"
+        ))),
+    }
+}
+
+pub fn next_automation_run_after(
+    start_at: DateTime<Utc>,
+    repeat_every_seconds: i64,
+    now: DateTime<Utc>,
+) -> DateTime<Utc> {
+    if now < start_at {
+        return start_at;
+    }
+    let elapsed = now.signed_duration_since(start_at).num_seconds();
+    let interval = repeat_every_seconds.max(1);
+    let intervals_elapsed = elapsed.div_euclid(interval) + 1;
+    start_at + chrono::Duration::seconds(intervals_elapsed * interval)
 }
 
 fn row_to_thread_runtime_state(row: sqlx::sqlite::SqliteRow) -> ApiResult<ThreadRuntimeState> {
@@ -1674,6 +2321,7 @@ fn row_to_approval(row: sqlx::sqlite::SqliteRow) -> ApiResult<Approval> {
 
 #[cfg(test)]
 mod tests {
+    use chrono::TimeZone;
     use serde_json::json;
     use tempfile::tempdir;
 
@@ -1687,7 +2335,7 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'approvals', 'thread_reads', 'thread_composer_settings', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'approvals', 'thread_reads', 'thread_composer_settings', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs') order by name",
         )
         .fetch_all(store.pool())
         .await
@@ -1696,6 +2344,8 @@ mod tests {
             tables,
             vec![
                 "approvals",
+                "automation_runs",
+                "automations",
                 "events",
                 "projects",
                 "queued_turn_inputs",
@@ -2004,6 +2654,223 @@ mod tests {
             .as_deref()
             .unwrap_or_default()
             .contains("Gateway restarted"));
+    }
+
+    #[tokio::test]
+    async fn queued_inputs_preserve_nullable_source_labels() {
+        let store = Store::in_memory().await.unwrap();
+        let manual = store
+            .create_queued_input(
+                "thread-1",
+                vec![UserInput::Text {
+                    text: "manual".to_string(),
+                    text_elements: vec![],
+                }],
+                TurnStartOptions::default(),
+            )
+            .await
+            .unwrap();
+        assert!(manual.source_type.is_none());
+        assert!(manual.source_id.is_none());
+
+        let automation = store
+            .create_queued_input_with_source(
+                "thread-1",
+                vec![UserInput::Text {
+                    text: "automated".to_string(),
+                    text_elements: vec![],
+                }],
+                TurnStartOptions::default(),
+                Some("automation"),
+                Some("run-1"),
+            )
+            .await
+            .unwrap();
+        assert_eq!(automation.source_type.as_deref(), Some("automation"));
+        assert_eq!(automation.source_id.as_deref(), Some("run-1"));
+    }
+
+    #[tokio::test]
+    async fn automation_due_claims_coalesce_and_advance_wall_clock_cadence() {
+        let store = Store::in_memory().await.unwrap();
+        let start_at = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 5, 7, 9, 2, 5).unwrap();
+        let automation = store
+            .create_automation(NewAutomation {
+                name: "status".to_string(),
+                prompt: "summarize".to_string(),
+                target_thread_id: "thread-1".to_string(),
+                start_at,
+                repeat_every_seconds: 60,
+                next_run_at: start_at,
+            })
+            .await
+            .unwrap();
+
+        let runs = store.claim_due_automation_runs(now, 10).await.unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].scheduled_for, start_at);
+        let advanced = store.get_automation(&automation.id).await.unwrap();
+        assert_eq!(
+            advanced.next_run_at,
+            Utc.with_ymd_and_hms(2026, 5, 7, 9, 3, 0).unwrap()
+        );
+
+        let repeated_tick = store.claim_due_automation_runs(now, 10).await.unwrap();
+        assert!(repeated_tick.is_empty());
+
+        let queued = store
+            .create_queued_input_with_source(
+                "thread-1",
+                vec![UserInput::Text {
+                    text: "summarize".to_string(),
+                    text_elements: vec![],
+                }],
+                TurnStartOptions::default(),
+                Some("automation"),
+                Some(&runs[0].id),
+            )
+            .await
+            .unwrap();
+        store
+            .mark_automation_run_queued(&runs[0].id, &queued.id)
+            .await
+            .unwrap();
+        let future = Utc.with_ymd_and_hms(2026, 5, 7, 9, 4, 0).unwrap();
+        assert!(store
+            .claim_due_automation_runs(future, 10)
+            .await
+            .unwrap()
+            .is_empty());
+
+        store
+            .delete_queued_input_for_gateway("thread-1", &queued.id)
+            .await
+            .unwrap();
+        let after_delete = store
+            .claim_due_automation_runs(future + chrono::Duration::minutes(1), 10)
+            .await
+            .unwrap();
+        assert_eq!(after_delete.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn automation_failures_auto_pause_after_threshold() {
+        let store = Store::in_memory().await.unwrap();
+        let start_at = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+        let automation = store
+            .create_automation(NewAutomation {
+                name: "status".to_string(),
+                prompt: "summarize".to_string(),
+                target_thread_id: "thread-1".to_string(),
+                start_at,
+                repeat_every_seconds: 30,
+                next_run_at: start_at,
+            })
+            .await
+            .unwrap();
+
+        for index in 0..5 {
+            let now = start_at + chrono::Duration::seconds(30 * index);
+            let run = store.claim_due_automation_runs(now, 10).await.unwrap();
+            assert_eq!(run.len(), 1);
+            store
+                .mark_automation_run_failed(&run[0].id, "thread missing".to_string(), 5)
+                .await
+                .unwrap();
+        }
+
+        let paused = store.get_automation(&automation.id).await.unwrap();
+        assert_eq!(paused.status, AutomationStatus::Paused);
+        assert_eq!(paused.paused_reason.as_deref(), Some("tooManyFailures"));
+        assert_eq!(paused.consecutive_failure_count, 5);
+        assert!(store
+            .claim_due_automation_runs(start_at + chrono::Duration::minutes(5), 10)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn pending_automation_run_recovery_marks_failed_or_links_existing_queue_row() {
+        let store = Store::in_memory().await.unwrap();
+        let start_at = Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+        let failed_automation = store
+            .create_automation(NewAutomation {
+                name: "missing queue".to_string(),
+                prompt: "summarize".to_string(),
+                target_thread_id: "thread-1".to_string(),
+                start_at,
+                repeat_every_seconds: 30,
+                next_run_at: start_at,
+            })
+            .await
+            .unwrap();
+        let failed_run = store.claim_due_automation_runs(start_at, 10).await.unwrap();
+        assert_eq!(failed_run.len(), 1);
+
+        let queued_automation = store
+            .create_automation(NewAutomation {
+                name: "existing queue".to_string(),
+                prompt: "summarize".to_string(),
+                target_thread_id: "thread-2".to_string(),
+                start_at,
+                repeat_every_seconds: 30,
+                next_run_at: start_at,
+            })
+            .await
+            .unwrap();
+        let queued_run = store.claim_due_automation_runs(start_at, 10).await.unwrap();
+        assert_eq!(queued_run.len(), 1);
+        let queued_input = store
+            .create_queued_input_with_source(
+                "thread-2",
+                vec![UserInput::Text {
+                    text: "summarize".to_string(),
+                    text_elements: vec![],
+                }],
+                TurnStartOptions::default(),
+                Some("automation"),
+                Some(&queued_run[0].id),
+            )
+            .await
+            .unwrap();
+        store
+            .claim_next_queued_input("thread-2")
+            .await
+            .unwrap()
+            .unwrap();
+        let recovered_queue_rows = store.recover_queued_inputs_after_restart().await.unwrap();
+        assert!(recovered_queue_rows
+            .iter()
+            .any(|row| row.id == queued_input.id && row.status == QueuedInputStatus::Failed));
+        store
+            .delete_queued_input_for_gateway("thread-2", &queued_input.id)
+            .await
+            .unwrap();
+
+        let recovered = store
+            .recover_pending_automation_runs_after_restart("automation", 5)
+            .await
+            .unwrap();
+        assert_eq!(recovered.len(), 2);
+
+        let failed = store.get_automation(&failed_automation.id).await.unwrap();
+        assert_eq!(failed.consecutive_failure_count, 1);
+        assert!(failed
+            .last_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Gateway restarted"));
+
+        let queued = store.get_automation(&queued_automation.id).await.unwrap();
+        assert_eq!(
+            queued.last_queued_input_id.as_deref(),
+            Some(queued_input.id.as_str())
+        );
+        assert_eq!(queued.consecutive_failure_count, 0);
+        let recovered_run = store.get_automation_run(&queued_run[0].id).await.unwrap();
+        assert_eq!(recovered_run.status, "queued");
     }
 
     #[tokio::test]

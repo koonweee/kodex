@@ -209,6 +209,23 @@ pub async fn recover_queued_inputs(state: &AppState) -> ApiResult<()> {
     Ok(())
 }
 
+pub async fn create_queued_input_with_source(
+    state: &AppState,
+    thread_id: &str,
+    input: Vec<UserInput>,
+    options: TurnStartOptions,
+    source_type: Option<&str>,
+    source_id: Option<&str>,
+) -> ApiResult<QueuedInput> {
+    let queued_input = state
+        .store
+        .create_queued_input_with_source(thread_id, input, options, source_type, source_id)
+        .await?;
+    broadcast_queue_upsert(state, &queued_input).await?;
+    trigger_queue_drain(state.clone(), thread_id.to_string());
+    Ok(queued_input)
+}
+
 pub fn trigger_queue_drain(state: AppState, thread_id: String) {
     tokio::spawn(async move {
         if let Err(error) = drain_one_queued_input(&state, &thread_id).await {

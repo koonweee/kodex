@@ -21,6 +21,8 @@ type EventStreamClientOptions = {
 const GATEWAY_SSE_EVENT_TYPES = [
   "approval.created",
   "approval.resolved",
+  "automation.item_deleted",
+  "automation.item_upsert",
   "codex.notification",
   "gateway.warning",
   "skills.changed",

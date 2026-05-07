@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use kodex_gateway::{
     app_server::{DynAppServer, JsonRpcAppServer, UnavailableAppServer},
+    automations::{recover_automations_after_restart, start_automation_scheduler},
     build_router,
     config::Config,
     events::run_inbound_ingest,
@@ -43,6 +44,8 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState::new(config.clone(), store, app_server);
     recover_queued_inputs(&state).await?;
+    recover_automations_after_restart(&state).await?;
+    start_automation_scheduler(state.clone());
     tokio::spawn(run_inbound_ingest(inbound_rx, state.clone()));
 
     let app = build_router(state);

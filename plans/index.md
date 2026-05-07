@@ -44,6 +44,7 @@ This file is the directory of record for Kodex plans. Keep the status column cur
 | [Pinned threads plan](pinned-threads.md) | Complete | Gateway-owned pinned thread state, pin/unpin API, Pinned sidebar section, and responsive pin controls | Implemented durable gateway SQLite pin state, pin/unpin and pinned-list routes, generated frontend API types, SSE updates, sidebar pin controls, and focused verification. |
 | [Deep link navigation plan](deep-link-navigation.md) | Complete | URL-owned thread selection, empty default pane, mobile Back to thread selector, and desktop Back/Forward selection | Implemented URL-owned selection, empty default pane, mobile Back to selector, not-found pane, and SPA fallback verification. |
 | [Sidebar row primitives plan](sidebar-row-primitives.md) | Complete | Shared sidebar row layout primitives for section, project, and thread row alignment | Implemented shared section/project/thread rows, collapsible Pinned, fixed rails, and mobile touch/hover validation. |
+| [Gateway automations plan](automations.md) | Complete | Gateway-owned recurring prompts into target threads using queued-input execution | Implemented scheduler, source-labeled queue rows, automation API/OpenAPI, generated frontend types, and backend verification; no frontend UI in v1. |
 | [Future extensions overview](future-extensions.md) | Proposed | Non-MVP feature map linked to app-server APIs | Overview only, not an implementation plan. |
 
 ## Maintenance Rules

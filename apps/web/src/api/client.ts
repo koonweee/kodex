@@ -5,6 +5,9 @@ import type { components, paths } from "./generated/schema";
 export type AccountResponse = components["schemas"]["AccountResponse"];
 export type Approval = components["schemas"]["Approval"];
 export type ApprovalResponse = Record<string, unknown>;
+export type Automation = components["schemas"]["AutomationDto"];
+export type AutomationCreateRequest = components["schemas"]["AutomationCreateRequest"];
+export type AutomationUpdateRequest = components["schemas"]["AutomationUpdateRequest"];
 export type Capabilities = components["schemas"]["CapabilitiesResponse"];
 export type ComposerSettingsResponse = components["schemas"]["ComposerSettingsResponse"];
 export type ComposerSettingsUpdateRequest = components["schemas"]["ComposerSettingsUpdateRequest"];
@@ -206,6 +209,59 @@ export async function deleteQueuedInput(threadId: string, queueId: string): Prom
   await unwrap(
     api.DELETE("/v1/threads/{threadId}/queued-inputs/{queueId}", {
       params: { path: { threadId, queueId } },
+    }),
+  );
+}
+
+export async function listAutomations(threadId?: string): Promise<Automation[]> {
+  const response = await unwrap(
+    api.GET("/v1/automations", {
+      params: threadId ? { query: { threadId } } : undefined,
+    }),
+  );
+  return response.automations;
+}
+
+export async function createAutomation(request: AutomationCreateRequest): Promise<Automation> {
+  const response = await unwrap(api.POST("/v1/automations", { body: request }));
+  return response.automation;
+}
+
+export async function updateAutomation(
+  automationId: string,
+  request: AutomationUpdateRequest,
+): Promise<Automation> {
+  const response = await unwrap(
+    api.PATCH("/v1/automations/{automationId}", {
+      params: { path: { automationId } },
+      body: request,
+    }),
+  );
+  return response.automation;
+}
+
+export async function pauseAutomation(automationId: string): Promise<Automation> {
+  const response = await unwrap(
+    api.POST("/v1/automations/{automationId}/pause", {
+      params: { path: { automationId } },
+    }),
+  );
+  return response.automation;
+}
+
+export async function resumeAutomation(automationId: string): Promise<Automation> {
+  const response = await unwrap(
+    api.POST("/v1/automations/{automationId}/resume", {
+      params: { path: { automationId } },
+    }),
+  );
+  return response.automation;
+}
+
+export async function deleteAutomation(automationId: string): Promise<void> {
+  await unwrap(
+    api.DELETE("/v1/automations/{automationId}", {
+      params: { path: { automationId } },
     }),
   );
 }

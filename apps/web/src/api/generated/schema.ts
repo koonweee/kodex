@@ -164,6 +164,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/automations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_automations"];
+        put?: never;
+        post: operations["create_automation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/automations/{automationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_automation"];
+        put?: never;
+        post?: never;
+        delete: operations["delete_automation"];
+        options?: never;
+        head?: never;
+        patch: operations["update_automation"];
+        trace?: never;
+    };
+    "/v1/automations/{automationId}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["pause_automation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/automations/{automationId}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resume_automation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/capabilities": {
         parameters: {
             query?: never;
@@ -632,6 +696,91 @@ export interface components {
         ApprovalListResponse: {
             approvals: components["schemas"]["Approval"][];
         };
+        AutomationCreateRequest: {
+            /**
+             * @description Non-empty display name for the automation.
+             * @example Daily status
+             */
+            name: string;
+            /**
+             * @description Non-empty prompt to enqueue into the target thread at each scheduled firing.
+             * @example Summarize current repo state and next actions.
+             */
+            prompt: string;
+            /** @description Initial schedule. startAt is an absolute instant; repeatEvery is a fixed duration. */
+            schedule: components["schemas"]["AutomationSchedule"];
+            /** @description Target thread id that will receive the queued automation prompt. */
+            targetThreadId: string;
+        };
+        AutomationDeleteResponse: {
+            id: string;
+        };
+        AutomationDto: {
+            /** Format: int64 */
+            consecutiveFailureCount: number;
+            /** Format: date-time */
+            createdAt: string;
+            id: string;
+            lastError?: string | null;
+            lastQueuedInputId?: string | null;
+            /** Format: date-time */
+            lastRunAt?: string | null;
+            name: string;
+            /**
+             * Format: date-time
+             * @description Next due firing instant in UTC.
+             */
+            nextRunAt: string;
+            pausedReason?: string | null;
+            prompt: string;
+            schedule: components["schemas"]["AutomationSchedule"];
+            status: components["schemas"]["AutomationStatus"];
+            targetThreadId: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AutomationListQuery: {
+            threadId?: string | null;
+        };
+        AutomationListResponse: {
+            automations: components["schemas"]["AutomationDto"][];
+        };
+        AutomationRepeatEvery: {
+            /** @description Interval unit. The gateway canonicalizes this to seconds for storage and scheduling. */
+            unit: components["schemas"]["AutomationRepeatUnit"];
+            /**
+             * Format: int64
+             * @description Positive repeat interval value in the selected unit.
+             * @example 1
+             */
+            value: number;
+        };
+        /** @enum {string} */
+        AutomationRepeatUnit: "seconds" | "minutes" | "hours";
+        AutomationResponse: {
+            automation: components["schemas"]["AutomationDto"];
+        };
+        AutomationSchedule: {
+            /** @description Fixed-duration repeat interval. Accepted units are seconds, minutes, and hours; the effective interval must be at least 30 seconds. */
+            repeatEvery: components["schemas"]["AutomationRepeatEvery"];
+            /**
+             * Format: date-time
+             * @description Absolute RFC3339 timestamp for the first firing. Clients should send either a Z timestamp or an explicit UTC offset; the gateway normalizes and stores the instant in UTC. Fixed-duration repeats are not timezone or DST aware.
+             * @example 2026-05-07T09:00:00-07:00
+             */
+            startAt: string;
+        };
+        /** @enum {string} */
+        AutomationStatus: "active" | "paused";
+        AutomationUpdateRequest: {
+            /** @description Replacement non-empty display name. Omit to keep the current name. */
+            name?: string | null;
+            /** @description Replacement non-empty prompt. Omit to keep the current prompt. */
+            prompt?: string | null;
+            schedule?: null | components["schemas"]["AutomationSchedule"];
+            /** @description Replacement target thread id. Omit to keep the current target thread. */
+            targetThreadId?: string | null;
+        };
         ByteRange: {
             /** Format: int32 */
             end: number;
@@ -808,6 +957,8 @@ export interface components {
             lastError?: string | null;
             options: components["schemas"]["TurnStartOptions"];
             priority: components["schemas"]["QueuedInputPriority"];
+            sourceId?: string | null;
+            sourceType?: string | null;
             status: components["schemas"]["QueuedInputStatus"];
             threadId: string;
             /** Format: date-time */
@@ -1272,6 +1423,159 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Approval"];
+                };
+            };
+        };
+    };
+    list_automations: {
+        parameters: {
+            query?: {
+                threadId?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationListResponse"];
+                };
+            };
+        };
+    };
+    create_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutomationCreateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationResponse"];
+                };
+            };
+        };
+    };
+    get_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationResponse"];
+                };
+            };
+        };
+    };
+    delete_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationDeleteResponse"];
+                };
+            };
+        };
+    };
+    update_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutomationUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationResponse"];
+                };
+            };
+        };
+    };
+    pause_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationResponse"];
+                };
+            };
+        };
+    };
+    resume_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationResponse"];
                 };
             };
         };

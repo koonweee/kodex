@@ -28,6 +28,11 @@ use crate::{
     routes::{
         account::{AccountQuery, LoginRequest},
         approvals::{ApprovalDecisionRequest, ApprovalListResponse},
+        automations::{
+            AutomationCreateRequest, AutomationDeleteResponse, AutomationDto, AutomationListQuery,
+            AutomationListResponse, AutomationRepeatEvery, AutomationRepeatUnit,
+            AutomationResponse, AutomationSchedule, AutomationUpdateRequest,
+        },
         capabilities::{AppServerCapabilities, CapabilitiesResponse, GatewayCapabilities},
         composer_settings::ComposerSettingsQuery,
         events::EventListResponse,
@@ -45,8 +50,8 @@ use crate::{
     },
     static_assets,
     store::{
-        Approval, EventEnvelope, Project, QueuedInput, QueuedInputPriority, QueuedInputStatus,
-        Store, ThreadRead,
+        Approval, AutomationStatus, EventEnvelope, Project, QueuedInput, QueuedInputPriority,
+        QueuedInputStatus, Store, ThreadRead,
     },
 };
 
@@ -110,6 +115,13 @@ impl AppState {
         crate::routes::approvals::list_approvals,
         crate::routes::approvals::get_approval,
         crate::routes::approvals::decide_approval,
+        crate::routes::automations::list_automations,
+        crate::routes::automations::create_automation,
+        crate::routes::automations::get_automation,
+        crate::routes::automations::update_automation,
+        crate::routes::automations::pause_automation,
+        crate::routes::automations::resume_automation,
+        crate::routes::automations::delete_automation,
         crate::routes::account::read_account,
         crate::routes::account::start_login,
         crate::routes::account::cancel_login,
@@ -171,6 +183,17 @@ impl AppState {
         Approval,
         ApprovalListResponse,
         ApprovalDecisionRequest,
+        AutomationListQuery,
+        AutomationSchedule,
+        AutomationRepeatEvery,
+        AutomationRepeatUnit,
+        AutomationStatus,
+        AutomationCreateRequest,
+        AutomationUpdateRequest,
+        AutomationDto,
+        AutomationResponse,
+        AutomationListResponse,
+        AutomationDeleteResponse,
         AccountQuery,
         AccountResponse,
         LoginRequest,
@@ -200,6 +223,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::file_preview::router())
         .merge(routes::uploads::router())
         .merge(routes::approvals::router())
+        .merge(routes::automations::router())
         .merge(routes::account::router())
         .merge(routes::models::router())
         .merge(routes::skills::router())
