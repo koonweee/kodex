@@ -1,4 +1,7 @@
-use std::path::{Path as FsPath, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path as FsPath, PathBuf},
+};
 
 use axum::{
     extract::{Path, Query, State},
@@ -14,8 +17,9 @@ use utoipa::{IntoParams, ToSchema};
 use crate::{
     api::AppState,
     app_server_api::{
-        self, RawAppServerResponse, ThreadCommandResponse, ThreadDetailResponse,
-        ThreadListResponse, ThreadSummary,
+        self, visible_text_from_thread_item, RawAppServerResponse, ThreadCommandResponse,
+        ThreadDetailResponse, ThreadItemSnapshot, ThreadListResponse, ThreadSummary,
+        TimelineSkillMention,
     },
     error::{ApiError, ApiResult},
     store::{EventEnvelope, NewEvent, ThreadComposerSettings, ThreadRead},
@@ -703,7 +707,61 @@ async fn apply_thread_detail_response_state(
     response: &mut ThreadDetailResponse,
 ) -> ApiResult<()> {
     apply_thread_summary_state(state, std::slice::from_mut(&mut response.thread)).await?;
+    apply_thread_detail_skill_mentions(state, response).await?;
     sync_raw_response_thread(&mut response.raw_payload, &response.thread);
+    Ok(())
+}
+
+async fn apply_thread_detail_skill_mentions(
+    state: &AppState,
+    response: &mut ThreadDetailResponse,
+) -> ApiResult<()> {
+    let thread_id = response.thread.id.clone();
+    let item_ids = response
+        .turns
+        .iter()
+        .flat_map(|turn| turn.items.iter())
+        .map(|item| item.id.clone())
+        .collect::<Vec<_>>();
+    let mut stored = state
+        .store
+        .timeline_skill_mentions_for_items(&thread_id, &item_ids)
+        .await?;
+    for turn in &mut response.turns {
+        for item in &mut turn.items {
+            apply_thread_item_skill_mentions(state, &thread_id, item, &mut stored).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn apply_thread_item_skill_mentions(
+    state: &AppState,
+    thread_id: &str,
+    item: &mut ThreadItemSnapshot,
+    stored: &mut HashMap<String, Vec<TimelineSkillMention>>,
+) -> ApiResult<()> {
+    if !item.skill_mentions.is_empty() {
+        state
+            .store
+            .upsert_timeline_skill_mentions(thread_id, &item.id, &item.skill_mentions)
+            .await?;
+        return Ok(());
+    }
+    if let Some(mentions) = stored.remove(&item.id) {
+        item.skill_mentions = mentions;
+        return Ok(());
+    }
+    let Some(text) = visible_text_from_thread_item(&item.raw_payload) else {
+        return Ok(());
+    };
+    if let Some(mentions) = state
+        .store
+        .commit_pending_timeline_skill_mentions(thread_id, &item.id, &text)
+        .await?
+    {
+        item.skill_mentions = mentions;
+    }
     Ok(())
 }
 

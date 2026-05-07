@@ -30,10 +30,14 @@ function collectImages(value: unknown, images: TimelineImage[]) {
   if (!record) {
     return;
   }
-  const type = stringValue(record.type);
+  const type = stringValue(record.type).toLowerCase();
   const url = stringValue(record.url) || stringValue(record.imageUrl) || stringValue(record.image_url);
   const path = stringValue(record.path);
-  if ((type === "image" || type === "inputImage" || type === "input_image" || url || path) && (url || path)) {
+  const hasImageType = ["image", "inputimage", "input_image", "localimage", "local_image"].includes(type);
+  if (type && !hasImageType && !url) {
+    return;
+  }
+  if ((hasImageType || url || path) && (url || path)) {
     images.push({ url: url || undefined, path: path || undefined });
   }
 }

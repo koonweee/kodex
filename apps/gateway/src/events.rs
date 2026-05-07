@@ -23,9 +23,10 @@ use crate::{
     api::AppState,
     app_server::InboundMessage,
     app_server_api::{
-        self, ThreadItemSnapshot, ThreadLiveState, ThreadStatus, ThreadSummary, ThreadTurnSnapshot,
-        TimelineItemDeltaPayload, TimelineItemUpsertPayload, TimelineThreadMetadataPayload,
-        TimelineThreadStatusPayload, TimelineTurnUpsertPayload, TimelineUpdateSource,
+        self, visible_text_from_thread_item, ThreadItemSnapshot, ThreadLiveState, ThreadStatus,
+        ThreadSummary, ThreadTurnSnapshot, TimelineItemDeltaPayload, TimelineItemUpsertPayload,
+        TimelineThreadMetadataPayload, TimelineThreadStatusPayload, TimelineTurnUpsertPayload,
+        TimelineUpdateSource,
     },
     automations,
     error::{ApiError, ApiResult},
@@ -570,9 +571,10 @@ async fn timeline_item_upsert_event(
     let Some(item) = params.get("item").filter(|item| item.is_object()) else {
         return Ok(Vec::new());
     };
-    let Ok(item_snapshot) = item_snapshot_from_value(item) else {
+    let Ok(mut item_snapshot) = item_snapshot_from_value(item) else {
         return Ok(Vec::new());
     };
+    apply_live_item_skill_mentions(state, &thread_id, item, &mut item_snapshot).await?;
     let payload = TimelineItemUpsertPayload {
         source,
         turn_id: turn_id.clone(),
@@ -600,6 +602,45 @@ async fn timeline_item_upsert_event(
         events.push(event);
     }
     Ok(events)
+}
+
+async fn apply_live_item_skill_mentions(
+    state: &AppState,
+    thread_id: &str,
+    item: &Value,
+    item_snapshot: &mut ThreadItemSnapshot,
+) -> ApiResult<()> {
+    if !item_snapshot.skill_mentions.is_empty() {
+        state
+            .store
+            .upsert_timeline_skill_mentions(
+                thread_id,
+                &item_snapshot.id,
+                &item_snapshot.skill_mentions,
+            )
+            .await?;
+        return Ok(());
+    }
+    let Some(text) = visible_text_from_thread_item(item) else {
+        return Ok(());
+    };
+    if let Some(mentions) = state
+        .store
+        .commit_pending_timeline_skill_mentions(thread_id, &item_snapshot.id, &text)
+        .await?
+    {
+        item_snapshot.skill_mentions = mentions;
+        return Ok(());
+    }
+    if let Some(mentions) = state
+        .store
+        .timeline_skill_mentions_for_items(thread_id, std::slice::from_ref(&item_snapshot.id))
+        .await?
+        .remove(&item_snapshot.id)
+    {
+        item_snapshot.skill_mentions = mentions;
+    }
+    Ok(())
 }
 
 async fn timeline_turn_upsert_event(
@@ -827,11 +868,7 @@ fn turn_snapshot_from_value(turn: &Value) -> ApiResult<ThreadTurnSnapshot> {
 }
 
 fn item_snapshot_from_value(item: &Value) -> ApiResult<ThreadItemSnapshot> {
-    Ok(ThreadItemSnapshot {
-        id: required_payload_string(item, "id")?,
-        item_type: required_payload_string(item, "type")?,
-        raw_payload: item.clone(),
-    })
+    ThreadItemSnapshot::from_payload(item)
 }
 
 fn thread_summary_from_value(thread: &Value) -> ApiResult<ThreadSummary> {
@@ -1057,6 +1094,69 @@ mod tests {
         assert_eq!(normalized.item_id.as_deref(), Some("item-1"));
         assert_eq!(normalized.payload["source"], "gatewayStream");
         assert_eq!(normalized.payload["delta"], "hello");
+    }
+
+    #[tokio::test]
+    async fn notification_ingest_commits_pending_skill_mentions_to_user_item() {
+        let state = test_state().await;
+        let mut receiver = state.events.subscribe();
+        state
+            .store
+            .insert_pending_timeline_skill_mentions(
+                "thread-1",
+                "Use $agent-browser",
+                &[app_server_api::TimelineSkillMention {
+                    start: 4,
+                    end: 18,
+                    name: "agent-browser".to_string(),
+                    path: "/skills/agent-browser/SKILL.md".to_string(),
+                    display_name: None,
+                    scope: None,
+                }],
+            )
+            .await
+            .unwrap();
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "item/completed".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "item-user-1",
+                    "item": {
+                        "id": "item-user-1",
+                        "type": "userMessage",
+                        "content": [
+                            {"type": "text", "text": "Use $agent-browser"},
+                            {"type": "skill", "name": "agent-browser", "path": "/skills/agent-browser/SKILL.md"}
+                        ]
+                    }
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let _raw = receiver.recv().await.unwrap();
+        let normalized = receiver.recv().await.unwrap();
+        assert_eq!(normalized.kind, "timeline.item_upsert");
+        assert_eq!(
+            normalized.payload["itemSnapshot"]["skillMentions"],
+            json!([{
+                "start": 4,
+                "end": 18,
+                "name": "agent-browser",
+                "path": "/skills/agent-browser/SKILL.md"
+            }])
+        );
+        let persisted = state
+            .store
+            .timeline_skill_mentions_for_items("thread-1", &["item-user-1".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(persisted["item-user-1"][0].name, "agent-browser");
     }
 
     #[test]

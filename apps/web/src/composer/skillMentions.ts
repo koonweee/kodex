@@ -1,4 +1,4 @@
-import type { SkillMetadata, UserInput } from "../api/client";
+import type { SkillMetadata, TextElement, TimelineSkillMention, UserInput } from "../api/client";
 
 export type SkillMentionToken = {
   end: number;
@@ -83,6 +83,28 @@ export function validSkillMentionBindings(text: string, bindings: SkillMentionBi
   return bindings.filter((binding) => text.slice(binding.start, binding.end) === `$${binding.name}`);
 }
 
+export function trimmedSkillMentionBindings(text: string, bindings: SkillMentionBinding[]): {
+  bindings: SkillMentionBinding[];
+  text: string;
+} {
+  const trimmedText = text.trim();
+  if (!trimmedText) {
+    return { bindings: [], text: trimmedText };
+  }
+  const leadingTrimLength = text.search(/\S/);
+  const shifted = validSkillMentionBindings(text, bindings)
+    .map((binding) => ({
+      ...binding,
+      start: binding.start - leadingTrimLength,
+      end: binding.end - leadingTrimLength,
+    }))
+    .filter((binding) => binding.start >= 0 && binding.end <= trimmedText.length);
+  return {
+    bindings: validSkillMentionBindings(trimmedText, shifted),
+    text: trimmedText,
+  };
+}
+
 export function deleteSkillMentionBeforeCursor(
   text: string,
   bindings: SkillMentionBinding[],
@@ -128,6 +150,28 @@ export function skillInputsFromBindings(bindings: SkillMentionBinding[]): UserIn
     inputs.push({ type: "skill", name: binding.name, path: binding.path });
   }
   return inputs;
+}
+
+export function skillTextElementsFromBindings(text: string, bindings: SkillMentionBinding[]): TextElement[] {
+  return validSkillMentionBindings(text, bindings).map((binding) => ({
+    byteRange: {
+      start: utf8ByteLength(text.slice(0, binding.start)),
+      end: utf8ByteLength(text.slice(0, binding.end)),
+    },
+    placeholder: `$${binding.name}`,
+  }));
+}
+
+export function timelineSkillMentionsFromBindings(
+  text: string,
+  bindings: SkillMentionBinding[],
+): TimelineSkillMention[] {
+  return validSkillMentionBindings(text, bindings).map((binding) => ({
+    start: binding.start,
+    end: binding.end,
+    name: binding.name,
+    path: binding.path,
+  }));
 }
 
 export function filterSkillsForQuery(skills: SkillMetadata[], query: string): SkillMetadata[] {
@@ -199,4 +243,8 @@ function isCommonEnvVar(value: string): boolean {
 
 function isMentionNameChar(value: string | undefined): boolean {
   return value !== undefined && /[A-Za-z0-9_-]/.test(value);
+}
+
+function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).length;
 }

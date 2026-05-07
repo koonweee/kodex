@@ -1,4 +1,4 @@
-import type { EventEnvelope, ThreadDetailResponse } from "../api/client";
+import type { EventEnvelope, ThreadDetailResponse, TimelineSkillMention } from "../api/client";
 import {
   createBaseItem,
   createDiagnosticItem,
@@ -212,6 +212,7 @@ export function addOptimisticUserMessage(state: TimelineState, input: Optimistic
     payload: { optimistic: true },
     debugEvents: [],
     images: input.images,
+    skillMentions: input.skillMentions,
     source: "optimistic",
     clientRequestId: input.clientRequestId,
     confirmationState: input.confirmationState,
@@ -294,7 +295,7 @@ export function applyTimelineSnapshot(state: TimelineState, snapshot: ThreadDeta
           turnId: turn.id,
           itemId: item.id,
           projectId: null,
-          payload: { item: item.rawPayload },
+          payload: { item: item.rawPayload, itemSnapshot: item },
           receivedAt: new Date(0).toISOString(),
         },
         { skipOptimisticUserMessageMatch: shouldSkipLocalUserMessageMatch },
@@ -345,10 +346,11 @@ function optimisticOnlyTimeline(state: TimelineState): TimelineState {
 }
 
 function shouldCarryLocalUserMessageAcrossSnapshot(item: TimelineItem): boolean {
+  const hasSkillMentions = (item.skillMentions ?? []).length > 0;
   return (
     item.kind === "user_message" &&
     Boolean(item.clientRequestId) &&
-    item.confirmationState !== "failed" &&
+    (item.confirmationState !== "failed" || hasSkillMentions) &&
     (item.source === "optimistic" || item.confirmationState === "sent")
   );
 }
@@ -489,6 +491,7 @@ function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event
     path: incoming.path || existing.path,
     messagePhase: incoming.messagePhase || existing.messagePhase,
     images: mergeImages(existing.images, incoming.images),
+    skillMentions: mergeSkillMentions(existing, incoming, text),
     payload: event.payload,
     resultSummary: incoming.resultSummary || existing.resultSummary,
     seq: mergeTimelineDisplaySeq(existing),
@@ -496,6 +499,35 @@ function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event
     toolName: incoming.toolName || existing.toolName,
     text,
   };
+}
+
+function mergeSkillMentions(
+  existing: TimelineItem,
+  incoming: TimelineItem,
+  text: string,
+): TimelineSkillMention[] | undefined {
+  if (incoming.kind !== "user_message") {
+    return existing.skillMentions;
+  }
+  if (incoming.skillMentions !== undefined) {
+    return incoming.skillMentions;
+  }
+  if (!existing.clientRequestId || !existing.skillMentions || existing.skillMentions.length === 0) {
+    return undefined;
+  }
+  return skillMentionsMatchText(existing.skillMentions, text) ? existing.skillMentions : undefined;
+}
+
+function skillMentionsMatchText(mentions: TimelineSkillMention[], text: string): boolean {
+  return mentions.every(
+    (mention) =>
+      Number.isInteger(mention.start) &&
+      Number.isInteger(mention.end) &&
+      mention.start >= 0 &&
+      mention.end > mention.start &&
+      mention.end <= text.length &&
+      text.slice(mention.start, mention.end) === `$${mention.name}`,
+  );
 }
 
 function collabAgentNameMap(indexes: TimelineIndexes): CollabAgentNameMap {

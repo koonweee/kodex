@@ -120,9 +120,8 @@ pub async fn resolve_turn_input_for_thread(
         return Ok(input);
     }
     let thread = app_server_api::client(&state.app_server)
-        .thread_read(thread_id.to_string())
-        .await?
-        .thread;
+        .thread_read_summary(thread_id.to_string())
+        .await?;
     resolve_turn_input_for_cwd(state, Some(thread.cwd), input).await
 }
 

@@ -105,11 +105,15 @@ describe("ComposerPanel", () => {
       }),
     ]);
     const submittedSkillInputs: unknown[][] = [];
+    const submittedSkillTextElements: unknown[][] = [];
+    const submittedSkillMentions: unknown[][] = [];
 
     renderComposerPanel({
-      onSubmitTurn: (event, _draft, controls, skillInputs) => {
+      onSubmitTurn: (event, _draft, controls, skillInputs, skillTextElements, skillMentions) => {
         event.preventDefault();
         submittedSkillInputs.push(skillInputs);
+        submittedSkillTextElements.push(skillTextElements);
+        submittedSkillMentions.push(skillMentions);
         controls.clearText();
       },
     });
@@ -126,6 +130,24 @@ describe("ComposerPanel", () => {
         [{ type: "skill", name: "review-fix", path: "/skills/review-fix/SKILL.md" }],
       ]),
     );
+    expect(submittedSkillTextElements).toEqual([
+      [
+        {
+          byteRange: { start: 0, end: "$review-fix".length },
+          placeholder: "$review-fix",
+        },
+      ],
+    ]);
+    expect(submittedSkillMentions).toEqual([
+      [
+        {
+          start: 0,
+          end: "$review-fix".length,
+          name: "review-fix",
+          path: "/skills/review-fix/SKILL.md",
+        },
+      ],
+    ]);
   });
 
   it("moves skill autocomplete selection with arrow keys", async () => {

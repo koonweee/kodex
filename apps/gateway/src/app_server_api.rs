@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -110,6 +113,19 @@ impl CodexClient {
             )
             .await?;
         ThreadDetailResponse::from_payload(payload)
+    }
+
+    pub async fn thread_read_summary(&self, thread_id: String) -> ApiResult<ThreadSummary> {
+        let payload = self
+            .request(
+                "thread/read",
+                json!({ "threadId": thread_id, "includeTurns": false }),
+            )
+            .await?;
+        let thread = payload
+            .get("thread")
+            .ok_or_else(|| bad_gateway("thread/read response missing thread"))?;
+        ThreadSummary::from_payload(thread)
     }
 
     pub async fn thread_resume(
@@ -520,6 +536,19 @@ pub struct ByteRange {
     pub end: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineSkillMention {
+    pub start: u32,
+    pub end: u32,
+    pub name: String,
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadListResponse {
@@ -768,17 +797,165 @@ impl ThreadTurnSnapshot {
 pub struct ThreadItemSnapshot {
     pub id: String,
     pub item_type: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skill_mentions: Vec<TimelineSkillMention>,
     pub raw_payload: Value,
 }
 
 impl ThreadItemSnapshot {
-    fn from_payload(payload: &Value) -> ApiResult<Self> {
+    pub(crate) fn from_payload(payload: &Value) -> ApiResult<Self> {
         Ok(Self {
             id: required_string(payload, "id")?,
             item_type: required_string(payload, "type")?,
+            skill_mentions: skill_mentions_from_thread_item(payload),
             raw_payload: payload.clone(),
         })
     }
+}
+
+pub(crate) fn timeline_skill_mentions_from_user_input(
+    input: &[UserInput],
+) -> Option<(String, Vec<TimelineSkillMention>)> {
+    let content = serde_json::to_value(input).ok()?;
+    let content = content.as_array()?;
+    let text = visible_text_from_user_content(content)?;
+    Some((text, skill_mentions_from_user_content(content)))
+}
+
+pub(crate) fn visible_text_from_thread_item(item: &Value) -> Option<String> {
+    if item.get("type").and_then(Value::as_str) != Some("userMessage") {
+        return None;
+    }
+    let content = item.get("content").and_then(Value::as_array)?;
+    visible_text_from_user_content(content)
+}
+
+fn skill_mentions_from_thread_item(item: &Value) -> Vec<TimelineSkillMention> {
+    if item.get("type").and_then(Value::as_str) != Some("userMessage") {
+        return Vec::new();
+    }
+    let Some(content) = item.get("content").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    skill_mentions_from_user_content(content)
+}
+
+fn visible_text_from_user_content(content: &[Value]) -> Option<String> {
+    let parts = content
+        .iter()
+        .filter_map(|input| {
+            if input.get("type").and_then(Value::as_str) != Some("text") {
+                return None;
+            }
+            input
+                .get("text")
+                .and_then(Value::as_str)
+                .filter(|text| !text.is_empty())
+        })
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("\n"))
+    }
+}
+
+fn skill_mentions_from_user_content(content: &[Value]) -> Vec<TimelineSkillMention> {
+    let skills = skills_by_unambiguous_name(content);
+    if skills.is_empty() {
+        return Vec::new();
+    }
+
+    let mut mentions = Vec::new();
+    let mut display_offset = 0u32;
+    let mut first_visible_text = true;
+    for input in content {
+        if input.get("type").and_then(Value::as_str) != Some("text") {
+            continue;
+        }
+        let Some(text) = input.get("text").and_then(Value::as_str) else {
+            continue;
+        };
+        if text.is_empty() {
+            continue;
+        }
+        if first_visible_text {
+            first_visible_text = false;
+        } else {
+            display_offset = display_offset.saturating_add(1);
+        }
+        let Some(elements) = input.get("text_elements").and_then(Value::as_array) else {
+            display_offset = display_offset.saturating_add(text.encode_utf16().count() as u32);
+            continue;
+        };
+        for element in elements {
+            if let Some(mention) =
+                skill_mention_from_text_element(text, display_offset, element, &skills)
+            {
+                mentions.push(mention);
+            }
+        }
+        display_offset = display_offset.saturating_add(text.encode_utf16().count() as u32);
+    }
+    mentions
+}
+
+fn skills_by_unambiguous_name(content: &[Value]) -> HashMap<String, String> {
+    let mut paths_by_name: HashMap<String, Option<String>> = HashMap::new();
+    for input in content {
+        if input.get("type").and_then(Value::as_str) != Some("skill") {
+            continue;
+        }
+        let (Some(name), Some(path)) = (
+            input.get("name").and_then(Value::as_str),
+            input.get("path").and_then(Value::as_str),
+        ) else {
+            continue;
+        };
+        paths_by_name
+            .entry(name.to_string())
+            .and_modify(|existing| {
+                if existing.as_deref() != Some(path) {
+                    *existing = None;
+                }
+            })
+            .or_insert_with(|| Some(path.to_string()));
+    }
+    paths_by_name
+        .into_iter()
+        .filter_map(|(name, path)| path.map(|path| (name, path)))
+        .collect()
+}
+
+fn skill_mention_from_text_element(
+    text: &str,
+    display_offset: u32,
+    element: &Value,
+    skills_by_name: &HashMap<String, String>,
+) -> Option<TimelineSkillMention> {
+    let range = element.get("byteRange")?;
+    let start_byte = range.get("start")?.as_u64()? as usize;
+    let end_byte = range.get("end")?.as_u64()? as usize;
+    if start_byte >= end_byte
+        || end_byte > text.len()
+        || !text.is_char_boundary(start_byte)
+        || !text.is_char_boundary(end_byte)
+    {
+        return None;
+    }
+    let token = &text[start_byte..end_byte];
+    let name = token.strip_prefix('$')?;
+    let path = skills_by_name.get(name)?;
+    let start = text[..start_byte].encode_utf16().count() as u32;
+    let end = start + token.encode_utf16().count() as u32;
+    Some(TimelineSkillMention {
+        start: display_offset + start,
+        end: display_offset + end,
+        name: name.to_string(),
+        path: path.clone(),
+        display_name: None,
+        scope: None,
+    })
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
@@ -1550,6 +1727,67 @@ mod tests {
                 json!({"threadId": "thread-1", "turnId": "turn-1"})
             )
         );
+    }
+
+    #[test]
+    fn user_message_snapshot_projects_skill_mentions_from_text_elements() {
+        let item = ThreadItemSnapshot::from_payload(&json!({
+            "id": "user-1",
+            "type": "userMessage",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Use 🚀 $review-fix",
+                    "text_elements": [{
+                        "byteRange": {
+                            "start": "Use 🚀 ".len(),
+                            "end": "Use 🚀 $review-fix".len()
+                        },
+                        "placeholder": "$review-fix"
+                    }]
+                },
+                {"type": "skill", "name": "review-fix", "path": "/skills/review-fix/SKILL.md"}
+            ]
+        }))
+        .unwrap();
+
+        assert_eq!(
+            item.skill_mentions,
+            vec![TimelineSkillMention {
+                start: "Use 🚀 ".encode_utf16().count() as u32,
+                end: "Use 🚀 $review-fix".encode_utf16().count() as u32,
+                name: "review-fix".to_string(),
+                path: "/skills/review-fix/SKILL.md".to_string(),
+                display_name: None,
+                scope: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn user_message_snapshot_ignores_unstructured_or_mismatched_skill_ranges() {
+        let manual = ThreadItemSnapshot::from_payload(&json!({
+            "id": "user-1",
+            "type": "userMessage",
+            "content": [{"type": "text", "text": "Use $review-fix"}]
+        }))
+        .unwrap();
+        assert!(manual.skill_mentions.is_empty());
+
+        let mismatched = ThreadItemSnapshot::from_payload(&json!({
+            "id": "user-1",
+            "type": "userMessage",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Use $other",
+                    "text_elements": [{"byteRange": {"start": 4, "end": 10}}]
+                },
+                {"type": "skill", "name": "review-fix", "path": "/skills/review-fix/SKILL.md"}
+            ]
+        }))
+        .unwrap();
+        assert!(mismatched.skill_mentions.is_empty());
     }
 
     #[tokio::test]

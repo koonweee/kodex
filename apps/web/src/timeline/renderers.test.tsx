@@ -247,6 +247,66 @@ describe("timeline renderer registry", () => {
     expect(container.querySelector(".lucide-check")).toBeInTheDocument();
   });
 
+  it("renders user skill mentions as inline badges from structured ranges only", () => {
+    const { container } = render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "user_message",
+            text: "Use $agent-browser now",
+            skillMentions: [
+              {
+                start: "Use ".length,
+                end: "Use $agent-browser".length,
+                name: "agent-browser",
+                path: "/skills/agent-browser/SKILL.md",
+              },
+            ],
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    const badge = screen.getByLabelText("$agent-browser skill");
+    expect(badge).toHaveTextContent("$agent-browser");
+    expect(badge).toHaveClass("kodex-inline-skill-badge");
+    expect(container.querySelector(".kodex-user-message-bubble")).toHaveTextContent("Use $agent-browser now");
+  });
+
+  it("does not badge invalid or unstructured user skill-looking text", () => {
+    const { container, rerender } = render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "user_message",
+            text: "Use $agent-browser now",
+          })}
+        />
+      </MantineProvider>,
+    );
+    expect(container.querySelector(".kodex-inline-skill-badge")).not.toBeInTheDocument();
+
+    rerender(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "user_message",
+            text: "Use $agent-browser now",
+            skillMentions: [
+              {
+                start: "Use ".length,
+                end: "Use $agent-browser".length,
+                name: "other-skill",
+                path: "/skills/other/SKILL.md",
+              },
+            ],
+          })}
+        />
+      </MantineProvider>,
+    );
+    expect(container.querySelector(".kodex-inline-skill-badge")).not.toBeInTheDocument();
+  });
+
   it("falls back to selection copy when the async Clipboard API is unavailable", async () => {
     mockMissingClipboardWriteText();
     const execCommand = vi.fn().mockReturnValue(true);

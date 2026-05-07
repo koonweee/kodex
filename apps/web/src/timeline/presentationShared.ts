@@ -104,6 +104,10 @@ export function contentArrayText(value: unknown): string {
         return entry;
       }
       const record = payloadRecord(entry);
+      const type = stringValue(record?.type).toLowerCase();
+      if (["image", "input_image", "inputimage", "local_image", "localimage", "mention", "skill"].includes(type)) {
+        return "";
+      }
       return textValue(record?.text) || textValue(record?.content);
     })
     .filter(Boolean)

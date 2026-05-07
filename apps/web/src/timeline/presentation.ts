@@ -1,4 +1,4 @@
-import type { EventEnvelope } from "../api/client";
+import type { EventEnvelope, TimelineSkillMention } from "../api/client";
 import type { TimelineItem } from "./state";
 import {
   collabAgentArgsSummary,
@@ -56,10 +56,12 @@ export function createPresentationItem(
 
   if (itemType === "user_message") {
     const images = payloadImages(event.payload);
+    const skillMentions = payloadSkillMentions(event.payload, text);
     return {
       item: {
         ...base,
         images,
+        skillMentions,
         text,
       },
       hidden: !text && images.length === 0,
@@ -272,6 +274,42 @@ export function createPresentationItem(
   }
 
   return null;
+}
+
+function payloadSkillMentions(payload: unknown, text: string): TimelineSkillMention[] | undefined {
+  const record = payloadRecord(payload);
+  const itemSnapshot = payloadRecord(record?.itemSnapshot);
+  const mentions = Array.isArray(itemSnapshot?.skillMentions)
+    ? itemSnapshot.skillMentions
+    : Array.isArray(record?.skillMentions)
+      ? record.skillMentions
+      : undefined;
+  if (!mentions) {
+    return undefined;
+  }
+  const valid = mentions.filter((mention): mention is TimelineSkillMention => {
+    const record = payloadRecord(mention);
+    if (!record) {
+      return false;
+    }
+    const start = record.start;
+    const end = record.end;
+    const name = record.name;
+    const path = record.path;
+    return (
+      typeof start === "number" &&
+      typeof end === "number" &&
+      Number.isInteger(start) &&
+      Number.isInteger(end) &&
+      typeof name === "string" &&
+      typeof path === "string" &&
+      start >= 0 &&
+      end > start &&
+      end <= text.length &&
+      text.slice(start, end) === `$${name}`
+    );
+  });
+  return valid.length > 0 ? valid : undefined;
 }
 
 function imageDataUrl(result: string): string {

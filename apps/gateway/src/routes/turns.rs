@@ -8,7 +8,10 @@ use utoipa::ToSchema;
 
 use crate::{
     api::AppState,
-    app_server_api::{self, RawAppServerResponse, TurnStartOptions, UserInput},
+    app_server_api::{
+        self, timeline_skill_mentions_from_user_input, RawAppServerResponse, TurnStartOptions,
+        UserInput,
+    },
     error::ApiResult,
     skills,
 };
@@ -47,9 +50,30 @@ pub async fn start_turn(
     Json(request): Json<TurnStartRequest>,
 ) -> ApiResult<Json<RawAppServerResponse>> {
     let input = skills::resolve_turn_input_for_thread(&state, &thread_id, request.input).await?;
-    let response = app_server_api::client(&state.app_server)
+    let pending_skill_mentions_id =
+        if let Some((text, mentions)) = timeline_skill_mentions_from_user_input(&input) {
+            state
+                .store
+                .insert_pending_timeline_skill_mentions(&thread_id, &text, &mentions)
+                .await?
+        } else {
+            None
+        };
+    let response = match app_server_api::client(&state.app_server)
         .turn_start(thread_id.clone(), input, request.options.clone())
-        .await?;
+        .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            if let Some(pending_id) = pending_skill_mentions_id.as_deref() {
+                state
+                    .store
+                    .delete_pending_timeline_skill_mentions(pending_id)
+                    .await?;
+            }
+            return Err(error);
+        }
+    };
     state
         .store
         .save_thread_turn_options(&thread_id, &request.options)

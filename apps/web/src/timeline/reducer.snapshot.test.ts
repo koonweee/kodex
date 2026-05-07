@@ -45,6 +45,283 @@ describe("timeline reducer snapshots", () => {
     });
   });
 
+  it("loads skill mention metadata from snapshot item projections", () => {
+    const state = applyTimelineSnapshot(createTimelineState(), snapshotWithSkillMention());
+
+    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+      kind: "user_message",
+      text: "Use $agent-browser now",
+      skillMentions: [
+        {
+          start: "Use ".length,
+          end: "Use $agent-browser".length,
+          name: "agent-browser",
+          path: "/skills/agent-browser/SKILL.md",
+        },
+      ],
+    });
+  });
+
+  it("replaces optimistic skill mentions with confirmed snapshot metadata", () => {
+    let state = addOptimisticUserMessage(createTimelineState(), {
+      clientRequestId: "client-message-1",
+      images: [],
+      text: "Use $agent-browser now",
+      skillMentions: [
+        {
+          start: "Use ".length,
+          end: "Use $agent-browser".length,
+          name: "agent-browser",
+          path: "/stale/SKILL.md",
+        },
+      ],
+      turnId: null,
+      confirmationState: "sending",
+    });
+
+    state = applyTimelineSnapshot(state, snapshotWithSkillMention());
+
+    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+      serverItemId: "user-skill",
+      skillMentions: [
+        {
+          name: "agent-browser",
+          path: "/skills/agent-browser/SKILL.md",
+        },
+      ],
+    });
+  });
+
+  it("preserves provisional skill mentions when confirmation has matching text but no normalized mentions", () => {
+    let state = addOptimisticUserMessage(createTimelineState(), {
+      clientRequestId: "client-message-1",
+      images: [],
+      text: "Use $agent-browser now",
+      skillMentions: [
+        {
+          start: "Use ".length,
+          end: "Use $agent-browser".length,
+          name: "agent-browser",
+          path: "/skills/agent-browser/SKILL.md",
+        },
+      ],
+      turnId: null,
+      confirmationState: "sending",
+    });
+
+    state = applyTimelineSnapshot(state, snapshotWithUserOnlyTurn("Use $agent-browser now"));
+
+    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+      serverItemId: "user-1",
+      source: "app_server",
+      text: "Use $agent-browser now",
+    });
+    expect(sortedVisibleTimelineItems(state, false)[0]?.skillMentions).toEqual([
+      {
+        start: "Use ".length,
+        end: "Use $agent-browser".length,
+        name: "agent-browser",
+        path: "/skills/agent-browser/SKILL.md",
+      },
+    ]);
+  });
+
+  it("applies live item upsert skill mention metadata", () => {
+    const state = applyTimelineEvent(createTimelineState(), {
+      id: "event-user-skill",
+      seq: 1,
+      kind: "timeline.item_upsert",
+      codexMethod: "item/completed",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "user-skill",
+      projectId: "project-1",
+      payload: {
+        item: {
+          id: "user-skill",
+          type: "userMessage",
+          content: [{ type: "text", text: "Use $agent-browser now" }],
+        },
+        itemSnapshot: {
+          id: "user-skill",
+          itemType: "userMessage",
+          rawPayload: {},
+          skillMentions: [
+            {
+              start: "Use ".length,
+              end: "Use $agent-browser".length,
+              name: "agent-browser",
+              path: "/skills/agent-browser/SKILL.md",
+            },
+          ],
+        },
+      },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+      id: "user-skill",
+      skillMentions: [
+        {
+          name: "agent-browser",
+          path: "/skills/agent-browser/SKILL.md",
+        },
+      ],
+    });
+  });
+
+  it("reconciles optimistic skill mentions when a live confirmation has matching text but no normalized mentions", () => {
+    let state = addOptimisticUserMessage(createTimelineState(), {
+      clientRequestId: "client-message-1",
+      images: [],
+      text: "Use $agent-browser now",
+      skillMentions: [
+        {
+          start: "Use ".length,
+          end: "Use $agent-browser".length,
+          name: "agent-browser",
+          path: "/skills/agent-browser/SKILL.md",
+        },
+      ],
+      turnId: null,
+      confirmationState: "sending",
+    });
+
+    state = applyTimelineEvent(state, {
+      id: "event-user-skill-no-mentions",
+      seq: 1,
+      kind: "timeline.item_upsert",
+      codexMethod: "item/upsert",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "user-skill",
+      projectId: "project-1",
+      payload: {
+        item: {
+          id: "user-skill",
+          type: "userMessage",
+          content: [{ type: "text", text: "Use $agent-browser now" }],
+        },
+        itemSnapshot: {
+          id: "user-skill",
+          itemType: "userMessage",
+          rawPayload: {},
+        },
+      },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(sortedVisibleTimelineItems(state, false)).toHaveLength(1);
+    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+      id: "optimistic-client-message-1",
+      serverItemId: "user-skill",
+      source: "app_server",
+      text: "Use $agent-browser now",
+    });
+    expect(sortedVisibleTimelineItems(state, false)[0]?.skillMentions).toEqual([
+      {
+        start: "Use ".length,
+        end: "Use $agent-browser".length,
+        name: "agent-browser",
+        path: "/skills/agent-browser/SKILL.md",
+      },
+    ]);
+  });
+
+  it("does not duplicate optimistic skill messages when app-server sidecars carry content", () => {
+    let state = addOptimisticUserMessage(createTimelineState(), {
+      clientRequestId: "client-message-1",
+      images: [],
+      text: "Use $agent-browser now",
+      skillMentions: [
+        {
+          start: "Use ".length,
+          end: "Use $agent-browser".length,
+          name: "agent-browser",
+          path: "/skills/agent-browser/SKILL.md",
+        },
+      ],
+      turnId: null,
+      confirmationState: "sending",
+    });
+
+    state = applyTimelineEvent(state, {
+      id: "event-user-skill-sidecar-content",
+      seq: 1,
+      kind: "timeline.item_upsert",
+      codexMethod: "item/upsert",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "user-skill",
+      projectId: "project-1",
+      payload: {
+        item: {
+          id: "user-skill",
+          type: "userMessage",
+          content: [
+            { type: "text", text: "Use $agent-browser now" },
+            {
+              type: "skill",
+              name: "agent-browser",
+              path: "/skills/agent-browser/SKILL.md",
+              content: "Skill body should not be visible timeline text.",
+            },
+          ],
+        },
+        itemSnapshot: {
+          id: "user-skill",
+          itemType: "userMessage",
+          rawPayload: {},
+        },
+      },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(sortedVisibleTimelineItems(state, false)).toHaveLength(1);
+    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+      id: "optimistic-client-message-1",
+      serverItemId: "user-skill",
+      source: "app_server",
+      text: "Use $agent-browser now",
+      skillMentions: [
+        {
+          name: "agent-browser",
+          path: "/skills/agent-browser/SKILL.md",
+        },
+      ],
+    });
+  });
+
+  it("carries failed optimistic skill mentions across snapshots", () => {
+    const state = addOptimisticUserMessage(createTimelineState(), {
+      clientRequestId: "client-message-1",
+      images: [],
+      text: "Use $agent-browser now",
+      skillMentions: [
+        {
+          start: "Use ".length,
+          end: "Use $agent-browser".length,
+          name: "agent-browser",
+          path: "/skills/agent-browser/SKILL.md",
+        },
+      ],
+      turnId: null,
+      confirmationState: "failed",
+    });
+
+    const refreshed = applyTimelineSnapshot(state, snapshot("Old answer", "agent-1"));
+
+    expect(sortedVisibleTimelineItems(refreshed, false).at(-1)).toMatchObject({
+      confirmationState: "failed",
+      skillMentions: [
+        {
+          name: "agent-browser",
+          path: "/skills/agent-browser/SKILL.md",
+        },
+      ],
+    });
+  });
+
   it("reconciles optimistic user messages when a running snapshot has only the user item", () => {
     let state = addOptimisticUserMessage(createTimelineState(), {
       clientRequestId: "client-message-1",
@@ -782,6 +1059,45 @@ function snapshot(agentText: string, agentId: string): ThreadDetailResponse {
             id: agentId,
             itemType: "agentMessage",
             rawPayload: { id: agentId, type: "agentMessage", text: agentText },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function snapshotWithSkillMention(): ThreadDetailResponse {
+  return {
+    ...snapshot("Done", "agent-1"),
+    turns: [
+      {
+        id: "turn-skill",
+        status: "completed",
+        startedAt: 1,
+        completedAt: 2,
+        rawPayload: {},
+        items: [
+          {
+            id: "user-skill",
+            itemType: "userMessage",
+            skillMentions: [
+              {
+                start: "Use ".length,
+                end: "Use $agent-browser".length,
+                name: "agent-browser",
+                path: "/skills/agent-browser/SKILL.md",
+              },
+            ],
+            rawPayload: {
+              id: "user-skill",
+              type: "userMessage",
+              content: [{ type: "text", text: "Use $agent-browser now" }],
+            },
+          },
+          {
+            id: "agent-skill",
+            itemType: "agentMessage",
+            rawPayload: { id: "agent-skill", type: "agentMessage", text: "Done" },
           },
         ],
       },

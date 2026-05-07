@@ -32,6 +32,7 @@ mod tests {
     use crate::{
         api::{build_router, AppState},
         app_server::{tests::RecordingAppServer, AppServer, InboundMessage},
+        app_server_api::TimelineSkillMention,
         automations,
         config::Config,
         error::{ApiError, ApiResult},
@@ -963,6 +964,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn thread_detail_overlays_persisted_skill_mentions() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_timeline_skill_mentions(
+                "thread-1",
+                "item-user-1",
+                &[TimelineSkillMention {
+                    start: 4,
+                    end: 18,
+                    name: "agent-browser".to_string(),
+                    path: "/skills/agent-browser/SKILL.md".to_string(),
+                    display_name: None,
+                    scope: None,
+                }],
+            )
+            .await
+            .unwrap();
+        let app = build_router(state);
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "thread": {
+                "id": "thread-1",
+                "cliVersion": "0.128.0",
+                "cwd": "/workspace",
+                "ephemeral": false,
+                "modelProvider": "openai",
+                "preview": "Use $agent-browser",
+                "source": "cli",
+                "status": {"type": "idle"},
+                "turns": [{
+                    "id": "turn-1",
+                    "status": {"type": "completed"},
+                    "startedAt": 1_767_225_600_i64,
+                    "completedAt": 1_767_225_610_i64,
+                    "items": [
+                        {"id": "item-user-1", "type": "userMessage", "content": [{"type": "text", "text": "Use $agent-browser"}]}
+                    ]
+                }],
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_610_i64
+            }
+        }));
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(
+            body["turns"][0]["items"][0]["skillMentions"],
+            json!([{
+                "start": 4,
+                "end": 18,
+                "name": "agent-browser",
+                "path": "/skills/agent-browser/SKILL.md"
+            }])
+        );
+    }
+
+    #[tokio::test]
     async fn thread_list_derives_unread_completed_agent_turns_from_persisted_read_state() {
         let (state, app_server) = test_state().await;
         state
@@ -1608,6 +1675,7 @@ mod tests {
 
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[0].1["includeTurns"], false);
         assert_eq!(requests[1].0, "skills/list");
         assert_eq!(requests[1].1["cwds"], json!(["/workspace"]));
         assert_eq!(requests[2].0, "turn/start");
@@ -1647,6 +1715,8 @@ mod tests {
         );
 
         let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[0].1["includeTurns"], false);
         assert_eq!(requests[2].0, "turn/start");
         assert_eq!(
             requests[2].1["input"],
@@ -1655,6 +1725,38 @@ mod tests {
                 {"type": "skill", "name": "canonical-review", "path": "/skills/review-fix/SKILL.md"}
             ])
         );
+    }
+
+    #[tokio::test]
+    async fn turn_start_records_structured_skill_mentions_until_user_item_materializes() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"thread": thread_summary("thread-1")}),
+            skills_list_response("/workspace", "review-fix", "/skills/review-fix/SKILL.md"),
+        ]);
+        let app = build_router(state.clone());
+
+        assert_ok(
+            app.oneshot(
+                Request::post("/v1/threads/thread-1/turns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"Run $review-fix","text_elements":[{"byteRange":{"start":4,"end":15}}]},{"type":"skill","name":"review-fix","path":"/skills/review-fix/SKILL.md"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+        );
+
+        let mentions = state
+            .store
+            .commit_pending_timeline_skill_mentions("thread-1", "item-user-1", "Run $review-fix")
+            .await
+            .unwrap()
+            .expect("structured skill mention should be pending until item materializes");
+        assert_eq!(mentions[0].name, "review-fix");
+        assert_eq!(mentions[0].path, "/skills/review-fix/SKILL.md");
     }
 
     #[tokio::test]

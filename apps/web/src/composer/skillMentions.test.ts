@@ -7,6 +7,9 @@ import {
   filterSkillsForQuery,
   replaceSkillMentionToken,
   skillInputsFromBindings,
+  skillTextElementsFromBindings,
+  timelineSkillMentionsFromBindings,
+  trimmedSkillMentionBindings,
   validSkillMentionBindings,
 } from "./skillMentions";
 
@@ -40,6 +43,57 @@ describe("skill mention helpers", () => {
         { start: 20, end: 31, name: "review-fix", path: "/skills/review/SKILL.md" },
       ]),
     ).toEqual([{ type: "skill", name: "review-fix", path: "/skills/review/SKILL.md" }]);
+  });
+
+  it("creates text elements with utf-8 byte ranges for selected skill bindings", () => {
+    const text = "Use 🚀 $review-fix";
+    const binding = {
+      start: "Use 🚀 ".length,
+      end: "Use 🚀 $review-fix".length,
+      name: "review-fix",
+      path: "/skills/review/SKILL.md",
+    };
+
+    expect(skillTextElementsFromBindings(text, [binding])).toEqual([
+      {
+        byteRange: {
+          start: new TextEncoder().encode("Use 🚀 ").length,
+          end: new TextEncoder().encode("Use 🚀 $review-fix").length,
+        },
+        placeholder: "$review-fix",
+      },
+    ]);
+    expect(timelineSkillMentionsFromBindings(text, [binding])).toEqual([
+      {
+        start: binding.start,
+        end: binding.end,
+        name: "review-fix",
+        path: "/skills/review/SKILL.md",
+      },
+    ]);
+  });
+
+  it("shifts selected skill bindings to match trimmed submitted text", () => {
+    expect(
+      trimmedSkillMentionBindings("  Use $review-fix  ", [
+        {
+          start: "  Use ".length,
+          end: "  Use $review-fix".length,
+          name: "review-fix",
+          path: "/skills/review/SKILL.md",
+        },
+      ]),
+    ).toEqual({
+      text: "Use $review-fix",
+      bindings: [
+        {
+          start: "Use ".length,
+          end: "Use $review-fix".length,
+          name: "review-fix",
+          path: "/skills/review/SKILL.md",
+        },
+      ],
+    });
   });
 
   it("deletes a bound skill mention and shifts later bindings", () => {

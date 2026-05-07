@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
-    app_server_api::{TurnStartOptions, UserInput},
+    app_server_api::{TimelineSkillMention, TurnStartOptions, UserInput},
     error::{ApiError, ApiResult},
 };
 
@@ -397,6 +397,33 @@ impl Store {
         .await?;
         sqlx::query(
             r#"
+            create table if not exists pending_timeline_skill_mentions (
+                id text primary key,
+                thread_id text not null,
+                text text not null,
+                mentions_json text not null,
+                created_at text not null
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
+            create table if not exists timeline_skill_mentions (
+                thread_id text not null,
+                item_id text not null,
+                mentions_json text not null,
+                created_at text not null,
+                updated_at text not null,
+                primary key (thread_id, item_id)
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
             create table if not exists queued_turn_inputs (
                 id text primary key,
                 thread_id text not null,
@@ -506,6 +533,11 @@ impl Store {
         )
         .execute(&self.pool)
         .await?;
+        sqlx::query(
+            "create index if not exists pending_timeline_skill_mentions_match_idx on pending_timeline_skill_mentions (thread_id, text, created_at)",
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -579,6 +611,158 @@ impl Store {
             codex_method: event.codex_method,
             payload: event.payload,
         })
+    }
+
+    pub async fn insert_pending_timeline_skill_mentions(
+        &self,
+        thread_id: &str,
+        text: &str,
+        mentions: &[TimelineSkillMention],
+    ) -> ApiResult<Option<String>> {
+        if mentions.is_empty() {
+            return Ok(None);
+        }
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now();
+        let mentions_json = serde_json::to_string(mentions)?;
+        sqlx::query(
+            r#"
+            insert into pending_timeline_skill_mentions (
+                id, thread_id, text, mentions_json, created_at
+            )
+            values (?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(thread_id)
+        .bind(text)
+        .bind(mentions_json)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(Some(id))
+    }
+
+    pub async fn delete_pending_timeline_skill_mentions(&self, id: &str) -> ApiResult<()> {
+        sqlx::query("delete from pending_timeline_skill_mentions where id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn upsert_timeline_skill_mentions(
+        &self,
+        thread_id: &str,
+        item_id: &str,
+        mentions: &[TimelineSkillMention],
+    ) -> ApiResult<()> {
+        if mentions.is_empty() {
+            return Ok(());
+        }
+        let now = Utc::now();
+        let mentions_json = serde_json::to_string(mentions)?;
+        sqlx::query(
+            r#"
+            insert into timeline_skill_mentions (
+                thread_id, item_id, mentions_json, created_at, updated_at
+            )
+            values (?, ?, ?, ?, ?)
+            on conflict(thread_id, item_id) do update set
+                mentions_json = excluded.mentions_json,
+                updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(thread_id)
+        .bind(item_id)
+        .bind(mentions_json)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn commit_pending_timeline_skill_mentions(
+        &self,
+        thread_id: &str,
+        item_id: &str,
+        text: &str,
+    ) -> ApiResult<Option<Vec<TimelineSkillMention>>> {
+        let mut tx = self.pool.begin().await?;
+        let pending = sqlx::query(
+            r#"
+            select id, mentions_json
+            from pending_timeline_skill_mentions
+            where thread_id = ? and text = ?
+            order by created_at asc
+            limit 1
+            "#,
+        )
+        .bind(thread_id)
+        .bind(text)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some(row) = pending else {
+            tx.commit().await?;
+            return Ok(None);
+        };
+        let id: String = row.try_get("id")?;
+        let mentions_json: String = row.try_get("mentions_json")?;
+        let mentions: Vec<TimelineSkillMention> = serde_json::from_str(&mentions_json)?;
+        sqlx::query("delete from pending_timeline_skill_mentions where id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        let now = Utc::now();
+        sqlx::query(
+            r#"
+            insert into timeline_skill_mentions (
+                thread_id, item_id, mentions_json, created_at, updated_at
+            )
+            values (?, ?, ?, ?, ?)
+            on conflict(thread_id, item_id) do update set
+                mentions_json = excluded.mentions_json,
+                updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(thread_id)
+        .bind(item_id)
+        .bind(mentions_json)
+        .bind(now)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(Some(mentions))
+    }
+
+    pub async fn timeline_skill_mentions_for_items(
+        &self,
+        thread_id: &str,
+        item_ids: &[String],
+    ) -> ApiResult<HashMap<String, Vec<TimelineSkillMention>>> {
+        if item_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let mut builder = QueryBuilder::new(
+            "select item_id, mentions_json from timeline_skill_mentions where thread_id = ",
+        );
+        builder.push_bind(thread_id);
+        builder.push(" and item_id in (");
+        let mut separated = builder.separated(", ");
+        for item_id in item_ids {
+            separated.push_bind(item_id);
+        }
+        separated.push_unseparated(")");
+        let rows = builder.build().fetch_all(&self.pool).await?;
+        let mut mentions_by_item_id = HashMap::new();
+        for row in rows {
+            let item_id: String = row.try_get("item_id")?;
+            let mentions_json: String = row.try_get("mentions_json")?;
+            mentions_by_item_id.insert(item_id, serde_json::from_str(&mentions_json)?);
+        }
+        Ok(mentions_by_item_id)
     }
 
     pub async fn replay_events(
@@ -2335,7 +2519,7 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'approvals', 'thread_reads', 'thread_composer_settings', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'approvals', 'thread_reads', 'thread_composer_settings', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
         )
         .fetch_all(store.pool())
         .await
@@ -2347,14 +2531,51 @@ mod tests {
                 "automation_runs",
                 "automations",
                 "events",
+                "pending_timeline_skill_mentions",
                 "projects",
                 "queued_turn_inputs",
                 "thread_composer_settings",
                 "thread_pins",
                 "thread_reads",
-                "thread_runtime_state"
+                "thread_runtime_state",
+                "timeline_skill_mentions"
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn timeline_skill_mentions_commit_pending_and_reload_by_item() {
+        let store = Store::in_memory().await.unwrap();
+        let mentions = vec![TimelineSkillMention {
+            start: 4,
+            end: 18,
+            name: "agent-browser".to_string(),
+            path: "/skills/agent-browser/SKILL.md".to_string(),
+            display_name: None,
+            scope: None,
+        }];
+        let pending_id = store
+            .insert_pending_timeline_skill_mentions("thread-1", "Use $agent-browser", &mentions)
+            .await
+            .unwrap();
+        assert!(pending_id.is_some());
+
+        let committed = store
+            .commit_pending_timeline_skill_mentions("thread-1", "item-user-1", "Use $agent-browser")
+            .await
+            .unwrap();
+        assert_eq!(committed.as_deref(), Some(mentions.as_slice()));
+        assert!(store
+            .commit_pending_timeline_skill_mentions("thread-1", "item-user-2", "Use $agent-browser")
+            .await
+            .unwrap()
+            .is_none());
+
+        let loaded = store
+            .timeline_skill_mentions_for_items("thread-1", &["item-user-1".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(loaded.get("item-user-1"), Some(&mentions));
     }
 
     #[tokio::test]

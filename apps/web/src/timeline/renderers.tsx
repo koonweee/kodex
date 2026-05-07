@@ -528,7 +528,7 @@ function UserMessageBubble({
         ) : null}
         {item.text ? (
           <Text size="sm" className="kodex-user-message-bubble">
-            {item.text}
+            <InlineSkillMentionText item={item} />
           </Text>
         ) : null}
         {item.confirmationState && item.confirmationState !== "sent" ? (
@@ -540,6 +540,61 @@ function UserMessageBubble({
       </Box>
     </Box>
   );
+}
+
+function InlineSkillMentionText({ item }: { item: TimelineItem }) {
+  const mentions = validInlineSkillMentions(item);
+  if (mentions.length === 0) {
+    return <>{item.text}</>;
+  }
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  for (const mention of mentions) {
+    if (mention.start > cursor) {
+      parts.push(item.text.slice(cursor, mention.start));
+    }
+    const label = item.text.slice(mention.start, mention.end);
+    const title = [mention.displayName, mention.scope, mention.path].filter(Boolean).join(" · ");
+    parts.push(
+      <span
+        aria-label={`${label} skill`}
+        className="kodex-inline-skill-badge"
+        key={`${mention.path}-${mention.start}-${mention.end}`}
+        title={title || mention.path}
+      >
+        {label}
+      </span>,
+    );
+    cursor = mention.end;
+  }
+  if (cursor < item.text.length) {
+    parts.push(item.text.slice(cursor));
+  }
+  return <>{parts}</>;
+}
+
+function validInlineSkillMentions(item: TimelineItem) {
+  const mentions = item.skillMentions ?? [];
+  const valid = mentions
+    .filter((mention) =>
+      Number.isInteger(mention.start) &&
+      Number.isInteger(mention.end) &&
+      mention.start >= 0 &&
+      mention.end > mention.start &&
+      mention.end <= item.text.length &&
+      item.text.slice(mention.start, mention.end) === `$${mention.name}`,
+    )
+    .sort((left, right) => left.start - right.start || left.end - right.end);
+  const output: typeof valid = [];
+  let cursor = 0;
+  for (const mention of valid) {
+    if (mention.start < cursor) {
+      return [];
+    }
+    output.push(mention);
+    cursor = mention.end;
+  }
+  return output;
 }
 
 function optimisticStatusText(item: TimelineItem): string {

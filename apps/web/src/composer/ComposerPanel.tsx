@@ -15,7 +15,7 @@ import {
   type ComposerSettings,
   type ContextUsage,
 } from "../ComposerFooterControls";
-import type { ModelSummary, UserInput } from "../api/client";
+import type { ModelSummary, TextElement, TimelineSkillMention, UserInput } from "../api/client";
 import type { ImageLightboxImage } from "../images/types";
 import { AttachmentTray } from "./AttachmentTray";
 import { QueuedSteerCard } from "./QueuedSteerCard";
@@ -26,6 +26,9 @@ import {
   filterSkillsForQuery,
   replaceSkillMentionToken,
   skillInputsFromBindings,
+  skillTextElementsFromBindings,
+  timelineSkillMentionsFromBindings,
+  trimmedSkillMentionBindings,
   validSkillMentionBindings,
   type SkillMentionBinding,
   type SkillMentionToken,
@@ -135,6 +138,8 @@ export function ComposerPanel({
     draftText: string,
     controls: ComposerDraftControls,
     skillInputs: UserInput[],
+    skillTextElements: TextElement[],
+    skillMentions: TimelineSkillMention[],
   ) => void;
   pendingAttachments: PendingAttachment[];
   queuedSteerRows: QueuedSteerRow[];
@@ -307,7 +312,21 @@ export function ComposerPanel({
   }
 
   function currentSkillInputs() {
-    return skillInputsFromBindings(validSkillMentionBindings(composerText, skillBindings));
+    return skillInputsFromBindings(currentSubmittedSkillBindings().bindings);
+  }
+
+  function currentSkillTextElements() {
+    const submitted = currentSubmittedSkillBindings();
+    return skillTextElementsFromBindings(submitted.text, submitted.bindings);
+  }
+
+  function currentTimelineSkillMentions() {
+    const submitted = currentSubmittedSkillBindings();
+    return timelineSkillMentionsFromBindings(submitted.text, submitted.bindings);
+  }
+
+  function currentSubmittedSkillBindings() {
+    return trimmedSkillMentionBindings(composerText, skillBindings);
   }
 
   const setComposerShellNode = useCallback((node: HTMLDivElement | null) => {
@@ -357,10 +376,17 @@ export function ComposerPanel({
         component="form"
         className="kodex-composer"
         onSubmit={(event) =>
-          onSubmitTurn(event, composerText, {
-            clearText: clearComposerDraft,
-            restoreText: restoreComposerDraft,
-          }, currentSkillInputs())
+          onSubmitTurn(
+            event,
+            composerText,
+            {
+              clearText: clearComposerDraft,
+              restoreText: restoreComposerDraft,
+            },
+            currentSkillInputs(),
+            currentSkillTextElements(),
+            currentTimelineSkillMentions(),
+          )
         }
       >
         <input

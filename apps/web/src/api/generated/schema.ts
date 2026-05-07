@@ -1074,6 +1074,7 @@ export interface components {
             id: string;
             itemType: string;
             rawPayload: unknown;
+            skillMentions?: components["schemas"]["TimelineSkillMention"][];
         };
         ThreadListQuery: {
             cursor?: string | null;
@@ -1151,6 +1152,16 @@ export interface components {
             itemSnapshot: components["schemas"]["ThreadItemSnapshot"];
             source: components["schemas"]["TimelineUpdateSource"];
             turnId: string;
+        };
+        TimelineSkillMention: {
+            displayName?: string | null;
+            /** Format: int32 */
+            end: number;
+            name: string;
+            path: string;
+            scope?: string | null;
+            /** Format: int32 */
+            start: number;
         };
         TimelineThreadMetadataPayload: {
             gitInfo?: null | components["schemas"]["GitInfoPatch"];

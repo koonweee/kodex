@@ -20,6 +20,8 @@ import {
   steerQueuedInput,
   uploadImages,
   type ImageUpload,
+  type TextElement,
+  type TimelineSkillMention,
   type UserInput,
 } from "../api/client";
 import type { ComposerSettings } from "../ComposerFooterControls";
@@ -132,6 +134,8 @@ export function useComposerOrchestration({
     composerText: string,
     draftControls: ComposerDraftControls,
     skillInputs: UserInput[] = [],
+    skillTextElements: TextElement[] = [],
+    skillMentions: TimelineSkillMention[] = [],
   ) {
     event.preventDefault();
     const canSubmitComposer =
@@ -149,7 +153,7 @@ export function useComposerOrchestration({
       setIsComposerSubmitting(true);
       setIsQueuedTurnStartPending(true);
       try {
-        const input = await buildTurnInput(text, attachments, skillInputs);
+        const input = await buildTurnInput(text, attachments, skillInputs, skillTextElements);
         const row = await createQueuedInput(selectedThreadId, input, composerTurnOptions(composerSettings));
         onQueuedInputUpsert(row);
         for (const attachment of attachments) {
@@ -180,11 +184,11 @@ export function useComposerOrchestration({
     setIsComposerSubmitting(true);
     try {
       if (selectedThreadId) {
-        optimisticClientRequestId = addOptimisticMessage(text, optimisticImages, null, initialConfirmationState);
+        optimisticClientRequestId = addOptimisticMessage(text, optimisticImages, null, initialConfirmationState, skillMentions);
         startedThreadId = selectedThreadId;
         onThreadTurnStarted(selectedThreadId);
         draftControls.clearText();
-        const input = await buildTurnInput(text, attachments, skillInputs);
+        const input = await buildTurnInput(text, attachments, skillInputs, skillTextElements);
         const uploadedImages = userInputImages(input);
         if (uploadedImages.length > 0) {
           updateOptimisticMessage(optimisticClientRequestId, {
@@ -220,11 +224,11 @@ export function useComposerOrchestration({
       };
       latestComposerContextRef.current = retryRestoreContext;
       composerContextRef.current = retryRestoreContext;
-      optimisticClientRequestId = addOptimisticMessage(text, optimisticImages, null, initialConfirmationState);
+      optimisticClientRequestId = addOptimisticMessage(text, optimisticImages, null, initialConfirmationState, skillMentions);
       startedThreadId = threadId;
       onThreadTurnStarted(threadId);
       draftControls.clearText();
-      const input = await buildTurnInput(text, attachments, skillInputs);
+      const input = await buildTurnInput(text, attachments, skillInputs, skillTextElements);
       const uploadedImages = userInputImages(input);
       if (uploadedImages.length > 0) {
         updateOptimisticMessage(optimisticClientRequestId, {
@@ -239,9 +243,16 @@ export function useComposerOrchestration({
       clearPendingAttachments();
       setIsComposerSubmitting(false);
     } catch (error) {
-      if (optimisticClientRequestId) {
-        const clientRequestId = optimisticClientRequestId;
-        setTimeline((current) => removeOptimisticUserMessage(current, clientRequestId));
+      const failedClientRequestId = optimisticClientRequestId;
+      if (failedClientRequestId) {
+        if (skillMentions.length > 0) {
+          updateOptimisticMessage(failedClientRequestId, {
+            confirmationState: "failed",
+            error: errorMessageFrom(error),
+          });
+        } else {
+          setTimeline((current) => removeOptimisticUserMessage(current, failedClientRequestId));
+        }
       }
       if (startedThreadId) {
         onThreadTurnStartFailed(startedThreadId);
@@ -361,10 +372,11 @@ export function useComposerOrchestration({
     text: string,
     attachments: PendingAttachment[],
     skillInputs: UserInput[] = [],
+    skillTextElements: TextElement[] = [],
   ): Promise<UserInput[]> {
     const input: UserInput[] = [];
     if (text) {
-      input.push({ type: "text", text });
+      input.push({ type: "text", text, ...(skillTextElements.length > 0 ? { text_elements: skillTextElements } : {}) });
     }
     input.push(...skillInputs);
     if (attachments.length > 0) {
@@ -490,6 +502,7 @@ export function useComposerOrchestration({
     images: TimelineImage[],
     turnId: string | null,
     confirmationState: "uploading" | "sending" | "sent" | "failed",
+    skillMentions: TimelineSkillMention[] = [],
   ) {
     nextOptimisticMessageId.current += 1;
     const clientRequestId = `client-message-${nextOptimisticMessageId.current}`;
@@ -498,6 +511,7 @@ export function useComposerOrchestration({
         clientRequestId,
         text,
         images,
+        skillMentions,
         turnId,
         confirmationState,
       }),

@@ -1,4 +1,5 @@
 import type { EventEnvelope } from "../api/client";
+import type { TimelineSkillMention } from "../api/client";
 
 export type TimelineStatus = "running" | "completed" | "failed" | "waiting" | "cancelled" | "approval_required";
 export type TimelineItemSource = "app_server" | "optimistic";
@@ -50,6 +51,7 @@ export type TimelineItem = {
   summary?: string;
   toolName?: string;
   images?: TimelineImage[];
+  skillMentions?: TimelineSkillMention[];
   source?: TimelineItemSource;
   clientRequestId?: string;
   confirmationState?: TimelineConfirmationState;
@@ -66,6 +68,7 @@ export type OptimisticUserMessageInput = {
   clientRequestId: string;
   text: string;
   images: TimelineImage[];
+  skillMentions?: TimelineSkillMention[];
   turnId: string | null;
   confirmationState: TimelineConfirmationState;
 };
