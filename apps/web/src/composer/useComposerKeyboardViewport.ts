@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 export type ComposerKeyboardViewport = {
   keyboardInset: number;
+  viewportOffsetTop: number;
   viewportHeight: number;
 };
 
@@ -32,6 +33,7 @@ function readViewport(): ComposerKeyboardViewport {
   const layoutHeight = window.innerHeight || 0;
   const visualViewport = window.visualViewport;
   const viewportHeight = Math.round(visualViewport?.height ?? layoutHeight);
-  const keyboardInset = Math.max(0, Math.round(layoutHeight - viewportHeight - (visualViewport?.offsetTop ?? 0)));
-  return { keyboardInset, viewportHeight };
+  const viewportOffsetTop = Math.max(0, Math.round(visualViewport?.offsetTop ?? 0));
+  const keyboardInset = Math.max(0, Math.round(layoutHeight - viewportHeight - viewportOffsetTop));
+  return { keyboardInset, viewportHeight, viewportOffsetTop };
 }

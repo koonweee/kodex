@@ -72,6 +72,7 @@ export function MobileComposerPanel({
   const keyboardViewport = useComposerKeyboardViewport();
   const expandedStyle = {
     "--kodex-mobile-keyboard-inset": `${keyboardViewport.keyboardInset}px`,
+    "--kodex-mobile-visual-viewport-offset-top": `${keyboardViewport.viewportOffsetTop}px`,
     "--kodex-mobile-visual-viewport-height": `${keyboardViewport.viewportHeight}px`,
   } as CSSProperties;
   const submitContent = useMemo(
@@ -87,6 +88,16 @@ export function MobileComposerPanel({
 
   function openExpanded() {
     setIsExpanded(true);
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) {
+        return;
+      }
+
+      textarea.focus({ preventScroll: true });
+      const cursor = textarea.value.length;
+      textarea.setSelectionRange(cursor, cursor);
+    });
   }
 
   function handleSubmit(event: FormEvent) {
@@ -131,97 +142,102 @@ export function MobileComposerPanel({
   }
 
   return isExpanded ? (
-    <Box
-      ref={setComposerShellNode}
-      className="kodex-mobile-composer-expanded"
-      role="dialog"
-      aria-label={MOBILE_COMPOSER_TEXT.compose}
-      style={expandedStyle}
-    >
-      <Box className="kodex-mobile-composer-expanded-header">
-        <span aria-hidden="true" />
-        <Text fw={700} size="sm">
-          {MOBILE_COMPOSER_TEXT.compose}
-        </Text>
-        <ActionIcon
-          aria-label={MOBILE_COMPOSER_TEXT.collapse}
-          type="button"
-          variant="subtle"
-          onClick={() => setIsExpanded(false)}
-        >
-          <Minimize2 size={18} />
-        </ActionIcon>
-      </Box>
+    <>
+      <Box aria-hidden="true" className="kodex-mobile-composer-keyboard-mask" style={expandedStyle} />
       <Box
-        component="form"
-        className="kodex-mobile-composer-expanded-body"
-        data-skill-command-open={skillPopupOpen ? "true" : undefined}
-        onSubmit={handleSubmit}
+        ref={setComposerShellNode}
+        className="kodex-mobile-composer-expanded"
+        role="dialog"
+        aria-label={MOBILE_COMPOSER_TEXT.compose}
+        style={expandedStyle}
       >
-        {renderHiddenAttachmentInput()}
-        <Box
-          className="kodex-mobile-composer-expanded-main"
-          data-skill-command-open={skillPopupOpen ? "true" : undefined}
-        >
-          {pendingAttachments.length > 0 && !isComposerBusy ? (
-            <AttachmentTray
-              attachments={pendingAttachments}
-              compact
-              onImageOpen={onImageOpen}
-              onRemove={onRemovePendingAttachment}
-            />
-          ) : null}
-          <Textarea
-            ref={textareaRef}
-            aria-label="Message composer"
-            className="kodex-mobile-composer-textarea"
-            placeholder={canCompose ? MOBILE_COMPOSER_TEXT.placeholder : "Select a thread to start composing"}
-            minRows={3}
-            maxRows={16}
-            autosize
-            value={draftState.composerText}
-            onChange={(event) => {
-              if (!isComposerDisabled) {
-                draftState.updateComposerText(event.currentTarget.value, event.currentTarget.selectionStart);
-              }
-            }}
-            onClick={(event) => draftState.updateComposerText(event.currentTarget.value, event.currentTarget.selectionStart)}
-            onKeyUp={(event) => {
-              if (event.key !== "Escape") {
-                draftState.updateComposerText(event.currentTarget.value, event.currentTarget.selectionStart);
-              }
-            }}
-            onKeyDown={handleTextareaKeyDown}
-            onPaste={onComposerPaste}
-            disabled={isComposerDisabled}
-            variant="unstyled"
-          />
-          {renderSkillCommandSheet()}
+        <Box className="kodex-mobile-composer-expanded-header">
+          <span aria-hidden="true" />
+          <Text fw={700} size="sm">
+            {MOBILE_COMPOSER_TEXT.compose}
+          </Text>
+          <ActionIcon
+            aria-label={MOBILE_COMPOSER_TEXT.collapse}
+            type="button"
+            variant="subtle"
+            onClick={() => setIsExpanded(false)}
+          >
+            <Minimize2 size={18} />
+          </ActionIcon>
         </Box>
-        {isComposerDragActive ? (
-          <Box className="kodex-composer-drop-hint" aria-hidden="true">
-            {MOBILE_COMPOSER_TEXT.dropImages}
-          </Box>
-        ) : null}
-        {skillPopupOpen ? null : (
-          <Box className="kodex-mobile-composer-expanded-footer">
-            <ComposerToolbar
-              attachmentInputRef={attachmentInputRef}
-              canSubmitComposer={canSubmitComposer}
-              contextUsage={contextUsage}
+        <Box
+          component="form"
+          className="kodex-mobile-composer-expanded-body"
+          data-skill-command-open={skillPopupOpen ? "true" : undefined}
+          onSubmit={handleSubmit}
+        >
+          {renderHiddenAttachmentInput()}
+          <Box
+            className="kodex-mobile-composer-expanded-main"
+            data-skill-command-open={skillPopupOpen ? "true" : undefined}
+          >
+            {pendingAttachments.length > 0 && !isComposerBusy ? (
+              <AttachmentTray
+                attachments={pendingAttachments}
+                compact
+                onImageOpen={onImageOpen}
+                onRemove={onRemovePendingAttachment}
+              />
+            ) : null}
+            <Textarea
+              ref={textareaRef}
+              aria-label="Message composer"
+              className="kodex-mobile-composer-textarea"
+              placeholder={canCompose ? MOBILE_COMPOSER_TEXT.placeholder : "Select a thread to start composing"}
+              minRows={3}
+              maxRows={16}
+              autosize
+              value={draftState.composerText}
+              onChange={(event) => {
+                if (!isComposerDisabled) {
+                  draftState.updateComposerText(event.currentTarget.value, event.currentTarget.selectionStart);
+                }
+              }}
+              onClick={(event) =>
+                draftState.updateComposerText(event.currentTarget.value, event.currentTarget.selectionStart)
+              }
+              onKeyUp={(event) => {
+                if (event.key !== "Escape") {
+                  draftState.updateComposerText(event.currentTarget.value, event.currentTarget.selectionStart);
+                }
+              }}
+              onKeyDown={handleTextareaKeyDown}
+              onPaste={onComposerPaste}
               disabled={isComposerDisabled}
-              models={models}
-              onSettingsChange={onComposerSettingsChange}
-              onStopTurn={onStopTurn}
-              selectedThreadPresent={selectedThreadPresent}
-              settings={composerSettings}
-              settingsError={composerSettingsError}
-              shouldShowStopAction={shouldShowStopAction}
+              variant="unstyled"
             />
+            {renderSkillCommandSheet()}
           </Box>
-        )}
+          {isComposerDragActive ? (
+            <Box className="kodex-composer-drop-hint" aria-hidden="true">
+              {MOBILE_COMPOSER_TEXT.dropImages}
+            </Box>
+          ) : null}
+          {skillPopupOpen ? null : (
+            <Box className="kodex-mobile-composer-expanded-footer">
+              <ComposerToolbar
+                attachmentInputRef={attachmentInputRef}
+                canSubmitComposer={canSubmitComposer}
+                contextUsage={contextUsage}
+                disabled={isComposerDisabled}
+                models={models}
+                onSettingsChange={onComposerSettingsChange}
+                onStopTurn={onStopTurn}
+                selectedThreadPresent={selectedThreadPresent}
+                settings={composerSettings}
+                settingsError={composerSettingsError}
+                shouldShowStopAction={shouldShowStopAction}
+              />
+            </Box>
+          )}
+        </Box>
       </Box>
-    </Box>
+    </>
   ) : (
     <InlineComposerPanel
       {...inlineComposerProps}
@@ -242,7 +258,7 @@ export function MobileComposerPanel({
       onAttachmentInputChange={onAttachmentInputChange}
       onComposerPaste={onComposerPaste}
       onComposerSettingsChange={onComposerSettingsChange}
-      onExpandComposer={() => openExpanded()}
+      onFocusComposer={() => openExpanded()}
       onImageOpen={onImageOpen}
       onRemovePendingAttachment={onRemovePendingAttachment}
       onStopTurn={onStopTurn}

@@ -3,7 +3,6 @@ import { asRecord, stringValue } from "../shared/values";
 
 const THREAD_TEXT = {
   new: "New thread",
-  untitled: "Untitled thread",
 };
 
 export type ThreadsByProjectId = Record<string, ThreadSummary[]>;
@@ -162,7 +161,7 @@ export function threadDisplayTitle(thread: ThreadSummary): string {
   return (
     threadNameTitle(thread) ??
     normalizeTitle(previewTitle(thread.preview)) ??
-    `${THREAD_TEXT.untitled} ${thread.id.slice(0, 8)}`
+    THREAD_TEXT.new
   );
 }
 

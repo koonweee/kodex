@@ -20,7 +20,7 @@ describe("useComposerKeyboardViewport", () => {
 
     const { result } = renderHook(() => useComposerKeyboardViewport());
 
-    expect(result.current).toEqual({ keyboardInset: 268, viewportHeight: 520 });
+    expect(result.current).toEqual({ keyboardInset: 268, viewportHeight: 520, viewportOffsetTop: 12 });
 
     act(() => {
       Object.defineProperty(window.visualViewport, "height", { configurable: true, value: 600 });
@@ -28,6 +28,6 @@ describe("useComposerKeyboardViewport", () => {
       listeners.get("resize")?.(new Event("resize"));
     });
 
-    expect(result.current).toEqual({ keyboardInset: 200, viewportHeight: 600 });
+    expect(result.current).toEqual({ keyboardInset: 200, viewportHeight: 600, viewportOffsetTop: 0 });
   });
 });

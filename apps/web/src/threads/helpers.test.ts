@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Approval, ThreadSummary } from "../api/client";
-import { sortPinnedThreadsForSidebar, sortThreadsForSidebar, withoutPinnedThreads } from "./helpers";
+import { sortPinnedThreadsForSidebar, sortThreadsForSidebar, threadDisplayTitle, withoutPinnedThreads } from "./helpers";
 
 function threadSummary(
   id: string,
@@ -73,5 +73,18 @@ describe("sidebar thread ordering", () => {
         threadSummary("pinned", { pinnedAt: "2026-05-06T00:00:00Z" }),
       ]).map((thread) => thread.id),
     ).toEqual(["normal"]);
+  });
+});
+
+describe("thread display titles", () => {
+  it("uses New thread when a thread has no generated title or preview yet", () => {
+    expect(
+      threadDisplayTitle(
+        threadSummary("019de25f-9ac3-72b1-adf6-a108f82d1fb6", {
+          name: "New thread",
+          preview: null,
+        }),
+      ),
+    ).toBe("New thread");
   });
 });

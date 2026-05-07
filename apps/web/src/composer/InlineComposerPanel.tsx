@@ -30,6 +30,7 @@ type InlineComposerPanelProps = ComposerPanelProps & {
   isComposerDisabled: boolean;
   isEntryPending: boolean;
   onExpandComposer?: () => void;
+  onFocusComposer?: () => void;
   renderSkillSuggestions?: () => ReactNode;
   selectSkill: (skillIndex?: number) => void;
   setComposerShellNode: (node: HTMLDivElement | null) => void;
@@ -69,6 +70,7 @@ export function InlineComposerPanel({
   onComposerPaste,
   onComposerSettingsChange,
   onExpandComposer,
+  onFocusComposer,
   onImageOpen,
   onRemovePendingAttachment,
   onStopTurn,
@@ -190,6 +192,11 @@ export function InlineComposerPanel({
             }
           }}
           onClick={(event) => draftState.updateComposerText(event.currentTarget.value, event.currentTarget.selectionStart)}
+          onFocus={() => {
+            if (!isComposerDisabled) {
+              onFocusComposer?.();
+            }
+          }}
           onKeyUp={(event) => {
             if (event.key !== "Escape") {
               draftState.updateComposerText(event.currentTarget.value, event.currentTarget.selectionStart);

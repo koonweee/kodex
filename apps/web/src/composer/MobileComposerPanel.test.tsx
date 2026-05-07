@@ -50,53 +50,105 @@ describe("Mobile composer panel", () => {
     expect(screen.getByLabelText(/message composer/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /model: gpt-5\.5, high/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /expand composer/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /expand composer/i })).not.toBeInTheDocument();
     expect(screen.getByRole("img", { name: /context/i })).toBeInTheDocument();
     expect(screen.getByRole("toolbar", { name: /composer context/i })).toHaveClass("kodex-composer-underbar");
     expect(screen.getByText("main")).toBeInTheDocument();
     expect(mobileComposerCss).not.toMatch(/\.kodex-composer-shell\[data-inline-density="mobile"\] \.kodex-composer-underbar\s*\{/);
   });
 
-  it("keeps non-fullscreen mobile composer to one inline state after focus", async () => {
+  it("opens fullscreen composer when the mobile inline textarea is focused", async () => {
     renderComposerPanel();
 
     await userEvent.click(screen.getByLabelText(/message composer/i));
-
-    expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile");
-    expect(screen.queryByRole("form", { name: /mobile focused composer/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("dialog", { name: /compose/i })).not.toBeInTheDocument();
-  });
-
-  it("opens fullscreen composer from the shared inline composer", async () => {
-    renderComposerPanel();
-
-    await userEvent.click(screen.getByLabelText(/message composer/i));
-
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Long mobile draft");
-    expect(screen.getByLabelText(/message composer/i)).toHaveValue("Long mobile draft");
-
-    await userEvent.click(screen.getByRole("button", { name: /expand composer/i }));
 
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toHaveFocus();
+  });
+
+  it("anchors fullscreen composer to the visual viewport when mobile browser chrome shifts", async () => {
+    vi.stubGlobal("innerHeight", 800);
+    vi.stubGlobal("visualViewport", {
+      addEventListener: () => undefined,
+      height: 520,
+      offsetTop: 24,
+      removeEventListener: () => undefined,
+    });
+    renderComposerPanel();
+
+    await userEvent.click(screen.getByLabelText(/message composer/i));
+
+    const dialog = screen.getByRole("dialog", { name: /compose/i });
+    const keyboardMask = document.querySelector(".kodex-mobile-composer-keyboard-mask");
+    expect(dialog).toHaveStyle({
+      "--kodex-mobile-keyboard-inset": "256px",
+      "--kodex-mobile-visual-viewport-height": "520px",
+      "--kodex-mobile-visual-viewport-offset-top": "24px",
+    });
+    expect(keyboardMask).toHaveStyle({
+      "--kodex-mobile-keyboard-inset": "256px",
+      "--kodex-mobile-visual-viewport-height": "520px",
+      "--kodex-mobile-visual-viewport-offset-top": "24px",
+    });
+    expect(mobileComposerCss).toMatch(/\.kodex-mobile-composer-keyboard-mask\s*\{[^}]*inset:\s*0;/s);
+    expect(mobileComposerCss).toMatch(
+      /\.kodex-mobile-composer-expanded\s*\{[^}]*top:\s*calc\(env\(safe-area-inset-top\) \+ var\(--kodex-mobile-visual-viewport-offset-top,\s*0px\)\);/s,
+    );
+    expect(mobileComposerCss).toMatch(
+      /\.kodex-mobile-composer-expanded\s*\{[^}]*bottom:\s*var\(--kodex-mobile-keyboard-inset,\s*0px\);/s,
+    );
+    expect(mobileComposerCss).toMatch(
+      /\.kodex-mobile-composer-expanded\s*\{[^}]*max-height:\s*calc\(var\(--kodex-mobile-visual-viewport-height,\s*100dvh\) - env\(safe-area-inset-top\)\);/s,
+    );
+    expect(mobileComposerCss).toMatch(
+      /\.kodex-mobile-composer-expanded-body\s*\{[^}]*padding:\s*10px 12px calc\(12px \+ env\(safe-area-inset-bottom\)\);/s,
+    );
+  });
+
+  it("preserves draft text when collapsing back to inline mode", async () => {
+    renderComposerPanel();
+
+    await userEvent.click(screen.getByLabelText(/message composer/i));
+    expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Long mobile draft");
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("Long mobile draft");
 
     await userEvent.click(screen.getByRole("button", { name: /collapse composer/i }));
 
     expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile");
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("Long mobile draft");
+  });
+
+  it("moves the cursor to the draft end when reopening fullscreen from inline focus", async () => {
+    renderComposerPanel();
+
+    await userEvent.click(screen.getByLabelText(/message composer/i));
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Long mobile draft");
+    await userEvent.click(screen.getByRole("button", { name: /collapse composer/i }));
+
+    const inlineTextarea = screen.getByLabelText(/message composer/i) as HTMLTextAreaElement;
+    inlineTextarea.setSelectionRange(0, 0);
+    await userEvent.click(inlineTextarea);
+
+    const expandedTextarea = screen.getByLabelText(/message composer/i) as HTMLTextAreaElement;
+    await waitFor(() => {
+      expect(expandedTextarea.selectionStart).toBe("Long mobile draft".length);
+      expect(expandedTextarea.selectionEnd).toBe("Long mobile draft".length);
+    });
   });
 
   it("returns from expanded composer to inline mode on collapse", async () => {
     renderComposerPanel();
 
-    await userEvent.click(screen.getByRole("button", { name: /expand composer/i }));
+    await userEvent.click(screen.getByLabelText(/message composer/i));
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /collapse composer/i }));
     expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile");
 
     await userEvent.click(screen.getByLabelText(/message composer/i));
-    await userEvent.click(screen.getByRole("button", { name: /expand composer/i }));
+    expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /collapse composer/i }));
 
     expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile");
@@ -113,8 +165,8 @@ describe("Mobile composer panel", () => {
     });
 
     await userEvent.click(screen.getByLabelText(/message composer/i));
+    expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/message composer/i), "Send from expanded");
-    await userEvent.click(screen.getByRole("button", { name: /expand composer/i }));
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
     await waitFor(() => expect(submittedDrafts).toEqual(["Send from expanded"]));
@@ -134,11 +186,10 @@ describe("Mobile composer panel", () => {
       ],
     });
 
-    await userEvent.click(screen.getByLabelText(/message composer/i));
     expect(screen.getByRole("button", { name: /remove preview\.png/i })).toBeInTheDocument();
     expect(document.querySelector(".kodex-attachment-tray")).toHaveAttribute("data-compact", "false");
 
-    await userEvent.click(screen.getByRole("button", { name: /expand composer/i }));
+    await userEvent.click(screen.getByLabelText(/message composer/i));
 
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /remove preview\.png/i })).toBeInTheDocument();
@@ -149,7 +200,7 @@ describe("Mobile composer panel", () => {
     const onComposerSettingsChange = vi.fn();
     renderComposerPanel({ onComposerSettingsChange });
 
-    await userEvent.click(screen.getByRole("button", { name: /expand composer/i }));
+    await userEvent.click(screen.getByLabelText(/message composer/i));
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /open attachment menu/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
@@ -202,10 +253,9 @@ describe("Mobile composer panel", () => {
     renderComposerPanel();
 
     await userEvent.click(screen.getByLabelText(/message composer/i));
+    expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/message composer/i), "$img");
     expect(await screen.findByRole("listbox", { name: /skill suggestions/i })).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: /expand composer/i }));
 
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
     expect(document.querySelector(".kodex-mobile-composer-expanded-body")).toHaveAttribute(
@@ -226,7 +276,13 @@ describe("Mobile composer panel", () => {
       /\.kodex-mobile-composer-expanded-body\[data-skill-command-open="true"\]\s*\{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\);/s,
     );
     expect(mobileComposerCss).toMatch(
-      /\.kodex-mobile-composer-expanded \.kodex-mobile-skill-command-list\s*\{[^}]*min-height:\s*clamp\(160px,\s*30dvh,\s*240px\);/s,
+      /\.kodex-mobile-composer-expanded \.kodex-mobile-skill-command-list\s*\{[^}]*flex:\s*1 1 0;/s,
+    );
+    expect(mobileComposerCss).toMatch(
+      /\.kodex-mobile-composer-expanded \.kodex-mobile-skill-command-list\s*\{[^}]*min-height:\s*0;/s,
+    );
+    expect(mobileComposerCss).toMatch(
+      /\.kodex-mobile-composer-expanded \.kodex-mobile-skill-command-list\s*\{[^}]*max-height:\s*100%;/s,
     );
     expect(mobileComposerCss).toMatch(
       /\.kodex-mobile-composer-expanded-main\[data-skill-command-open="true"\]\s*\{[^}]*padding-bottom:\s*12px;/s,
@@ -241,7 +297,7 @@ describe("Mobile composer panel", () => {
       /\.kodex-mobile-composer-expanded \.kodex-mobile-skill-command-list\s*\{[^}]*z-index:\s*3;/s,
     );
     expect(mobileComposerCss).toMatch(
-      /\.kodex-mobile-composer-expanded-main\[data-skill-command-open="true"\] \.kodex-mobile-composer-textarea textarea\s*\{[^}]*max-height:\s*clamp\(120px,\s*28dvh,\s*220px\);/s,
+      /\.kodex-mobile-composer-expanded-main\[data-skill-command-open="true"\] \.kodex-mobile-composer-textarea textarea\s*\{[^}]*max-height:\s*clamp\(88px,\s*calc\(var\(--kodex-mobile-visual-viewport-height,\s*100dvh\) \* 0\.24\),\s*180px\);/s,
     );
 
     await userEvent.click(screen.getByRole("option", { name: /image gen/i }));

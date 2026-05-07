@@ -1522,6 +1522,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn turn_start_retries_transient_rollout_load_error() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_errors.lock().unwrap().push(ApiError::BadGateway(
+            "app-server error -32603: failed to load rollout `/Users/example/.codex/sessions/2026/05/07/rollout-2026-05-07T13-41-03-019e042c-2a66-73c1-8b68-94e5be3f51af.jsonl`".to_string(),
+        ));
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"ok": true}));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/turns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":[{"type":"text","text":"hi"}]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(requests.iter().all(|(method, params)| {
+            method == "turn/start"
+                && *params
+                    == json!({"threadId": "thread-1", "input": [{"type": "text", "text": "hi"}]})
+        }));
+    }
+
+    #[tokio::test]
     async fn skills_route_maps_to_app_server_skills_list() {
         let (state, app_server) = test_state().await;
         *app_server.next_response.lock().unwrap() = Some(json!({

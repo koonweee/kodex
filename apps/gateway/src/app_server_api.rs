@@ -6,6 +6,7 @@ use std::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
+use tokio::time::{sleep, Duration};
 use utoipa::ToSchema;
 
 use crate::{
@@ -13,6 +14,9 @@ use crate::{
     error::{ApiError, ApiResult},
     schema::validate_client_request_params,
 };
+
+const ROLLOUT_LOAD_RETRY_ATTEMPTS: usize = 3;
+const ROLLOUT_LOAD_RETRY_DELAY: Duration = Duration::from_millis(25);
 
 #[derive(Clone)]
 pub struct CodexClient {
@@ -169,7 +173,10 @@ impl CodexClient {
     ) -> ApiResult<RawAppServerResponse> {
         let mut payload = json!({ "threadId": thread_id, "input": input });
         options.apply_to_payload(&mut payload);
-        self.raw_request("turn/start", payload).await
+        let payload = self
+            .request_retrying_rollout_load("turn/start", payload)
+            .await?;
+        Ok(RawAppServerResponse { payload })
     }
 
     pub async fn turn_steer(
@@ -287,10 +294,35 @@ impl CodexClient {
         Ok(RawAppServerResponse { payload })
     }
 
+    async fn request_retrying_rollout_load(&self, method: &str, params: Value) -> ApiResult<Value> {
+        let mut attempt = 0;
+        loop {
+            match self.request(method, params.clone()).await {
+                Ok(payload) => return Ok(payload),
+                Err(error)
+                    if attempt + 1 < ROLLOUT_LOAD_RETRY_ATTEMPTS
+                        && is_rollout_load_error(&error) =>
+                {
+                    attempt += 1;
+                    sleep(ROLLOUT_LOAD_RETRY_DELAY).await;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+
     async fn request(&self, method: &str, params: Value) -> ApiResult<Value> {
         validate_client_request_params(method, params.clone())?;
         self.app_server.request(method, params).await
     }
+}
+
+fn is_rollout_load_error(error: &ApiError) -> bool {
+    let ApiError::BadGateway(message) = error else {
+        return false;
+    };
+    let normalized = message.to_ascii_lowercase();
+    normalized.contains("failed to load rollout")
 }
 
 pub fn client(app_server: &DynAppServer) -> CodexClient {

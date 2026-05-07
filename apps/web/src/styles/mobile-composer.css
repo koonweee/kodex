@@ -36,12 +36,24 @@
   box-shadow: var(--kodex-shadow-strong);
 }
 
+.kodex-mobile-composer-keyboard-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 29;
+  background: var(--kodex-bg-shell);
+  pointer-events: none;
+}
+
 .kodex-mobile-composer-expanded {
   position: fixed;
-  inset: env(safe-area-inset-top) 0 0 0;
+  top: calc(env(safe-area-inset-top) + var(--kodex-mobile-visual-viewport-offset-top, 0px));
+  right: 0;
+  bottom: var(--kodex-mobile-keyboard-inset, 0px);
+  left: 0;
   z-index: 30;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  max-height: calc(var(--kodex-mobile-visual-viewport-height, 100dvh) - env(safe-area-inset-top));
   border-width: 0;
   border-radius: 0;
   background: var(--kodex-bg-shell);
@@ -64,7 +76,7 @@
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 10px;
   min-height: 0;
-  padding: 10px 12px calc(12px + env(safe-area-inset-bottom) + var(--kodex-mobile-keyboard-inset, 0px));
+  padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
   overflow: hidden;
   background: var(--kodex-bg-shell);
 }
@@ -87,6 +99,10 @@
 .kodex-mobile-composer-expanded-main[data-skill-command-open="true"] {
   overflow: hidden;
   padding-bottom: 12px;
+}
+
+.kodex-mobile-composer-expanded-main[data-skill-command-open="true"] .kodex-mobile-composer-textarea {
+  flex: 0 1 auto;
 }
 
 .kodex-mobile-composer-textarea {
@@ -112,8 +128,8 @@
 }
 
 .kodex-mobile-composer-expanded-main[data-skill-command-open="true"] .kodex-mobile-composer-textarea textarea {
-  min-height: clamp(96px, 22dvh, 180px);
-  max-height: clamp(120px, 28dvh, 220px);
+  min-height: clamp(72px, calc(var(--kodex-mobile-visual-viewport-height, 100dvh) * 0.18), 140px);
+  max-height: clamp(88px, calc(var(--kodex-mobile-visual-viewport-height, 100dvh) * 0.24), 180px);
 }
 
 .kodex-mobile-composer-textarea textarea:disabled {
@@ -164,9 +180,9 @@
 }
 
 .kodex-mobile-composer-expanded .kodex-mobile-skill-command-list {
-  flex: 1 1 auto;
-  min-height: clamp(160px, 30dvh, 240px);
-  max-height: none;
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: 100%;
   margin-bottom: 2px;
   padding-bottom: 16px;
   position: relative;
