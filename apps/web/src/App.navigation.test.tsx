@@ -90,7 +90,10 @@ describe("deep link navigation", () => {
     expect(loadingState).toHaveAttribute("aria-busy", "true");
     expect(container.querySelector(".kodex-timeline-skeleton-user")).toBeInTheDocument();
     expect(container.querySelector(".kodex-timeline-skeleton-assistant")).toBeInTheDocument();
-    expect(container.querySelector(".kodex-timeline-skeleton-worked-line")).toBeInTheDocument();
+    expect(container.querySelectorAll(".kodex-timeline-skeleton-user-bubble")).toHaveLength(1);
+    expect(container.querySelectorAll(".kodex-timeline-skeleton-assistant")).toHaveLength(1);
+    expect(container.querySelectorAll(".kodex-timeline-skeleton-user-line")).toHaveLength(2);
+    expect(container.querySelectorAll(".kodex-timeline-skeleton-assistant-line")).toHaveLength(5);
     expect(container.querySelector(".kodex-timeline-skeleton-divider")).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toBeDisabled();
     expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();

@@ -116,16 +116,16 @@
 .kodex-timeline-loading {
   display: grid;
   align-content: start;
-  gap: 44px;
+  gap: 24px;
   box-sizing: border-box;
   width: 100%;
   min-height: 100%;
-  padding: 54px 0 28px;
+  padding: 26px 0 28px;
 }
 
 .kodex-timeline-skeleton-row {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
   color: var(--kodex-text-secondary);
 }
@@ -139,44 +139,87 @@
 }
 
 .kodex-timeline-skeleton-user-bubble {
-  --kodex-skeleton-base: var(--kodex-bg-user-bubble);
-  --kodex-skeleton-shimmer: color-mix(in srgb, var(--kodex-bg-user-bubble) 82%, var(--kodex-text-on-accent));
-
-  width: min(48%, 300px);
-  height: 42px;
-  border-radius: var(--kodex-radius-round);
-}
-
-.kodex-timeline-skeleton-worked-line {
-  --kodex-skeleton-base: color-mix(in srgb, var(--kodex-text-muted) 46%, var(--kodex-bg-thread-surface));
-  --kodex-skeleton-shimmer: color-mix(in srgb, var(--kodex-text-muted) 62%, var(--kodex-bg-thread-surface));
-
-  width: min(20%, 155px);
-  height: 18px;
+  display: grid;
+  gap: 9px;
+  box-sizing: border-box;
+  width: min(61%, 560px);
+  min-width: min(260px, 100%);
+  border: 1px solid color-mix(in srgb, var(--kodex-border-subtle) 64%, transparent);
+  border-radius: var(--kodex-radius-xl);
+  padding: 13px 18px;
+  background: color-mix(in srgb, var(--kodex-bg-user-bubble) 12%, var(--kodex-bg-thread-surface));
 }
 
 .kodex-timeline-skeleton-divider {
   width: 100%;
   height: 1px;
+  margin: 10px 0 6px;
   background: var(--kodex-border-subtle);
 }
 
+.kodex-timeline-skeleton-user-line,
 .kodex-timeline-skeleton-assistant-line {
-  --kodex-skeleton-base: color-mix(in srgb, var(--kodex-text-primary) 24%, var(--kodex-bg-thread-surface));
-  --kodex-skeleton-shimmer: color-mix(in srgb, var(--kodex-text-primary) 38%, var(--kodex-bg-thread-surface));
-
-  width: min(44%, 340px);
-  height: 36px;
+  height: 14px;
+  border-radius: var(--kodex-radius-round);
 }
 
-.kodex-timeline-skeleton-user-bubble:where([data-visible])::before,
-.kodex-timeline-skeleton-worked-line:where([data-visible])::before,
+.kodex-timeline-skeleton-user-line {
+  --kodex-skeleton-base: color-mix(in srgb, var(--kodex-text-muted) 36%, var(--kodex-bg-user-bubble));
+  --kodex-skeleton-shimmer: color-mix(in srgb, var(--kodex-text-on-accent) 34%, var(--kodex-bg-user-bubble));
+}
+
+.kodex-timeline-skeleton-assistant-line {
+  --kodex-skeleton-base: color-mix(in srgb, var(--kodex-text-muted) 30%, var(--kodex-bg-thread-surface));
+  --kodex-skeleton-shimmer: color-mix(in srgb, var(--kodex-text-muted) 46%, var(--kodex-bg-thread-surface));
+}
+
+.kodex-timeline-skeleton-user-line[data-line-width="full"],
+.kodex-timeline-skeleton-assistant-line[data-line-width="full"] {
+  width: 100%;
+}
+
+.kodex-timeline-skeleton-user-line[data-line-width="long"],
+.kodex-timeline-skeleton-assistant-line[data-line-width="long"] {
+  width: min(70%, 640px);
+}
+
+.kodex-timeline-skeleton-user-line[data-line-width="medium"],
+.kodex-timeline-skeleton-assistant-line[data-line-width="medium"] {
+  width: min(64%, 590px);
+}
+
+.kodex-timeline-skeleton-user-line[data-line-width="short"],
+.kodex-timeline-skeleton-assistant-line[data-line-width="short"] {
+  width: min(48%, 440px);
+}
+
+.kodex-timeline-skeleton-user-line[data-line-width="tiny"],
+.kodex-timeline-skeleton-assistant-line[data-line-width="tiny"] {
+  width: min(34%, 300px);
+}
+
+.kodex-timeline-skeleton-assistant-line[data-line-width="long"] {
+  width: 100%;
+}
+
+.kodex-timeline-skeleton-assistant-line[data-line-width="medium"] {
+  width: 92%;
+}
+
+.kodex-timeline-skeleton-assistant-line[data-line-width="short"] {
+  width: 68%;
+}
+
+.kodex-timeline-skeleton-assistant-line[data-line-width="tiny"] {
+  width: 48%;
+}
+
+.kodex-timeline-skeleton-user-line:where([data-visible])::before,
 .kodex-timeline-skeleton-assistant-line:where([data-visible])::before {
   background-color: var(--kodex-skeleton-base);
 }
 
-.kodex-timeline-skeleton-user-bubble:where([data-visible])::after,
-.kodex-timeline-skeleton-worked-line:where([data-visible])::after,
+.kodex-timeline-skeleton-user-line:where([data-visible])::after,
 .kodex-timeline-skeleton-assistant-line:where([data-visible])::after {
   background-color: var(--kodex-skeleton-shimmer);
 }
