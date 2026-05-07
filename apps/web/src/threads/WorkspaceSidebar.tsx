@@ -384,16 +384,16 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
         </Box>
         <Box className="kodex-sidebar-scroll">
           <SidebarRowFrame
-            className="kodex-automations-sidebar-row kodex-ui-selectable"
+            className="kodex-ui-selectable"
             leadingIcon={<Clock />}
             rootProps={{ "data-active": selectedMainPane === "automations" ? "true" : undefined }}
           >
             <button
-              className="kodex-ui-button kodex-automations-sidebar-button"
+              className="kodex-ui-button kodex-sidebar-row-main"
               onClick={onSelectAutomations}
               type="button"
             >
-              <Text component="span" fw={400} size="xs">
+              <Text component="span" className="kodex-sidebar-row-label" fw={400} size="xs" lineClamp={1}>
                 {SIDEBAR_TEXT.automations}
               </Text>
             </button>
