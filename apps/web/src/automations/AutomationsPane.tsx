@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Box, Button, Group, Loader, Table, Text, Title, Tooltip } from "@mantine/core";
+import { ActionIcon, Badge, Box, Group, Loader, Table, Text, Title, Tooltip } from "@mantine/core";
 import {
   flexRender,
   getCoreRowModel,
@@ -26,6 +26,7 @@ import { threadLabelById } from "./threadOptions";
 
 const AUTOMATIONS_TEXT = {
   add: "Add automation",
+  addShort: "Automation",
   emptyText: "Create recurring prompts that enqueue into a target thread.",
   emptyTitle: "No automations",
   showSidebar: "Show sidebar",
@@ -183,9 +184,15 @@ export function AutomationsPane({
           </Title>
         </Group>
         <Tooltip label={AUTOMATIONS_TEXT.add}>
-          <Button leftSection={<Plus size={15} />} onClick={handleAdd} size="compact-sm">
-            {AUTOMATIONS_TEXT.add}
-          </Button>
+          <button
+            aria-label={AUTOMATIONS_TEXT.add}
+            className="kodex-ui-button kodex-automations-add-button"
+            onClick={handleAdd}
+            type="button"
+          >
+            <Plus size={15} />
+            {AUTOMATIONS_TEXT.addShort}
+          </button>
         </Tooltip>
       </Group>
       <Box className="kodex-automations-pane kodex-main-column">

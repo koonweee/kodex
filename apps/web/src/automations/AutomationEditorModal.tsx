@@ -7,6 +7,7 @@ import {
   NumberInput,
   Select,
   Stack,
+  Tabs,
   Text,
   TextInput,
   Tooltip,
@@ -61,6 +62,7 @@ export function AutomationEditorModal({
   const [values, setValues] = useState<AutomationFormValues>(() => automationFormValues(automation, fallbackThreadId));
   const [submittingAction, setSubmittingAction] = useState<string | null>(null);
   const [deletePendingConfirmation, setDeletePendingConfirmation] = useState(false);
+  const [mobileTab, setMobileTab] = useState<"details" | "prompt">("details");
   const [error, setError] = useState<string | null>(null);
   const title = automation ? "Automation details" : "New automation";
   const isSubmitting = submittingAction !== null;
@@ -81,6 +83,7 @@ export function AutomationEditorModal({
       setError(null);
       setDeletePendingConfirmation(false);
       setSubmittingAction(null);
+      setMobileTab("details");
     }
   }, [automation, fallbackThreadId, opened]);
 
@@ -158,6 +161,70 @@ export function AutomationEditorModal({
     setValues((current) => ({ ...current, ...patch }));
   }
 
+  const detailsFields = (
+    <div className="kodex-automation-modal-grid">
+      <TextInput
+        className="kodex-automation-mobile-input"
+        label="Name"
+        onChange={(event) => patchValues({ name: event.currentTarget.value })}
+        required
+        value={values.name}
+      />
+      <Select
+        className="kodex-automation-mobile-input kodex-automation-thread-select"
+        data={targetThreadOptions}
+        comboboxProps={{ classNames: { dropdown: "kodex-automation-thread-select-dropdown" } }}
+        label="Target thread"
+        onChange={(value) => patchValues({ targetThreadId: value })}
+        renderOption={({ option }) => <ThreadSelectOption option={option} />}
+        required
+        searchable
+        value={values.targetThreadId}
+      />
+      <TextInput
+        className="kodex-automation-mobile-input"
+        label="Start"
+        onChange={(event) => patchValues({ startAtLocal: event.currentTarget.value })}
+        required
+        type="datetime-local"
+        value={values.startAtLocal}
+      />
+      <div className="kodex-automation-repeat-row">
+        <NumberInput
+          className="kodex-automation-mobile-input"
+          hideControls
+          label="Repeat every"
+          min={1}
+          onChange={(value) => patchValues({ repeatValue: Number(value) || 0 })}
+          required
+          value={values.repeatValue}
+          inputMode="numeric"
+        />
+        <Select
+          aria-label="Repeat unit"
+          className="kodex-automation-mobile-input"
+          data={REPEAT_UNIT_OPTIONS}
+          onChange={(value) => {
+            if (value === "seconds" || value === "minutes" || value === "hours") {
+              patchValues({ repeatUnit: value });
+            }
+          }}
+          value={values.repeatUnit}
+        />
+      </div>
+    </div>
+  );
+  const promptFields = (showLabel = true) => (
+    <Stack className="kodex-automation-modal-prompt-section" gap={6}>
+      {showLabel ? (
+        <Text fw={500} size="sm">
+          Prompt
+        </Text>
+      ) : null}
+      <PromptMarkdownEditor value={values.prompt} onChange={(prompt) => patchValues({ prompt })} />
+    </Stack>
+  );
+
   return (
     <Modal
       centered={!isMobileModal}
@@ -168,69 +235,43 @@ export function AutomationEditorModal({
       size="xl"
       title={title}
     >
-      <Stack gap="md">
+      <Stack className="kodex-automation-modal-form" gap="md">
         {error ? (
           <Alert color="red" icon={<AlertCircle size={16} />}>
             {error}
           </Alert>
         ) : null}
-        <div className="kodex-automation-modal-grid">
-          <TextInput
-            className="kodex-automation-mobile-input"
-            label="Name"
-            onChange={(event) => patchValues({ name: event.currentTarget.value })}
-            required
-            value={values.name}
-          />
-          <Select
-            className="kodex-automation-mobile-input kodex-automation-thread-select"
-            data={targetThreadOptions}
-            comboboxProps={{ classNames: { dropdown: "kodex-automation-thread-select-dropdown" } }}
-            label="Target thread"
-            onChange={(value) => patchValues({ targetThreadId: value })}
-            renderOption={({ option }) => <ThreadSelectOption option={option} />}
-            required
-            searchable
-            value={values.targetThreadId}
-          />
-          <TextInput
-            className="kodex-automation-mobile-input"
-            label="Start"
-            onChange={(event) => patchValues({ startAtLocal: event.currentTarget.value })}
-            required
-            type="datetime-local"
-            value={values.startAtLocal}
-          />
-          <div className="kodex-automation-repeat-row">
-            <NumberInput
-              className="kodex-automation-mobile-input"
-              hideControls
-              label="Repeat every"
-              min={1}
-              onChange={(value) => patchValues({ repeatValue: Number(value) || 0 })}
-              required
-              value={values.repeatValue}
-              inputMode="numeric"
-            />
-            <Select
-              aria-label="Repeat unit"
-              className="kodex-automation-mobile-input"
-              data={REPEAT_UNIT_OPTIONS}
-              onChange={(value) => {
-                if (value === "seconds" || value === "minutes" || value === "hours") {
-                  patchValues({ repeatUnit: value });
-                }
-              }}
-              value={values.repeatUnit}
-            />
-          </div>
-        </div>
-        <Stack gap={6}>
-          <Text fw={500} size="sm">
-            Prompt
-          </Text>
-          <PromptMarkdownEditor value={values.prompt} onChange={(prompt) => patchValues({ prompt })} />
-        </Stack>
+        {isMobileModal ? (
+          <Tabs
+            className="kodex-automation-modal-tabs"
+            keepMounted={false}
+            onChange={(value) => {
+              if (value === "details" || value === "prompt") {
+                setMobileTab(value);
+              }
+            }}
+            value={mobileTab}
+          >
+            <Tabs.List grow>
+              <Tabs.Tab value="details">Details</Tabs.Tab>
+              <Tabs.Tab value="prompt">Prompt</Tabs.Tab>
+            </Tabs.List>
+            <Tabs.Panel className="kodex-automation-modal-tab-panel" value="details">
+              {detailsFields}
+            </Tabs.Panel>
+            <Tabs.Panel
+              className="kodex-automation-modal-tab-panel kodex-automation-modal-prompt-panel"
+              value="prompt"
+            >
+              {promptFields(false)}
+            </Tabs.Panel>
+          </Tabs>
+        ) : (
+          <>
+            {detailsFields}
+            {promptFields()}
+          </>
+        )}
         <Group className="kodex-automation-modal-footer" justify="space-between" wrap="nowrap">
           <Group gap="xs" wrap="nowrap">
             {automation ? (
@@ -251,11 +292,12 @@ export function AutomationEditorModal({
                 <Tooltip label={automation.status === "paused" ? "Resume" : "Pause"}>
                   <ActionIcon
                     aria-label={automation.status === "paused" ? "Resume" : "Pause"}
+                    className="kodex-automation-status-action"
                     disabled={isSubmitting}
                     loading={submittingAction === "pause" || submittingAction === "resume"}
                     onClick={() => void handleAction(automation.status === "paused" ? "resume" : "pause")}
                     size="lg"
-                    variant="light"
+                    variant="subtle"
                   >
                     {automation.status === "paused" ? <Play size={18} /> : <Pause size={18} />}
                   </ActionIcon>

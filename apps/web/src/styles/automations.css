@@ -2,6 +2,19 @@
   flex: 0 0 auto;
 }
 
+.kodex-automations-add-button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  color: var(--kodex-text-primary);
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .kodex-automations-pane {
   min-height: 0;
   min-width: 0;
@@ -137,6 +150,10 @@
   font-size: var(--mantine-font-size-sm);
 }
 
+.kodex-automation-modal-prompt-section {
+  min-height: 0;
+}
+
 .kodex-automation-modal-footer {
   position: sticky;
   bottom: 0;
@@ -147,8 +164,18 @@
   background: var(--kodex-bg-raised);
 }
 
+.kodex-automation-status-action,
+.kodex-automation-status-action:hover {
+  background: transparent;
+  color: var(--kodex-text-primary);
+}
+
 @media (max-width: 900px) {
   .kodex-automations-header .mantine-Button-root {
+    min-height: 44px;
+  }
+
+  .kodex-automations-add-button {
     min-height: 44px;
   }
 
@@ -211,13 +238,45 @@
 
   .kodex-automation-modal .mantine-Modal-body {
     display: flex;
+    flex: 1 1 auto;
     min-height: 0;
     flex-direction: column;
+    padding-bottom: 0;
     overflow: auto;
+  }
+
+  .kodex-automation-modal-form {
+    flex: 1 1 auto;
+    gap: 0;
+    min-height: 100%;
+  }
+
+  .kodex-automation-modal-tabs {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  .kodex-automation-modal-tabs .mantine-Tabs-list {
+    flex: 0 0 auto;
+  }
+
+  .kodex-automation-modal-tab-panel {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding-top: var(--mantine-spacing-md);
+    overflow: auto;
+  }
+
+  .kodex-automation-modal-prompt-panel:not([style*="display: none"]) {
+    display: flex;
+    flex-direction: column;
   }
 
   .kodex-automation-modal-grid {
     grid-template-columns: minmax(0, 1fr);
+    gap: var(--mantine-spacing-md);
   }
 
   .kodex-automation-repeat-row {
@@ -242,9 +301,42 @@
     max-height: 32dvh;
   }
 
+  .kodex-automation-modal-prompt-section {
+    flex: 1 1 auto;
+  }
+
+  .kodex-automation-modal-prompt-section .kodex-automation-prompt-editor {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    margin-bottom: var(--mantine-spacing-md);
+  }
+
+  .kodex-automation-modal-prompt-section .kodex-automation-prompt-editor > .mantine-Tabs-root,
+  .kodex-automation-modal-prompt-section .kodex-automation-prompt-editor .mantine-Tabs-panel:not([style*="display: none"]),
+  .kodex-automation-modal-prompt-section .kodex-automation-prompt-textarea,
+  .kodex-automation-modal-prompt-section .kodex-automation-prompt-textarea .mantine-Textarea-wrapper,
+  .kodex-automation-modal-prompt-section .kodex-automation-prompt-textarea .mantine-Textarea-input {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  .kodex-automation-modal-prompt-section .kodex-automation-prompt-textarea textarea,
+  .kodex-automation-modal-prompt-section .kodex-automation-prompt-preview {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
+
   .kodex-automation-modal-footer {
+    bottom: calc(env(safe-area-inset-bottom) * -1);
+    margin-top: auto;
+    margin-bottom: calc(env(safe-area-inset-bottom) * -1);
     align-items: stretch;
     gap: var(--mantine-spacing-xs);
+    padding-bottom: calc(var(--mantine-spacing-sm) + env(safe-area-inset-bottom));
   }
 
   .kodex-automation-modal-footer .mantine-ActionIcon-root {
