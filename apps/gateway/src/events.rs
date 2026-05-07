@@ -31,6 +31,7 @@ use crate::{
     queue,
     routes::threads::THREAD_PIN_UPDATED_EVENT,
     schema::is_supported_approval_method,
+    skills,
     store::{EventEnvelope, NewApproval, NewEvent, ThreadRuntimeState},
 };
 
@@ -120,6 +121,9 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             }
             for thread_id in normalized.drain_thread_ids {
                 queue::trigger_queue_drain(state.clone(), thread_id);
+            }
+            if method == "skills/changed" {
+                skills::broadcast_skills_changed(state, "app-server").await?;
             }
         }
         InboundMessage::ServerRequest {
@@ -379,6 +383,7 @@ fn is_operational_replay_event(event: &EventEnvelope) -> bool {
         "approval.created"
             | "approval.resolved"
             | "gateway.warning"
+            | skills::SKILLS_CHANGED_EVENT
             | THREAD_PIN_UPDATED_EVENT
             | queue::QUEUE_UPSERT_EVENT
             | queue::QUEUE_DELETE_EVENT
@@ -397,6 +402,7 @@ fn is_normal_live_event(event: &EventEnvelope) -> bool {
                 | "timeline.thread_status"
                 | "timeline.thread_metadata"
                 | SNAPSHOT_REQUIRED_KIND
+                | skills::SKILLS_CHANGED_EVENT
                 | queue::QUEUE_UPSERT_EVENT
                 | queue::QUEUE_DELETE_EVENT
         )

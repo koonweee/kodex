@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isTimelineInitialBottomRevealReady,
   isTimelineInitialBottomSettled,
   type TimelineInitialBottomSettleSnapshot,
 } from "./TimelineView";
@@ -29,5 +30,11 @@ describe("timeline initial bottom settling", () => {
 
     expect(isTimelineInitialBottomSettled(settledSnapshot({ hasRenderedDomBottom: false }), previous)).toBe(false);
     expect(isTimelineInitialBottomSettled(settledSnapshot({ hasRenderedVirtualBottom: false }), previous)).toBe(false);
+  });
+
+  it("reveals after a short stable-bottom settle period", () => {
+    expect(isTimelineInitialBottomRevealReady(2, 12)).toBe(false);
+    expect(isTimelineInitialBottomRevealReady(3, 12)).toBe(true);
+    expect(isTimelineInitialBottomRevealReady(0, 90)).toBe(true);
   });
 });

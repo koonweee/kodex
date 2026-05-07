@@ -157,4 +157,64 @@ describe("event stream client", () => {
     expect(received).toEqual(["thread.pin_updated"]);
     client.close();
   });
+
+  it("receives gateway skill invalidation events", () => {
+    const received: string[] = [];
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      onEvent: (event) => received.push(event.kind),
+    });
+
+    client.connect();
+    FakeEventSource.instances[0].emitNamed("skills.changed", {
+      id: "event-10",
+      seq: 10,
+      kind: "skills.changed",
+      codexMethod: "skills/changed",
+      itemId: null,
+      threadId: null,
+      turnId: null,
+      projectId: null,
+      payload: { generation: 1, source: "app-server" },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(received).toEqual(["skills.changed"]);
+    client.close();
+  });
+
+  it("delivers skill invalidation events to two stream clients", () => {
+    const first: string[] = [];
+    const second: string[] = [];
+    const clientA = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      onEvent: (event) => first.push(event.kind),
+    });
+    const clientB = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      onEvent: (event) => second.push(event.kind),
+    });
+
+    clientA.connect();
+    clientB.connect();
+    const payload = {
+      id: "event-11",
+      seq: 11,
+      kind: "skills.changed",
+      codexMethod: "skills/changed",
+      itemId: null,
+      threadId: null,
+      turnId: null,
+      projectId: null,
+      payload: { generation: 2, source: "app-server" },
+      receivedAt: "2026-04-30T00:00:00Z",
+    };
+    FakeEventSource.instances[0].emitNamed("skills.changed", payload);
+    FakeEventSource.instances[1].emitNamed("skills.changed", payload);
+
+    expect(first).toEqual(["skills.changed"]);
+    expect(second).toEqual(["skills.changed"]);
+    clientA.close();
+    clientB.close();
+  });
 });

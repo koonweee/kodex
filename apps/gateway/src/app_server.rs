@@ -448,6 +448,7 @@ pub mod tests {
         pub readiness_error: StdMutex<Option<String>>,
         pub requests: StdMutex<Vec<(String, Value)>>,
         pub responses: StdMutex<Vec<(String, Value)>>,
+        pub queued_responses: StdMutex<Vec<Value>>,
         pub next_response: StdMutex<Option<Value>>,
     }
 
@@ -649,6 +650,11 @@ done
                 .lock()
                 .unwrap()
                 .push((method.to_string(), params));
+            let mut queued_responses = self.queued_responses.lock().unwrap();
+            if !queued_responses.is_empty() {
+                return Ok(queued_responses.remove(0));
+            }
+            drop(queued_responses);
             Ok(self
                 .next_response
                 .lock()
@@ -687,6 +693,7 @@ done
                 "rateLimitsByLimitId": null
             }),
             "model/list" => json!({"data": [], "nextCursor": null}),
+            "skills/list" => json!({"data": []}),
             _ => json!({"ok": true, "method": method}),
         }
     }

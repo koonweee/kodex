@@ -12,6 +12,7 @@ use crate::{
     api::AppState,
     app_server_api::{self, TurnStartOptions, UserInput},
     error::{ApiError, ApiResult},
+    skills,
     store::{
         EventEnvelope, NewEvent, QueuedInput, QueuedInputPriority, QueuedInputStatus,
         ThreadRuntimeState,
@@ -83,13 +84,14 @@ pub async fn create_queued_input(
     Path(thread_id): Path<String>,
     Json(request): Json<QueuedInputCreateRequest>,
 ) -> ApiResult<Json<QueuedInputResponse>> {
+    let input = skills::resolve_turn_input_for_thread(&state, &thread_id, request.input).await?;
     state
         .store
         .save_thread_turn_options(&thread_id, &request.options)
         .await?;
     let queued_input = state
         .store
-        .create_queued_input(&thread_id, request.input, request.options)
+        .create_queued_input(&thread_id, input, request.options)
         .await?;
     broadcast_queue_upsert(&state, &queued_input).await?;
     trigger_queue_drain(state.clone(), thread_id);
@@ -134,12 +136,22 @@ pub async fn steer_queued_input(
         .await?;
     broadcast_queue_upsert(&state, &queued_input).await?;
 
+    let input =
+        match skills::resolve_turn_input_for_thread(&state, &thread_id, queued_input.input.clone())
+            .await
+        {
+            Ok(input) => input,
+            Err(error) => {
+                let failed = state
+                    .store
+                    .mark_queued_input_failed(&thread_id, &queue_id, error.to_string())
+                    .await?;
+                broadcast_queue_upsert(&state, &failed).await?;
+                return Err(error);
+            }
+        };
     let result = app_server_api::client(&state.app_server)
-        .turn_steer(
-            thread_id.clone(),
-            active_turn_id.clone(),
-            queued_input.input.clone(),
-        )
+        .turn_steer(thread_id.clone(), active_turn_id.clone(), input)
         .await;
     match result {
         Ok(_) => {
@@ -311,12 +323,27 @@ async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<
     };
     broadcast_queue_upsert(state, &queued_input).await?;
 
+    let input =
+        match skills::resolve_turn_input_for_thread(state, thread_id, queued_input.input.clone())
+            .await
+        {
+            Ok(input) => input,
+            Err(error) => {
+                let failed = state
+                    .store
+                    .mark_queued_input_failed(thread_id, &queued_input.id, error.to_string())
+                    .await?;
+                state
+                    .store
+                    .clear_queue_drain_runtime_claim(thread_id)
+                    .await?;
+                broadcast_queue_upsert(state, &failed).await?;
+                return Err(error);
+            }
+        };
+
     let result = app_server_api::client(&state.app_server)
-        .turn_start(
-            thread_id.to_string(),
-            queued_input.input.clone(),
-            queued_input.options.clone(),
-        )
+        .turn_start(thread_id.to_string(), input, queued_input.options.clone())
         .await;
     match result {
         Ok(_) => {

@@ -161,6 +161,7 @@ function KodexShell({
   const [hoveredThreadActionId, setHoveredThreadActionId] = useState<string | null>(null);
   const [timelineScrollElement, setTimelineScrollElement] = useState<HTMLDivElement | null>(null);
   const [composerResetToken, setComposerResetToken] = useState(0);
+  const [skillsInvalidationGeneration, setSkillsInvalidationGeneration] = useState(0);
   const selectedProjectIdRef = useRef<string | null>(null);
   const selectedThreadIdRef = useRef<string | null>(selectedThreadId);
   const queueRevisionByThreadIdRef = useRef<Record<string, number>>({});
@@ -256,7 +257,7 @@ function KodexShell({
     sidebarWidth,
   } = useSidebarResize();
   const selectedTimelineEntry =
-    selectedThread !== null && timelineEntry.threadId === selectedThread.id ? timelineEntry : idleTimelineEntry;
+    selectedThreadId !== null && timelineEntry.threadId === selectedThreadId ? timelineEntry : idleTimelineEntry;
   const isSelectedThreadSnapshotDeferred =
     selectedThreadId !== null && materializingThreadIds.has(selectedThreadId);
   const isSelectedThreadNotLoaded = selectedThread?.status === "notLoaded";
@@ -266,7 +267,15 @@ function KodexShell({
   const activeSelectedTurnId = selectedThread !== null ? timeline.activeTurnId : null;
   const isDraftThreadSelected =
     draftChatThreadSelected || (draftThreadProjectId !== null && draftThreadProjectId === selectedProjectId);
-  const canCompose = selectedThread !== null || isDraftThreadSelected;
+  const draftComposerProject = draftThreadProjectId
+    ? orderedProjects.find((project) => project.id === draftThreadProjectId) ?? null
+    : null;
+  const composerCwd =
+    selectedThread?.cwd ??
+    (isDraftThreadSelected && !draftChatThreadSelected
+      ? draftComposerProject?.cwd ?? selectedProject?.cwd ?? null
+      : null);
+  const canCompose = selectedThread !== null || isSelectedTimelineLoading || isDraftThreadSelected;
   const {
     attachmentInputRef,
     handleAbortQueuedSteer,
@@ -461,6 +470,9 @@ function KodexShell({
         }
         if (isApprovalEvent(event)) {
           setApprovals((current) => applyApprovalEventWithTombstone(current, event));
+        }
+        if (event.kind === "skills.changed") {
+          setSkillsInvalidationGeneration((current) => current + 1);
         }
       },
     });
@@ -1185,7 +1197,7 @@ function KodexShell({
       <KodexShellView
           composerPanelProps={{
           activeSelectedTurnId, attachmentInputRef, canCompose, composerResetToken, composerSettings, composerSettingsError,
-          composerShellRef, contextUsage: selectedContextUsage, currentProjectName: selectedProject?.name ?? null,
+          composerCwd, composerShellRef, contextUsage: selectedContextUsage, currentProjectName: selectedProject?.name ?? null,
           draftProjectSelector: isDraftThreadSelected
             ? {
                 onChange: stableHandleDraftProjectChange,
@@ -1194,13 +1206,13 @@ function KodexShell({
               }
             : undefined,
           selectedGitBranch: selectedThread?.gitInfo?.branch ?? null, isDraftThreadSelected, isDraftComposerTransitioning, isComposerDragActive,
-          isComposerSubmitting, isQueuedTurnStartPending, isSelectedTimelineReady, models,
+          isComposerSubmitting, isQueuedTurnStartPending, isSelectedTimelineReady, skillsInvalidationGeneration, models,
           onAbortQueuedSteer: handleAbortQueuedSteer, onAttachmentInputChange: handleAttachmentInputChange,
           onComposerDragLeave: handleComposerDragLeave, onComposerDragOver: handleComposerDragOver, onComposerDrop: handleComposerDrop,
           onComposerKeyDown: handleComposerKeyDown, onComposerPaste: handleComposerPaste, onComposerSettingsChange: handleComposerSettingsChange,
           onImageOpen: setLightboxImage, onRemovePendingAttachment: removePendingAttachment, onStopTurn: handleStopTurn,
           onSubmitQueuedSteer: handleSubmitQueuedSteer, onSubmitTurn: handleSubmitTurn, pendingAttachments, queuedSteerRows,
-          selectedThreadPresent: selectedThread !== null,
+          selectedThreadPresent: selectedThread !== null || isSelectedTimelineLoading,
         }}
         isSidebarResizing={isSidebarResizing}
         mobilePanel={mobilePanel}

@@ -127,7 +127,12 @@ export function useComposerOrchestration({
     clearPendingAttachments();
   }, [activeSelectedTurnId, draftChatThreadSelected, draftThreadProjectId, isComposerSubmitting, selectedProjectId, selectedThreadId]);
 
-  async function handleSubmitTurn(event: FormEvent, composerText: string, draftControls: ComposerDraftControls) {
+  async function handleSubmitTurn(
+    event: FormEvent,
+    composerText: string,
+    draftControls: ComposerDraftControls,
+    skillInputs: UserInput[] = [],
+  ) {
     event.preventDefault();
     const canSubmitComposer =
       canCompose &&
@@ -144,7 +149,7 @@ export function useComposerOrchestration({
       setIsComposerSubmitting(true);
       setIsQueuedTurnStartPending(true);
       try {
-        const input = await buildTurnInput(text, attachments);
+        const input = await buildTurnInput(text, attachments, skillInputs);
         const row = await createQueuedInput(selectedThreadId, input, composerTurnOptions(composerSettings));
         onQueuedInputUpsert(row);
         for (const attachment of attachments) {
@@ -179,7 +184,7 @@ export function useComposerOrchestration({
         startedThreadId = selectedThreadId;
         onThreadTurnStarted(selectedThreadId);
         draftControls.clearText();
-        const input = await buildTurnInput(text, attachments);
+        const input = await buildTurnInput(text, attachments, skillInputs);
         const uploadedImages = userInputImages(input);
         if (uploadedImages.length > 0) {
           updateOptimisticMessage(optimisticClientRequestId, {
@@ -219,7 +224,7 @@ export function useComposerOrchestration({
       startedThreadId = threadId;
       onThreadTurnStarted(threadId);
       draftControls.clearText();
-      const input = await buildTurnInput(text, attachments);
+      const input = await buildTurnInput(text, attachments, skillInputs);
       const uploadedImages = userInputImages(input);
       if (uploadedImages.length > 0) {
         updateOptimisticMessage(optimisticClientRequestId, {
@@ -352,11 +357,16 @@ export function useComposerOrchestration({
     event.currentTarget.form?.requestSubmit();
   }
 
-  async function buildTurnInput(text: string, attachments: PendingAttachment[]): Promise<UserInput[]> {
+  async function buildTurnInput(
+    text: string,
+    attachments: PendingAttachment[],
+    skillInputs: UserInput[] = [],
+  ): Promise<UserInput[]> {
     const input: UserInput[] = [];
     if (text) {
       input.push({ type: "text", text });
     }
+    input.push(...skillInputs);
     if (attachments.length > 0) {
       const attachmentsToUpload = attachments.filter((attachment) => !attachment.uploaded);
       updateAttachments(

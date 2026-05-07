@@ -17,6 +17,8 @@ export type QueuedInputCreateRequest = components["schemas"]["QueuedInputCreateR
 export type RateLimitSnapshot = components["schemas"]["RateLimitSnapshot"];
 export type RateLimitWindow = components["schemas"]["RateLimitWindow"];
 export type RateLimitsResponse = components["schemas"]["RateLimitsResponse"];
+export type SkillMetadata = components["schemas"]["SkillMetadata"];
+export type SkillsCatalogResponse = components["schemas"]["SkillsCatalogResponse"];
 export type ThreadRead = components["schemas"]["ThreadRead"];
 export type ThreadDetailResponse = components["schemas"]["ThreadDetailResponse"];
 export type ThreadSummary = components["schemas"]["ThreadSummary"];
@@ -278,6 +280,14 @@ export async function getRateLimits(): Promise<RateLimitsResponse> {
 export async function listModels(): Promise<ModelSummary[]> {
   const response = await unwrap(api.GET("/v1/models", { params: { query: { includeHidden: false } } }));
   return response.models.filter((model) => !model.hidden);
+}
+
+export async function listSkills(cwd?: string | null, forceReload = false): Promise<SkillsCatalogResponse> {
+  return unwrap(
+    api.GET("/v1/skills", {
+      params: { query: { cwd: cwd ?? undefined, forceReload } },
+    }),
+  );
 }
 
 export async function getComposerSettings(projectId?: string | null): Promise<ComposerSettingsResponse> {

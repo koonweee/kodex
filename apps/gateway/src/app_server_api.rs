@@ -249,6 +249,23 @@ impl CodexClient {
         Ok(ComposerSettingsUpdateResponse { saved: true })
     }
 
+    pub async fn skills_list(
+        &self,
+        cwds: Vec<String>,
+        force_reload: bool,
+    ) -> ApiResult<SkillsListResponse> {
+        let payload = self
+            .request(
+                "skills/list",
+                json!({
+                    "cwds": cwds,
+                    "forceReload": force_reload,
+                }),
+            )
+            .await?;
+        SkillsListResponse::from_payload(payload)
+    }
+
     async fn raw_request(&self, method: &str, params: Value) -> ApiResult<RawAppServerResponse> {
         let payload = self.request(method, params).await?;
         Ok(RawAppServerResponse { payload })
@@ -390,6 +407,74 @@ impl ComposerSettingsUpdateRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ComposerSettingsUpdateResponse {
     pub saved: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillsListResponse {
+    pub data: Vec<SkillsListEntry>,
+}
+
+impl SkillsListResponse {
+    fn from_payload(payload: Value) -> ApiResult<Self> {
+        serde_json::from_value(payload)
+            .map_err(|error| bad_gateway(format!("skills/list response: {error}")))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillsListEntry {
+    pub cwd: String,
+    pub skills: Vec<SkillMetadata>,
+    pub errors: Vec<SkillErrorInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillMetadata {
+    pub name: String,
+    pub path: String,
+    pub description: String,
+    pub enabled: bool,
+    pub scope: String,
+    #[serde(default)]
+    pub short_description: Option<String>,
+    #[serde(default)]
+    pub interface: Option<SkillInterface>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillInterface {
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub short_description: Option<String>,
+    #[serde(default)]
+    pub brand_color: Option<String>,
+    #[serde(default)]
+    pub default_prompt: Option<String>,
+    #[serde(default)]
+    pub icon_small: Option<String>,
+    #[serde(default)]
+    pub icon_large: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillErrorInfo {
+    pub message: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillsCatalogResponse {
+    pub cwd: Option<String>,
+    pub skills: Vec<SkillMetadata>,
+    pub errors: Vec<SkillErrorInfo>,
+    pub invalidation_generation: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

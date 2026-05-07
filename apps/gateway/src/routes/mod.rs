@@ -7,6 +7,7 @@ pub mod file_preview;
 pub mod health;
 pub mod models;
 pub mod projects;
+pub mod skills;
 pub mod threads;
 pub mod turns;
 pub mod uploads;
@@ -94,7 +95,7 @@ mod tests {
     async fn shell_routes_report_readiness_capabilities_docs_and_openapi_paths() {
         let (state, app_server) = test_state().await;
         app_server.ready.store(false, Ordering::SeqCst);
-        let app = build_router(state);
+        let app = build_router(state.clone());
 
         let ready = app
             .clone()
@@ -166,6 +167,7 @@ mod tests {
             "/v1/account/logout",
             "/v1/account/rate-limits",
             "/v1/models",
+            "/v1/skills",
         ] {
             assert!(openapi["paths"].get(path).is_some(), "missing {path}");
         }
@@ -219,7 +221,7 @@ mod tests {
             "Codex app-server is incompatible: rejected required persistExtendedHistory field"
                 .to_string(),
         );
-        let app = build_router(state);
+        let app = build_router(state.clone());
 
         let ready = app
             .oneshot(Request::get("/readyz").body(Body::empty()).unwrap())
@@ -687,7 +689,7 @@ mod tests {
             },
             "origins": {}
         }));
-        let app = build_router(state);
+        let app = build_router(state.clone());
 
         let read = app
             .clone()
@@ -744,6 +746,10 @@ mod tests {
             })
         );
         assert!(requests[1].1.get("reloadUserConfig").is_none());
+        let events = state.store.replay_events(None, None, None).await.unwrap();
+        assert!(events.iter().any(|event| {
+            event.kind == "skills.changed" && event.payload["source"] == "config-write"
+        }));
     }
 
     #[tokio::test]
@@ -1442,6 +1448,243 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn skills_route_maps_to_app_server_skills_list() {
+        let (state, app_server) = test_state().await;
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "data": [{
+                "cwd": "/workspace",
+                "errors": [],
+                "skills": [{
+                    "name": "review-fix",
+                    "path": "/skills/review-fix/SKILL.md",
+                    "description": "Review and fix",
+                    "enabled": true,
+                    "scope": "user",
+                    "shortDescription": "Review loop",
+                    "interface": {
+                        "displayName": "Review Fix",
+                        "shortDescription": "Review loop",
+                        "defaultPrompt": null,
+                        "brandColor": null,
+                        "iconSmall": null,
+                        "iconLarge": null
+                    }
+                }]
+            }]
+        }));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/skills?cwd=%2Fworkspace")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["cwd"], "/workspace");
+        assert_eq!(body["skills"][0]["name"], "review-fix");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "skills/list");
+        assert_eq!(
+            requests[0].1,
+            json!({"cwds": ["/workspace"], "forceReload": false})
+        );
+    }
+
+    #[tokio::test]
+    async fn app_server_skills_changed_invalidates_gateway_catalog() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            skills_list_response("/workspace", "old-skill", "/skills/old/SKILL.md"),
+            skills_list_response("/workspace", "new-skill", "/skills/new/SKILL.md"),
+        ]);
+        let app = build_router(state.clone());
+
+        let first = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/skills?cwd=%2Fworkspace")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response_json(first).await["skills"][0]["name"], "old-skill");
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "skills/changed".to_string(),
+                params: json!({}),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let second = app
+            .oneshot(
+                Request::get("/v1/skills?cwd=%2Fworkspace")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response_json(second).await["skills"][0]["name"],
+            "new-skill"
+        );
+
+        let events = state.store.replay_events(None, None, None).await.unwrap();
+        assert!(events.iter().any(|event| event.kind == "skills.changed"));
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].1["forceReload"], false);
+        assert_eq!(requests[1].1["forceReload"], true);
+    }
+
+    #[tokio::test]
+    async fn app_server_skills_changed_delivers_global_sse_event() {
+        let (state, _) = test_state().await;
+        let app = build_router(state.clone());
+        let response = app
+            .oneshot(
+                Request::get("/v1/events")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "skills/changed".to_string(),
+                params: json!({}),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let mut body = response.into_body();
+        let chunk = next_sse_chunk(&mut body).await;
+        assert!(chunk.contains("event: skills.changed"));
+        assert!(chunk.contains("\"kind\":\"skills.changed\""));
+        assert!(chunk.contains("\"threadId\":null"));
+    }
+
+    #[tokio::test]
+    async fn turn_start_resolves_skill_mentions_against_thread_cwd() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"thread": thread_summary("thread-1")}),
+            skills_list_response("/workspace", "review-fix", "/skills/review-fix/SKILL.md"),
+        ]);
+        let app = build_router(state);
+
+        assert_ok(
+            app.oneshot(
+                Request::post("/v1/threads/thread-1/turns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"Run $review-fix"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+        );
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[1].0, "skills/list");
+        assert_eq!(requests[1].1["cwds"], json!(["/workspace"]));
+        assert_eq!(requests[2].0, "turn/start");
+        assert_eq!(
+            requests[2].1["input"],
+            json!([
+                {"type": "text", "text": "Run $review-fix"},
+                {"type": "skill", "name": "review-fix", "path": "/skills/review-fix/SKILL.md"}
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn selected_skill_input_is_rewritten_from_gateway_catalog() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"thread": thread_summary("thread-1")}),
+            skills_list_response(
+                "/workspace",
+                "canonical-review",
+                "/skills/review-fix/SKILL.md",
+            ),
+        ]);
+        let app = build_router(state);
+
+        assert_ok(
+            app.oneshot(
+                Request::post("/v1/threads/thread-1/turns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"Run selected skill"},{"type":"skill","name":"client-stale-name","path":"/skills/review-fix/SKILL.md"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+        );
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[2].0, "turn/start");
+        assert_eq!(
+            requests[2].1["input"],
+            json!([
+                {"type": "text", "text": "Run selected skill"},
+                {"type": "skill", "name": "canonical-review", "path": "/skills/review-fix/SKILL.md"}
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn stale_selected_skill_returns_clear_error_after_force_reload() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"thread": thread_summary("thread-1")}),
+            skills_list_response("/workspace", "review-fix", "/skills/new/SKILL.md"),
+            skills_list_response("/workspace", "review-fix", "/skills/new/SKILL.md"),
+        ]);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/turns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"Run $review-fix"},{"type":"skill","name":"review-fix","path":"/skills/old/SKILL.md"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = response_json(response).await;
+        assert!(body["message"]
+            .as_str()
+            .unwrap()
+            .contains("Skill \"review-fix\" is no longer available"));
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[1].1["forceReload"], false);
+        assert_eq!(requests[2].1["forceReload"], true);
+        assert!(requests.iter().all(|(method, _)| method != "turn/start"));
+    }
+
+    #[tokio::test]
     async fn turn_start_forwards_only_present_composer_settings() {
         let (state, app_server) = test_state().await;
         let app = build_router(state);
@@ -1894,6 +2137,81 @@ mod tests {
                 "threadId": "thread-1",
                 "input": [{"type": "text", "text": "drain me"}]
             })
+        );
+    }
+
+    #[tokio::test]
+    async fn queued_skill_input_resolves_and_drains_against_target_thread_cwd() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"thread": thread_summary_with_cwd("thread-1", "/target")}),
+            skills_list_response(
+                "/target",
+                "review-fix",
+                "/target/.codex/skills/review-fix/SKILL.md",
+            ),
+            json!({"thread": thread_summary_with_cwd("thread-1", "/target")}),
+            json!({"thread": thread_summary_with_cwd("thread-1", "/target")}),
+        ]);
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "idle".to_string(),
+                active_turn_id: None,
+                updated_at: chrono::Utc::now(),
+                last_event_seq: None,
+            })
+            .await
+            .unwrap();
+        let app = build_router(state);
+
+        assert_ok(
+            app.oneshot(
+                Request::post("/v1/threads/thread-1/queued-inputs")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"queued $review-fix"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+        );
+
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if app_server
+                    .requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|(method, _)| method == "turn/start")
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let requests = app_server.requests.lock().unwrap();
+        let skills_list = requests
+            .iter()
+            .find(|(method, _)| method == "skills/list")
+            .unwrap();
+        assert_eq!(skills_list.1["cwds"], json!(["/target"]));
+        let turn_start = requests
+            .iter()
+            .find(|(method, _)| method == "turn/start")
+            .unwrap();
+        assert_eq!(
+            turn_start.1["input"],
+            json!([
+                {"type": "text", "text": "queued $review-fix"},
+                {"type": "skill", "name": "review-fix", "path": "/target/.codex/skills/review-fix/SKILL.md"}
+            ])
         );
     }
 
@@ -3900,6 +4218,12 @@ mod tests {
         })
     }
 
+    fn thread_summary_with_cwd(id: &str, cwd: &str) -> Value {
+        let mut thread = thread_summary(id);
+        thread["cwd"] = json!(cwd);
+        thread
+    }
+
     fn thread_summary_with_completed_turns(id: &str, completed_turns: usize) -> Value {
         let turns = (0..completed_turns)
             .map(|index| {
@@ -3913,6 +4237,24 @@ mod tests {
         let mut thread = thread_summary(id);
         thread["turns"] = Value::Array(turns);
         thread
+    }
+
+    fn skills_list_response(cwd: &str, name: &str, path: &str) -> Value {
+        json!({
+            "data": [{
+                "cwd": cwd,
+                "errors": [],
+                "skills": [{
+                    "name": name,
+                    "path": path,
+                    "description": format!("{name} description"),
+                    "enabled": true,
+                    "scope": "user",
+                    "shortDescription": null,
+                    "interface": null
+                }]
+            }]
+        })
     }
 
     fn multipart_body(file_name: &str, content_type: &str, bytes: &[u8]) -> Vec<u8> {

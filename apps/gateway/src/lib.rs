@@ -8,6 +8,7 @@ pub mod events;
 pub mod queue;
 pub mod routes;
 pub mod schema;
+pub mod skills;
 pub mod static_assets;
 pub mod store;
 

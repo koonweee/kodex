@@ -292,6 +292,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_skills"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/threads": {
         parameters: {
             query?: never;
@@ -848,6 +864,38 @@ export interface components {
         ReasoningEffortOption: {
             description: string;
             reasoningEffort: string;
+        };
+        SkillErrorInfo: {
+            message: string;
+            path: string;
+        };
+        SkillInterface: {
+            brandColor?: string | null;
+            defaultPrompt?: string | null;
+            displayName?: string | null;
+            iconLarge?: string | null;
+            iconSmall?: string | null;
+            shortDescription?: string | null;
+        };
+        SkillMetadata: {
+            description: string;
+            enabled: boolean;
+            interface?: null | components["schemas"]["SkillInterface"];
+            name: string;
+            path: string;
+            scope: string;
+            shortDescription?: string | null;
+        };
+        SkillsCatalogResponse: {
+            cwd?: string | null;
+            errors: components["schemas"]["SkillErrorInfo"][];
+            /** Format: int64 */
+            invalidationGeneration: number;
+            skills: components["schemas"]["SkillMetadata"][];
+        };
+        SkillsQuery: {
+            cwd?: string | null;
+            forceReload?: boolean;
         };
         TextElement: {
             byteRange: components["schemas"]["ByteRange"];
@@ -1459,6 +1507,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Project"];
+                };
+            };
+        };
+    };
+    list_skills: {
+        parameters: {
+            query?: {
+                cwd?: string | null;
+                forceReload?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillsCatalogResponse"];
                 };
             };
         };

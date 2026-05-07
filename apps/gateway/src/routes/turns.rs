@@ -10,6 +10,7 @@ use crate::{
     api::AppState,
     app_server_api::{self, RawAppServerResponse, TurnStartOptions, UserInput},
     error::ApiResult,
+    skills,
 };
 
 pub fn router() -> Router<AppState> {
@@ -45,8 +46,9 @@ pub async fn start_turn(
     Path(thread_id): Path<String>,
     Json(request): Json<TurnStartRequest>,
 ) -> ApiResult<Json<RawAppServerResponse>> {
+    let input = skills::resolve_turn_input_for_thread(&state, &thread_id, request.input).await?;
     let response = app_server_api::client(&state.app_server)
-        .turn_start(thread_id.clone(), request.input, request.options.clone())
+        .turn_start(thread_id.clone(), input, request.options.clone())
         .await?;
     state
         .store
@@ -61,9 +63,10 @@ pub async fn steer_turn(
     Path((thread_id, turn_id)): Path<(String, String)>,
     Json(request): Json<TurnSteerRequest>,
 ) -> ApiResult<Json<RawAppServerResponse>> {
+    let input = skills::resolve_turn_input_for_thread(&state, &thread_id, request.input).await?;
     Ok(Json(
         app_server_api::client(&state.app_server)
-            .turn_steer(thread_id, turn_id, request.input)
+            .turn_steer(thread_id, turn_id, input)
             .await?,
     ))
 }

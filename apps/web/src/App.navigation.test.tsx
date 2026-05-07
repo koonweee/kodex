@@ -73,6 +73,63 @@ describe("deep link navigation", () => {
     expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(1);
   });
 
+  it("shows representative timeline skeleton rows while a selected thread snapshot loads", async () => {
+    goTo("/threads/thread-2");
+    const detailDeferred = deferred<ReturnType<typeof threadDetail>>();
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/threads/thread-2": () => detailDeferred.promise,
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+    const loadingState = screen.getByRole("status", { name: /loading thread timeline/i });
+    expect(loadingState).toHaveAttribute("aria-busy", "true");
+    expect(container.querySelector(".kodex-timeline-skeleton-user")).toBeInTheDocument();
+    expect(container.querySelector(".kodex-timeline-skeleton-assistant")).toBeInTheDocument();
+    expect(container.querySelector(".kodex-timeline-skeleton-worked-line")).toBeInTheDocument();
+    expect(container.querySelector(".kodex-timeline-skeleton-divider")).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toBeDisabled();
+    expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
+
+    await act(async () => {
+      detailDeferred.resolve(threadDetail(secondThread));
+      await detailDeferred.promise;
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("status", { name: /loading thread timeline/i })).not.toBeInTheDocument();
+    });
+  });
+
+  it("shows the timeline skeleton immediately for a deep-linked thread before the thread list resolves", async () => {
+    goTo("/threads/thread-2");
+    const threadsDeferred = deferred<{
+      backwardsCursor: null;
+      nextCursor: null;
+      rawPayload: Record<string, never>;
+      threads: typeof secondThread[];
+    }>();
+    const detailDeferred = deferred<ReturnType<typeof threadDetail>>();
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": () => threadsDeferred.promise,
+        "GET /v1/threads/thread-2": () => detailDeferred.promise,
+      }),
+    );
+
+    render(<App />);
+
+    const main = screen.getByRole("main", { name: /thread/i });
+    expect(screen.getByRole("status", { name: /loading thread timeline/i })).toBeInTheDocument();
+    expect(within(main).queryByText(/no thread selected/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toBeDisabled();
+    expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
+  });
+
   it("keeps the detail snapshot authoritative when a stale sidebar list resolves later", async () => {
     goTo("/threads/thread-2");
     const threadsDeferred = deferred<{

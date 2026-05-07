@@ -18,7 +18,7 @@ import { TimelineActivityGroupRenderer, TimelineItemRenderer, TimelineWorkRowRen
 import type { TimelineState } from "./reducer";
 
 const EMPTY_APPROVALS: Approval[] = [];
-const INITIAL_BOTTOM_STABLE_FRAMES = 18;
+const INITIAL_BOTTOM_STABLE_FRAMES = 3;
 const INITIAL_BOTTOM_MAX_SETTLE_FRAMES = 90;
 const BOTTOM_DISTANCE_EPSILON = 2;
 const disableTimelineScrollAdjustment = () => false;
@@ -259,7 +259,7 @@ function useBottomPinnedVirtualTimeline({
         );
         const nextStableFrames = isTimelineInitialBottomSettled(snapshot, previousSnapshot) ? stableFrames + 1 : 0;
 
-        if (nextStableFrames >= INITIAL_BOTTOM_STABLE_FRAMES || attempt >= INITIAL_BOTTOM_MAX_SETTLE_FRAMES) {
+        if (isTimelineInitialBottomRevealReady(nextStableFrames, attempt)) {
           finishInitialBottomReveal();
           return;
         }
@@ -454,6 +454,10 @@ export function isTimelineInitialBottomSettled(
     snapshot.hasRenderedVirtualBottom &&
     Math.abs(snapshot.distanceFromBottom) < BOTTOM_DISTANCE_EPSILON
   );
+}
+
+export function isTimelineInitialBottomRevealReady(stableFrames: number, attempt: number) {
+  return stableFrames >= INITIAL_BOTTOM_STABLE_FRAMES || attempt >= INITIAL_BOTTOM_MAX_SETTLE_FRAMES;
 }
 
 function hasRenderedTimelineBottom(scrollElement: HTMLElement, rowCount: number) {

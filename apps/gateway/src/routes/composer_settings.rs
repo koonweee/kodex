@@ -13,6 +13,7 @@ use crate::{
         ComposerSettingsUpdateResponse,
     },
     error::ApiResult,
+    skills,
 };
 
 pub fn router() -> Router<AppState> {
@@ -60,9 +61,13 @@ pub async fn update_composer_settings(
     State(state): State<AppState>,
     Json(request): Json<ComposerSettingsUpdateRequest>,
 ) -> ApiResult<Json<ComposerSettingsUpdateResponse>> {
-    Ok(Json(
-        app_server_api::client(&state.app_server)
-            .update_composer_settings(request)
-            .await?,
-    ))
+    let should_invalidate_skills =
+        request.model.is_some() || request.effort.is_some() || request.service_tier.is_some();
+    let response = app_server_api::client(&state.app_server)
+        .update_composer_settings(request)
+        .await?;
+    if should_invalidate_skills {
+        skills::broadcast_skills_changed(&state, "config-write").await?;
+    }
+    Ok(Json(response))
 }

@@ -6,7 +6,6 @@
 }
 
 .kodex-composer-shell[data-entry-ready="false"] {
-  visibility: hidden;
   pointer-events: none;
 }
 
@@ -54,16 +53,11 @@
   box-shadow: var(--kodex-shadow-strong);
 }
 
-.kodex-composer-with-underbar {
-  border-bottom-right-radius: 0;
-  border-bottom-left-radius: 0;
-}
-
 .kodex-composer-underbar {
   position: relative;
   min-width: 0;
-  margin-top: -1px;
-  padding: 10px 14px 11px;
+  margin-top: calc(-1 * var(--kodex-radius-composer));
+  padding: calc(10px + var(--kodex-radius-composer)) 14px 11px;
   border-top: 1px solid var(--kodex-border-subtle);
   border-bottom-right-radius: var(--kodex-radius-composer);
   border-bottom-left-radius: var(--kodex-radius-composer);
@@ -221,6 +215,99 @@
   color: var(--input-color);
   opacity: 1;
   -webkit-text-fill-color: var(--input-color);
+}
+
+.kodex-skill-popup {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  margin-bottom: calc(-1 * var(--kodex-radius-composer));
+  overflow: hidden;
+  border-bottom: 1px solid var(--kodex-border-subtle);
+  border-top-left-radius: var(--kodex-radius-composer);
+  border-top-right-radius: var(--kodex-radius-composer);
+  padding: 12px 6px calc(6px + var(--kodex-radius-composer));
+  background: var(--kodex-bg-raised);
+  box-shadow: var(--kodex-shadow-strong);
+}
+
+.kodex-skill-popup-scroll {
+  display: grid;
+  gap: 2px;
+  max-height: min(280px, 44vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.kodex-skill-popup-row {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: var(--kodex-radius-sm);
+  padding: 8px 9px;
+  background: transparent;
+  color: var(--kodex-text-primary);
+  font: inherit;
+  text-align: left;
+  touch-action: pan-y;
+  cursor: pointer;
+}
+
+.kodex-skill-popup-row:hover,
+.kodex-skill-popup-row[aria-selected="true"] {
+  background: var(--kodex-bg-selected);
+}
+
+.kodex-skill-popup-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kodex-skill-popup-scope {
+  flex: 0 0 auto;
+  border: 1px solid var(--kodex-border-subtle);
+  border-radius: var(--kodex-radius-round);
+  padding: 2px 6px;
+  color: var(--kodex-text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.kodex-skill-popup-meta {
+  min-width: 0;
+  color: var(--kodex-text-secondary);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.kodex-skill-popup-meta span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kodex-skill-popup-meta span:first-child {
+  flex: 0 0 auto;
+  color: var(--kodex-text-accent-soft);
+  font-weight: 700;
+}
+
+.kodex-skill-popup-status {
+  padding: 10px 9px;
+  color: var(--kodex-text-secondary);
+  font-size: 12px;
+  line-height: 1.25;
 }
 
 @media (pointer: coarse) {

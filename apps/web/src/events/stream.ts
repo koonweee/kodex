@@ -23,6 +23,7 @@ const GATEWAY_SSE_EVENT_TYPES = [
   "approval.resolved",
   "codex.notification",
   "gateway.warning",
+  "skills.changed",
   "timeline.item_delta",
   "timeline.item_upsert",
   "timeline.snapshot",

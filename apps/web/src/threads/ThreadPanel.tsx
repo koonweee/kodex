@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Box, Button, Group, Menu, Title } from "@mantine/core";
+import { ActionIcon, Badge, Box, Button, Group, Menu, Skeleton, Title } from "@mantine/core";
 import { AlertCircle, Archive, MoreHorizontal, PanelLeftOpen, PanelRightOpen, Pin, PinOff } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -72,6 +72,7 @@ export function ThreadPanel({
 }) {
   const selectedThreadTitleIsPending = selectedThread ? pendingTitleThreadIds.has(selectedThread.id) : false;
   const shouldShowThreadTitle = selectedThread !== null && !selectedThreadTitleIsPending;
+  const shouldShowThreadPane = selectedThread !== null || isSelectedTimelineLoading || isDraftThreadSelected;
 
   return (
     <>
@@ -110,7 +111,7 @@ export function ThreadPanel({
             </Group>
           </Box>
         </>
-      ) : selectedThread || isDraftThreadSelected ? (
+      ) : shouldShowThreadPane ? (
         <>
           <ThreadHeader
             onShowMobileSidebar={onShowMobileSidebar}
@@ -143,15 +144,15 @@ export function ThreadPanel({
               </Menu>
             ) : null}
           </ThreadHeader>
-          {selectedThread ? (
+          {selectedThread || isSelectedTimelineLoading ? (
             <Box
               className="kodex-timeline-scroll"
               data-entry-phase={selectedTimelineEntry.phase}
               ref={setTimelineScrollElement}
             >
               {isSelectedTimelineLoading ? (
-                <Box aria-busy="true" className="kodex-timeline-loading" />
-              ) : (
+                <TimelineLoadingSkeleton />
+              ) : selectedThread ? (
                 <TimelineView
                   key={selectedThread.id}
                   approvals={selectedThreadApprovals}
@@ -165,7 +166,7 @@ export function ThreadPanel({
                   threadId={selectedThread.id}
                   timeline={timeline}
                 />
-              )}
+              ) : null}
             </Box>
           ) : null}
         </>
@@ -196,6 +197,26 @@ export function ThreadPanel({
         </>
       )}
     </>
+  );
+}
+
+function TimelineLoadingSkeleton() {
+  return (
+    <Box
+      aria-busy="true"
+      aria-label="Loading thread timeline"
+      className="kodex-timeline-loading kodex-main-column"
+      role="status"
+    >
+      <Box aria-hidden="true" className="kodex-timeline-skeleton-row kodex-timeline-skeleton-user">
+        <Skeleton className="kodex-timeline-skeleton-user-bubble" radius="xl" />
+      </Box>
+      <Box aria-hidden="true" className="kodex-timeline-skeleton-row kodex-timeline-skeleton-assistant">
+        <Skeleton className="kodex-timeline-skeleton-worked-line" radius="xl" />
+        <Box className="kodex-timeline-skeleton-divider" />
+        <Skeleton className="kodex-timeline-skeleton-assistant-line" radius="xl" />
+      </Box>
+    </Box>
   );
 }
 

@@ -11,7 +11,8 @@ use crate::{
     app_server_api::{
         AccountResponse, ComposerPermissionsPreset, ComposerSettingsResponse,
         ComposerSettingsUpdateRequest, ComposerSettingsUpdateResponse, LoginStartResponse,
-        ModelListResponse, RateLimitsResponse, RawAppServerResponse, ThreadCommandResponse,
+        ModelListResponse, RateLimitsResponse, RawAppServerResponse, SkillErrorInfo,
+        SkillInterface, SkillMetadata, SkillsCatalogResponse, ThreadCommandResponse,
         ThreadDetailResponse, ThreadItemSnapshot, ThreadListResponse, ThreadLiveState,
         ThreadTurnSnapshot, TimelineItemDeltaPayload, TimelineItemUpsertPayload,
         TimelineThreadMetadataPayload, TimelineThreadStatusPayload, TimelineTurnUpsertPayload,
@@ -34,6 +35,7 @@ use crate::{
         health::{HealthResponse, ReadyResponse},
         models::ModelsQuery,
         projects::{CreateProjectRequest, ProjectListResponse},
+        skills::SkillsQuery,
         threads::{
             CreateChatThreadRequest, CreateThreadRequest, MarkThreadSeenRequest, ThreadListQuery,
             ThreadPinResponse,
@@ -54,6 +56,7 @@ pub struct AppState {
     pub store: Store,
     pub app_server: DynAppServer,
     pub events: broadcast::Sender<EventEnvelope>,
+    pub skills: crate::skills::SkillCatalogCache,
 }
 
 impl AppState {
@@ -64,6 +67,7 @@ impl AppState {
             store,
             app_server,
             events,
+            skills: crate::skills::SkillCatalogCache::default(),
         }
     }
 }
@@ -111,7 +115,8 @@ impl AppState {
         crate::routes::account::cancel_login,
         crate::routes::account::logout,
         crate::routes::account::read_rate_limits,
-        crate::routes::models::list_models
+        crate::routes::models::list_models,
+        crate::routes::skills::list_skills
     ),
     components(schemas(
         ApiErrorBody,
@@ -172,7 +177,12 @@ impl AppState {
         LoginStartResponse,
         RateLimitsResponse,
         ModelsQuery,
-        ModelListResponse
+        ModelListResponse,
+        SkillsQuery,
+        SkillsCatalogResponse,
+        SkillMetadata,
+        SkillInterface,
+        SkillErrorInfo
     ))
 )]
 pub struct ApiDoc;
@@ -192,6 +202,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::approvals::router())
         .merge(routes::account::router())
         .merge(routes::models::router())
+        .merge(routes::skills::router())
         .merge(SwaggerUi::new("/docs").url("/openapi.json", ApiDoc::openapi()))
         .layer(TraceLayer::new_for_http())
         .with_state(state.clone());

@@ -1,11 +1,18 @@
 import { MantineProvider } from "@mantine/core";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
-import { useRef, useState, type FormEvent, type RefObject } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useRef, useState, type ComponentProps, type FormEvent, type RefObject } from "react";
 
+import { listSkills } from "../api/client";
+import type { SkillMetadata } from "../api/client";
 import type { ComposerSettings } from "../ComposerFooterControls";
 import { ComposerPanel, type ComposerDraftControls } from "./ComposerPanel";
+
+vi.mock("../api/client", async (importActual) => ({
+  ...(await importActual<typeof import("../api/client")>()),
+  listSkills: vi.fn(),
+}));
 
 const composerSettings: ComposerSettings = {
   effort: "medium",
@@ -18,7 +25,265 @@ function noopSubmit(event: FormEvent) {
   event.preventDefault();
 }
 
+function skillFixture(overrides: Partial<SkillMetadata> = {}): SkillMetadata {
+  const name = overrides.name ?? "review-fix";
+  return {
+    description: `${name} description`,
+    enabled: true,
+    interface: null,
+    name,
+    path: `/skills/${name}/SKILL.md`,
+    scope: "user",
+    ...overrides,
+  };
+}
+
+function mockSkills(skills: SkillMetadata[]) {
+  vi.mocked(listSkills).mockResolvedValue({
+    cwd: "/workspace",
+    errors: [],
+    invalidationGeneration: 0,
+    skills,
+  });
+}
+
+function renderComposerPanel(
+  props: Partial<ComponentProps<typeof ComposerPanel>> = {},
+) {
+  const attachmentInputRef = { current: null } as RefObject<HTMLInputElement | null>;
+  return render(
+    <MantineProvider>
+      <ComposerPanel
+        activeSelectedTurnId={null}
+        attachmentInputRef={attachmentInputRef}
+        canCompose
+        composerCwd="/workspace"
+        composerResetToken={0}
+        composerSettings={composerSettings}
+        composerSettingsError={null}
+        contextUsage={null}
+        isDraftThreadSelected={false}
+        isDraftComposerTransitioning={false}
+        isComposerDragActive={false}
+        isComposerSubmitting={false}
+        isSelectedTimelineReady
+        models={[]}
+        onAbortQueuedSteer={vi.fn()}
+        onAttachmentInputChange={vi.fn()}
+        onComposerDragLeave={vi.fn()}
+        onComposerDragOver={vi.fn()}
+        onComposerDrop={vi.fn()}
+        onComposerKeyDown={vi.fn()}
+        onComposerPaste={vi.fn()}
+        onComposerSettingsChange={vi.fn()}
+        onImageOpen={vi.fn()}
+        onRemovePendingAttachment={vi.fn()}
+        onStopTurn={vi.fn()}
+        onSubmitQueuedSteer={vi.fn()}
+        onSubmitTurn={noopSubmit}
+        pendingAttachments={[]}
+        queuedSteerRows={[]}
+        selectedThreadPresent
+        {...props}
+      />
+    </MantineProvider>,
+  );
+}
+
 describe("ComposerPanel", () => {
+  beforeEach(() => {
+    vi.mocked(listSkills).mockReset();
+  });
+
+  it("opens skill autocomplete from $ and submits selected skill inputs", async () => {
+    mockSkills([
+      skillFixture({
+        description: "Review and fix changes",
+        interface: { displayName: "Review Fix", shortDescription: "Review loop" },
+        name: "review-fix",
+        path: "/skills/review-fix/SKILL.md",
+      }),
+    ]);
+    const submittedSkillInputs: unknown[][] = [];
+
+    renderComposerPanel({
+      onSubmitTurn: (event, _draft, controls, skillInputs) => {
+        event.preventDefault();
+        submittedSkillInputs.push(skillInputs);
+        controls.clearText();
+      },
+    });
+
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "$rev");
+    expect(await screen.findByRole("option", { name: /review fix/i })).toBeInTheDocument();
+    await userEvent.keyboard("{Enter}");
+    expect(composer).toHaveValue("$review-fix ");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() =>
+      expect(submittedSkillInputs).toEqual([
+        [{ type: "skill", name: "review-fix", path: "/skills/review-fix/SKILL.md" }],
+      ]),
+    );
+  });
+
+  it("moves skill autocomplete selection with arrow keys", async () => {
+    mockSkills([
+      skillFixture({ interface: { displayName: "Alpha Skill" }, name: "alpha-skill" }),
+      skillFixture({ interface: { displayName: "Beta Skill" }, name: "beta-skill" }),
+    ]);
+    renderComposerPanel();
+
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "$");
+    const alpha = await screen.findByRole("option", { name: /alpha skill/i });
+    const beta = screen.getByRole("option", { name: /beta skill/i });
+    expect(alpha).toHaveAttribute("aria-selected", "true");
+
+    await userEvent.keyboard("{ArrowDown}");
+    expect(beta).toHaveAttribute("aria-selected", "true");
+    await userEvent.keyboard("{Enter}");
+    expect(composer).toHaveValue("$beta-skill ");
+  });
+
+  it("scrolls the active skill autocomplete option into view during keyboard navigation", async () => {
+    mockSkills(
+      Array.from({ length: 10 }, (_, index) =>
+        skillFixture({
+          interface: { displayName: `Skill ${index}` },
+          name: `skill-${index}`,
+        }),
+      ),
+    );
+
+    renderComposerPanel();
+
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "$");
+    expect(await screen.findByRole("option", { name: /skill 0/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    const scrollArea = document.querySelector(".kodex-skill-popup-scroll") as HTMLElement;
+    Object.defineProperty(scrollArea, "clientHeight", { configurable: true, value: 40 });
+    screen.getAllByRole("option").forEach((option, index) => {
+      Object.defineProperty(option, "offsetTop", { configurable: true, value: index * 20 });
+      Object.defineProperty(option, "offsetHeight", { configurable: true, value: 20 });
+    });
+
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
+
+    expect(screen.getByRole("option", { name: /skill 3/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(scrollArea.scrollTop).toBe(40);
+  });
+
+  it("wraps skill autocomplete selection with ArrowUp", async () => {
+    mockSkills([
+      skillFixture({ interface: { displayName: "Alpha Skill" }, name: "alpha-skill" }),
+      skillFixture({ interface: { displayName: "Beta Skill" }, name: "beta-skill" }),
+    ]);
+    renderComposerPanel();
+
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "$");
+    expect(await screen.findByRole("option", { name: /alpha skill/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    await userEvent.keyboard("{ArrowUp}");
+    expect(screen.getByRole("option", { name: /beta skill/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await userEvent.keyboard("{Enter}");
+    expect(composer).toHaveValue("$beta-skill ");
+  });
+
+  it("closes skill autocomplete with Escape without changing draft text", async () => {
+    mockSkills([skillFixture({ interface: { displayName: "Review Fix" }, name: "review-fix" })]);
+    renderComposerPanel();
+
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "$rev");
+    expect(await screen.findByRole("option", { name: /review fix/i })).toBeInTheDocument();
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.queryByRole("listbox", { name: /skill suggestions/i })).not.toBeInTheDocument();
+    expect(composer).toHaveValue("$rev");
+  });
+
+  it("selects skill autocomplete rows with click input", async () => {
+    mockSkills([skillFixture({ interface: { displayName: "Review Fix" }, name: "review-fix" })]);
+    renderComposerPanel();
+
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "$rev");
+    const option = await screen.findByRole("option", { name: /review fix/i });
+
+    await userEvent.click(option);
+
+    expect(composer).toHaveValue("$review-fix ");
+    expect(screen.queryByRole("listbox", { name: /skill suggestions/i })).not.toBeInTheDocument();
+    await waitFor(() => expect(composer).toHaveFocus());
+  });
+
+  it("deletes an inserted skill token with one Backspace", async () => {
+    mockSkills([skillFixture({ interface: { displayName: "Review Fix" }, name: "review-fix" })]);
+    const submittedSkillInputs: unknown[][] = [];
+    renderComposerPanel({
+      onSubmitTurn: (event, _draft, controls, skillInputs) => {
+        event.preventDefault();
+        submittedSkillInputs.push(skillInputs);
+        controls.clearText();
+      },
+    });
+
+    const composer = screen.getByLabelText(/message composer/i) as HTMLTextAreaElement;
+    await userEvent.type(composer, "$rev");
+    expect(await screen.findByRole("option", { name: /review fix/i })).toBeInTheDocument();
+    await userEvent.keyboard("{Enter}");
+    expect(composer).toHaveValue("$review-fix ");
+
+    composer.setSelectionRange(composer.value.length, composer.value.length);
+    fireEvent.keyDown(composer, { key: "Backspace" });
+
+    expect(composer).toHaveValue("");
+
+    await userEvent.type(composer, "plain text");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await waitFor(() => expect(submittedSkillInputs).toEqual([[]]));
+  });
+
+  it("closes skill autocomplete on outside pointer input without changing draft text", async () => {
+    mockSkills([skillFixture({ interface: { displayName: "Review Fix" }, name: "review-fix" })]);
+    renderComposerPanel();
+
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "$rev");
+    expect(await screen.findByRole("option", { name: /review fix/i })).toBeInTheDocument();
+
+    fireEvent.pointerDown(document.body);
+
+    expect(screen.queryByRole("listbox", { name: /skill suggestions/i })).not.toBeInTheDocument();
+    expect(composer).toHaveValue("$rev");
+  });
+
+  it("shows an empty skill autocomplete state when no skills match", async () => {
+    mockSkills([skillFixture({ interface: { displayName: "Review Fix" }, name: "review-fix" })]);
+    renderComposerPanel();
+
+    await userEvent.type(screen.getByLabelText(/message composer/i), "$zzz");
+
+    expect(await screen.findByText("No matching skills")).toBeInTheDocument();
+    expect(screen.getByRole("listbox", { name: /skill suggestions/i })).toBeInTheDocument();
+  });
+
   it("keeps draft typing local until submit", async () => {
     const submittedDrafts: string[] = [];
     let parentRenderCount = 0;
