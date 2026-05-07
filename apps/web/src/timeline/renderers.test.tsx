@@ -226,6 +226,27 @@ describe("timeline renderer registry", () => {
     });
   });
 
+  it("falls back to the file preview endpoint for reloaded user message images", () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          threadId="thread-1"
+          imagePreviewUrlsByPath={{}}
+          item={item({
+            kind: "user_message",
+            text: "Inspect this",
+            images: [{ path: "/tmp/diagram.png" }],
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("Inspect this")).toBeInTheDocument();
+    expect(document.querySelector(".kodex-user-image-grid img")?.getAttribute("src")).toContain(
+      `/v1/threads/thread-1/files/preview?path=${encodeURIComponent("/tmp/diagram.png")}`,
+    );
+  });
+
   it("copies user message text from the user-aligned toolbar", async () => {
     const writeText = mockClipboardWriteText();
     const { container } = render(

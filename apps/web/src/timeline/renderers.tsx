@@ -13,7 +13,7 @@ import type { ImageLightboxImage } from "../images/types";
 import { copyTextToClipboard } from "./clipboard";
 import type { TimelineActivityRow, TimelineItemRow, TimelineWorkRow } from "./derive";
 import { FileDiffViewer } from "./FileDiffViewer";
-import type { TimelineItem, WebSearchAction } from "./reducer";
+import type { TimelineImage, TimelineItem, WebSearchAction } from "./reducer";
 
 type TimelineRendererOptions = {
   imagePreviewUrlsByPath: Record<string, string>;
@@ -47,6 +47,7 @@ const rendererRegistry: Record<string, TimelineRenderer> = {
       item={item}
       imagePreviewUrlsByPath={options.imagePreviewUrlsByPath}
       onImageOpen={options.onImageOpen}
+      threadId={options.threadId}
     />
   ),
   reasoning_summary: (item) => <ReasoningBlock item={item} />,
@@ -501,10 +502,12 @@ function UserMessageBubble({
   imagePreviewUrlsByPath,
   item,
   onImageOpen,
+  threadId,
 }: {
   imagePreviewUrlsByPath: Record<string, string>;
   item: TimelineItem;
   onImageOpen?: (image: ImageLightboxImage) => void;
+  threadId?: string;
 }) {
   const images = item.images ?? [];
   return (
@@ -513,7 +516,7 @@ function UserMessageBubble({
         {images.length > 0 ? (
           <Box className="kodex-user-image-grid">
             {images.map((image, index) => {
-              const src = image.url ?? (image.path ? imagePreviewUrlsByPath[image.path] : undefined);
+              const src = userMessageImageSrc(image, imagePreviewUrlsByPath, threadId);
               return src ? (
                 <ImageThumbnail
                   alt=""
@@ -539,6 +542,23 @@ function UserMessageBubble({
         {item.text ? <MessageCopyToolbar align="end" text={item.text} /> : null}
       </Box>
     </Box>
+  );
+}
+
+function userMessageImageSrc(
+  image: TimelineImage,
+  imagePreviewUrlsByPath: Record<string, string>,
+  threadId?: string,
+): string | undefined {
+  if (image.url) {
+    return image.url;
+  }
+  if (!image.path) {
+    return undefined;
+  }
+  return (
+    imagePreviewUrlsByPath[image.path] ??
+    (threadId && localPreviewPath(image.path) ? filePreviewUrl(threadId, image.path) : undefined)
   );
 }
 
