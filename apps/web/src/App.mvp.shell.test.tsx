@@ -524,6 +524,9 @@ describe("MVP shell flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/archive")).toHaveLength(1);
     });
+    expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
+    expect(screen.queryByText(/select or create a thread/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /project: kodex/i })).toBeInTheDocument();
   });
 
   it("pins and unpins the selected thread from the thread actions menu", async () => {
@@ -581,6 +584,58 @@ describe("MVP shell flows", () => {
     });
     expect(screen.queryByRole("button", { name: /second thread/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+  });
+
+  it("returns to a project draft when archiving the selected thread from the selector hover action", async () => {
+    const gateway = mockGateway(
+      baseRoutes({
+        "POST /v1/threads/thread-1/archive": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    const selectedThreadButton = await screen.findByRole("button", { name: /implement frontend/i });
+    await userEvent.hover(selectedThreadButton);
+    await userEvent.click(screen.getByRole("button", { name: /archive implement frontend/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/archive")).toHaveLength(1);
+    });
+    const main = screen.getByRole("main", { name: /thread/i });
+    expect(within(main).queryByText(/select or create a thread/i)).not.toBeInTheDocument();
+    expect(within(main).getByLabelText(/message composer/i)).toBeEnabled();
+    expect(main.querySelector(".kodex-main-stack")).toHaveAttribute("data-draft-thread", "true");
+    expect(within(main).getByRole("button", { name: /project: kodex/i })).toBeInTheDocument();
+  });
+
+  it("returns to a chat draft when archiving the selected chat thread", async () => {
+    const chatThread = { ...thread, source: "chat" };
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/chats/threads": { threads: [chatThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/threads/thread-1": threadDetail(chatThread, [
+          snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "Hello from chat" })]),
+        ]),
+        "POST /v1/threads/thread-1/archive": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /thread actions/i }));
+    await clickMenuItem(/archive thread/i);
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/archive")).toHaveLength(1);
+    });
+    const main = screen.getByRole("main", { name: /thread/i });
+    expect(within(main).queryByText(/select or create a thread/i)).not.toBeInTheDocument();
+    expect(within(main).getByLabelText(/message composer/i)).toBeEnabled();
+    expect(main.querySelector(".kodex-main-stack")).toHaveAttribute("data-draft-thread", "true");
+    expect(within(main).getByRole("button", { name: /project: no project/i })).toBeInTheDocument();
   });
 
   it("shows in-progress threads in the selector action slot until archive is available", async () => {
@@ -894,7 +949,7 @@ describe("MVP shell flows", () => {
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
   });
 
-  it("clears the old active thread immediately after creating a project", async () => {
+  it("opens a draft thread immediately after creating a project", async () => {
     let resolveNewProjectThreads: (value: unknown) => void = () => undefined;
     const newProjectThreads = new Promise((resolve) => {
       resolveNewProjectThreads = resolve;
@@ -927,8 +982,9 @@ describe("MVP shell flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/projects")).toHaveLength(1);
     });
-    expect(screen.getByLabelText(/message composer/i)).toBeDisabled();
-    expect(screen.getByText(/select or create a thread/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
+    expect(screen.queryByText(/select or create a thread/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /project: scratch/i })).toBeInTheDocument();
 
     resolveNewProjectThreads({
       threads: [secondThread],

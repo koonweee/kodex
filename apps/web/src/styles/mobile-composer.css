@@ -1,0 +1,226 @@
+.kodex-composer-shell[data-inline-density="mobile"] .kodex-composer {
+  border-radius: 24px;
+  padding: 10px 10px 8px;
+}
+
+.kodex-composer-shell[data-inline-density="mobile"] .kodex-composer-toolbar,
+.kodex-mobile-composer-expanded .kodex-composer-toolbar {
+  flex-wrap: nowrap;
+}
+
+.kodex-composer-shell[data-inline-density="mobile"] .kodex-composer-toolbar-left,
+.kodex-mobile-composer-expanded .kodex-composer-toolbar-left {
+  min-width: 0;
+}
+
+.kodex-composer-shell[data-inline-density="mobile"] .kodex-composer-footer-controls,
+.kodex-mobile-composer-expanded .kodex-composer-footer-controls {
+  min-width: 0;
+}
+
+.kodex-composer-shell[data-inline-density="mobile"] .kodex-composer-control,
+.kodex-mobile-composer-expanded .kodex-composer-control {
+  max-width: 132px;
+}
+
+.kodex-composer-shell[data-inline-density="mobile"] .kodex-composer-textarea textarea {
+  min-height: 44px;
+  max-height: min(32dvh, 220px);
+  font-size: 16px;
+}
+
+.kodex-mobile-composer-expanded {
+  min-width: 0;
+  border: 0;
+  background: var(--kodex-bg-raised);
+  box-shadow: var(--kodex-shadow-strong);
+}
+
+.kodex-mobile-composer-expanded {
+  position: fixed;
+  inset: env(safe-area-inset-top) 0 0 0;
+  z-index: 30;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-width: 0;
+  border-radius: 0;
+  background: var(--kodex-bg-shell);
+  overflow: hidden;
+}
+
+.kodex-mobile-composer-expanded-header {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  min-height: 54px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--kodex-border-subtle);
+  text-align: center;
+}
+
+.kodex-mobile-composer-expanded-body {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 10px;
+  min-height: 0;
+  padding: 10px 12px calc(12px + env(safe-area-inset-bottom) + var(--kodex-mobile-keyboard-inset, 0px));
+  overflow: hidden;
+  background: var(--kodex-bg-shell);
+}
+
+.kodex-mobile-composer-expanded-body[data-skill-command-open="true"] {
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+}
+
+.kodex-mobile-composer-expanded-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.kodex-mobile-composer-expanded-main[data-skill-command-open="true"] {
+  overflow: hidden;
+  padding-bottom: 12px;
+}
+
+.kodex-mobile-composer-textarea {
+  min-width: 0;
+}
+
+.kodex-mobile-composer-textarea textarea {
+  min-height: 44px;
+  max-height: min(36dvh, 240px);
+  padding: 8px 2px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 16px;
+  line-height: 1.45;
+  overflow-y: auto;
+  resize: none;
+}
+
+.kodex-mobile-composer-expanded .kodex-mobile-composer-textarea textarea {
+  max-height: none;
+  min-height: min(38dvh, 340px);
+}
+
+.kodex-mobile-composer-expanded-main[data-skill-command-open="true"] .kodex-mobile-composer-textarea textarea {
+  min-height: clamp(96px, 22dvh, 180px);
+  max-height: clamp(120px, 28dvh, 220px);
+}
+
+.kodex-mobile-composer-textarea textarea:disabled {
+  background: transparent;
+  color: var(--input-color);
+  opacity: 1;
+  -webkit-text-fill-color: var(--input-color);
+}
+
+.kodex-mobile-composer-expanded-footer {
+  min-width: 0;
+  padding-top: 2px;
+  position: relative;
+  z-index: 1;
+}
+
+.kodex-composer-shell[data-inline-density="mobile"] .kodex-attachment-tray,
+.kodex-mobile-composer-expanded .kodex-attachment-tray[data-compact="true"] {
+  flex-wrap: nowrap;
+  gap: 6px;
+  max-width: 100%;
+  margin-bottom: 2px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.kodex-composer-shell[data-inline-density="mobile"] .kodex-attachment-thumb,
+.kodex-mobile-composer-expanded .kodex-attachment-tray[data-compact="true"] .kodex-attachment-thumb {
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+}
+
+.kodex-mobile-skill-command-list {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  max-height: min(260px, 34dvh);
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--kodex-border-subtle);
+  border-radius: 18px;
+  padding: 8px;
+  background: var(--kodex-bg-raised);
+  -webkit-overflow-scrolling: touch;
+}
+
+.kodex-mobile-composer-expanded .kodex-mobile-skill-command-list {
+  flex: 1 1 auto;
+  min-height: clamp(160px, 30dvh, 240px);
+  max-height: none;
+  margin-bottom: 2px;
+  padding-bottom: 16px;
+  position: relative;
+  scroll-padding-block: 12px;
+  z-index: 3;
+  touch-action: pan-y;
+}
+
+.kodex-mobile-skill-command-row {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 13px;
+  padding: 10px 12px;
+  background: transparent;
+  color: var(--kodex-text-primary);
+  font: inherit;
+  text-align: left;
+  touch-action: pan-y;
+  cursor: pointer;
+}
+
+.kodex-mobile-skill-command-row[aria-selected="true"],
+.kodex-mobile-skill-command-row:hover {
+  background: var(--kodex-bg-selected);
+}
+
+.kodex-mobile-skill-command-name,
+.kodex-mobile-skill-command-token {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kodex-mobile-skill-command-name {
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.kodex-mobile-skill-command-token {
+  color: var(--kodex-text-accent-soft);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.kodex-mobile-skill-command-status {
+  color: var(--kodex-text-secondary);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.kodex-mobile-skill-command-status {
+  padding: 10px 9px;
+}

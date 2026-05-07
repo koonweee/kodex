@@ -711,7 +711,7 @@ function KodexShell({
     setRouteSelectedThreadState(null);
     setUnavailableThreadId(null);
     setDraftChatThreadSelected(false);
-    setDraftThreadProjectId(null);
+    setDraftThreadProjectId(projectId);
     clearTimelineEntry();
     if (!threadsByProjectId[projectId]) {
       void loadProjectThreads(projectId);
@@ -997,22 +997,40 @@ function KodexShell({
     return null;
   }
 
-  async function handleArchiveThread(threadId = selectedThreadId) {
+  async function handleArchiveThread(threadId = selectedThreadIdRef.current) {
     if (!threadId) {
       return;
     }
+    const archivedSelectedThreadId = selectedThreadIdRef.current;
+    const shouldSelectDraftAfterArchive = threadId === archivedSelectedThreadId;
+    const draftProjectId = selectedProjectIdRef.current;
     await archiveThread(threadId);
     attachedThreadIdsRef.current.delete(threadId);
     attachingThreadIdsRef.current.delete(threadId);
     setThreadsByProjectId((current) => removeThreadFromProjects(current, threadId));
     setChatThreads((current) => removeThreadFromList(current, threadId));
     setPinnedThreads((current) => removeThreadFromList(current, threadId));
-    if (threadId === selectedThreadId) {
+    if (
+      shouldSelectDraftAfterArchive &&
+      (selectedThreadIdRef.current === archivedSelectedThreadId || selectedThreadIdRef.current === null)
+    ) {
       clearTimelineEntry();
       selectedThreadIdRef.current = null;
       setSelectedThreadId(null);
       setRouteSelectedThreadState(null);
       setUnavailableThreadId(null);
+      if (draftProjectId) {
+        setDraftChatThreadSelected(false);
+        setDraftThreadProjectId(draftProjectId);
+        if (!draftComposerEditedRef.current) {
+          void hydrateComposerDefaults(draftProjectId);
+        }
+      } else {
+        draftComposerEditedRef.current = false;
+        setDraftChatThreadSelected(true);
+        setDraftThreadProjectId(null);
+        void hydrateComposerDefaults(null);
+      }
       replaceKodexRoute({ panel: null, threadId: null });
     }
   }

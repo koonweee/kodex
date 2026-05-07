@@ -29,18 +29,16 @@ export function AttachmentTray({
             />
             {attachment.status === "uploading" ? <Box className="kodex-attachment-status">Uploading</Box> : null}
             {attachment.status === "error" ? <Box className="kodex-attachment-status">Failed</Box> : null}
-            {!compact ? (
-              <ActionIcon
-                aria-label={`Remove ${attachment.file.name}`}
-                className="kodex-attachment-remove"
-                size="xs"
-                type="button"
-                variant="filled"
-                onClick={() => onRemove(attachment.id)}
-              >
-                <X size={12} />
-              </ActionIcon>
-            ) : null}
+            <ActionIcon
+              aria-label={`Remove ${attachment.file.name}`}
+              className="kodex-attachment-remove"
+              size="xs"
+              type="button"
+              variant="filled"
+              onClick={() => onRemove(attachment.id)}
+            >
+              <X size={12} />
+            </ActionIcon>
           </Box>
         </Tooltip>
       ))}

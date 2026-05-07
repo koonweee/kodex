@@ -202,13 +202,31 @@ function skillMatchScore(skill: SkillMetadata, normalizedQuery: string): number 
   let best: number | null = null;
   for (const term of terms) {
     const index = term.indexOf(normalizedQuery);
-    if (index === -1) {
+    const fuzzyIndex = index === -1 ? fuzzySubsequenceStart(term, normalizedQuery) : null;
+    if (index === -1 && fuzzyIndex === null) {
       continue;
     }
-    const score = index + (term === skill.name.toLocaleLowerCase() ? 0 : 2);
+    const matchIndex = index === -1 ? fuzzyIndex! : index;
+    const score =
+      matchIndex +
+      (term === skill.name.toLocaleLowerCase() ? 0 : 2) +
+      (index === -1 ? 20 : 0);
     best = best === null ? score : Math.min(best, score);
   }
   return best;
+}
+
+function fuzzySubsequenceStart(term: string, query: string): number | null {
+  let queryIndex = 0;
+  let firstMatchIndex: number | null = null;
+  for (let termIndex = 0; termIndex < term.length && queryIndex < query.length; termIndex += 1) {
+    if (term[termIndex] !== query[queryIndex]) {
+      continue;
+    }
+    firstMatchIndex ??= termIndex;
+    queryIndex += 1;
+  }
+  return queryIndex === query.length ? firstMatchIndex : null;
 }
 
 function compareSkills(left: SkillMetadata, right: SkillMetadata): number {

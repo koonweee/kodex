@@ -2,7 +2,18 @@
 
 ## Status
 
-Proposed. This plan adapts the composer for mobile by keeping shared composer logic while giving phone layouts their own compact dock, focused bottom sheet, expanded compose sheet, and mobile-specific skill command sheet.
+Complete. The composer now uses shared draft, skill, attachment, submit, stop, and settings logic. Mobile non-fullscreen composition reuses the shared inline composer structure with mobile density styling, the same toolbar and underbar as desktop, and an expand affordance; fullscreen mobile composition remains a separate drafting surface with keyboard-aware sizing and a mobile skill command sheet.
+
+Implemented code:
+
+- `ComposerPanel.tsx` is the shared controller that chooses desktop or mobile at the existing `900px` shell breakpoint.
+- `InlineComposerPanel.tsx` preserves the inline composer used by both desktop and mobile, including the shared toolbar, underbar, and desktop `SkillMentionPopup`.
+- `MobileComposerPanel.tsx` owns only per-tab mobile UI state: fullscreen open/closed.
+- `MobileSkillCommandSheet.tsx` renders mobile `$` suggestions inside the composer surface.
+- `useComposerDraftState.ts` and `useComposerKeyboardViewport.ts` hold shared draft/skill behavior and mobile viewport sizing.
+- `styles/mobile-composer.css` contains mobile-only composer presentation rules.
+
+Verified with focused Vitest coverage, production build, and agent-browser desktop/mobile smoke checks. The earlier compact/focused bottom-sheet split was replaced by a single shared inline mobile composer plus explicit fullscreen expansion after design review.
 
 ## Design References
 
@@ -92,8 +103,8 @@ Add a shared composer controller layer:
 - `apps/web/src/composer/ComposerPanel.tsx`
   - Becomes the stateful controller shell that chooses desktop or mobile presentation.
   - Keeps draft state mounted while switching representations so text is not lost on rotate or resize.
-- `apps/web/src/composer/DesktopComposerPanel.tsx`
-  - Current desktop layout, moved out of `ComposerPanel.tsx`.
+- `apps/web/src/composer/InlineComposerPanel.tsx`
+  - Shared inline layout, moved out of `ComposerPanel.tsx`.
   - Keeps `SkillMentionPopup`.
 - `apps/web/src/composer/MobileComposerPanel.tsx`
   - Mobile layout coordinator.
@@ -116,7 +127,7 @@ Compact state:
   - concise permissions chip
   - concise model chip
   - send/stop icon
-- Hide context usage, branch/project underbar, and full settings labels by default.
+- Keep context usage, branch/project underbar, and settings controls in the shared inline composer instead of introducing a separate compact mobile-only toolbar.
 - Tapping the input area enters `focused`.
 - Tapping an explicit expand affordance enters `expanded`.
 
@@ -170,7 +181,7 @@ Implementation:
 
 - Move text, skill binding, active token, active index, select/delete, reset/restore, and submitted binding helpers from `ComposerPanel.tsx` into `useComposerDraftState.ts`.
 - Keep `useSkillCatalog.ts` unchanged except for any type polish needed by the new hook.
-- Keep current desktop JSX visually unchanged by rendering it through `DesktopComposerPanel.tsx`.
+- Keep current desktop JSX visually unchanged by rendering it through `InlineComposerPanel.tsx`.
 - Keep current CSS classes for desktop to reduce regression risk.
 
 Exit conditions:
@@ -347,7 +358,7 @@ Two-tab correctness:
 ## File Plan
 
 - `apps/web/src/composer/ComposerPanel.tsx`
-- `apps/web/src/composer/DesktopComposerPanel.tsx`
+- `apps/web/src/composer/InlineComposerPanel.tsx`
 - `apps/web/src/composer/MobileComposerPanel.tsx`
 - `apps/web/src/composer/MobileSkillCommandSheet.tsx`
 - `apps/web/src/composer/MobileComposerSettingsSheet.tsx`
@@ -360,14 +371,14 @@ Two-tab correctness:
 - `apps/web/src/composer/QueuedSteerCard.tsx`
 - `apps/web/src/ComposerFooterControls.tsx`
 - `apps/web/src/styles/composer.css`
-- Optional if CSS grows too large: `apps/web/src/styles/mobile-composer.css`
+- `apps/web/src/styles/mobile-composer.css`
 - `apps/web/src/App.css`
 - Focused tests under `apps/web/src/composer`
 - App-level mobile shell tests only where needed
 
-## Open Decisions
+## Decisions
 
-- Whether focused mode should open automatically on textarea focus for every phone width, or only after the user types more than one line. Recommended first pass: open on focus below the existing mobile shell breakpoint.
-- Whether expanded mode should be automatic when skill suggestions are open and available height is below a threshold. Recommended first pass: explicit expand affordance plus automatic expansion only for very long drafts.
-- Whether mobile settings should be a dedicated sheet or tabs inside expanded mode. Recommended first pass: simple sheet from focused mode, full settings section in expanded mode if needed.
-- Whether hardware keyboard arrow navigation matters on mobile. Recommended first pass: keep existing keyboard behavior because it falls out of shared logic, but optimize touch rows first.
+- Mobile non-fullscreen composition uses the shared inline composer instead of a separate compact/focused pair.
+- Expanded mode is explicit through the expand affordance.
+- Mobile settings are available through the shared inline composer controls and the same controls in the fullscreen footer toolbar.
+- Hardware keyboard arrow navigation stays shared with desktop behavior while touch rows are optimized for mobile.

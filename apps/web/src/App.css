@@ -2,6 +2,7 @@
 @import "./styles/ui.css";
 @import "./styles/shell.css";
 @import "./styles/composer.css";
+@import "./styles/mobile-composer.css";
 @import "./styles/sidebar.css";
 @import "./styles/automations.css";
 @import "./styles/approvals.css";

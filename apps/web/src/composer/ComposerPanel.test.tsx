@@ -170,6 +170,37 @@ describe("ComposerPanel", () => {
     expect(composerCss).toMatch(/\.kodex-skill-popup\s*\{[^}]*bottom:\s*calc\(100% \+ 8px\);/s);
   });
 
+  it("layers queued steer rows under the rounded composer surface", () => {
+    renderComposerPanel({
+      activeSelectedTurnId: "turn-1",
+      queuedSteerRows: [
+        {
+          id: "queue-1",
+          threadId: "thread-1",
+          input: [{ type: "text", text: "Match the composer" }],
+          options: {},
+          status: "queued",
+          priority: "normal",
+          attemptCount: 0,
+          lastError: null,
+          createdAt: "2026-05-05T00:00:00Z",
+          updatedAt: "2026-05-05T00:00:00Z",
+        },
+      ],
+    });
+
+    expect(screen.getByRole("region", { name: /queued steer messages/i })).toHaveClass("kodex-queued-steer");
+    expect(screen.getByLabelText(/message composer/i).closest(".kodex-composer")).toBeInTheDocument();
+    expect(composerCss).toMatch(
+      /\.kodex-queued-steer\s*\{[^}]*margin-bottom:\s*calc\(-1 \* var\(--kodex-radius-composer\)\);/s,
+    );
+    expect(composerCss).toMatch(/\.kodex-queued-steer\s*\{[^}]*padding-bottom:\s*var\(--kodex-radius-composer\);/s);
+    expect(composerCss).toMatch(/\.kodex-queued-steer\s*\{[^}]*border:\s*0;/s);
+    expect(composerCss).toMatch(/\.kodex-queued-steer\s*\{[^}]*background:\s*var\(--kodex-bg-raised\);/s);
+    expect(composerCss).not.toMatch(/\.kodex-queued-steer\s*\{[^}]*box-shadow:/s);
+    expect(composerCss).not.toMatch(/\.kodex-queued-steer\s*\+\s*\.kodex-composer\s*\{[^}]*border-top-left-radius:\s*0;/s);
+  });
+
   it("moves skill autocomplete selection with arrow keys", async () => {
     mockSkills([
       skillFixture({ interface: { displayName: "Alpha Skill" }, name: "alpha-skill" }),

@@ -134,6 +134,18 @@ describe("skill mention helpers", () => {
       ).map((item) => item.name),
     ).toEqual(["imagegen"]);
   });
+
+  it("matches compact skill abbreviations as fuzzy subsequences", () => {
+    expect(
+      filterSkillsForQuery(
+        [
+          skill("imagegen", { displayName: "Image Gen" }),
+          skill("review-fix", { displayName: "Review Fix" }),
+        ],
+        "img",
+      ).map((item) => item.name),
+    ).toEqual(["imagegen"]);
+  });
 });
 
 function skill(
