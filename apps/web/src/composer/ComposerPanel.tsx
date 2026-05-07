@@ -363,15 +363,6 @@ export function ComposerPanel({
           onSubmitRow={onSubmitQueuedSteer}
         />
       ) : null}
-      {skillPopupOpen ? (
-        <SkillMentionPopup
-          activeIndex={activeSkillIndex}
-          error={skillCatalog.error}
-          loading={skillCatalog.loading}
-          skills={filteredSkills}
-          onSelect={(skill) => selectSkill(filteredSkills.findIndex((item) => item.path === skill.path))}
-        />
-      ) : null}
       <Box
         component="form"
         className="kodex-composer"
@@ -389,6 +380,15 @@ export function ComposerPanel({
           )
         }
       >
+        {skillPopupOpen ? (
+          <SkillMentionPopup
+            activeIndex={activeSkillIndex}
+            error={skillCatalog.error}
+            loading={skillCatalog.loading}
+            skills={filteredSkills}
+            onSelect={(skill) => selectSkill(filteredSkills.findIndex((item) => item.path === skill.path))}
+          />
+        ) : null}
         <input
           ref={attachmentInputRef}
           aria-label={COMPOSER_TEXT.addAttachment}

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { MantineProvider } from "@mantine/core";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -8,6 +11,8 @@ import { listSkills } from "../api/client";
 import type { SkillMetadata } from "../api/client";
 import type { ComposerSettings } from "../ComposerFooterControls";
 import { ComposerPanel, type ComposerDraftControls } from "./ComposerPanel";
+
+const composerCss = readFileSync(join(process.cwd(), "src/styles/composer.css"), "utf8");
 
 vi.mock("../api/client", async (importActual) => ({
   ...(await importActual<typeof import("../api/client")>()),
@@ -148,6 +153,21 @@ describe("ComposerPanel", () => {
         },
       ],
     ]);
+  });
+
+  it("renders skill autocomplete as a composer popover outside layout flow", async () => {
+    mockSkills([skillFixture({ interface: { displayName: "Review Fix" }, name: "review-fix" })]);
+    renderComposerPanel({ isDraftThreadSelected: true, selectedThreadPresent: false });
+
+    await userEvent.type(screen.getByLabelText(/message composer/i), "$rev");
+
+    const popup = (await screen.findByRole("listbox", { name: /skill suggestions/i })).closest(
+      ".kodex-skill-popup",
+    );
+    expect(popup).not.toBeNull();
+    expect(popup?.parentElement).toHaveClass("kodex-composer");
+    expect(composerCss).toMatch(/\.kodex-skill-popup\s*\{[^}]*position:\s*absolute;/s);
+    expect(composerCss).toMatch(/\.kodex-skill-popup\s*\{[^}]*bottom:\s*calc\(100% \+ 8px\);/s);
   });
 
   it("moves skill autocomplete selection with arrow keys", async () => {

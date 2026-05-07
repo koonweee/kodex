@@ -218,15 +218,16 @@
 }
 
 .kodex-skill-popup {
-  position: relative;
-  z-index: 1;
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 4;
   min-width: 0;
-  margin-bottom: calc(-1 * var(--kodex-radius-composer));
   overflow: hidden;
-  border-bottom: 1px solid var(--kodex-border-subtle);
-  border-top-left-radius: var(--kodex-radius-composer);
-  border-top-right-radius: var(--kodex-radius-composer);
-  padding: 12px 6px calc(6px + var(--kodex-radius-composer));
+  border: 1px solid var(--kodex-border-subtle);
+  border-radius: 18px;
+  padding: 8px 6px;
   background: var(--kodex-bg-raised);
   box-shadow: var(--kodex-shadow-strong);
 }
