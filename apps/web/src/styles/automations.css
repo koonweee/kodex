@@ -171,6 +171,10 @@
     padding: 12px;
   }
 
+  .kodex-automation-table-row:last-child {
+    border-bottom: 0;
+  }
+
   .kodex-automation-table-row > td {
     display: block;
     height: auto;

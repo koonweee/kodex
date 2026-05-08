@@ -695,8 +695,10 @@
 .kodex-message-copy-button {
   width: 24px;
   height: 24px;
+  padding: 0;
   border-radius: var(--kodex-radius-sm);
   color: var(--kodex-text-muted);
+  line-height: 0;
 }
 
 .kodex-message-copy-button:hover {
