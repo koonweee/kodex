@@ -441,6 +441,7 @@
   margin-left: 5px;
 }
 
+/* Scoped composer density exceptions for Mantine inner text nodes. App-wide control chrome lives in theme.components. */
 .kodex-composer-model-control .mantine-Button-label {
   display: inline-flex;
   align-items: center;
@@ -490,7 +491,7 @@
   max-width: calc(100vw - 20px);
 }
 
-.kodex-composer-menu .mantine-Menu-itemLabel {
+.kodex-composer-menu .kodex-mantine-menu-item-label {
   min-width: 0;
   white-space: normal;
 }
@@ -528,12 +529,12 @@
   gap: 4px;
 }
 
-.mantine-Menu-dropdown .kodex-composer-fast-row,
-.mantine-Menu-dropdown .kodex-composer-fast-row:hover,
-.mantine-Menu-dropdown .kodex-composer-fast-row[data-hovered],
-.mantine-Menu-dropdown .kodex-composer-fast-row[data-active="true"],
-.mantine-Menu-dropdown .kodex-composer-fast-row[data-active="true"]:hover,
-.mantine-Menu-dropdown .kodex-composer-fast-row[data-active="true"][data-hovered] {
+.kodex-mantine-menu-dropdown .kodex-composer-fast-row,
+.kodex-mantine-menu-dropdown .kodex-composer-fast-row:hover,
+.kodex-mantine-menu-dropdown .kodex-composer-fast-row[data-hovered],
+.kodex-mantine-menu-dropdown .kodex-composer-fast-row[data-active="true"],
+.kodex-mantine-menu-dropdown .kodex-composer-fast-row[data-active="true"]:hover,
+.kodex-mantine-menu-dropdown .kodex-composer-fast-row[data-active="true"][data-hovered] {
   background: transparent !important;
   color: var(--kodex-text-secondary) !important;
   cursor: default;
@@ -701,6 +702,7 @@
     padding: 0 2px 6px 8px;
   }
 
+  /* Scoped mobile run-settings menu exceptions; default Menu chrome comes from theme.components. */
   .kodex-run-settings-menu .mantine-Menu-label {
     padding: 4px 8px 5px;
     font-size: 11px;
@@ -726,7 +728,7 @@
     gap: 5px;
   }
 
-  .mantine-Menu-dropdown .kodex-run-settings-chip {
+  .kodex-mantine-menu-dropdown .kodex-run-settings-chip {
     width: auto;
     min-height: 28px;
     border: 1px solid var(--kodex-border-subtle);
@@ -736,17 +738,17 @@
     line-height: 1;
   }
 
-  .mantine-Menu-dropdown .kodex-run-settings-chip .mantine-Menu-itemSection {
+  .kodex-mantine-menu-dropdown .kodex-run-settings-chip .kodex-mantine-menu-item-section {
     margin-inline-end: 4px;
   }
 
-  .mantine-Menu-dropdown .kodex-run-settings-chip[data-active="true"] {
+  .kodex-mantine-menu-dropdown .kodex-run-settings-chip[data-active="true"] {
     border-color: var(--kodex-border-accent-soft);
     background: var(--kodex-bg-selected);
     color: var(--kodex-text-primary);
   }
 
-  .mantine-Menu-dropdown .kodex-run-settings-chip[data-tone="danger"][data-active="true"] {
+  .kodex-mantine-menu-dropdown .kodex-run-settings-chip[data-tone="danger"][data-active="true"] {
     border-color: var(--kodex-border-danger);
     background: var(--kodex-bg-danger);
     color: var(--kodex-text-danger);
@@ -757,7 +759,7 @@
     gap: 6px;
   }
 
-  .mantine-Menu-dropdown .kodex-permission-row {
+  .kodex-mantine-menu-dropdown .kodex-permission-row {
     width: 100%;
     min-height: 48px;
     border: 1px solid var(--kodex-border-subtle);
@@ -766,17 +768,17 @@
     line-height: 1;
   }
 
-  .mantine-Menu-dropdown .kodex-permission-row .mantine-Menu-itemSection {
+  .kodex-mantine-menu-dropdown .kodex-permission-row .kodex-mantine-menu-item-section {
     margin-inline-end: 7px;
   }
 
-  .mantine-Menu-dropdown .kodex-permission-row[data-active="true"] {
+  .kodex-mantine-menu-dropdown .kodex-permission-row[data-active="true"] {
     border-color: var(--kodex-border-accent-soft);
     background: var(--kodex-bg-selected);
     color: var(--kodex-text-primary);
   }
 
-  .mantine-Menu-dropdown .kodex-permission-row[data-tone="danger"][data-active="true"] {
+  .kodex-mantine-menu-dropdown .kodex-permission-row[data-tone="danger"][data-active="true"] {
     border-color: var(--kodex-border-danger);
     background: var(--kodex-bg-danger);
     color: var(--kodex-text-danger);

@@ -1,5 +1,6 @@
 import { createTheme, type MantineColorsTuple, type MantineThemeOverride } from "@mantine/core";
 
+import { createKodexMantineComponents } from "./theme/components";
 import {
   DEFAULT_KODEX_COLOR_SCHEME_ID,
   getKodexColorSchemeDefinition,
@@ -89,8 +90,12 @@ export function createKodexMantineTheme(colorScheme: KodexColorScheme): MantineT
       red: colorScheme.mantineRed,
     },
     fontFamily: FONT_FAMILY,
+    defaultRadius: "sm",
+    cursorType: "pointer",
+    activeClassName: "",
     headings: {
       fontFamily: FONT_FAMILY,
     },
+    components: createKodexMantineComponents(),
   });
 }

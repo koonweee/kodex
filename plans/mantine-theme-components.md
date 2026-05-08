@@ -6,6 +6,10 @@ Make ordinary Mantine controls render with Kodex chrome by default, so new front
 
 This is a frontend styling-system change only. It does not change gateway APIs, OpenAPI output, app-server behavior, or shared thread state ownership.
 
+## Status
+
+Complete.
+
 ## Problem
 
 The current app has strong color-scheme tokens but weak component defaults.
@@ -310,7 +314,7 @@ Manual QA:
 
 ### Milestone 1: Component Theme Scaffold
 
-Status: Proposed
+Status: Complete
 
 Implementation:
 
@@ -328,7 +332,7 @@ Exit conditions:
 
 ### Milestone 2: Inputs, Menus, Modals, Drawers
 
-Status: Proposed
+Status: Complete
 
 Implementation:
 
@@ -344,7 +348,7 @@ Exit conditions:
 
 ### Milestone 3: Buttons, Badges, Tabs, Segmented Controls, Alerts
 
-Status: Proposed
+Status: Complete
 
 Implementation:
 
@@ -360,7 +364,7 @@ Exit conditions:
 
 ### Milestone 4: Cleanup And Guardrail
 
-Status: Proposed
+Status: Complete
 
 Implementation:
 

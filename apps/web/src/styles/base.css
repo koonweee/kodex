@@ -15,76 +15,6 @@ body {
   color: var(--kodex-text-primary);
 }
 
-.mantine-active:active {
-  transform: none;
-}
-
-.mantine-Menu-dropdown {
-  border: 1px solid var(--kodex-border-subtle);
-  border-radius: var(--kodex-radius-menu);
-  background: var(--kodex-bg-raised);
-  color: var(--kodex-text-primary);
-  box-shadow: var(--kodex-shadow-menu);
-  overflow: hidden;
-  padding: 4px;
-}
-
-.mantine-Menu-label {
-  color: var(--kodex-text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.045em;
-}
-
-.mantine-Menu-divider {
-  border-color: var(--kodex-border-subtle);
-}
-
-.mantine-Modal-content,
-.kodex-preferences-modal-content {
-  background: var(--kodex-bg-panel);
-  color: var(--kodex-text-primary);
-}
-
-.kodex-preferences-modal-content {
-  overflow: hidden;
-  border: 1px solid var(--kodex-border-subtle);
-  border-radius: var(--kodex-radius-xl);
-  box-shadow: var(--kodex-shadow-modal);
-}
-
-.mantine-Modal-header,
-.kodex-preferences-modal-header {
-  background: var(--kodex-bg-panel);
-  border-bottom: 1px solid var(--kodex-border-subtle);
-}
-
-.kodex-preferences-modal-header {
-  min-height: 44px;
-  padding: 11px 14px;
-}
-
-.mantine-Modal-close {
-  color: var(--kodex-text-secondary);
-}
-
-.mantine-Modal-close:hover {
-  background: var(--kodex-bg-button-hover);
-}
-
-.mantine-Menu-dropdown [data-menu-item] {
-  appearance: none;
-  width: 100%;
-  border: 1px solid transparent;
-  border-color: transparent;
-  border-radius: var(--kodex-radius-lg);
-  padding: 8px 10px;
-  background: transparent;
-  color: var(--kodex-text-secondary);
-  font-size: 13px;
-  text-align: left;
-}
-
 .kodex-checkbox-menu-item {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr) auto;
@@ -102,28 +32,12 @@ body {
   min-width: 0;
 }
 
-.mantine-Menu-dropdown [data-menu-item] svg {
-  color: currentColor;
-}
-
-.mantine-Menu-dropdown [data-menu-item]:hover,
-.mantine-Menu-dropdown [data-menu-item][data-hovered] {
-  background: var(--kodex-bg-button-hover);
-  color: var(--kodex-text-primary);
-}
-
-.mantine-Menu-dropdown [data-menu-item][data-active="true"],
 .kodex-composer-control[data-variant="light"],
 .kodex-list-button[data-active="true"],
 .kodex-preferences-section-button[data-active="true"],
 .kodex-scheme-option[data-active="true"] {
   background: var(--kodex-bg-selected);
   color: var(--kodex-text-primary);
-}
-
-.mantine-Menu-dropdown [data-menu-item][data-active="true"]:hover,
-.mantine-Menu-dropdown [data-menu-item][data-active="true"][data-hovered] {
-  background: var(--kodex-bg-selected-strong);
 }
 
 .kodex-shell {

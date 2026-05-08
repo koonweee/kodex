@@ -125,6 +125,19 @@ describe("App shell", () => {
     expect(within(colorSchemeGroup).getByRole("radio", { name: /paper light/i })).toHaveAttribute("aria-checked", "true");
   });
 
+  it("renders the theme workbench route without loading gateway state", async () => {
+    window.history.replaceState(null, "", "/__theme");
+
+    render(<App />);
+
+    expect(screen.getByRole("main", { name: /theme workbench/i })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: /workspace/i })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: /paper light/i }));
+    await waitFor(() => {
+      expect(document.documentElement).toHaveAttribute("data-kodex-color-scheme", "paper-light");
+    });
+  });
+
   it("moves the selected color scheme with arrow keys in preferences", async () => {
     mockGateway({
       "GET /v1/projects": { projects: [] },

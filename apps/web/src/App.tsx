@@ -61,6 +61,7 @@ import {
   writeStoredKodexColorScheme,
   type KodexColorSchemeId,
 } from "./theme";
+import { ThemeWorkbench } from "./theme/ThemeWorkbench";
 import { idleTimelineEntry, type TimelineEntry } from "./timeline/entry";
 import { useSelectedThreadTimeline } from "./timeline/useSelectedThreadTimeline";
 import {
@@ -125,9 +126,15 @@ export function App() {
     applyKodexColorScheme(document.documentElement, colorScheme);
   }, [colorScheme, colorSchemeId]);
 
+  const isThemeWorkbench = typeof window !== "undefined" && window.location.pathname === "/__theme";
+
   return (
     <MantineProvider forceColorScheme={colorScheme.mode} theme={theme}>
-      <KodexShell colorSchemeId={colorSchemeId} onColorSchemeChange={setColorSchemeId} />
+      {isThemeWorkbench ? (
+        <ThemeWorkbench colorSchemeId={colorSchemeId} onColorSchemeChange={setColorSchemeId} />
+      ) : (
+        <KodexShell colorSchemeId={colorSchemeId} onColorSchemeChange={setColorSchemeId} />
+      )}
     </MantineProvider>
   );
 }

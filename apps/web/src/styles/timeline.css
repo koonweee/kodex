@@ -664,11 +664,6 @@
   color: var(--kodex-text-primary);
 }
 
-.kodex-markdown-preview-pane .mantine-Drawer-content {
-  background: var(--kodex-bg-app);
-  color: var(--kodex-text-primary);
-}
-
 .kodex-markdown-preview-rendered {
   min-width: 0;
   overflow-wrap: anywhere;

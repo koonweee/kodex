@@ -74,16 +74,16 @@
   color: var(--kodex-text-primary);
 }
 
-.kodex-approval-action .mantine-Button-section {
+.kodex-approval-action .kodex-mantine-button-section {
   color: currentColor;
 }
 
-.kodex-approval-action .mantine-Button-inner,
-.kodex-approval-action .mantine-Button-label {
+.kodex-approval-action .kodex-mantine-button-inner,
+.kodex-approval-action .kodex-mantine-button-label {
   min-width: 0;
 }
 
-.kodex-approval-action .mantine-Button-label {
+.kodex-approval-action .kodex-mantine-button-label {
   overflow-wrap: anywhere;
   white-space: normal;
 }

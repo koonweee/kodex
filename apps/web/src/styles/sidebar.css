@@ -537,7 +537,7 @@
     opacity: 1;
   }
 
-  .kodex-project-title .mantine-Text-root,
+  .kodex-project-title .kodex-sidebar-row-label,
   .kodex-thread-list-title {
     font-size: 14px;
     line-height: 1.25;

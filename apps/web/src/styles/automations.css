@@ -141,7 +141,7 @@
 }
 
 @media (max-width: 900px) {
-  .kodex-automations-header .mantine-Button-root {
+  .kodex-automations-header .kodex-mantine-button-root {
     min-height: 44px;
   }
 
@@ -198,7 +198,7 @@
     min-height: 44px;
   }
 
-  .kodex-automation-modal .mantine-Modal-content {
+  .kodex-automation-modal .kodex-mantine-modal-content {
     display: flex;
     height: 100dvh;
     max-height: 100dvh;
@@ -206,7 +206,7 @@
     border-radius: 0;
   }
 
-  .kodex-automation-modal .mantine-Modal-body {
+  .kodex-automation-modal .kodex-mantine-modal-body {
     display: flex;
     flex: 1 1 auto;
     min-height: 0;
@@ -228,7 +228,7 @@
     flex-direction: column;
   }
 
-  .kodex-automation-modal-tabs .mantine-Tabs-list {
+  .kodex-automation-modal-tabs .kodex-mantine-tabs-list {
     flex: 0 0 auto;
   }
 
@@ -256,7 +256,7 @@
   .kodex-automation-mobile-input input,
   .kodex-automation-mobile-input textarea,
   .kodex-automation-mobile-input button,
-  .kodex-automation-prompt-editor .mantine-Tabs-tab {
+  .kodex-automation-prompt-editor .kodex-mantine-tabs-tab {
     min-height: 44px;
     font-size: 16px;
   }
@@ -282,11 +282,11 @@
     margin-bottom: var(--mantine-spacing-md);
   }
 
-  .kodex-automation-modal-prompt-section .kodex-automation-prompt-editor > .mantine-Tabs-root,
-  .kodex-automation-modal-prompt-section .kodex-automation-prompt-editor .mantine-Tabs-panel:not([style*="display: none"]),
+  .kodex-automation-modal-prompt-section .kodex-automation-prompt-editor > .kodex-mantine-tabs-root,
+  .kodex-automation-modal-prompt-section .kodex-automation-prompt-editor .kodex-mantine-tabs-panel:not([style*="display: none"]),
   .kodex-automation-modal-prompt-section .kodex-automation-prompt-textarea,
-  .kodex-automation-modal-prompt-section .kodex-automation-prompt-textarea .mantine-Textarea-wrapper,
-  .kodex-automation-modal-prompt-section .kodex-automation-prompt-textarea .mantine-Textarea-input {
+  .kodex-automation-modal-prompt-section .kodex-automation-prompt-textarea .kodex-mantine-input-wrapper,
+  .kodex-automation-modal-prompt-section .kodex-automation-prompt-textarea .kodex-mantine-input {
     display: flex;
     flex: 1 1 auto;
     min-height: 0;
@@ -309,7 +309,7 @@
     padding-bottom: calc(var(--mantine-spacing-sm) + env(safe-area-inset-bottom));
   }
 
-  .kodex-automation-modal-footer .mantine-ActionIcon-root {
+  .kodex-automation-modal-footer .kodex-mantine-action-icon-root {
     width: 44px;
     min-width: 44px;
     height: 44px;

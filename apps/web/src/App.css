@@ -1,5 +1,7 @@
 @import "./styles/base.css";
 @import "./styles/ui.css";
+@import "./styles/mantine-components.css";
+@import "./styles/theme-workbench.css";
 @import "./styles/shell.css";
 @import "./styles/composer.css";
 @import "./styles/mobile-composer.css";

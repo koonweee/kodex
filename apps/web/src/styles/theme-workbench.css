@@ -1,0 +1,65 @@
+.kodex-theme-workbench {
+  min-height: 100dvh;
+  overflow: auto;
+  padding: 24px;
+  background: var(--kodex-bg-app);
+  color: var(--kodex-text-primary);
+}
+
+.kodex-theme-workbench-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+}
+
+.kodex-theme-workbench-section {
+  min-width: 0;
+  border: 1px solid var(--kodex-border-subtle);
+  border-radius: var(--kodex-radius-md);
+  padding: 16px;
+  background: var(--kodex-bg-panel);
+}
+
+.kodex-theme-workbench-schemes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.kodex-theme-workbench-scheme {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+
+.kodex-theme-workbench-swatches {
+  display: inline-flex;
+  align-items: center;
+}
+
+.kodex-theme-workbench-swatch {
+  width: 13px;
+  height: 13px;
+  border: 1px solid var(--kodex-border-subtle);
+  border-radius: var(--kodex-radius-round);
+  box-shadow: var(--kodex-shadow-swatch);
+}
+
+.kodex-theme-workbench-swatch + .kodex-theme-workbench-swatch {
+  margin-left: -4px;
+}
+
+@media (max-width: 700px) {
+  .kodex-theme-workbench {
+    padding: 14px;
+  }
+
+  .kodex-theme-workbench-schemes {
+    justify-content: flex-start;
+  }
+}

@@ -25,6 +25,22 @@
   padding: 0;
 }
 
+.kodex-preferences-modal-content {
+  overflow: hidden;
+  border: 1px solid var(--kodex-border-subtle);
+  border-radius: var(--kodex-radius-xl);
+  background: var(--kodex-bg-panel);
+  color: var(--kodex-text-primary);
+  box-shadow: var(--kodex-shadow-modal);
+}
+
+.kodex-preferences-modal-header {
+  min-height: 44px;
+  border-bottom: 1px solid var(--kodex-border-subtle);
+  padding: 11px 14px;
+  background: var(--kodex-bg-panel);
+}
+
 .kodex-preferences-layout {
   display: grid;
   grid-template-columns: 140px minmax(0, 1fr);
