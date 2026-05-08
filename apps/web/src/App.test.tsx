@@ -337,6 +337,80 @@ describe("App shell", () => {
     }
   });
 
+  it("renders markdown preview pane content with shared markdown components", async () => {
+    vi.spyOn(window, "matchMedia").mockImplementation((query: string): MediaQueryList => ({
+      matches: query.includes("min-width: 901px"),
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
+
+    mockGateway({
+      "GET /v1/projects": {
+        projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
+      },
+      "GET /v1/threads": {
+        threads: [
+          {
+            id: "thread-1",
+            name: "Markdown QA",
+            cwd: "/home/example/kodex",
+            status: "idle",
+            source: "local",
+            preview: "",
+            rawPayload: {},
+            createdAt: 1777500000,
+            updatedAt: 1777501200,
+          },
+        ],
+        nextCursor: null,
+        backwardsCursor: null,
+        rawPayload: {},
+      },
+      "GET /v1/threads/thread-1": threadDetail(
+        {
+          id: "thread-1",
+          name: "Markdown QA",
+          cwd: "/home/example/kodex",
+          status: "idle",
+          source: "local",
+          preview: "",
+          rawPayload: {},
+          createdAt: 1777500000,
+          updatedAt: 1777501200,
+        },
+        [
+          snapshotTurn("turn-1", [
+            snapshotItem("answer-1", "agentMessage", {
+              text: "Open [rendered](/Users/example/kodex/rendered-preview.md).",
+            }),
+          ]),
+        ],
+      ),
+      "GET /v1/threads/thread-1/files/preview": new Response(
+        "# Rendered Preview\n\n```ts\nconst value = 1;\n```\n\n| Name | Value |\n| --- | --- |\n| Alpha | Beta |",
+        { headers: { "content-type": "text/markdown" } },
+      ),
+      "GET /v1/approvals": { approvals: [] },
+      "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
+    });
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("link", { name: "rendered" }));
+    const pane = await screen.findByRole("dialog", { name: /rendered-preview\.md/i });
+
+    expect(pane).toHaveClass("kodex-mantine-modal-content");
+    expect(within(pane).getByRole("radio", { name: "Preview" })).toBeChecked();
+    expect(within(pane).getByRole("button", { name: "Copy code" })).toBeInTheDocument();
+    expect(pane.querySelector(".kodex-code-block-shell")).toBeInTheDocument();
+    expect(pane.querySelector(".kodex-markdown-table-scroll")).toBeInTheDocument();
+  });
+
   it("mounts a bounded row window for large timelines", async () => {
     const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
     const scrollTo = vi.fn(function (this: HTMLElement, _options?: ScrollToOptions) {

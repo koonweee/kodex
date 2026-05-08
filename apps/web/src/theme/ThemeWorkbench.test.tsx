@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { MantineProvider } from "@mantine/core";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -5,6 +8,9 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { applyKodexColorScheme, createKodexMantineTheme, getKodexColorScheme, type KodexColorSchemeId } from "../theme";
 import { ThemeWorkbench } from "./ThemeWorkbench";
+
+const mantineComponentsCss = readFileSync(join(process.cwd(), "src/styles/mantine-components.css"), "utf8");
+const uiCss = readFileSync(join(process.cwd(), "src/styles/ui.css"), "utf8");
 
 function renderWorkbench(initialSchemeId: KodexColorSchemeId = "oled-black") {
   const initialScheme = getKodexColorScheme(initialSchemeId);
@@ -67,6 +73,26 @@ describe("ThemeWorkbench", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /open drawer/i }));
     expect(await screen.findByRole("dialog", { name: /themed drawer/i })).toHaveClass("kodex-mantine-drawer-content");
+  });
+
+  it("shows disabled shared button controls without inherited opacity washout", () => {
+    renderWorkbench();
+
+    expect(screen.getByRole("button", { name: /disabled button/i })).toHaveClass("kodex-mantine-button-root");
+    expect(screen.getByRole("button", { name: /disabled button/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /disabled action/i })).toHaveClass("kodex-mantine-action-icon-root");
+    expect(screen.getByRole("button", { name: /disabled action/i })).toBeDisabled();
+
+    expect(mantineComponentsCss).toMatch(
+      /\.kodex-mantine-button-root:is\(:disabled,\s*\[data-disabled\]\),\s*\.kodex-mantine-action-icon-root:is\(:disabled,\s*\[data-disabled\]\)\s*\{[^}]*opacity:\s*1;/s,
+    );
+    expect(uiCss).toMatch(/--kodex-bg-disabled-subtle:\s*color-mix\(in srgb,\s*var\(--kodex-text-muted\)\s*6%,\s*transparent\);/);
+    expect(mantineComponentsCss).toMatch(
+      /\.kodex-mantine-button-root\[data-variant="subtle"\]:is\(:disabled,\s*\[data-disabled\]\),\s*\.kodex-mantine-action-icon-root\[data-variant="subtle"\]:is\(:disabled,\s*\[data-disabled\]\)\s*\{[^}]*background:\s*var\(--kodex-bg-disabled-subtle\);/s,
+    );
+    expect(mantineComponentsCss).toMatch(
+      /\.kodex-mantine-button-root:is\(:disabled,\s*\[data-disabled\]\):hover,\s*\.kodex-mantine-action-icon-root:is\(:disabled,\s*\[data-disabled\]\):hover/s,
+    );
   });
 
   it("switches Kodex and Mantine color scheme attributes from the workbench", async () => {

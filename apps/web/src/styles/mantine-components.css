@@ -239,6 +239,22 @@
   background: var(--kodex-bg-selected-strong);
 }
 
+.kodex-mantine-menu-item:is([data-disabled], :disabled),
+.kodex-mantine-menu-dropdown [data-menu-item]:is([data-disabled], :disabled) {
+  background: transparent;
+  color: var(--kodex-text-disabled);
+  opacity: 1;
+  cursor: default;
+}
+
+.kodex-mantine-menu-item:is([data-disabled], :disabled):hover,
+.kodex-mantine-menu-item:is([data-disabled], :disabled)[data-hovered],
+.kodex-mantine-menu-dropdown [data-menu-item]:is([data-disabled], :disabled):hover,
+.kodex-mantine-menu-dropdown [data-menu-item]:is([data-disabled], :disabled)[data-hovered] {
+  background: transparent;
+  color: var(--kodex-text-disabled);
+}
+
 .kodex-mantine-popover-dropdown,
 .kodex-mantine-tooltip {
   border: 1px solid var(--kodex-border-subtle);
@@ -272,6 +288,9 @@
 
 .kodex-mantine-drawer-content {
   background: var(--kodex-bg-app);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .kodex-mantine-modal-header,
@@ -282,6 +301,13 @@
 
 .kodex-mantine-drawer-header {
   background: var(--kodex-bg-app);
+  flex: 0 0 auto;
+}
+
+.kodex-mantine-drawer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .kodex-mantine-modal-title,
@@ -323,6 +349,33 @@
 .kodex-mantine-action-icon-root:hover {
   background: var(--kodex-bg-button-hover);
   color: var(--kodex-text-primary);
+}
+
+.kodex-mantine-button-root:is(:disabled, [data-disabled]),
+.kodex-mantine-action-icon-root:is(:disabled, [data-disabled]) {
+  border-color: var(--kodex-border-disabled);
+  background: var(--kodex-bg-disabled-raised);
+  color: var(--kodex-text-disabled);
+  opacity: 1;
+  cursor: default;
+  box-shadow: none;
+}
+
+.kodex-mantine-button-root:is(:disabled, [data-disabled]):hover,
+.kodex-mantine-action-icon-root:is(:disabled, [data-disabled]):hover {
+  background: var(--kodex-bg-disabled-raised);
+  color: var(--kodex-text-disabled);
+}
+
+.kodex-mantine-button-root[data-variant="subtle"]:is(:disabled, [data-disabled]),
+.kodex-mantine-action-icon-root[data-variant="subtle"]:is(:disabled, [data-disabled]) {
+  border-color: transparent;
+  background: var(--kodex-bg-disabled-subtle);
+}
+
+.kodex-mantine-button-root[data-variant="subtle"]:is(:disabled, [data-disabled]):hover,
+.kodex-mantine-action-icon-root[data-variant="subtle"]:is(:disabled, [data-disabled]):hover {
+  background: var(--kodex-bg-disabled-subtle);
 }
 
 .kodex-mantine-badge-root {

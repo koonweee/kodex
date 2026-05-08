@@ -16,6 +16,10 @@
   --kodex-focus-outline: 2px solid var(--kodex-border-accent-soft);
   --kodex-focus-offset: 2px;
   --kodex-divider-subtle: color-mix(in srgb, var(--kodex-text-primary) 8%, transparent);
+  --kodex-bg-disabled-subtle: color-mix(in srgb, var(--kodex-text-muted) 6%, transparent);
+  --kodex-bg-disabled-raised: color-mix(in srgb, var(--kodex-bg-raised-muted) 68%, transparent);
+  --kodex-border-disabled: color-mix(in srgb, var(--kodex-border-subtle) 72%, transparent);
+  --kodex-text-disabled: color-mix(in srgb, var(--kodex-text-muted) 72%, var(--kodex-bg-raised));
   --kodex-shadow-menu: var(--kodex-shadow-floating);
   --kodex-shadow-modal: var(--kodex-shadow-floating);
   --kodex-shadow-swatch: inset 0 1px 2px rgb(255 255 255 / 12%);

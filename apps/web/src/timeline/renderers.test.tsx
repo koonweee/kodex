@@ -16,7 +16,7 @@ vi.mock("react-markdown", async (importOriginal) => {
   };
 });
 
-import { TimelineActivityGroupRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
+import { TimelineActivityGroupRenderer, TimelineFileChangesRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
 import type { MarkdownPreviewRequest } from "../files/types";
 import { createKodexMantineTheme, getKodexColorScheme } from "../theme";
 import type { TimelineItem } from "./reducer";
@@ -74,7 +74,7 @@ describe("timeline renderer registry", () => {
 
     expect(screen.getByText(/cargo test/i)).toBeInTheDocument();
     expect(screen.getAllByText(/file change/i).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/src\/app\.tsx/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/modified src\/app\.tsx/i)).toBeInTheDocument();
     expect(screen.getByText(/low trust/i)).toBeInTheDocument();
     expect(screen.getByText(/boom/i)).toBeInTheDocument();
     expect(screen.getByText(/future_item/i)).toBeInTheDocument();
@@ -107,7 +107,7 @@ describe("timeline renderer registry", () => {
       <MantineProvider>
         <TimelineItemRenderer
           item={item({
-            action: "update",
+            action: "Modified",
             kind: "file_change",
             output: "@@ -1 +1 @@\n-old\n+new",
             path: "timeline-rendering-feedback.md",
@@ -130,7 +130,7 @@ describe("timeline renderer registry", () => {
           showDebug
           items={[
             item({
-              action: "update",
+              action: "Modified",
               debugEvents: [
                 {
                   id: "event-1",
@@ -155,7 +155,7 @@ describe("timeline renderer registry", () => {
       </MantineProvider>,
     );
 
-    expect(screen.getByText("Changed timeline-rendering-feedback.md")).toBeInTheDocument();
+    expect(screen.getByText("Modified timeline-rendering-feedback.md")).toBeInTheDocument();
     expect(screen.queryByLabelText(/file diff for timeline-rendering-feedback\.md/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/item\/completed/i)).not.toBeInTheDocument();
 
@@ -164,6 +164,77 @@ describe("timeline renderer registry", () => {
 
     expect(screen.getByLabelText(/file diff for timeline-rendering-feedback\.md/i)).toBeInTheDocument();
     expect(screen.getByText(/item\/completed/i)).toBeInTheDocument();
+  });
+
+  it("renders aggregated file changes and expands diffs only for modified files", () => {
+    const { container } = render(
+      <MantineProvider>
+        <TimelineFileChangesRenderer
+          items={[
+            item({
+              id: "file-added",
+              action: "Added",
+              kind: "file_change",
+              path: "src/new.ts",
+              payload: {
+                item: {
+                  changes: [{ path: "src/new.ts", kind: { type: "add" }, diff: "+new file contents" }],
+                },
+              },
+            }),
+            item({
+              id: "file-deleted",
+              action: "Deleted",
+              kind: "file_change",
+              path: "src/old.ts",
+              payload: {
+                item: {
+                  changes: [{ path: "src/old.ts", kind: { type: "delete" }, diff: "-old file contents" }],
+                },
+              },
+            }),
+            item({
+              id: "file-modified",
+              action: "Modified",
+              kind: "file_change",
+              path: "src/App.tsx",
+              payload: {
+                item: {
+                  changes: [{ path: "src/App.tsx", kind: { type: "update" }, diff: "@@ -1 +1 @@\n-old\n+new" }],
+                },
+              },
+            }),
+            item({
+              id: "file-modified-again",
+              action: "Modified",
+              kind: "file_change",
+              path: "src/App.tsx",
+              payload: {
+                item: {
+                  changes: [{ path: "src/App.tsx", kind: { type: "update" }, diff: "@@ -4 +4 @@\n-before\n+after" }],
+                },
+              },
+            }),
+          ]}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("3 files changed")).toBeInTheDocument();
+    expect(screen.getByText("Added")).toBeInTheDocument();
+    expect(screen.getByText("src/new.ts")).toBeInTheDocument();
+    expect(screen.getByText("Deleted")).toBeInTheDocument();
+    expect(screen.getByText("src/old.ts")).toBeInTheDocument();
+    expect(screen.getByText("Modified")).toBeInTheDocument();
+    expect(screen.getByText("src/App.tsx")).toBeInTheDocument();
+    expect(container.querySelectorAll("details.kodex-file-change-entry")).toHaveLength(1);
+    expect(screen.queryByLabelText(/file diff for src\/new\.ts/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/file diff for src\/old\.ts/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/file diff for src\/app\.tsx/i)).not.toBeInTheDocument();
+
+    openDetails(container.querySelector("details.kodex-file-change-entry") as HTMLDetailsElement);
+
+    expect(screen.getByLabelText(/file diff for src\/app\.tsx/i)).toBeInTheDocument();
   });
 
   it("hides message headings, hides normal completed status, and keeps raw payloads out of the default view", () => {

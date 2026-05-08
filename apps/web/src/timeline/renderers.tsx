@@ -1,19 +1,18 @@
-import { Badge, Box, Code, Group, Stack, Table, Text } from "@mantine/core";
+import { Badge, Box, Code, Group, Stack, Text } from "@mantine/core";
 import { AlertTriangle, Bot, Check, ChevronRight, ClipboardList, Code2, Copy, FileDiff, Globe, ImageIcon, Info, Terminal, Wrench } from "lucide-react";
-import { Children, isValidElement, memo, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, MouseEvent, ReactNode, SyntheticEvent } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkBreaks from "remark-breaks";
-import remarkGfm from "remark-gfm";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, ReactNode, SyntheticEvent } from "react";
 
 import { filePreviewUrl } from "../api/client";
 import { cssUrl, skillIconUrlIsSvg } from "../composer/skillMentions";
 import type { MarkdownPreviewRequest } from "../files/types";
 import { ImageThumbnail } from "../images/ImageThumbnail";
 import type { ImageLightboxImage } from "../images/types";
-import { copyTextToClipboard } from "./clipboard";
-import type { TimelineActivityRow, TimelineItemRow, TimelineWorkRow } from "./derive";
+import { MarkdownContent } from "../markdown/MarkdownContent";
+import { copyTextToClipboard } from "../shared/clipboard";
+import type { TimelineActivityRow, TimelineFileChangesRow, TimelineItemRow, TimelineWorkRow } from "./derive";
 import { FileDiffViewer } from "./FileDiffViewer";
+import { fileChangeActionIsModified, fileChangeActionLabel, fileChangeEntriesFromTimelineItem, type FileChangeEntry } from "./presentationFile";
 import type { TimelineImage, TimelineItem, WebSearchAction } from "./reducer";
 
 type TimelineRendererOptions = {
@@ -106,173 +105,6 @@ const labels: Record<string, string> = {
   error: "Error",
   debug_event: "Debug event",
 };
-
-const assistantMarkdownRemarkPlugins = [remarkGfm, remarkBreaks];
-
-function assistantMarkdownComponents(
-  threadId?: string,
-  onImageOpen?: (image: ImageLightboxImage) => void,
-  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void,
-): Components {
-  return {
-    a: ({ children, href, title }) => {
-      const imagePreview = localImagePreviewHref(threadId, href);
-      const markdownPreview = localMarkdownPreviewHref(threadId, href);
-      if (imagePreview) {
-        return (
-          <a
-            href={imagePreview.href}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(event) => {
-              if (!onImageOpen || event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-                return;
-              }
-              event.preventDefault();
-              onImageOpen({ alt: "", src: imagePreview.href, title: title ?? imagePreview.path });
-            }}
-          >
-            {children}
-          </a>
-        );
-      }
-      return (
-        <a
-          href={markdownPreview?.href ?? href}
-          target="_blank"
-          rel="noreferrer"
-          download={onMarkdownOpen ? undefined : markdownPreview?.download}
-          onClick={(event) => {
-            if (!markdownPreview || !onMarkdownOpen || shouldUseNativeLinkClick(event)) {
-              return;
-            }
-            event.preventDefault();
-            onMarkdownOpen({
-              fragment: markdownPreview.fragment,
-              href: markdownPreview.href,
-              column: markdownPreview.column,
-              line: markdownPreview.line,
-              path: markdownPreview.path,
-              title: title ?? markdownPreview.title,
-            });
-          }}
-        >
-          {children}
-        </a>
-      );
-    },
-    code: ({ children, className }) => {
-      const isBlock = Boolean(className) || String(children).includes("\n");
-      return isBlock ? (
-        <AssistantCodeBlock>{children}</AssistantCodeBlock>
-      ) : (
-        <Code className="kodex-assistant-inline-code">{children}</Code>
-      );
-    },
-    p: ({ children }) => (
-      <Text component="p" size="sm" className="kodex-assistant-markdown-paragraph">
-        {children}
-      </Text>
-    ),
-    pre: ({ children }) => <>{children}</>,
-    table: ({ children }) => (
-      <Table.ScrollContainer className="kodex-markdown-table-scroll" minWidth="100%" type="native">
-        <Table horizontalSpacing="sm" verticalSpacing="xs" withRowBorders>
-          {children}
-        </Table>
-      </Table.ScrollContainer>
-    ),
-    tbody: ({ children }) => <Table.Tbody>{children}</Table.Tbody>,
-    td: ({ align, children, node: _node, style, ...props }) => (
-      <Table.Td {...props} style={markdownTableCellStyle(align, style)}>
-        {children}
-      </Table.Td>
-    ),
-    tfoot: ({ children }) => <Table.Tfoot>{children}</Table.Tfoot>,
-    th: ({ align, children, node: _node, style, ...props }) => (
-      <Table.Th {...props} style={markdownTableCellStyle(align, style)}>
-        {children}
-      </Table.Th>
-    ),
-    thead: ({ children }) => <Table.Thead>{children}</Table.Thead>,
-    tr: ({ children }) => <Table.Tr>{children}</Table.Tr>,
-  };
-}
-
-function markdownTableCellStyle(
-  align: "center" | "char" | "justify" | "left" | "right" | undefined,
-  style?: CSSProperties,
-): CSSProperties | undefined {
-  if (!align || align === "char" || align === "justify") {
-    return style;
-  }
-  return { ...style, textAlign: align };
-}
-
-function AssistantCodeBlock({ children }: { children: ReactNode }) {
-  const [copied, setCopied] = useState(false);
-  const resetTimerRef = useRef<number | null>(null);
-  const copyText = useMemo(() => codeBlockClipboardText(children), [children]);
-
-  useEffect(() => {
-    return () => {
-      if (resetTimerRef.current !== null) {
-        window.clearTimeout(resetTimerRef.current);
-      }
-    };
-  }, []);
-
-  async function handleCopy() {
-    const copied = await copyTextToClipboard(copyText);
-    if (!copied) {
-      return;
-    }
-    setCopied(true);
-    if (resetTimerRef.current !== null) {
-      window.clearTimeout(resetTimerRef.current);
-    }
-    resetTimerRef.current = window.setTimeout(() => {
-      setCopied(false);
-      resetTimerRef.current = null;
-    }, 1_300);
-  }
-
-  return (
-    <Box className="kodex-code-block-shell">
-      <Code block className="kodex-timeline-code">
-        {children}
-      </Code>
-      <button
-        aria-label={copied ? "Copied code" : "Copy code"}
-        className="kodex-ui-button kodex-ui-icon-button kodex-code-copy-button"
-        onClick={handleCopy}
-        title={copied ? "Copied code" : "Copy code"}
-        type="button"
-      >
-        {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
-      </button>
-    </Box>
-  );
-}
-
-function codeBlockClipboardText(children: ReactNode): string {
-  const text = reactNodeText(children);
-  return text.endsWith("\n") ? text.slice(0, -1) : text;
-}
-
-function reactNodeText(children: ReactNode): string {
-  return Children.toArray(children)
-    .map((child) => {
-      if (typeof child === "string" || typeof child === "number") {
-        return String(child);
-      }
-      if (isValidElement<{ children?: ReactNode }>(child)) {
-        return reactNodeText(child.props.children);
-      }
-      return "";
-    })
-    .join("");
-}
 
 type TimelineItemRendererProps = {
   item: TimelineItem;
@@ -372,6 +204,55 @@ function TimelineActivityGroupRendererImpl({
 export const TimelineActivityGroupRenderer = memo(TimelineActivityGroupRendererImpl);
 TimelineActivityGroupRenderer.displayName = "TimelineActivityGroupRenderer";
 
+type TimelineFileChangesRendererProps = {
+  items: TimelineItem[];
+  showDebug?: boolean;
+};
+
+function TimelineFileChangesRendererImpl({ items, showDebug = false }: TimelineFileChangesRendererProps) {
+  const entries = fileChangeEntriesForItems(items);
+  if (entries.length === 0) {
+    return null;
+  }
+  const additions = entries.reduce((sum, entry) => sum + entry.additions, 0);
+  const deletions = entries.reduce((sum, entry) => sum + entry.deletions, 0);
+  return (
+    <Box className="kodex-file-changes-panel">
+      <Group gap="xs" wrap="nowrap" className="kodex-file-changes-heading">
+        <FileDiff size={15} />
+        <Text size="sm" fw={700} className="kodex-file-changes-title">
+          {entries.length === 1 ? "1 file changed" : `${entries.length} files changed`}
+        </Text>
+        {additions > 0 ? (
+          <Text size="sm" className="kodex-file-change-count" data-tone="success">
+            +{additions}
+          </Text>
+        ) : null}
+        {deletions > 0 ? (
+          <Text size="sm" className="kodex-file-change-count" data-tone="danger">
+            -{deletions}
+          </Text>
+        ) : null}
+      </Group>
+      <Stack gap={0} className="kodex-file-change-table">
+        {entries.map((entry) => (
+          <FileChangeEntryRow entry={entry} key={`${entry.itemId ?? "file"}-${entry.path}-${entry.action}`} />
+        ))}
+      </Stack>
+      {showDebug ? (
+        <Stack gap={6} mt={8}>
+          {items.map((item) => (
+            <DebugDisclosure item={item} key={item.id} />
+          ))}
+        </Stack>
+      ) : null}
+    </Box>
+  );
+}
+
+export const TimelineFileChangesRenderer = memo(TimelineFileChangesRendererImpl);
+TimelineFileChangesRenderer.displayName = "TimelineFileChangesRenderer";
+
 type TimelineWorkRowRendererProps = {
   imagePreviewUrlsByPath: Record<string, string>;
   onImageOpen?: (image: ImageLightboxImage) => void;
@@ -460,7 +341,7 @@ function CollapsedWorkRowRenderer({
   imagePreviewUrlsByPath: Record<string, string>;
   onImageOpen?: (image: ImageLightboxImage) => void;
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
-  row: TimelineItemRow | TimelineActivityRow;
+  row: TimelineItemRow | TimelineActivityRow | TimelineFileChangesRow;
   showDebug: boolean;
   threadId?: string;
 }) {
@@ -475,6 +356,9 @@ function CollapsedWorkRowRenderer({
         threadId={threadId}
       />
     );
+  }
+  if (row.type === "file_changes") {
+    return <TimelineFileChangesRenderer items={row.items} showDebug={showDebug} />;
   }
   return (
     <TimelineItemRenderer
@@ -795,17 +679,15 @@ const AssistantMessageMarkdown = memo(
     text: string;
     threadId?: string;
   }) {
-    const components = useMemo(
-      () => assistantMarkdownComponents(threadId, onImageOpen, onMarkdownOpen),
-      [onImageOpen, onMarkdownOpen, threadId],
-    );
     return (
       <Box className="kodex-assistant-message-stack">
-        <Box className="kodex-assistant-markdown">
-          <ReactMarkdown remarkPlugins={assistantMarkdownRemarkPlugins} skipHtml components={components}>
-            {text}
-          </ReactMarkdown>
-        </Box>
+        <MarkdownContent
+          className="kodex-assistant-markdown"
+          onImageOpen={onImageOpen}
+          onMarkdownOpen={onMarkdownOpen}
+          text={text}
+          threadId={threadId}
+        />
         {isFinalAssistantMessage(item) ? <MessageCopyToolbar align="start" text={text} /> : null}
       </Box>
     );
@@ -888,6 +770,82 @@ function WebSearchBlock({ actions }: { actions: WebSearchAction[] }) {
         ))}
       </Stack>
     </details>
+  );
+}
+
+function fileChangeEntriesForItems(items: TimelineItem[]): FileChangeEntry[] {
+  const entriesByPath = new Map<string, FileChangeEntry>();
+  for (const entry of items.flatMap(fileChangeEntriesFromTimelineItem)) {
+    if (!entry.path) {
+      continue;
+    }
+    const existing = entriesByPath.get(entry.path);
+    if (!existing) {
+      entriesByPath.set(entry.path, entry);
+      continue;
+    }
+    entriesByPath.set(entry.path, {
+      ...existing,
+      action: fileChangeActionLabel(`${existing.action}, ${entry.action}`),
+      additions: existing.additions + entry.additions,
+      deletions: existing.deletions + entry.deletions,
+      diff: [fileChangeDisplayDiff(existing), fileChangeDisplayDiff(entry)].filter(Boolean).join("\n"),
+    });
+  }
+  return [...entriesByPath.values()];
+}
+
+function fileChangeDisplayDiff(entry: FileChangeEntry): string {
+  return fileChangeActionIsModified(entry.action) ? entry.diff : "";
+}
+
+function FileChangeEntryRow({ entry }: { entry: FileChangeEntry }) {
+  const isModified = fileChangeActionIsModified(entry.action);
+  const [isOpen, setIsOpen] = useState(false);
+  const handleToggle = (event: SyntheticEvent<HTMLDetailsElement>) => {
+    setIsOpen(event.currentTarget.open);
+  };
+  const summary = <FileChangeEntrySummary entry={entry} />;
+
+  if (!isModified || !entry.diff) {
+    return <Box className="kodex-file-change-row">{summary}</Box>;
+  }
+
+  return (
+    <details className="kodex-file-change-row kodex-file-change-entry" onToggle={handleToggle}>
+      <summary>
+        {summary}
+        <ChevronRight size={16} className="kodex-file-change-caret" aria-hidden="true" />
+      </summary>
+      {isOpen ? (
+        <Box className="kodex-file-change-diff">
+          <FileDiffViewer diff={entry.diff} path={entry.path} />
+        </Box>
+      ) : null}
+    </details>
+  );
+}
+
+function FileChangeEntrySummary({ entry }: { entry: FileChangeEntry }) {
+  return (
+    <Group gap="xs" wrap="nowrap" className="kodex-file-change-summary">
+      <Text size="sm" className="kodex-file-change-action">
+        {entry.action || "Modified"}
+      </Text>
+      <Text size="sm" className="kodex-file-change-path" title={entry.path}>
+        {entry.path}
+      </Text>
+      {entry.additions > 0 ? (
+        <Text size="sm" className="kodex-file-change-count" data-tone="success">
+          +{entry.additions}
+        </Text>
+      ) : null}
+      {entry.deletions > 0 ? (
+        <Text size="sm" className="kodex-file-change-count" data-tone="danger">
+          -{entry.deletions}
+        </Text>
+      ) : null}
+    </Group>
   );
 }
 
@@ -994,12 +952,12 @@ function CommandBlock({ item }: { item: TimelineItem }) {
 
 function FileChangeBlock({ item }: { item: TimelineItem }) {
   const path = item.path || payloadValue(item.payload, "path");
-  if (item.output) {
+  if (item.output && fileChangeActionIsModified(item.action)) {
     return <FileDiffViewer diff={item.output} path={path || undefined} />;
   }
   return (
     <Stack gap={6} className="kodex-file-change-block">
-      <Text size="sm">File change</Text>
+      <Text size="sm">{activityItemSummary(item)}</Text>
     </Stack>
   );
 }
@@ -1125,13 +1083,13 @@ function CollabAgentMarkdownPreview({
   text: string;
   threadId?: string;
 }) {
-  const components = useMemo(() => assistantMarkdownComponents(threadId, undefined, onMarkdownOpen), [onMarkdownOpen, threadId]);
   return (
-    <Box className="kodex-collab-agent-markdown kodex-assistant-markdown">
-      <ReactMarkdown remarkPlugins={assistantMarkdownRemarkPlugins} skipHtml components={components}>
-        {text}
-      </ReactMarkdown>
-    </Box>
+    <MarkdownContent
+      className="kodex-collab-agent-markdown kodex-assistant-markdown"
+      onMarkdownOpen={onMarkdownOpen}
+      text={text}
+      threadId={threadId}
+    />
   );
 }
 
@@ -1282,112 +1240,8 @@ function localPreviewPath(path?: string): string | null {
   return path && isLocalAbsolutePath(path) ? path : null;
 }
 
-function localMarkdownPreviewHref(
-  threadId?: string,
-  href?: string,
-): {
-  column?: number;
-  download: string;
-  fragment: string;
-  href: string;
-  line?: number;
-  path: string;
-  title: string;
-} | null {
-  const target = href ? localMarkdownPreviewTarget(href) : null;
-  if (!threadId || !target) {
-    return null;
-  }
-  const download = markdownFileName(target.path);
-  return {
-    column: target.column,
-    download,
-    fragment: target.fragment,
-    href: `${filePreviewUrl(threadId, target.path)}${target.fragment}`,
-    line: target.line,
-    path: target.path,
-    title: markdownLocationTitle(download, target.line, target.column),
-  };
-}
-
-function localImagePreviewHref(threadId?: string, href?: string): { href: string; path: string } | null {
-  const target = href ? localImagePreviewTarget(href) : null;
-  if (!threadId || !target) {
-    return null;
-  }
-  return {
-    href: filePreviewUrl(threadId, target.path),
-    path: target.path,
-  };
-}
-
-function localMarkdownPreviewTarget(href: string): { column?: number; fragment: string; line?: number; path: string } | null {
-  const { fragment, path } = localFilePreviewTarget(href);
-  const target = localMarkdownPathWithLocation(path);
-  if (!target) {
-    return null;
-  }
-  return { ...target, fragment };
-}
-
-function localImagePreviewTarget(href: string): { path: string } | null {
-  const { path } = localFilePreviewTarget(href);
-  if (!isLocalImagePath(path)) {
-    return null;
-  }
-  return { path };
-}
-
-function localFilePreviewTarget(href: string): { fragment: string; path: string } {
-  const hashIndex = href.indexOf("#");
-  const pathWithQuery = hashIndex >= 0 ? href.slice(0, hashIndex) : href;
-  const fragment = hashIndex >= 0 ? href.slice(hashIndex) : "";
-  const queryIndex = pathWithQuery.indexOf("?");
-  const path = queryIndex >= 0 ? pathWithQuery.slice(0, queryIndex) : pathWithQuery;
-  return { fragment, path };
-}
-
-function isLocalMarkdownPath(path: string): boolean {
-  return isLocalAbsolutePath(path) && /\.(?:md|markdown)$/i.test(path);
-}
-
-function localMarkdownPathWithLocation(path: string): { column?: number; line?: number; path: string } | null {
-  if (isLocalMarkdownPath(path)) {
-    return { path };
-  }
-  const match = path.match(/^(.+\.(?:md|markdown)):([1-9]\d*)(?::([1-9]\d*))?$/i);
-  if (!match || !isLocalMarkdownPath(match[1])) {
-    return null;
-  }
-  return {
-    column: match[3] ? Number(match[3]) : undefined,
-    line: Number(match[2]),
-    path: match[1],
-  };
-}
-
-function isLocalImagePath(path: string): boolean {
-  return isLocalAbsolutePath(path) && /\.(?:png|jpe?g|gif|webp)$/i.test(path);
-}
-
 function isLocalAbsolutePath(path: string): boolean {
   return /^(?:\/(?!\/)|[A-Za-z]:[\\/])/.test(path);
-}
-
-function markdownFileName(path: string): string {
-  const parts = path.split(/[\\/]/);
-  return parts[parts.length - 1] || "preview.md";
-}
-
-function markdownLocationTitle(fileName: string, line?: number, column?: number): string {
-  if (!line) {
-    return fileName;
-  }
-  return column ? `${fileName}:${line}:${column}` : `${fileName}:${line}`;
-}
-
-function shouldUseNativeLinkClick(event: MouseEvent<HTMLAnchorElement>) {
-  return event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0;
 }
 
 function StatusMarker({ item }: { item: TimelineItem }) {
@@ -1503,7 +1357,8 @@ function commandSummary(item: TimelineItem): string {
 function activityItemSummary(item: TimelineItem): string {
   if (item.kind === "file_change") {
     const path = item.path || payloadValue(item.payload, "path");
-    return path ? `Changed ${path}` : "Changed files";
+    const action = fileChangeActionIsModified(item.action) ? "Modified" : item.action || "Modified";
+    return path ? `${action} ${path}` : `${action} files`;
   }
   if (item.kind === "web_search_group") {
     const count = item.actions?.length ?? 0;

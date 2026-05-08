@@ -14,7 +14,7 @@ import {
   getUnanchoredApprovals,
   type TimelineRow,
 } from "./derive";
-import { TimelineActivityGroupRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
+import { TimelineActivityGroupRenderer, TimelineFileChangesRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
 import type { TimelineState } from "./reducer";
 
 const EMPTY_APPROVALS: Approval[] = [];
@@ -361,6 +361,8 @@ const TimelineRowView = memo(function TimelineRowView({
           showDebug={showDebug}
           threadId={threadId}
         />
+      ) : row.type === "file_changes" ? (
+        <TimelineFileChangesRenderer items={row.items} showDebug={showDebug} />
       ) : (
         <TimelineItemRenderer
           item={row.item}

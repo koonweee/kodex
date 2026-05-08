@@ -1,11 +1,10 @@
-import { Box, Drawer, Group, Loader, SegmentedControl, Stack, Text } from "@mantine/core";
+import { Box, Drawer, Group, Loader, Modal, SegmentedControl, Stack, Text } from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 import { FileText } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkBreaks from "remark-breaks";
-import remarkGfm from "remark-gfm";
 
 import { fetchThreadFilePreview } from "../api/client";
+import { MarkdownContent } from "../markdown/MarkdownContent";
 import type { MarkdownPreviewRequest } from "./types";
 
 type MarkdownPreviewPaneProps = {
@@ -14,13 +13,12 @@ type MarkdownPreviewPaneProps = {
   threadId?: string;
 };
 
-const markdownPreviewPlugins = [remarkGfm, remarkBreaks];
-
 export function MarkdownPreviewPane({ onClose, preview, threadId }: MarkdownPreviewPaneProps) {
   const [mode, setMode] = useState<"preview" | "source">("preview");
   const [content, setContent] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const isDesktopPreview = useMediaQuery("(min-width: 901px)", true);
   const title =
     preview?.title ||
     (preview?.path
@@ -111,29 +109,25 @@ export function MarkdownPreviewPane({ onClose, preview, threadId }: MarkdownPrev
       );
     }
     return (
-      <Box className="kodex-markdown-preview-rendered">
-        <ReactMarkdown remarkPlugins={markdownPreviewPlugins}>{content || "_Empty Markdown file_"}</ReactMarkdown>
-      </Box>
+      <MarkdownContent
+        className="kodex-markdown-preview-rendered"
+        text={content || "_Empty Markdown file_"}
+        threadId={threadId}
+      />
     );
   }, [content, error, loading, mode, preview?.line, setTargetLineRef, threadId]);
 
-  return (
-    <Drawer
-      opened={opened}
-      onClose={onClose}
-      position="right"
-      size="lg"
-      title={
-        <Group gap="xs" wrap="nowrap">
-          <FileText size={17} aria-hidden="true" />
-          <Text fw={700} size="sm">
-            {title}
-          </Text>
-        </Group>
-      }
-      className="kodex-markdown-preview-pane"
-    >
-      <Stack gap="sm">
+  const titleNode = (
+    <Group gap="xs" wrap="nowrap">
+      <FileText size={17} aria-hidden="true" />
+      <Text fw={700} size="sm">
+        {title}
+      </Text>
+    </Group>
+  );
+  const paneContent = (
+    <Stack gap="sm" className="kodex-markdown-preview-layout">
+      <Stack gap="xs" className="kodex-markdown-preview-toolbar">
         <Text size="xs" c="dimmed" className="kodex-timeline-inline-row">
           {pathLabel}
         </Text>
@@ -146,8 +140,29 @@ export function MarkdownPreviewPane({ onClose, preview, threadId }: MarkdownPrev
             { label: "Source", value: "source" },
           ]}
         />
-        {body}
       </Stack>
+      {body}
+    </Stack>
+  );
+
+  if (isDesktopPreview) {
+    return (
+      <Modal
+        centered
+        className="kodex-markdown-preview-pane"
+        opened={opened}
+        onClose={onClose}
+        size="min(1440px, calc(100vw - 32px))"
+        title={titleNode}
+      >
+        {paneContent}
+      </Modal>
+    );
+  }
+
+  return (
+    <Drawer opened={opened} onClose={onClose} position="right" size="lg" title={titleNode} className="kodex-markdown-preview-pane">
+      {paneContent}
     </Drawer>
   );
 }

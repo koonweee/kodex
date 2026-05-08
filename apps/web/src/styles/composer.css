@@ -435,6 +435,12 @@
   margin-left: 5px;
 }
 
+.kodex-composer-control:is(:disabled, [data-disabled]) .kodex-composer-model-name,
+.kodex-composer-control:is(:disabled, [data-disabled]) .kodex-composer-model-effort {
+  color: currentColor;
+  opacity: 1;
+}
+
 /* Scoped composer density exceptions for Mantine inner text nodes. App-wide control chrome lives in theme.components. */
 .kodex-composer-model-control .mantine-Button-label {
   display: inline-flex;

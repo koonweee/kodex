@@ -262,6 +262,9 @@ export function ThemeWorkbench({
                 <Button variant="subtle">Subtle</Button>
                 <Button variant="light">Light</Button>
                 <Button variant="filled">Filled</Button>
+                <Button disabled variant="subtle">
+                  Disabled button
+                </Button>
                 <Button color="red" variant="light">
                   Danger
                 </Button>
@@ -272,6 +275,9 @@ export function ThemeWorkbench({
                 </ActionIcon>
                 <ActionIcon aria-label="Filled action" variant="filled">
                   <Check size={17} />
+                </ActionIcon>
+                <ActionIcon aria-label="Disabled action" disabled>
+                  <Settings size={17} />
                 </ActionIcon>
               </Group>
               <Group gap="xs">

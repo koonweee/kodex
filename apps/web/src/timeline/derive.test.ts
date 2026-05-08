@@ -12,7 +12,7 @@ describe("timeline derivation", () => {
   it("derives large timeline rows in sequence order across messages, activity, and debug items", () => {
     const timeline = timelineState({
       items: [
-        timelineItem({ id: "answer-1", kind: "assistant_message", seq: 8, text: "Done." }),
+        timelineItem({ id: "answer-1", kind: "assistant_message", messagePhase: "final_answer", seq: 8, text: "Done." }),
         timelineItem({ id: "user-1", kind: "user_message", seq: 1, text: "Please inspect this." }),
         timelineItem({ id: "cmd-1", kind: "command_execution", seq: 4, command: "rg timeline" }),
         timelineItem({ id: "file-1", kind: "file_change", seq: 5, path: "apps/web/src/App.tsx" }),
@@ -36,12 +36,18 @@ describe("timeline derivation", () => {
       "activity-web-search-turn-1",
       "item-debug-hidden-1",
       "item-warning-1",
+      "file-changes-turn-turn-1",
       "item-answer-1",
     ]);
-    expect(rows.map((row) => row.type)).toEqual(["item", "item", "activity", "item", "item", "item"]);
+    expect(rows.map((row) => row.type)).toEqual(["item", "item", "activity", "item", "item", "file_changes", "item"]);
     expect(rows[2]).toMatchObject({
       type: "activity",
-      items: [{ id: "web-search-turn-1" }, { id: "cmd-1" }, { id: "file-1" }],
+      items: [{ id: "web-search-turn-1" }, { id: "cmd-1" }],
+      turnKey: "turn-turn-1",
+    });
+    expect(rows[5]).toMatchObject({
+      type: "file_changes",
+      items: [{ id: "file-1" }],
       turnKey: "turn-turn-1",
     });
   });
@@ -88,14 +94,14 @@ describe("timeline derivation", () => {
     ]);
 
     const activityRow = rows.find((row) => row.type === "activity");
+    const fileChangesRow = rows.find((row) => row.type === "file_changes");
     const answerRow = rows.find((row) => row.type === "item" && row.item.id === "answer-1");
 
     expect(activityRow).toBeDefined();
+    expect(fileChangesRow).toBeDefined();
     expect(answerRow).toBeDefined();
-    expect(getTimelineRowApprovals(activityRow!, indexed).map((item) => item.id)).toEqual([
-      "approval-command",
-      "approval-file",
-    ]);
+    expect(getTimelineRowApprovals(activityRow!, indexed).map((item) => item.id)).toEqual(["approval-command"]);
+    expect(getTimelineRowApprovals(fileChangesRow!, indexed).map((item) => item.id)).toEqual(["approval-file"]);
     expect(getTimelineRowApprovals(answerRow!, indexed).map((item) => item.id)).toEqual(["approval-answer"]);
     expect(getUnanchoredApprovals(rows, indexed).map((item) => item.id)).toEqual([
       "approval-unanchored",
@@ -160,7 +166,7 @@ describe("timeline derivation", () => {
         turns: [
           {
             turnId: "turn-1",
-            itemIds: ["user-1", "reasoning-1", "cmd-1", "answer-1"],
+            itemIds: ["user-1", "reasoning-1", "cmd-1", "file-1", "answer-1"],
             status: "completed",
             startedAtMs: 1_000,
             completedAtMs: 6_000,
@@ -170,11 +176,12 @@ describe("timeline derivation", () => {
           timelineItem({ id: "user-1", kind: "user_message", seq: 1, text: "Inspect this." }),
           timelineItem({ id: "reasoning-1", kind: "reasoning_summary", seq: 2, summary: "Need context." }),
           timelineItem({ id: "cmd-1", kind: "command_execution", seq: 3, command: "rg issue" }),
+          timelineItem({ id: "file-1", kind: "file_change", seq: 4, path: "src/App.tsx" }),
           timelineItem({
             id: "answer-1",
             kind: "assistant_message",
             messagePhase: "final_answer",
-            seq: 4,
+            seq: 5,
             text: "Done.",
           }),
         ],
@@ -190,9 +197,50 @@ describe("timeline derivation", () => {
       collapsedRows: [
         { type: "item", item: { id: "reasoning-1" } },
         { type: "activity", items: [{ id: "cmd-1" }] },
+        { type: "file_changes", items: [{ id: "file-1" }] },
       ],
     });
     expect(rows[2]).not.toHaveProperty("dividerBefore");
+  });
+
+  it("aggregates interleaved file changes into one row before the final answer", () => {
+    const rows = deriveTimelineRows(
+      timelineState({
+        turns: [
+          {
+            turnId: "turn-1",
+            itemIds: ["user-1", "file-1", "assistant-progress-1", "file-2", "assistant-progress-2", "answer-1"],
+            status: "completed",
+            startedAtMs: 1_000,
+            completedAtMs: 6_000,
+          },
+        ],
+        items: [
+          timelineItem({ id: "user-1", kind: "user_message", seq: 1, text: "Inspect this." }),
+          timelineItem({ id: "file-1", kind: "file_change", seq: 2, path: "src/App.tsx" }),
+          timelineItem({ id: "assistant-progress-1", kind: "assistant_message", seq: 3, text: "I am checking it." }),
+          timelineItem({ id: "file-2", kind: "file_change", seq: 4, path: "src/App.test.tsx" }),
+          timelineItem({ id: "assistant-progress-2", kind: "assistant_message", seq: 5, text: "Still working." }),
+          timelineItem({
+            id: "answer-1",
+            kind: "assistant_message",
+            messagePhase: "final_answer",
+            seq: 6,
+            text: "Done.",
+          }),
+        ],
+      }),
+    );
+
+    expect(rows.map((row) => row.key)).toEqual(["item-user-1", "work-turn-1", "item-answer-1"]);
+    expect(rows[1]).toMatchObject({
+      type: "work",
+      collapsedRows: [
+        { type: "item", item: { id: "assistant-progress-1" } },
+        { type: "item", item: { id: "assistant-progress-2" } },
+        { type: "file_changes", items: [{ id: "file-1" }, { id: "file-2" }] },
+      ],
+    });
   });
 
   it("keeps generated images visible outside completed turn work", () => {
@@ -335,14 +383,14 @@ describe("timeline derivation", () => {
       timelineState({
         items: [
           timelineItem({ id: "cmd-1", kind: "command_execution", seq: 1 }),
-          timelineItem({ id: "file-1", kind: "file_change", seq: 2 }),
+          timelineItem({ id: "web-1", kind: "web_search_group", seq: 2 }),
         ],
       }),
     );
 
     expect(initialRows[0].key).toBe("activity-cmd-1");
     expect(grownRows[0].key).toBe(initialRows[0].key);
-    expect(grownRows[0]).toMatchObject({ type: "activity", items: [{ id: "cmd-1" }, { id: "file-1" }] });
+    expect(grownRows[0]).toMatchObject({ type: "activity", items: [{ id: "cmd-1" }, { id: "web-1" }] });
 
     const chunkedRows = deriveTimelineRows(
       timelineState({

@@ -145,6 +145,9 @@ describe("MVP composer settings flows", () => {
     expect(appCss).toMatch(/\.kodex-composer-model-control\s*\{[^}]*width:\s*fit-content;/s);
     expect(appCss).toMatch(/\.kodex-composer-model-control\s*\{[^}]*max-width:\s*none;/s);
     expect(appCss).toMatch(/\.kodex-composer-control\s+\.mantine-Button-label\s*\{[^}]*overflow:\s*visible;/s);
+    expect(appCss).toMatch(
+      /\.kodex-composer-control:is\(:disabled,\s*\[data-disabled\]\)\s+\.kodex-composer-model-name,\s*\.kodex-composer-control:is\(:disabled,\s*\[data-disabled\]\)\s+\.kodex-composer-model-effort\s*\{[^}]*opacity:\s*1;/s,
+    );
     expect(appCss).toMatch(/@media \(max-width: 700px\)\s*\{[\s\S]*?\.kodex-run-settings-menu\s*\{[^}]*position:\s*fixed/s);
     expect(appCss).toMatch(/@media \(max-width: 700px\)\s*\{[\s\S]*?\.kodex-run-settings-menu\s*\{[^}]*top:\s*auto\s*!important;/s);
     expect(appCss).toMatch(/@media \(max-width: 700px\)\s*\{[\s\S]*?\.kodex-run-settings-chip-row\s*\{[^}]*display:\s*flex/s);

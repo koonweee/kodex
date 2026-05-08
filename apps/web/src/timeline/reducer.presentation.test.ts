@@ -110,6 +110,11 @@ describe("timeline reducer presentation", () => {
                 kind: { type: "add" },
                 diff: "+export const value = 1;",
               },
+              {
+                path: "src/old.ts",
+                kind: { type: "delete" },
+                diff: "-export const old = true;",
+              },
             ],
           },
         },
@@ -119,10 +124,10 @@ describe("timeline reducer presentation", () => {
     expect(state.items).toHaveLength(1);
     expect(state.items[0]).toMatchObject({
       kind: "file_change",
-      action: "update, add",
-      path: "src/App.tsx, src/new.ts",
-      output: "@@ -1 +1 @@\n-old\n+new\n+export const value = 1;",
-      text: "update, add src/App.tsx, src/new.ts",
+      action: "Modified, Added, Deleted",
+      path: "src/App.tsx, src/new.ts, src/old.ts",
+      output: "@@ -1 +1 @@\n-old\n+new",
+      text: "Modified, Added, Deleted src/App.tsx, src/new.ts, src/old.ts",
     });
     expect(state.hiddenItems).toHaveLength(0);
   });

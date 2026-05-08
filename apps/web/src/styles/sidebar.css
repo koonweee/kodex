@@ -66,6 +66,8 @@
 }
 
 .kodex-sidebar-search input {
+  border: 0;
+  background: transparent;
   min-height: 28px;
   color: var(--kodex-text-primary);
   font-size: 12px;

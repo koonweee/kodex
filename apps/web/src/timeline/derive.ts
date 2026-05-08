@@ -19,6 +19,15 @@ export type TimelineActivityRow = {
   dividerBefore?: TimelineRowDivider;
 };
 
+export type TimelineFileChangesRow = {
+  type: "file_changes";
+  key: string;
+  turnKey: string;
+  turnId: string | null;
+  items: TimelineItem[];
+  dividerBefore?: TimelineRowDivider;
+};
+
 export type TimelineWorkRow = {
   type: "work";
   key: string;
@@ -27,12 +36,12 @@ export type TimelineWorkRow = {
   state: "running" | "completed";
   startedAtMs: number;
   completedAtMs?: number;
-  collapsedRows: Array<TimelineItemRow | TimelineActivityRow>;
+  collapsedRows: Array<TimelineItemRow | TimelineActivityRow | TimelineFileChangesRow>;
   seq: number;
 };
 
-export type TimelineRow = TimelineItemRow | TimelineActivityRow | TimelineWorkRow;
-type TimelineContentRow = TimelineItemRow | TimelineActivityRow;
+export type TimelineRow = TimelineItemRow | TimelineActivityRow | TimelineFileChangesRow | TimelineWorkRow;
+type TimelineContentRow = TimelineItemRow | TimelineActivityRow | TimelineFileChangesRow;
 export type TimelineRowDivider = "final_response";
 
 export type TimelineDeriveOptions = {
@@ -49,7 +58,6 @@ const timelineActivityKinds = new Set([
   "collab_agent_tool_call",
   "command_execution",
   "dynamic_tool_call",
-  "file_change",
   "image_view",
   "mcp_tool_call",
   "web_search_group",
@@ -62,6 +70,7 @@ export function deriveTimelineRows(timeline: TimelineState, options: TimelineDer
   const rows: TimelineRow[] = [];
   let currentTurnKey: string | null = null;
   let activityItems: TimelineItem[] = [];
+  let fileChangeItems: TimelineItem[] = [];
   const turnHasFinalResponsePrecursor = new Set<string>();
 
   function flushActivityItems() {
@@ -76,12 +85,27 @@ export function deriveTimelineRows(timeline: TimelineState, options: TimelineDer
     activityItems = [];
   }
 
+  function flushFileChangeItems() {
+    if (fileChangeItems.length === 0) {
+      return;
+    }
+    rows.push(createFileChangesRow(fileChangeItems));
+    markFinalResponsePrecursor(fileChangeItems[0], turnHasFinalResponsePrecursor);
+    fileChangeItems = [];
+  }
+
   for (const item of items) {
     const turnKey = timelineTurnKey(item);
     if (currentTurnKey !== null && currentTurnKey !== turnKey) {
       flushActivityItems();
+      flushFileChangeItems();
     }
     currentTurnKey = turnKey;
+
+    if (item.kind === "file_change") {
+      fileChangeItems.push(item);
+      continue;
+    }
 
     if (isTimelineActivityItem(item)) {
       activityItems.push(item);
@@ -89,6 +113,9 @@ export function deriveTimelineRows(timeline: TimelineState, options: TimelineDer
     }
 
     flushActivityItems();
+    if (isFinalResponse(item)) {
+      flushFileChangeItems();
+    }
     const row: TimelineItemRow = {
       type: "item",
       key: timelineItemRowKey(item),
@@ -106,6 +133,7 @@ export function deriveTimelineRows(timeline: TimelineState, options: TimelineDer
   }
 
   flushActivityItems();
+  flushFileChangeItems();
   return insertWorkRows(rows, timeline);
 }
 
@@ -166,6 +194,9 @@ export function timelineRowItemIds(row: TimelineRow): string[] {
   if (row.type === "activity") {
     return row.items.map((item) => item.id);
   }
+  if (row.type === "file_changes") {
+    return row.items.map((item) => item.id);
+  }
   return row.collapsedRows.flatMap(timelineRowItemIds);
 }
 
@@ -178,6 +209,17 @@ function createActivityRow(items: TimelineItem[]): TimelineActivityRow {
   return {
     type: "activity",
     key: `activity-${first.id}`,
+    turnKey: timelineTurnKey(first),
+    turnId: first.turnId,
+    items: [...items],
+  };
+}
+
+function createFileChangesRow(items: TimelineItem[]): TimelineFileChangesRow {
+  const first = items[0];
+  return {
+    type: "file_changes",
+    key: `file-changes-${timelineTurnKey(first)}`,
     turnKey: timelineTurnKey(first),
     turnId: first.turnId,
     items: [...items],
@@ -308,6 +350,9 @@ function firstRowSeq(row: TimelineRow): number {
     return row.item.seq;
   }
   if (row.type === "activity") {
+    return row.items[0]?.seq ?? Number.MAX_SAFE_INTEGER;
+  }
+  if (row.type === "file_changes") {
     return row.items[0]?.seq ?? Number.MAX_SAFE_INTEGER;
   }
   return row.seq;

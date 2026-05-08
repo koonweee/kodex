@@ -54,6 +54,7 @@ This file is the directory of record for Kodex plans. Keep the status column cur
 | [Mantine theme components plan](mantine-theme-components.md) | Complete | Centralized Mantine component defaults, Kodex control chrome, and lightweight theme workbench | Implemented theme component defaults, `/__theme` workbench, scoped CSS cleanup, and frontend contributor guardrail. |
 | [Mantine common component coverage checklist](mantine-common-component-coverage.md) | Complete | Common Mantine selection, searchable input, overlay, data/surface, and loading defaults | Added component defaults, `/__theme` coverage, timeline table theme coverage, and scoped one-off cleanup. |
 | [Mantine local style cleanup checklist](mantine-local-style-cleanup-checklist.md) | Complete | Remove one-off control chrome that can use Mantine theme defaults | Moved local Button/Menu/Switch/Modal/Badge chrome to Mantine-backed defaults while keeping feature layout local. |
+| [Shared Markdown renderer plan](shared-markdown-renderer.md) | Complete | Shared ReactMarkdown component mapping for timeline messages and Markdown preview pane | Extracted custom timeline Markdown rendering into a reusable module and applied it to the Markdown preview pane with desktop modal presentation. |
 | [Future extensions overview](future-extensions.md) | Proposed | Non-MVP feature map linked to app-server APIs | Overview only, not an implementation plan. |
 
 ## Maintenance Rules
