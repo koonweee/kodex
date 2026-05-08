@@ -142,7 +142,7 @@ export function InlineComposerPanel({
         onSubmit={(event) =>
           onSubmitTurn(
             event,
-            draftState.composerText,
+            draftState.currentSubmittedText(),
             {
               clearText: draftState.clearText,
               restoreText: draftState.restoreText,

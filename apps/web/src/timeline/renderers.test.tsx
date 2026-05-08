@@ -294,6 +294,162 @@ describe("timeline renderer registry", () => {
     expect(container.querySelector(".kodex-user-message-bubble")).toHaveTextContent("Use $agent-browser now");
   });
 
+  it("renders enriched skill mention display name, tooltip, filled accent, and icon", () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "user_message",
+            text: "Use $agent-browser now",
+            skillMentions: [
+              {
+                start: "Use ".length,
+                end: "Use $agent-browser".length,
+                name: "agent-browser",
+                path: "/skills/agent-browser/SKILL.md",
+                displayName: "Agent Browser",
+                scope: "user",
+                shortDescription: "Browser automation",
+                brandColor: "#23a55a",
+                iconSmallUrl: "/v1/skills/icon?path=%2Fskills%2Fagent-browser%2Ficon.png",
+              },
+            ],
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    const badge = screen.getByLabelText("Agent Browser skill");
+    expect(badge).toHaveTextContent("Agent Browser");
+    expect(badge).toHaveAttribute(
+      "title",
+      "Browser automation · user · /skills/agent-browser/SKILL.md",
+    );
+    expect(badge).toHaveAttribute("data-has-accent", "true");
+    expect((badge as HTMLElement).style.getPropertyValue("--skill-accent-color")).toBe("#23a55a");
+    expect((badge as HTMLElement).style.getPropertyValue("--skill-accent-foreground")).toBe("#ffffff");
+    expect(badge.querySelector("img")).toHaveAttribute(
+      "src",
+      "/v1/skills/icon?path=%2Fskills%2Fagent-browser%2Ficon.png",
+    );
+    expect(badge.querySelector("img")).toHaveAttribute("alt", "");
+  });
+
+  it("renders enriched svg skill mention icons as themed masks", () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "user_message",
+            text: "Use $github:github now",
+            skillMentions: [
+              {
+                start: "Use ".length,
+                end: "Use $github:github".length,
+                name: "github:github",
+                path: "/skills/github/SKILL.md",
+                displayName: "GitHub",
+                brandColor: "#24292f",
+                iconSmallUrl: "/v1/skills/icon?path=%2Fskills%2Fgithub%2Fgithub-small.svg",
+              },
+            ],
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    const badge = screen.getByLabelText("GitHub skill");
+    const svgIcon = badge.querySelector(".kodex-inline-skill-icon-svg") as HTMLElement;
+    expect(badge).toHaveTextContent("GitHub");
+    expect(badge).toHaveAttribute("data-has-accent", "true");
+    expect(badge.querySelector("img")).not.toBeInTheDocument();
+    expect(svgIcon).toBeInTheDocument();
+    expect(svgIcon.style.getPropertyValue("--skill-icon-mask")).toContain("github-small.svg");
+  });
+
+  it("uses dark text on light filled skill accent colors", () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "user_message",
+            text: "Use $google-drive:google-slides now",
+            skillMentions: [
+              {
+                start: "Use ".length,
+                end: "Use $google-drive:google-slides".length,
+                name: "google-drive:google-slides",
+                path: "/skills/google-slides/SKILL.md",
+                displayName: "Google Slides",
+                brandColor: "#F9AB00",
+              },
+            ],
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    const badge = screen.getByLabelText("Google Slides skill");
+    expect(badge).toHaveTextContent("Google Slides");
+    expect((badge as HTMLElement).style.getPropertyValue("--skill-accent-color")).toBe("#F9AB00");
+    expect((badge as HTMLElement).style.getPropertyValue("--skill-accent-foreground")).toBe("#17211f");
+    const fallbackIcon = badge.querySelector(".kodex-inline-skill-icon-fallback");
+    expect(fallbackIcon).toHaveTextContent("G");
+    expect(badge.querySelector("img")).not.toBeInTheDocument();
+  });
+
+  it("renders enriched skill names without a dollar prefix when display names are absent", () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "user_message",
+            text: "Run $restart-prod-tmux",
+            skillMentions: [
+              {
+                start: "Run ".length,
+                end: "Run $restart-prod-tmux".length,
+                name: "restart-prod-tmux",
+                path: "/skills/restart-prod-tmux/SKILL.md",
+                scope: "project",
+              },
+            ],
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    const badge = screen.getByLabelText("restart-prod-tmux skill");
+    expect(badge).toHaveTextContent("restart-prod-tmux");
+    expect(badge).not.toHaveTextContent("$restart-prod-tmux");
+  });
+
+  it("ignores invalid skill badge brand colors", () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "user_message",
+            text: "Use $agent-browser now",
+            skillMentions: [
+              {
+                start: "Use ".length,
+                end: "Use $agent-browser".length,
+                name: "agent-browser",
+                path: "/skills/agent-browser/SKILL.md",
+                brandColor: "not a color",
+              },
+            ],
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    const badge = screen.getByLabelText("$agent-browser skill");
+    expect(badge).not.toHaveAttribute("data-has-accent");
+    expect((badge as HTMLElement).style.getPropertyValue("--skill-accent-color")).toBe("");
+  });
+
   it("does not badge invalid or unstructured user skill-looking text", () => {
     const { container, rerender } = render(
       <MantineProvider>
@@ -747,6 +903,38 @@ describe("timeline renderer registry", () => {
     );
 
     expect(container.querySelector(".kodex-assistant-markdown")?.innerHTML).toBe(initialMarkup);
+  });
+
+  it("renders assistant markdown tables in a scrollable themed shell with GFM alignment", () => {
+    const { container } = render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "assistant_message",
+            text: [
+              "| Path | Status | Count |",
+              "| :--- | :---: | ---: |",
+              "| `apps/web/src/App.tsx` | Ready | 12 |",
+            ].join("\n"),
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    const tableShell = container.querySelector(".kodex-markdown-table-scroll");
+    const table = within(tableShell as HTMLElement).getByRole("table");
+    const headers = within(table).getAllByRole("columnheader");
+    const cells = within(table).getAllByRole("cell");
+
+    expect(tableShell).toBeInTheDocument();
+    expect(table).toHaveClass("kodex-markdown-table");
+    expect(headers.map((header) => header.textContent)).toEqual(["Path", "Status", "Count"]);
+    expect(headers[0]).toHaveStyle({ textAlign: "left" });
+    expect(headers[1]).toHaveStyle({ textAlign: "center" });
+    expect(headers[2]).toHaveStyle({ textAlign: "right" });
+    expect(cells[0]).toHaveTextContent("apps/web/src/App.tsx");
+    expect(cells[1]).toHaveStyle({ textAlign: "center" });
+    expect(cells[2]).toHaveStyle({ textAlign: "right" });
   });
 
   it("renders unlabeled fenced code blocks as block code", () => {

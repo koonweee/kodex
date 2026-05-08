@@ -23,6 +23,14 @@ describe("skill mention helpers", () => {
     expect(activeSkillMentionToken("echo $PATH", "echo $PATH".length)).toBeNull();
   });
 
+  it("keeps plugin-qualified skill names in the active token", () => {
+    expect(activeSkillMentionToken("Run $browser-use:browser", "Run $browser-use:browser".length)).toEqual({
+      start: 4,
+      end: "Run $browser-use:browser".length,
+      query: "browser-use:browser",
+    });
+  });
+
   it("replaces a token and keeps only still-valid bindings", () => {
     const token = activeSkillMentionToken("Run $rev now", "Run $rev".length);
     expect(token).not.toBeNull();
@@ -70,6 +78,46 @@ describe("skill mention helpers", () => {
         name: "review-fix",
         path: "/skills/review/SKILL.md",
       },
+    ]);
+  });
+
+  it("carries selected skill display metadata into optimistic timeline mentions", () => {
+    const text = "Use $review-fix";
+    const binding = replaceSkillMentionToken(
+      "Use $rev",
+      { start: "Use ".length, end: "Use $rev".length, query: "rev" },
+      skill("review-fix", {
+        brandColor: "#23a55a",
+        displayName: "Review Fix",
+        iconSmall: "/skills/review-fix/icon.png",
+        shortDescription: "Review loop",
+      }),
+    ).binding;
+
+    expect(timelineSkillMentionsFromBindings(text, [binding])).toEqual([
+      {
+        start: "Use ".length,
+        end: "Use $review-fix".length,
+        name: "review-fix",
+        path: "/skills/review-fix/SKILL.md",
+        displayName: "Review Fix",
+        scope: "user",
+        shortDescription: "Review loop",
+        brandColor: "#23a55a",
+        iconSmallUrl: "http://localhost:3000/v1/skills/icon?path=%2Fskills%2Freview-fix%2Ficon.png",
+      },
+    ]);
+  });
+
+  it("keeps app-server skill sidecar inputs limited to name and path", () => {
+    const replacement = replaceSkillMentionToken(
+      "Use $rev",
+      { start: "Use ".length, end: "Use $rev".length, query: "rev" },
+      skill("review-fix", { displayName: "Review Fix" }),
+    );
+
+    expect(skillInputsFromBindings([replacement.binding])).toEqual([
+      { type: "skill", name: "review-fix", path: "/skills/review-fix/SKILL.md" },
     ]);
   });
 
@@ -150,14 +198,24 @@ describe("skill mention helpers", () => {
 
 function skill(
   name: string,
-  options: { description?: string; displayName?: string; enabled?: boolean } = {},
+  options: {
+    brandColor?: string;
+    description?: string;
+    displayName?: string;
+    enabled?: boolean;
+    iconSmall?: string;
+    shortDescription?: string;
+  } = {},
 ): SkillMetadata {
   return {
     description: options.description ?? `${name} description`,
     enabled: options.enabled ?? true,
-    interface: options.displayName
+    interface: options.displayName || options.shortDescription || options.brandColor || options.iconSmall
       ? {
+          brandColor: options.brandColor,
           displayName: options.displayName,
+          iconSmall: options.iconSmall,
+          shortDescription: options.shortDescription,
         }
       : null,
     name,

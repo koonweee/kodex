@@ -964,7 +964,48 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thread_detail_overlays_persisted_skill_mentions() {
+    async fn thread_detail_retries_transient_rollout_load_error() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_errors.lock().unwrap().push(ApiError::BadGateway(
+            "app-server error -32603: failed to load rollout `/Users/example/.codex/sessions/2026/05/07/rollout-2026-05-07T16-08-24-019e042c-2a66-73c1-8b68-94e5be3f51af.jsonl`".to_string(),
+        ));
+        app_server.queued_responses.lock().unwrap().push(json!({
+            "thread": {
+                "id": "thread-1",
+                "cliVersion": "0.128.0",
+                "cwd": "/workspace",
+                "ephemeral": false,
+                "modelProvider": "openai",
+                "preview": "hi",
+                "source": "cli",
+                "status": {"type": "idle"},
+                "turns": [],
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_610_i64
+            }
+        }));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(requests.iter().all(|(method, params)| {
+            method == "thread/read"
+                && *params == json!({"threadId": "thread-1", "includeTurns": true})
+        }));
+    }
+
+    #[tokio::test]
+    async fn thread_detail_revalidates_persisted_skill_mentions_against_catalog() {
         let (state, app_server) = test_state().await;
         state
             .store
@@ -976,8 +1017,11 @@ mod tests {
                     end: 18,
                     name: "agent-browser".to_string(),
                     path: "/skills/agent-browser/SKILL.md".to_string(),
-                    display_name: None,
-                    scope: None,
+                    display_name: Some("Agent Browser".to_string()),
+                    scope: Some("user".to_string()),
+                    short_description: Some("Open sites".to_string()),
+                    brand_color: Some("#23a55a".to_string()),
+                    icon_small_url: Some("/v1/skills/icon?path=%2Fstale.png".to_string()),
                 }],
             )
             .await
@@ -1025,6 +1069,68 @@ mod tests {
                 "end": 18,
                 "name": "agent-browser",
                 "path": "/skills/agent-browser/SKILL.md"
+            }])
+        );
+    }
+
+    #[tokio::test]
+    async fn thread_detail_derives_skill_mentions_from_historical_user_text() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({
+                "thread": {
+                    "id": "thread-1",
+                    "cliVersion": "0.128.0",
+                    "cwd": "/workspace",
+                    "ephemeral": false,
+                    "modelProvider": "openai",
+                    "preview": "Use $browser-use:browser",
+                    "source": "cli",
+                    "status": {"type": "idle"},
+                    "turns": [{
+                        "id": "turn-1",
+                        "status": {"type": "completed"},
+                        "startedAt": 1_767_225_600_i64,
+                        "completedAt": 1_767_225_610_i64,
+                        "items": [
+                            {"id": "item-user-1", "type": "userMessage", "content": [{"type": "text", "text": "Use $browser-use:browser"}]}
+                        ]
+                    }],
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_610_i64
+                }
+            }),
+            skills_list_response_with_interface(
+                "/workspace",
+                "browser-use:browser",
+                "/skills/browser-use/browser/SKILL.md",
+            ),
+        ]);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(
+            body["turns"][0]["items"][0]["skillMentions"],
+            json!([{
+                "start": 4,
+                "end": 24,
+                "name": "browser-use:browser",
+                "path": "/skills/browser-use/browser/SKILL.md",
+                "displayName": "Review Fix",
+                "scope": "user",
+                "shortDescription": "Review loop",
+                "brandColor": "#23a55a",
+                "iconSmallUrl": "/v1/skills/icon?path=%2Fskills%2Freview-fix%2Ficon.png"
             }])
         );
     }
@@ -1280,6 +1386,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn archive_missing_rollout_thread_clears_stale_pin() {
+        let store = Store::in_memory().await.unwrap();
+        store.pin_thread("thread-missing").await.unwrap();
+        let app_server = Arc::new(MissingRolloutAppServer);
+        let state = AppState::new(Config::default(), store.clone(), app_server);
+        let mut receiver = state.events.subscribe();
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-missing/archive")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["payload"]["threadId"], "thread-missing");
+        assert_eq!(body["payload"]["stale"], true);
+        assert!(store.get_thread_pin("thread-missing").await.is_err());
+        let event = receiver.recv().await.unwrap();
+        assert_eq!(event.kind, "thread.pin_updated");
+        assert_eq!(event.thread_id.as_deref(), Some("thread-missing"));
+        assert_eq!(event.payload["pinnedAt"], Value::Null);
+    }
+
+    #[tokio::test]
     async fn thread_start_requires_stored_project_before_app_server_call() {
         let (state, app_server) = test_state().await;
         let app = build_router(state);
@@ -1323,6 +1458,11 @@ mod tests {
                 dir.path().join("preview-webp.local"),
                 b"RIFF0000WEBPpreview image".as_slice(),
                 "image/webp",
+            ),
+            (
+                dir.path().join("preview-svg.local"),
+                b"<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".as_slice(),
+                "image/svg+xml",
             ),
         ];
         for (path, bytes, _) in &images {
@@ -1395,6 +1535,62 @@ mod tests {
 
         let requests = app_server.requests.lock().unwrap();
         assert!(requests.iter().all(|(method, _)| method == "thread/read"));
+    }
+
+    #[tokio::test]
+    async fn skill_icon_preview_serves_supported_images_only() {
+        let (state, _app_server) = test_state().await;
+        let dir = tempdir().unwrap();
+        let icon = dir.path().join("skill-icon.local");
+        std::fs::write(&icon, b"\x89PNG\r\n\x1a\npreview image").unwrap();
+        let svg_icon = dir.path().join("skill-icon.svg");
+        std::fs::write(
+            &svg_icon,
+            b"<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>",
+        )
+        .unwrap();
+        let markdown = dir.path().join("skill.md");
+        std::fs::write(&markdown, "# Skill").unwrap();
+        let app = build_router(state);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get(skill_icon_url(&icon))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers().get("content-type").unwrap(), "image/png");
+        assert_eq!(response.headers().get("cache-control").unwrap(), "private");
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get(skill_icon_url(&svg_icon))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "image/svg+xml"
+        );
+        assert_eq!(response.headers().get("cache-control").unwrap(), "private");
+
+        let response = app
+            .oneshot(
+                Request::get(skill_icon_url(&markdown))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
     }
 
     #[tokio::test]
@@ -1573,8 +1769,8 @@ mod tests {
                         "shortDescription": "Review loop",
                         "defaultPrompt": null,
                         "brandColor": null,
-                        "iconSmall": null,
-                        "iconLarge": null
+                        "iconSmall": "./assets/review-fix-small.svg",
+                        "iconLarge": "./assets/review-fix.png"
                     }
                 }]
             }]
@@ -1594,6 +1790,14 @@ mod tests {
         let body = response_json(response).await;
         assert_eq!(body["cwd"], "/workspace");
         assert_eq!(body["skills"][0]["name"], "review-fix");
+        assert_eq!(
+            body["skills"][0]["interface"]["iconSmall"],
+            "/skills/review-fix/assets/review-fix-small.svg"
+        );
+        assert_eq!(
+            body["skills"][0]["interface"]["iconLarge"],
+            "/skills/review-fix/assets/review-fix.png"
+        );
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "skills/list");
         assert_eq!(
@@ -1722,6 +1926,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn turn_start_retries_transient_rollout_load_error_while_resolving_thread_cwd() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_errors.lock().unwrap().push(ApiError::BadGateway(
+            "app-server error -32603: failed to load rollout `/Users/example/.codex/sessions/2026/05/07/rollout-2026-05-07T16-08-24-019e042c-2a66-73c1-8b68-94e5be3f51af.jsonl`".to_string(),
+        ));
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"thread": thread_summary("thread-1")}),
+            skills_list_response("/workspace", "review-fix", "/skills/review-fix/SKILL.md"),
+            json!({"ok": true}),
+        ]);
+        let app = build_router(state);
+
+        assert_ok(
+            app.oneshot(
+                Request::post("/v1/threads/thread-1/turns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"Run $review-fix"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+        );
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[0].1["includeTurns"], false);
+        assert_eq!(requests[1].0, "thread/read");
+        assert_eq!(requests[1].1["includeTurns"], false);
+        assert_eq!(requests[2].0, "skills/list");
+        assert_eq!(requests[3].0, "turn/start");
+    }
+
+    #[tokio::test]
     async fn selected_skill_input_is_rewritten_from_gateway_catalog() {
         let (state, app_server) = test_state().await;
         app_server.queued_responses.lock().unwrap().extend([
@@ -1790,6 +2029,98 @@ mod tests {
             .expect("structured skill mention should be pending until item materializes");
         assert_eq!(mentions[0].name, "review-fix");
         assert_eq!(mentions[0].path, "/skills/review-fix/SKILL.md");
+    }
+
+    #[tokio::test]
+    async fn turn_start_enriches_pending_skill_mentions_from_catalog_metadata() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"thread": thread_summary("thread-1")}),
+            skills_list_response_with_interface(
+                "/workspace",
+                "review-fix",
+                "/skills/review-fix/SKILL.md",
+            ),
+        ]);
+        let app = build_router(state.clone());
+
+        assert_ok(
+            app.oneshot(
+                Request::post("/v1/threads/thread-1/turns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r##"{"input":[{"type":"text","text":"Run $review-fix","text_elements":[{"byteRange":{"start":4,"end":15}}]},{"type":"skill","name":"review-fix","path":"/skills/review-fix/SKILL.md"}]}"##,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+        );
+
+        let mentions = state
+            .store
+            .commit_pending_timeline_skill_mentions("thread-1", "item-user-1", "Run $review-fix")
+            .await
+            .unwrap()
+            .expect("structured skill mention should be pending until item materializes");
+        assert_eq!(mentions[0].display_name.as_deref(), Some("Review Fix"));
+        assert_eq!(mentions[0].scope.as_deref(), Some("user"));
+        assert_eq!(
+            mentions[0].short_description.as_deref(),
+            Some("Review loop")
+        );
+        assert_eq!(mentions[0].brand_color.as_deref(), Some("#23a55a"));
+        assert_eq!(
+            mentions[0].icon_small_url.as_deref(),
+            Some("/v1/skills/icon?path=%2Fskills%2Freview-fix%2Ficon.png")
+        );
+    }
+
+    #[tokio::test]
+    async fn turn_steer_records_structured_skill_mentions_until_user_item_materializes() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"thread": thread_summary("thread-1")}),
+            skills_list_response_with_interface(
+                "/workspace",
+                "agent-browser",
+                "/skills/agent-browser/SKILL.md",
+            ),
+        ]);
+        let app = build_router(state.clone());
+
+        assert_ok(
+            app.oneshot(
+                Request::post("/v1/threads/thread-1/turns/turn-1/steer")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r##"{"input":[{"type":"text","text":"Use $agent-browser","text_elements":[{"byteRange":{"start":4,"end":18}}]},{"type":"skill","name":"agent-browser","path":"/skills/agent-browser/SKILL.md"}]}"##,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+        );
+
+        let mentions = state
+            .store
+            .commit_pending_timeline_skill_mentions("thread-1", "item-user-1", "Use $agent-browser")
+            .await
+            .unwrap()
+            .expect("structured steer skill mention should be pending until item materializes");
+        assert_eq!(mentions[0].name, "agent-browser");
+        assert_eq!(mentions[0].display_name.as_deref(), Some("Review Fix"));
+        assert_eq!(mentions[0].brand_color.as_deref(), Some("#23a55a"));
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[2].0, "turn/steer");
+        assert_eq!(
+            requests[2].1["input"],
+            json!([
+                {"type": "text", "text": "Use $agent-browser", "text_elements": [{"byteRange": {"start": 4, "end": 18}, "placeholder": null}]},
+                {"type": "skill", "name": "agent-browser", "path": "/skills/agent-browser/SKILL.md"}
+            ])
+        );
     }
 
     #[tokio::test]
@@ -3400,7 +3731,7 @@ mod tests {
                 .unwrap();
             state
                 .store
-                .mark_queued_input_pending_commit("thread-1", &row.id, "turn-1", None)
+                .mark_queued_input_pending_commit("thread-1", &row.id, "turn-1", None, None)
                 .await
                 .unwrap();
         }
@@ -4615,6 +4946,31 @@ mod tests {
         })
     }
 
+    fn skills_list_response_with_interface(cwd: &str, name: &str, path: &str) -> Value {
+        json!({
+            "data": [{
+                "cwd": cwd,
+                "errors": [],
+                "skills": [{
+                    "name": name,
+                    "path": path,
+                    "description": format!("{name} description"),
+                    "enabled": true,
+                    "scope": "user",
+                    "shortDescription": "Fallback short",
+                    "interface": {
+                        "displayName": "Review Fix",
+                        "shortDescription": "Review loop",
+                        "brandColor": "#23a55a",
+                        "defaultPrompt": null,
+                        "iconSmall": "/skills/review-fix/icon.png",
+                        "iconLarge": null
+                    }
+                }]
+            }]
+        })
+    }
+
     fn multipart_body(file_name: &str, content_type: &str, bytes: &[u8]) -> Vec<u8> {
         let mut body = Vec::new();
         body.extend_from_slice(b"--kodexboundary\r\n");
@@ -4635,6 +4991,10 @@ mod tests {
             "/v1/threads/{thread_id}/files/preview?path={}",
             path.display()
         )
+    }
+
+    fn skill_icon_url(path: &std::path::Path) -> String {
+        format!("/v1/skills/icon?path={}", path.display())
     }
 
     async fn response_text(response: axum::response::Response) -> String {

@@ -135,6 +135,11 @@
   background: var(--kodex-bg-button-hover);
 }
 
+.kodex-sidebar-row > .kodex-ui-button:hover {
+  background: transparent;
+  color: inherit;
+}
+
 .kodex-sidebar-row[data-has-leading="true"] {
   --kodex-sidebar-leading-rail: 18px;
 
@@ -300,11 +305,6 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
-}
-
-.kodex-thread-select-button:hover {
-  background: transparent;
-  color: inherit;
 }
 
 .kodex-thread-select-button:focus-visible,

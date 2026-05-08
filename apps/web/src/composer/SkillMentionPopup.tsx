@@ -1,8 +1,17 @@
 import { Box, Group } from "@mantine/core";
 import { useEffect, useRef } from "react";
+import type { CSSProperties } from "react";
 
 import type { SkillMetadata } from "../api/client";
-import { skillDescription, skillDisplayName } from "./skillMentions";
+import {
+  cssUrl,
+  skillBrandColor,
+  skillDescription,
+  skillDisplayName,
+  skillFallbackIconLabel,
+  skillIconUrlIsSvg,
+  skillSmallIconUrl,
+} from "./skillMentions";
 
 export function SkillMentionPopup({
   activeIndex,
@@ -55,25 +64,54 @@ export function SkillMentionPopup({
           <Box className="kodex-skill-popup-status">No matching skills</Box>
         ) : null}
         {!loading && !error
-          ? skills.map((skill, index) => (
-              <Box
-                key={skill.path}
-                aria-selected={index === activeIndex}
-                className="kodex-skill-popup-row"
-                data-skill-option-index={index}
-                role="option"
-                onClick={() => onSelect(skill)}
-              >
-                <Group justify="space-between" gap={8} wrap="nowrap">
-                  <span className="kodex-skill-popup-name">{skillDisplayName(skill)}</span>
-                  <span className="kodex-skill-popup-scope">{skill.scope}</span>
-                </Group>
-                <Group className="kodex-skill-popup-meta" gap={8} wrap="nowrap">
-                  <span>${skill.name}</span>
-                  <span>{skillDescription(skill)}</span>
-                </Group>
-              </Box>
-            ))
+          ? skills.map((skill, index) => {
+              const brandColor = skillBrandColor(skill);
+              const iconUrl = skillSmallIconUrl(skill);
+              const isSvgIcon = skillIconUrlIsSvg(iconUrl);
+              const fallbackLabel = skillFallbackIconLabel(skill);
+              const iconStyle = brandColor ? ({ "--skill-brand-color": brandColor } as CSSProperties) : undefined;
+              const svgIconStyle =
+                iconUrl && isSvgIcon
+                  ? ({
+                      "--skill-icon-mask": cssUrl(iconUrl),
+                    } as CSSProperties)
+                  : undefined;
+              return (
+                <Box
+                  key={skill.path}
+                  aria-selected={index === activeIndex}
+                  className="kodex-skill-popup-row"
+                  data-skill-option-index={index}
+                  role="option"
+                  onClick={() => onSelect(skill)}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="kodex-skill-option-icon"
+                    data-has-accent={brandColor ? "true" : undefined}
+                    style={iconStyle}
+                  >
+                    {iconUrl && isSvgIcon ? (
+                      <span className="kodex-skill-option-icon-svg" style={svgIconStyle} />
+                    ) : iconUrl ? (
+                      <img alt="" src={iconUrl} />
+                    ) : (
+                      <span className="kodex-skill-option-icon-label">{fallbackLabel}</span>
+                    )}
+                  </span>
+                  <span className="kodex-skill-popup-body">
+                    <Group justify="space-between" gap={8} wrap="nowrap">
+                      <span className="kodex-skill-popup-name">{skillDisplayName(skill)}</span>
+                      <span className="kodex-skill-popup-scope">{skill.scope}</span>
+                    </Group>
+                    <Group className="kodex-skill-popup-meta" gap={8} wrap="nowrap">
+                      <span>${skill.name}</span>
+                      <span>{skillDescription(skill)}</span>
+                    </Group>
+                  </span>
+                </Box>
+              );
+            })
           : null}
       </Box>
     </Box>

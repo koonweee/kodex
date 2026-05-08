@@ -104,7 +104,12 @@ describe("ComposerPanel", () => {
     mockSkills([
       skillFixture({
         description: "Review and fix changes",
-        interface: { displayName: "Review Fix", shortDescription: "Review loop" },
+        interface: {
+          brandColor: "#23a55a",
+          displayName: "Review Fix",
+          iconSmall: "/skills/review-fix/icon.png",
+          shortDescription: "Review loop",
+        },
         name: "review-fix",
         path: "/skills/review-fix/SKILL.md",
       }),
@@ -125,7 +130,15 @@ describe("ComposerPanel", () => {
 
     const composer = screen.getByLabelText(/message composer/i);
     await userEvent.type(composer, "$rev");
-    expect(await screen.findByRole("option", { name: /review fix/i })).toBeInTheDocument();
+    const option = await screen.findByRole("option", { name: /review fix/i });
+    expect(option).toBeInTheDocument();
+    const optionIcon = option.querySelector(".kodex-skill-option-icon") as HTMLElement;
+    expect(optionIcon).toHaveAttribute("data-has-accent", "true");
+    expect(optionIcon.style.getPropertyValue("--skill-brand-color")).toBe("#23a55a");
+    expect(optionIcon.querySelector("img")).toHaveAttribute(
+      "src",
+      "http://localhost:3000/v1/skills/icon?path=%2Fskills%2Freview-fix%2Ficon.png",
+    );
     await userEvent.keyboard("{Enter}");
     expect(composer).toHaveValue("$review-fix ");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
@@ -150,6 +163,11 @@ describe("ComposerPanel", () => {
           end: "$review-fix".length,
           name: "review-fix",
           path: "/skills/review-fix/SKILL.md",
+          displayName: "Review Fix",
+          scope: "user",
+          shortDescription: "Review loop",
+          brandColor: "#23a55a",
+          iconSmallUrl: "http://localhost:3000/v1/skills/icon?path=%2Fskills%2Freview-fix%2Ficon.png",
         },
       ],
     ]);
@@ -168,6 +186,50 @@ describe("ComposerPanel", () => {
     expect(popup?.parentElement).toHaveClass("kodex-composer");
     expect(composerCss).toMatch(/\.kodex-skill-popup\s*\{[^}]*position:\s*absolute;/s);
     expect(composerCss).toMatch(/\.kodex-skill-popup\s*\{[^}]*bottom:\s*calc\(100% \+ 8px\);/s);
+  });
+
+  it("renders a generated first-character icon for skill suggestions without icon assets", async () => {
+    mockSkills([
+      skillFixture({
+        interface: { brandColor: "#F9AB00", displayName: "Google Slides" },
+        name: "google-drive:google-slides",
+      }),
+    ]);
+    renderComposerPanel({ isDraftThreadSelected: true, selectedThreadPresent: false });
+
+    await userEvent.type(screen.getByLabelText(/message composer/i), "$slides");
+
+    const option = await screen.findByRole("option", { name: /google slides/i });
+    const optionIcon = option.querySelector(".kodex-skill-option-icon") as HTMLElement;
+    expect(optionIcon).toHaveAttribute("data-has-accent", "true");
+    expect(optionIcon.style.getPropertyValue("--skill-brand-color")).toBe("#F9AB00");
+    expect(optionIcon.querySelector("img")).not.toBeInTheDocument();
+    expect(optionIcon).toHaveTextContent("G");
+  });
+
+  it("renders svg skill suggestion icons as themed masks", async () => {
+    mockSkills([
+      skillFixture({
+        interface: {
+          brandColor: "#24292f",
+          displayName: "GitHub",
+          iconSmall: "/skills/github/github-small.svg",
+        },
+        name: "github:github",
+      }),
+    ]);
+    renderComposerPanel({ isDraftThreadSelected: true, selectedThreadPresent: false });
+
+    await userEvent.type(screen.getByLabelText(/message composer/i), "$git");
+
+    const option = await screen.findByRole("option", { name: /github/i });
+    const optionIcon = option.querySelector(".kodex-skill-option-icon") as HTMLElement;
+    const svgIcon = optionIcon.querySelector(".kodex-skill-option-icon-svg") as HTMLElement;
+    expect(optionIcon).toHaveAttribute("data-has-accent", "true");
+    expect(optionIcon.style.getPropertyValue("--skill-brand-color")).toBe("#24292f");
+    expect(optionIcon.querySelector("img")).not.toBeInTheDocument();
+    expect(svgIcon).toBeInTheDocument();
+    expect(svgIcon.style.getPropertyValue("--skill-icon-mask")).toContain("github-small.svg");
   });
 
   it("layers queued steer rows under the rounded composer surface", () => {

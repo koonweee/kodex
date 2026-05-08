@@ -239,7 +239,9 @@
 
 .kodex-skill-popup-row {
   display: grid;
-  gap: 3px;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 8px;
   width: 100%;
   min-width: 0;
   border: 0;
@@ -251,6 +253,62 @@
   text-align: left;
   touch-action: pan-y;
   cursor: pointer;
+}
+
+.kodex-skill-popup-body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.kodex-skill-option-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  overflow: hidden;
+  border: 1px solid var(--kodex-border-subtle);
+  border-radius: var(--kodex-radius-sm);
+  background: var(--kodex-bg-subtle);
+  color: var(--kodex-text-secondary);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 8%);
+}
+
+.kodex-skill-option-icon[data-has-accent="true"] {
+  border-color: color-mix(in srgb, var(--skill-brand-color) 72%, white);
+  background: var(--skill-brand-color);
+  color: var(--kodex-text-on-accent);
+}
+
+.kodex-skill-option-icon img {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--kodex-radius-xs);
+  object-fit: cover;
+}
+
+.kodex-skill-option-icon-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: currentColor;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.kodex-skill-option-icon-svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  mask: var(--skill-icon-mask) center / contain no-repeat;
+  -webkit-mask: var(--skill-icon-mask) center / contain no-repeat;
 }
 
 .kodex-skill-popup-row:hover,

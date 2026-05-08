@@ -1,3 +1,4 @@
+import { skillIconUrl } from "../api/client";
 import type { SkillMetadata, TextElement, TimelineSkillMention, UserInput } from "../api/client";
 
 export type SkillMentionToken = {
@@ -7,9 +8,14 @@ export type SkillMentionToken = {
 };
 
 export type SkillMentionBinding = {
+  brandColor?: string | null;
+  displayName?: string | null;
   end: number;
+  iconSmallUrl?: string | null;
   name: string;
   path: string;
+  scope?: string | null;
+  shortDescription?: string | null;
   start: number;
 };
 
@@ -71,8 +77,13 @@ export function replaceSkillMentionToken(
     binding: {
       start: token.start,
       end,
+      displayName: trimmed(skill.interface?.displayName),
       name: skill.name,
       path: skill.path,
+      scope: trimmed(skill.scope),
+      shortDescription: skillDescription(skill),
+      brandColor: trimmed(skill.interface?.brandColor),
+      iconSmallUrl: trimmed(skill.interface?.iconSmall) ? skillIconUrl(skill.interface!.iconSmall!) : undefined,
     },
     cursor: token.start + replacement.length,
     text: nextText,
@@ -166,12 +177,20 @@ export function timelineSkillMentionsFromBindings(
   text: string,
   bindings: SkillMentionBinding[],
 ): TimelineSkillMention[] {
-  return validSkillMentionBindings(text, bindings).map((binding) => ({
-    start: binding.start,
-    end: binding.end,
-    name: binding.name,
-    path: binding.path,
-  }));
+  return validSkillMentionBindings(text, bindings).map((binding) => {
+    const mention: TimelineSkillMention = {
+      start: binding.start,
+      end: binding.end,
+      name: binding.name,
+      path: binding.path,
+    };
+    assignOptional(mention, "displayName", binding.displayName);
+    assignOptional(mention, "scope", binding.scope);
+    assignOptional(mention, "shortDescription", binding.shortDescription);
+    assignOptional(mention, "brandColor", binding.brandColor);
+    assignOptional(mention, "iconSmallUrl", binding.iconSmallUrl);
+    return mention;
+  });
 }
 
 export function filterSkillsForQuery(skills: SkillMetadata[], query: string): SkillMetadata[] {
@@ -192,7 +211,40 @@ export function skillDisplayName(skill: SkillMetadata): string {
 }
 
 export function skillDescription(skill: SkillMetadata): string {
-  return skill.interface?.shortDescription?.trim() || skill.shortDescription?.trim() || skill.description;
+  return trimmed(skill.interface?.shortDescription) || trimmed(skill.shortDescription) || skill.description;
+}
+
+export function skillBrandColor(skill: SkillMetadata): string | undefined {
+  return trimmed(skill.interface?.brandColor);
+}
+
+export function skillSmallIconUrl(skill: SkillMetadata): string | undefined {
+  const iconSmall = trimmed(skill.interface?.iconSmall);
+  return iconSmall ? skillIconUrl(iconSmall) : undefined;
+}
+
+export function skillIconUrlIsSvg(url?: string | null): boolean {
+  return Boolean(url?.toLocaleLowerCase().includes(".svg"));
+}
+
+export function cssUrl(value: string): string {
+  return `url("${value.replace(/["\\]/g, "\\$&")}")`;
+}
+
+export function skillFallbackIconLabel(skill: SkillMetadata): string {
+  const source = skillDisplayName(skill).trim() || skill.name.trim();
+  return source.match(/[A-Za-z0-9]/)?.[0]?.toLocaleUpperCase() ?? "$";
+}
+
+function trimmed(value?: string | null): string | undefined {
+  const output = value?.trim();
+  return output || undefined;
+}
+
+function assignOptional<T extends object, K extends keyof T>(target: T, key: K, value: T[K] | undefined | null): void {
+  if (value !== undefined && value !== null) {
+    target[key] = value;
+  }
 }
 
 function skillMatchScore(skill: SkillMetadata, normalizedQuery: string): number | null {
@@ -260,7 +312,7 @@ function isCommonEnvVar(value: string): boolean {
 }
 
 function isMentionNameChar(value: string | undefined): boolean {
-  return value !== undefined && /[A-Za-z0-9_-]/.test(value);
+  return value !== undefined && /[A-Za-z0-9_:-]/.test(value);
 }
 
 function utf8ByteLength(value: string): number {

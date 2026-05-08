@@ -40,7 +40,7 @@ use crate::{
         health::{HealthResponse, ReadyResponse},
         models::ModelsQuery,
         projects::{CreateProjectRequest, ProjectListResponse},
-        skills::SkillsQuery,
+        skills::{SkillIconQuery, SkillsQuery},
         threads::{
             CreateChatThreadRequest, CreateThreadRequest, MarkThreadSeenRequest, ThreadListQuery,
             ThreadPinResponse,
@@ -128,7 +128,8 @@ impl AppState {
         crate::routes::account::logout,
         crate::routes::account::read_rate_limits,
         crate::routes::models::list_models,
-        crate::routes::skills::list_skills
+        crate::routes::skills::list_skills,
+        crate::routes::skills::preview_skill_icon
     ),
     components(schemas(
         ApiErrorBody,
@@ -203,6 +204,7 @@ impl AppState {
         ModelsQuery,
         ModelListResponse,
         SkillsQuery,
+        SkillIconQuery,
         SkillsCatalogResponse,
         SkillMetadata,
         SkillInterface,

@@ -1,8 +1,16 @@
 import { Box, Group } from "@mantine/core";
 import { useEffect, useRef } from "react";
+import type { CSSProperties } from "react";
 
 import type { SkillMetadata } from "../api/client";
-import { skillDisplayName } from "./skillMentions";
+import {
+  cssUrl,
+  skillBrandColor,
+  skillDisplayName,
+  skillFallbackIconLabel,
+  skillIconUrlIsSvg,
+  skillSmallIconUrl,
+} from "./skillMentions";
 
 type MobileSkillCommandSheetProps = {
   activeIndex: number;
@@ -62,23 +70,50 @@ export function MobileSkillCommandSheet({
       role="listbox"
       onPointerDownCapture={(event) => event.stopPropagation()}
     >
-      {skills.map((skill, index) => (
-        <Box
-          component="button"
-          key={skill.path}
-          aria-selected={index === activeIndex}
-          className="kodex-mobile-skill-command-row"
-          data-skill-option-index={index}
-          role="option"
-          type="button"
-          onClick={() => onSelect(skill)}
-        >
-          <Group justify="space-between" gap={10} wrap="nowrap">
-            <span className="kodex-mobile-skill-command-name">{skillDisplayName(skill)}</span>
-            <span className="kodex-mobile-skill-command-token">${skill.name}</span>
-          </Group>
-        </Box>
-      ))}
+      {skills.map((skill, index) => {
+        const brandColor = skillBrandColor(skill);
+        const iconUrl = skillSmallIconUrl(skill);
+        const isSvgIcon = skillIconUrlIsSvg(iconUrl);
+        const fallbackLabel = skillFallbackIconLabel(skill);
+        const iconStyle = brandColor ? ({ "--skill-brand-color": brandColor } as CSSProperties) : undefined;
+        const svgIconStyle =
+          iconUrl && isSvgIcon
+            ? ({
+                "--skill-icon-mask": cssUrl(iconUrl),
+              } as CSSProperties)
+            : undefined;
+        return (
+          <Box
+            component="button"
+            key={skill.path}
+            aria-selected={index === activeIndex}
+            className="kodex-mobile-skill-command-row"
+            data-skill-option-index={index}
+            role="option"
+            type="button"
+            onClick={() => onSelect(skill)}
+          >
+            <span
+              aria-hidden="true"
+              className="kodex-skill-option-icon"
+              data-has-accent={brandColor ? "true" : undefined}
+              style={iconStyle}
+            >
+              {iconUrl && isSvgIcon ? (
+                <span className="kodex-skill-option-icon-svg" style={svgIconStyle} />
+              ) : iconUrl ? (
+                <img alt="" src={iconUrl} />
+              ) : (
+                <span className="kodex-skill-option-icon-label">{fallbackLabel}</span>
+              )}
+            </span>
+            <Group className="kodex-mobile-skill-command-copy" justify="space-between" gap={10} wrap="nowrap">
+              <span className="kodex-mobile-skill-command-name">{skillDisplayName(skill)}</span>
+              <span className="kodex-mobile-skill-command-token">${skill.name}</span>
+            </Group>
+          </Box>
+        );
+      })}
     </Box>
   );
 }

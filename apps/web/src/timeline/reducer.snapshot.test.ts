@@ -73,6 +73,8 @@ describe("timeline reducer snapshots", () => {
           end: "Use $agent-browser".length,
           name: "agent-browser",
           path: "/stale/SKILL.md",
+          displayName: "Stale Agent Browser",
+          shortDescription: "Stale metadata",
         },
       ],
       turnId: null,
@@ -87,6 +89,8 @@ describe("timeline reducer snapshots", () => {
         {
           name: "agent-browser",
           path: "/skills/agent-browser/SKILL.md",
+          displayName: "Agent Browser",
+          shortDescription: "Browser automation",
         },
       ],
     });
@@ -1086,6 +1090,8 @@ function snapshotWithSkillMention(): ThreadDetailResponse {
                 end: "Use $agent-browser".length,
                 name: "agent-browser",
                 path: "/skills/agent-browser/SKILL.md",
+                displayName: "Agent Browser",
+                shortDescription: "Browser automation",
               },
             ],
             rawPayload: {

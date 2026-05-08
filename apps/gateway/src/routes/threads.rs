@@ -17,7 +17,8 @@ use utoipa::{IntoParams, ToSchema};
 use crate::{
     api::AppState,
     app_server_api::{
-        self, visible_text_from_thread_item, RawAppServerResponse, ThreadCommandResponse,
+        self, enrich_timeline_skill_mentions, timeline_skill_mentions_from_text,
+        visible_text_from_thread_item, RawAppServerResponse, ThreadCommandResponse,
         ThreadDetailResponse, ThreadItemSnapshot, ThreadListResponse, ThreadSummary,
         TimelineSkillMention,
     },
@@ -182,6 +183,11 @@ pub async fn list_pinned_threads(
         let detail = match client.thread_read(pin.thread_id.clone()).await {
             Ok(detail) => detail,
             Err(ApiError::NotFound(_)) => continue,
+            Err(error) if app_server_error_mentions_missing_thread(&error) => {
+                state.store.unpin_thread(&pin.thread_id).await?;
+                broadcast_thread_pin_update(&state, &pin.thread_id, None).await?;
+                continue;
+            }
             Err(error) => return Err(error),
         };
         if thread_is_archived(&detail.thread) {
@@ -653,11 +659,24 @@ pub async fn archive_thread(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
 ) -> ApiResult<Json<RawAppServerResponse>> {
-    Ok(Json(
-        app_server_api::client(&state.app_server)
-            .thread_archive(thread_id)
-            .await?,
-    ))
+    match app_server_api::client(&state.app_server)
+        .thread_archive(thread_id.clone())
+        .await
+    {
+        Ok(response) => Ok(Json(response)),
+        Err(error) if app_server_error_mentions_missing_thread(&error) => {
+            state.store.unpin_thread(&thread_id).await?;
+            broadcast_thread_pin_update(&state, &thread_id, None).await?;
+            Ok(Json(RawAppServerResponse {
+                payload: json!({
+                    "threadId": thread_id,
+                    "archived": true,
+                    "stale": true,
+                }),
+            }))
+        }
+        Err(error) => Err(error),
+    }
 }
 
 #[utoipa::path(post, path = "/v1/threads/{threadId}/seen", request_body = MarkThreadSeenRequest, responses((status = 200, body = MarkThreadSeenResponse)))]
@@ -727,9 +746,38 @@ async fn apply_thread_detail_skill_mentions(
         .store
         .timeline_skill_mentions_for_items(&thread_id, &item_ids)
         .await?;
+    let has_snapshot_skill_mentions = response
+        .turns
+        .iter()
+        .flat_map(|turn| turn.items.iter())
+        .any(|item| !item.skill_mentions.is_empty());
+    let has_stored_skill_mentions = stored.values().any(|mentions| !mentions.is_empty());
+    let has_skill_text = response
+        .turns
+        .iter()
+        .flat_map(|turn| turn.items.iter())
+        .any(|item| {
+            visible_text_from_thread_item(&item.raw_payload).is_some_and(|text| text.contains('$'))
+        });
+    let catalog = if has_snapshot_skill_mentions || has_stored_skill_mentions || has_skill_text {
+        state
+            .skills
+            .catalog(&state.app_server, Some(response.thread.cwd.clone()), false)
+            .await
+            .ok()
+    } else {
+        None
+    };
     for turn in &mut response.turns {
         for item in &mut turn.items {
-            apply_thread_item_skill_mentions(state, &thread_id, item, &mut stored).await?;
+            apply_thread_item_skill_mentions(
+                state,
+                &thread_id,
+                item,
+                &mut stored,
+                catalog.as_ref().map(|catalog| catalog.skills.as_slice()),
+            )
+            .await?;
         }
     }
     Ok(())
@@ -740,8 +788,13 @@ async fn apply_thread_item_skill_mentions(
     thread_id: &str,
     item: &mut ThreadItemSnapshot,
     stored: &mut HashMap<String, Vec<TimelineSkillMention>>,
+    catalog: Option<&[app_server_api::SkillMetadata]>,
 ) -> ApiResult<()> {
     if !item.skill_mentions.is_empty() {
+        item.skill_mentions = enrich_timeline_skill_mentions(
+            std::mem::take(&mut item.skill_mentions),
+            catalog.unwrap_or(&[]),
+        );
         state
             .store
             .upsert_timeline_skill_mentions(thread_id, &item.id, &item.skill_mentions)
@@ -749,7 +802,11 @@ async fn apply_thread_item_skill_mentions(
         return Ok(());
     }
     if let Some(mentions) = stored.remove(&item.id) {
-        item.skill_mentions = mentions;
+        item.skill_mentions = enrich_timeline_skill_mentions(mentions, catalog.unwrap_or(&[]));
+        state
+            .store
+            .upsert_timeline_skill_mentions(thread_id, &item.id, &item.skill_mentions)
+            .await?;
         return Ok(());
     }
     let Some(text) = visible_text_from_thread_item(&item.raw_payload) else {
@@ -761,6 +818,16 @@ async fn apply_thread_item_skill_mentions(
         .await?
     {
         item.skill_mentions = mentions;
+        return Ok(());
+    }
+    if let Some(catalog) = catalog {
+        item.skill_mentions = timeline_skill_mentions_from_text(&text, catalog);
+        if !item.skill_mentions.is_empty() {
+            state
+                .store
+                .upsert_timeline_skill_mentions(thread_id, &item.id, &item.skill_mentions)
+                .await?;
+        }
     }
     Ok(())
 }
@@ -954,6 +1021,23 @@ fn thread_is_archived(thread: &ThreadSummary) -> bool {
         .get("archived")
         .and_then(Value::as_bool)
         .unwrap_or(false)
+}
+
+fn app_server_error_mentions_missing_thread(error: &ApiError) -> bool {
+    match error {
+        ApiError::BadGateway(message) => message_mentions_missing_thread(message),
+        _ => false,
+    }
+}
+
+fn message_mentions_missing_thread(message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    (message.contains("thread")
+        && (message.contains("not found")
+            || message.contains("no such")
+            || message.contains("does not exist")
+            || message.contains("unknown")))
+        || message.contains("no rollout found for thread id")
 }
 
 async fn save_forked_thread_composer_settings(

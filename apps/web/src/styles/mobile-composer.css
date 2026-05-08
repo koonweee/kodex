@@ -192,7 +192,10 @@
 }
 
 .kodex-mobile-skill-command-row {
-  display: block;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
   width: 100%;
   min-width: 0;
   border: 0;
@@ -206,9 +209,32 @@
   cursor: pointer;
 }
 
+.kodex-mobile-skill-command-row .kodex-skill-option-icon {
+  width: 26px;
+  height: 26px;
+}
+
+.kodex-mobile-skill-command-row .kodex-skill-option-icon img {
+  width: 18px;
+  height: 18px;
+}
+
+.kodex-mobile-skill-command-row .kodex-skill-option-icon-label {
+  font-size: 13px;
+}
+
+.kodex-mobile-skill-command-row .kodex-skill-option-icon-svg {
+  width: 18px;
+  height: 18px;
+}
+
 .kodex-mobile-skill-command-row[aria-selected="true"],
 .kodex-mobile-skill-command-row:hover {
   background: var(--kodex-bg-selected);
+}
+
+.kodex-mobile-skill-command-copy {
+  min-width: 0;
 }
 
 .kodex-mobile-skill-command-name,

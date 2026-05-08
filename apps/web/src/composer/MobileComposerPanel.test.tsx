@@ -221,7 +221,12 @@ describe("Mobile composer panel", () => {
     mockSkills([
       skillFixture({
         description: "Generate raster images",
-        interface: { displayName: "Image Gen", shortDescription: "Generate images" },
+        interface: {
+          brandColor: "#8B5CF6",
+          displayName: "Image Gen",
+          iconSmall: "/skills/imagegen/icon.png",
+          shortDescription: "Generate images",
+        },
         name: "imagegen",
       }),
     ]);
@@ -233,13 +238,67 @@ describe("Mobile composer panel", () => {
     expect(await screen.findByRole("listbox", { name: /skill suggestions/i })).toHaveClass(
       "kodex-mobile-skill-command-list",
     );
+    const option = screen.getByRole("option", { name: /image gen/i });
+    const optionIcon = option.querySelector(".kodex-skill-option-icon") as HTMLElement;
+    expect(optionIcon).toHaveAttribute("data-has-accent", "true");
+    expect(optionIcon.style.getPropertyValue("--skill-brand-color")).toBe("#8B5CF6");
+    expect(optionIcon.querySelector("img")).toHaveAttribute(
+      "src",
+      "http://localhost:3000/v1/skills/icon?path=%2Fskills%2Fimagegen%2Ficon.png",
+    );
     expect(document.querySelector(".kodex-skill-popup")).not.toBeInTheDocument();
     expect(screen.queryByText("Generate raster images")).not.toBeInTheDocument();
     expect(document.querySelector(".kodex-mobile-skill-command-description")).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("option", { name: /image gen/i }));
+    await userEvent.click(option);
 
     await waitFor(() => expect(screen.getByLabelText(/message composer/i)).toHaveValue("$imagegen "));
+  });
+
+  it("renders generated first-character icons for mobile skill suggestions without icon assets", async () => {
+    mockSkills([
+      skillFixture({
+        interface: { brandColor: "#0F9D58", displayName: "Google Drive" },
+        name: "google-drive:google-drive",
+      }),
+    ]);
+    renderComposerPanel();
+
+    await userEvent.click(screen.getByLabelText(/message composer/i));
+    await userEvent.type(screen.getByLabelText(/message composer/i), "$drive");
+
+    const option = await screen.findByRole("option", { name: /google drive/i });
+    const optionIcon = option.querySelector(".kodex-skill-option-icon") as HTMLElement;
+    expect(optionIcon).toHaveAttribute("data-has-accent", "true");
+    expect(optionIcon.style.getPropertyValue("--skill-brand-color")).toBe("#0F9D58");
+    expect(optionIcon.querySelector("img")).not.toBeInTheDocument();
+    expect(optionIcon).toHaveTextContent("G");
+  });
+
+  it("renders svg mobile skill suggestion icons as themed masks", async () => {
+    mockSkills([
+      skillFixture({
+        interface: {
+          brandColor: "#4285F4",
+          displayName: "Google Drive",
+          iconSmall: "/skills/google-drive/google-drive-small.svg",
+        },
+        name: "google-drive:google-drive",
+      }),
+    ]);
+    renderComposerPanel();
+
+    await userEvent.click(screen.getByLabelText(/message composer/i));
+    await userEvent.type(screen.getByLabelText(/message composer/i), "$drive");
+
+    const option = await screen.findByRole("option", { name: /google drive/i });
+    const optionIcon = option.querySelector(".kodex-skill-option-icon") as HTMLElement;
+    const svgIcon = optionIcon.querySelector(".kodex-skill-option-icon-svg") as HTMLElement;
+    expect(optionIcon).toHaveAttribute("data-has-accent", "true");
+    expect(optionIcon.style.getPropertyValue("--skill-brand-color")).toBe("#4285F4");
+    expect(optionIcon.querySelector("img")).not.toBeInTheDocument();
+    expect(svgIcon).toBeInTheDocument();
+    expect(svgIcon.style.getPropertyValue("--skill-icon-mask")).toContain("google-drive-small.svg");
   });
 
   it("reserves readable fullscreen space for the mobile skill command sheet", async () => {

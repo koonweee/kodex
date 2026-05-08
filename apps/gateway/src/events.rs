@@ -610,6 +610,27 @@ async fn apply_live_item_skill_mentions(
     item: &Value,
     item_snapshot: &mut ThreadItemSnapshot,
 ) -> ApiResult<()> {
+    let Some(text) = visible_text_from_thread_item(item) else {
+        if !item_snapshot.skill_mentions.is_empty() {
+            state
+                .store
+                .upsert_timeline_skill_mentions(
+                    thread_id,
+                    &item_snapshot.id,
+                    &item_snapshot.skill_mentions,
+                )
+                .await?;
+        }
+        return Ok(());
+    };
+    if let Some(mentions) = state
+        .store
+        .commit_pending_timeline_skill_mentions(thread_id, &item_snapshot.id, &text)
+        .await?
+    {
+        item_snapshot.skill_mentions = mentions;
+        return Ok(());
+    }
     if !item_snapshot.skill_mentions.is_empty() {
         state
             .store
@@ -619,17 +640,6 @@ async fn apply_live_item_skill_mentions(
                 &item_snapshot.skill_mentions,
             )
             .await?;
-        return Ok(());
-    }
-    let Some(text) = visible_text_from_thread_item(item) else {
-        return Ok(());
-    };
-    if let Some(mentions) = state
-        .store
-        .commit_pending_timeline_skill_mentions(thread_id, &item_snapshot.id, &text)
-        .await?
-    {
-        item_snapshot.skill_mentions = mentions;
         return Ok(());
     }
     if let Some(mentions) = state
@@ -1110,8 +1120,13 @@ mod tests {
                     end: 18,
                     name: "agent-browser".to_string(),
                     path: "/skills/agent-browser/SKILL.md".to_string(),
-                    display_name: None,
-                    scope: None,
+                    display_name: Some("Agent Browser".to_string()),
+                    scope: Some("user".to_string()),
+                    short_description: Some("Automate browser tasks".to_string()),
+                    brand_color: Some("#23a55a".to_string()),
+                    icon_small_url: Some(
+                        "/v1/skills/icon?path=%2Fskills%2Fagent-browser%2Ficon.png".to_string(),
+                    ),
                 }],
             )
             .await
@@ -1128,7 +1143,14 @@ mod tests {
                         "id": "item-user-1",
                         "type": "userMessage",
                         "content": [
-                            {"type": "text", "text": "Use $agent-browser"},
+                            {
+                                "type": "text",
+                                "text": "Use $agent-browser",
+                                "text_elements": [{
+                                    "byteRange": {"start": 4, "end": 18},
+                                    "placeholder": "$agent-browser"
+                                }]
+                            },
                             {"type": "skill", "name": "agent-browser", "path": "/skills/agent-browser/SKILL.md"}
                         ]
                     }
@@ -1148,7 +1170,12 @@ mod tests {
                 "start": 4,
                 "end": 18,
                 "name": "agent-browser",
-                "path": "/skills/agent-browser/SKILL.md"
+                "path": "/skills/agent-browser/SKILL.md",
+                "displayName": "Agent Browser",
+                "scope": "user",
+                "shortDescription": "Automate browser tasks",
+                "brandColor": "#23a55a",
+                "iconSmallUrl": "/v1/skills/icon?path=%2Fskills%2Fagent-browser%2Ficon.png"
             }])
         );
         let persisted = state
@@ -1157,6 +1184,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(persisted["item-user-1"][0].name, "agent-browser");
+        assert_eq!(
+            persisted["item-user-1"][0].display_name.as_deref(),
+            Some("Agent Browser")
+        );
     }
 
     #[test]

@@ -66,6 +66,12 @@ export function filePreviewUrl(threadId: string, path: string): string {
   return apiBaseUrl ? `${apiBaseUrl}${route}` : route;
 }
 
+export function skillIconUrl(path: string): string {
+  const route = `/v1/skills/icon?path=${encodeURIComponent(path)}`;
+  const apiBaseUrl = getApiBaseUrl();
+  return apiBaseUrl ? `${apiBaseUrl}${route}` : route;
+}
+
 export async function fetchThreadFilePreview(threadId: string, path: string): Promise<string> {
   const response = await globalThis.fetch(filePreviewUrl(threadId, path));
   if (!response.ok) {

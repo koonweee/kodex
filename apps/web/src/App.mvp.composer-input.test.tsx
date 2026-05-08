@@ -25,6 +25,16 @@ function clickMenuItem(name: RegExp) {
   return clickMenuItemWithDeps(name, screen, waitFor, fireEvent);
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, reject, resolve };
+}
+
 describe("MVP composer input flows", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -89,6 +99,58 @@ describe("MVP composer input flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
     });
+  });
+
+  it("renders selected skill icon and accent in the optimistic user message before turn confirmation", async () => {
+    const turnStart = deferred<unknown>();
+    mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "GET /v1/skills": {
+          cwd: "/home/example/kodex",
+          skills: [
+            {
+              name: "documents:documents",
+              path: "/skills/documents/SKILL.md",
+              description: "Create and edit documents",
+              enabled: true,
+              scope: "user",
+              shortDescription: null,
+              interface: {
+                displayName: "Documents",
+                shortDescription: "Create and edit document files",
+                brandColor: "#2563EB",
+                defaultPrompt: null,
+                iconSmall: "/skills/documents/assets/file-document.png",
+                iconLarge: null,
+              },
+            },
+          ],
+          errors: [],
+          invalidationGeneration: 0,
+        },
+        "POST /v1/threads/thread-1/turns": () => turnStart.promise,
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/message composer/i), "$doc");
+    expect(await screen.findByRole("option", { name: /documents/i })).toBeInTheDocument();
+    await userEvent.keyboard("{Enter}");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      const badge = container.querySelector(".kodex-inline-skill-badge");
+      expect(badge).toHaveTextContent("Documents");
+      expect(badge).toHaveAttribute("data-has-accent", "true");
+      expect(badge).toHaveStyle({ "--skill-accent-color": "#2563EB" });
+      expect(badge).toHaveStyle({ "--skill-accent-foreground": "#ffffff" });
+      expect(badge?.querySelector(".kodex-inline-skill-icon")).toBeInTheDocument();
+    });
+
+    turnStart.resolve({ payload: {} });
   });
 
   it("queues active-turn composer messages through the gateway queue", async () => {

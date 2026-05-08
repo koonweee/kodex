@@ -591,18 +591,28 @@ function KodexShell({
     threadRequestIds.current.set(projectId, requestId);
 
     try {
-      const nextThreads = mergeRouteSelectedThreadIntoList(
-        await listThreads(projectId),
-        routeSelectedThreadRef.current,
-        selectedThreadIdRef.current,
-      );
+      const loadedThreads = await listThreads(projectId);
       if (threadRequestIds.current.get(projectId) !== requestId) {
         return;
       }
 
-      setThreadsByProjectId((current) => ({ ...current, [projectId]: nextThreads }));
-      setPendingTitleThreadIds((current) => clearAvailableThreadTitles(current, nextThreads));
       const selectedId = selectedThreadIdRef.current;
+      const nextThreads = mergeLoadedProjectThreads(
+        threadsByProjectIdRef.current[projectId] ?? [],
+        loadedThreads,
+        routeSelectedThreadRef.current,
+        selectedId,
+      );
+      setThreadsByProjectId((current) => ({
+        ...current,
+        [projectId]: mergeLoadedProjectThreads(
+          current[projectId] ?? [],
+          loadedThreads,
+          routeSelectedThreadRef.current,
+          selectedThreadIdRef.current,
+        ),
+      }));
+      setPendingTitleThreadIds((current) => clearAvailableThreadTitles(current, nextThreads));
       if (selectedId && nextThreads.some((thread) => thread.id === selectedId)) {
         selectedProjectIdRef.current = projectId;
         setSelectedProjectId(projectId);
@@ -1463,6 +1473,24 @@ function mergeLoadedChatThreads(current: ThreadSummary[], loaded: ThreadSummary[
   }
   const currentIds = new Set(current.map((thread) => thread.id));
   return [...current, ...loaded.filter((thread) => !currentIds.has(thread.id))];
+}
+
+function mergeLoadedProjectThreads(
+  current: ThreadSummary[],
+  loaded: ThreadSummary[],
+  routeSelectedThread: ThreadSummary | null,
+  selectedThreadId: string | null,
+): ThreadSummary[] {
+  const hydratedThreads = mergeRouteSelectedThreadIntoList(loaded, routeSelectedThread, selectedThreadId);
+  if (
+    !routeSelectedThread ||
+    routeSelectedThread.id !== selectedThreadId ||
+    hydratedThreads.some((thread) => thread.id === routeSelectedThread.id) ||
+    !current.some((thread) => thread.id === routeSelectedThread.id)
+  ) {
+    return hydratedThreads;
+  }
+  return [routeSelectedThread, ...hydratedThreads];
 }
 
 function mergeRouteSelectedThreadIntoList(

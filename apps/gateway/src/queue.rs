@@ -10,7 +10,9 @@ use utoipa::ToSchema;
 
 use crate::{
     api::AppState,
-    app_server_api::{self, TurnStartOptions, UserInput},
+    app_server_api::{
+        self, timeline_skill_mentions_from_user_input, SkillMetadata, TurnStartOptions, UserInput,
+    },
     error::{ApiError, ApiResult},
     skills,
     store::{
@@ -136,33 +138,46 @@ pub async fn steer_queued_input(
         .await?;
     broadcast_queue_upsert(&state, &queued_input).await?;
 
-    let input =
-        match skills::resolve_turn_input_for_thread(&state, &thread_id, queued_input.input.clone())
-            .await
-        {
-            Ok(input) => input,
-            Err(error) => {
-                let failed = state
-                    .store
-                    .mark_queued_input_failed(&thread_id, &queue_id, error.to_string())
-                    .await?;
-                broadcast_queue_upsert(&state, &failed).await?;
-                return Err(error);
-            }
-        };
+    let resolved = match skills::resolve_turn_input_with_skills_for_thread(
+        &state,
+        &thread_id,
+        queued_input.input.clone(),
+    )
+    .await
+    {
+        Ok(resolved) => resolved,
+        Err(error) => {
+            let failed = state
+                .store
+                .mark_queued_input_failed(&thread_id, &queue_id, error.to_string())
+                .await?;
+            broadcast_queue_upsert(&state, &failed).await?;
+            return Err(error);
+        }
+    };
+    let pending_skill_mentions_id =
+        insert_pending_skill_mentions(&state, &thread_id, &resolved.input, &resolved.skills)
+            .await?;
     let result = app_server_api::client(&state.app_server)
-        .turn_steer(thread_id.clone(), active_turn_id.clone(), input)
+        .turn_steer(thread_id.clone(), active_turn_id.clone(), resolved.input)
         .await;
     match result {
         Ok(_) => {
             let queued_input = state
                 .store
-                .mark_queued_input_pending_commit(&thread_id, &queue_id, &active_turn_id, None)
+                .mark_queued_input_pending_commit(
+                    &thread_id,
+                    &queue_id,
+                    &active_turn_id,
+                    None,
+                    pending_skill_mentions_id.as_deref(),
+                )
                 .await?;
             broadcast_queue_upsert(&state, &queued_input).await?;
             Ok(Json(QueuedInputResponse { queued_input }))
         }
         Err(error) if is_non_steerable_error(&error) => {
+            delete_pending_skill_mentions(&state, pending_skill_mentions_id.as_deref()).await?;
             let queued_input = state
                 .store
                 .mark_queued_input_rejected_steer(&thread_id, &queue_id, error.to_string())
@@ -173,6 +188,7 @@ pub async fn steer_queued_input(
             ))
         }
         Err(error) => {
+            delete_pending_skill_mentions(&state, pending_skill_mentions_id.as_deref()).await?;
             let queued_input = state
                 .store
                 .mark_queued_input_failed(&thread_id, &queue_id, error.to_string())
@@ -340,36 +356,14 @@ async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<
     };
     broadcast_queue_upsert(state, &queued_input).await?;
 
-    let input =
-        match skills::resolve_turn_input_for_thread(state, thread_id, queued_input.input.clone())
-            .await
-        {
-            Ok(input) => input,
-            Err(error) => {
-                let failed = state
-                    .store
-                    .mark_queued_input_failed(thread_id, &queued_input.id, error.to_string())
-                    .await?;
-                state
-                    .store
-                    .clear_queue_drain_runtime_claim(thread_id)
-                    .await?;
-                broadcast_queue_upsert(state, &failed).await?;
-                return Err(error);
-            }
-        };
-
-    let result = app_server_api::client(&state.app_server)
-        .turn_start(thread_id.to_string(), input, queued_input.options.clone())
-        .await;
-    match result {
-        Ok(_) => {
-            state
-                .store
-                .delete_queued_input_for_gateway(thread_id, &queued_input.id)
-                .await?;
-            broadcast_queue_delete(state, thread_id, &queued_input.id).await?;
-        }
+    let resolved = match skills::resolve_turn_input_with_skills_for_thread(
+        state,
+        thread_id,
+        queued_input.input.clone(),
+    )
+    .await
+    {
+        Ok(resolved) => resolved,
         Err(error) => {
             let failed = state
                 .store
@@ -380,7 +374,68 @@ async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<
                 .clear_queue_drain_runtime_claim(thread_id)
                 .await?;
             broadcast_queue_upsert(state, &failed).await?;
+            return Err(error);
         }
+    };
+
+    let pending_skill_mentions_id =
+        insert_pending_skill_mentions(state, thread_id, &resolved.input, &resolved.skills).await?;
+
+    let result = app_server_api::client(&state.app_server)
+        .turn_start(
+            thread_id.to_string(),
+            resolved.input,
+            queued_input.options.clone(),
+        )
+        .await;
+    match result {
+        Ok(_) => {
+            state
+                .store
+                .delete_queued_input_for_gateway(thread_id, &queued_input.id)
+                .await?;
+            broadcast_queue_delete(state, thread_id, &queued_input.id).await?;
+        }
+        Err(error) => {
+            delete_pending_skill_mentions(state, pending_skill_mentions_id.as_deref()).await?;
+            let failed = state
+                .store
+                .mark_queued_input_failed(thread_id, &queued_input.id, error.to_string())
+                .await?;
+            state
+                .store
+                .clear_queue_drain_runtime_claim(thread_id)
+                .await?;
+            broadcast_queue_upsert(state, &failed).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn insert_pending_skill_mentions(
+    state: &AppState,
+    thread_id: &str,
+    input: &[UserInput],
+    skills: &[SkillMetadata],
+) -> ApiResult<Option<String>> {
+    let Some((text, mentions)) = timeline_skill_mentions_from_user_input(input, skills) else {
+        return Ok(None);
+    };
+    state
+        .store
+        .insert_pending_timeline_skill_mentions(thread_id, &text, &mentions)
+        .await
+}
+
+async fn delete_pending_skill_mentions(
+    state: &AppState,
+    pending_id: Option<&str>,
+) -> ApiResult<()> {
+    if let Some(pending_id) = pending_id {
+        state
+            .store
+            .delete_pending_timeline_skill_mentions(pending_id)
+            .await?;
     }
     Ok(())
 }

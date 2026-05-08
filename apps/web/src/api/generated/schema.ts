@@ -372,6 +372,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/skills/icon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview a local skill icon image
+         * @description Serves supported readable local skill icon images for localhost or trusted VPN deployments; this endpoint is not a public-safe filesystem authorization model.
+         */
+        get: operations["preview_skill_icon"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/threads": {
         parameters: {
             query?: never;
@@ -1020,6 +1040,9 @@ export interface components {
             message: string;
             path: string;
         };
+        SkillIconQuery: {
+            path: string;
+        };
         SkillInterface: {
             brandColor?: string | null;
             defaultPrompt?: string | null;
@@ -1154,12 +1177,15 @@ export interface components {
             turnId: string;
         };
         TimelineSkillMention: {
+            brandColor?: string | null;
             displayName?: string | null;
             /** Format: int32 */
             end: number;
+            iconSmallUrl?: string | null;
             name: string;
             path: string;
             scope?: string | null;
+            shortDescription?: string | null;
             /** Format: int32 */
             start: number;
         };
@@ -1845,6 +1871,40 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SkillsCatalogResponse"];
                 };
+            };
+        };
+    };
+    preview_skill_icon: {
+        parameters: {
+            query: {
+                path: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Local skill icon image bytes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Icon path was not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Icon path exists but is not a supported image type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

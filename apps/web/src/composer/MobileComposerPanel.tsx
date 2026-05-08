@@ -103,7 +103,7 @@ export function MobileComposerPanel({
   function handleSubmit(event: FormEvent) {
     onSubmitTurn(
       event,
-      submitContent.text,
+      draftState.currentSubmittedText(),
       submitContent.controls,
       draftState.currentSkillInputs(),
       draftState.currentSkillTextElements(),

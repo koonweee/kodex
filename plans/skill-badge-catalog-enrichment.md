@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+Complete. Implemented catalog-backed gateway projection, skill icon preview serving, optimistic composer metadata, enriched inline badge rendering, stale/missing catalog fallback behavior, generated OpenAPI/frontend types, and focused verification.
 
 ## Goal
 

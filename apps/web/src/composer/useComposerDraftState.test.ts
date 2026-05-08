@@ -46,6 +46,8 @@ describe("useComposerDraftState", () => {
         end: "Use $review-fix".length,
         name: "review-fix",
         path: "/skills/review-fix/SKILL.md",
+        scope: "user",
+        shortDescription: "review-fix description",
       },
     ]);
 
@@ -72,13 +74,65 @@ describe("useComposerDraftState", () => {
     rerender({ resetToken: 1 });
     expect(result.current.composerText).toBe("");
   });
+
+  it("exposes selected skill metadata synchronously for immediate submit", () => {
+    const { result } = renderHook(() => useComposerDraftState(0));
+
+    act(() => {
+      result.current.updateComposerText("$doc", "$doc".length);
+    });
+
+    let mentions = result.current.currentTimelineSkillMentions();
+    act(() => {
+      result.current.selectSkill(
+        skill("documents:documents", {
+          brandColor: "#2563EB",
+          displayName: "Documents",
+          iconSmall: "/skills/documents/assets/file-document.png",
+          shortDescription: "Create and edit document files",
+        }),
+      );
+      mentions = result.current.currentTimelineSkillMentions();
+    });
+
+    expect(result.current.currentSubmittedText()).toBe("$documents:documents");
+    expect(mentions).toEqual([
+      {
+        start: 0,
+        end: "$documents:documents".length,
+        name: "documents:documents",
+        path: "/skills/documents:documents/SKILL.md",
+        displayName: "Documents",
+        scope: "user",
+        shortDescription: "Create and edit document files",
+        brandColor: "#2563EB",
+        iconSmallUrl: "http://localhost:3000/v1/skills/icon?path=%2Fskills%2Fdocuments%2Fassets%2Ffile-document.png",
+      },
+    ]);
+  });
 });
 
-function skill(name: string): SkillMetadata {
+function skill(
+  name: string,
+  options: {
+    brandColor?: string;
+    displayName?: string;
+    iconSmall?: string;
+    shortDescription?: string;
+  } = {},
+): SkillMetadata {
   return {
     description: `${name} description`,
     enabled: true,
-    interface: null,
+    interface:
+      options.brandColor || options.displayName || options.iconSmall || options.shortDescription
+        ? {
+            brandColor: options.brandColor,
+            displayName: options.displayName,
+            iconSmall: options.iconSmall,
+            shortDescription: options.shortDescription,
+          }
+        : null,
     name,
     path: `/skills/${name}/SKILL.md`,
     scope: "user",

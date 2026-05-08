@@ -15,8 +15,8 @@ use crate::{
     schema::validate_client_request_params,
 };
 
-const ROLLOUT_LOAD_RETRY_ATTEMPTS: usize = 3;
-const ROLLOUT_LOAD_RETRY_DELAY: Duration = Duration::from_millis(25);
+const ROLLOUT_LOAD_RETRY_ATTEMPTS: usize = 6;
+const ROLLOUT_LOAD_RETRY_DELAY: Duration = Duration::from_millis(50);
 
 #[derive(Clone)]
 pub struct CodexClient {
@@ -111,7 +111,7 @@ impl CodexClient {
 
     pub async fn thread_read(&self, thread_id: String) -> ApiResult<ThreadDetailResponse> {
         let payload = self
-            .request(
+            .request_retrying_rollout_load(
                 "thread/read",
                 json!({ "threadId": thread_id, "includeTurns": true }),
             )
@@ -121,7 +121,7 @@ impl CodexClient {
 
     pub async fn thread_read_summary(&self, thread_id: String) -> ApiResult<ThreadSummary> {
         let payload = self
-            .request(
+            .request_retrying_rollout_load(
                 "thread/read",
                 json!({ "threadId": thread_id, "includeTurns": false }),
             )
@@ -579,6 +579,12 @@ pub struct TimelineSkillMention {
     pub display_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub short_description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brand_color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_small_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -847,11 +853,12 @@ impl ThreadItemSnapshot {
 
 pub(crate) fn timeline_skill_mentions_from_user_input(
     input: &[UserInput],
+    skills: &[SkillMetadata],
 ) -> Option<(String, Vec<TimelineSkillMention>)> {
     let content = serde_json::to_value(input).ok()?;
     let content = content.as_array()?;
     let text = visible_text_from_user_content(content)?;
-    Some((text, skill_mentions_from_user_content(content)))
+    Some((text, skill_mentions_from_user_content(content, skills)))
 }
 
 pub(crate) fn visible_text_from_thread_item(item: &Value) -> Option<String> {
@@ -862,6 +869,58 @@ pub(crate) fn visible_text_from_thread_item(item: &Value) -> Option<String> {
     visible_text_from_user_content(content)
 }
 
+pub(crate) fn timeline_skill_mentions_from_text(
+    text: &str,
+    catalog: &[SkillMetadata],
+) -> Vec<TimelineSkillMention> {
+    let skills = unambiguous_enabled_catalog_skills_by_name(catalog);
+    if skills.is_empty() {
+        return Vec::new();
+    }
+    let bytes = text.as_bytes();
+    let mut mentions = Vec::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'$' {
+            index += 1;
+            continue;
+        }
+        let name_start = index + 1;
+        let Some(first) = bytes.get(name_start) else {
+            index += 1;
+            continue;
+        };
+        if !is_skill_name_char(*first) {
+            index += 1;
+            continue;
+        }
+        let mut name_end = name_start + 1;
+        while bytes
+            .get(name_end)
+            .is_some_and(|next| is_skill_name_char(*next))
+        {
+            name_end += 1;
+        }
+        let name = &text[name_start..name_end];
+        if let Some(skill) = skills.get(name) {
+            let mention = TimelineSkillMention {
+                start: text[..index].encode_utf16().count() as u32,
+                end: text[..name_end].encode_utf16().count() as u32,
+                name: name.to_string(),
+                path: skill.path.clone(),
+                display_name: None,
+                scope: None,
+                short_description: None,
+                brand_color: None,
+                icon_small_url: None,
+            };
+            mentions.push(enrich_timeline_skill_mention(mention, catalog));
+        }
+        index = name_end;
+    }
+    mentions
+}
+
 fn skill_mentions_from_thread_item(item: &Value) -> Vec<TimelineSkillMention> {
     if item.get("type").and_then(Value::as_str) != Some("userMessage") {
         return Vec::new();
@@ -869,7 +928,34 @@ fn skill_mentions_from_thread_item(item: &Value) -> Vec<TimelineSkillMention> {
     let Some(content) = item.get("content").and_then(Value::as_array) else {
         return Vec::new();
     };
-    skill_mentions_from_user_content(content)
+    skill_mentions_from_user_content(content, &[])
+}
+
+fn unambiguous_enabled_catalog_skills_by_name(
+    catalog: &[SkillMetadata],
+) -> HashMap<String, &SkillMetadata> {
+    let mut skills_by_name: HashMap<String, Option<&SkillMetadata>> = HashMap::new();
+    for skill in catalog.iter().filter(|skill| skill.enabled) {
+        skills_by_name
+            .entry(skill.name.clone())
+            .and_modify(|existing| {
+                if existing
+                    .as_ref()
+                    .is_some_and(|existing| existing.path != skill.path)
+                {
+                    *existing = None;
+                }
+            })
+            .or_insert_with(|| Some(skill));
+    }
+    skills_by_name
+        .into_iter()
+        .filter_map(|(name, skill)| skill.map(|skill| (name, skill)))
+        .collect()
+}
+
+fn is_skill_name_char(byte: u8) -> bool {
+    matches!(byte, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-' | b':')
 }
 
 fn visible_text_from_user_content(content: &[Value]) -> Option<String> {
@@ -892,7 +978,10 @@ fn visible_text_from_user_content(content: &[Value]) -> Option<String> {
     }
 }
 
-fn skill_mentions_from_user_content(content: &[Value]) -> Vec<TimelineSkillMention> {
+fn skill_mentions_from_user_content(
+    content: &[Value],
+    catalog: &[SkillMetadata],
+) -> Vec<TimelineSkillMention> {
     let skills = skills_by_unambiguous_name(content);
     if skills.is_empty() {
         return Vec::new();
@@ -924,12 +1013,90 @@ fn skill_mentions_from_user_content(content: &[Value]) -> Vec<TimelineSkillMenti
             if let Some(mention) =
                 skill_mention_from_text_element(text, display_offset, element, &skills)
             {
-                mentions.push(mention);
+                mentions.push(enrich_timeline_skill_mention(mention, catalog));
             }
         }
         display_offset = display_offset.saturating_add(text.encode_utf16().count() as u32);
     }
     mentions
+}
+
+pub(crate) fn enrich_timeline_skill_mentions(
+    mentions: Vec<TimelineSkillMention>,
+    catalog: &[SkillMetadata],
+) -> Vec<TimelineSkillMention> {
+    mentions
+        .into_iter()
+        .map(|mention| enrich_timeline_skill_mention(mention, catalog))
+        .collect()
+}
+
+fn enrich_timeline_skill_mention(
+    mut mention: TimelineSkillMention,
+    catalog: &[SkillMetadata],
+) -> TimelineSkillMention {
+    let Some(skill) = matching_enabled_skill_for_mention(&mention, catalog) else {
+        mention.display_name = None;
+        mention.scope = None;
+        mention.short_description = None;
+        mention.brand_color = None;
+        mention.icon_small_url = None;
+        return mention;
+    };
+
+    mention.display_name = skill
+        .interface
+        .as_ref()
+        .and_then(|interface| trimmed_optional(interface.display_name.as_deref()));
+    mention.scope = trimmed_optional(Some(&skill.scope));
+    mention.short_description = skill
+        .interface
+        .as_ref()
+        .and_then(|interface| trimmed_optional(interface.short_description.as_deref()))
+        .or_else(|| trimmed_optional(skill.short_description.as_deref()))
+        .or_else(|| trimmed_optional(Some(&skill.description)));
+    mention.brand_color = skill
+        .interface
+        .as_ref()
+        .and_then(|interface| trimmed_optional(interface.brand_color.as_deref()));
+    mention.icon_small_url = skill
+        .interface
+        .as_ref()
+        .and_then(|interface| trimmed_optional(interface.icon_small.as_deref()))
+        .map(|path| format!("/v1/skills/icon?path={}", percent_encode_query_value(&path)));
+    mention
+}
+
+fn matching_enabled_skill_for_mention<'a>(
+    mention: &TimelineSkillMention,
+    catalog: &'a [SkillMetadata],
+) -> Option<&'a SkillMetadata> {
+    catalog
+        .iter()
+        .find(|skill| skill.enabled && skill.path == mention.path && skill.name == mention.name)
+}
+
+fn trimmed_optional(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn percent_encode_query_value(value: &str) -> String {
+    let mut output = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                output.push(byte as char);
+            }
+            _ => {
+                output.push('%');
+                output.push_str(&format!("{byte:02X}"));
+            }
+        }
+    }
+    output
 }
 
 fn skills_by_unambiguous_name(content: &[Value]) -> HashMap<String, String> {
@@ -987,6 +1154,9 @@ fn skill_mention_from_text_element(
         path: path.clone(),
         display_name: None,
         scope: None,
+        short_description: None,
+        brand_color: None,
+        icon_small_url: None,
     })
 }
 
@@ -1792,6 +1962,9 @@ mod tests {
                 path: "/skills/review-fix/SKILL.md".to_string(),
                 display_name: None,
                 scope: None,
+                short_description: None,
+                brand_color: None,
+                icon_small_url: None,
             }]
         );
     }
@@ -1820,6 +1993,45 @@ mod tests {
         }))
         .unwrap();
         assert!(mismatched.skill_mentions.is_empty());
+    }
+
+    #[test]
+    fn skill_mention_enrichment_requires_enabled_name_and_path_match() {
+        let mentions = vec![TimelineSkillMention {
+            start: 4,
+            end: 15,
+            name: "review-fix".to_string(),
+            path: "/skills/review-fix/SKILL.md".to_string(),
+            display_name: None,
+            scope: None,
+            short_description: None,
+            brand_color: None,
+            icon_small_url: None,
+        }];
+        let skill = SkillMetadata {
+            name: "other".to_string(),
+            path: "/skills/review-fix/SKILL.md".to_string(),
+            description: "Should not apply".to_string(),
+            enabled: true,
+            scope: "user".to_string(),
+            short_description: Some("Wrong skill".to_string()),
+            interface: Some(SkillInterface {
+                display_name: Some("Wrong".to_string()),
+                short_description: Some("Wrong skill".to_string()),
+                brand_color: Some("#f00".to_string()),
+                default_prompt: None,
+                icon_small: Some("/skills/review-fix/icon.png".to_string()),
+                icon_large: None,
+            }),
+        };
+
+        let enriched = enrich_timeline_skill_mentions(mentions, &[skill]);
+
+        assert!(enriched[0].display_name.is_none());
+        assert!(enriched[0].scope.is_none());
+        assert!(enriched[0].short_description.is_none());
+        assert!(enriched[0].brand_color.is_none());
+        assert!(enriched[0].icon_small_url.is_none());
     }
 
     #[tokio::test]

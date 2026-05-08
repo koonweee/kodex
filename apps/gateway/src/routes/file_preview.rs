@@ -69,6 +69,24 @@ pub async fn preview_thread_file(
     preview_response(kind, path.as_path(), bytes)
 }
 
+pub async fn preview_local_image_file(path: &str) -> ApiResult<Response<Body>> {
+    let path = canonical_preview_path(path).await?;
+    let metadata = fs::metadata(&path).await.map_err(|_| preview_not_found())?;
+    if !metadata.is_file() {
+        return Err(preview_not_found());
+    }
+
+    let kind = classify_preview_file(&path, metadata.len()).await?;
+    if !matches!(kind, PreviewKind::Image(_)) {
+        return Err(ApiError::UnsupportedMediaType(
+            "unsupported preview type".to_string(),
+        ));
+    }
+    let bytes = fs::read(&path).await.map_err(|_| preview_not_found())?;
+    kind.validate_bytes(&bytes)?;
+    preview_response(kind, path.as_path(), bytes)
+}
+
 async fn ensure_thread_exists(state: &AppState, thread_id: &str) -> ApiResult<()> {
     let response = match app_server_api::client(&state.app_server)
         .thread_read(thread_id.to_string())
@@ -146,7 +164,18 @@ fn sniff_image_type(bytes: &[u8]) -> Option<ImagePreviewType> {
     if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
         return Some(ImagePreviewType::Webp);
     }
+    if svg_extension_header(bytes) {
+        return Some(ImagePreviewType::Svg);
+    }
     None
+}
+
+fn svg_extension_header(bytes: &[u8]) -> bool {
+    let Ok(header) = std::str::from_utf8(bytes) else {
+        return false;
+    };
+    let trimmed = header.trim_start_matches(|character: char| character.is_whitespace());
+    trimmed.starts_with("<svg") || trimmed.starts_with("<?xml")
 }
 
 fn markdown_extension(path: &FsPath) -> bool {
@@ -235,6 +264,7 @@ enum ImagePreviewType {
     Jpeg,
     Gif,
     Webp,
+    Svg,
 }
 
 impl ImagePreviewType {
@@ -244,6 +274,7 @@ impl ImagePreviewType {
             Self::Jpeg => "image/jpeg",
             Self::Gif => "image/gif",
             Self::Webp => "image/webp",
+            Self::Svg => "image/svg+xml",
         }
     }
 }

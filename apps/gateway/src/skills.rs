@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -17,6 +18,12 @@ use crate::{
 pub const SKILLS_CHANGED_EVENT: &str = "skills.changed";
 
 const DEFAULT_CATALOG_KEY: &str = "";
+
+#[derive(Debug, Clone)]
+pub struct ResolvedTurnInput {
+    pub input: Vec<UserInput>,
+    pub skills: Vec<SkillMetadata>,
+}
 
 #[derive(Clone, Default)]
 pub struct SkillCatalogCache {
@@ -56,11 +63,15 @@ impl SkillCatalogCache {
                 .data
                 .into_iter()
                 .find(|entry| cwd.as_deref().is_none_or(|cwd| entry.cwd == cwd))
-                .map(|entry| SkillsCatalogResponse {
-                    cwd: Some(entry.cwd),
-                    skills: entry.skills,
-                    errors: entry.errors,
-                    invalidation_generation: generation,
+                .map(|entry| {
+                    let mut skills = entry.skills;
+                    normalize_skill_icon_paths(&mut skills);
+                    SkillsCatalogResponse {
+                        cwd: Some(entry.cwd),
+                        skills,
+                        errors: entry.errors,
+                        invalidation_generation: generation,
+                    }
                 })
                 .unwrap_or_else(|| SkillsCatalogResponse {
                     cwd: cwd.clone(),
@@ -90,6 +101,48 @@ impl SkillCatalogCache {
     }
 }
 
+fn normalize_skill_icon_paths(skills: &mut [SkillMetadata]) {
+    for skill in skills {
+        let Some(skill_dir) = Path::new(&skill.path).parent() else {
+            continue;
+        };
+        let Some(interface) = skill.interface.as_mut() else {
+            continue;
+        };
+        normalize_skill_icon_path(skill_dir, &mut interface.icon_small);
+        normalize_skill_icon_path(skill_dir, &mut interface.icon_large);
+    }
+}
+
+fn normalize_skill_icon_path(skill_dir: &Path, icon_path: &mut Option<String>) {
+    let Some(raw_path) = icon_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+    else {
+        *icon_path = None;
+        return;
+    };
+    if raw_path.starts_with("http://") || raw_path.starts_with("https://") {
+        *icon_path = Some(raw_path.to_string());
+        return;
+    }
+    let path = Path::new(raw_path);
+    let absolute = if path.is_absolute() {
+        PathBuf::from(path)
+    } else {
+        skill_dir.join(path)
+    };
+    *icon_path = Some(clean_path_string(&absolute));
+}
+
+fn clean_path_string(path: &Path) -> String {
+    path.components()
+        .collect::<PathBuf>()
+        .to_string_lossy()
+        .into_owned()
+}
+
 pub async fn broadcast_skills_changed(state: &AppState, source: &str) -> ApiResult<()> {
     let generation = state.skills.invalidate().await;
     let event = state
@@ -116,13 +169,28 @@ pub async fn resolve_turn_input_for_thread(
     thread_id: &str,
     input: Vec<UserInput>,
 ) -> ApiResult<Vec<UserInput>> {
+    Ok(
+        resolve_turn_input_with_skills_for_thread(state, thread_id, input)
+            .await?
+            .input,
+    )
+}
+
+pub async fn resolve_turn_input_with_skills_for_thread(
+    state: &AppState,
+    thread_id: &str,
+    input: Vec<UserInput>,
+) -> ApiResult<ResolvedTurnInput> {
     if !input_needs_skill_resolution(&input) {
-        return Ok(input);
+        return Ok(ResolvedTurnInput {
+            input,
+            skills: Vec::new(),
+        });
     }
     let thread = app_server_api::client(&state.app_server)
         .thread_read_summary(thread_id.to_string())
         .await?;
-    resolve_turn_input_for_cwd(state, Some(thread.cwd), input).await
+    resolve_turn_input_with_skills_for_cwd(state, Some(thread.cwd), input).await
 }
 
 pub async fn resolve_turn_input_for_cwd(
@@ -130,8 +198,21 @@ pub async fn resolve_turn_input_for_cwd(
     cwd: Option<String>,
     input: Vec<UserInput>,
 ) -> ApiResult<Vec<UserInput>> {
+    Ok(resolve_turn_input_with_skills_for_cwd(state, cwd, input)
+        .await?
+        .input)
+}
+
+pub async fn resolve_turn_input_with_skills_for_cwd(
+    state: &AppState,
+    cwd: Option<String>,
+    input: Vec<UserInput>,
+) -> ApiResult<ResolvedTurnInput> {
     if !input_needs_skill_resolution(&input) {
-        return Ok(input);
+        return Ok(ResolvedTurnInput {
+            input,
+            skills: Vec::new(),
+        });
     }
 
     let catalog = state
@@ -139,7 +220,7 @@ pub async fn resolve_turn_input_for_cwd(
         .catalog(&state.app_server, cwd.clone(), false)
         .await?;
     match build_resolved_input(&input, &catalog.skills) {
-        Ok(input) => Ok(input),
+        Ok(resolved) => Ok(resolved),
         Err(ResolveSkillError::SelectedSkillMissing { .. }) => {
             let catalog = state.skills.catalog(&state.app_server, cwd, true).await?;
             build_resolved_input(&input, &catalog.skills).map_err(Into::into)
@@ -162,9 +243,10 @@ fn input_needs_skill_resolution(input: &[UserInput]) -> bool {
 fn build_resolved_input(
     input: &[UserInput],
     skills: &[SkillMetadata],
-) -> Result<Vec<UserInput>, ResolveSkillError> {
+) -> Result<ResolvedTurnInput, ResolveSkillError> {
     let enabled: Vec<&SkillMetadata> = skills.iter().filter(|skill| skill.enabled).collect();
     let mut resolved = Vec::new();
+    let mut resolved_skills = Vec::new();
     let mut seen_paths = HashSet::new();
     let mut seen_names = HashSet::new();
 
@@ -178,6 +260,7 @@ fn build_resolved_input(
             };
             if seen_paths.insert(skill.path.clone()) {
                 seen_names.insert(skill.name.clone());
+                resolved_skills.push(skill.clone());
                 resolved.push(skill_input(skill));
             }
         }
@@ -201,6 +284,7 @@ fn build_resolved_input(
                     };
                     if seen_paths.insert(skill.path.clone()) {
                         seen_names.insert(skill.name.clone());
+                        resolved_skills.push((*skill).clone());
                         resolved.push(skill_input(skill));
                     }
                 }
@@ -215,7 +299,10 @@ fn build_resolved_input(
         .cloned()
         .collect();
     output.extend(resolved);
-    Ok(output)
+    Ok(ResolvedTurnInput {
+        input: output,
+        skills: resolved_skills,
+    })
 }
 
 fn skill_input(skill: &SkillMetadata) -> UserInput {
@@ -260,7 +347,7 @@ fn extract_skill_token_names(text: &str) -> Vec<String> {
 }
 
 fn is_mention_name_char(byte: u8) -> bool {
-    matches!(byte, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-')
+    matches!(byte, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-' | b':')
 }
 
 fn is_common_env_var(name: &str) -> bool {
@@ -395,8 +482,14 @@ mod tests {
     #[test]
     fn parses_skill_tokens_and_ignores_common_env_vars() {
         assert_eq!(
-            extract_skill_token_names("use $review-fix and $PATH then $_ok"),
-            vec!["review-fix".to_string(), "_ok".to_string()]
+            extract_skill_token_names(
+                "use $review-fix and $PATH then $_ok and $browser-use:browser"
+            ),
+            vec![
+                "review-fix".to_string(),
+                "_ok".to_string(),
+                "browser-use:browser".to_string()
+            ]
         );
     }
 
@@ -421,9 +514,21 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(resolved.len(), 3);
-        assert!(matches!(resolved[1], UserInput::Skill { ref name, .. } if name == "selected"));
-        assert!(matches!(resolved[2], UserInput::Skill { ref name, .. } if name == "review-fix"));
+        assert_eq!(resolved.input.len(), 3);
+        assert!(
+            matches!(resolved.input[1], UserInput::Skill { ref name, .. } if name == "selected")
+        );
+        assert!(
+            matches!(resolved.input[2], UserInput::Skill { ref name, .. } if name == "review-fix")
+        );
+        assert_eq!(
+            resolved
+                .skills
+                .iter()
+                .map(|skill| skill.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["selected", "review-fix"]
+        );
     }
 
     #[test]
@@ -432,7 +537,7 @@ mod tests {
             text: "Run $missing".to_string(),
             text_elements: Vec::new(),
         }];
-        assert_eq!(build_resolved_input(&input, &[]).unwrap().len(), 1);
+        assert_eq!(build_resolved_input(&input, &[]).unwrap().input.len(), 1);
     }
 
     #[test]
@@ -450,7 +555,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved.input.len(), 1);
     }
 
     #[test]

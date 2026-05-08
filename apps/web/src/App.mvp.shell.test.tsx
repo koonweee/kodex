@@ -440,6 +440,41 @@ describe("MVP shell flows", () => {
     expect(screen.getByRole("heading", { name: /keep local chat/i })).toBeInTheDocument();
   });
 
+  it("keeps a locally created project thread when the initial project list resolves late", async () => {
+    const initialProjectThreads = deferred<unknown>();
+    const projectThread = {
+      ...thread,
+      id: "project-thread-2",
+      name: "New thread",
+      preview: "",
+    };
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": () => initialProjectThreads.promise,
+        "POST /v1/threads": { thread: projectThread, rawPayload: {} },
+        "GET /v1/threads/project-thread-2/queued-inputs": { queuedInputs: [] },
+        "POST /v1/threads/project-thread-2/turns": { payload: {} },
+        "GET /v1/threads/project-thread-2": threadDetail(
+          { ...projectThread, preview: "Keep local project thread" },
+          [],
+        ),
+      }),
+    );
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /create thread in kodex/i }));
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Keep local project thread");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    expect(await screen.findByRole("button", { name: /keep local project thread/i })).toBeInTheDocument();
+    initialProjectThreads.resolve({ threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} });
+
+    expect(await screen.findByRole("button", { name: /keep local project thread/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /keep local project thread/i })).toBeInTheDocument();
+  });
+
   it("groups threads under their projects in the sidebar", async () => {
     const otherProject = {
       ...project,
