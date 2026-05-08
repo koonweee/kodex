@@ -1,21 +1,36 @@
 import {
   ActionIcon,
   Alert,
+  Autocomplete,
   Badge,
   Box,
   Button,
+  Checkbox,
+  Combobox,
   Drawer,
   Group,
+  Loader,
   Menu,
   Modal,
+  MultiSelect,
   NumberInput,
+  Paper,
   Select,
   SegmentedControl,
+  Skeleton,
   Stack,
+  Switch,
   Tabs,
+  Table,
   Text,
   Textarea,
   TextInput,
+  Tooltip,
+  Popover,
+  Progress,
+  Radio,
+  ScrollArea,
+  useCombobox,
 } from "@mantine/core";
 import { Bell, Check, Menu as MenuIcon, PanelRightOpen, Settings, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -46,6 +61,11 @@ export function ThemeWorkbench({
   );
   const [modalOpen, setModalOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [comboboxValue, setComboboxValue] = useState("Inbox");
+  const combobox = useCombobox({
+    onDropdownClose: () => combobox.resetSelectedOption(),
+  });
   const activeColorSchemeId = colorSchemeId ?? localColorSchemeId;
   const activeColorScheme = getKodexColorScheme(activeColorSchemeId);
 
@@ -116,8 +136,36 @@ export function ThemeWorkbench({
                 label="Plain select"
               />
               <NumberInput defaultValue={3} label="Plain number input" min={1} />
+              <Autocomplete
+                data={["thread settings", "timeline rendering", "automation prompt"]}
+                label="Plain autocomplete"
+                placeholder="Search commands"
+              />
+              <MultiSelect
+                data={[
+                  { value: "frontend", label: "Frontend" },
+                  { value: "backend", label: "Backend" },
+                  { value: "docs", label: "Docs" },
+                ]}
+                defaultValue={["frontend", "docs"]}
+                label="Plain multi select"
+              />
               <TextInput disabled label="Disabled input" defaultValue="Unavailable" />
               <TextInput error="Field is required" label="Error input" defaultValue="" />
+            </Stack>
+          </section>
+
+          <section className="kodex-theme-workbench-section" aria-label="Selection controls">
+            <Stack gap="sm">
+              <Text fw={700}>Selection controls</Text>
+              <Checkbox defaultChecked description="Inline checkbox description" label="Plain checkbox" />
+              <Switch defaultChecked label="Plain switch" />
+              <Radio.Group defaultValue="allow" label="Plain radio group">
+                <Group mt="xs">
+                  <Radio label="Allow" value="allow" />
+                  <Radio label="Ask" value="ask" />
+                </Group>
+              </Radio.Group>
             </Stack>
           </section>
 
@@ -150,6 +198,50 @@ export function ThemeWorkbench({
                 <Button leftSection={<PanelRightOpen size={15} />} onClick={() => setDrawerOpen(true)} variant="light">
                   Open drawer
                 </Button>
+              </Group>
+
+              <Combobox
+                store={combobox}
+                onOptionSubmit={(value) => {
+                  setComboboxValue(value);
+                  combobox.closeDropdown();
+                }}
+              >
+                <Combobox.Target>
+                  <Button
+                    aria-label="Plain combobox"
+                    onClick={() => combobox.toggleDropdown()}
+                    rightSection={<MenuIcon size={14} />}
+                    variant="light"
+                  >
+                    {comboboxValue}
+                  </Button>
+                </Combobox.Target>
+                <Combobox.Dropdown>
+                  <Combobox.Options>
+                    {["Inbox", "Pinned", "Archived"].map((option) => (
+                      <Combobox.Option key={option} value={option}>
+                        {option}
+                      </Combobox.Option>
+                    ))}
+                  </Combobox.Options>
+                </Combobox.Dropdown>
+              </Combobox>
+
+              <Group gap="xs">
+                <Popover opened={popoverOpen} onChange={setPopoverOpen} position="bottom-start" withArrow>
+                  <Popover.Target>
+                    <Button onClick={() => setPopoverOpen((opened) => !opened)} variant="light">
+                      Open popover
+                    </Button>
+                  </Popover.Target>
+                  <Popover.Dropdown>
+                    <Text size="sm">Popover surface uses default chrome.</Text>
+                  </Popover.Dropdown>
+                </Popover>
+                <Tooltip label="Themed tooltip" opened>
+                  <Button variant="subtle">Tooltip target</Button>
+                </Tooltip>
               </Group>
 
               <Modal opened={modalOpen} onClose={() => setModalOpen(false)} title="Themed modal">
@@ -194,6 +286,37 @@ export function ThemeWorkbench({
               <Alert icon={<Bell size={16} />} title="Workbench alert">
                 Alert defaults follow semantic Kodex surfaces.
               </Alert>
+              <Group align="center" gap="sm">
+                <Loader size="sm" />
+                <Progress aria-label="Plain progress" value={68} w={180} />
+              </Group>
+              <Skeleton aria-label="Plain skeleton" h={18} w="70%" />
+            </Stack>
+          </section>
+
+          <section className="kodex-theme-workbench-section" aria-label="Data surfaces">
+            <Stack gap="sm">
+              <Text fw={700}>Data surfaces</Text>
+              <Paper>
+                <ScrollArea h={126}>
+                  <Table stickyHeader>
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>Component</Table.Th>
+                        <Table.Th>Status</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {["Table", "Paper", "ScrollArea", "Progress", "Skeleton"].map((name) => (
+                        <Table.Tr key={name}>
+                          <Table.Td>{name}</Table.Td>
+                          <Table.Td>Defaulted</Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                </ScrollArea>
+              </Paper>
             </Stack>
           </section>
 

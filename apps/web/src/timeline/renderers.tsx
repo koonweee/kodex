@@ -177,7 +177,7 @@ function assistantMarkdownComponents(
     pre: ({ children }) => <>{children}</>,
     table: ({ children }) => (
       <Table.ScrollContainer className="kodex-markdown-table-scroll" minWidth="100%" type="native">
-        <Table className="kodex-markdown-table" horizontalSpacing="sm" verticalSpacing="xs" withRowBorders>
+        <Table horizontalSpacing="sm" verticalSpacing="xs" withRowBorders>
           {children}
         </Table>
       </Table.ScrollContainer>

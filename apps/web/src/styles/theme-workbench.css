@@ -1,5 +1,7 @@
 .kodex-theme-workbench {
-  min-height: 100dvh;
+  box-sizing: border-box;
+  height: 100dvh;
+  min-height: 0;
   overflow: auto;
   padding: 24px;
   background: var(--kodex-bg-app);

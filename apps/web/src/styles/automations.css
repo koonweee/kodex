@@ -31,10 +31,7 @@
 }
 
 .kodex-automation-table-paper {
-  border: 1px solid var(--kodex-border-subtle);
-  border-radius: var(--kodex-radius-md);
   overflow: hidden;
-  background: transparent;
 }
 
 .kodex-automation-table-container {

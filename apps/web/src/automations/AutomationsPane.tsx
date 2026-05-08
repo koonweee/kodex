@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Box, Group, Loader, Table, Text, Title, Tooltip } from "@mantine/core";
+import { ActionIcon, Badge, Box, Group, Loader, Paper, Table, Text, Title, Tooltip } from "@mantine/core";
 import {
   flexRender,
   getCoreRowModel,
@@ -205,7 +205,7 @@ export function AutomationsPane({
             />
           </Box>
         ) : (
-          <Box className="kodex-automation-table-paper">
+          <Paper className="kodex-mantine-paper-root kodex-automation-table-paper">
             <Box className="kodex-automation-table-container">
               <Table highlightOnHover stickyHeader>
                 <Table.Thead>
@@ -266,7 +266,7 @@ export function AutomationsPane({
                 </Table.Tbody>
               </Table>
             </Box>
-          </Box>
+          </Paper>
         )}
       </Box>
       <AutomationEditorModal

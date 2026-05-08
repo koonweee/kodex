@@ -67,6 +67,9 @@ describe("Automations frontend", () => {
     const main = screen.getByRole("main", { name: /thread/i });
     expect(await within(main).findByRole("heading", { name: "Automations" })).toBeInTheDocument();
     expect(await within(main).findByText("Daily status", undefined, { timeout: 5000 })).toBeInTheDocument();
+    expect(within(main).getByRole("table").closest(".kodex-automation-table-paper")).toHaveClass(
+      "kodex-mantine-paper-root",
+    );
     expect(within(main).queryByLabelText(/message composer/i)).not.toBeInTheDocument();
     await waitFor(() => {
       expect(gateway.callsFor("GET", "/v1/automations")).toHaveLength(1);

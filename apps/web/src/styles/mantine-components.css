@@ -71,6 +71,96 @@
   color: var(--kodex-text-primary);
 }
 
+.kodex-mantine-combobox-empty,
+.kodex-mantine-combobox-footer,
+.kodex-mantine-combobox-header,
+.kodex-mantine-combobox-group-label {
+  color: var(--kodex-text-muted);
+}
+
+.kodex-mantine-combobox-footer,
+.kodex-mantine-combobox-header {
+  border-color: var(--kodex-border-subtle);
+}
+
+.kodex-mantine-combobox-search {
+  border-color: var(--kodex-border-subtle);
+  background: var(--kodex-bg-raised-muted);
+  color: var(--kodex-text-primary);
+}
+
+.kodex-mantine-multi-select-pill {
+  border: 1px solid var(--kodex-border-subtle);
+  background: var(--kodex-bg-selected);
+  color: var(--kodex-text-primary);
+}
+
+.kodex-mantine-multi-select-input-field {
+  color: var(--kodex-text-primary);
+}
+
+.kodex-mantine-inline-input-label {
+  color: var(--kodex-text-secondary);
+  font-weight: 600;
+}
+
+.kodex-mantine-inline-input-description {
+  color: var(--kodex-text-muted);
+}
+
+.kodex-mantine-inline-input-error {
+  color: var(--kodex-text-danger);
+}
+
+.kodex-mantine-selection-input {
+  border-color: var(--kodex-border-subtle);
+  background: var(--kodex-bg-raised-muted);
+}
+
+.kodex-mantine-selection-input:checked {
+  border-color: var(--kodex-border-accent);
+  background: var(--kodex-accent);
+}
+
+.kodex-mantine-selection-input:disabled {
+  border-color: var(--kodex-border-subtle);
+  background: var(--kodex-bg-raised-alt);
+  opacity: 0.72;
+}
+
+.kodex-mantine-selection-icon {
+  color: var(--kodex-text-on-accent);
+}
+
+.kodex-mantine-radio-input {
+  border-color: var(--kodex-border-subtle);
+  background: var(--kodex-bg-raised-muted);
+}
+
+.kodex-mantine-radio-input:checked {
+  border-color: var(--kodex-border-accent);
+  background: var(--kodex-accent);
+}
+
+.kodex-mantine-switch-track {
+  border-color: var(--kodex-border-subtle);
+  background: var(--kodex-bg-raised-muted);
+}
+
+.kodex-mantine-switch-input:checked + .kodex-mantine-switch-track {
+  border-color: var(--kodex-border-accent-soft);
+  background: var(--kodex-bg-selected-strong);
+}
+
+.kodex-mantine-switch-thumb {
+  border-color: var(--kodex-border-subtle);
+  background: var(--kodex-text-secondary);
+}
+
+.kodex-mantine-switch-input:checked + .kodex-mantine-switch-track .kodex-mantine-switch-thumb {
+  background: var(--kodex-accent);
+}
+
 .kodex-mantine-menu-dropdown {
   border: 1px solid var(--kodex-border-subtle);
   border-radius: var(--kodex-radius-menu);
@@ -134,6 +224,24 @@
 .kodex-mantine-menu-dropdown [data-menu-item][data-active="true"]:hover,
 .kodex-mantine-menu-dropdown [data-menu-item][data-active="true"][data-hovered] {
   background: var(--kodex-bg-selected-strong);
+}
+
+.kodex-mantine-popover-dropdown,
+.kodex-mantine-tooltip {
+  border: 1px solid var(--kodex-border-subtle);
+  background: var(--kodex-bg-raised);
+  color: var(--kodex-text-primary);
+  box-shadow: var(--kodex-shadow-menu);
+}
+
+.kodex-mantine-popover-arrow,
+.kodex-mantine-tooltip-arrow {
+  border-color: var(--kodex-border-subtle);
+  background: var(--kodex-bg-raised);
+}
+
+.kodex-mantine-popover-overlay {
+  background: var(--kodex-overlay-muted);
 }
 
 .kodex-mantine-modal-overlay,
@@ -275,4 +383,80 @@
 .kodex-mantine-alert-icon,
 .kodex-mantine-alert-close {
   color: currentColor;
+}
+
+.kodex-mantine-table {
+  --table-border-color: var(--kodex-border-subtle);
+  color: var(--kodex-text-primary);
+  font-size: 13px;
+}
+
+.kodex-mantine-table-thead,
+.kodex-mantine-table-tfoot {
+  background: var(--kodex-bg-raised-alt);
+}
+
+.kodex-mantine-table-th {
+  color: var(--kodex-text-secondary);
+  font-weight: 700;
+}
+
+.kodex-mantine-table-td {
+  color: var(--kodex-text-primary);
+}
+
+.kodex-mantine-table-tr:hover {
+  background: var(--kodex-bg-button-hover);
+}
+
+.kodex-mantine-table-caption {
+  color: var(--kodex-text-muted);
+}
+
+.kodex-mantine-paper-root {
+  border: 1px solid var(--kodex-border-subtle);
+  background: var(--kodex-bg-panel);
+  color: var(--kodex-text-primary);
+}
+
+.kodex-mantine-scroll-area-scrollbar {
+  background: transparent;
+}
+
+.kodex-mantine-scroll-area-thumb {
+  background: var(--kodex-border-strong);
+}
+
+.kodex-mantine-scroll-area-thumb:hover {
+  background: var(--kodex-text-muted);
+}
+
+.kodex-mantine-loader-root {
+  color: var(--kodex-accent);
+}
+
+.kodex-mantine-progress-root {
+  background: var(--kodex-bg-raised-muted);
+}
+
+.kodex-mantine-progress-section {
+  background: var(--kodex-accent);
+}
+
+.kodex-mantine-progress-label {
+  color: var(--kodex-text-on-accent);
+  font-weight: 700;
+}
+
+.kodex-mantine-skeleton-root::before {
+  background: color-mix(in srgb, var(--kodex-text-muted) 22%, var(--kodex-bg-raised-muted));
+}
+
+.kodex-mantine-skeleton-root::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--kodex-text-muted) 18%, transparent),
+    transparent
+  );
 }

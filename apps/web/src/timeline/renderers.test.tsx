@@ -18,6 +18,7 @@ vi.mock("react-markdown", async (importOriginal) => {
 
 import { TimelineActivityGroupRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
 import type { MarkdownPreviewRequest } from "../files/types";
+import { createKodexMantineTheme, getKodexColorScheme } from "../theme";
 import type { TimelineItem } from "./reducer";
 
 function item(overrides: Partial<TimelineItem>): TimelineItem {
@@ -907,7 +908,7 @@ describe("timeline renderer registry", () => {
 
   it("renders assistant markdown tables in a scrollable themed shell with GFM alignment", () => {
     const { container } = render(
-      <MantineProvider>
+      <MantineProvider theme={createKodexMantineTheme(getKodexColorScheme("oled-black"))}>
         <TimelineItemRenderer
           item={item({
             kind: "assistant_message",
@@ -927,7 +928,7 @@ describe("timeline renderer registry", () => {
     const cells = within(table).getAllByRole("cell");
 
     expect(tableShell).toBeInTheDocument();
-    expect(table).toHaveClass("kodex-markdown-table");
+    expect(table).toHaveClass("kodex-mantine-table");
     expect(headers.map((header) => header.textContent)).toEqual(["Path", "Status", "Count"]);
     expect(headers[0]).toHaveStyle({ textAlign: "left" });
     expect(headers[1]).toHaveStyle({ textAlign: "center" });

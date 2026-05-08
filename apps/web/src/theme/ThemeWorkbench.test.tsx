@@ -33,6 +33,11 @@ describe("ThemeWorkbench", () => {
     expect(screen.getByLabelText("Plain textarea")).toHaveClass("kodex-mantine-input");
     expect(screen.getByRole("textbox", { name: "Plain select" })).toHaveClass("kodex-mantine-input");
     expect(screen.getByLabelText("Plain number input")).toHaveClass("kodex-mantine-input");
+    expect(screen.getByRole("textbox", { name: "Plain autocomplete" })).toHaveClass("kodex-mantine-input");
+    expect(screen.getByRole("textbox", { name: "Plain multi select" }).closest(".kodex-mantine-input")).toBeInTheDocument();
+    expect(screen.getByLabelText("Plain checkbox")).toHaveClass("kodex-mantine-selection-input");
+    expect(screen.getByLabelText("Plain switch")).toHaveClass("kodex-mantine-switch-input");
+    expect(screen.getByLabelText("Allow")).toHaveClass("kodex-mantine-radio-input");
 
     expect(screen.getByRole("button", { name: /plain action/i })).toHaveClass("kodex-mantine-action-icon-root");
     expect(screen.getByRole("button", { name: /default button/i })).toHaveClass("kodex-mantine-button-root");
@@ -40,10 +45,22 @@ describe("ThemeWorkbench", () => {
     expect(screen.getByRole("tab", { name: /activity/i })).toHaveClass("kodex-mantine-tabs-tab");
     expect(screen.getByText("Preview").closest("label")).toHaveClass("kodex-mantine-segmented-control-label");
     expect(screen.getByRole("alert")).toHaveClass("kodex-mantine-alert-root");
+    expect(screen.getByText("Themed tooltip")).toHaveClass("kodex-mantine-tooltip");
+    expect(screen.getByLabelText("Plain progress").closest(".kodex-mantine-progress-root")).toBeInTheDocument();
+    expect(screen.getByLabelText("Plain skeleton")).toHaveClass("kodex-mantine-skeleton-root");
+    expect(screen.getByRole("table")).toHaveClass("kodex-mantine-table");
+    expect(screen.getByRole("table").closest(".kodex-mantine-paper-root")).toBeInTheDocument();
+    expect(screen.getByRole("table").closest(".kodex-mantine-scroll-area-root")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /open menu/i }));
     expect(await screen.findByRole("menu")).toHaveClass("kodex-mantine-menu-dropdown");
     expect((await screen.findByText("Archive")).closest(".kodex-mantine-menu-item")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /plain combobox/i }));
+    expect((await screen.findByText("Pinned")).closest(".kodex-mantine-combobox-option")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /open popover/i }));
+    expect((await screen.findByText("Popover surface uses default chrome.")).closest(".kodex-mantine-popover-dropdown")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /open modal/i }));
     expect(await screen.findByRole("dialog", { name: /themed modal/i })).toHaveClass("kodex-mantine-modal-content");
