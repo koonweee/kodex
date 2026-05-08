@@ -309,7 +309,7 @@ function TimelineItemRendererImpl({
             </>
           ) : null}
           {showStatus ? (
-            <Badge className="kodex-ui-badge" data-tone={statusTone(item.status)} size="xs" variant="light">
+            <Badge data-tone={statusTone(item.status)} size="xs" variant="light">
               {statusLabel(item.status)}
             </Badge>
           ) : null}
@@ -923,7 +923,7 @@ const ActivityItemRenderer = memo(function ActivityItemRenderer({
               {commandSummary(item)}
             </Text>
             {status ? (
-              <Badge className="kodex-ui-badge" data-tone={status.tone} size="xs" variant="light">
+              <Badge data-tone={status.tone} size="xs" variant="light">
                 {status.label}
               </Badge>
             ) : null}
@@ -1054,7 +1054,7 @@ function CollabAgentBlock({
                   </Text>
                   {agent.status ? (
                     <Badge
-                      className="kodex-ui-badge kodex-collab-agent-status"
+                      className="kodex-collab-agent-status"
                       data-tone={collabStatusTone(agent.rawStatus)}
                       size="xs"
                       variant="light"
@@ -1103,7 +1103,7 @@ function CollabAgentChips({ item }: { item: TimelineItem }) {
   return (
     <Group gap={4} wrap="wrap" className="kodex-collab-agent-chips">
       {chips.map((chip) => (
-        <Badge key={chip} className="kodex-ui-badge" data-tone={chip === "Failed" ? "danger" : "neutral"} size="xs" variant="light">
+        <Badge key={chip} data-tone={chip === "Failed" ? "danger" : "neutral"} size="xs" variant="light">
           {chip}
         </Badge>
       ))}

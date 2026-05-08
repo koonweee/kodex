@@ -15,27 +15,7 @@ body {
   color: var(--kodex-text-primary);
 }
 
-.kodex-checkbox-menu-item {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-}
-
-.kodex-checkbox-menu-item-section {
-  display: inline-grid;
-  place-items: center;
-  color: currentColor;
-}
-
-.kodex-checkbox-menu-item-label {
-  min-width: 0;
-}
-
-.kodex-composer-control[data-variant="light"],
-.kodex-list-button[data-active="true"],
-.kodex-preferences-section-button[data-active="true"],
-.kodex-scheme-option[data-active="true"] {
+.kodex-list-button[data-active="true"] {
   background: var(--kodex-bg-selected);
   color: var(--kodex-text-primary);
 }

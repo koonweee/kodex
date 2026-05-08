@@ -147,7 +147,7 @@
   flex: 0 0 auto;
 }
 
-.kodex-activity-heading .kodex-ui-badge {
+.kodex-activity-heading .kodex-mantine-badge-root {
   flex: 0 0 auto;
   min-width: max-content;
 }
@@ -244,7 +244,7 @@
   -webkit-line-clamp: 2;
 }
 
-.kodex-collab-agent-chips .kodex-ui-badge,
+.kodex-collab-agent-chips .kodex-mantine-badge-root,
 .kodex-collab-agent-status {
   flex: 0 0 auto;
   max-width: 100%;

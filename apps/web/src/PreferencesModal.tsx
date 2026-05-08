@@ -1,4 +1,4 @@
-import { Box, Modal, Stack, Text } from "@mantine/core";
+import { Box, Button, Modal, Stack, Text } from "@mantine/core";
 import { useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import { KODEX_COLOR_SCHEMES, type KodexColorSchemeId } from "./theme";
@@ -57,8 +57,6 @@ export function PreferencesModal({
       centered
       classNames={{
         body: "kodex-preferences-modal-body",
-        content: "kodex-preferences-modal-content",
-        header: "kodex-preferences-modal-header",
       }}
       onClose={onClose}
       opened={opened}
@@ -67,14 +65,15 @@ export function PreferencesModal({
     >
       <Box className="kodex-preferences-layout">
         <Stack className="kodex-preferences-sections" gap={4}>
-          <button
-            className="kodex-ui-button kodex-ui-selectable kodex-preferences-section-button"
+          <Button
+            className="kodex-preferences-section-button"
             data-active={activeSection === "appearance" ? "true" : undefined}
             onClick={() => onSectionChange("appearance")}
             type="button"
+            variant={activeSection === "appearance" ? "light" : "subtle"}
           >
             Appearance
-          </button>
+          </Button>
         </Stack>
 
         <Stack className="kodex-preferences-panel" gap={14}>
@@ -91,9 +90,9 @@ export function PreferencesModal({
 
             <Box aria-labelledby="kodex-color-scheme-label" className="kodex-scheme-list" role="radiogroup">
               {KODEX_COLOR_SCHEMES.map((scheme, index) => (
-                <button
+                <Button
                   aria-checked={scheme.id === colorSchemeId}
-                  className="kodex-ui-button kodex-ui-selectable kodex-scheme-option"
+                  className="kodex-scheme-option"
                   data-active={scheme.id === colorSchemeId ? "true" : undefined}
                   key={scheme.id}
                   onClick={() => onColorSchemeChange(scheme.id)}
@@ -104,6 +103,7 @@ export function PreferencesModal({
                   role="radio"
                   tabIndex={scheme.id === colorSchemeId ? 0 : -1}
                   type="button"
+                  variant={scheme.id === colorSchemeId ? "light" : "subtle"}
                 >
                   <Box className="kodex-scheme-copy">
                     <Text className="kodex-scheme-label" fw={600}>
@@ -115,7 +115,7 @@ export function PreferencesModal({
                       <span className="kodex-scheme-swatch" key={color} style={{ background: color }} />
                     ))}
                   </Box>
-                </button>
+                </Button>
               ))}
             </Box>
           </Stack>

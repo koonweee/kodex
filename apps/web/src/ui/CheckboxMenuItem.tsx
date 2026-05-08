@@ -34,7 +34,7 @@ export function CheckboxMenuItem({
   return (
     <button
       aria-checked={checked}
-      className={["kodex-checkbox-menu-item", className].filter(Boolean).join(" ")}
+      className={["kodex-mantine-menu-item", className].filter(Boolean).join(" ")}
       data-active={checked ? "true" : undefined}
       data-mantine-stop-propagation
       data-menu-item
@@ -46,13 +46,13 @@ export function CheckboxMenuItem({
       type="button"
     >
       {leftSection ? (
-        <span className="kodex-checkbox-menu-item-section" data-position="left">
+        <span className="kodex-mantine-menu-item-section" data-position="left">
           {leftSection}
         </span>
       ) : null}
-      <span className="kodex-checkbox-menu-item-label">{children}</span>
+      <span className="kodex-mantine-menu-item-label">{children}</span>
       {rightSection ? (
-        <span className="kodex-checkbox-menu-item-section" data-position="right">
+        <span className="kodex-mantine-menu-item-section" data-position="right">
           {rightSection}
         </span>
       ) : null}

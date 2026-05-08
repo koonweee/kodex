@@ -78,7 +78,7 @@ export function ThreadPanel({
     <>
       {errorMessage ? (
         <Badge
-          className="kodex-main-column kodex-ui-badge"
+          className="kodex-main-column"
           data-tone="danger"
           variant="light"
           leftSection={<AlertCircle size={12} />}

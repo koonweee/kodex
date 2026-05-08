@@ -109,7 +109,7 @@ function SettingsMenu({
   return (
     <Menu opened={opened} onChange={setOpened} position="top-end" withinPortal={false}>
       <Menu.Target>
-        <ActionIcon aria-label={ACCOUNT_TEXT.settings} className="kodex-settings-button" variant="subtle">
+        <ActionIcon aria-label={ACCOUNT_TEXT.settings} variant="subtle">
           <Settings size={17} />
         </ActionIcon>
       </Menu.Target>

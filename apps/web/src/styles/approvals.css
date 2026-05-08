@@ -68,22 +68,3 @@
 .kodex-approval-action[data-approval-tone="neutral"] {
   color: var(--kodex-text-secondary);
 }
-
-.kodex-approval-action:hover {
-  background: var(--kodex-bg-button-hover);
-  color: var(--kodex-text-primary);
-}
-
-.kodex-approval-action .kodex-mantine-button-section {
-  color: currentColor;
-}
-
-.kodex-approval-action .kodex-mantine-button-inner,
-.kodex-approval-action .kodex-mantine-button-label {
-  min-width: 0;
-}
-
-.kodex-approval-action .kodex-mantine-button-label {
-  overflow-wrap: anywhere;
-  white-space: normal;
-}

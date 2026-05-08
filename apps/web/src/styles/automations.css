@@ -3,15 +3,6 @@
 }
 
 .kodex-automations-add-button {
-  display: inline-flex;
-  min-height: 32px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 4px;
-  color: var(--kodex-text-primary);
-  font-size: var(--mantine-font-size-sm);
-  font-weight: 600;
-  line-height: 1;
   white-space: nowrap;
 }
 

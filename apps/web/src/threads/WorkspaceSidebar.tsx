@@ -808,7 +808,7 @@ export const ThreadListRow = memo(function ThreadListRow({
             {displayTitle}
           </Text>
           {needsApproval ? (
-            <Badge className="kodex-thread-approval-badge kodex-ui-badge" data-tone="warning" size="xs" variant="light">
+            <Badge className="kodex-thread-approval-badge" data-tone="warning" size="xs" variant="light">
               Needs approval
             </Badge>
           ) : null}

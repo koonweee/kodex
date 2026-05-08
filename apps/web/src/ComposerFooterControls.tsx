@@ -1,4 +1,4 @@
-import { ActionIcon, Box, Button, Group, Menu, Text, Tooltip } from "@mantine/core";
+import { ActionIcon, Box, Button, Group, Menu, Switch, Text, Tooltip } from "@mantine/core";
 import { AlertCircle, Check, Gauge, Shield, X } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useState } from "react";
@@ -247,7 +247,7 @@ export function ComposerFooterControls({
               className="kodex-composer-fast-row"
               leftSection={<SolidBoltIcon />}
               onChange={toggleFast}
-              rightSection={<span aria-hidden="true" className="kodex-fast-menu-switch" data-checked={settings.fast} />}
+              rightSection={<Switch aria-hidden="true" checked={settings.fast} readOnly size="xs" tabIndex={-1} />}
             >
               Fast
             </CheckboxMenuItem>

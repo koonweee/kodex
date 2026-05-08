@@ -276,10 +276,10 @@ export function ThemeWorkbench({
               </Group>
               <Group gap="xs">
                 <Badge>Neutral badge</Badge>
-                <Badge className="kodex-ui-badge" data-tone="accent">
+                <Badge data-tone="accent">
                   Accent badge
                 </Badge>
-                <Badge className="kodex-ui-badge" data-tone="danger">
+                <Badge data-tone="danger">
                   Danger badge
                 </Badge>
               </Group>

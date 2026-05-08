@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Box, Group, Loader, Paper, Table, Text, Title, Tooltip } from "@mantine/core";
+import { ActionIcon, Badge, Box, Button, Group, Loader, Paper, Table, Text, Title, Tooltip } from "@mantine/core";
 import {
   flexRender,
   getCoreRowModel,
@@ -76,11 +76,7 @@ export function AutomationsPane({
                 {threadLabelById(threadOptions, row.original.targetThreadId)}
               </Text>
               <Group gap="xs" mt={6} wrap="wrap">
-                <Badge
-                  className="kodex-ui-badge"
-                  data-tone={row.original.status === "active" ? "success" : "neutral"}
-                  variant="light"
-                >
+                <Badge data-tone={row.original.status === "active" ? "success" : "neutral"} variant="light">
                   {row.original.status}
                 </Badge>
                 <Text c="dimmed" size="xs">
@@ -105,11 +101,7 @@ export function AutomationsPane({
         header: "Status",
         size: 110,
         cell: ({ row }) => (
-          <Badge
-            className="kodex-ui-badge"
-            data-tone={row.original.status === "active" ? "success" : "neutral"}
-            variant="light"
-          >
+          <Badge data-tone={row.original.status === "active" ? "success" : "neutral"} variant="light">
             {row.original.status}
           </Badge>
         ),
@@ -184,15 +176,17 @@ export function AutomationsPane({
           </Title>
         </Group>
         <Tooltip label={AUTOMATIONS_TEXT.add}>
-          <button
+          <Button
             aria-label={AUTOMATIONS_TEXT.add}
-            className="kodex-ui-button kodex-automations-add-button"
+            className="kodex-automations-add-button"
+            leftSection={<Plus size={15} />}
             onClick={handleAdd}
+            size="sm"
             type="button"
+            variant="subtle"
           >
-            <Plus size={15} />
             {AUTOMATIONS_TEXT.addShort}
-          </button>
+          </Button>
         </Tooltip>
       </Group>
       <Box className="kodex-automations-pane kodex-main-column">
