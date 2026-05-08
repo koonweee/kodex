@@ -1,4 +1,4 @@
-import { Badge, Box, Code, Group, Stack, Text } from "@mantine/core";
+import { Badge, Box, Code, Group, Stack, Table, Text } from "@mantine/core";
 import { AlertTriangle, Bot, Check, ChevronRight, ClipboardList, Code2, Copy, FileDiff, Globe, ImageIcon, Info, Terminal, Wrench } from "lucide-react";
 import { Children, isValidElement, memo, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent, ReactNode, SyntheticEvent } from "react";
@@ -176,20 +176,26 @@ function assistantMarkdownComponents(
     ),
     pre: ({ children }) => <>{children}</>,
     table: ({ children }) => (
-      <Box className="kodex-markdown-table-scroll">
-        <table className="kodex-markdown-table">{children}</table>
-      </Box>
+      <Table.ScrollContainer className="kodex-markdown-table-scroll" minWidth="100%" type="native">
+        <Table className="kodex-markdown-table" horizontalSpacing="sm" verticalSpacing="xs" withRowBorders>
+          {children}
+        </Table>
+      </Table.ScrollContainer>
     ),
+    tbody: ({ children }) => <Table.Tbody>{children}</Table.Tbody>,
     td: ({ align, children, node: _node, style, ...props }) => (
-      <td {...props} style={markdownTableCellStyle(align, style)}>
+      <Table.Td {...props} style={markdownTableCellStyle(align, style)}>
         {children}
-      </td>
+      </Table.Td>
     ),
+    tfoot: ({ children }) => <Table.Tfoot>{children}</Table.Tfoot>,
     th: ({ align, children, node: _node, style, ...props }) => (
-      <th {...props} style={markdownTableCellStyle(align, style)}>
+      <Table.Th {...props} style={markdownTableCellStyle(align, style)}>
         {children}
-      </th>
+      </Table.Th>
     ),
+    thead: ({ children }) => <Table.Thead>{children}</Table.Thead>,
+    tr: ({ children }) => <Table.Tr>{children}</Table.Tr>,
   };
 }
 
