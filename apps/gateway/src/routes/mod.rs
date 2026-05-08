@@ -3068,6 +3068,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn due_automation_marks_failure_when_target_thread_cannot_resume() {
+        let (state, app_server) = test_state().await;
+        app_server
+            .queued_errors
+            .lock()
+            .unwrap()
+            .push(ApiError::BadGateway(
+                "app-server error -32600: thread not found: thread-1".to_string(),
+            ));
+        let start_at = chrono::Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
+        let automation = state
+            .store
+            .create_automation(crate::store::NewAutomation {
+                name: "Status".to_string(),
+                prompt: "Summarize status".to_string(),
+                target_thread_id: "thread-1".to_string(),
+                start_at,
+                repeat_every_seconds: 30,
+                next_run_at: start_at,
+            })
+            .await
+            .unwrap();
+        let mut receiver = state.events.subscribe();
+
+        let processed = automations::process_due_automations(&state, start_at)
+            .await
+            .unwrap();
+        assert_eq!(processed, 1);
+
+        let automation_event = timeout(Duration::from_secs(2), async {
+            loop {
+                let event = receiver.recv().await.unwrap();
+                if event.kind == automations::AUTOMATION_UPSERT_EVENT {
+                    break event;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(automation_event.payload["id"], automation.id);
+        assert_eq!(automation_event.payload["consecutiveFailureCount"], 1);
+        assert!(automation_event.payload["lastError"]
+            .as_str()
+            .unwrap()
+            .contains("Target thread is not resumable"));
+
+        let automation = state.store.get_automation(&automation.id).await.unwrap();
+        assert_eq!(automation.consecutive_failure_count, 1);
+        assert!(automation.last_queued_input_id.is_none());
+        assert!(automation
+            .last_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Target thread is not resumable"));
+        assert!(state
+            .store
+            .list_queued_inputs("thread-1")
+            .await
+            .unwrap()
+            .is_empty());
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0, "thread/resume");
+    }
+
+    #[tokio::test]
     async fn due_automation_waits_when_app_server_is_unready() {
         let (state, app_server) = test_state().await;
         app_server.ready.store(false, Ordering::SeqCst);

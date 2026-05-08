@@ -4,7 +4,7 @@ use tokio::time::{interval, Duration};
 
 use crate::{
     api::AppState,
-    app_server_api::{TurnStartOptions, UserInput},
+    app_server_api::{self, TurnStartOptions, UserInput},
     error::ApiResult,
     queue,
     routes::automations::automation_to_dto,
@@ -58,6 +58,20 @@ pub async fn process_due_automations(state: &AppState, now: DateTime<Utc>) -> Ap
     for run in runs {
         processed += 1;
         let automation = state.store.automation_for_run(&run.id).await?;
+        if let Err(error) =
+            resume_automation_target_thread(state, &automation.target_thread_id).await
+        {
+            let automation = state
+                .store
+                .mark_automation_run_failed(
+                    &run.id,
+                    format!("Target thread is not resumable: {error}"),
+                    AUTOMATION_AUTO_PAUSE_FAILURES,
+                )
+                .await?;
+            broadcast_automation_upsert(state, &automation).await?;
+            continue;
+        }
         let options = latest_thread_options(state, &automation.target_thread_id).await?;
         let input = vec![UserInput::Text {
             text: automation.prompt.clone(),
@@ -113,6 +127,13 @@ pub async fn process_due_automations(state: &AppState, now: DateTime<Utc>) -> Ap
         }
     }
     Ok(processed)
+}
+
+async fn resume_automation_target_thread(state: &AppState, thread_id: &str) -> ApiResult<()> {
+    app_server_api::client(&state.app_server)
+        .thread_resume(thread_id.to_string(), json!({}))
+        .await?;
+    Ok(())
 }
 
 async fn latest_thread_options(state: &AppState, thread_id: &str) -> ApiResult<TurnStartOptions> {
