@@ -658,6 +658,143 @@ describe("MVP shell flows", () => {
     expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
   });
 
+  it("inserts gateway-created project and chat threads from live upsert events", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(baseRoutes());
+
+    render(<App />);
+
+    const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
+    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    expect(globalStream).toBeDefined();
+
+    const projectThread = {
+      ...thread,
+      id: "thread-live-project",
+      name: "Live project thread",
+      preview: "Created elsewhere",
+      seenCompletedAgentTurnSeq: 0,
+      unreadCompletedAgentTurn: false,
+      updatedAt: thread.updatedAt + 1,
+    };
+    act(() => {
+      globalStream?.emitNamed("thread.upserted", {
+        id: "event-project-thread",
+        seq: 2,
+        kind: "thread.upserted",
+        codexMethod: null,
+        projectId: project.id,
+        threadId: projectThread.id,
+        payload: { scope: "project", projectId: project.id, thread: projectThread },
+        receivedAt: "2026-05-09T12:00:00Z",
+      });
+    });
+
+    await waitFor(() =>
+      expect(within(kodexGroup).getByRole("button", { name: /live project thread/i })).toBeInTheDocument(),
+    );
+
+    const chatThread = {
+      ...thread,
+      id: "thread-live-chat",
+      name: "Live chat thread",
+      cwd: "/home/example/Documents/Codex/2026-05-09/live-chat-thread",
+      preview: "Created elsewhere",
+      seenCompletedAgentTurnSeq: 0,
+      unreadCompletedAgentTurn: false,
+      updatedAt: thread.updatedAt + 2,
+    };
+    act(() => {
+      globalStream?.emitNamed("thread.upserted", {
+        id: "event-chat-thread",
+        seq: 3,
+        kind: "thread.upserted",
+        codexMethod: null,
+        projectId: null,
+        threadId: chatThread.id,
+        payload: { scope: "chat", projectId: null, thread: chatThread },
+        receivedAt: "2026-05-09T12:00:01Z",
+      });
+    });
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /live chat thread/i })).toBeInTheDocument());
+  });
+
+  it("refreshes a live-created chat thread after its first timeline item gives it a preview", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const pendingChatThread = {
+      ...thread,
+      id: "thread-live-chat-pending",
+      name: null,
+      cwd: "/home/example/Documents/Codex/2026-05-09/live-chat-pending",
+      preview: "",
+      seenCompletedAgentTurnSeq: 0,
+      unreadCompletedAgentTurn: false,
+      updatedAt: thread.updatedAt + 1,
+    };
+    const hydratedChatThread = {
+      ...pendingChatThread,
+      preview: "First message from another tab",
+      updatedAt: thread.updatedAt + 2,
+    };
+    let chatListCalls = 0;
+    mockGateway(
+      baseRoutes({
+        "GET /v1/chats/threads": () => {
+          chatListCalls += 1;
+          const threads =
+            chatListCalls === 1 ? [] : chatListCalls === 2 ? [pendingChatThread] : [hydratedChatThread];
+          return { threads, nextCursor: null, backwardsCursor: null, rawPayload: {} };
+        },
+      }),
+    );
+
+    render(<App />);
+
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
+    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    expect(globalStream).toBeDefined();
+    await waitFor(() => expect(chatListCalls).toBeGreaterThanOrEqual(1));
+
+    act(() => {
+      globalStream?.emitNamed("thread.upserted", {
+        id: "event-chat-thread-pending",
+        seq: 2,
+        kind: "thread.upserted",
+        codexMethod: null,
+        projectId: null,
+        threadId: pendingChatThread.id,
+        payload: { scope: "chat", projectId: null, thread: pendingChatThread },
+        receivedAt: "2026-05-09T12:00:01Z",
+      });
+    });
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /new thread/i })).toBeInTheDocument());
+    await waitFor(() => expect(chatListCalls).toBeGreaterThanOrEqual(2));
+
+    act(() => {
+      globalStream?.emitNamed("timeline.item_upsert", {
+        id: "event-chat-first-item",
+        seq: 3,
+        kind: "timeline.item_upsert",
+        codexMethod: "item/upsert",
+        projectId: null,
+        threadId: pendingChatThread.id,
+        payload: {
+          item: { id: "item-1", type: "userMessage", content: [{ type: "text", text: "First message from another tab" }] },
+          source: "gatewayStream",
+        },
+        receivedAt: "2026-05-09T12:00:02Z",
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /first message from another tab/i })).toBeInTheDocument(),
+    );
+    expect(chatListCalls).toBeGreaterThanOrEqual(3);
+  });
+
   it("shows compact thread actions without fork or path subtitle", async () => {
     const gateway = mockGateway(
       baseRoutes({

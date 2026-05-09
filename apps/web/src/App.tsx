@@ -104,7 +104,7 @@ import {
   mergeQueuedInputData,
   upsertCachedQueuedInput,
 } from "./queuedInputs/cache";
-import { threadPinUpdateFromEvent } from "./threads/events";
+import { threadPinUpdateFromEvent, threadUpsertFromEvent } from "./threads/events";
 import { SubagentThreadViewer } from "./threads/SubagentThreadViewer";
 import {
   applySidebarProjectOrder,
@@ -649,7 +649,9 @@ function KodexShell({
         applyAutomationStreamEvent(event);
         applyQueueEvent(event);
         applyThreadPinEvent(event);
+        applyThreadUpsertEvent(event);
         applyThreadMetadataEvent(event);
+        refreshSidebarThreadsForLiveEvent(event);
         applyCompletedAgentTurnEvent(event);
         invalidateSelectedSubagentsForEvent(event);
         const nextUsageLimitSnapshot = usageLimitSnapshotFromEvent(event);
@@ -1199,6 +1201,83 @@ function KodexShell({
       return;
     }
     applyThreadPinState(update.threadId, update.pinnedAt);
+  }
+
+  function applyThreadUpsertEvent(event: EventEnvelope) {
+    const update = threadUpsertFromEvent(event);
+    if (!update) {
+      return;
+    }
+
+    if (update.scope === "project") {
+      upsertProjectThread(queryClientForShell, update.projectId, update.thread);
+      void queryClientForShell.invalidateQueries({ queryKey: queryKeys.projectThreads(update.projectId) });
+    } else {
+      upsertChatThread(queryClientForShell, update.thread);
+      void queryClientForShell.invalidateQueries({ queryKey: queryKeys.chatThreads });
+    }
+
+    if (update.thread.pinnedAt) {
+      upsertPinnedThread(queryClientForShell, update.thread);
+    } else {
+      removeThreadEverywhere(queryClientForShell, update.thread.id, { pinnedOnly: true });
+    }
+
+    if (threadHasDisplayTitle(update.thread)) {
+      setPendingTitleThreadIds((current) => {
+        if (!current.has(update.thread.id)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.delete(update.thread.id);
+        return next;
+      });
+    }
+  }
+
+  function refreshSidebarThreadsForLiveEvent(event: EventEnvelope) {
+    if (!event.threadId || !eventCanRefreshSidebarThread(event)) {
+      return;
+    }
+
+    const location = findThreadSidebarLocation(event.threadId);
+    if (!location) {
+      void queryClientForShell.invalidateQueries({ queryKey: queryKeys.projectThreadsRoot });
+      void queryClientForShell.invalidateQueries({ queryKey: queryKeys.chatThreads });
+      return;
+    }
+
+    if (threadHasDisplayTitle(location.thread)) {
+      return;
+    }
+
+    if (location.scope === "project") {
+      void queryClientForShell.invalidateQueries({ queryKey: queryKeys.projectThreads(location.projectId) });
+    } else {
+      void queryClientForShell.invalidateQueries({ queryKey: queryKeys.chatThreads });
+    }
+  }
+
+  function findThreadSidebarLocation(
+    threadId: string,
+  ): { scope: "project"; projectId: string; thread: ThreadSummary } | { scope: "chat"; thread: ThreadSummary } | null {
+    for (const [projectId, threads] of Object.entries(threadsByProjectIdRef.current)) {
+      const thread = threads.find((item) => item.id === threadId);
+      if (thread) {
+        return { scope: "project", projectId, thread };
+      }
+    }
+    const chatThread = chatThreadsRef.current.find((thread) => thread.id === threadId);
+    return chatThread ? { scope: "chat", thread: chatThread } : null;
+  }
+
+  function eventCanRefreshSidebarThread(event: EventEnvelope) {
+    return (
+      event.kind === "timeline.item_upsert" ||
+      event.kind === "timeline.thread_metadata" ||
+      event.kind === "timeline.thread_status" ||
+      event.kind === "timeline.turn_upsert"
+    );
   }
 
   function applyThreadPinState(threadId: string, pinnedAt: string | null) {

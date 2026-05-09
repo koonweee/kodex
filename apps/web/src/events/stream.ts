@@ -31,6 +31,7 @@ const GATEWAY_SSE_EVENT_TYPES = [
   "timeline.snapshot",
   "timeline.snapshot_required",
   "thread.pin_updated",
+  "thread.upserted",
   "timeline.thread_metadata",
   "timeline.thread_status",
   "timeline.turn_upsert",
@@ -40,7 +41,7 @@ const GATEWAY_SSE_EVENT_TYPES = [
 
 export function createEventStreamClient({
   EventSourceCtor = globalThis.EventSource as EventSourceCtor | undefined,
-  cursor = 0,
+  cursor,
   reconnectDelayMs = 1000,
   threadId,
   onEvent,
@@ -61,7 +62,7 @@ export function createEventStreamClient({
 
     const handleMessage = (message: MessageEvent<string>) => {
       const event = JSON.parse(message.data) as EventEnvelope;
-      lastSeq = Math.max(lastSeq, event.seq);
+      lastSeq = Math.max(lastSeq ?? 0, event.seq);
       onEvent(event);
     };
 
@@ -92,11 +93,13 @@ export function createEventStreamClient({
   return { close, connect };
 }
 
-function eventStreamUrl(cursor: number, threadId?: string): string {
+function eventStreamUrl(cursor?: number, threadId?: string): string {
   const baseUrl =
     typeof window === "undefined" ? "http://127.0.0.1:8787" : window.location.origin;
   const url = new URL("/v1/events", baseUrl);
-  url.searchParams.set("cursor", String(cursor));
+  if (typeof cursor === "number") {
+    url.searchParams.set("cursor", String(cursor));
+  }
   if (threadId) {
     url.searchParams.set("threadId", threadId);
   }

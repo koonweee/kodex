@@ -27,6 +27,7 @@ use crate::{
 };
 
 pub const THREAD_PIN_UPDATED_EVENT: &str = "thread.pin_updated";
+pub const THREAD_UPSERTED_EVENT: &str = "thread.upserted";
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -143,6 +144,9 @@ pub async fn list_threads(
     let mut response = app_server_api::client(&state.app_server)
         .thread_list(cwd, query.cursor, query.limit)
         .await?;
+    response
+        .threads
+        .retain(|thread| !thread_is_archived(thread));
     apply_thread_list_response_state(&state, &mut response).await?;
     Ok(Json(response))
 }
@@ -153,6 +157,7 @@ pub async fn create_thread(
     Json(request): Json<CreateThreadRequest>,
 ) -> ApiResult<Json<ThreadCommandResponse>> {
     let project = state.store.get_project(&request.project_id).await?;
+    let project_id = project.id.clone();
     let options = ThreadCreationOptions {
         model: request.model,
         effort: request.effort,
@@ -169,6 +174,13 @@ pub async fn create_thread(
     save_thread_creation_options(&state, &response.thread.id, &options).await?;
     overlay_thread_creation_options(&mut response.thread, &options);
     apply_thread_command_response_state(&state, &mut response).await?;
+    broadcast_thread_upserted(
+        &state,
+        ThreadUpsertScope::Project,
+        Some(&project_id),
+        &response.thread,
+    )
+    .await?;
     Ok(Json(response))
 }
 
@@ -187,6 +199,9 @@ pub async fn list_chat_threads(
     response
         .threads
         .retain(|thread| thread_is_under_canonical_root(thread, &chat_root));
+    response
+        .threads
+        .retain(|thread| !thread_is_archived(thread));
     response.next_cursor = None;
     apply_thread_list_response_state(&state, &mut response).await?;
     Ok(Json(response))
@@ -280,6 +295,7 @@ pub async fn create_chat_thread(
     save_thread_creation_options(&state, &response.thread.id, &options).await?;
     overlay_thread_creation_options(&mut response.thread, &options);
     apply_thread_command_response_state(&state, &mut response).await?;
+    broadcast_thread_upserted(&state, ThreadUpsertScope::Chat, None, &response.thread).await?;
     Ok(Json(response))
 }
 
@@ -1099,6 +1115,47 @@ async fn broadcast_thread_pin_update(
             payload: json!({
                 "threadId": thread_id,
                 "pinnedAt": pinned_at,
+            }),
+        })
+        .await?;
+    let _ = state.events.send(event.clone());
+    Ok(event)
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ThreadUpsertScope {
+    Project,
+    Chat,
+}
+
+impl ThreadUpsertScope {
+    fn as_str(self) -> &'static str {
+        match self {
+            ThreadUpsertScope::Project => "project",
+            ThreadUpsertScope::Chat => "chat",
+        }
+    }
+}
+
+async fn broadcast_thread_upserted(
+    state: &AppState,
+    scope: ThreadUpsertScope,
+    project_id: Option<&str>,
+    thread: &ThreadSummary,
+) -> ApiResult<EventEnvelope> {
+    let event = state
+        .store
+        .append_event(NewEvent {
+            project_id: project_id.map(str::to_string),
+            thread_id: Some(thread.id.clone()),
+            turn_id: None,
+            item_id: None,
+            kind: THREAD_UPSERTED_EVENT.to_string(),
+            codex_method: None,
+            payload: json!({
+                "thread": thread,
+                "scope": scope.as_str(),
+                "projectId": project_id,
             }),
         })
         .await?;

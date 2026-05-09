@@ -63,6 +63,30 @@ describe("thread query cache helpers", () => {
     expect(queryClient.getQueryData(queryKeys.chatThreads)).toEqual([localChat]);
   });
 
+  it("keeps a live-created project thread when the initial project snapshot resolves later", () => {
+    const queryClient = createKodexQueryClient();
+    const liveThread = thread("thread-live", { preview: "Live prompt" });
+    upsertProjectThread(queryClient, "project-1", liveThread);
+
+    mergeProjectThreadSnapshot(queryClient, "project-1", [thread("thread-old")], null, null);
+
+    expect(queryClient.getQueryData(queryKeys.projectThreads("project-1"))).toEqual([
+      liveThread,
+      thread("thread-old"),
+    ]);
+  });
+
+  it("replaces duplicate live upserts without adding another row", () => {
+    const queryClient = createKodexQueryClient();
+    upsertProjectThread(queryClient, "project-1", thread("thread-live", { name: "Initial" }));
+
+    upsertProjectThread(queryClient, "project-1", thread("thread-live", { name: "Updated" }));
+
+    expect(queryClient.getQueryData(queryKeys.projectThreads("project-1"))).toEqual([
+      thread("thread-live", { name: "Updated" }),
+    ]);
+  });
+
   it("applies pin state across normal lists and the pinned cache", () => {
     const queryClient = createKodexQueryClient();
     const projectThread = thread("thread-1");

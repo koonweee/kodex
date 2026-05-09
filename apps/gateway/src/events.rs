@@ -31,7 +31,7 @@ use crate::{
     automations,
     error::{ApiError, ApiResult},
     queue,
-    routes::threads::THREAD_PIN_UPDATED_EVENT,
+    routes::threads::{THREAD_PIN_UPDATED_EVENT, THREAD_UPSERTED_EVENT},
     schema::is_supported_approval_method,
     skills,
     store::{EventEnvelope, NewApproval, NewEvent, ThreadRuntimeState},
@@ -211,26 +211,31 @@ async fn event_stream(
 ) -> ApiResult<impl Stream<Item = Result<Event, Infallible>>> {
     let mut receiver = state.events.subscribe();
     let mut replay = Vec::new();
-    let mut replay_high_water = query.cursor.unwrap_or(0);
+    let mut replay_high_water = match query.cursor {
+        Some(cursor) => cursor,
+        None => state.store.latest_event_seq().await?,
+    };
 
-    loop {
-        let page = state
-            .store
-            .replay_events_page(
-                Some(replay_high_water),
-                query.project_id.as_deref(),
-                query.thread_id.as_deref(),
-                SSE_REPLAY_PAGE_SIZE,
-            )
-            .await?;
-        let page_len = page.len();
-        let Some(last) = page.last() else {
-            break;
-        };
-        replay_high_water = last.seq;
-        replay.extend(page.into_iter().filter(is_operational_replay_event));
-        if page_len < SSE_REPLAY_PAGE_SIZE as usize {
-            break;
+    if query.cursor.is_some() {
+        loop {
+            let page = state
+                .store
+                .replay_events_page(
+                    Some(replay_high_water),
+                    query.project_id.as_deref(),
+                    query.thread_id.as_deref(),
+                    SSE_REPLAY_PAGE_SIZE,
+                )
+                .await?;
+            let page_len = page.len();
+            let Some(last) = page.last() else {
+                break;
+            };
+            replay_high_water = last.seq;
+            replay.extend(page.into_iter().filter(is_operational_replay_event));
+            if page_len < SSE_REPLAY_PAGE_SIZE as usize {
+                break;
+            }
         }
     }
 
@@ -387,6 +392,7 @@ fn is_operational_replay_event(event: &EventEnvelope) -> bool {
             | "gateway.warning"
             | skills::SKILLS_CHANGED_EVENT
             | THREAD_PIN_UPDATED_EVENT
+            | THREAD_UPSERTED_EVENT
             | automations::AUTOMATION_UPSERT_EVENT
             | automations::AUTOMATION_DELETE_EVENT
             | queue::QUEUE_UPSERT_EVENT

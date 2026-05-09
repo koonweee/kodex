@@ -417,6 +417,65 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn thread_start_broadcasts_and_replays_thread_upserted_event() {
+        let (state, app_server) = test_state().await;
+        let project = state
+            .store
+            .create_project(
+                "Kodex".to_string(),
+                std::env::current_dir().unwrap().display().to_string(),
+            )
+            .await
+            .unwrap();
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "thread": thread_summary("project-thread-1"),
+            "cwd": "/workspace"
+        }));
+        let mut receiver = state.events.subscribe();
+        let app = build_router(state);
+
+        let body = json!({"projectId": project.id, "payload": {"prompt": "hi"}}).to_string();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let event = receiver.recv().await.unwrap();
+        assert_eq!(event.kind, "thread.upserted");
+        assert_eq!(event.project_id.as_deref(), Some(project.id.as_str()));
+        assert_eq!(event.thread_id.as_deref(), Some("project-thread-1"));
+        assert_eq!(event.payload["scope"], "project");
+        assert_eq!(event.payload["projectId"], project.id);
+        assert_eq!(event.payload["thread"]["id"], "project-thread-1");
+
+        let replay = app
+            .oneshot(
+                Request::get(format!(
+                    "/v1/events?projectId={}&threadId=project-thread-1",
+                    project.id
+                ))
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(replay.status(), StatusCode::OK);
+        let replay = response_json(replay).await;
+        assert_eq!(replay["events"][0]["kind"], "thread.upserted");
+        assert_eq!(
+            replay["events"][0]["payload"]["thread"]["id"],
+            "project-thread-1"
+        );
+    }
+
+    #[tokio::test]
     async fn thread_start_forwards_initial_composer_settings() {
         let (state, app_server) = test_state().await;
         let project = state
@@ -592,6 +651,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn chat_thread_start_broadcasts_and_replays_thread_upserted_event() {
+        let (mut state, app_server) = test_state().await;
+        let home = tempdir().unwrap();
+        Arc::make_mut(&mut state.config).projects.home_dir = home.path().join(".");
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "thread": thread_summary("chat-thread-1"),
+            "cwd": "/workspace/chat"
+        }));
+        let mut receiver = state.events.subscribe();
+        let app = build_router(state);
+
+        let body = json!({"firstMessageText": "Build the Chat Sidebar!"}).to_string();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/chats/threads")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let event = receiver.recv().await.unwrap();
+        assert_eq!(event.kind, "thread.upserted");
+        assert_eq!(event.project_id.as_deref(), None);
+        assert_eq!(event.thread_id.as_deref(), Some("chat-thread-1"));
+        assert_eq!(event.payload["scope"], "chat");
+        assert_eq!(event.payload["projectId"], Value::Null);
+        assert_eq!(event.payload["thread"]["id"], "chat-thread-1");
+
+        let replay = app
+            .oneshot(
+                Request::get("/v1/events?threadId=chat-thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(replay.status(), StatusCode::OK);
+        let replay = response_json(replay).await;
+        assert_eq!(replay["events"][0]["kind"], "thread.upserted");
+        assert_eq!(replay["events"][0]["payload"]["scope"], "chat");
+    }
+
+    #[tokio::test]
     async fn chat_thread_list_filters_threads_under_chat_root() {
         let (mut state, app_server) = test_state().await;
         let home = tempdir().unwrap();
@@ -653,6 +759,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn chat_thread_list_filters_archived_threads() {
+        let (mut state, app_server) = test_state().await;
+        let home = tempdir().unwrap();
+        Arc::make_mut(&mut state.config).projects.home_dir = home.path().to_path_buf();
+        let chat_cwd = home
+            .path()
+            .join("Documents")
+            .join("Codex")
+            .join("2026-05-09")
+            .join("chat-thread");
+        std::fs::create_dir_all(&chat_cwd).unwrap();
+        let chat_cwd = std::fs::canonicalize(chat_cwd).unwrap();
+        let mut archived_thread = thread_summary("archived-chat");
+        archived_thread["cwd"] = json!(chat_cwd.to_string_lossy().to_string());
+        archived_thread["archived"] = json!(true);
+        let mut visible_thread = thread_summary("visible-chat");
+        visible_thread["cwd"] = json!(chat_cwd.to_string_lossy().to_string());
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "data": [archived_thread, visible_thread],
+            "nextCursor": null,
+            "backwardsCursor": null
+        }));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/chats/threads")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["threads"].as_array().unwrap().len(), 1);
+        assert_eq!(body["threads"][0]["id"], "visible-chat");
+    }
+
+    #[tokio::test]
     async fn thread_list_project_filter_maps_to_cwd() {
         let (state, app_server) = test_state().await;
         let cwd = std::env::current_dir().unwrap().display().to_string();
@@ -676,6 +822,42 @@ mod tests {
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "thread/list");
         assert_eq!(requests[0].1["cwd"], cwd);
+        assert_eq!(requests[0].1["sortKey"], "updated_at");
+        assert_eq!(requests[0].1["sortDirection"], "desc");
+    }
+
+    #[tokio::test]
+    async fn thread_list_filters_archived_threads() {
+        let (state, app_server) = test_state().await;
+        let cwd = std::env::current_dir().unwrap().display().to_string();
+        let project = state
+            .store
+            .create_project("Kodex".to_string(), cwd)
+            .await
+            .unwrap();
+        let mut archived_thread = thread_summary("archived-thread");
+        archived_thread["archived"] = json!(true);
+        let visible_thread = thread_summary("visible-thread");
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "data": [archived_thread, visible_thread],
+            "nextCursor": null,
+            "backwardsCursor": null
+        }));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get(format!("/v1/threads?projectId={}", project.id))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["threads"].as_array().unwrap().len(), 1);
+        assert_eq!(body["threads"][0]["id"], "visible-thread");
     }
 
     #[tokio::test]
@@ -4909,7 +5091,7 @@ mod tests {
 
         let response = app
             .oneshot(
-                Request::get("/v1/events?projectId=p1&threadId=t1")
+                Request::get("/v1/events?cursor=0&projectId=p1&threadId=t1")
                     .header("accept", "text/event-stream")
                     .body(Body::empty())
                     .unwrap(),
@@ -4950,6 +5132,58 @@ mod tests {
         let live_chunk = next_sse_chunk(&mut body).await;
         assert!(live_chunk.contains(&format!("id: {}", live.seq)));
         assert!(live_chunk.contains("\"phase\":\"live\""));
+    }
+
+    #[tokio::test]
+    async fn sse_without_cursor_starts_after_existing_operational_events() {
+        let (state, _) = test_state().await;
+        let replay = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("t1".to_string()),
+                turn_id: None,
+                item_id: None,
+                kind: "gateway.warning".to_string(),
+                codex_method: None,
+                payload: json!({"threadId": "t1", "phase": "replay"}),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?threadId=t1")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let live = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("t1".to_string()),
+                turn_id: None,
+                item_id: None,
+                kind: "gateway.warning".to_string(),
+                codex_method: None,
+                payload: json!({"threadId": "t1", "phase": "live"}),
+            })
+            .await
+            .unwrap();
+        state.events.send(replay).unwrap();
+        state.events.send(live.clone()).unwrap();
+
+        let mut body = response.into_body();
+        let first = next_sse_chunk(&mut body).await;
+        assert!(first.contains(&format!("id: {}", live.seq)));
+        assert!(first.contains("\"phase\":\"live\""));
+        assert!(!first.contains("\"phase\":\"replay\""));
     }
 
     #[tokio::test]

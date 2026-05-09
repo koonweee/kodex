@@ -43,6 +43,20 @@ describe("event stream client", () => {
     FakeEventSource.instances = [];
   });
 
+  it("starts fresh streams without a replay cursor", () => {
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      threadId: "thread-1",
+      onEvent: () => {},
+    });
+
+    client.connect();
+
+    expect(FakeEventSource.instances[0].url).toContain("/v1/events?threadId=thread-1");
+    expect(FakeEventSource.instances[0].url).not.toContain("cursor=");
+    client.close();
+  });
+
   it("reconnects from the last seen sequence", () => {
     vi.useFakeTimers();
     const received: number[] = [];

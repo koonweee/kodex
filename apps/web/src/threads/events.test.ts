@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { EventEnvelope } from "../api/client";
-import { completedAgentTurnEvent, threadStatusUpdateFromEvent } from "./events";
+import { completedAgentTurnEvent, threadStatusUpdateFromEvent, threadUpsertFromEvent } from "./events";
 
 describe("thread events", () => {
   it("ignores legacy raw completion notifications", () => {
@@ -50,6 +50,51 @@ describe("thread events", () => {
       ),
     ).toEqual({ threadId: "thread-1", status: "idle" });
   });
+
+  it("parses project and chat thread upsert events", () => {
+    const summary = threadSummary("thread-live");
+
+    expect(
+      threadUpsertFromEvent(
+        event({
+          kind: "thread.upserted",
+          projectId: "project-1",
+          threadId: "thread-live",
+          payload: { scope: "project", projectId: "project-1", thread: summary },
+        }),
+      ),
+    ).toEqual({ scope: "project", projectId: "project-1", thread: summary });
+
+    expect(
+      threadUpsertFromEvent(
+        event({
+          kind: "thread.upserted",
+          threadId: "thread-live",
+          payload: { scope: "chat", projectId: null, thread: summary },
+        }),
+      ),
+    ).toEqual({ scope: "chat", thread: summary });
+  });
+
+  it("rejects malformed thread upsert events", () => {
+    expect(threadUpsertFromEvent(event({ kind: "thread.pin_updated" }))).toBeNull();
+    expect(
+      threadUpsertFromEvent(
+        event({
+          kind: "thread.upserted",
+          payload: { scope: "project", thread: threadSummary("thread-live") },
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      threadUpsertFromEvent(
+        event({
+          kind: "thread.upserted",
+          payload: { scope: "chat", thread: { id: "thread-live" } },
+        }),
+      ),
+    ).toBeNull();
+  });
 });
 
 function event(overrides: Partial<EventEnvelope>): EventEnvelope {
@@ -65,5 +110,19 @@ function event(overrides: Partial<EventEnvelope>): EventEnvelope {
     payload: {},
     receivedAt: "2026-05-02T00:00:00Z",
     ...overrides,
+  };
+}
+
+function threadSummary(id: string) {
+  return {
+    createdAt: 1,
+    cwd: "/workspace",
+    id,
+    name: "Live thread",
+    rawPayload: {},
+    seenCompletedAgentTurnSeq: 0,
+    status: "idle" as const,
+    unreadCompletedAgentTurn: false,
+    updatedAt: 2,
   };
 }

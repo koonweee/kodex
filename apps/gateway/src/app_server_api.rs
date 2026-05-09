@@ -41,6 +41,8 @@ impl CodexClient {
                     "cursor": cursor,
                     "limit": limit,
                     "cwd": cwd,
+                    "sortKey": "updated_at",
+                    "sortDirection": "desc",
                 }),
             )
             .await?;
@@ -1920,7 +1922,13 @@ mod tests {
             requests[0],
             (
                 "thread/list".to_string(),
-                json!({"cursor": "cursor-1", "limit": 25, "cwd": "/workspace"})
+                json!({
+                    "cursor": "cursor-1",
+                    "limit": 25,
+                    "cwd": "/workspace",
+                    "sortKey": "updated_at",
+                    "sortDirection": "desc"
+                })
             )
         );
         assert_eq!(

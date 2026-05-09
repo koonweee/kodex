@@ -783,6 +783,13 @@ impl Store {
         .await
     }
 
+    pub async fn latest_event_seq(&self) -> ApiResult<i64> {
+        let seq: Option<i64> = sqlx::query_scalar("select max(seq) from events")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(seq.unwrap_or(0))
+    }
+
     pub async fn replay_events_page(
         &self,
         cursor: Option<i64>,

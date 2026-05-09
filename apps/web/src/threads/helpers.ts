@@ -246,13 +246,10 @@ function threadPriority(
   if (pendingTitleThreadIds.has(thread.id)) {
     return 0;
   }
-  if (threadInProgress(thread)) {
+  if (threadNeedsApproval(thread, approvals)) {
     return 1;
   }
-  if (threadNeedsApproval(thread, approvals)) {
-    return 2;
-  }
-  return 3;
+  return 2;
 }
 
 function comparePinnedAt(left: ThreadSummary, right: ThreadSummary): number {

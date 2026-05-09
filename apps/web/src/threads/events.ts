@@ -1,7 +1,11 @@
 import type { EventEnvelope } from "../api/client";
-import { asRecord, stringValue } from "../shared/values";
+import type { ThreadSummary } from "../api/client";
+import { asRecord, numberValue, stringValue } from "../shared/values";
 
 type ThreadRuntimeStatus = "active" | "idle";
+type ThreadUpsert =
+  | { scope: "project"; projectId: string; thread: ThreadSummary }
+  | { scope: "chat"; thread: ThreadSummary };
 
 export function threadPinUpdateFromEvent(event: EventEnvelope): { threadId: string; pinnedAt: string | null } | null {
   if (event.kind !== "thread.pin_updated") {
@@ -14,6 +18,29 @@ export function threadPinUpdateFromEvent(event: EventEnvelope): { threadId: stri
   }
   const pinnedAt = stringValue(payload.pinnedAt) ?? stringValue(payload.pinned_at);
   return { threadId, pinnedAt };
+}
+
+export function threadUpsertFromEvent(event: EventEnvelope): ThreadUpsert | null {
+  if (event.kind !== "thread.upserted") {
+    return null;
+  }
+  const payload = asRecord(event.payload);
+  const scope = stringValue(payload.scope);
+  const thread = threadSummaryFromValue(payload.thread);
+  if (!thread) {
+    return null;
+  }
+
+  if (scope === "project") {
+    const projectId = stringValue(payload.projectId) ?? event.projectId;
+    return projectId ? { scope, projectId, thread } : null;
+  }
+
+  if (scope === "chat") {
+    return { scope, thread };
+  }
+
+  return null;
 }
 
 export function completedAgentTurnEvent(event: EventEnvelope): { threadId: string; seq: number } | null {
@@ -83,4 +110,35 @@ function normalizeRuntimeStatus(status: string | null): ThreadRuntimeStatus | nu
     return "idle";
   }
   return null;
+}
+
+function threadSummaryFromValue(value: unknown): ThreadSummary | null {
+  const thread = asRecord(value);
+  const id = stringValue(thread.id);
+  const cwd = stringValue(thread.cwd);
+  const status = stringValue(thread.status);
+  const createdAt = numberValue(thread.createdAt);
+  const updatedAt = numberValue(thread.updatedAt);
+  const seenCompletedAgentTurnSeq = numberValue(thread.seenCompletedAgentTurnSeq);
+  const unreadCompletedAgentTurn =
+    typeof thread.unreadCompletedAgentTurn === "boolean" ? thread.unreadCompletedAgentTurn : null;
+
+  if (
+    !id ||
+    !cwd ||
+    !isThreadStatus(status) ||
+    createdAt === null ||
+    updatedAt === null ||
+    seenCompletedAgentTurnSeq === null ||
+    unreadCompletedAgentTurn === null ||
+    !("rawPayload" in thread)
+  ) {
+    return null;
+  }
+
+  return thread as ThreadSummary;
+}
+
+function isThreadStatus(status: string | null): status is ThreadSummary["status"] {
+  return status === "active" || status === "idle" || status === "notLoaded" || status === "systemError";
 }

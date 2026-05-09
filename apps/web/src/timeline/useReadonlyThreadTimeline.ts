@@ -132,6 +132,7 @@ export function useReadonlyThreadTimeline({
 
     const connectStream = () => {
       const client = createEventStreamClient({
+        cursor: 0,
         threadId: currentThreadId,
         onStatusChange: (status) => {
           if (status === "reconnecting" && streamToken.current === currentToken) {

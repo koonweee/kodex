@@ -171,6 +171,7 @@ export function useSelectedThreadTimeline({
 
     const connectSelectedThreadStream = () => {
       const client = createEventStreamClient({
+        cursor: 0,
         threadId,
         onStatusChange: (status) => {
           if (status === "reconnecting" && selectedThreadStreamToken.current === streamToken) {
