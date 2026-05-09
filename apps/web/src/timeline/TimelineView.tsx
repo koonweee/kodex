@@ -22,7 +22,6 @@ const INITIAL_BOTTOM_STABLE_FRAMES = 3;
 const INITIAL_BOTTOM_MAX_SETTLE_FRAMES = 90;
 const LIVE_BOTTOM_SETTLE_FRAMES = 8;
 const BOTTOM_DISTANCE_EPSILON = 2;
-const FAR_FROM_BOTTOM_DISTANCE = 256;
 const disableTimelineScrollAdjustment = () => false;
 
 const TIMELINE_TEXT = {
@@ -216,7 +215,6 @@ function useBottomPinnedVirtualTimeline({
   const handledFollowLiveTokenRef = useRef(0);
   const lastScrollTopRef = useRef(0);
   const nearBottomRef = useRef(true);
-  const pointerScrollIntentRef = useRef(false);
   const recentScrollIntentRef = useRef(false);
   const scrollIntentClearTimerRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
@@ -264,17 +262,22 @@ function useBottomPinnedVirtualTimeline({
     const scrollElement = scrollParentElement;
     if (!scrollElement) {
       nearBottomRef.current = true;
-      setFollowingLive(true);
       lastScrollTopRef.current = 0;
-      upwardIntentRef.current = false;
+      setFollowingLive(true);
       return true;
     }
     const distanceFromBottom = getDistanceFromBottom(scrollElement);
     const isAtBottom = distanceFromBottom <= BOTTOM_DISTANCE_EPSILON;
     const isNearBottom = distanceFromBottom < 96;
-    const previousScrollTop = lastScrollTopRef.current;
-    const movedDown = scrollElement.scrollTop > previousScrollTop;
-    if (isAtBottom && (!upwardIntentRef.current || movedDown)) {
+    const movedUp = scrollElement.scrollTop < lastScrollTopRef.current;
+    const movedAwayFromBottom =
+      (movedUp && (!isNearBottom || recentScrollIntentRef.current)) ||
+      (!isNearBottom && lastScrollTopRef.current === 0);
+    if (movedAwayFromBottom) {
+      upwardIntentRef.current = true;
+      setFollowingLive(false);
+    }
+    if (isAtBottom && !upwardIntentRef.current) {
       setFollowingLive(true);
     }
     lastScrollTopRef.current = scrollElement.scrollTop;
@@ -356,16 +359,7 @@ function useBottomPinnedVirtualTimeline({
     }
 
     updateNearBottom();
-    const handleScroll = () => {
-      const previousScrollTop = lastScrollTopRef.current;
-      const isNearBottom = updateNearBottom();
-      const moved = scrollElement.scrollTop !== previousScrollTop;
-      const isFarFromBottom = getDistanceFromBottom(scrollElement) > FAR_FROM_BOTTOM_DISTANCE;
-      if (!isNearBottom && (recentScrollIntentRef.current || pointerScrollIntentRef.current || (moved && isFarFromBottom))) {
-        stopFollowingLive();
-      }
-    };
-    scrollElement.addEventListener("scroll", handleScroll, { passive: true });
+    scrollElement.addEventListener("scroll", updateNearBottom, { passive: true });
 
     const handleWheel = (event: WheelEvent) => {
       markRecentScrollIntent();
@@ -385,11 +379,7 @@ function useBottomPinnedVirtualTimeline({
       }
     };
     const handlePointerDown = () => {
-      pointerScrollIntentRef.current = true;
       markRecentScrollIntent();
-    };
-    const handlePointerDone = () => {
-      pointerScrollIntentRef.current = false;
     };
     const handleTouchStart = (event: TouchEvent) => {
       markRecentScrollIntent();
@@ -409,19 +399,14 @@ function useBottomPinnedVirtualTimeline({
     scrollElement.addEventListener("keydown", handleKeyDown);
     scrollElement.addEventListener("touchstart", handleTouchStart, { passive: true });
     scrollElement.addEventListener("touchmove", handleTouchMove, { passive: true });
-    window.addEventListener("pointercancel", handlePointerDone);
-    window.addEventListener("pointerup", handlePointerDone);
     return () => {
       clearRecentScrollIntent();
-      pointerScrollIntentRef.current = false;
-      scrollElement.removeEventListener("scroll", handleScroll);
+      scrollElement.removeEventListener("scroll", updateNearBottom);
       scrollElement.removeEventListener("pointerdown", handlePointerDown);
       scrollElement.removeEventListener("wheel", handleWheel);
       scrollElement.removeEventListener("keydown", handleKeyDown);
       scrollElement.removeEventListener("touchstart", handleTouchStart);
       scrollElement.removeEventListener("touchmove", handleTouchMove);
-      window.removeEventListener("pointercancel", handlePointerDone);
-      window.removeEventListener("pointerup", handlePointerDone);
     };
   }, [clearRecentScrollIntent, markRecentScrollIntent, scrollParentElement, stopFollowingLive, updateNearBottom]);
 
