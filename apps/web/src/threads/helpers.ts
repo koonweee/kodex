@@ -252,10 +252,7 @@ function threadPriority(
   if (threadNeedsApproval(thread, approvals)) {
     return 2;
   }
-  if (thread.unreadCompletedAgentTurn) {
-    return 3;
-  }
-  return 4;
+  return 3;
 }
 
 function comparePinnedAt(left: ThreadSummary, right: ThreadSummary): number {

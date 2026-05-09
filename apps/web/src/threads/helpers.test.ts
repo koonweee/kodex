@@ -22,7 +22,7 @@ function threadSummary(
 }
 
 describe("sidebar thread ordering", () => {
-  it("sorts by draft title, active state, approval, unread state, and recency", () => {
+  it("sorts by draft title, active state, approval state, and recency without promoting unread threads", () => {
     const approvals: Approval[] = [
       {
         createdAt: "2026-05-01T00:00:00Z",
@@ -48,14 +48,18 @@ describe("sidebar thread ordering", () => {
         approvals,
         new Set(["draft"]),
       ).map((thread) => thread.id),
-    ).toEqual(["draft", "active", "approval", "unread", "recent", "older"]);
+    ).toEqual(["draft", "active", "approval", "recent", "unread", "older"]);
   });
 
-  it("sorts pinned threads by attention first, then pin time and recency", () => {
+  it("sorts pinned threads by attention first, then pin time and recency without promoting unread threads", () => {
     expect(
       sortPinnedThreadsForSidebar(
         [
-          threadSummary("older-pin", { pinnedAt: "2026-05-05T00:00:00Z", updatedAt: 100 }),
+          threadSummary("older-pin", {
+            pinnedAt: "2026-05-05T00:00:00Z",
+            unreadCompletedAgentTurn: true,
+            updatedAt: 100,
+          }),
           threadSummary("newer-pin", { pinnedAt: "2026-05-06T00:00:00Z", updatedAt: 10 }),
           threadSummary("active-pin", { pinnedAt: "2026-05-04T00:00:00Z", status: "active", updatedAt: 1 }),
           threadSummary("same-pin-recent", { pinnedAt: "2026-05-05T00:00:00Z", updatedAt: 200 }),
