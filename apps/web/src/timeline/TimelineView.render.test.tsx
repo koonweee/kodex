@@ -172,6 +172,96 @@ describe("TimelineView debug rendering", () => {
     }
   });
 
+  it("does not replay submit follow-bottom after the user scrolls up during the turn", async () => {
+    const scrollParentElement = document.createElement("div");
+    document.body.appendChild(scrollParentElement);
+    Object.defineProperties(scrollParentElement, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 3600 },
+      scrollTop: { configurable: true, writable: true, value: 3200 },
+    });
+
+    const onReady = vi.fn();
+    const props = {
+      approvals: [],
+      followLiveToken: 1,
+      imagePreviewUrlsByPath: {},
+      onApprovalDecision: vi.fn(),
+      onImageOpen: vi.fn(),
+      onMarkdownOpen: vi.fn(),
+      onReady,
+      scrollParentElement,
+      showDebug: false,
+      threadId: "thread-1",
+    };
+    const timeline = timelineState({
+      activeTurnId: "turn-1",
+      items: Array.from({ length: 30 }, (_, index) =>
+        timelineItem({
+          id: `answer-${index}`,
+          displayOrder: index,
+          status: "running",
+          text: `Large answer ${index}`,
+        }),
+      ),
+      lastSeq: 1,
+    });
+
+    let unmount: (() => void) | undefined;
+    try {
+      const rendered = render(
+        <MantineProvider>
+          <TimelineView {...props} timeline={timelineState()} />
+        </MantineProvider>,
+        { container: scrollParentElement },
+      );
+      unmount = rendered.unmount;
+      const { rerender } = rendered;
+
+      await waitFor(() => expect(onReady).toHaveBeenCalled());
+      rerender(
+        <MantineProvider>
+          <TimelineView {...props} timeline={timeline} />
+        </MantineProvider>,
+      );
+      await waitFor(() => {
+        expect(scrollParentElement.scrollTop).toBe(3200);
+      });
+
+      fireEvent.wheel(scrollParentElement, { deltaY: -24 });
+      scrollParentElement.scrollTop = 3120;
+      fireEvent.scroll(scrollParentElement);
+
+      rerender(
+        <MantineProvider>
+          <TimelineView
+            {...props}
+            timeline={timelineState({
+              ...timeline,
+              items: [
+                ...timeline.items,
+                timelineItem({
+                  id: "streamed-answer",
+                  displayOrder: 30,
+                  status: "running",
+                  text: "Streaming answer",
+                }),
+              ],
+              lastSeq: 2,
+            })}
+          />
+        </MantineProvider>,
+      );
+
+      await waitFor(() => {
+        expect(scrollParentElement.scrollTop).toBe(3120);
+      });
+    } finally {
+      unmount?.();
+      scrollParentElement.remove();
+    }
+  });
+
   it("keeps following live output when streamed text growth fires a scroll event without scroll movement", async () => {
     const scrollParentElement = document.createElement("div");
     document.body.appendChild(scrollParentElement);
