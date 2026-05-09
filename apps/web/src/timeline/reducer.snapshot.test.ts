@@ -1004,6 +1004,52 @@ describe("timeline reducer snapshots", () => {
     ]);
   });
 
+  it("keeps active-turn assistant deltas after refreshed snapshot history", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("Previous answer", "agent-1"));
+    state = applyTimelineEvent(state, {
+      id: "live-turn-upsert-1",
+      seq: 100,
+      kind: "timeline.turn_upsert",
+      codexMethod: "turn/upsert",
+      threadId: "thread-1",
+      turnId: "turn-2",
+      itemId: null,
+      projectId: null,
+      payload: {
+        source: "gatewayStream",
+        liveState: "streaming",
+        turn: { id: "turn-2", status: "inProgress", items: [] },
+      },
+      receivedAt: "2026-04-30T00:00:01Z",
+    });
+
+    state = applyTimelineSnapshot(state, snapshotWithPreviousAndRunningUser("New question"));
+    state = applyTimelineEvent(state, {
+      id: "live-agent-delta-1",
+      seq: 101,
+      kind: "timeline.item_delta",
+      codexMethod: "item/agentMessage/delta",
+      threadId: "thread-1",
+      turnId: "turn-2",
+      itemId: "agent-live-1",
+      projectId: null,
+      payload: {
+        source: "gatewayStream",
+        type: "agentMessage",
+        delta: "I'll investigate",
+        rawPayload: { delta: "I'll investigate" },
+      },
+      receivedAt: "2026-04-30T00:00:02Z",
+    });
+
+    expect(sortedVisibleTimelineItems(state, false).map((item) => item.text)).toEqual([
+      "Hello",
+      "Previous answer",
+      "New question",
+      "I'll investigate",
+    ]);
+  });
+
   it("uses payload item ids to merge completed items when the event item id is absent", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot("Done", "agent-1"));
 
@@ -1155,6 +1201,31 @@ function snapshotWithUserOnlyTurn(userText: string): ThreadDetailResponse {
             id: "user-1",
             itemType: "userMessage",
             rawPayload: { id: "user-1", type: "userMessage", content: [{ type: "text", text: userText }] },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function snapshotWithPreviousAndRunningUser(userText: string): ThreadDetailResponse {
+  const previous = snapshot("Previous answer", "agent-1");
+  return {
+    ...previous,
+    liveState: "streaming",
+    turns: [
+      ...previous.turns,
+      {
+        id: "turn-2",
+        status: "running",
+        startedAt: 3,
+        completedAt: null,
+        rawPayload: {},
+        items: [
+          {
+            id: "user-2",
+            itemType: "userMessage",
+            rawPayload: { id: "user-2", type: "userMessage", content: [{ type: "text", text: userText }] },
           },
         ],
       },

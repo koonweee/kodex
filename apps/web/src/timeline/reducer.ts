@@ -278,7 +278,7 @@ export function replayTimeline(events: EventEnvelope[]): TimelineState {
 
 export function applyTimelineSnapshot(state: TimelineState, snapshot: ThreadDetailResponse): TimelineState {
   let next = optimisticOnlyTimeline(state);
-  let seq = Math.max(state.lastSeq, 0);
+  let seq = 0;
   const knownAppServerItemIds = appServerItemIdsForState(state);
   for (const turn of snapshot.turns) {
     for (const item of turn.items) {
@@ -659,7 +659,7 @@ function matchingConfirmedUserMessage(indexes: TimelineIndexes, incoming: Timeli
   return timelineItems(indexes).find(
     (item) =>
       item.kind === "user_message" &&
-      item.serverItemId === incoming.id &&
+      (item.serverItemId === incoming.id || (item.source !== "optimistic" && item.id === incoming.id)) &&
       (!item.turnId || !incoming.turnId || item.turnId === incoming.turnId),
   );
 }

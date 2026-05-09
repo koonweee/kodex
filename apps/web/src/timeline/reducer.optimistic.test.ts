@@ -89,6 +89,42 @@ describe("timeline reducer optimistic", () => {
     });
   });
 
+  it("does not let stale same-text user replay confirm a newer optimistic message", () => {
+    let state = createTimelineState();
+    const historicalUserMessage = {
+      id: "event-user-1",
+      seq: 1,
+      kind: "codex.notification",
+      codexMethod: "item/completed",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "user-1",
+      projectId: "project-1",
+      payload: { item: { id: "user-1", type: "userMessage", content: [{ type: "text", text: "Again" }] } },
+      receivedAt: "2026-04-30T00:00:00Z",
+    } satisfies Parameters<typeof applyTimelineEvent>[1];
+
+    state = applyTimelineEvent(state, historicalUserMessage);
+    state = addOptimisticUserMessage(state, {
+      clientRequestId: "client-same-text",
+      images: [],
+      text: "Again",
+      turnId: null,
+      confirmationState: "sending",
+    });
+    state = applyTimelineEvent(state, { ...historicalUserMessage, id: "event-user-1-replay", seq: 2 });
+
+    expect(state.items).toHaveLength(2);
+    expect(state.items[0]).toMatchObject({
+      id: "user-1",
+    });
+    expect(state.items[1]).toMatchObject({
+      id: "optimistic-client-same-text",
+      source: "optimistic",
+    });
+    expect(state.items[1]).not.toHaveProperty("serverItemId");
+  });
+
   it("updates optimistic user message status", () => {
     let state = addOptimisticUserMessage(createTimelineState(), {
       clientRequestId: "client-message-1",
