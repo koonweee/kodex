@@ -55,6 +55,7 @@ This file is the directory of record for Kodex plans. Keep the status column cur
 | [Mantine common component coverage checklist](mantine-common-component-coverage.md) | Complete | Common Mantine selection, searchable input, overlay, data/surface, and loading defaults | Added component defaults, `/__theme` coverage, timeline table theme coverage, and scoped one-off cleanup. |
 | [Mantine local style cleanup checklist](mantine-local-style-cleanup-checklist.md) | Complete | Remove one-off control chrome that can use Mantine theme defaults | Moved local Button/Menu/Switch/Modal/Badge chrome to Mantine-backed defaults while keeping feature layout local. |
 | [Shared Markdown renderer plan](shared-markdown-renderer.md) | Complete | Shared ReactMarkdown component mapping for timeline messages and Markdown preview pane | Extracted custom timeline Markdown rendering into a reusable module and applied it to the Markdown preview pane with desktop modal presentation. |
+| [TanStack Query fetching overhaul plan](tanstack-query-fetching.md) | Complete | Frontend server-state queries, mutations, cache helpers, and SSE cache integration | Implemented Query-owned server snapshots, merge-protected SSE/cache helpers, fitting mutations, timeline boundary docs, tests, build, browser smoke, and review loop. |
 | [Future extensions overview](future-extensions.md) | Proposed | Non-MVP feature map linked to app-server APIs | Overview only, not an implementation plan. |
 
 ## Maintenance Rules

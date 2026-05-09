@@ -1,4 +1,5 @@
 import { MantineProvider } from "@mantine/core";
+import { QueryClientProvider, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useCallback,
   useEffect,
@@ -23,9 +24,12 @@ import {
   createProject,
   createThread,
   deleteAutomation,
-  listQueuedInputs,
+  getRateLimits,
   listAutomations,
+  listChatThreads,
+  listQueuedInputs,
   listPinnedThreads,
+  listProjects,
   listThreads,
   pauseAutomation,
   pinThread,
@@ -40,10 +44,16 @@ import {
   type EventEnvelope,
   type Project,
   type QueuedInput,
-  type RateLimitSnapshot,
   type ThreadSummary,
 } from "./api/client";
-import { applyAutomationEvent, deleteAutomationById, mergeAutomationSnapshot, upsertAutomation } from "./automations/state";
+import { queryClient } from "./api/queryClient";
+import { queryKeys } from "./api/queryKeys";
+import {
+  applyCachedAutomationEvent,
+  deleteCachedAutomation,
+  mergeAutomationData,
+  upsertCachedAutomation,
+} from "./automations/cache";
 import { automationThreadOptions } from "./automations/threadOptions";
 import { createThreadOptions } from "./composer/settings";
 import { useComposerSettingsState } from "./composer/useComposerSettingsState";
@@ -68,19 +78,30 @@ import {
   clearAvailableThreadTitles,
   markThreadTitlePending,
   optimisticThreadSummary,
-  prependThreadForProject,
-  removeThreadFromList,
-  removeThreadFromProjects,
-  replaceThreadInList,
-  replaceThreadInProjects,
   threadDisplayTitle,
   threadHasDisplayTitle,
-  updateThreadReadStateInList,
-  updateThreadReadStateInProjects,
   withoutPinnedProjectThreads,
   withoutPinnedThreads,
   type ThreadsByProjectId,
 } from "./threads/helpers";
+import {
+  applyThreadPinState as applyThreadPinStateToCache,
+  findCachedThread,
+  mergeChatThreadData,
+  mergePinnedThreadData,
+  mergeProjectThreadData,
+  pinnedTombstonesAddedDuringSnapshot,
+  removeThreadEverywhere,
+  updateThreadEverywhere,
+  upsertChatThread,
+  upsertPinnedThread,
+  upsertProjectThread,
+} from "./threads/cache";
+import {
+  deleteCachedQueuedInput,
+  mergeQueuedInputData,
+  upsertCachedQueuedInput,
+} from "./queuedInputs/cache";
 import { threadPinUpdateFromEvent } from "./threads/events";
 import {
   applySidebarProjectOrder,
@@ -94,7 +115,6 @@ import {
   type TimelineState,
 } from "./timeline/reducer";
 import { errorMessageFrom } from "./shared/values";
-import { loadInitialKodexState } from "./shell/initialLoad";
 import { KodexShellView } from "./shell/KodexShellView";
 import type { MobilePanel } from "./shell/KodexShellView";
 import { automationsPath, emptyPath, parseKodexLocation, threadPath, type KodexRoute } from "./shell/navigation";
@@ -129,13 +149,15 @@ export function App() {
   const isThemeWorkbench = typeof window !== "undefined" && window.location.pathname === "/__theme";
 
   return (
-    <MantineProvider forceColorScheme={colorScheme.mode} theme={theme}>
-      {isThemeWorkbench ? (
-        <ThemeWorkbench colorSchemeId={colorSchemeId} onColorSchemeChange={setColorSchemeId} />
-      ) : (
-        <KodexShell colorSchemeId={colorSchemeId} onColorSchemeChange={setColorSchemeId} />
-      )}
-    </MantineProvider>
+    <QueryClientProvider client={queryClient}>
+      <MantineProvider forceColorScheme={colorScheme.mode} theme={theme}>
+        {isThemeWorkbench ? (
+          <ThemeWorkbench colorSchemeId={colorSchemeId} onColorSchemeChange={setColorSchemeId} />
+        ) : (
+          <KodexShell colorSchemeId={colorSchemeId} onColorSchemeChange={setColorSchemeId} />
+        )}
+      </MantineProvider>
+    </QueryClientProvider>
   );
 }
 
@@ -147,12 +169,9 @@ function KodexShell({
   onColorSchemeChange: (colorSchemeId: KodexColorSchemeId) => void;
 }) {
   const [initialRoute] = useState(() => currentKodexRoute());
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [chatThreads, setChatThreads] = useState<ThreadSummary[]>([]);
-  const [pinnedThreads, setPinnedThreads] = useState<ThreadSummary[]>([]);
+  const queryClientForShell = useQueryClient();
   const [projectOrderIds, setProjectOrderIds] = useState<string[] | null>(() => loadSidebarProjectOrder());
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [threadsByProjectId, setThreadsByProjectId] = useState<ThreadsByProjectId>({});
   const [selectedMainPane, setSelectedMainPane] = useState<"thread" | "automations">(initialRoute.view ?? "thread");
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(initialRoute.threadId);
   const [routeSelectedThread, setRouteSelectedThread] = useState<ThreadSummary | null>(null);
@@ -162,10 +181,6 @@ function KodexShell({
   const [pendingTitleThreadIds, setPendingTitleThreadIds] = useState<Set<string>>(new Set());
   const [materializingThreadIds, setMaterializingThreadIds] = useState<Set<string>>(new Set());
   const [timeline, setTimeline] = useState<TimelineState>(createTimelineState());
-  const [queuedInputsByThreadId, setQueuedInputsByThreadId] = useState<Record<string, QueuedInput[]>>({});
-  const [automations, setAutomations] = useState<Automation[]>([]);
-  const [automationsLoaded, setAutomationsLoaded] = useState(false);
-  const [automationsLoading, setAutomationsLoading] = useState(false);
   const [timelineEntry, setTimelineEntry] = useState<TimelineEntry>(() =>
     initialRoute.threadId ? { phase: "loadingSnapshot", threadId: initialRoute.threadId } : idleTimelineEntry,
   );
@@ -179,15 +194,13 @@ function KodexShell({
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownPreviewRequest | null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesSection, setPreferencesSection] = useState<"appearance">("appearance");
-  const [usageLimitSnapshot, setUsageLimitSnapshot] = useState<RateLimitSnapshot | null>(null);
   const [hoveredThreadActionId, setHoveredThreadActionId] = useState<string | null>(null);
   const [timelineScrollElement, setTimelineScrollElement] = useState<HTMLDivElement | null>(null);
   const [composerResetToken, setComposerResetToken] = useState(0);
   const [skillsInvalidationGeneration, setSkillsInvalidationGeneration] = useState(0);
+  const [timelineFollowLiveToken, setTimelineFollowLiveToken] = useState(0);
   const selectedProjectIdRef = useRef<string | null>(null);
   const selectedThreadIdRef = useRef<string | null>(selectedThreadId);
-  const queueRevisionByThreadIdRef = useRef<Record<string, number>>({});
-  const automationRevisionRef = useRef(0);
   const approvalsRef = useRef<Approval[]>([]);
   const attachedThreadIdsRef = useRef<Set<string>>(new Set());
   const attachingThreadIdsRef = useRef<Set<string>>(new Set());
@@ -199,25 +212,152 @@ function KodexShell({
   const composerShellRef = useRef<HTMLDivElement | null>(null);
   const directMobileDeepLinkSeededRef = useRef(false);
   const draftComposerTransitionOriginRef = useRef<DOMRect | null>(null);
-  const initialPendingApprovalsReconciledRef = useRef(false);
   const liveUsageLimitSnapshotReceivedRef = useRef(false);
-  const threadRequestIds = useRef<Map<string, number>>(new Map());
-  const nextThreadRequestId = useRef(0);
   const [draftComposerTransitionToken, setDraftComposerTransitionToken] = useState(0);
   const [isDraftComposerTransitioning, setIsDraftComposerTransitioning] = useState(false);
-  const [initialPendingApprovalsLoaded, setInitialPendingApprovalsLoaded] = useState(false);
+  const [pinnedStateTrusted, setPinnedStateTrusted] = useState(false);
 
-  const selectedProjectThreads = selectedProjectId ? threadsByProjectId[selectedProjectId] ?? [] : [];
+  const projectsQuery = useQuery({
+    queryKey: queryKeys.projects,
+    queryFn: listProjects,
+  });
+  const projects = projectsQuery.data ?? [];
   const orderedProjects = useMemo(() => applySidebarProjectOrder(projects, projectOrderIds), [projectOrderIds, projects]);
+  const projectThreadQueries = useQueries({
+    queries: orderedProjects.map((project) => ({
+      queryKey: queryKeys.projectThreads(project.id),
+      queryFn: async () =>
+        mergeProjectThreadData(
+          queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.projectThreads(project.id)),
+          await listThreads(project.id),
+          routeSelectedThreadRef.current,
+          selectedThreadIdRef.current,
+        ),
+    })),
+  });
+  const threadsByProjectId = useMemo(() => {
+    const next: ThreadsByProjectId = {};
+    orderedProjects.forEach((project, index) => {
+      next[project.id] = projectThreadQueries[index]?.data ?? [];
+    });
+    return next;
+  }, [orderedProjects, projectThreadQueries]);
+  const chatThreadsQuery = useQuery({
+    queryKey: queryKeys.chatThreads,
+    queryFn: async () =>
+      mergeChatThreadData(
+        queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.chatThreads),
+        await listChatThreads(),
+      ),
+  });
+  const pinnedThreadsQuery = useQuery({
+    queryKey: queryKeys.pinnedThreads,
+    queryFn: async () => {
+      const beforeSnapshot = queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads);
+      const tombstonesBeforeSnapshot = queryClientForShell.getQueryData<string[]>(queryKeys.pinnedThreadTombstones);
+      const threads = await listPinnedThreads();
+      const current = queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads);
+      const tombstones = queryClientForShell.getQueryData<string[]>(queryKeys.pinnedThreadTombstones);
+      const tombstonesForSnapshot = pinnedTombstonesAddedDuringSnapshot(tombstonesBeforeSnapshot, tombstones);
+      if (tombstones && tombstones.length > 0) {
+        queryClientForShell.setQueryData<string[]>(queryKeys.pinnedThreadTombstones, []);
+      }
+      setPinnedStateTrusted(true);
+      return mergePinnedThreadData(
+        beforeSnapshot,
+        current,
+        threads,
+        tombstonesForSnapshot,
+      );
+    },
+  });
+  const automationsQuery = useQuery({
+    enabled: selectedMainPane === "automations",
+    queryKey: queryKeys.automations,
+    queryFn: async () => {
+      const beforeSnapshot = queryClientForShell.getQueryData<Automation[]>(queryKeys.automations);
+      const snapshot = await listAutomations();
+      const current = queryClientForShell.getQueryData<Automation[]>(queryKeys.automations);
+      if (!beforeSnapshot && current && current.length > 0) {
+        return current;
+      }
+      return mergeAutomationData(
+        current,
+        snapshot,
+        queryClientForShell.getQueryData<string[]>(queryKeys.automationTombstones) ?? [],
+      );
+    },
+  });
+  const selectedQueuedInputsThreadId = selectedThreadId;
+  const selectedQueuedInputsQuery = useQuery({
+    enabled: selectedQueuedInputsThreadId !== null,
+    queryKey: selectedQueuedInputsThreadId ? queryKeys.queuedInputs(selectedQueuedInputsThreadId) : ["queued-inputs", "none"],
+    queryFn: async () => {
+      const threadId = selectedQueuedInputsThreadId;
+      if (!threadId) {
+        return [];
+      }
+      const snapshot = await listQueuedInputs(threadId);
+      return mergeQueuedInputData(
+        queryClientForShell.getQueryData<QueuedInput[]>(queryKeys.queuedInputs(threadId)),
+        snapshot,
+        queryClientForShell.getQueryData<string[]>(queryKeys.queuedInputTombstones(threadId)) ?? [],
+      );
+    },
+  });
+  const rateLimitsQuery = useQuery({
+    queryKey: queryKeys.rateLimits,
+    queryFn: async () => {
+      const nextSnapshot = usageLimitSnapshotFromResponse(await getRateLimits());
+      if (liveUsageLimitSnapshotReceivedRef.current) {
+        return queryClientForShell.getQueryData<ReturnType<typeof usageLimitSnapshotFromResponse>>(queryKeys.rateLimits) ?? nextSnapshot;
+      }
+      return nextSnapshot;
+    },
+  });
+  const createAutomationMutation = useMutation({
+    mutationFn: createAutomation,
+    onSuccess: (automation) => upsertCachedAutomation(queryClientForShell, automation),
+  });
+  const updateAutomationMutation = useMutation({
+    mutationFn: ({ automationId, request }: { automationId: string; request: AutomationUpdateRequest }) =>
+      updateAutomation(automationId, request),
+    onSuccess: (automation) => upsertCachedAutomation(queryClientForShell, automation),
+  });
+  const pauseAutomationMutation = useMutation({
+    mutationFn: pauseAutomation,
+    onSuccess: (automation) => upsertCachedAutomation(queryClientForShell, automation),
+  });
+  const resumeAutomationMutation = useMutation({
+    mutationFn: resumeAutomation,
+    onSuccess: (automation) => upsertCachedAutomation(queryClientForShell, automation),
+  });
+  const deleteAutomationMutation = useMutation({
+    mutationFn: async (automationId: string) => {
+      await deleteAutomation(automationId);
+      return automationId;
+    },
+    onSuccess: (automationId) => deleteCachedAutomation(queryClientForShell, automationId),
+  });
+  const createProjectMutation = useMutation({ mutationFn: createProject });
+  const archiveThreadMutation = useMutation({ mutationFn: archiveThread });
+  const pinThreadMutation = useMutation({ mutationFn: pinThread });
+  const unpinThreadMutation = useMutation({ mutationFn: unpinThread });
+  const chatThreads = chatThreadsQuery.data ?? [];
+  const pinnedThreads = pinnedThreadsQuery.data ?? [];
+  const selectedProjectThreads = selectedProjectId ? threadsByProjectId[selectedProjectId] ?? [] : [];
+  const flatProjectThreads = useMemo(() => Object.values(threadsByProjectId).flat(), [threadsByProjectId]);
   const selectedProject = selectedProjectId ? orderedProjects.find((project) => project.id === selectedProjectId) ?? null : null;
   const selectedThread =
+    (routeSelectedThread?.id === selectedThreadId ? routeSelectedThread : null) ??
     selectedProjectThreads.find((thread) => thread.id === selectedThreadId) ??
+    flatProjectThreads.find((thread) => thread.id === selectedThreadId) ??
     chatThreads.find((thread) => thread.id === selectedThreadId) ??
     pinnedThreads.find((thread) => thread.id === selectedThreadId) ??
-    (routeSelectedThread?.id === selectedThreadId ? routeSelectedThread : null) ??
     null;
-  const selectedQueuedInputs = selectedThreadId ? queuedInputsByThreadId[selectedThreadId] ?? [] : [];
-  const flatProjectThreads = useMemo(() => Object.values(threadsByProjectId).flat(), [threadsByProjectId]);
+  const selectedQueuedInputs = selectedThreadId ? selectedQueuedInputsQuery.data ?? [] : [];
+  const automations = automationsQuery.data ?? [];
+  const usageLimitSnapshot = rateLimitsQuery.data ?? null;
   const automationTargetThreadOptions = useMemo(
     () =>
       automationThreadOptions({
@@ -232,7 +372,6 @@ function KodexShell({
     applyApprovalEventWithTombstone,
     applyApprovalEventsWithTombstone,
     handleApprovalDecision,
-    mergeFetchedPendingApprovals,
     selectedThreadApprovals,
     setApprovals,
   } = useApprovalsState({ selectedThreadId });
@@ -247,7 +386,6 @@ function KodexShell({
     handleLogin,
     handleLogout,
     loginState,
-    setAccount,
   } = useAccountSession({ onError: reportError });
   const {
     composerSettings,
@@ -266,11 +404,9 @@ function KodexShell({
     chatThreads,
     onError: reportError,
     selectedThreadIdRef,
-    setChatThreads,
-    setPinnedThreads,
-    setThreadsByProjectId,
     threadsByProjectId,
     pinnedThreads,
+    updateThreadEverywhere: patchThreadEverywhere,
   });
   const {
     applyThreadMetadataEvent,
@@ -278,10 +414,8 @@ function KodexShell({
     selectedContextUsage,
   } = useThreadMetadata({
     selectedThreadId,
-    setChatThreads,
     setPendingTitleThreadIds,
-    setPinnedThreads,
-    setThreadsByProjectId,
+    updateThreadEverywhere: patchThreadEverywhere,
   });
   const {
     handleSidebarResizeKeyDown,
@@ -340,6 +474,7 @@ function KodexShell({
     onQueuedInputDeleted: removeQueuedInput,
     onQueuedInputUpsert: upsertQueuedInput,
     onThreadMaterialized: markThreadMaterialized,
+    onThreadLocalInputSubmitted: requestSelectedThreadFollowLive,
     onThreadTurnStartFailed: markThreadIdle,
     onThreadTurnStarted: markThreadActive,
     queuedSteerRows: selectedQueuedInputs,
@@ -355,45 +490,32 @@ function KodexShell({
   const usageLimitLines = useMemo(() => formatUsageLimitLines(usageLimitSnapshot), [usageLimitSnapshot]);
 
   useEffect(() => {
-    void loadInitialKodexState({
-      hydrateComposerDefaults,
-      loadProjectThreads,
-      mergePendingApprovals: (nextApprovals) => {
-        mergeFetchedPendingApprovals(nextApprovals);
-        setInitialPendingApprovalsLoaded(true);
-      },
-      onChatThreadsLoaded: (nextThreads) => {
-        const hydratedThreads = mergeRouteSelectedThreadIntoList(
-          nextThreads,
-          routeSelectedThreadRef.current,
-          selectedThreadIdRef.current,
-        );
-        setChatThreads((current) => mergeLoadedChatThreads(current, hydratedThreads));
-        setPendingTitleThreadIds((current) => clearAvailableThreadTitles(current, hydratedThreads));
-      },
-      onPinnedThreadsLoaded: (nextThreads) => {
-        setPinnedThreads(nextThreads);
-        setPendingTitleThreadIds((current) => clearAvailableThreadTitles(current, nextThreads));
-      },
-      onError: reportError,
-      onProjectsLoaded: (nextProjects) => {
-        setProjects(nextProjects);
-      },
-      setAccount,
-      setRateLimits: (rateLimits) => {
-        if (!liveUsageLimitSnapshotReceivedRef.current) {
-          setUsageLimitSnapshot(usageLimitSnapshotFromResponse(rateLimits));
-        }
-      },
-    });
+    void hydrateComposerDefaults(null);
   }, []);
 
   useEffect(() => {
-    if (!initialPendingApprovalsLoaded || initialPendingApprovalsReconciledRef.current) {
+    const loadedThreads = [
+      ...chatThreads,
+      ...pinnedThreads,
+      ...Object.values(threadsByProjectId).flat(),
+    ];
+    setPendingTitleThreadIds((current) => clearAvailableThreadTitles(current, loadedThreads));
+  }, [chatThreads, pinnedThreads, threadsByProjectId]);
+
+  useEffect(() => {
+    const selectedId = selectedThreadIdRef.current;
+    if (!selectedId || selectedProjectIdRef.current) {
       return;
     }
-    initialPendingApprovalsReconciledRef.current = true;
-  }, [approvals, initialPendingApprovalsLoaded]);
+    for (const [projectId, projectThreads] of Object.entries(threadsByProjectId)) {
+      if (projectThreads.some((thread) => thread.id === selectedId)) {
+        selectedProjectIdRef.current = projectId;
+        setSelectedProjectId(projectId);
+        void hydrateComposerDefaults(projectId);
+        return;
+      }
+    }
+  }, [hydrateComposerDefaults, threadsByProjectId]);
 
   useEffect(() => {
     function handlePopState() {
@@ -500,7 +622,7 @@ function KodexShell({
         const nextUsageLimitSnapshot = usageLimitSnapshotFromEvent(event);
         if (nextUsageLimitSnapshot) {
           liveUsageLimitSnapshotReceivedRef.current = true;
-          setUsageLimitSnapshot(nextUsageLimitSnapshot);
+          queryClientForShell.setQueryData(queryKeys.rateLimits, nextUsageLimitSnapshot);
         }
         if (isApprovalEvent(event)) {
           setApprovals((current) => applyApprovalEventWithTombstone(current, event));
@@ -513,36 +635,6 @@ function KodexShell({
     client.connect();
     return client.close;
   }, []);
-
-  useEffect(() => {
-    if (selectedMainPane !== "automations" || automationsLoaded || automationsLoading) {
-      return;
-    }
-    void loadAutomationsSnapshot();
-  }, [automationsLoaded, automationsLoading, selectedMainPane]);
-
-  useEffect(() => {
-    if (!selectedThreadId) {
-      return;
-    }
-    let cancelled = false;
-    const threadId = selectedThreadId;
-    const loadRevision = queueRevisionByThreadIdRef.current[threadId] ?? 0;
-    listQueuedInputs(threadId)
-      .then((queuedInputs) => {
-        if (cancelled || (queueRevisionByThreadIdRef.current[threadId] ?? 0) !== loadRevision) {
-          return;
-        }
-        setQueuedInputsByThreadId((current) => ({
-          ...current,
-          [threadId]: [...queuedInputs].sort(compareQueuedInputs),
-        }));
-      })
-      .catch(reportError);
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedThreadId]);
 
   useSelectedThreadTimeline({
     isSelectedThreadNotLoaded,
@@ -592,73 +684,6 @@ function KodexShell({
     };
   }, [isSelectedThreadSnapshotDeferred, selectedThread?.id, selectedThread?.status]);
 
-  async function loadProjectThreads(projectId: string) {
-    const requestId = nextThreadRequestId.current + 1;
-    nextThreadRequestId.current = requestId;
-    threadRequestIds.current.set(projectId, requestId);
-
-    try {
-      const loadedThreads = await listThreads(projectId);
-      if (threadRequestIds.current.get(projectId) !== requestId) {
-        return;
-      }
-
-      const selectedId = selectedThreadIdRef.current;
-      const nextThreads = mergeLoadedProjectThreads(
-        threadsByProjectIdRef.current[projectId] ?? [],
-        loadedThreads,
-        routeSelectedThreadRef.current,
-        selectedId,
-      );
-      setThreadsByProjectId((current) => ({
-        ...current,
-        [projectId]: mergeLoadedProjectThreads(
-          current[projectId] ?? [],
-          loadedThreads,
-          routeSelectedThreadRef.current,
-          selectedThreadIdRef.current,
-        ),
-      }));
-      setPendingTitleThreadIds((current) => clearAvailableThreadTitles(current, nextThreads));
-      if (selectedId && nextThreads.some((thread) => thread.id === selectedId)) {
-        selectedProjectIdRef.current = projectId;
-        setSelectedProjectId(projectId);
-        void hydrateComposerDefaults(projectId);
-      }
-    } catch (error) {
-      if (threadRequestIds.current.get(projectId) === requestId) {
-        reportError(error);
-      }
-    }
-  }
-
-  async function loadAutomationsSnapshot() {
-    const loadRevision = automationRevisionRef.current;
-    setAutomationsLoading(true);
-    try {
-      const snapshot = await listAutomations();
-      if (automationRevisionRef.current === loadRevision) {
-        setAutomations((current) =>
-          mergeAutomationSnapshot(current, snapshot, loadRevision, automationRevisionRef.current),
-        );
-        setAutomationsLoaded(true);
-      } else {
-        const freshRevision = automationRevisionRef.current;
-        const freshSnapshot = await listAutomations();
-        if (automationRevisionRef.current === freshRevision) {
-          setAutomations((current) =>
-            mergeAutomationSnapshot(current, freshSnapshot, freshRevision, automationRevisionRef.current),
-          );
-          setAutomationsLoaded(true);
-        }
-      }
-    } catch (error) {
-      reportError(error);
-    } finally {
-      setAutomationsLoading(false);
-    }
-  }
-
   function clearTimelineEntry() {
     setTimelineEntry(idleTimelineEntry);
     setTimeline(createTimelineState());
@@ -687,12 +712,11 @@ function KodexShell({
     }
 
     try {
-      const project = await createProject({
+      const project = await createProjectMutation.mutateAsync({
         ...(options.createDirectory ? { createDirectory: true } : {}),
         cwd,
       });
-      setProjects((current) => [project, ...current]);
-      setThreadsByProjectId((current) => ({ ...current, [project.id]: [] }));
+      queryClientForShell.setQueryData<Project[]>(queryKeys.projects, (current) => [project, ...(current ?? [])]);
       selectProject(project.id);
       setProjectCwd("");
       setProjectDirectoryCreateCwd(null);
@@ -730,9 +754,6 @@ function KodexShell({
     setDraftChatThreadSelected(false);
     setDraftThreadProjectId(projectId);
     clearTimelineEntry();
-    if (!threadsByProjectId[projectId]) {
-      void loadProjectThreads(projectId);
-    }
   }
 
   function handleCreateThread(projectId: string) {
@@ -799,9 +820,6 @@ function KodexShell({
     if (!draftComposerEditedRef.current) {
       void hydrateComposerDefaults(projectId);
     }
-    if (!threadsByProjectId[projectId]) {
-      void loadProjectThreads(projectId);
-    }
   }
 
   async function createDraftThreadFromComposer({
@@ -824,9 +842,9 @@ function KodexShell({
     );
     attachedThreadIdsRef.current.add(thread.id);
     if (projectId) {
-      setThreadsByProjectId((current) => prependThreadForProject(current, projectId, thread));
+      upsertProjectThread(queryClientForShell, projectId, thread);
     } else {
-      setChatThreads((current) => [thread, ...current]);
+      upsertChatThread(queryClientForShell, thread);
     }
     setPendingTitleThreadIds((current) => markThreadTitlePending(current, thread));
     setMaterializingThreadIds((current) => {
@@ -862,38 +880,14 @@ function KodexShell({
 
   function markThreadActive(threadId: string) {
     attachedThreadIdsRef.current.add(threadId);
-    setThreadsByProjectId((current) =>
-      updateThreadReadStateInProjects(current, threadId, (thread) =>
-        thread.status === "active" ? {} : { status: "active" },
-      ),
-    );
-    setChatThreads((current) =>
-      updateThreadReadStateInList(current, threadId, (thread) =>
-        thread.status === "active" ? {} : { status: "active" },
-      ),
-    );
-    setPinnedThreads((current) =>
-      updateThreadReadStateInList(current, threadId, (thread) =>
-        thread.status === "active" ? {} : { status: "active" },
-      ),
+    patchThreadEverywhere(threadId, (thread) =>
+      thread.status === "active" ? thread : { ...thread, status: "active" },
     );
   }
 
   function markThreadIdle(threadId: string) {
-    setThreadsByProjectId((current) =>
-      updateThreadReadStateInProjects(current, threadId, (thread) =>
-        thread.status === "idle" ? {} : { status: "idle" },
-      ),
-    );
-    setChatThreads((current) =>
-      updateThreadReadStateInList(current, threadId, (thread) =>
-        thread.status === "idle" ? {} : { status: "idle" },
-      ),
-    );
-    setPinnedThreads((current) =>
-      updateThreadReadStateInList(current, threadId, (thread) =>
-        thread.status === "idle" ? {} : { status: "idle" },
-      ),
+    patchThreadEverywhere(threadId, (thread) =>
+      thread.status === "idle" ? thread : { ...thread, status: "idle" },
     );
   }
 
@@ -1021,12 +1015,10 @@ function KodexShell({
     const archivedSelectedThreadId = selectedThreadIdRef.current;
     const shouldSelectDraftAfterArchive = threadId === archivedSelectedThreadId;
     const draftProjectId = selectedProjectIdRef.current;
-    await archiveThread(threadId);
+    await archiveThreadMutation.mutateAsync(threadId);
     attachedThreadIdsRef.current.delete(threadId);
     attachingThreadIdsRef.current.delete(threadId);
-    setThreadsByProjectId((current) => removeThreadFromProjects(current, threadId));
-    setChatThreads((current) => removeThreadFromList(current, threadId));
-    setPinnedThreads((current) => removeThreadFromList(current, threadId));
+    removeThreadEverywhere(queryClientForShell, threadId);
     if (
       shouldSelectDraftAfterArchive &&
       (selectedThreadIdRef.current === archivedSelectedThreadId || selectedThreadIdRef.current === null)
@@ -1062,42 +1054,34 @@ function KodexShell({
     if (event.kind !== "automation.item_upsert" && event.kind !== "automation.item_deleted") {
       return;
     }
-    automationRevisionRef.current += 1;
-    setAutomations((current) => applyAutomationEvent(current, event));
+    const automationQueryState = queryClientForShell.getQueryState(queryKeys.automations);
+    if (automationQueryState?.data === undefined && automationQueryState?.fetchStatus !== "fetching") {
+      return;
+    }
+    applyCachedAutomationEvent(queryClientForShell, event);
+    if (automationQueryState.fetchStatus === "fetching") {
+      void queryClientForShell.invalidateQueries({ queryKey: queryKeys.automations });
+    }
   }
 
   async function handleCreateAutomation(request: AutomationCreateRequest) {
-    const automation = await createAutomation(request);
-    automationRevisionRef.current += 1;
-    setAutomations((current) => upsertAutomation(current, automation));
-    return automation;
+    return createAutomationMutation.mutateAsync(request);
   }
 
   async function handleUpdateAutomation(automationId: string, request: AutomationUpdateRequest) {
-    const automation = await updateAutomation(automationId, request);
-    automationRevisionRef.current += 1;
-    setAutomations((current) => upsertAutomation(current, automation));
-    return automation;
+    return updateAutomationMutation.mutateAsync({ automationId, request });
   }
 
   async function handlePauseAutomation(automationId: string) {
-    const automation = await pauseAutomation(automationId);
-    automationRevisionRef.current += 1;
-    setAutomations((current) => upsertAutomation(current, automation));
-    return automation;
+    return pauseAutomationMutation.mutateAsync(automationId);
   }
 
   async function handleResumeAutomation(automationId: string) {
-    const automation = await resumeAutomation(automationId);
-    automationRevisionRef.current += 1;
-    setAutomations((current) => upsertAutomation(current, automation));
-    return automation;
+    return resumeAutomationMutation.mutateAsync(automationId);
   }
 
   async function handleDeleteAutomation(automationId: string) {
-    await deleteAutomation(automationId);
-    automationRevisionRef.current += 1;
-    setAutomations((current) => deleteAutomationById(current, automationId));
+    await deleteAutomationMutation.mutateAsync(automationId);
   }
 
   function handleTimelineReady(threadId: string) {
@@ -1121,21 +1105,37 @@ function KodexShell({
     setUnavailableThreadId(threadId);
   }
 
+  function requestSelectedThreadFollowLive(threadId: string) {
+    if (selectedThreadIdRef.current === threadId) {
+      setTimelineFollowLiveToken((current) => current + 1);
+    }
+  }
+
   function setRouteSelectedThreadState(thread: ThreadSummary | null) {
     routeSelectedThreadRef.current = thread;
     setRouteSelectedThread(thread);
   }
 
+  function patchThreadEverywhere(
+    threadId: string,
+    patcher: (thread: ThreadSummary) => ThreadSummary,
+  ) {
+    updateThreadEverywhere(queryClientForShell, threadId, patcher);
+    if (routeSelectedThreadRef.current?.id === threadId) {
+      setRouteSelectedThreadState(patcher(routeSelectedThreadRef.current));
+    }
+  }
+
   function replaceThread(thread: ThreadSummary) {
-    setThreadsByProjectId((current) => replaceThreadInProjects(current, thread, selectedProjectId));
-    setChatThreads((current) => replaceThreadInList(current, thread));
-    setPinnedThreads((current) => {
-      if (!thread.pinnedAt) {
-        return removeThreadFromList(current, thread.id);
-      }
-      const replaced = replaceThreadInList(current, thread);
-      return replaced === current ? [thread, ...current] : replaced;
-    });
+    if (thread.id === selectedThreadIdRef.current) {
+      setRouteSelectedThreadState(thread);
+    }
+    updateThreadEverywhere(queryClientForShell, thread.id, () => thread);
+    if (thread.pinnedAt) {
+      upsertPinnedThread(queryClientForShell, thread);
+    } else {
+      removeThreadEverywhere(queryClientForShell, thread.id, { pinnedOnly: true });
+    }
     if (threadHasDisplayTitle(thread)) {
       setPendingTitleThreadIds((current) => {
         if (!current.has(thread.id)) {
@@ -1150,7 +1150,7 @@ function KodexShell({
 
   async function handlePinThread(threadId: string) {
     try {
-      const pinnedAt = await pinThread(threadId);
+      const pinnedAt = await pinThreadMutation.mutateAsync(threadId);
       applyThreadPinState(threadId, pinnedAt);
     } catch (error) {
       reportError(error);
@@ -1159,7 +1159,7 @@ function KodexShell({
 
   async function handleUnpinThread(threadId: string) {
     try {
-      const pinnedAt = await unpinThread(threadId);
+      const pinnedAt = await unpinThreadMutation.mutateAsync(threadId);
       applyThreadPinState(threadId, pinnedAt);
     } catch (error) {
       reportError(error);
@@ -1175,33 +1175,18 @@ function KodexShell({
   }
 
   function applyThreadPinState(threadId: string, pinnedAt: string | null) {
+    setPinnedStateTrusted(true);
     const knownThread = findKnownThread(threadId);
-    setThreadsByProjectId((current) =>
-      updateThreadReadStateInProjects(current, threadId, (thread) => ({ pinnedAt })),
-    );
-    setChatThreads((current) => updateThreadReadStateInList(current, threadId, () => ({ pinnedAt })));
     setRouteSelectedThreadState(
       routeSelectedThreadRef.current?.id === threadId
         ? withThreadPinnedAt(routeSelectedThreadRef.current, pinnedAt)
         : routeSelectedThreadRef.current,
     );
-    if (!pinnedAt) {
-      setPinnedThreads((current) => removeThreadFromList(current, threadId));
+    applyThreadPinStateToCache(queryClientForShell, threadId, pinnedAt, knownThread);
+    if (pinnedAt && !knownThread) {
+      void queryClientForShell.invalidateQueries({ queryKey: queryKeys.pinnedThreads });
       return;
     }
-
-    if (knownThread) {
-      const pinnedThread = withThreadPinnedAt(knownThread, pinnedAt);
-      setPinnedThreads((current) => {
-        const replaced = replaceThreadInList(current, pinnedThread);
-        return replaced === current ? [pinnedThread, ...current] : replaced;
-      });
-      return;
-    }
-
-    void listPinnedThreads()
-      .then((threads) => setPinnedThreads(threads))
-      .catch(reportError);
   }
 
   function findKnownThread(threadId: string): ThreadSummary | null {
@@ -1244,27 +1229,11 @@ function KodexShell({
   }
 
   function upsertQueuedInput(row: QueuedInput) {
-    bumpQueueRevision(row.threadId);
-    setQueuedInputsByThreadId((current) => {
-      const rows = current[row.threadId] ?? [];
-      const withoutRow = rows.filter((item) => item.id !== row.id);
-      return {
-        ...current,
-        [row.threadId]: [...withoutRow, row].sort(compareQueuedInputs),
-      };
-    });
+    upsertCachedQueuedInput(queryClientForShell, row);
   }
 
   function removeQueuedInput(threadId: string, id: string) {
-    bumpQueueRevision(threadId);
-    setQueuedInputsByThreadId((current) => ({
-      ...current,
-      [threadId]: (current[threadId] ?? []).filter((item) => item.id !== id),
-    }));
-  }
-
-  function bumpQueueRevision(threadId: string) {
-    queueRevisionByThreadIdRef.current[threadId] = (queueRevisionByThreadIdRef.current[threadId] ?? 0) + 1;
+    deleteCachedQueuedInput(queryClientForShell, threadId, id);
   }
 
   function resetComposerDraft() {
@@ -1363,10 +1332,29 @@ function KodexShell({
     });
     setMobilePanel("chat");
   });
-  const sidebarChatThreads = useMemo(() => withoutPinnedThreads(chatThreads), [chatThreads]);
+  const pinnedStateIsTrusted = pinnedStateTrusted;
+  const sidebarPinnedThreads = pinnedStateIsTrusted ? pinnedThreads : [];
+  const sidebarChatThreads = useMemo(
+    () => (pinnedStateIsTrusted ? withoutPinnedThreads(chatThreads) : chatThreads),
+    [chatThreads, pinnedStateIsTrusted],
+  );
   const sidebarThreadsByProjectId = useMemo(
-    () => withoutPinnedProjectThreads(threadsByProjectId),
-    [threadsByProjectId],
+    () => (pinnedStateIsTrusted ? withoutPinnedProjectThreads(threadsByProjectId) : threadsByProjectId),
+    [pinnedStateIsTrusted, threadsByProjectId],
+  );
+  const sidebarDataState = useMemo(
+    () => ({
+      chatThreads: queryResultLoadState(chatThreadsQuery),
+      pinnedThreads: pinnedStateIsTrusted ? queryResultLoadState(pinnedThreadsQuery) : "loading",
+      projects: queryResultLoadState(projectsQuery),
+      projectThreadsById: Object.fromEntries(
+        orderedProjects.map((project, index) => [
+          project.id,
+          queryResultLoadState(projectThreadQueries[index]),
+        ]),
+      ),
+    }),
+    [chatThreadsQuery, orderedProjects, pinnedStateIsTrusted, pinnedThreadsQuery, projectThreadQueries, projectsQuery],
   );
 
   return (
@@ -1375,7 +1363,7 @@ function KodexShell({
         automationsPaneProps={{
           automations,
           defaultThreadId: selectedThreadId,
-          isLoading: automationsLoading,
+          isLoading: automationsQuery.isLoading,
           onCreateAutomation: handleCreateAutomation,
           onDeleteAutomation: handleDeleteAutomation,
           onPauseAutomation: handlePauseAutomation,
@@ -1420,10 +1408,10 @@ function KodexShell({
           onUnpinThread: stableHandleUnpinThread, pendingTitleThreadIds,
           scrollParentElement: timelineScrollElement, selectedThread, selectedThreadApprovals, selectedThreadTitle,
           selectedThreadUnavailableId: unavailableThreadId,
-          selectedTimelineEntry, setTimelineScrollElement, showDebugEvents, timeline,
+          selectedTimelineEntry, setTimelineScrollElement, showDebugEvents, timeline, timelineFollowLiveToken,
         }}
         workspaceSidebarProps={{
-          account, approvals, chatThreads: sidebarChatThreads, hoveredThreadActionId, isSidebarResizing, loginState,
+          account, approvals, chatThreads: sidebarChatThreads, dataState: sidebarDataState, hoveredThreadActionId, isSidebarResizing, loginState,
           onArchiveThread: handleArchiveThreadById, onCancelLogin: handleCancelLogin,
           onCreateChat: stableHandleCreateChat, onCreateProject: stableHandleCreateProject, onCreateThread: stableHandleCreateThread, onLogin: handleLogin, onLogout: handleLogout,
           onPinThread: stableHandlePinThread,
@@ -1432,7 +1420,7 @@ function KodexShell({
           onSelectAutomations: stableHandleSelectAutomations, onSelectPinnedThread: stableHandleSelectPinnedThread, onSelectThread: stableHandleSelectThread, onUnpinThread: stableHandleUnpinThread,
           onShowThread: handleShowMobileThread, onShowDebugEventsChange: setShowDebugEvents, onSidebarResizeKeyDown: handleSidebarResizeKeyDown,
           onSidebarResizePointerDown: handleSidebarResizePointerDown, onThreadActionHoverChange: setHoveredThreadActionId,
-          pinnedThreads,
+          pinnedThreads: sidebarPinnedThreads,
           pendingTitleThreadIds, projectCwd, projectDirectoryCreatePending: projectDirectoryCreateCwd === projectCwd.trim() && projectCwd.trim().length > 0,
           projectFormOpen, projects: orderedProjects, selectedMainPane, selectedProjectId, selectedThreadId: selectedMainPane === "thread" ? selectedThreadId : null,
           showDebugEvents, sidebarWidth, threadsByProjectId: sidebarThreadsByProjectId, usageLimitLines,
@@ -1448,13 +1436,22 @@ function selectedThreadShouldAttachLive(thread: ThreadSummary): boolean {
   return thread.status === "notLoaded" || thread.status === "active";
 }
 
-function compareQueuedInputs(left: QueuedInput, right: QueuedInput): number {
-  const priority = (row: QueuedInput) => (row.priority === "rejectedSteer" ? 0 : 1);
-  const priorityDelta = priority(left) - priority(right);
-  if (priorityDelta !== 0) {
-    return priorityDelta;
+function queryResultLoadState(query: {
+  data?: unknown;
+  isError?: boolean;
+  isFetching?: boolean;
+  isLoading?: boolean;
+} | undefined): "error" | "loaded" | "loading" | "refetching" {
+  if (!query || (query.data === undefined && (query.isLoading || query.isFetching))) {
+    return "loading";
   }
-  return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+  if (query.isError) {
+    return "error";
+  }
+  if (query.isFetching) {
+    return "refetching";
+  }
+  return "loaded";
 }
 
 function currentKodexRoute(): KodexRoute {
@@ -1472,47 +1469,6 @@ function historyState(): Record<string, unknown> {
 
 function isMobileViewport(): boolean {
   return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 900px)").matches;
-}
-
-function mergeLoadedChatThreads(current: ThreadSummary[], loaded: ThreadSummary[]): ThreadSummary[] {
-  if (current.length === 0) {
-    return loaded;
-  }
-  const currentIds = new Set(current.map((thread) => thread.id));
-  return [...current, ...loaded.filter((thread) => !currentIds.has(thread.id))];
-}
-
-function mergeLoadedProjectThreads(
-  current: ThreadSummary[],
-  loaded: ThreadSummary[],
-  routeSelectedThread: ThreadSummary | null,
-  selectedThreadId: string | null,
-): ThreadSummary[] {
-  const hydratedThreads = mergeRouteSelectedThreadIntoList(loaded, routeSelectedThread, selectedThreadId);
-  if (
-    !routeSelectedThread ||
-    routeSelectedThread.id !== selectedThreadId ||
-    hydratedThreads.some((thread) => thread.id === routeSelectedThread.id) ||
-    !current.some((thread) => thread.id === routeSelectedThread.id)
-  ) {
-    return hydratedThreads;
-  }
-  return [routeSelectedThread, ...hydratedThreads];
-}
-
-function mergeRouteSelectedThreadIntoList(
-  threads: ThreadSummary[],
-  routeSelectedThread: ThreadSummary | null,
-  selectedThreadId: string | null,
-): ThreadSummary[] {
-  if (
-    !routeSelectedThread ||
-    routeSelectedThread.id !== selectedThreadId ||
-    !threads.some((thread) => thread.id === routeSelectedThread.id)
-  ) {
-    return threads;
-  }
-  return threads.map((thread) => (thread.id === routeSelectedThread.id ? routeSelectedThread : thread));
 }
 
 function withThreadPinnedAt(thread: ThreadSummary, pinnedAt: string | null): ThreadSummary {

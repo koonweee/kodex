@@ -1,11 +1,14 @@
 import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   cancelLogin,
+  getAccount,
   logout,
   startLogin,
   type AccountResponse,
 } from "../api/client";
+import { queryKeys } from "../api/queryKeys";
 import type { LoginState } from "./SidebarAccountFooter";
 
 type UseAccountSessionParams = {
@@ -13,45 +16,54 @@ type UseAccountSessionParams = {
 };
 
 export function useAccountSession({ onError }: UseAccountSessionParams) {
-  const [account, setAccount] = useState<AccountResponse | null>(null);
+  const queryClient = useQueryClient();
+  const accountQuery = useQuery({
+    queryKey: queryKeys.account,
+    queryFn: getAccount,
+  });
   const [loginState, setLoginState] = useState<LoginState>({});
+  const loginMutation = useMutation({
+    mutationFn: startLogin,
+    onError,
+    onSuccess: (login) => setLoginState({ authUrl: login.authUrl, loginId: login.loginId }),
+  });
+  const cancelLoginMutation = useMutation({
+    mutationFn: cancelLogin,
+    onError,
+    onSuccess: () => setLoginState({}),
+  });
+  const logoutMutation = useMutation({
+    mutationFn: logout,
+    onError,
+    onSuccess: () => {
+      queryClient.setQueryData<AccountResponse>(queryKeys.account, {
+        requiresOpenaiAuth: true,
+        account: null,
+        rawPayload: {},
+      });
+    },
+  });
 
   async function handleLogin() {
-    try {
-      const login = await startLogin();
-      setLoginState({ authUrl: login.authUrl, loginId: login.loginId });
-    } catch (error) {
-      onError(error);
-    }
+    loginMutation.mutate();
   }
 
   async function handleCancelLogin() {
     if (!loginState.loginId) {
       return;
     }
-    try {
-      await cancelLogin(loginState.loginId);
-      setLoginState({});
-    } catch (error) {
-      onError(error);
-    }
+    cancelLoginMutation.mutate(loginState.loginId);
   }
 
   async function handleLogout() {
-    try {
-      await logout();
-      setAccount({ requiresOpenaiAuth: true, account: null, rawPayload: {} });
-    } catch (error) {
-      onError(error);
-    }
+    logoutMutation.mutate();
   }
 
   return {
-    account,
+    account: accountQuery.data ?? null,
     handleCancelLogin,
     handleLogin,
     handleLogout,
     loginState,
-    setAccount,
   };
 }

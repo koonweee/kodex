@@ -247,8 +247,14 @@ describe("Automations frontend", () => {
     render(<App />);
 
     await userEvent.click(await screen.findByRole("button", { name: /automations/i }));
-    const addButtons = await screen.findAllByRole("button", { name: /add automation/i });
-    await userEvent.click(addButtons[addButtons.length - 1]);
+    const addButton = await waitFor(() => {
+      const enabledButton = screen
+        .getAllByRole("button", { name: /add automation/i })
+        .find((button) => !button.hasAttribute("disabled"));
+      expect(enabledButton).toBeDefined();
+      return enabledButton!;
+    });
+    await userEvent.click(addButton);
     expect(await screen.findByRole("dialog", { name: /new automation/i })).toBeInTheDocument();
     await userEvent.type(screen.getByRole("textbox", { name: /name/i }), "Morning review");
     await userEvent.type(screen.getByLabelText("Automation prompt"), "## Check status");
@@ -291,7 +297,9 @@ describe("Automations frontend", () => {
 
     render(<App />);
 
-    await userEvent.click(await screen.findByText("Daily status"));
+    const main = screen.getByRole("main", { name: /thread/i });
+    const automationRow = await within(main).findByRole("row", { name: /daily status/i });
+    await userEvent.click(automationRow);
     expect(await screen.findByRole("dialog", { name: /automation details/i })).toBeInTheDocument();
 
     const nameInput = screen.getByRole("textbox", { name: /name/i });

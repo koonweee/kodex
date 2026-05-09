@@ -46,6 +46,7 @@ export function ThreadPanel({
   setTimelineScrollElement,
   showDebugEvents,
   timeline,
+  timelineFollowLiveToken,
 }: {
   errorMessage: string | null;
   imagePreviewUrlsByPath: Record<string, string>;
@@ -69,6 +70,7 @@ export function ThreadPanel({
   setTimelineScrollElement: (element: HTMLDivElement | null) => void;
   showDebugEvents: boolean;
   timeline: TimelineState;
+  timelineFollowLiveToken: number;
 }) {
   const selectedThreadTitleIsPending = selectedThread ? pendingTitleThreadIds.has(selectedThread.id) : false;
   const shouldShowThreadTitle = selectedThread !== null && !selectedThreadTitleIsPending;
@@ -165,6 +167,7 @@ export function ThreadPanel({
                   showDebug={showDebugEvents}
                   threadId={selectedThread.id}
                   timeline={timeline}
+                  followLiveToken={timelineFollowLiveToken}
                 />
               ) : null}
             </Box>

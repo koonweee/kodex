@@ -499,8 +499,10 @@ describe("MVP composer input flows", () => {
       });
     });
 
-    expect(firstThreadRow?.querySelector(".kodex-thread-progress-indicator")).not.toBeInTheDocument();
-    expect(firstThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(firstThreadRow?.querySelector(".kodex-thread-progress-indicator")).not.toBeInTheDocument();
+      expect(firstThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
+    });
 
     await userEvent.click(firstThreadButton);
     expect(await within(timelineElement(container)).findByText("hello")).toBeInTheDocument();

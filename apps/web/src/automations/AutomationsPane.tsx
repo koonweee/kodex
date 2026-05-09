@@ -159,6 +159,11 @@ export function AutomationsPane({
     setEditorOpen(true);
   }
 
+  function handleEdit(automation: Automation) {
+    setEditingAutomation(automation);
+    setEditorOpen(true);
+  }
+
   return (
     <>
       <Group justify="space-between" wrap="nowrap" className="kodex-thread-header kodex-automations-header">
@@ -238,15 +243,11 @@ export function AutomationsPane({
                       <Table.Tr
                         className="kodex-automation-table-row"
                         key={row.id}
-                        onClick={() => {
-                          setEditingAutomation(row.original);
-                          setEditorOpen(true);
-                        }}
+                        onClick={() => handleEdit(row.original)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
-                            setEditingAutomation(row.original);
-                            setEditorOpen(true);
+                            handleEdit(row.original);
                           }
                         }}
                         tabIndex={0}

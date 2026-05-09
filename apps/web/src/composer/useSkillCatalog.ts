@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { listSkills, type SkillMetadata } from "../api/client";
+import { queryKeys } from "../api/queryKeys";
 import { errorMessageFrom } from "../shared/values";
 
 export type SkillCatalogState = {
@@ -18,48 +20,33 @@ export function useSkillCatalog({
   enabled: boolean;
   invalidationGeneration: number;
 }) {
-  const [state, setState] = useState<SkillCatalogState>({
-    error: null,
-    loading: false,
-    skills: [],
+  const queryClient = useQueryClient();
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const queryKey = useMemo(() => queryKeys.skills(cwd ?? null), [cwd]);
+  const skillsQuery = useQuery({
+    enabled,
+    queryKey,
+    queryFn: () => listSkills(cwd ?? null, false),
+    placeholderData: keepPreviousData,
   });
-  const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    setRefreshError(null);
+  }, [queryKey]);
 
   const refresh = useCallback(
     async (forceReload = false) => {
-      requestIdRef.current += 1;
-      const requestId = requestIdRef.current;
-      setState((current) => ({ ...current, loading: true, error: null }));
       try {
         const response = await listSkills(cwd ?? null, forceReload);
-        if (requestId !== requestIdRef.current) {
-          return;
-        }
-        setState({
-          error: response.errors.length > 0 ? response.errors[0]?.message ?? "Some skills could not be loaded" : null,
-          loading: false,
-          skills: response.skills,
-        });
+        queryClient.setQueryData(queryKey, response);
+        setRefreshError(null);
       } catch (error) {
-        if (requestId !== requestIdRef.current) {
-          return;
-        }
-        setState((current) => ({
-          ...current,
-          error: errorMessageFrom(error),
-          loading: false,
-        }));
+        setRefreshError(errorMessageFrom(error));
+        // Query keeps the previous successful data while exposing the error state.
       }
     },
-    [cwd],
+    [cwd, queryClient, queryKey],
   );
-
-  useEffect(() => {
-    if (!enabled) {
-      return;
-    }
-    void refresh(false);
-  }, [cwd, enabled, refresh]);
 
   useEffect(() => {
     if (!enabled || invalidationGeneration === 0) {
@@ -68,5 +55,13 @@ export function useSkillCatalog({
     void refresh(true);
   }, [enabled, invalidationGeneration, refresh]);
 
-  return { ...state, refresh };
+  const response = skillsQuery.data;
+  const responseError = response?.errors[0]?.message ?? null;
+  const queryError = skillsQuery.error ? errorMessageFrom(skillsQuery.error) : null;
+  return {
+    error: refreshError ?? queryError ?? responseError,
+    loading: skillsQuery.isLoading || skillsQuery.isFetching,
+    refresh,
+    skills: response?.skills ?? [],
+  };
 }

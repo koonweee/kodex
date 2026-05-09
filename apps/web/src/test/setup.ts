@@ -1,5 +1,7 @@
 import "@testing-library/jest-dom/vitest";
-import { beforeEach } from "vitest";
+import { afterEach, beforeEach } from "vitest";
+
+import { queryClient } from "../api/queryClient";
 
 const localStorageState = new Map<string, string>();
 
@@ -51,6 +53,16 @@ if (typeof URL.revokeObjectURL !== "function") {
   URL.revokeObjectURL = () => undefined;
 }
 
-beforeEach(() => {
+async function resetQueryClient() {
+  await queryClient.cancelQueries();
+  queryClient.clear();
+}
+
+beforeEach(async () => {
+  await resetQueryClient();
   window.history.replaceState(null, "", "/threads/thread-1");
+});
+
+afterEach(async () => {
+  await resetQueryClient();
 });

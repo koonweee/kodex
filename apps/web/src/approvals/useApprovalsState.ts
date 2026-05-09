@@ -1,11 +1,14 @@
-import { useCallback, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useMemo, useRef, type SetStateAction } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   decideApproval,
+  listPendingApprovals,
   type Approval,
   type ApprovalResponse,
   type EventEnvelope,
 } from "../api/client";
+import { queryKeys } from "../api/queryKeys";
 import { applyApprovalEvent, approvalFromPayload, mergePendingApprovals } from "./state";
 
 type UseApprovalsStateParams = {
@@ -13,18 +16,47 @@ type UseApprovalsStateParams = {
 };
 
 export function useApprovalsState({ selectedThreadId }: UseApprovalsStateParams) {
-  const [approvals, setApprovals] = useState<Approval[]>([]);
+  const queryClient = useQueryClient();
   const resolvedApprovalIds = useRef<Set<string>>(new Set());
+  const approvalsQuery = useQuery({
+    queryKey: queryKeys.pendingApprovals,
+    queryFn: async () => {
+      const nextApprovals = await listPendingApprovals();
+      return mergePendingApprovals(
+        queryClient.getQueryData<Approval[]>(queryKeys.pendingApprovals) ?? [],
+        nextApprovals.filter((approval) => !resolvedApprovalIds.current.has(approval.id)),
+      );
+    },
+  });
+  const approvals = approvalsQuery.data ?? [];
   const selectedThreadApprovals = useMemo(
     () => (selectedThreadId ? approvals.filter((approval) => approval.threadId === selectedThreadId) : []),
     [approvals, selectedThreadId],
   );
+  const decideApprovalMutation = useMutation({
+    mutationFn: ({ approval, decision }: { approval: Approval; decision: ApprovalResponse }) =>
+      decideApproval(approval.id, decision),
+    onSuccess: (resolved, { approval }) => {
+      resolvedApprovalIds.current.add(resolved.id);
+      setApprovals((current) => current.filter((item) => item.id !== approval.id));
+    },
+  });
 
-  const handleApprovalDecision = useCallback(async (approval: Approval, decision: ApprovalResponse) => {
-    const resolved = await decideApproval(approval.id, decision);
-    resolvedApprovalIds.current.add(resolved.id);
-    setApprovals((current) => current.filter((item) => item.id !== approval.id));
-  }, []);
+  const setApprovals = useCallback(
+    (action: SetStateAction<Approval[]>) => {
+      queryClient.setQueryData<Approval[]>(queryKeys.pendingApprovals, (current) =>
+        typeof action === "function" ? action(current ?? []) : action,
+      );
+    },
+    [queryClient],
+  );
+
+  const handleApprovalDecision = useCallback(
+    async (approval: Approval, decision: ApprovalResponse) => {
+      await decideApprovalMutation.mutateAsync({ approval, decision });
+    },
+    [decideApprovalMutation],
+  );
 
   function mergeFetchedPendingApprovals(nextApprovals: Approval[]) {
     setApprovals((current) =>
@@ -58,6 +90,6 @@ export function useApprovalsState({ selectedThreadId }: UseApprovalsStateParams)
     handleApprovalDecision,
     mergeFetchedPendingApprovals,
     selectedThreadApprovals,
-    setApprovals: setApprovals as Dispatch<SetStateAction<Approval[]>>,
+    setApprovals,
   };
 }

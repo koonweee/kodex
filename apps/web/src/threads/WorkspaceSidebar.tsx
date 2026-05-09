@@ -80,11 +80,27 @@ const SIDEBAR_TEXT = {
 };
 
 const VISIBLE_THREAD_LIMIT = 5;
+type SidebarDataLoadState = "error" | "loaded" | "loading" | "refetching";
+
+export type WorkspaceSidebarDataState = {
+  chatThreads: SidebarDataLoadState;
+  pinnedThreads: SidebarDataLoadState;
+  projects: SidebarDataLoadState;
+  projectThreadsById: Record<string, SidebarDataLoadState>;
+};
+
+const DEFAULT_DATA_STATE: WorkspaceSidebarDataState = {
+  chatThreads: "loaded",
+  pinnedThreads: "loaded",
+  projects: "loaded",
+  projectThreadsById: {},
+};
 
 export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   account,
   approvals,
   chatThreads,
+  dataState = DEFAULT_DATA_STATE,
   hoveredThreadActionId,
   isSidebarResizing,
   loginState,
@@ -128,6 +144,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   account: AccountResponse | null;
   approvals: Approval[];
   chatThreads: ThreadSummary[];
+  dataState?: WorkspaceSidebarDataState;
   hoveredThreadActionId: string | null;
   isSidebarResizing: boolean;
   loginState: LoginState;
@@ -382,7 +399,12 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             {SIDEBAR_TEXT.chats}
           </button>
         </Box>
-        <Box className="kodex-sidebar-scroll">
+        <Box
+          className="kodex-sidebar-scroll"
+          data-chats-state={dataState.chatThreads}
+          data-pinned-state={dataState.pinnedThreads}
+          data-projects-state={dataState.projects}
+        >
           <SidebarRowFrame
             className="kodex-ui-selectable"
             leadingIcon={<Clock />}
@@ -478,9 +500,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           ) : null}
           {!projectsSectionCollapsed ? (
             <Stack gap="sm" className="kodex-project-tree">
-              {projects.length === 0 ? (
+              {projects.length === 0 && dataState.projects === "loaded" ? (
                 <EmptyPanel icon={<Inbox size={20} />} title={SIDEBAR_TEXT.noProjectsTitle} text={SIDEBAR_TEXT.noProjectsText} />
-              ) : (
+              ) : projects.length > 0 ? (
                 displayedProjects.map((project) => {
                   const projectThreads = sortThreadsForSidebar(
                     threadsByProjectId[project.id] ?? [],
@@ -507,6 +529,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                   return (
                     <Box
                       className="kodex-project-group"
+                      data-threads-state={dataState.projectThreadsById[project.id] ?? "loading"}
                       key={project.id}
                       ref={(element: HTMLDivElement | null) => {
                         if (element) {
@@ -577,7 +600,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                     </Box>
                   );
                 })
-              )}
+              ) : null}
             </Stack>
           ) : null}
           <Box className="kodex-sidebar-section">
@@ -604,7 +627,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 selectedThreadId={selectedThreadId}
                 threads={visibleChatThreads}
               />
-            ) : !chatsSectionCollapsed ? (
+            ) : !chatsSectionCollapsed && dataState.chatThreads === "loaded" ? (
               <Box className="kodex-chat-empty">
                 <MessageSquare size={14} />
                 <Text c="dimmed" size="xs">

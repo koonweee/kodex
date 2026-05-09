@@ -140,8 +140,10 @@ describe("MVP timeline flows", () => {
         receivedAt: "2026-04-30T00:00:02Z",
       });
     });
-    expect(secondThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
-    expect(firstThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(secondThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
+      expect(firstThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
+    });
 
     await userEvent.click(secondThreadButton);
     await waitFor(() => {
@@ -294,7 +296,9 @@ describe("MVP timeline flows", () => {
       });
     });
 
-    expect(secondThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(secondThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
+    });
 
     await userEvent.click(secondThreadButton);
     await waitFor(() => {

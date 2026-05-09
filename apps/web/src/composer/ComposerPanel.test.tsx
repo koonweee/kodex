@@ -2,12 +2,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { MantineProvider } from "@mantine/core";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useRef, useState, type ComponentProps, type FormEvent, type RefObject } from "react";
+import { useRef, useState, type ComponentProps, type FormEvent, type ReactElement, type ReactNode, type RefObject } from "react";
 
 import { listSkills } from "../api/client";
+import { createKodexQueryClient } from "../api/queryClient";
 import type { SkillMetadata } from "../api/client";
 import type { ComposerSettings } from "../ComposerFooterControls";
 import { ComposerPanel, type ComposerDraftControls } from "./ComposerPanel";
@@ -52,11 +54,22 @@ function mockSkills(skills: SkillMetadata[]) {
   });
 }
 
+function queryWrapper() {
+  const queryClient = createKodexQueryClient();
+  return function TestQueryProvider({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  };
+}
+
+function renderWithQueryProvider(ui: ReactElement) {
+  return render(ui, { wrapper: queryWrapper() });
+}
+
 function renderComposerPanel(
   props: Partial<ComponentProps<typeof ComposerPanel>> = {},
 ) {
   const attachmentInputRef = { current: null } as RefObject<HTMLInputElement | null>;
-  return render(
+  return renderWithQueryProvider(
     <MantineProvider>
       <ComposerPanel
         activeSelectedTurnId={null}
@@ -477,7 +490,7 @@ describe("ComposerPanel", () => {
       );
     }
 
-    render(<Harness />);
+    renderWithQueryProvider(<Harness />);
 
     const composer = screen.getByLabelText(/message composer/i);
     await userEvent.type(composer, "Keep this local");
@@ -495,7 +508,7 @@ describe("ComposerPanel", () => {
 
   it("resets the local draft when the shell asks it to clear", async () => {
     const attachmentInputRef = { current: null } as RefObject<HTMLInputElement | null>;
-    const { rerender } = render(
+    const { rerender } = renderWithQueryProvider(
       <MantineProvider>
         <ComposerPanel
           activeSelectedTurnId={null}
@@ -576,7 +589,7 @@ describe("ComposerPanel", () => {
   it("hides context usage while the draft composer is selected", () => {
     const attachmentInputRef = { current: null } as RefObject<HTMLInputElement | null>;
 
-    render(
+    renderWithQueryProvider(
       <MantineProvider>
         <ComposerPanel
           activeSelectedTurnId={null}
@@ -618,7 +631,7 @@ describe("ComposerPanel", () => {
   it("shows the selected thread git branch in the composer underflow", () => {
     const attachmentInputRef = { current: null } as RefObject<HTMLInputElement | null>;
 
-    render(
+    renderWithQueryProvider(
       <MantineProvider>
         <ComposerPanel
           activeSelectedTurnId={null}
@@ -665,7 +678,7 @@ describe("ComposerPanel", () => {
     const attachmentInputRef = { current: null } as RefObject<HTMLInputElement | null>;
     const onProjectChange = vi.fn();
 
-    render(
+    renderWithQueryProvider(
       <MantineProvider>
         <ComposerPanel
           activeSelectedTurnId={null}
@@ -717,7 +730,7 @@ describe("ComposerPanel", () => {
     (selectedGitBranch) => {
       const attachmentInputRef = { current: null } as RefObject<HTMLInputElement | null>;
 
-      render(
+      renderWithQueryProvider(
         <MantineProvider>
           <ComposerPanel
             activeSelectedTurnId={null}

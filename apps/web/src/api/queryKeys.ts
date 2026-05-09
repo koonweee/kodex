@@ -1,0 +1,18 @@
+export const queryKeys = {
+  account: ["account"] as const,
+  automations: ["automations"] as const,
+  automationTombstones: ["automations", "tombstones"] as const,
+  chatThreads: ["threads", "chat"] as const,
+  composerSettings: (projectId: string | null) => ["composer-settings", projectId ?? "global"] as const,
+  models: ["models"] as const,
+  pendingApprovals: ["approvals", "pending"] as const,
+  pinnedThreadTombstones: ["threads", "pinned", "tombstones"] as const,
+  pinnedThreads: ["threads", "pinned"] as const,
+  projectThreads: (projectId: string) => ["threads", "project", projectId] as const,
+  projectThreadsRoot: ["threads", "project"] as const,
+  projects: ["projects"] as const,
+  queuedInputs: (threadId: string) => ["queued-inputs", threadId] as const,
+  queuedInputTombstones: (threadId: string) => ["queued-inputs", threadId, "tombstones"] as const,
+  rateLimits: ["account", "rate-limits"] as const,
+  skills: (cwd: string | null) => ["skills", cwd ?? "global"] as const,
+};

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
   getComposerSettings,
@@ -7,6 +8,7 @@ import {
   type ModelSummary,
   type ThreadSummary,
 } from "../api/client";
+import { queryKeys } from "../api/queryKeys";
 import type { ComposerSettings } from "../ComposerFooterControls";
 import { errorMessageFrom } from "../shared/values";
 import {
@@ -29,6 +31,7 @@ export function useComposerSettingsState({
   selectedProjectId,
   selectedThread,
 }: UseComposerSettingsStateParams) {
+  const queryClient = useQueryClient();
   const [models, setModels] = useState<ModelSummary[]>([]);
   const [composerDefaults, setComposerDefaults] = useState<ComposerSettings>(DEFAULT_COMPOSER_SETTINGS);
   const [globalComposerDefaults, setGlobalComposerDefaults] = useState<ComposerSettings>(DEFAULT_COMPOSER_SETTINGS);
@@ -36,6 +39,18 @@ export function useComposerSettingsState({
   const [selectedThreadComposerOverride, setSelectedThreadComposerOverride] = useState<ComposerSettings | null>(null);
   const [composerSettingsError, setComposerSettingsError] = useState<string | null>(null);
   const draftComposerEditedRef = useRef(false);
+  const persistSettingsMutation = useMutation({
+    mutationFn: persistComposerSettings,
+    onError: (error) => {
+      setComposerSettingsError(`Composer settings were not saved: ${errorMessageFrom(error)}`);
+    },
+    onSuccess: (_response, patch) => {
+      setComposerDefaults((current) => mergeDurableComposerSettings(current, patch));
+      queryClient.setQueriesData({ queryKey: ["composer-settings"] }, (current) =>
+        current && typeof current === "object" ? { ...current, ...patch } : current,
+      );
+    },
+  });
 
   useEffect(() => {
     setSelectedThreadComposerOverride(null);
@@ -60,9 +75,15 @@ export function useComposerSettingsState({
 
   async function hydrateComposerDefaults(projectId: string | null): Promise<ComposerSettings | null> {
     try {
-      const nextModels = await listModels();
+      const nextModels = await queryClient.fetchQuery({
+        queryKey: queryKeys.models,
+        queryFn: listModels,
+      });
       setModels(nextModels);
-      const settings = await getComposerSettings(projectId);
+      const settings = await queryClient.fetchQuery({
+        queryKey: queryKeys.composerSettings(projectId),
+        queryFn: () => getComposerSettings(projectId),
+      });
       const normalized = normalizePersistedComposerSettings(settings, nextModels);
       setComposerDefaults(normalized);
       if (projectId === null) {
@@ -75,7 +96,7 @@ export function useComposerSettingsState({
     } catch (error) {
       if (models.length === 0) {
         try {
-          setModels(await listModels());
+          setModels(await queryClient.fetchQuery({ queryKey: queryKeys.models, queryFn: listModels }));
         } catch (modelsError) {
           onError(modelsError);
         }
@@ -112,13 +133,7 @@ export function useComposerSettingsState({
     }
 
     setComposerSettingsError(null);
-    void persistComposerSettings(patch)
-      .then(() => {
-        setComposerDefaults((current) => mergeDurableComposerSettings(current, patch));
-      })
-      .catch((error) => {
-        setComposerSettingsError(`Composer settings were not saved: ${errorMessageFrom(error)}`);
-      });
+    persistSettingsMutation.mutate(patch);
   }
 
   return {

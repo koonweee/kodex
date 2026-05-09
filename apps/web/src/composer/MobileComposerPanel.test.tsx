@@ -2,12 +2,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { MantineProvider } from "@mantine/core";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps, FormEvent, RefObject } from "react";
 
 import { listSkills } from "../api/client";
+import { createKodexQueryClient } from "../api/queryClient";
 import type { SkillMetadata } from "../api/client";
 import type { ComposerSettings } from "../ComposerFooterControls";
 import { ComposerPanel } from "./ComposerPanel";
@@ -378,56 +380,59 @@ describe("Mobile composer panel", () => {
 
 function renderComposerPanel(props: Partial<ComponentProps<typeof ComposerPanel>> = {}) {
   const attachmentInputRef = { current: null } as RefObject<HTMLInputElement | null>;
+  const queryClient = createKodexQueryClient();
   return render(
-    <MantineProvider>
-      <ComposerPanel
-        activeSelectedTurnId={null}
-        attachmentInputRef={attachmentInputRef}
-        canCompose
-        composerCwd="/workspace"
-        composerResetToken={0}
-        composerSettings={composerSettings}
-        composerSettingsError={null}
-        contextUsage={null}
-        isDraftThreadSelected={false}
-        isDraftComposerTransitioning={false}
-        isComposerDragActive={false}
-        isComposerSubmitting={false}
-        isSelectedTimelineReady
-        models={[
-          {
-            id: "gpt-5.5",
-            model: "gpt-5.5",
-            displayName: "GPT-5.5",
-            description: "Coding model",
-            defaultReasoningEffort: "high",
-            hidden: false,
-            inputModalities: ["text"],
-            isDefault: true,
-            rawPayload: {},
-            supportedReasoningEfforts: [{ reasoningEffort: "high", description: "Deep reasoning" }],
-            upgrade: null,
-          },
-        ]}
-        onAbortQueuedSteer={vi.fn()}
-        onAttachmentInputChange={vi.fn()}
-        onComposerDragLeave={vi.fn()}
-        onComposerDragOver={vi.fn()}
-        onComposerDrop={vi.fn()}
-        onComposerKeyDown={vi.fn()}
-        onComposerPaste={vi.fn()}
-        onComposerSettingsChange={vi.fn()}
-        onImageOpen={vi.fn()}
-        onRemovePendingAttachment={vi.fn()}
-        onStopTurn={vi.fn()}
-        onSubmitQueuedSteer={vi.fn()}
-        onSubmitTurn={noopSubmit}
-        pendingAttachments={[]}
-        queuedSteerRows={[]}
-        selectedThreadPresent
-        {...props}
-      />
-    </MantineProvider>,
+    <QueryClientProvider client={queryClient}>
+      <MantineProvider>
+        <ComposerPanel
+          activeSelectedTurnId={null}
+          attachmentInputRef={attachmentInputRef}
+          canCompose
+          composerCwd="/workspace"
+          composerResetToken={0}
+          composerSettings={composerSettings}
+          composerSettingsError={null}
+          contextUsage={null}
+          isDraftThreadSelected={false}
+          isDraftComposerTransitioning={false}
+          isComposerDragActive={false}
+          isComposerSubmitting={false}
+          isSelectedTimelineReady
+          models={[
+            {
+              id: "gpt-5.5",
+              model: "gpt-5.5",
+              displayName: "GPT-5.5",
+              description: "Coding model",
+              defaultReasoningEffort: "high",
+              hidden: false,
+              inputModalities: ["text"],
+              isDefault: true,
+              rawPayload: {},
+              supportedReasoningEfforts: [{ reasoningEffort: "high", description: "Deep reasoning" }],
+              upgrade: null,
+            },
+          ]}
+          onAbortQueuedSteer={vi.fn()}
+          onAttachmentInputChange={vi.fn()}
+          onComposerDragLeave={vi.fn()}
+          onComposerDragOver={vi.fn()}
+          onComposerDrop={vi.fn()}
+          onComposerKeyDown={vi.fn()}
+          onComposerPaste={vi.fn()}
+          onComposerSettingsChange={vi.fn()}
+          onImageOpen={vi.fn()}
+          onRemovePendingAttachment={vi.fn()}
+          onStopTurn={vi.fn()}
+          onSubmitQueuedSteer={vi.fn()}
+          onSubmitTurn={noopSubmit}
+          pendingAttachments={[]}
+          queuedSteerRows={[]}
+          selectedThreadPresent
+          {...props}
+        />
+      </MantineProvider>
+    </QueryClientProvider>,
   );
 }
 

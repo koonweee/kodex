@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { TimelineView } from "./TimelineView";
@@ -79,5 +79,361 @@ describe("TimelineView debug rendering", () => {
 
     expect(screen.getByText("Hidden debug events")).toBeInTheDocument();
     expect(screen.getByText("thread/status")).toBeInTheDocument();
+  });
+
+  it("does not auto-scroll streamed updates after upward wheel intent near the bottom", async () => {
+    const scrollParentElement = document.createElement("div");
+    document.body.appendChild(scrollParentElement);
+    Object.defineProperties(scrollParentElement, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 3600 },
+      scrollTop: { configurable: true, writable: true, value: 3200 },
+    });
+
+    const onReady = vi.fn();
+    const props = {
+      approvals: [],
+      imagePreviewUrlsByPath: {},
+      onApprovalDecision: vi.fn(),
+      onImageOpen: vi.fn(),
+      onMarkdownOpen: vi.fn(),
+      onReady,
+      scrollParentElement,
+      showDebug: false,
+      threadId: "thread-1",
+    };
+    const timeline = timelineState({
+      activeTurnId: "turn-1",
+      items: Array.from({ length: 30 }, (_, index) =>
+        timelineItem({
+          id: `answer-${index}`,
+          displayOrder: index,
+          status: "running",
+          text: `Large answer ${index}`,
+        }),
+      ),
+      lastSeq: 1,
+    });
+
+    let unmount: (() => void) | undefined;
+    try {
+      const rendered = render(
+        <MantineProvider>
+          <TimelineView {...props} timeline={timelineState()} />
+        </MantineProvider>,
+        { container: scrollParentElement },
+      );
+      unmount = rendered.unmount;
+      const { rerender } = rendered;
+
+      await waitFor(() => expect(onReady).toHaveBeenCalled());
+      rerender(
+        <MantineProvider>
+          <TimelineView {...props} timeline={timeline} />
+        </MantineProvider>,
+      );
+      await waitFor(() => {
+        expect(scrollParentElement.scrollTop).toBe(3200);
+      });
+      scrollParentElement.scrollTop = 3200;
+      fireEvent.scroll(scrollParentElement);
+
+      fireEvent.wheel(scrollParentElement, { deltaY: -24 });
+      scrollParentElement.scrollTop = 3120;
+      fireEvent.scroll(scrollParentElement);
+
+      rerender(
+        <MantineProvider>
+          <TimelineView
+            {...props}
+            timeline={timelineState({
+              ...timeline,
+              items: [
+                ...timeline.items,
+                timelineItem({
+                  id: "streamed-answer",
+                  displayOrder: 30,
+                  status: "running",
+                  text: "Streaming answer",
+                }),
+              ],
+              lastSeq: 2,
+            })}
+          />
+        </MantineProvider>,
+      );
+
+      await waitFor(() => {
+        expect(scrollParentElement.scrollTop).toBe(3120);
+      });
+    } finally {
+      unmount?.();
+      scrollParentElement.remove();
+    }
+  });
+
+  it("keeps following live output when streamed text growth fires a scroll event without scroll movement", async () => {
+    const scrollParentElement = document.createElement("div");
+    document.body.appendChild(scrollParentElement);
+    let scrollHeight = 3600;
+    Object.defineProperties(scrollParentElement, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, get: () => scrollHeight },
+      scrollTop: { configurable: true, writable: true, value: 3200 },
+    });
+
+    const onReady = vi.fn();
+    const props = {
+      approvals: [],
+      imagePreviewUrlsByPath: {},
+      onApprovalDecision: vi.fn(),
+      onImageOpen: vi.fn(),
+      onMarkdownOpen: vi.fn(),
+      onReady,
+      scrollParentElement,
+      showDebug: false,
+      threadId: "thread-1",
+    };
+    const timeline = timelineState({
+      activeTurnId: "turn-1",
+      items: [
+        timelineItem({
+          id: "streamed-answer",
+          displayOrder: 1,
+          status: "running",
+          text: "Streaming answer",
+        }),
+      ],
+      lastSeq: 1,
+    });
+
+    let unmount: (() => void) | undefined;
+    try {
+      const rendered = render(
+        <MantineProvider>
+          <TimelineView {...props} timeline={timelineState()} />
+        </MantineProvider>,
+        { container: scrollParentElement },
+      );
+      unmount = rendered.unmount;
+      const { rerender } = rendered;
+
+      await waitFor(() => expect(onReady).toHaveBeenCalled());
+      rerender(
+        <MantineProvider>
+          <TimelineView {...props} timeline={timeline} />
+        </MantineProvider>,
+      );
+      await waitFor(() => {
+        expect(scrollParentElement.scrollTop).toBe(3200);
+      });
+
+      scrollHeight = 3720;
+      fireEvent.scroll(scrollParentElement);
+
+      rerender(
+        <MantineProvider>
+          <TimelineView
+            {...props}
+            timeline={timelineState({
+              ...timeline,
+              items: [
+                timelineItem({
+                  id: "streamed-answer",
+                  displayOrder: 1,
+                  status: "running",
+                  text: "Streaming answer with more text",
+                }),
+              ],
+              lastSeq: 2,
+            })}
+          />
+        </MantineProvider>,
+      );
+
+      await waitFor(() => {
+        expect(scrollParentElement.scrollTop).toBe(3320);
+      });
+    } finally {
+      unmount?.();
+      scrollParentElement.remove();
+    }
+  });
+
+  it("keeps following live output when streamed text changes increase layout height after render", async () => {
+    const scrollParentElement = document.createElement("div");
+    document.body.appendChild(scrollParentElement);
+    let scrollHeight = 3600;
+    Object.defineProperties(scrollParentElement, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, get: () => scrollHeight },
+      scrollTop: { configurable: true, writable: true, value: 3200 },
+    });
+
+    const onReady = vi.fn();
+    const props = {
+      approvals: [],
+      imagePreviewUrlsByPath: {},
+      onApprovalDecision: vi.fn(),
+      onImageOpen: vi.fn(),
+      onMarkdownOpen: vi.fn(),
+      onReady,
+      scrollParentElement,
+      showDebug: false,
+      threadId: "thread-1",
+    };
+    const timeline = timelineState({
+      activeTurnId: "turn-1",
+      items: [
+        timelineItem({
+          id: "streamed-answer",
+          displayOrder: 1,
+          status: "running",
+          text: "Streaming answer",
+        }),
+      ],
+      lastSeq: 1,
+    });
+
+    let unmount: (() => void) | undefined;
+    try {
+      const rendered = render(
+        <MantineProvider>
+          <TimelineView {...props} timeline={timelineState()} />
+        </MantineProvider>,
+        { container: scrollParentElement },
+      );
+      unmount = rendered.unmount;
+      const { rerender } = rendered;
+
+      await waitFor(() => expect(onReady).toHaveBeenCalled());
+      rerender(
+        <MantineProvider>
+          <TimelineView {...props} timeline={timeline} />
+        </MantineProvider>,
+      );
+      await waitFor(() => {
+        expect(scrollParentElement.scrollTop).toBe(3200);
+      });
+
+      rerender(
+        <MantineProvider>
+          <TimelineView
+            {...props}
+            timeline={timelineState({
+              ...timeline,
+              items: [
+                timelineItem({
+                  id: "streamed-answer",
+                  displayOrder: 1,
+                  status: "running",
+                  text: "Streaming answer with enough markdown to grow after measurement",
+                }),
+              ],
+              lastSeq: 2,
+            })}
+          />
+        </MantineProvider>,
+      );
+      requestAnimationFrame(() => {
+        scrollHeight = 4200;
+      });
+
+      await waitFor(() => {
+        expect(scrollParentElement.scrollTop).toBe(3800);
+      });
+    } finally {
+      unmount?.();
+      scrollParentElement.remove();
+    }
+  });
+
+  it("keeps following live output after layout-driven scroll events move the viewport upward", async () => {
+    const scrollParentElement = document.createElement("div");
+    document.body.appendChild(scrollParentElement);
+    let scrollHeight = 3600;
+    Object.defineProperties(scrollParentElement, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, get: () => scrollHeight },
+      scrollTop: { configurable: true, writable: true, value: 3200 },
+    });
+
+    const onReady = vi.fn();
+    const props = {
+      approvals: [],
+      imagePreviewUrlsByPath: {},
+      onApprovalDecision: vi.fn(),
+      onImageOpen: vi.fn(),
+      onMarkdownOpen: vi.fn(),
+      onReady,
+      scrollParentElement,
+      showDebug: false,
+      threadId: "thread-1",
+    };
+    const timeline = timelineState({
+      activeTurnId: "turn-1",
+      items: [
+        timelineItem({
+          id: "streamed-answer",
+          displayOrder: 1,
+          status: "running",
+          text: "Streaming answer",
+        }),
+      ],
+      lastSeq: 1,
+    });
+
+    let unmount: (() => void) | undefined;
+    try {
+      const rendered = render(
+        <MantineProvider>
+          <TimelineView {...props} timeline={timelineState()} />
+        </MantineProvider>,
+        { container: scrollParentElement },
+      );
+      unmount = rendered.unmount;
+      const { rerender } = rendered;
+
+      await waitFor(() => expect(onReady).toHaveBeenCalled());
+      rerender(
+        <MantineProvider>
+          <TimelineView {...props} timeline={timeline} />
+        </MantineProvider>,
+      );
+      await waitFor(() => {
+        expect(scrollParentElement.scrollTop).toBe(3200);
+      });
+
+      scrollParentElement.scrollTop = 3160;
+      fireEvent.scroll(scrollParentElement);
+      scrollHeight = 3920;
+
+      rerender(
+        <MantineProvider>
+          <TimelineView
+            {...props}
+            timeline={timelineState({
+              ...timeline,
+              items: [
+                timelineItem({
+                  id: "streamed-answer",
+                  displayOrder: 1,
+                  status: "running",
+                  text: "Streaming answer after layout-driven scroll",
+                }),
+              ],
+              lastSeq: 2,
+            })}
+          />
+        </MantineProvider>,
+      );
+
+      await waitFor(() => {
+        expect(scrollParentElement.scrollTop).toBe(3520);
+      });
+    } finally {
+      unmount?.();
+      scrollParentElement.remove();
+    }
   });
 });

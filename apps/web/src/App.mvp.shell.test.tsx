@@ -251,6 +251,44 @@ describe("MVP shell flows", () => {
     expect(screen.queryByText("feature/old-branch")).not.toBeInTheDocument();
   });
 
+  it("updates sidebar thread summaries from global metadata events", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(baseRoutes());
+
+    render(<App />);
+
+    const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
+    expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
+    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    expect(globalStream).toBeDefined();
+
+    act(() => {
+      globalStream?.emitNamed("timeline.thread_metadata", {
+        id: "event-thread-metadata-sidebar",
+        seq: 10,
+        kind: "timeline.thread_metadata",
+        codexMethod: "thread/metadata",
+        threadId: "thread-1",
+        turnId: null,
+        itemId: null,
+        projectId: project.id,
+        payload: {
+          source: "gatewayStream",
+          thread: {
+            ...thread,
+            name: "Metadata renamed thread",
+            gitInfo: { branch: "feature/sidebar", originUrl: null, sha: null },
+          },
+        },
+        receivedAt: "2026-04-30T00:00:01Z",
+      });
+    });
+
+    expect(await within(kodexGroup).findByRole("button", { name: /metadata renamed thread/i })).toBeInTheDocument();
+    expect(within(kodexGroup).queryByRole("button", { name: /implement frontend/i })).not.toBeInTheDocument();
+  });
+
   it("preserves and clears git branch underflow from metadata patches", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     mockGateway(
@@ -471,7 +509,7 @@ describe("MVP shell flows", () => {
     initialProjectThreads.resolve({ threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} });
 
     expect(await screen.findByRole("button", { name: /keep local project thread/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /keep local project thread/i })).toBeInTheDocument();
   });
 
@@ -536,6 +574,88 @@ describe("MVP shell flows", () => {
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
     expect(within(kodexGroup).queryByRole("button", { name: /implement frontend/i })).not.toBeInTheDocument();
     expect(within(kodexGroup).getByRole("button", { name: /second thread/i })).toBeInTheDocument();
+  });
+
+  it("keeps pinned project rows visible while the pinned snapshot is pending", async () => {
+    const pinnedThreads = deferred<unknown>();
+    const pinnedThread = { ...thread, pinnedAt: "2026-05-06T12:00:00Z" };
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": { threads: [pinnedThread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/threads/pinned": () => pinnedThreads.promise,
+      }),
+    );
+
+    render(<App />);
+
+    const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
+    expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+
+    pinnedThreads.resolve({ threads: [pinnedThread], nextCursor: null, backwardsCursor: null, rawPayload: {} });
+
+    expect(await screen.findByText("Pinned")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(within(kodexGroup).queryByRole("button", { name: /implement frontend/i })).not.toBeInTheDocument();
+  });
+
+  it("moves pinned rows from live pin events while the pinned snapshot is pending", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const pinnedThreads = deferred<unknown>();
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/threads/pinned": () => pinnedThreads.promise,
+      }),
+    );
+
+    render(<App />);
+
+    const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
+    expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
+    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    expect(globalStream).toBeDefined();
+
+    act(() => {
+      globalStream?.emitNamed("thread.pin_updated", {
+        id: "event-pin-thread-1",
+        seq: 2,
+        kind: "thread.pin_updated",
+        codexMethod: "thread/pin_updated",
+        projectId: project.id,
+        threadId: thread.id,
+        payload: { threadId: thread.id, pinnedAt: "2026-05-06T12:00:00Z" },
+        receivedAt: "2026-05-06T12:00:00Z",
+      });
+    });
+
+    expect(await screen.findByText("Pinned")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(within(kodexGroup).queryByRole("button", { name: /implement frontend/i })).not.toBeInTheDocument();
+
+    await act(async () => {
+      pinnedThreads.resolve({ threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} });
+      await pinnedThreads.promise;
+    });
+    expect(screen.getByText("Pinned")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(within(kodexGroup).queryByRole("button", { name: /implement frontend/i })).not.toBeInTheDocument();
+
+    act(() => {
+      globalStream?.emitNamed("thread.pin_updated", {
+        id: "event-unpin-thread-1",
+        seq: 3,
+        kind: "thread.pin_updated",
+        codexMethod: "thread/pin_updated",
+        projectId: project.id,
+        threadId: thread.id,
+        payload: { threadId: thread.id, pinnedAt: null },
+        receivedAt: "2026-05-06T12:00:01Z",
+      });
+    });
+
+    await waitFor(() => expect(screen.queryByText("Pinned")).not.toBeInTheDocument());
+    expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
   });
 
   it("shows compact thread actions without fork or path subtitle", async () => {

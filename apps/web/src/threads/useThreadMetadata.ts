@@ -4,28 +4,20 @@ import type { ContextUsage } from "../ComposerFooterControls";
 import type { EventEnvelope, ThreadSummary } from "../api/client";
 import { contextUsageFromEvent } from "../composer/settings";
 import { threadNameUpdateFromEvent, threadStatusUpdateFromEvent } from "./events";
-import {
-  updateThreadNameInList,
-  updateThreadNameInProjects,
-  updateThreadReadStateInList,
-  updateThreadReadStateInProjects,
-  type ThreadsByProjectId,
-} from "./helpers";
 
 type UseThreadMetadataParams = {
   selectedThreadId: string | null;
   setPendingTitleThreadIds: Dispatch<SetStateAction<Set<string>>>;
-  setChatThreads: Dispatch<SetStateAction<ThreadSummary[]>>;
-  setPinnedThreads: Dispatch<SetStateAction<ThreadSummary[]>>;
-  setThreadsByProjectId: Dispatch<SetStateAction<ThreadsByProjectId>>;
+  updateThreadEverywhere: (
+    threadId: string,
+    patcher: (thread: ThreadSummary) => ThreadSummary,
+  ) => void;
 };
 
 export function useThreadMetadata({
   selectedThreadId,
   setPendingTitleThreadIds,
-  setChatThreads,
-  setPinnedThreads,
-  setThreadsByProjectId,
+  updateThreadEverywhere,
 }: UseThreadMetadataParams) {
   const [contextUsageByThreadId, setContextUsageByThreadId] = useState<Record<string, ContextUsage>>({});
   const selectedContextUsage = selectedThreadId ? contextUsageByThreadId[selectedThreadId] : null;
@@ -38,58 +30,21 @@ export function useThreadMetadata({
 
     const statusUpdate = threadStatusUpdateFromEvent(event);
     if (statusUpdate) {
-      setThreadsByProjectId((current) =>
-        updateThreadReadStateInProjects(current, statusUpdate.threadId, (thread) =>
-          thread.status === statusUpdate.status ? {} : { status: statusUpdate.status },
-        ),
-      );
-      setChatThreads((current) =>
-        updateThreadReadStateInList(current, statusUpdate.threadId, (thread) =>
-          thread.status === statusUpdate.status ? {} : { status: statusUpdate.status },
-        ),
-      );
-      setPinnedThreads((current) =>
-        updateThreadReadStateInList(current, statusUpdate.threadId, (thread) =>
-          thread.status === statusUpdate.status ? {} : { status: statusUpdate.status },
-        ),
+      updateThreadEverywhere(statusUpdate.threadId, (thread) =>
+        thread.status === statusUpdate.status ? thread : { ...thread, status: statusUpdate.status },
       );
     }
 
     const metadataThread = threadMetadataFromEvent(event);
     if (metadataThread) {
-      setThreadsByProjectId((current) =>
-        updateThreadReadStateInProjects(current, metadataThread.id, () => ({
-          gitInfo: metadataThread.gitInfo,
-        })),
-      );
-      setChatThreads((current) =>
-        updateThreadReadStateInList(current, metadataThread.id, () => ({
-          gitInfo: metadataThread.gitInfo,
-        })),
-      );
-      setPinnedThreads((current) =>
-        updateThreadReadStateInList(current, metadataThread.id, () => ({
-          gitInfo: metadataThread.gitInfo,
-        })),
-      );
+      updateThreadEverywhere(metadataThread.id, (thread) => ({ ...thread, ...metadataThread }));
     }
     const metadataGitInfo = threadMetadataGitInfoFromEvent(event);
     if (metadataGitInfo) {
-      setThreadsByProjectId((current) =>
-        updateThreadReadStateInProjects(current, metadataGitInfo.threadId, (thread) => ({
-          gitInfo: mergeGitInfoPatch(thread.gitInfo, metadataGitInfo.gitInfo),
-        })),
-      );
-      setChatThreads((current) =>
-        updateThreadReadStateInList(current, metadataGitInfo.threadId, (thread) => ({
-          gitInfo: mergeGitInfoPatch(thread.gitInfo, metadataGitInfo.gitInfo),
-        })),
-      );
-      setPinnedThreads((current) =>
-        updateThreadReadStateInList(current, metadataGitInfo.threadId, (thread) => ({
-          gitInfo: mergeGitInfoPatch(thread.gitInfo, metadataGitInfo.gitInfo),
-        })),
-      );
+      updateThreadEverywhere(metadataGitInfo.threadId, (thread) => ({
+        ...thread,
+        gitInfo: mergeGitInfoPatch(thread.gitInfo, metadataGitInfo.gitInfo),
+      }));
     }
 
     const update = threadNameUpdateFromEvent(event);
@@ -99,9 +54,7 @@ export function useThreadMetadata({
 
     const name = update.name?.trim();
     if (name) {
-      setThreadsByProjectId((current) => updateThreadNameInProjects(current, update.threadId, name));
-      setChatThreads((current) => updateThreadNameInList(current, update.threadId, name));
-      setPinnedThreads((current) => updateThreadNameInList(current, update.threadId, name));
+      updateThreadEverywhere(update.threadId, (thread) => ({ ...thread, name }));
       setPendingTitleThreadIds((current) => {
         if (!current.has(update.threadId)) {
           return current;
