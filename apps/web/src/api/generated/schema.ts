@@ -604,6 +604,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads/{threadId}/subagents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_subagents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/threads/{threadId}/turns": {
         parameters: {
             query?: never;
@@ -1127,7 +1143,22 @@ export interface components {
         };
         /** @enum {string} */
         ThreadStatus: "notLoaded" | "idle" | "systemError" | "active";
+        ThreadSubagentListResponse: {
+            subagents: components["schemas"]["ThreadSubagentSummary"][];
+        };
+        ThreadSubagentSummary: {
+            agentNickname?: string | null;
+            agentRole?: string | null;
+            id: string;
+            liveState: components["schemas"]["ThreadLiveState"];
+            parentThreadId: string;
+            status: components["schemas"]["ThreadStatus"];
+            /** Format: int64 */
+            updatedAt: number;
+        };
         ThreadSummary: {
+            agentNickname?: string | null;
+            agentRole?: string | null;
             approvalPolicy?: string | null;
             approvalsReviewer?: string | null;
             /** Format: int64 */
@@ -2277,6 +2308,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadRead"];
+                };
+            };
+        };
+    };
+    list_subagents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadSubagentListResponse"];
                 };
             };
         };

@@ -1,5 +1,5 @@
-import { ActionIcon, Badge, Box, Button, Group, Menu, Skeleton, Title } from "@mantine/core";
-import { AlertCircle, Archive, MoreHorizontal, PanelLeftOpen, PanelRightOpen, Pin, PinOff } from "lucide-react";
+import { ActionIcon, Badge, Box, Button, Group, Menu, Skeleton, Title, Tooltip } from "@mantine/core";
+import { AlertCircle, Archive, Bot, MoreHorizontal, PanelLeftOpen, PanelRightOpen, Pin, PinOff } from "lucide-react";
 import type { ReactNode } from "react";
 
 import type { Approval, ApprovalResponse, ThreadSummary } from "../api/client";
@@ -34,6 +34,7 @@ export function ThreadPanel({
   onMarkdownOpen,
   onPinThread,
   onShowMobileSidebar,
+  onSubagentSidebarToggle,
   onTimelineReady,
   onUnpinThread,
   pendingTitleThreadIds,
@@ -45,6 +46,9 @@ export function ThreadPanel({
   selectedTimelineEntry,
   setTimelineScrollElement,
   showDebugEvents,
+  subagentSidebarOpen,
+  subagentToggleVisible,
+  subagentViewer,
   timeline,
 }: {
   errorMessage: string | null;
@@ -57,6 +61,7 @@ export function ThreadPanel({
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   onPinThread: (threadId: string) => void;
   onShowMobileSidebar: () => void;
+  onSubagentSidebarToggle?: () => void;
   onTimelineReady: () => void;
   onUnpinThread: (threadId: string) => void;
   pendingTitleThreadIds: Set<string>;
@@ -68,6 +73,9 @@ export function ThreadPanel({
   selectedTimelineEntry: TimelineEntry;
   setTimelineScrollElement: (element: HTMLDivElement | null) => void;
   showDebugEvents: boolean;
+  subagentSidebarOpen?: boolean;
+  subagentToggleVisible?: boolean;
+  subagentViewer?: ReactNode;
   timeline: TimelineState;
 }) {
   const selectedThreadTitleIsPending = selectedThread ? pendingTitleThreadIds.has(selectedThread.id) : false;
@@ -118,55 +126,72 @@ export function ThreadPanel({
             title={shouldShowThreadTitle ? selectedThreadTitle : null}
           >
             {selectedThread ? (
-              <Menu position="bottom-end" withinPortal>
-                <Menu.Target>
-                  <ActionIcon aria-label={THREAD_PANEL_TEXT.actions} variant="subtle">
-                    <MoreHorizontal size={17} />
-                  </ActionIcon>
-                </Menu.Target>
-                <Menu.Dropdown>
-                  <Menu.Item
-                    leftSection={selectedThread.pinnedAt ? <PinOff size={14} /> : <Pin size={14} />}
-                    onClick={() => {
-                      if (selectedThread.pinnedAt) {
-                        onUnpinThread(selectedThread.id);
-                        return;
-                      }
-                      onPinThread(selectedThread.id);
-                    }}
-                  >
-                    {selectedThread.pinnedAt ? THREAD_PANEL_TEXT.unpin : THREAD_PANEL_TEXT.pin}
-                  </Menu.Item>
-                  <Menu.Item leftSection={<Archive size={14} />} onClick={onArchiveThread}>
-                    {THREAD_PANEL_TEXT.archive}
-                  </Menu.Item>
-                </Menu.Dropdown>
-              </Menu>
+              <Group gap={4} wrap="nowrap">
+                {subagentToggleVisible && onSubagentSidebarToggle ? (
+                  <Tooltip label={subagentSidebarOpen ? "Hide subagents" : "Show subagents"}>
+                    <ActionIcon
+                      aria-label={subagentSidebarOpen ? "Hide subagents" : "Show subagents"}
+                      aria-pressed={subagentSidebarOpen ? "true" : "false"}
+                      onClick={onSubagentSidebarToggle}
+                      variant={subagentSidebarOpen ? "light" : "subtle"}
+                    >
+                      <Bot size={17} />
+                    </ActionIcon>
+                  </Tooltip>
+                ) : null}
+                <Menu position="bottom-end" withinPortal>
+                  <Menu.Target>
+                    <ActionIcon aria-label={THREAD_PANEL_TEXT.actions} variant="subtle">
+                      <MoreHorizontal size={17} />
+                    </ActionIcon>
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    <Menu.Item
+                      leftSection={selectedThread.pinnedAt ? <PinOff size={14} /> : <Pin size={14} />}
+                      onClick={() => {
+                        if (selectedThread.pinnedAt) {
+                          onUnpinThread(selectedThread.id);
+                          return;
+                        }
+                        onPinThread(selectedThread.id);
+                      }}
+                    >
+                      {selectedThread.pinnedAt ? THREAD_PANEL_TEXT.unpin : THREAD_PANEL_TEXT.pin}
+                    </Menu.Item>
+                    <Menu.Item leftSection={<Archive size={14} />} onClick={onArchiveThread}>
+                      {THREAD_PANEL_TEXT.archive}
+                    </Menu.Item>
+                  </Menu.Dropdown>
+                </Menu>
+              </Group>
             ) : null}
           </ThreadHeader>
           {selectedThread || isSelectedTimelineLoading ? (
-            <Box
-              className="kodex-timeline-scroll"
-              data-entry-phase={selectedTimelineEntry.phase}
-              ref={setTimelineScrollElement}
-            >
-              {isSelectedTimelineLoading ? (
-                <TimelineLoadingSkeleton />
-              ) : selectedThread ? (
-                <TimelineView
-                  key={selectedThread.id}
-                  approvals={selectedThreadApprovals}
-                  onReady={onTimelineReady}
-                  onApprovalDecision={onApprovalDecision}
-                  onImageOpen={onImageOpen}
-                  onMarkdownOpen={onMarkdownOpen}
-                  imagePreviewUrlsByPath={imagePreviewUrlsByPath}
-                  scrollParentElement={scrollParentElement}
-                  showDebug={showDebugEvents}
-                  threadId={selectedThread.id}
-                  timeline={timeline}
-                />
-              ) : null}
+            <Box className="kodex-thread-content" data-subagent-sidebar={subagentViewer ? "open" : "closed"}>
+              <Box
+                className="kodex-timeline-scroll"
+                data-entry-phase={selectedTimelineEntry.phase}
+                ref={setTimelineScrollElement}
+              >
+                {isSelectedTimelineLoading ? (
+                  <TimelineLoadingSkeleton />
+                ) : selectedThread ? (
+                  <TimelineView
+                    key={selectedThread.id}
+                    approvals={selectedThreadApprovals}
+                    onReady={onTimelineReady}
+                    onApprovalDecision={onApprovalDecision}
+                    onImageOpen={onImageOpen}
+                    onMarkdownOpen={onMarkdownOpen}
+                    imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+                    scrollParentElement={scrollParentElement}
+                    showDebug={showDebugEvents}
+                    threadId={selectedThread.id}
+                    timeline={timeline}
+                  />
+                ) : null}
+              </Box>
+              {subagentViewer}
             </Box>
           ) : null}
         </>

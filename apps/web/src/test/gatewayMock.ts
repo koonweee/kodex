@@ -23,6 +23,10 @@ export function mockGateway(routes: GatewayRouteMap) {
       if (queuedInput) {
         return jsonResponse(queuedInput, 200);
       }
+      const subagents = fallbackThreadSubagents(request);
+      if (subagents) {
+        return jsonResponse(subagents, 200);
+      }
       const threadDetail = await fallbackThreadDetail(routes, request);
       if (threadDetail) {
         return jsonResponse(threadDetail, 200);
@@ -119,6 +123,15 @@ async function fallbackQueuedInput(request: Request, nextQueueId: () => string) 
     };
   }
   return null;
+}
+
+function fallbackThreadSubagents(request: Request) {
+  const url = new URL(request.url);
+  const match = url.pathname.match(/^\/v1\/threads\/([^/]+)\/subagents$/);
+  if (request.method !== "GET" || !match) {
+    return null;
+  }
+  return { subagents: [] };
 }
 
 async function fallbackThreadDetail(routes: GatewayRouteMap, request: Request) {

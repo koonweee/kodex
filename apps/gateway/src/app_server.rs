@@ -681,6 +681,7 @@ done
     fn default_test_response(method: &str) -> Value {
         match method {
             "thread/list" => json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
+            "thread/loaded/list" => json!({"data": [], "nextCursor": null}),
             "thread/read" => json!({"thread": test_thread("thread-1")}),
             "thread/start" | "thread/resume" | "thread/fork" => json!({
                 "thread": test_thread("thread-1"),

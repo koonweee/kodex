@@ -24,6 +24,8 @@ export type SkillMetadata = components["schemas"]["SkillMetadata"];
 export type SkillsCatalogResponse = components["schemas"]["SkillsCatalogResponse"];
 export type ThreadRead = components["schemas"]["ThreadRead"];
 export type ThreadDetailResponse = components["schemas"]["ThreadDetailResponse"];
+export type ThreadSubagentListResponse = components["schemas"]["ThreadSubagentListResponse"];
+export type ThreadSubagentSummary = components["schemas"]["ThreadSubagentSummary"];
 export type TextElement = components["schemas"]["TextElement"];
 export type ThreadSummary = components["schemas"]["ThreadSummary"];
 export type TimelineSkillMention = components["schemas"]["TimelineSkillMention"];
@@ -139,6 +141,13 @@ export async function forkThread(threadId: string): Promise<ThreadSummary> {
 
 export async function getThreadDetail(threadId: string): Promise<ThreadDetailResponse> {
   return unwrap(api.GET("/v1/threads/{threadId}", { params: { path: { threadId } } }));
+}
+
+export async function listThreadSubagents(threadId: string): Promise<ThreadSubagentSummary[]> {
+  const response = await unwrap(
+    api.GET("/v1/threads/{threadId}/subagents", { params: { path: { threadId } } }),
+  );
+  return response.subagents;
 }
 
 export async function archiveThread(threadId: string): Promise<void> {

@@ -30,6 +30,7 @@ import {
   listQueuedInputs,
   listPinnedThreads,
   listProjects,
+  listThreadSubagents,
   listThreads,
   pauseAutomation,
   pinThread,
@@ -45,6 +46,7 @@ import {
   type Project,
   type QueuedInput,
   type ThreadSummary,
+  type ThreadSubagentSummary,
 } from "./api/client";
 import { queryClient } from "./api/queryClient";
 import { queryKeys } from "./api/queryKeys";
@@ -103,6 +105,7 @@ import {
   upsertCachedQueuedInput,
 } from "./queuedInputs/cache";
 import { threadPinUpdateFromEvent } from "./threads/events";
+import { SubagentThreadViewer } from "./threads/SubagentThreadViewer";
 import {
   applySidebarProjectOrder,
   loadSidebarProjectOrder,
@@ -196,6 +199,8 @@ function KodexShell({
   const [preferencesSection, setPreferencesSection] = useState<"appearance">("appearance");
   const [hoveredThreadActionId, setHoveredThreadActionId] = useState<string | null>(null);
   const [timelineScrollElement, setTimelineScrollElement] = useState<HTMLDivElement | null>(null);
+  const [subagentSidebarOpen, setSubagentSidebarOpen] = useState(false);
+  const [selectedSubagentThreadId, setSelectedSubagentThreadId] = useState<string | null>(null);
   const [composerResetToken, setComposerResetToken] = useState(0);
   const [skillsInvalidationGeneration, setSkillsInvalidationGeneration] = useState(0);
   const selectedProjectIdRef = useRef<string | null>(null);
@@ -354,6 +359,16 @@ function KodexShell({
     chatThreads.find((thread) => thread.id === selectedThreadId) ??
     pinnedThreads.find((thread) => thread.id === selectedThreadId) ??
     null;
+  const selectedThreadSubagentsQuery = useQuery({
+    enabled: selectedMainPane === "thread" && selectedThread !== null,
+    queryKey: selectedThread ? queryKeys.threadSubagents(selectedThread.id) : ["threads", "none", "subagents"],
+    queryFn: async () => {
+      const threadId = selectedThread?.id;
+      return threadId ? listThreadSubagents(threadId) : [];
+    },
+    refetchInterval: selectedThread?.status === "active" ? 2000 : false,
+  });
+  const selectedThreadSubagents = selectedThreadSubagentsQuery.data ?? [];
   const selectedQueuedInputs = selectedThreadId ? selectedQueuedInputsQuery.data ?? [] : [];
   const automations = automationsQuery.data ?? [];
   const usageLimitSnapshot = rateLimitsQuery.data ?? null;
@@ -547,6 +562,25 @@ function KodexShell({
   }, [selectedThreadId]);
 
   useEffect(() => {
+    setSubagentSidebarOpen(false);
+    setSelectedSubagentThreadId(null);
+  }, [selectedThreadId]);
+
+  useEffect(() => {
+    if (selectedThreadSubagents.length === 0) {
+      setSubagentSidebarOpen(false);
+      setSelectedSubagentThreadId(null);
+      return;
+    }
+    setSelectedSubagentThreadId((current) => {
+      if (current && selectedThreadSubagents.some((subagent) => subagent.id === current)) {
+        return current;
+      }
+      return defaultSubagent(selectedThreadSubagents)?.id ?? null;
+    });
+  }, [selectedThreadSubagents]);
+
+  useEffect(() => {
     routeSelectedThreadRef.current = routeSelectedThread;
   }, [routeSelectedThread]);
 
@@ -617,6 +651,7 @@ function KodexShell({
         applyThreadPinEvent(event);
         applyThreadMetadataEvent(event);
         applyCompletedAgentTurnEvent(event);
+        invalidateSelectedSubagentsForEvent(event);
         const nextUsageLimitSnapshot = usageLimitSnapshotFromEvent(event);
         if (nextUsageLimitSnapshot) {
           liveUsageLimitSnapshotReceivedRef.current = true;
@@ -1181,6 +1216,14 @@ function KodexShell({
     }
   }
 
+  function invalidateSelectedSubagentsForEvent(event: EventEnvelope) {
+    const threadId = selectedThreadIdRef.current;
+    if (!threadId || event.threadId !== threadId || !eventCanAffectSubagentDiscovery(event)) {
+      return;
+    }
+    void queryClientForShell.invalidateQueries({ queryKey: queryKeys.threadSubagents(threadId) });
+  }
+
   function findKnownThread(threadId: string): ThreadSummary | null {
     for (const threads of Object.values(threadsByProjectIdRef.current)) {
       const thread = threads.find((item) => item.id === threadId);
@@ -1348,6 +1391,22 @@ function KodexShell({
     }),
     [chatThreadsQuery, orderedProjects, pinnedStateIsTrusted, pinnedThreadsQuery, projectThreadQueries, projectsQuery],
   );
+  const selectedSubagentStillAvailable =
+    selectedSubagentThreadId !== null &&
+    selectedThreadSubagents.some((subagent) => subagent.id === selectedSubagentThreadId);
+  const subagentViewer =
+    subagentSidebarOpen && selectedSubagentStillAvailable ? (
+      <SubagentThreadViewer
+        imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+        onError={reportError}
+        onImageOpen={setLightboxImage}
+        onMarkdownOpen={setMarkdownPreview}
+        onSelectSubagent={setSelectedSubagentThreadId}
+        selectedSubagentId={selectedSubagentThreadId}
+        showDebugEvents={showDebugEvents}
+        subagents={selectedThreadSubagents}
+      />
+    ) : null;
 
   return (
     <>
@@ -1397,10 +1456,15 @@ function KodexShell({
           onMarkdownOpen: setMarkdownPreview,
           onPinThread: stableHandlePinThread,
           onShowMobileSidebar: handleShowMobileSidebar, onTimelineReady: handleTimelineReadyForSelectedThread,
+          onSubagentSidebarToggle: () => setSubagentSidebarOpen((current) => !current),
           onUnpinThread: stableHandleUnpinThread, pendingTitleThreadIds,
           scrollParentElement: timelineScrollElement, selectedThread, selectedThreadApprovals, selectedThreadTitle,
           selectedThreadUnavailableId: unavailableThreadId,
-          selectedTimelineEntry, setTimelineScrollElement, showDebugEvents, timeline,
+          selectedTimelineEntry, setTimelineScrollElement, showDebugEvents,
+          subagentSidebarOpen,
+          subagentToggleVisible: selectedThreadSubagents.length > 0,
+          subagentViewer,
+          timeline,
         }}
         workspaceSidebarProps={{
           account, approvals, chatThreads: sidebarChatThreads, dataState: sidebarDataState, hoveredThreadActionId, isSidebarResizing, loginState,
@@ -1426,6 +1490,25 @@ function KodexShell({
 
 function selectedThreadShouldAttachLive(thread: ThreadSummary): boolean {
   return thread.status === "notLoaded" || thread.status === "active";
+}
+
+function defaultSubagent(subagents: ThreadSubagentSummary[]): ThreadSubagentSummary | null {
+  return (
+    subagents.find((subagent) => subagent.status === "active" || subagent.liveState === "streaming") ??
+    subagents[0] ??
+    null
+  );
+}
+
+function eventCanAffectSubagentDiscovery(event: EventEnvelope): boolean {
+  return (
+    event.kind === "timeline.item_upsert" ||
+    event.kind === "timeline.turn_upsert" ||
+    event.kind === "timeline.thread_status" ||
+    event.kind === "timeline.thread_metadata" ||
+    event.kind === "timeline.snapshot_required" ||
+    event.kind === "codex.notification"
+  );
 }
 
 function queryResultLoadState(query: {

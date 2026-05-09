@@ -149,6 +149,7 @@ mod tests {
             "/v1/chats/threads",
             "/v1/threads/pinned",
             "/v1/threads/{threadId}",
+            "/v1/threads/{threadId}/subagents",
             "/v1/threads/{threadId}/resume",
             "/v1/threads/{threadId}/fork",
             "/v1/threads/{threadId}/archive",
@@ -819,6 +820,193 @@ mod tests {
         assert_eq!(requests[2].1["persistExtendedHistory"], true);
         assert_eq!(requests[3].0, "thread/archive");
         assert_eq!(requests[3].1["threadId"], "thread-1");
+    }
+
+    #[tokio::test]
+    async fn thread_subagents_returns_loaded_descendants_in_created_order() {
+        let (state, app_server) = test_state().await;
+        *app_server.queued_responses.lock().unwrap() = vec![
+            json!({
+                "data": [
+                    "thread-parent",
+                    "thread-bad",
+                    "thread-child-b",
+                    "thread-child-a",
+                    "thread-grandchild",
+                    "thread-unrelated",
+                    "thread-child-0"
+                ],
+                "nextCursor": null
+            }),
+            json!({}),
+            json!({"thread": subagent_thread_summary(
+                "thread-child-b",
+                "thread-parent",
+                30,
+                300,
+                "Builder",
+                "worker",
+                "idle"
+            )}),
+            json!({"thread": subagent_thread_summary(
+                "thread-child-a",
+                "thread-parent",
+                10,
+                100,
+                "Scout",
+                "explorer",
+                "active"
+            )}),
+            json!({"thread": subagent_thread_summary(
+                "thread-grandchild",
+                "thread-child-a",
+                20,
+                200,
+                "Verifier",
+                "reviewer",
+                "idle"
+            )}),
+            json!({"thread": subagent_thread_summary(
+                "thread-unrelated",
+                "thread-other-parent",
+                5,
+                500,
+                "Other",
+                "worker",
+                "idle"
+            )}),
+            json!({"thread": subagent_thread_summary(
+                "thread-child-0",
+                "thread-parent",
+                10,
+                150,
+                "Planner",
+                "planner",
+                "idle"
+            )}),
+        ];
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/threads/thread-parent/subagents")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+
+        assert_eq!(
+            body["subagents"],
+            json!([
+                {
+                    "id": "thread-child-0",
+                    "parentThreadId": "thread-parent",
+                    "agentNickname": "Planner",
+                    "agentRole": "planner",
+                    "status": "idle",
+                    "liveState": "idle",
+                    "updatedAt": 150
+                },
+                {
+                    "id": "thread-child-a",
+                    "parentThreadId": "thread-parent",
+                    "agentNickname": "Scout",
+                    "agentRole": "explorer",
+                    "status": "active",
+                    "liveState": "streaming",
+                    "updatedAt": 100
+                },
+                {
+                    "id": "thread-grandchild",
+                    "parentThreadId": "thread-child-a",
+                    "agentNickname": "Verifier",
+                    "agentRole": "reviewer",
+                    "status": "idle",
+                    "liveState": "idle",
+                    "updatedAt": 200
+                },
+                {
+                    "id": "thread-child-b",
+                    "parentThreadId": "thread-parent",
+                    "agentNickname": "Builder",
+                    "agentRole": "worker",
+                    "status": "idle",
+                    "liveState": "idle",
+                    "updatedAt": 300
+                }
+            ])
+        );
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/loaded/list");
+        assert_eq!(requests[0].1, json!({"cursor": null, "limit": null}));
+        assert_eq!(requests.len(), 7);
+        assert!(requests[1..].iter().all(|(method, params)| {
+            method == "thread/read" && params["includeTurns"] == false
+        }));
+    }
+
+    #[tokio::test]
+    async fn thread_subagents_returns_empty_list_without_loaded_descendants() {
+        let (state, app_server) = test_state().await;
+        *app_server.queued_responses.lock().unwrap() = vec![json!({
+            "data": ["thread-parent"],
+            "nextCursor": null
+        })];
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/threads/thread-parent/subagents")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["subagents"], json!([]));
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0, "thread/loaded/list");
+    }
+
+    #[tokio::test]
+    async fn thread_subagents_errors_when_all_loaded_thread_reads_fail() {
+        let (state, app_server) = test_state().await;
+        *app_server.queued_responses.lock().unwrap() = vec![
+            json!({
+                "data": ["thread-parent", "thread-child-a", "thread-child-b"],
+                "nextCursor": null
+            }),
+            json!({}),
+            json!({}),
+        ];
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/threads/thread-parent/subagents")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        let body = response_json(response).await;
+        assert_eq!(body["code"], "bad_gateway");
+        assert_eq!(
+            body["message"],
+            "failed to read any loaded thread during subagent discovery"
+        );
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 3);
+        assert_eq!(requests[0].0, "thread/loaded/list");
     }
 
     #[tokio::test]
@@ -4992,6 +5180,34 @@ mod tests {
             .collect::<Vec<_>>();
         let mut thread = thread_summary(id);
         thread["turns"] = Value::Array(turns);
+        thread
+    }
+
+    fn subagent_thread_summary(
+        id: &str,
+        parent_thread_id: &str,
+        created_at: i64,
+        updated_at: i64,
+        nickname: &str,
+        role: &str,
+        status: &str,
+    ) -> Value {
+        let mut thread = thread_summary(id);
+        thread["source"] = json!({
+            "subAgent": {
+                "thread_spawn": {
+                    "parent_thread_id": parent_thread_id,
+                    "depth": 1,
+                    "agent_nickname": nickname,
+                    "agent_role": role
+                }
+            }
+        });
+        thread["agentNickname"] = json!(nickname);
+        thread["agentRole"] = json!(role);
+        thread["status"] = json!({"type": status});
+        thread["createdAt"] = json!(created_at);
+        thread["updatedAt"] = json!(updated_at);
         thread
     }
 

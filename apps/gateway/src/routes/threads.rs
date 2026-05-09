@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path as FsPath, PathBuf},
 };
 
@@ -19,8 +19,8 @@ use crate::{
     app_server_api::{
         self, enrich_timeline_skill_mentions, timeline_skill_mentions_from_text,
         visible_text_from_thread_item, RawAppServerResponse, ThreadCommandResponse,
-        ThreadDetailResponse, ThreadItemSnapshot, ThreadListResponse, ThreadSummary,
-        TimelineSkillMention,
+        ThreadDetailResponse, ThreadItemSnapshot, ThreadListResponse, ThreadLiveState,
+        ThreadStatus, ThreadSummary, TimelineSkillMention,
     },
     error::{ApiError, ApiResult},
     store::{EventEnvelope, NewEvent, ThreadComposerSettings, ThreadRead},
@@ -36,6 +36,7 @@ pub fn router() -> Router<AppState> {
             get(list_chat_threads).post(create_chat_thread),
         )
         .route("/v1/threads/pinned", get(list_pinned_threads))
+        .route("/v1/threads/{thread_id}/subagents", get(list_subagents))
         .route("/v1/threads/{thread_id}", get(get_thread))
         .route("/v1/threads/{thread_id}/resume", post(resume_thread))
         .route("/v1/threads/{thread_id}/fork", post(fork_thread))
@@ -109,6 +110,24 @@ pub type MarkThreadSeenResponse = ThreadRead;
 pub struct ThreadPinResponse {
     pub thread_id: String,
     pub pinned_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadSubagentSummary {
+    pub id: String,
+    pub parent_thread_id: String,
+    pub agent_nickname: Option<String>,
+    pub agent_role: Option<String>,
+    pub status: ThreadStatus,
+    pub live_state: ThreadLiveState,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadSubagentListResponse {
+    pub subagents: Vec<ThreadSubagentSummary>,
 }
 
 #[utoipa::path(get, path = "/v1/threads", params(ThreadListQuery), responses((status = 200, body = ThreadListResponse)))]
@@ -627,6 +646,44 @@ pub async fn get_thread(
     Ok(Json(response))
 }
 
+#[utoipa::path(get, path = "/v1/threads/{threadId}/subagents", responses((status = 200, body = ThreadSubagentListResponse)))]
+pub async fn list_subagents(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+) -> ApiResult<Json<ThreadSubagentListResponse>> {
+    let client = app_server_api::client(&state.app_server);
+    let loaded = client.thread_loaded_list().await?;
+    let mut threads = Vec::new();
+    let mut attempted_thread_reads = 0;
+    let mut read_failures = 0;
+    for loaded_thread_id in loaded.thread_ids {
+        if loaded_thread_id == thread_id {
+            continue;
+        }
+        attempted_thread_reads += 1;
+        match client.thread_read_summary(loaded_thread_id.clone()).await {
+            Ok(thread) => threads.push(thread),
+            Err(error) => {
+                read_failures += 1;
+                tracing::warn!(
+                    thread_id = loaded_thread_id,
+                    %error,
+                    "failed to read loaded thread during subagent discovery"
+                );
+            }
+        }
+    }
+    if attempted_thread_reads > 0 && read_failures == attempted_thread_reads {
+        return Err(ApiError::BadGateway(
+            "failed to read any loaded thread during subagent discovery".to_string(),
+        ));
+    }
+
+    Ok(Json(ThreadSubagentListResponse {
+        subagents: loaded_descendant_subagents(&thread_id, threads),
+    }))
+}
+
 #[utoipa::path(post, path = "/v1/threads/{threadId}/resume", responses((status = 200, body = ThreadCommandResponse)))]
 pub async fn resume_thread(
     State(state): State<AppState>,
@@ -701,6 +758,86 @@ pub async fn mark_thread_seen(
             .mark_thread_seen_completed_agent_turns(&thread_id, seen_seq)
             .await?,
     ))
+}
+
+fn loaded_descendant_subagents(
+    parent_thread_id: &str,
+    threads: Vec<ThreadSummary>,
+) -> Vec<ThreadSubagentSummary> {
+    let mut included_thread_ids = HashSet::new();
+    let mut parent_ids = HashSet::from([parent_thread_id.to_string()]);
+    let mut subagents = Vec::new();
+
+    loop {
+        let mut changed = false;
+        for thread in &threads {
+            if included_thread_ids.contains(&thread.id) {
+                continue;
+            }
+            let Some(source_parent_thread_id) = subagent_parent_thread_id(&thread.raw_payload)
+            else {
+                continue;
+            };
+            if !parent_ids.contains(&source_parent_thread_id) {
+                continue;
+            }
+            included_thread_ids.insert(thread.id.clone());
+            parent_ids.insert(thread.id.clone());
+            subagents.push((
+                thread.created_at,
+                thread.id.clone(),
+                source_parent_thread_id,
+            ));
+            changed = true;
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    subagents.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+    subagents
+        .into_iter()
+        .filter_map(|(_, thread_id, source_parent_thread_id)| {
+            let thread = threads.iter().find(|thread| thread.id == thread_id)?;
+            Some(ThreadSubagentSummary {
+                id: thread.id.clone(),
+                parent_thread_id: source_parent_thread_id,
+                agent_nickname: thread.agent_nickname.clone(),
+                agent_role: thread.agent_role.clone(),
+                status: thread.status,
+                live_state: live_state_for_thread_status(thread.status),
+                updated_at: thread.updated_at,
+            })
+        })
+        .collect()
+}
+
+fn subagent_parent_thread_id(payload: &Value) -> Option<String> {
+    payload
+        .get("source")?
+        .get("subAgent")?
+        .get("thread_spawn")
+        .or_else(|| payload.get("source")?.get("subAgent")?.get("threadSpawn"))?
+        .get("parent_thread_id")
+        .or_else(|| {
+            payload
+                .get("source")?
+                .get("subAgent")?
+                .get("thread_spawn")
+                .or_else(|| payload.get("source")?.get("subAgent")?.get("threadSpawn"))?
+                .get("parentThreadId")
+        })?
+        .as_str()
+        .map(str::to_string)
+}
+
+fn live_state_for_thread_status(status: ThreadStatus) -> ThreadLiveState {
+    match status {
+        ThreadStatus::Active => ThreadLiveState::Streaming,
+        ThreadStatus::Idle | ThreadStatus::SystemError => ThreadLiveState::Idle,
+        ThreadStatus::NotLoaded => ThreadLiveState::NotLoaded,
+    }
 }
 
 async fn apply_thread_list_response_state(

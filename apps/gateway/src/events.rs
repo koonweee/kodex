@@ -899,6 +899,8 @@ fn thread_summary_from_value(thread: &Value) -> ApiResult<ThreadSummary> {
         service_tier: string_field(thread, &["serviceTier"]),
         approval_policy: string_field(thread, &["approvalPolicy"]),
         approvals_reviewer: string_field(thread, &["approvalsReviewer"]),
+        agent_nickname: string_field(thread, &["agentNickname"]),
+        agent_role: string_field(thread, &["agentRole"]),
         sandbox: thread
             .get("sandbox")
             .filter(|value| !value.is_null())

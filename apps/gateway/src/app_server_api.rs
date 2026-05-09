@@ -132,6 +132,19 @@ impl CodexClient {
         ThreadSummary::from_payload(thread)
     }
 
+    pub async fn thread_loaded_list(&self) -> ApiResult<ThreadLoadedListResponse> {
+        let payload = self
+            .request(
+                "thread/loaded/list",
+                json!({
+                    "cursor": null,
+                    "limit": null,
+                }),
+            )
+            .await?;
+        ThreadLoadedListResponse::from_payload(payload)
+    }
+
     pub async fn thread_resume(
         &self,
         thread_id: String,
@@ -617,6 +630,37 @@ impl ThreadListResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct ThreadLoadedListResponse {
+    pub thread_ids: Vec<String>,
+    pub next_cursor: Option<String>,
+    pub raw_payload: Value,
+}
+
+impl ThreadLoadedListResponse {
+    fn from_payload(payload: Value) -> ApiResult<Self> {
+        let thread_ids = payload
+            .get("data")
+            .and_then(Value::as_array)
+            .ok_or_else(|| bad_gateway("thread/loaded/list response missing data array"))?
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(str::to_string)
+                    .ok_or_else(|| bad_gateway("thread/loaded/list data item is not a string"))
+            })
+            .collect::<ApiResult<Vec<_>>>()?;
+
+        Ok(Self {
+            thread_ids,
+            next_cursor: optional_string(&payload, "nextCursor"),
+            raw_payload: payload,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ThreadSummary {
     pub id: String,
     pub name: Option<String>,
@@ -630,6 +674,8 @@ pub struct ThreadSummary {
     pub service_tier: Option<String>,
     pub approval_policy: Option<String>,
     pub approvals_reviewer: Option<String>,
+    pub agent_nickname: Option<String>,
+    pub agent_role: Option<String>,
     pub sandbox: Option<Value>,
     pub git_info: Option<GitInfo>,
     pub pinned_at: Option<DateTime<Utc>>,
@@ -674,6 +720,8 @@ impl ThreadSummary {
             service_tier: optional_string(payload, "serviceTier"),
             approval_policy: optional_string(payload, "approvalPolicy"),
             approvals_reviewer: optional_string(payload, "approvalsReviewer"),
+            agent_nickname: optional_string(payload, "agentNickname"),
+            agent_role: optional_string(payload, "agentRole"),
             sandbox: optional_value(payload, "sandbox"),
             git_info: optional_git_info(payload)?,
             pinned_at: None,
