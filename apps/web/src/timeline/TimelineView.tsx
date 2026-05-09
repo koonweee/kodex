@@ -226,7 +226,7 @@ function useBottomPinnedVirtualTimeline({
       return true;
     }
     const distanceFromBottom = getDistanceFromBottom(scrollElement);
-    const isNearBottom = distanceFromBottom < 96;
+    const isNearBottom = distanceFromBottom < 60;
     nearBottomRef.current = isNearBottom;
     setShowScrollToBottom(!isNearBottom && rowCount > 0 && distanceFromBottom > 0);
     return isNearBottom;
