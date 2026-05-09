@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { ThreadDetailResponse } from "../api/client";
-import { sortedVisibleTimelineItems } from "./derive";
+import { timelineItemsInDisplayOrder } from "./derive";
 import {
   addOptimisticUserMessage,
+  applyDebugEvent,
   applyTimelineEvent,
   applyTimelineSnapshot,
   createTimelineState,
@@ -23,6 +24,43 @@ describe("timeline reducer snapshots", () => {
     expect(state.items.map((item) => item.id)).toEqual(["user-1", "agent-2"]);
   });
 
+  it("keeps snapshot display order separate from the live event cursor", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("First answer", "agent-1"));
+
+    expect(state.lastSeq).toBe(0);
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.displayOrder)).toEqual([1, 2]);
+
+    state = applyTimelineEvent(state, liveAgentEvent(20, "agent-2", "Streaming answer"));
+
+    expect(state.lastSeq).toBe(20);
+  });
+
+  it("places optimistic messages after display items instead of after the live event cursor", () => {
+    let state = applyDebugEvent(createTimelineState(), {
+      id: "debug-20",
+      seq: 20,
+      kind: "codex.notification",
+      codexMethod: "thread/status",
+      threadId: "thread-1",
+      turnId: null,
+      itemId: null,
+      projectId: null,
+      payload: { status: "syncing" },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+    state = addOptimisticUserMessage(state, {
+      clientRequestId: "client-message-1",
+      images: [],
+      text: "New question",
+      turnId: null,
+      confirmationState: "sending",
+    });
+
+    expect(state.lastSeq).toBe(20);
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.text)).toEqual(["New question"]);
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.displayOrder)).toEqual([0.1]);
+  });
+
   it("reconciles optimistic user messages when the snapshot includes the server item", () => {
     let state = addOptimisticUserMessage(createTimelineState(), {
       clientRequestId: "client-message-1",
@@ -35,11 +73,11 @@ describe("timeline reducer snapshots", () => {
     state = applyTimelineSnapshot(state, snapshot("Agent response", "agent-1"));
 
     expect(state.items).toHaveLength(2);
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
       "optimistic-client-message-1",
       "agent-1",
     ]);
-    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+    expect(timelineItemsInDisplayOrder(state)[0]).toMatchObject({
       serverItemId: "user-1",
       source: "app_server",
     });
@@ -48,7 +86,7 @@ describe("timeline reducer snapshots", () => {
   it("loads skill mention metadata from snapshot item projections", () => {
     const state = applyTimelineSnapshot(createTimelineState(), snapshotWithSkillMention());
 
-    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+    expect(timelineItemsInDisplayOrder(state)[0]).toMatchObject({
       kind: "user_message",
       text: "Use $agent-browser now",
       skillMentions: [
@@ -83,7 +121,7 @@ describe("timeline reducer snapshots", () => {
 
     state = applyTimelineSnapshot(state, snapshotWithSkillMention());
 
-    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+    expect(timelineItemsInDisplayOrder(state)[0]).toMatchObject({
       serverItemId: "user-skill",
       skillMentions: [
         {
@@ -115,12 +153,12 @@ describe("timeline reducer snapshots", () => {
 
     state = applyTimelineSnapshot(state, snapshotWithUserOnlyTurn("Use $agent-browser now"));
 
-    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+    expect(timelineItemsInDisplayOrder(state)[0]).toMatchObject({
       serverItemId: "user-1",
       source: "app_server",
       text: "Use $agent-browser now",
     });
-    expect(sortedVisibleTimelineItems(state, false)[0]?.skillMentions).toEqual([
+    expect(timelineItemsInDisplayOrder(state)[0]?.skillMentions).toEqual([
       {
         start: "Use ".length,
         end: "Use $agent-browser".length,
@@ -163,7 +201,7 @@ describe("timeline reducer snapshots", () => {
       receivedAt: "2026-04-30T00:00:00Z",
     });
 
-    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+    expect(timelineItemsInDisplayOrder(state)[0]).toMatchObject({
       id: "user-skill",
       skillMentions: [
         {
@@ -215,14 +253,14 @@ describe("timeline reducer snapshots", () => {
       receivedAt: "2026-04-30T00:00:00Z",
     });
 
-    expect(sortedVisibleTimelineItems(state, false)).toHaveLength(1);
-    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+    expect(timelineItemsInDisplayOrder(state)).toHaveLength(1);
+    expect(timelineItemsInDisplayOrder(state)[0]).toMatchObject({
       id: "optimistic-client-message-1",
       serverItemId: "user-skill",
       source: "app_server",
       text: "Use $agent-browser now",
     });
-    expect(sortedVisibleTimelineItems(state, false)[0]?.skillMentions).toEqual([
+    expect(timelineItemsInDisplayOrder(state)[0]?.skillMentions).toEqual([
       {
         start: "Use ".length,
         end: "Use $agent-browser".length,
@@ -281,8 +319,8 @@ describe("timeline reducer snapshots", () => {
       receivedAt: "2026-04-30T00:00:00Z",
     });
 
-    expect(sortedVisibleTimelineItems(state, false)).toHaveLength(1);
-    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+    expect(timelineItemsInDisplayOrder(state)).toHaveLength(1);
+    expect(timelineItemsInDisplayOrder(state)[0]).toMatchObject({
       id: "optimistic-client-message-1",
       serverItemId: "user-skill",
       source: "app_server",
@@ -315,7 +353,7 @@ describe("timeline reducer snapshots", () => {
 
     const refreshed = applyTimelineSnapshot(state, snapshot("Old answer", "agent-1"));
 
-    expect(sortedVisibleTimelineItems(refreshed, false).at(-1)).toMatchObject({
+    expect(timelineItemsInDisplayOrder(refreshed).at(-1)).toMatchObject({
       confirmationState: "failed",
       skillMentions: [
         {
@@ -337,10 +375,10 @@ describe("timeline reducer snapshots", () => {
 
     state = applyTimelineSnapshot(state, snapshotWithUserOnlyTurn("Hello"));
 
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
       "optimistic-client-message-1",
     ]);
-    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+    expect(timelineItemsInDisplayOrder(state)[0]).toMatchObject({
       serverItemId: "user-1",
       source: "app_server",
       confirmationState: "sent",
@@ -403,7 +441,7 @@ describe("timeline reducer snapshots", () => {
 
     state = applyTimelineSnapshot(state, snapshot("Previous answer", "agent-1"));
 
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.text)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.text)).toEqual([
       "Hello",
       "Previous answer",
       "New question",
@@ -422,12 +460,12 @@ describe("timeline reducer snapshots", () => {
 
     state = applyTimelineSnapshot(state, snapshot("Previous answer", "agent-1"));
 
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.text)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.text)).toEqual([
       "Hello",
       "Previous answer",
       "Hello",
     ]);
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
       "user-1",
       "agent-1",
       "optimistic-client-message-1",
@@ -445,15 +483,15 @@ describe("timeline reducer snapshots", () => {
 
     state = applyTimelineSnapshot(state, snapshot("Previous answer", "agent-1"));
 
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.text)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.text)).toEqual([
       "Hello",
       "Previous answer",
     ]);
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
       "optimistic-client-message-1",
       "agent-1",
     ]);
-    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+    expect(timelineItemsInDisplayOrder(state)[0]).toMatchObject({
       serverItemId: "user-1",
       source: "app_server",
     });
@@ -471,15 +509,15 @@ describe("timeline reducer snapshots", () => {
 
     state = applyTimelineSnapshot(state, snapshot("Previous answer", "agent-1"));
 
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.text)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.text)).toEqual([
       "Hello",
       "Previous answer",
     ]);
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
       "optimistic-client-message-1",
       "agent-1",
     ]);
-    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+    expect(timelineItemsInDisplayOrder(state)[0]).toMatchObject({
       serverItemId: "user-1",
       source: "app_server",
     });
@@ -497,19 +535,19 @@ describe("timeline reducer snapshots", () => {
 
     state = applyTimelineSnapshot(state, snapshotWithSecondUser("New question", "Next answer"));
 
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.text)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.text)).toEqual([
       "Hello",
       "Previous answer",
       "New question",
       "Next answer",
     ]);
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
       "user-1",
       "agent-1",
       "optimistic-client-message-1",
       "agent-2",
     ]);
-    expect(sortedVisibleTimelineItems(state, false)[2]).toMatchObject({
+    expect(timelineItemsInDisplayOrder(state)[2]).toMatchObject({
       serverItemId: "user-2",
       source: "app_server",
     });
@@ -539,19 +577,19 @@ describe("timeline reducer snapshots", () => {
       receivedAt: "2026-04-30T00:00:00Z",
     });
 
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.text)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.text)).toEqual([
       "Hello",
       "Previous answer",
       "New question",
       "Next answer",
     ]);
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
       "user-1",
       "agent-1",
       "optimistic-client-message-1",
       "agent-2",
     ]);
-    expect(sortedVisibleTimelineItems(state, false)[2]).toMatchObject({
+    expect(timelineItemsInDisplayOrder(state)[2]).toMatchObject({
       serverItemId: "user-2",
       source: "app_server",
     });
@@ -562,7 +600,7 @@ describe("timeline reducer snapshots", () => {
     state = applyTimelineEvent(state, liveAgentEvent(20, "agent-2", "Streaming answer"));
 
     state = applyTimelineSnapshot(state, snapshotWithSecondUser("New question", "Streaming answer"));
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.text)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.text)).toEqual([
       "Hello",
       "Previous answer",
       "New question",
@@ -571,13 +609,13 @@ describe("timeline reducer snapshots", () => {
 
     state = applyTimelineEvent(state, liveAgentEvent(10, "agent-2", "Streaming answer"));
 
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.text)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.text)).toEqual([
       "Hello",
       "Previous answer",
       "New question",
       "Streaming answer",
     ]);
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
       "user-1",
       "agent-1",
       "user-2",
@@ -590,7 +628,7 @@ describe("timeline reducer snapshots", () => {
 
     state = applyTimelineEvent(state, liveAgentEvent(1, "agent-2", "Partial answer"));
 
-    const agent = sortedVisibleTimelineItems(state, false).find((item) => item.id === "agent-2");
+    const agent = timelineItemsInDisplayOrder(state).find((item) => item.id === "agent-2");
     expect(agent).toMatchObject({
       status: "completed",
       text: "Streaming answer",
@@ -620,7 +658,7 @@ describe("timeline reducer snapshots", () => {
       receivedAt: "2026-04-30T00:00:01Z",
     });
 
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
       "user-1",
       "agent-1",
       "optimistic-client-message-1",
@@ -650,11 +688,11 @@ describe("timeline reducer snapshots", () => {
 
     state = applyTimelineSnapshot(state, snapshot("Previous answer", "agent-1"));
 
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
       "optimistic-client-message-1",
       "agent-1",
     ]);
-    expect(sortedVisibleTimelineItems(state, false)[0]).toMatchObject({
+    expect(timelineItemsInDisplayOrder(state)[0]).toMatchObject({
       serverItemId: "user-1",
       source: "app_server",
     });
@@ -694,11 +732,11 @@ describe("timeline reducer snapshots", () => {
       receivedAt: "2026-04-30T00:00:01Z",
     });
 
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.id)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
       "user-1",
       "optimistic-client-message-1",
     ]);
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.serverItemId)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.serverItemId)).toEqual([
       undefined,
       "user-2",
     ]);
@@ -1042,7 +1080,7 @@ describe("timeline reducer snapshots", () => {
       receivedAt: "2026-04-30T00:00:02Z",
     });
 
-    expect(sortedVisibleTimelineItems(state, false).map((item) => item.text)).toEqual([
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.text)).toEqual([
       "Hello",
       "Previous answer",
       "New question",

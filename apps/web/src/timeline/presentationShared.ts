@@ -8,7 +8,7 @@ export function createBaseItem(event: EventEnvelope, id: string, kind: string, s
     status,
     text: "",
     turnId: event.turnId ?? null,
-    seq: event.seq,
+    displayOrder: event.seq,
     payload: event.payload,
     debugEvents: [event],
   };

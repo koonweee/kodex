@@ -35,7 +35,7 @@ export type TimelineItem = {
   status: TimelineStatus;
   text: string;
   turnId: string | null;
-  seq: number;
+  displayOrder: number;
   payload: unknown;
   debugEvents: EventEnvelope[];
   action?: string;
@@ -77,6 +77,7 @@ export type OptimisticUserMessageUpdate = Partial<Pick<TimelineItem, "confirmati
 
 export type TimelineTurn = {
   turnId: string;
+  // Membership list for turn bookkeeping; render order is owned by TimelineItem.displayOrder.
   itemIds: string[];
   status?: string;
   startedAtMs?: number;

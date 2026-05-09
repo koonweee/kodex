@@ -8,7 +8,7 @@ export function timelineItem(overrides: Partial<TimelineItem> = {}): TimelineIte
     status: "completed",
     text: "",
     turnId: "turn-1",
-    seq: 1,
+    displayOrder: 1,
     payload: {},
     debugEvents: [],
     ...overrides,

@@ -873,6 +873,26 @@
   min-width: 0;
 }
 
+.kodex-hidden-debug-panel {
+  border-top: 1px solid var(--kodex-border-subtle);
+  color: var(--kodex-text-secondary);
+  padding: 12px 0 4px;
+}
+
+.kodex-hidden-debug-panel > details {
+  min-width: 0;
+}
+
+.kodex-hidden-debug-panel > details > summary {
+  cursor: pointer;
+  font-size: 12px;
+  width: fit-content;
+}
+
+.kodex-hidden-debug-panel .kodex-timeline-item {
+  opacity: 0.9;
+}
+
 .kodex-timeline-disclosure summary,
 .kodex-timeline-debug summary {
   width: fit-content;

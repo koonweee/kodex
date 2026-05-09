@@ -8,6 +8,7 @@ import {
   isLifecycleEvent,
   isWarningEvent,
   mergeImages,
+  type TimelinePresentationItem,
 } from "./presentation";
 import type { CollabAgentNameMap } from "./presentationCollab";
 import {
@@ -58,6 +59,7 @@ const LIVE_TIMELINE_EVENT_KINDS = new Set([
 
 type TimelineEventApplyOptions = {
   skipOptimisticUserMessageMatch?: boolean;
+  preserveIncomingDisplayOrderOnConfirm?: boolean;
 };
 
 export function applyLiveTimelineUpdate(state: TimelineState, event: EventEnvelope): TimelineState {
@@ -125,75 +127,7 @@ function applyTimelineEventInternal(
     return createTimelineStateFromDraft(next);
   }
 
-  const existingItem = event.itemId ? timelineItemById(next.indexes, event.itemId) : undefined;
-  const presentation = createPresentationItem(event, existingItem, {
-    collabAgentNames: collabAgentNameMap(next.indexes),
-  });
-  if (!presentation) {
-    addHiddenDebugItem(next, event);
-    return createTimelineStateFromDraft(next);
-  }
-
-  if (presentation.hidden) {
-    if (shouldRetainPendingTimelineItem(presentation.item)) {
-      retainPendingTimelineItem(next, presentation.item);
-    }
-    addHiddenDebugItem(next, event, presentation.text);
-    return createTimelineStateFromDraft(next);
-  }
-
-  const existing = timelineItemById(next.indexes, presentation.item.id);
-  const completedReplayDeltaItem =
-    existing && shouldIgnoreCompletedReplayDelta(state.activeTurnId, existing, presentation.item, event)
-      ? existing
-      : matchingCompletedReplayDeltaItem(next.indexes, state.activeTurnId, presentation.item, event);
-  if (completedReplayDeltaItem) {
-    next.activeTurnId = state.activeTurnId;
-    next.indexes.itemUpdatesById.set(completedReplayDeltaItem.id, appendTimelineDebugEvent(completedReplayDeltaItem, event));
-    return createTimelineStateFromDraft(next);
-  }
-
-  if (existing) {
-    next.indexes.itemUpdatesById.set(presentation.item.id, mergeTimelineItem(existing, presentation.item, event));
-  } else {
-    const exactConfirmedUserItem =
-      presentation.item.kind === "user_message" ? matchingConfirmedUserMessage(next.indexes, presentation.item) : undefined;
-    const optimisticItem =
-      !exactConfirmedUserItem && presentation.item.kind === "user_message" && !options.skipOptimisticUserMessageMatch
-        ? matchingOptimisticUserMessage(next.indexes, presentation.item)
-        : undefined;
-    const confirmedItem =
-      exactConfirmedUserItem ??
-      (optimisticItem
-        ? undefined
-        : matchingConfirmedAppServerItem(next.indexes, presentation.item, {
-            allowUntetheredUserMessageMatch: !options.skipOptimisticUserMessageMatch,
-          }));
-    const pendingItem = pendingTimelineItemById(next.indexes, presentation.item.id);
-    const item = confirmedItem
-      ? confirmAppServerUserMessage(confirmedItem, presentation.item, event)
-      : optimisticItem
-        ? confirmOptimisticUserMessage(optimisticItem, presentation.item, event)
-        : pendingItem
-          ? mergeTimelineItem(pendingItem, presentation.item, event)
-          : presentation.item;
-    if (confirmedItem) {
-      next.indexes.itemUpdatesById.set(confirmedItem.id, item);
-      addToTurn(next, item);
-      return createTimelineStateFromDraft(next);
-    }
-    if (optimisticItem) {
-      next.indexes.itemUpdatesById.set(optimisticItem.id, item);
-      addToTurn(next, item);
-      return createTimelineStateFromDraft(next);
-    }
-    next.indexes.pendingItemById.delete(presentation.item.id);
-    addItem(next, item);
-    addToTurn(next, item);
-  }
-  compactTimelineStores(next.indexes);
-
-  return createTimelineStateFromDraft(next);
+  return applyTimelineItemEventToDraft(state, next, event, options);
 }
 
 export function addOptimisticUserMessage(state: TimelineState, input: OptimisticUserMessageInput): TimelineState {
@@ -208,7 +142,7 @@ export function addOptimisticUserMessage(state: TimelineState, input: Optimistic
     status: input.confirmationState === "failed" ? "failed" : "completed",
     text: input.text,
     turnId: input.turnId,
-    seq: nextOptimisticSeq(state, next.indexes),
+    displayOrder: nextOptimisticDisplayOrder(next.indexes),
     payload: { optimistic: true },
     debugEvents: [],
     images: input.images,
@@ -222,7 +156,7 @@ export function addOptimisticUserMessage(state: TimelineState, input: Optimistic
     next.indexes.itemUpdatesById.set(existing.id, {
       ...item,
       id: existing.id,
-      seq: existing.seq,
+      displayOrder: existing.displayOrder,
     });
     return createTimelineStateFromDraft(next);
   }
@@ -278,33 +212,58 @@ export function replayTimeline(events: EventEnvelope[]): TimelineState {
 
 export function applyTimelineSnapshot(state: TimelineState, snapshot: ThreadDetailResponse): TimelineState {
   let next = optimisticOnlyTimeline(state);
-  let seq = 0;
+  let displayOrder = 0;
   const knownAppServerItemIds = appServerItemIdsForState(state);
   for (const turn of snapshot.turns) {
     for (const item of turn.items) {
-      seq += 1;
-      const shouldSkipLocalUserMessageMatch = snapshotItemShouldSkipLocalUserMessageMatch(item, knownAppServerItemIds);
-      next = applyTimelineEventInternal(
-        next,
-        {
-          id: `snapshot-${turn.id}-${item.id}`,
-          seq,
-          kind: "timeline.item_upsert",
-          codexMethod: turn.status === "completed" ? "item/completed" : "item/started",
-          threadId: snapshot.thread.id,
-          turnId: turn.id,
-          itemId: item.id,
-          projectId: null,
-          payload: { item: item.rawPayload, itemSnapshot: item },
-          receivedAt: new Date(0).toISOString(),
-        },
-        { skipOptimisticUserMessageMatch: shouldSkipLocalUserMessageMatch },
-      );
+      displayOrder += 1;
+      next = applySnapshotItem(next, snapshot.thread.id, turn, item, displayOrder, knownAppServerItemIds);
     }
   }
-  next = moveUnmatchedLocalUserMessagesAfterSnapshot(next, seq);
+  next = moveUnmatchedLocalUserMessagesAfterSnapshot(next, displayOrder);
   next = withSnapshotTurnMetadata(next, snapshot);
   return withSnapshotLiveState(next, snapshot);
+}
+
+function applySnapshotItem(
+  state: TimelineState,
+  threadId: string,
+  turn: ThreadDetailResponse["turns"][number],
+  item: ThreadDetailResponse["turns"][number]["items"][number],
+  displayOrder: number,
+  knownAppServerItemIds: Set<string>,
+): TimelineState {
+  const event = snapshotItemEvent(threadId, turn, item, displayOrder);
+  const currentIndexes = indexesForState(state);
+  const next: TimelineDraft = {
+    activeTurnId: state.activeTurnId,
+    indexes: prepareTimelineIndexesForUpdate(currentIndexes),
+    lastSeq: state.lastSeq,
+  };
+  return applyTimelineItemEventToDraft(state, next, event, {
+    preserveIncomingDisplayOrderOnConfirm: true,
+    skipOptimisticUserMessageMatch: snapshotItemShouldSkipLocalUserMessageMatch(item, knownAppServerItemIds),
+  });
+}
+
+function snapshotItemEvent(
+  threadId: string,
+  turn: ThreadDetailResponse["turns"][number],
+  item: ThreadDetailResponse["turns"][number]["items"][number],
+  displayOrder: number,
+): EventEnvelope {
+  return {
+    id: `snapshot-${turn.id}-${item.id}`,
+    seq: displayOrder,
+    kind: "timeline.item_upsert",
+    codexMethod: turn.status === "completed" ? "item/completed" : "item/started",
+    threadId,
+    turnId: turn.id,
+    itemId: item.id,
+    projectId: null,
+    payload: { item: item.rawPayload, itemSnapshot: item },
+    receivedAt: new Date(0).toISOString(),
+  };
 }
 
 function snapshotItemShouldSkipLocalUserMessageMatch(
@@ -355,8 +314,8 @@ function shouldCarryLocalUserMessageAcrossSnapshot(item: TimelineItem): boolean 
   );
 }
 
-function moveUnmatchedLocalUserMessagesAfterSnapshot(state: TimelineState, snapshotMaxSeq: number): TimelineState {
-  if (snapshotMaxSeq <= 0) {
+function moveUnmatchedLocalUserMessagesAfterSnapshot(state: TimelineState, snapshotMaxDisplayOrder: number): TimelineState {
+  if (snapshotMaxDisplayOrder <= 0) {
     return state;
   }
 
@@ -365,14 +324,14 @@ function moveUnmatchedLocalUserMessagesAfterSnapshot(state: TimelineState, snaps
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
     lastSeq: state.lastSeq,
   };
-  let seq = snapshotMaxSeq;
+  let displayOrder = snapshotMaxDisplayOrder;
   let changed = false;
   for (const item of timelineItems(next.indexes)) {
-    if (!shouldMoveLocalUserMessageAfterSnapshot(item, snapshotMaxSeq)) {
+    if (!shouldMoveLocalUserMessageAfterSnapshot(item, snapshotMaxDisplayOrder)) {
       continue;
     }
-    seq += 0.1;
-    next.indexes.itemUpdatesById.set(item.id, { ...item, seq });
+    displayOrder += 0.1;
+    next.indexes.itemUpdatesById.set(item.id, { ...item, displayOrder });
     changed = true;
   }
   return changed ? createTimelineStateFromDraft(next) : state;
@@ -395,11 +354,11 @@ function withSnapshotTurnMetadata(state: TimelineState, snapshot: ThreadDetailRe
   return createTimelineStateFromDraft(next);
 }
 
-function shouldMoveLocalUserMessageAfterSnapshot(item: TimelineItem, snapshotMaxSeq: number): boolean {
+function shouldMoveLocalUserMessageAfterSnapshot(item: TimelineItem, snapshotMaxDisplayOrder: number): boolean {
   return (
     shouldCarryLocalUserMessageAcrossSnapshot(item) &&
-    item.seq <= snapshotMaxSeq &&
-    !item.debugEvents.some((event) => event.id.startsWith("snapshot-"))
+    item.displayOrder <= snapshotMaxDisplayOrder &&
+    !item.serverItemId
   );
 }
 
@@ -471,6 +430,93 @@ function eventCanMarkTurnActive(event: EventEnvelope) {
   return method.endsWith("/delta") || method === "item/started" || method.startsWith("turn/");
 }
 
+function applyTimelineItemEventToDraft(
+  state: TimelineState,
+  next: TimelineDraft,
+  event: EventEnvelope,
+  options: TimelineEventApplyOptions,
+): TimelineState {
+  const existingItem = event.itemId ? timelineItemById(next.indexes, event.itemId) : undefined;
+  const presentation = createPresentationItem(event, existingItem, {
+    collabAgentNames: collabAgentNameMap(next.indexes),
+  });
+  if (!presentation) {
+    addHiddenDebugItem(next, event);
+    return createTimelineStateFromDraft(next);
+  }
+
+  return applyPresentedTimelineItem(state, next, event, presentation, options);
+}
+
+function applyPresentedTimelineItem(
+  state: TimelineState,
+  next: TimelineDraft,
+  event: EventEnvelope,
+  presentation: TimelinePresentationItem,
+  options: TimelineEventApplyOptions,
+): TimelineState {
+  if (presentation.hidden) {
+    if (shouldRetainPendingTimelineItem(presentation.item)) {
+      retainPendingTimelineItem(next, presentation.item);
+    }
+    addHiddenDebugItem(next, event, presentation.text);
+    return createTimelineStateFromDraft(next);
+  }
+
+  const existing = timelineItemById(next.indexes, presentation.item.id);
+  const completedReplayDeltaItem =
+    existing && shouldIgnoreCompletedReplayDelta(state.activeTurnId, existing, presentation.item, event)
+      ? existing
+      : matchingCompletedReplayDeltaItem(next.indexes, state.activeTurnId, presentation.item, event);
+  if (completedReplayDeltaItem) {
+    next.activeTurnId = state.activeTurnId;
+    next.indexes.itemUpdatesById.set(completedReplayDeltaItem.id, appendTimelineDebugEvent(completedReplayDeltaItem, event));
+    return createTimelineStateFromDraft(next);
+  }
+
+  if (existing) {
+    next.indexes.itemUpdatesById.set(presentation.item.id, mergeTimelineItem(existing, presentation.item, event));
+  } else {
+    const exactConfirmedUserItem =
+      presentation.item.kind === "user_message" ? matchingConfirmedUserMessage(next.indexes, presentation.item) : undefined;
+    const optimisticItem =
+      !exactConfirmedUserItem && presentation.item.kind === "user_message" && !options.skipOptimisticUserMessageMatch
+        ? matchingOptimisticUserMessage(next.indexes, presentation.item)
+        : undefined;
+    const confirmedItem =
+      exactConfirmedUserItem ??
+      (optimisticItem
+        ? undefined
+        : matchingConfirmedAppServerItem(next.indexes, presentation.item, {
+            allowUntetheredUserMessageMatch: !options.skipOptimisticUserMessageMatch,
+          }));
+    const pendingItem = pendingTimelineItemById(next.indexes, presentation.item.id);
+    const item = confirmedItem
+      ? confirmAppServerUserMessage(confirmedItem, presentation.item, event, options)
+      : optimisticItem
+        ? confirmOptimisticUserMessage(optimisticItem, presentation.item, event, options)
+        : pendingItem
+          ? mergeTimelineItem(pendingItem, presentation.item, event)
+          : presentation.item;
+    if (confirmedItem) {
+      next.indexes.itemUpdatesById.set(confirmedItem.id, item);
+      addToTurn(next, item);
+      return createTimelineStateFromDraft(next);
+    }
+    if (optimisticItem) {
+      next.indexes.itemUpdatesById.set(optimisticItem.id, item);
+      addToTurn(next, item);
+      return createTimelineStateFromDraft(next);
+    }
+    next.indexes.pendingItemById.delete(presentation.item.id);
+    addItem(next, item);
+    addToTurn(next, item);
+  }
+  compactTimelineStores(next.indexes);
+
+  return createTimelineStateFromDraft(next);
+}
+
 function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event: EventEnvelope): TimelineItem {
   const text = mergeTimelineText(existing, incoming, event);
   const output = isCommandOutputDelta(event)
@@ -494,7 +540,7 @@ function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event
     skillMentions: mergeSkillMentions(existing, incoming, text),
     payload: event.payload,
     resultSummary: incoming.resultSummary || existing.resultSummary,
-    seq: mergeTimelineDisplaySeq(existing),
+    displayOrder: mergeTimelineDisplayOrder(existing),
     status: mergeTimelineStatus(existing, incoming, event),
     toolName: incoming.toolName || existing.toolName,
     text,
@@ -586,8 +632,8 @@ function mergeCollabPresentation(
   };
 }
 
-function mergeTimelineDisplaySeq(existing: TimelineItem): number {
-  return existing.seq;
+function mergeTimelineDisplayOrder(existing: TimelineItem): number {
+  return existing.displayOrder;
 }
 
 function mergeTimelineText(existing: TimelineItem, incoming: TimelineItem, event: EventEnvelope): string {
@@ -613,7 +659,7 @@ function shouldPreserveCompletedTextFromStaleLiveStart(
 ): boolean {
   return (
     existing.status === "completed" &&
-    incoming.seq < existing.seq &&
+    incoming.displayOrder < existing.displayOrder &&
     event.codexMethod !== "item/completed" &&
     !event.codexMethod?.endsWith("/delta")
   );
@@ -763,11 +809,21 @@ function appendTimelineDebugEvent(item: TimelineItem, event: EventEnvelope): Tim
   };
 }
 
-function confirmOptimisticUserMessage(existing: TimelineItem, incoming: TimelineItem, event: EventEnvelope): TimelineItem {
-  return confirmAppServerUserMessage(existing, incoming, event);
+function confirmOptimisticUserMessage(
+  existing: TimelineItem,
+  incoming: TimelineItem,
+  event: EventEnvelope,
+  options: TimelineEventApplyOptions = {},
+): TimelineItem {
+  return confirmAppServerUserMessage(existing, incoming, event, options);
 }
 
-function confirmAppServerUserMessage(existing: TimelineItem, incoming: TimelineItem, event: EventEnvelope): TimelineItem {
+function confirmAppServerUserMessage(
+  existing: TimelineItem,
+  incoming: TimelineItem,
+  event: EventEnvelope,
+  options: TimelineEventApplyOptions = {},
+): TimelineItem {
   const merged = mergeTimelineItem(existing, incoming, event);
   return {
     ...merged,
@@ -776,7 +832,7 @@ function confirmAppServerUserMessage(existing: TimelineItem, incoming: TimelineI
     source: "app_server",
     confirmationState: "sent",
     error: undefined,
-    seq: event.id.startsWith("snapshot-") ? incoming.seq : merged.seq,
+    displayOrder: options.preserveIncomingDisplayOrderOnConfirm ? incoming.displayOrder : merged.displayOrder,
     status: merged.status,
     turnId: incoming.turnId || existing.turnId,
   };
@@ -798,9 +854,9 @@ function imageKey(image: TimelineImage): string {
   return image.path || image.url || "";
 }
 
-function nextOptimisticSeq(state: TimelineState, indexes: TimelineIndexes): number {
-  const maxItemSeq = timelineItems(indexes).reduce((max, item) => Math.max(max, item.seq), state.lastSeq);
-  return maxItemSeq + 0.1;
+function nextOptimisticDisplayOrder(indexes: TimelineIndexes): number {
+  const maxDisplayOrder = timelineItems(indexes).reduce((max, item) => Math.max(max, item.displayOrder), 0);
+  return maxDisplayOrder + 0.1;
 }
 
 function isCommandOutputDelta(event: EventEnvelope): boolean {

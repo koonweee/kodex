@@ -72,7 +72,18 @@ export function TimelineView({
   });
 
   if (rowCount === 0) {
-    return approvals.length > 0 ? <ThreadApprovalStack approvals={approvals} onDecision={onApprovalDecision} /> : null;
+    return (
+      <>
+        <HiddenDebugPanel
+          hiddenItems={showDebug ? timeline.hiddenItems : []}
+          imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+          onImageOpen={onImageOpen}
+          onMarkdownOpen={onMarkdownOpen}
+          threadId={threadId}
+        />
+        {approvals.length > 0 ? <ThreadApprovalStack approvals={approvals} onDecision={onApprovalDecision} /> : null}
+      </>
+    );
   }
 
   const virtualItems = rowVirtualizer.getVirtualItems();
@@ -114,6 +125,13 @@ export function TimelineView({
           );
         })}
       </Box>
+      <HiddenDebugPanel
+        hiddenItems={showDebug ? timeline.hiddenItems : []}
+        imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+        onImageOpen={onImageOpen}
+        onMarkdownOpen={onMarkdownOpen}
+        threadId={threadId}
+      />
       {unanchoredApprovals.length > 0 ? (
         <ThreadApprovalStack approvals={unanchoredApprovals} onDecision={onApprovalDecision} />
       ) : null}
@@ -132,6 +150,44 @@ export function TimelineView({
           </ActionIcon>
         </Tooltip>
       ) : null}
+    </Box>
+  );
+}
+
+function HiddenDebugPanel({
+  hiddenItems,
+  imagePreviewUrlsByPath,
+  onImageOpen,
+  onMarkdownOpen,
+  threadId,
+}: {
+  hiddenItems: TimelineState["hiddenItems"];
+  imagePreviewUrlsByPath: Record<string, string>;
+  onImageOpen: (image: ImageLightboxImage) => void;
+  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
+  threadId?: string;
+}) {
+  if (hiddenItems.length === 0) {
+    return null;
+  }
+  return (
+    <Box className="kodex-hidden-debug-panel kodex-main-column">
+      <details>
+        <summary>Hidden debug events</summary>
+        <Stack gap={8} mt={8}>
+          {hiddenItems.map((item) => (
+            <TimelineItemRenderer
+              imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+              item={item}
+              key={item.id}
+              onImageOpen={onImageOpen}
+              onMarkdownOpen={onMarkdownOpen}
+              showDebug
+              threadId={threadId}
+            />
+          ))}
+        </Stack>
+      </details>
     </Box>
   );
 }

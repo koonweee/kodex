@@ -9,23 +9,23 @@ import {
 import { approval, timelineItem, timelineState } from "./testBuilders";
 
 describe("timeline derivation", () => {
-  it("derives large timeline rows in sequence order across messages, activity, and debug items", () => {
+  it("derives large timeline rows in display order while excluding hidden debug items", () => {
     const timeline = timelineState({
       items: [
-        timelineItem({ id: "answer-1", kind: "assistant_message", messagePhase: "final_answer", seq: 8, text: "Done." }),
-        timelineItem({ id: "user-1", kind: "user_message", seq: 1, text: "Please inspect this." }),
-        timelineItem({ id: "cmd-1", kind: "command_execution", seq: 4, command: "rg timeline" }),
-        timelineItem({ id: "file-1", kind: "file_change", seq: 5, path: "apps/web/src/App.tsx" }),
-        timelineItem({ id: "warning-1", kind: "warning", seq: 7, text: "Low confidence" }),
-        timelineItem({ id: "reasoning-1", kind: "reasoning_summary", seq: 2, summary: "Need context." }),
+        timelineItem({ id: "answer-1", kind: "assistant_message", messagePhase: "final_answer", displayOrder: 8, text: "Done." }),
+        timelineItem({ id: "user-1", kind: "user_message", displayOrder: 1, text: "Please inspect this." }),
+        timelineItem({ id: "cmd-1", kind: "command_execution", displayOrder: 4, command: "rg timeline" }),
+        timelineItem({ id: "file-1", kind: "file_change", displayOrder: 5, path: "apps/web/src/App.tsx" }),
+        timelineItem({ id: "warning-1", kind: "warning", displayOrder: 7, text: "Low confidence" }),
+        timelineItem({ id: "reasoning-1", kind: "reasoning_summary", displayOrder: 2, summary: "Need context." }),
         timelineItem({
           id: "web-search-turn-1",
           kind: "web_search_group",
-          seq: 3,
+          displayOrder: 3,
           actions: [{ kind: "search", query: "timeline performance" }],
         }),
       ],
-      hiddenItems: [timelineItem({ id: "debug-hidden-1", kind: "debug_event", seq: 6, text: "turn/completed" })],
+      hiddenItems: [timelineItem({ id: "debug-hidden-1", kind: "debug_event", displayOrder: 6, text: "turn/completed" })],
     });
 
     const rows = deriveTimelineRows(timeline, { showDebug: true });
@@ -34,31 +34,30 @@ describe("timeline derivation", () => {
       "item-user-1",
       "item-reasoning-1",
       "activity-web-search-turn-1",
-      "item-debug-hidden-1",
       "item-warning-1",
       "file-changes-turn-turn-1",
       "item-answer-1",
     ]);
-    expect(rows.map((row) => row.type)).toEqual(["item", "item", "activity", "item", "item", "file_changes", "item"]);
+    expect(rows.map((row) => row.type)).toEqual(["item", "item", "activity", "item", "file_changes", "item"]);
     expect(rows[2]).toMatchObject({
       type: "activity",
       items: [{ id: "web-search-turn-1" }, { id: "cmd-1" }],
       turnKey: "turn-turn-1",
     });
-    expect(rows[5]).toMatchObject({
+    expect(rows[4]).toMatchObject({
       type: "file_changes",
       items: [{ id: "file-1" }],
       turnKey: "turn-turn-1",
     });
   });
 
-  it("merges debug items without mutating reducer-owned timeline arrays", () => {
+  it("keeps hidden debug items out of the main row order without mutating reducer-owned timeline arrays", () => {
     const timeline = timelineState({
       items: [
-        timelineItem({ id: "visible-later", seq: 2 }),
-        timelineItem({ id: "visible-earlier", seq: 1 }),
+        timelineItem({ id: "visible-later", displayOrder: 2 }),
+        timelineItem({ id: "visible-earlier", displayOrder: 1 }),
       ],
-      hiddenItems: [timelineItem({ id: "debug-earliest", kind: "debug_event", seq: 0 })],
+      hiddenItems: [timelineItem({ id: "debug-earliest", kind: "debug_event", displayOrder: 0 })],
     });
 
     const originalItems = [...timeline.items];
@@ -66,7 +65,6 @@ describe("timeline derivation", () => {
 
     expect(deriveTimelineRows(timeline).map((row) => row.key)).toEqual(["item-visible-earlier", "item-visible-later"]);
     expect(deriveTimelineRows(timeline, { showDebug: true }).map((row) => row.key)).toEqual([
-      "item-debug-earliest",
       "item-visible-earlier",
       "item-visible-later",
     ]);
@@ -75,13 +73,46 @@ describe("timeline derivation", () => {
     expect(timeline.items.map((item) => item.id)).toEqual(["visible-later", "visible-earlier"]);
   });
 
+  it("places work rows by item display order even when turn itemIds disagree", () => {
+    const rows = deriveTimelineRows(
+      timelineState({
+        turns: [
+          {
+            turnId: "turn-1",
+            itemIds: ["answer-1", "cmd-1", "user-1"],
+            status: "completed",
+            startedAtMs: 1_000,
+            completedAtMs: 5_000,
+          },
+        ],
+        items: [
+          timelineItem({
+            id: "answer-1",
+            kind: "assistant_message",
+            messagePhase: "final_answer",
+            displayOrder: 3,
+            text: "Done.",
+          }),
+          timelineItem({ id: "cmd-1", kind: "command_execution", displayOrder: 2, command: "rg issue" }),
+          timelineItem({ id: "user-1", kind: "user_message", displayOrder: 1, text: "Inspect this." }),
+        ],
+      }),
+    );
+
+    expect(rows.map((row) => row.key)).toEqual(["item-user-1", "work-turn-1", "item-answer-1"]);
+    expect(rows[1]).toMatchObject({
+      type: "work",
+      collapsedRows: [{ type: "activity", items: [{ id: "cmd-1" }] }],
+    });
+  });
+
   it("pre-indexes approvals for single rows, activity groups, and unanchored placement", () => {
     const timeline = timelineState({
       items: [
-        timelineItem({ id: "user-1", kind: "user_message", seq: 1 }),
-        timelineItem({ id: "cmd-1", kind: "command_execution", seq: 2 }),
-        timelineItem({ id: "file-1", kind: "file_change", seq: 3 }),
-        timelineItem({ id: "answer-1", kind: "assistant_message", seq: 4 }),
+        timelineItem({ id: "user-1", kind: "user_message", displayOrder: 1 }),
+        timelineItem({ id: "cmd-1", kind: "command_execution", displayOrder: 2 }),
+        timelineItem({ id: "file-1", kind: "file_change", displayOrder: 3 }),
+        timelineItem({ id: "answer-1", kind: "assistant_message", displayOrder: 4 }),
       ],
     });
     const rows = deriveTimelineRows(timeline);
@@ -113,21 +144,21 @@ describe("timeline derivation", () => {
     const rows = deriveTimelineRows(
       timelineState({
         items: [
-          timelineItem({ id: "user-1", kind: "user_message", seq: 1, text: "Please inspect this." }),
-          timelineItem({ id: "cmd-1", kind: "command_execution", seq: 2, command: "rg timeline" }),
+          timelineItem({ id: "user-1", kind: "user_message", displayOrder: 1, text: "Please inspect this." }),
+          timelineItem({ id: "cmd-1", kind: "command_execution", displayOrder: 2, command: "rg timeline" }),
           timelineItem({
             id: "answer-1",
             kind: "assistant_message",
             messagePhase: "final_answer",
-            seq: 3,
+            displayOrder: 3,
             text: "I found the issue.",
           }),
-          timelineItem({ id: "user-2", kind: "user_message", seq: 4, text: "Thanks." }),
+          timelineItem({ id: "user-2", kind: "user_message", displayOrder: 4, text: "Thanks." }),
           timelineItem({
             id: "answer-2",
             kind: "assistant_message",
             messagePhase: "final_answer",
-            seq: 5,
+            displayOrder: 5,
             text: "You're welcome.",
             turnId: "turn-2",
           }),
@@ -145,8 +176,8 @@ describe("timeline derivation", () => {
         activeTurnId: "turn-1",
         turns: [{ turnId: "turn-1", itemIds: ["user-1", "reasoning-1"], status: "inProgress", startedAtMs: 1_000 }],
         items: [
-          timelineItem({ id: "user-1", kind: "user_message", seq: 1, text: "Inspect this." }),
-          timelineItem({ id: "reasoning-1", kind: "reasoning_summary", seq: 2, summary: "Need context." }),
+          timelineItem({ id: "user-1", kind: "user_message", displayOrder: 1, text: "Inspect this." }),
+          timelineItem({ id: "reasoning-1", kind: "reasoning_summary", displayOrder: 2, summary: "Need context." }),
         ],
       }),
     );
@@ -173,15 +204,15 @@ describe("timeline derivation", () => {
           },
         ],
         items: [
-          timelineItem({ id: "user-1", kind: "user_message", seq: 1, text: "Inspect this." }),
-          timelineItem({ id: "reasoning-1", kind: "reasoning_summary", seq: 2, summary: "Need context." }),
-          timelineItem({ id: "cmd-1", kind: "command_execution", seq: 3, command: "rg issue" }),
-          timelineItem({ id: "file-1", kind: "file_change", seq: 4, path: "src/App.tsx" }),
+          timelineItem({ id: "user-1", kind: "user_message", displayOrder: 1, text: "Inspect this." }),
+          timelineItem({ id: "reasoning-1", kind: "reasoning_summary", displayOrder: 2, summary: "Need context." }),
+          timelineItem({ id: "cmd-1", kind: "command_execution", displayOrder: 3, command: "rg issue" }),
+          timelineItem({ id: "file-1", kind: "file_change", displayOrder: 4, path: "src/App.tsx" }),
           timelineItem({
             id: "answer-1",
             kind: "assistant_message",
             messagePhase: "final_answer",
-            seq: 5,
+            displayOrder: 5,
             text: "Done.",
           }),
         ],
@@ -216,16 +247,16 @@ describe("timeline derivation", () => {
           },
         ],
         items: [
-          timelineItem({ id: "user-1", kind: "user_message", seq: 1, text: "Inspect this." }),
-          timelineItem({ id: "file-1", kind: "file_change", seq: 2, path: "src/App.tsx" }),
-          timelineItem({ id: "assistant-progress-1", kind: "assistant_message", seq: 3, text: "I am checking it." }),
-          timelineItem({ id: "file-2", kind: "file_change", seq: 4, path: "src/App.test.tsx" }),
-          timelineItem({ id: "assistant-progress-2", kind: "assistant_message", seq: 5, text: "Still working." }),
+          timelineItem({ id: "user-1", kind: "user_message", displayOrder: 1, text: "Inspect this." }),
+          timelineItem({ id: "file-1", kind: "file_change", displayOrder: 2, path: "src/App.tsx" }),
+          timelineItem({ id: "assistant-progress-1", kind: "assistant_message", displayOrder: 3, text: "I am checking it." }),
+          timelineItem({ id: "file-2", kind: "file_change", displayOrder: 4, path: "src/App.test.tsx" }),
+          timelineItem({ id: "assistant-progress-2", kind: "assistant_message", displayOrder: 5, text: "Still working." }),
           timelineItem({
             id: "answer-1",
             kind: "assistant_message",
             messagePhase: "final_answer",
-            seq: 6,
+            displayOrder: 6,
             text: "Done.",
           }),
         ],
@@ -256,12 +287,12 @@ describe("timeline derivation", () => {
           },
         ],
         items: [
-          timelineItem({ id: "user-1", kind: "user_message", seq: 1, text: "Generate an image." }),
-          timelineItem({ id: "cmd-1", kind: "command_execution", seq: 2, command: "open image tool" }),
+          timelineItem({ id: "user-1", kind: "user_message", displayOrder: 1, text: "Generate an image." }),
+          timelineItem({ id: "cmd-1", kind: "command_execution", displayOrder: 2, command: "open image tool" }),
           timelineItem({
             id: "image-1",
             kind: "image_generation",
-            seq: 3,
+            displayOrder: 3,
             imageSrc: "data:image/png;base64,iVBORw0KGgo=",
             path: "/tmp/generated.png",
             text: "Generated image",
@@ -270,7 +301,7 @@ describe("timeline derivation", () => {
             id: "answer-1",
             kind: "assistant_message",
             messagePhase: "final_answer",
-            seq: 4,
+            displayOrder: 4,
             text: "Done.",
           }),
         ],
@@ -302,14 +333,14 @@ describe("timeline derivation", () => {
           },
         ],
         items: [
-          timelineItem({ id: "user-1", kind: "user_message", seq: 1, text: "Inspect this." }),
-          timelineItem({ id: "cmd-1", kind: "command_execution", seq: 2, command: "rg issue" }),
-          timelineItem({ id: "user-2", kind: "user_message", seq: 3, text: "Also check the UI." }),
+          timelineItem({ id: "user-1", kind: "user_message", displayOrder: 1, text: "Inspect this." }),
+          timelineItem({ id: "cmd-1", kind: "command_execution", displayOrder: 2, command: "rg issue" }),
+          timelineItem({ id: "user-2", kind: "user_message", displayOrder: 3, text: "Also check the UI." }),
           timelineItem({
             id: "answer-1",
             kind: "assistant_message",
             messagePhase: "final_answer",
-            seq: 4,
+            displayOrder: 4,
             text: "Done.",
           }),
         ],
@@ -341,12 +372,12 @@ describe("timeline derivation", () => {
           },
         ],
         items: [
-          timelineItem({ id: "user-1", kind: "user_message", seq: 1, text: "Compact context." }),
-          timelineItem({ id: "cmd-1", kind: "command_execution", seq: 2, command: "prepare context" }),
+          timelineItem({ id: "user-1", kind: "user_message", displayOrder: 1, text: "Compact context." }),
+          timelineItem({ id: "cmd-1", kind: "command_execution", displayOrder: 2, command: "prepare context" }),
           timelineItem({
             id: "compact-1",
             kind: "context_compaction",
-            seq: 3,
+            displayOrder: 3,
             status: "completed",
             text: "Context compacted",
           }),
@@ -354,7 +385,7 @@ describe("timeline derivation", () => {
             id: "answer-1",
             kind: "assistant_message",
             messagePhase: "final_answer",
-            seq: 4,
+            displayOrder: 4,
             text: "Done.",
           }),
         ],
@@ -376,14 +407,14 @@ describe("timeline derivation", () => {
   it("keeps activity row keys stable as groups grow and chunks large activity runs", () => {
     const initialRows = deriveTimelineRows(
       timelineState({
-        items: [timelineItem({ id: "cmd-1", kind: "command_execution", seq: 1 })],
+        items: [timelineItem({ id: "cmd-1", kind: "command_execution", displayOrder: 1 })],
       }),
     );
     const grownRows = deriveTimelineRows(
       timelineState({
         items: [
-          timelineItem({ id: "cmd-1", kind: "command_execution", seq: 1 }),
-          timelineItem({ id: "web-1", kind: "web_search_group", seq: 2 }),
+          timelineItem({ id: "cmd-1", kind: "command_execution", displayOrder: 1 }),
+          timelineItem({ id: "web-1", kind: "web_search_group", displayOrder: 2 }),
         ],
       }),
     );
@@ -395,7 +426,7 @@ describe("timeline derivation", () => {
     const chunkedRows = deriveTimelineRows(
       timelineState({
         items: Array.from({ length: 30 }, (_, index) =>
-          timelineItem({ id: `cmd-${index}`, kind: "command_execution", seq: index + 1 }),
+          timelineItem({ id: `cmd-${index}`, kind: "command_execution", displayOrder: index + 1 }),
         ),
       }),
     );

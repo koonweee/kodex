@@ -37,7 +37,7 @@ export type TimelineWorkRow = {
   startedAtMs: number;
   completedAtMs?: number;
   collapsedRows: Array<TimelineItemRow | TimelineActivityRow | TimelineFileChangesRow>;
-  seq: number;
+  displayOrder: number;
 };
 
 export type TimelineRow = TimelineItemRow | TimelineActivityRow | TimelineFileChangesRow | TimelineWorkRow;
@@ -65,8 +65,8 @@ const timelineActivityKinds = new Set([
 
 const MAX_ACTIVITY_ITEMS_PER_ROW = 12;
 
-export function deriveTimelineRows(timeline: TimelineState, options: TimelineDeriveOptions = {}): TimelineRow[] {
-  const items = sortedVisibleTimelineItems(timeline, options.showDebug ?? false);
+export function deriveTimelineRows(timeline: TimelineState, _options: TimelineDeriveOptions = {}): TimelineRow[] {
+  const items = timelineItemsInDisplayOrder(timeline);
   const rows: TimelineRow[] = [];
   let currentTurnKey: string | null = null;
   let activityItems: TimelineItem[] = [];
@@ -137,11 +137,11 @@ export function deriveTimelineRows(timeline: TimelineState, options: TimelineDer
   return insertWorkRows(rows, timeline);
 }
 
-export function sortedVisibleTimelineItems(timeline: TimelineState, showDebug: boolean): TimelineItem[] {
-  const source = showDebug ? [...timeline.items, ...timeline.hiddenItems] : [...timeline.items];
+export function timelineItemsInDisplayOrder(timeline: TimelineState): TimelineItem[] {
+  const source = [...timeline.items];
   return source
     .map((item, index) => ({ item, index }))
-    .sort((left, right) => left.item.seq - right.item.seq || left.index - right.index)
+    .sort((left, right) => left.item.displayOrder - right.item.displayOrder || left.index - right.index)
     .map(({ item }) => item);
 }
 
@@ -261,7 +261,7 @@ function insertWorkRows(rows: TimelineRow[], timeline: TimelineState): TimelineR
       startedAtMs: turn.startedAtMs,
       completedAtMs: turn.completedAtMs,
       collapsedRows: [],
-      seq: Number.MAX_SAFE_INTEGER,
+      displayOrder: Number.MAX_SAFE_INTEGER,
     });
   }
   if (workRows.size === 0) {
@@ -288,7 +288,7 @@ function insertWorkRows(rows: TimelineRow[], timeline: TimelineState): TimelineR
     result.push(...rowsForTurnWithWorkRow(turnRows as TimelineContentRow[], workRows.get(turnId)!));
   }
 
-  return result.sort((left, right) => firstRowSeq(left) - firstRowSeq(right));
+  return result.sort((left, right) => firstRowDisplayOrder(left) - firstRowDisplayOrder(right));
 }
 
 function rowsForTurnWithWorkRow(rows: TimelineContentRow[], workRow: TimelineWorkRow): TimelineRow[] {
@@ -298,7 +298,7 @@ function rowsForTurnWithWorkRow(rows: TimelineContentRow[], workRow: TimelineWor
   }
   const finalIndex = rows.findIndex((row, index) => index > firstWorkIndex && rowIsFinalResponse(row));
   if (workRow.state === "completed" && finalIndex !== -1) {
-    const seq = firstRowSeq(rows[firstWorkIndex]) + 0.1;
+    const displayOrder = firstRowDisplayOrder(rows[firstWorkIndex]) + 0.1;
     const intermediateRows = rows.slice(firstWorkIndex + 1, finalIndex);
     const collapsedRows = intermediateRows.filter((row) => !rowIsProminentTurnResult(row));
     const prominentRows = intermediateRows.filter(rowIsProminentTurnResult);
@@ -307,7 +307,7 @@ function rowsForTurnWithWorkRow(rows: TimelineContentRow[], workRow: TimelineWor
       {
         ...workRow,
         collapsedRows,
-        seq,
+        displayOrder,
       },
       ...prominentRows,
       withoutFinalResponseDivider(rows[finalIndex]),
@@ -316,7 +316,7 @@ function rowsForTurnWithWorkRow(rows: TimelineContentRow[], workRow: TimelineWor
   }
   return [
     ...rows.slice(0, firstWorkIndex + 1),
-    { ...workRow, seq: firstRowSeq(rows[firstWorkIndex]) + 0.1 },
+    { ...workRow, displayOrder: firstRowDisplayOrder(rows[firstWorkIndex]) + 0.1 },
     ...rows.slice(firstWorkIndex + 1),
   ];
 }
@@ -345,17 +345,17 @@ function withoutFinalResponseDivider(row: TimelineContentRow): TimelineContentRo
   return rest;
 }
 
-function firstRowSeq(row: TimelineRow): number {
+function firstRowDisplayOrder(row: TimelineRow): number {
   if (row.type === "item") {
-    return row.item.seq;
+    return row.item.displayOrder;
   }
   if (row.type === "activity") {
-    return row.items[0]?.seq ?? Number.MAX_SAFE_INTEGER;
+    return row.items[0]?.displayOrder ?? Number.MAX_SAFE_INTEGER;
   }
   if (row.type === "file_changes") {
-    return row.items[0]?.seq ?? Number.MAX_SAFE_INTEGER;
+    return row.items[0]?.displayOrder ?? Number.MAX_SAFE_INTEGER;
   }
-  return row.seq;
+  return row.displayOrder;
 }
 
 function isTerminalTurnStatus(status: string | undefined): boolean {

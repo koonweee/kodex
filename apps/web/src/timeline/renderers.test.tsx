@@ -28,7 +28,7 @@ function item(overrides: Partial<TimelineItem>): TimelineItem {
     status: "completed",
     text: "",
     turnId: "turn-1",
-    seq: 1,
+    displayOrder: 1,
     payload: {},
     debugEvents: [],
     ...overrides,
@@ -1313,7 +1313,7 @@ describe("timeline renderer registry", () => {
             state: "completed",
             startedAtMs: 1_000,
             completedAtMs: 65_000,
-            seq: 1.1,
+            displayOrder: 1.1,
             collapsedRows: [
               {
                 type: "item",
@@ -1325,7 +1325,7 @@ describe("timeline renderer registry", () => {
                   kind: "reasoning_summary",
                   summary: "Need context.",
                   text: "Need context.",
-                  seq: 2,
+                  displayOrder: 2,
                 }),
               },
             ],
@@ -1356,7 +1356,7 @@ describe("timeline renderer registry", () => {
             state: "completed",
             startedAtMs: 1_000,
             completedAtMs: 6_000,
-            seq: 1.1,
+            displayOrder: 1.1,
             collapsedRows: [],
           }}
         />
@@ -1381,7 +1381,7 @@ describe("timeline renderer registry", () => {
             turnId: "turn-1",
             state: "running",
             startedAtMs: Date.now(),
-            seq: 1.1,
+            displayOrder: 1.1,
             collapsedRows: [],
           }}
         />
