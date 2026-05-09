@@ -1,12 +1,13 @@
 import { ActionIcon, Box, Text, Textarea } from "@mantine/core";
 import { Minimize2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
 
 import type { SkillMetadata } from "../api/client";
 import { AttachmentTray } from "./AttachmentTray";
 import type { ComposerPanelProps } from "./ComposerPanel";
 import { ComposerToolbar } from "./ComposerToolbar";
+import { isTouchInputDevice } from "./inputCapabilities";
 import { InlineComposerPanel } from "./InlineComposerPanel";
 import { MobileSkillCommandSheet } from "./MobileSkillCommandSheet";
 import type { ComposerDraftState } from "./useComposerDraftState";
@@ -69,6 +70,7 @@ export function MobileComposerPanel({
   ...inlineComposerProps
 }: MobileComposerPanelProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const shouldExpandOnFocus = useIsTouchDevice();
   const keyboardViewport = useComposerKeyboardViewport();
   const expandedStyle = {
     "--kodex-mobile-keyboard-inset": `${keyboardViewport.keyboardInset}px`,
@@ -258,7 +260,11 @@ export function MobileComposerPanel({
       onAttachmentInputChange={onAttachmentInputChange}
       onComposerPaste={onComposerPaste}
       onComposerSettingsChange={onComposerSettingsChange}
-      onFocusComposer={() => openExpanded()}
+      onFocusComposer={() => {
+        if (shouldExpandOnFocus) {
+          openExpanded();
+        }
+      }}
       onImageOpen={onImageOpen}
       onRemovePendingAttachment={onRemovePendingAttachment}
       onStopTurn={onStopTurn}
@@ -274,4 +280,31 @@ export function MobileComposerPanel({
       textareaRef={textareaRef}
     />
   );
+}
+
+function useIsTouchDevice() {
+  const [isTouchDevice, setIsTouchDevice] = useState(isTouchInputDevice);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") {
+      return;
+    }
+
+    const mediaQueries = [window.matchMedia("(any-pointer: coarse)"), window.matchMedia("(pointer: coarse)")];
+    function updateTouchDevice() {
+      setIsTouchDevice(isTouchInputDevice());
+    }
+
+    updateTouchDevice();
+    for (const mediaQuery of mediaQueries) {
+      mediaQuery.addEventListener("change", updateTouchDevice);
+    }
+    return () => {
+      for (const mediaQuery of mediaQueries) {
+        mediaQuery.removeEventListener("change", updateTouchDevice);
+      }
+    };
+  }, []);
+
+  return isTouchDevice;
 }

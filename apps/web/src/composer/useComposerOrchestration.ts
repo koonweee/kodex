@@ -43,6 +43,7 @@ import {
   userInputImages,
 } from "./attachmentUtils";
 import type { ComposerDraftControls } from "./ComposerPanel";
+import { isTouchInputDevice } from "./inputCapabilities";
 import type { PendingAttachment, QueuedSteerRow } from "./types";
 
 type DraftThreadCreateRequest = { firstMessageText: string; projectId?: string };
@@ -546,5 +547,5 @@ export function useComposerOrchestration({
 }
 
 function usesMobileComposerInput(): boolean {
-  return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 700px)").matches;
+  return isTouchInputDevice();
 }

@@ -57,12 +57,23 @@ describe("Mobile composer panel", () => {
     expect(mobileComposerCss).not.toMatch(/\.kodex-composer-shell\[data-inline-density="mobile"\] \.kodex-composer-underbar\s*\{/);
   });
 
-  it("opens fullscreen composer when the mobile inline textarea is focused", async () => {
+  it("opens fullscreen composer when the touch mobile inline textarea is focused", async () => {
     renderComposerPanel();
 
     await userEvent.click(screen.getByLabelText(/message composer/i));
 
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toHaveFocus();
+  });
+
+  it("keeps the narrow non-touch composer inline when the textarea is focused", async () => {
+    setMobileViewport(true, { touch: false });
+    renderComposerPanel();
+
+    await userEvent.click(screen.getByLabelText(/message composer/i));
+
+    expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile");
+    expect(screen.queryByRole("dialog", { name: /compose/i })).not.toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toHaveFocus();
   });
 
@@ -442,9 +453,15 @@ function skillFixture(overrides: Partial<SkillMetadata> = {}): SkillMetadata {
   };
 }
 
-function setMobileViewport(matches: boolean) {
+function setMobileViewport(matches: boolean, options: { touch?: boolean } = {}) {
+  const isTouchDevice = options.touch ?? true;
   vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
-    matches: query === "(max-width: 900px)" ? matches : false,
+    matches:
+      query === "(max-width: 900px)"
+        ? matches
+        : query === "(any-pointer: coarse)" || query === "(pointer: coarse)"
+          ? isTouchDevice
+          : false,
     media: query,
     onchange: null,
     addEventListener: () => undefined,

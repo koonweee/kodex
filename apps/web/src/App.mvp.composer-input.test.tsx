@@ -1283,9 +1283,9 @@ describe("MVP composer input flows", () => {
     });
   });
 
-  it("keeps Enter as a newline on mobile and requires the send action to submit", async () => {
+  it("submits on Enter in a narrow non-touch composer", async () => {
     vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
-      matches: query.includes("max-width: 700px"),
+      matches: query.includes("max-width") ? true : false,
       media: query,
       onchange: null,
       addEventListener: () => undefined,
@@ -1304,6 +1304,37 @@ describe("MVP composer input flows", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "Narrow hardware keyboard");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+    });
+  });
+
+  it("keeps Enter as a newline on touch input and requires the send action to submit", async () => {
+    vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
+      matches: query.includes("max-width") || query === "(any-pointer: coarse)" || query === "(pointer: coarse)",
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads/thread-1/turns": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText(/message composer/i));
     const composer = screen.getByLabelText(/message composer/i);
     await userEvent.type(composer, "Line one");
     await userEvent.keyboard("{Enter}");
