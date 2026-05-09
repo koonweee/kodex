@@ -568,8 +568,8 @@ describe("App shell", () => {
     });
   });
 
-  it("returns to the live edge when the user sends while scrolled up", async () => {
-    mockGateway({
+  it("keeps the user's scroll position when sending while scrolled up", async () => {
+    const gateway = mockGateway({
       "GET /v1/projects": {
         projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
       },
@@ -632,11 +632,11 @@ describe("App shell", () => {
     await userEvent.type(screen.getByLabelText(/message composer/i), "Follow live after send");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
+    expect(scrollRegion.scrollTop).toBe(600);
+    expect(screen.getByRole("button", { name: /scroll to bottom/i })).toBeInTheDocument();
     await waitFor(() => {
-      expect(scrollRegion.scrollTop).toBe(3200);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
     });
-    expect(screen.queryByRole("button", { name: /scroll to bottom/i })).not.toBeInTheDocument();
-    expect(await screen.findByText("Follow live after send")).toBeInTheDocument();
   });
 
   it("keeps the user's scroll position when selected-thread stream messages arrive while scrolled up", async () => {

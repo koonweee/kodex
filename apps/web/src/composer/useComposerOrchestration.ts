@@ -71,7 +71,6 @@ type UseComposerOrchestrationParams = {
   onQueuedInputDeleted: (threadId: string, queueId: string) => void;
   onQueuedInputUpsert: (row: QueuedSteerRow) => void;
   onThreadMaterialized: (threadId: string) => void;
-  onThreadLocalInputSubmitted: (threadId: string) => void;
   onThreadTurnStartFailed: (threadId: string) => void;
   onThreadTurnStarted: (threadId: string) => void;
   queuedSteerRows: QueuedSteerRow[];
@@ -92,7 +91,6 @@ export function useComposerOrchestration({
   onQueuedInputDeleted,
   onQueuedInputUpsert,
   onThreadMaterialized,
-  onThreadLocalInputSubmitted,
   onThreadTurnStartFailed,
   onThreadTurnStarted,
   queuedSteerRows,
@@ -220,7 +218,6 @@ export function useComposerOrchestration({
     try {
       if (selectedThreadId) {
         optimisticClientRequestId = addOptimisticMessage(text, optimisticImages, null, initialConfirmationState, skillMentions);
-        onThreadLocalInputSubmitted(selectedThreadId);
         startedThreadId = selectedThreadId;
         onThreadTurnStarted(selectedThreadId);
         draftControls.clearText();
@@ -261,7 +258,6 @@ export function useComposerOrchestration({
       latestComposerContextRef.current = retryRestoreContext;
       composerContextRef.current = retryRestoreContext;
       optimisticClientRequestId = addOptimisticMessage(text, optimisticImages, null, initialConfirmationState, skillMentions);
-      onThreadLocalInputSubmitted(threadId);
       startedThreadId = threadId;
       onThreadTurnStarted(threadId);
       draftControls.clearText();

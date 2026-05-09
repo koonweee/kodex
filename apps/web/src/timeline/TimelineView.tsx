@@ -20,7 +20,6 @@ import type { TimelineState } from "./reducer";
 const EMPTY_APPROVALS: Approval[] = [];
 const INITIAL_BOTTOM_STABLE_FRAMES = 3;
 const INITIAL_BOTTOM_MAX_SETTLE_FRAMES = 90;
-const LIVE_BOTTOM_SETTLE_FRAMES = 8;
 const BOTTOM_DISTANCE_EPSILON = 2;
 const disableTimelineScrollAdjustment = () => false;
 
@@ -30,7 +29,6 @@ const TIMELINE_TEXT = {
 
 export function TimelineView({
   approvals,
-  followLiveToken = 0,
   imagePreviewUrlsByPath,
   onApprovalDecision,
   onImageOpen,
@@ -42,7 +40,6 @@ export function TimelineView({
   timeline,
 }: {
   approvals: Approval[];
-  followLiveToken?: number;
   imagePreviewUrlsByPath: Record<string, string>;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
   onImageOpen: (image: ImageLightboxImage) => void;
@@ -68,7 +65,6 @@ export function TimelineView({
     scrollToBottom,
     showScrollToBottom,
   } = useBottomPinnedVirtualTimeline({
-    followLiveToken,
     onReady,
     rows,
     scrollParentElement,
@@ -197,13 +193,11 @@ function HiddenDebugPanel({
 }
 
 function useBottomPinnedVirtualTimeline({
-  followLiveToken,
   onReady,
   rows,
   scrollParentElement,
   timelineLastSeq,
 }: {
-  followLiveToken: number;
   onReady: () => void;
   rows: TimelineRow[];
   scrollParentElement: HTMLDivElement | null;
@@ -211,15 +205,8 @@ function useBottomPinnedVirtualTimeline({
 }) {
   const rowCount = rows.length;
   const lastRowKey = rows[rowCount - 1]?.key ?? "";
-  const followingLiveRef = useRef(true);
-  const handledFollowLiveTokenRef = useRef(0);
-  const lastScrollTopRef = useRef(0);
   const nearBottomRef = useRef(true);
-  const recentScrollIntentRef = useRef(false);
-  const scrollIntentClearTimerRef = useRef<number | null>(null);
-  const touchStartYRef = useRef<number | null>(null);
-  const upwardIntentRef = useRef(false);
-  const [isFollowingLive, setIsFollowingLive] = useState(true);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [initialBottomAligned, setInitialBottomAligned] = useState(false);
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
@@ -231,64 +218,19 @@ function useBottomPinnedVirtualTimeline({
   });
   rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = disableTimelineScrollAdjustment;
 
-  const setFollowingLive = useCallback((nextFollowingLive: boolean) => {
-    followingLiveRef.current = nextFollowingLive;
-    setIsFollowingLive((current) => (current === nextFollowingLive ? current : nextFollowingLive));
-    if (nextFollowingLive) {
-      upwardIntentRef.current = false;
-    }
-  }, []);
-
-  const clearRecentScrollIntent = useCallback(() => {
-    recentScrollIntentRef.current = false;
-    if (scrollIntentClearTimerRef.current !== null) {
-      window.clearTimeout(scrollIntentClearTimerRef.current);
-      scrollIntentClearTimerRef.current = null;
-    }
-  }, []);
-
-  const markRecentScrollIntent = useCallback(() => {
-    recentScrollIntentRef.current = true;
-    if (scrollIntentClearTimerRef.current !== null) {
-      window.clearTimeout(scrollIntentClearTimerRef.current);
-    }
-    scrollIntentClearTimerRef.current = window.setTimeout(() => {
-      recentScrollIntentRef.current = false;
-      scrollIntentClearTimerRef.current = null;
-    }, 250);
-  }, []);
-
   const updateNearBottom = useCallback(() => {
     const scrollElement = scrollParentElement;
     if (!scrollElement) {
       nearBottomRef.current = true;
-      lastScrollTopRef.current = 0;
-      setFollowingLive(true);
+      setShowScrollToBottom(false);
       return true;
     }
     const distanceFromBottom = getDistanceFromBottom(scrollElement);
-    const isAtBottom = distanceFromBottom <= BOTTOM_DISTANCE_EPSILON;
     const isNearBottom = distanceFromBottom < 96;
-    const movedUp = scrollElement.scrollTop < lastScrollTopRef.current;
-    const movedAwayFromBottom =
-      (movedUp && (!isNearBottom || recentScrollIntentRef.current)) ||
-      (!isNearBottom && lastScrollTopRef.current === 0);
-    if (movedAwayFromBottom) {
-      upwardIntentRef.current = true;
-      setFollowingLive(false);
-    }
-    if (isAtBottom && !upwardIntentRef.current) {
-      setFollowingLive(true);
-    }
-    lastScrollTopRef.current = scrollElement.scrollTop;
     nearBottomRef.current = isNearBottom;
+    setShowScrollToBottom(!isNearBottom && rowCount > 0 && distanceFromBottom > 0);
     return isNearBottom;
-  }, [scrollParentElement, setFollowingLive]);
-
-  const stopFollowingLive = useCallback(() => {
-    upwardIntentRef.current = true;
-    setFollowingLive(false);
-  }, [setFollowingLive]);
+  }, [rowCount, scrollParentElement]);
 
   const scrollToTimelineBottom = useCallback(() => {
     const scrollElement = scrollParentElement;
@@ -298,40 +240,6 @@ function useBottomPinnedVirtualTimeline({
     rowVirtualizer.scrollToIndex(Math.max(0, rowCount - 1), { align: "end" });
     scrollElement.scrollTop = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
   }, [rowCount, rowVirtualizer, scrollParentElement]);
-
-  const settleToTimelineBottom = useCallback(() => {
-    const frameIds: number[] = [];
-    let previousBottom = -1;
-    let stableFrames = 0;
-
-    const settle = (remainingFrames: number) => {
-      if (!followingLiveRef.current) {
-        updateNearBottom();
-        return;
-      }
-
-      scrollToTimelineBottom();
-      const scrollElement = scrollParentElement;
-      const nextBottom = scrollElement ? Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight) : 0;
-      stableFrames = nextBottom === previousBottom ? stableFrames + 1 : 0;
-      previousBottom = nextBottom;
-      updateNearBottom();
-
-      if (remainingFrames <= 0 || stableFrames >= 2) {
-        return;
-      }
-
-      frameIds.push(requestAnimationFrame(() => settle(remainingFrames - 1)));
-    };
-
-    settle(LIVE_BOTTOM_SETTLE_FRAMES);
-
-    return () => {
-      for (const frameId of frameIds) {
-        cancelAnimationFrame(frameId);
-      }
-    };
-  }, [scrollParentElement, scrollToTimelineBottom, updateNearBottom]);
 
   const markTimelineReady = useCallback(() => {
     setInitialBottomAligned(true);
@@ -345,12 +253,17 @@ function useBottomPinnedVirtualTimeline({
   }, [markTimelineReady, scrollToTimelineBottom, updateNearBottom]);
 
   const scrollToBottom = useCallback(() => {
-    upwardIntentRef.current = false;
-    setFollowingLive(true);
     nearBottomRef.current = true;
+    setShowScrollToBottom(false);
 
-    settleToTimelineBottom();
-  }, [setFollowingLive, settleToTimelineBottom]);
+    scrollToTimelineBottom();
+    requestAnimationFrame(() => {
+      if (nearBottomRef.current) {
+        scrollToTimelineBottom();
+      }
+      updateNearBottom();
+    });
+  }, [scrollToTimelineBottom, updateNearBottom]);
 
   useEffect(() => {
     const scrollElement = scrollParentElement;
@@ -360,55 +273,8 @@ function useBottomPinnedVirtualTimeline({
 
     updateNearBottom();
     scrollElement.addEventListener("scroll", updateNearBottom, { passive: true });
-
-    const handleWheel = (event: WheelEvent) => {
-      markRecentScrollIntent();
-      if (event.deltaY < 0) {
-        stopFollowingLive();
-      }
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const isUpwardKey =
-        event.key === "ArrowUp" ||
-        event.key === "Home" ||
-        event.key === "PageUp" ||
-        (event.key === " " && event.shiftKey);
-      if (isUpwardKey) {
-        markRecentScrollIntent();
-        stopFollowingLive();
-      }
-    };
-    const handlePointerDown = () => {
-      markRecentScrollIntent();
-    };
-    const handleTouchStart = (event: TouchEvent) => {
-      markRecentScrollIntent();
-      touchStartYRef.current = event.touches[0]?.clientY ?? null;
-    };
-    const handleTouchMove = (event: TouchEvent) => {
-      markRecentScrollIntent();
-      const startY = touchStartYRef.current;
-      const currentY = event.touches[0]?.clientY;
-      if (startY !== null && currentY !== undefined && currentY > startY) {
-        stopFollowingLive();
-      }
-    };
-
-    scrollElement.addEventListener("pointerdown", handlePointerDown);
-    scrollElement.addEventListener("wheel", handleWheel, { passive: true });
-    scrollElement.addEventListener("keydown", handleKeyDown);
-    scrollElement.addEventListener("touchstart", handleTouchStart, { passive: true });
-    scrollElement.addEventListener("touchmove", handleTouchMove, { passive: true });
-    return () => {
-      clearRecentScrollIntent();
-      scrollElement.removeEventListener("scroll", updateNearBottom);
-      scrollElement.removeEventListener("pointerdown", handlePointerDown);
-      scrollElement.removeEventListener("wheel", handleWheel);
-      scrollElement.removeEventListener("keydown", handleKeyDown);
-      scrollElement.removeEventListener("touchstart", handleTouchStart);
-      scrollElement.removeEventListener("touchmove", handleTouchMove);
-    };
-  }, [clearRecentScrollIntent, markRecentScrollIntent, scrollParentElement, stopFollowingLive, updateNearBottom]);
+    return () => scrollElement.removeEventListener("scroll", updateNearBottom);
+  }, [scrollParentElement, updateNearBottom]);
 
   useLayoutEffect(() => {
     if (initialBottomAligned) {
@@ -416,13 +282,13 @@ function useBottomPinnedVirtualTimeline({
     }
 
     if (rowCount === 0) {
-      setFollowingLive(true);
+      setShowScrollToBottom(false);
       markTimelineReady();
       return;
     }
 
     if (!nearBottomRef.current) {
-      setFollowingLive(false);
+      setShowScrollToBottom(true);
       markTimelineReady();
       return;
     }
@@ -479,38 +345,33 @@ function useBottomPinnedVirtualTimeline({
       return;
     }
 
-    if (followingLiveRef.current) {
-      return settleToTimelineBottom();
+    if (nearBottomRef.current) {
+      scrollToTimelineBottom();
+      const frameId = requestAnimationFrame(() => {
+        if (nearBottomRef.current) {
+          scrollToTimelineBottom();
+        }
+        updateNearBottom();
+      });
+      return () => cancelAnimationFrame(frameId);
     }
 
-    updateNearBottom();
+    setShowScrollToBottom(true);
   }, [
     initialBottomAligned,
     lastRowKey,
     rowCount,
-    settleToTimelineBottom,
+    scrollToTimelineBottom,
     timelineLastSeq,
     updateNearBottom,
   ]);
-
-  useLayoutEffect(() => {
-    if (!initialBottomAligned || rowCount === 0 || followLiveToken === 0) {
-      return;
-    }
-    if (handledFollowLiveTokenRef.current === followLiveToken) {
-      return;
-    }
-    handledFollowLiveTokenRef.current = followLiveToken;
-
-    scrollToBottom();
-  }, [followLiveToken, initialBottomAligned, rowCount, scrollToBottom]);
 
   return {
     initialBottomAligned,
     isNearBottom: nearBottomRef.current,
     rowVirtualizer,
     scrollToBottom,
-    showScrollToBottom: rowCount > 0 && !isFollowingLive,
+    showScrollToBottom,
   };
 }
 

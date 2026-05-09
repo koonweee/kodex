@@ -198,7 +198,6 @@ function KodexShell({
   const [timelineScrollElement, setTimelineScrollElement] = useState<HTMLDivElement | null>(null);
   const [composerResetToken, setComposerResetToken] = useState(0);
   const [skillsInvalidationGeneration, setSkillsInvalidationGeneration] = useState(0);
-  const [timelineFollowLiveToken, setTimelineFollowLiveToken] = useState(0);
   const selectedProjectIdRef = useRef<string | null>(null);
   const selectedThreadIdRef = useRef<string | null>(selectedThreadId);
   const approvalsRef = useRef<Approval[]>([]);
@@ -474,7 +473,6 @@ function KodexShell({
     onQueuedInputDeleted: removeQueuedInput,
     onQueuedInputUpsert: upsertQueuedInput,
     onThreadMaterialized: markThreadMaterialized,
-    onThreadLocalInputSubmitted: requestSelectedThreadFollowLive,
     onThreadTurnStartFailed: markThreadIdle,
     onThreadTurnStarted: markThreadActive,
     queuedSteerRows: selectedQueuedInputs,
@@ -1105,12 +1103,6 @@ function KodexShell({
     setUnavailableThreadId(threadId);
   }
 
-  function requestSelectedThreadFollowLive(threadId: string) {
-    if (selectedThreadIdRef.current === threadId) {
-      setTimelineFollowLiveToken((current) => current + 1);
-    }
-  }
-
   function setRouteSelectedThreadState(thread: ThreadSummary | null) {
     routeSelectedThreadRef.current = thread;
     setRouteSelectedThread(thread);
@@ -1408,7 +1400,7 @@ function KodexShell({
           onUnpinThread: stableHandleUnpinThread, pendingTitleThreadIds,
           scrollParentElement: timelineScrollElement, selectedThread, selectedThreadApprovals, selectedThreadTitle,
           selectedThreadUnavailableId: unavailableThreadId,
-          selectedTimelineEntry, setTimelineScrollElement, showDebugEvents, timeline, timelineFollowLiveToken,
+          selectedTimelineEntry, setTimelineScrollElement, showDebugEvents, timeline,
         }}
         workspaceSidebarProps={{
           account, approvals, chatThreads: sidebarChatThreads, dataState: sidebarDataState, hoveredThreadActionId, isSidebarResizing, loginState,
