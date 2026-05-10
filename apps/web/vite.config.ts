@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 
 import { buildKodexColorSchemeBootstrapScript, buildKodexColorSchemeCss } from "./src/themeRegistry";
 
+const gatewayProxyTarget = process.env.VITE_KODEX_PROXY_TARGET ?? "http://127.0.0.1:8787";
+
 export default defineConfig({
   plugins: [
     react(),
@@ -32,8 +34,8 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     proxy: {
-      "/v1": "http://127.0.0.1:8787",
-      "/openapi.json": "http://127.0.0.1:8787",
+      "/v1": gatewayProxyTarget,
+      "/openapi.json": gatewayProxyTarget,
     },
   },
   test: {

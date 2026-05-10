@@ -1,0 +1,4 @@
+interface:
+  display_name: "Kodex Proxy Evaluation"
+  short_description: "Evaluate repos for Kodex preview proxying"
+  default_prompt: "Use $kodex-proxy-evaluation to evaluate this repo for Kodex project preview proxy compatibility and propose proxy settings."

@@ -43,18 +43,20 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let state = AppState::new(config.clone(), store, app_server);
+    state.previews.start(&state.store).await?;
     recover_queued_inputs(&state).await?;
     recover_automations_after_restart(&state).await?;
     start_automation_scheduler(state.clone());
     tokio::spawn(run_inbound_ingest(inbound_rx, state.clone()));
 
-    let app = build_router(state);
+    let app = build_router(state.clone());
     let listener = tokio::net::TcpListener::bind(config.server.bind).await?;
     tracing::info!(bind = %config.server.bind, "kodex gateway listening");
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
+    state.previews.shutdown().await?;
     if let Some(supervisor) = supervisor {
         supervisor.shutdown().await?;
     }

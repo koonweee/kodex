@@ -15,6 +15,17 @@ export type EventEnvelope = components["schemas"]["EventEnvelope"];
 export type LoginStartResponse = components["schemas"]["LoginStartResponse"];
 export type ModelSummary = components["schemas"]["ModelSummary"];
 export type Project = components["schemas"]["Project"];
+export type PreviewCreateRequest = components["schemas"]["PreviewCreateRequest"];
+export type PreviewListResponse = components["schemas"]["PreviewListResponse"];
+export type PreviewRouteCreateRequest = components["schemas"]["PreviewRouteCreateRequest"];
+export type PreviewRouteUpdateRequest = components["schemas"]["PreviewRouteUpdateRequest"];
+export type PreviewServiceCreateRequest = components["schemas"]["PreviewServiceCreateRequest"];
+export type PreviewServiceUpdateRequest = components["schemas"]["PreviewServiceUpdateRequest"];
+export type PreviewSubsystemStatus = components["schemas"]["PreviewSubsystemStatus"];
+export type PreviewUpdateRequest = components["schemas"]["PreviewUpdateRequest"];
+export type ProjectPreview = components["schemas"]["ProjectPreviewDto"];
+export type ProjectPreviewRoute = components["schemas"]["ProjectPreviewRouteDto"];
+export type ProjectPreviewService = components["schemas"]["ProjectPreviewServiceDto"];
 export type QueuedInput = components["schemas"]["QueuedInput"];
 export type QueuedInputCreateRequest = components["schemas"]["QueuedInputCreateRequest"];
 export type RateLimitSnapshot = components["schemas"]["RateLimitSnapshot"];
@@ -93,6 +104,123 @@ export async function listProjects(): Promise<Project[]> {
 
 export async function createProject(input: { createDirectory?: boolean; cwd: string }): Promise<Project> {
   return unwrap(api.POST("/v1/projects", { body: input }));
+}
+
+export async function getProjectPreviewSettings(projectId: string): Promise<PreviewListResponse> {
+  return unwrap(api.GET("/v1/projects/{projectId}/previews", { params: { path: { projectId } } }));
+}
+
+export async function createProjectPreviewService(
+  projectId: string,
+  request: PreviewServiceCreateRequest,
+): Promise<ProjectPreviewService> {
+  const response = await unwrap(
+    api.POST("/v1/projects/{projectId}/preview-services", {
+      params: { path: { projectId } },
+      body: request,
+    }),
+  );
+  return response.service;
+}
+
+export async function updateProjectPreviewService(
+  projectId: string,
+  serviceId: string,
+  request: PreviewServiceUpdateRequest,
+): Promise<ProjectPreviewService> {
+  const response = await unwrap(
+    api.PATCH("/v1/projects/{projectId}/preview-services/{serviceId}", {
+      params: { path: { projectId, serviceId } },
+      body: request,
+    }),
+  );
+  return response.service;
+}
+
+export async function deleteProjectPreviewService(projectId: string, serviceId: string): Promise<void> {
+  await unwrap(
+    api.DELETE("/v1/projects/{projectId}/preview-services/{serviceId}", {
+      params: { path: { projectId, serviceId } },
+    }),
+  );
+}
+
+export async function createProjectPreview(
+  projectId: string,
+  request: PreviewCreateRequest,
+): Promise<ProjectPreview> {
+  return unwrap(
+    api.POST("/v1/projects/{projectId}/previews", {
+      params: { path: { projectId } },
+      body: request,
+    }),
+  );
+}
+
+export async function updateProjectPreview(
+  projectId: string,
+  previewId: string,
+  request: PreviewUpdateRequest,
+): Promise<ProjectPreview> {
+  return unwrap(
+    api.PATCH("/v1/projects/{projectId}/previews/{previewId}", {
+      params: { path: { projectId, previewId } },
+      body: request,
+    }),
+  );
+}
+
+export async function deleteProjectPreview(projectId: string, previewId: string): Promise<void> {
+  await unwrap(
+    api.DELETE("/v1/projects/{projectId}/previews/{previewId}", {
+      params: { path: { projectId, previewId } },
+    }),
+  );
+}
+
+export async function createProjectPreviewRoute(
+  projectId: string,
+  previewId: string,
+  request: PreviewRouteCreateRequest,
+): Promise<ProjectPreviewRoute> {
+  const response = await unwrap(
+    api.POST("/v1/projects/{projectId}/previews/{previewId}/routes", {
+      params: { path: { projectId, previewId } },
+      body: request,
+    }),
+  );
+  return response.route;
+}
+
+export async function updateProjectPreviewRoute(
+  projectId: string,
+  previewId: string,
+  routeId: string,
+  request: PreviewRouteUpdateRequest,
+): Promise<ProjectPreviewRoute> {
+  const response = await unwrap(
+    api.PATCH("/v1/projects/{projectId}/previews/{previewId}/routes/{routeId}", {
+      params: { path: { projectId, previewId, routeId } },
+      body: request,
+    }),
+  );
+  return response.route;
+}
+
+export async function deleteProjectPreviewRoute(
+  projectId: string,
+  previewId: string,
+  routeId: string,
+): Promise<void> {
+  await unwrap(
+    api.DELETE("/v1/projects/{projectId}/previews/{previewId}/routes/{routeId}", {
+      params: { path: { projectId, previewId, routeId } },
+    }),
+  );
+}
+
+export async function reloadProjectPreviews(): Promise<PreviewSubsystemStatus> {
+  return unwrap(api.POST("/v1/project-previews/reload"));
 }
 
 export async function listThreads(projectId: string): Promise<ThreadSummary[]> {

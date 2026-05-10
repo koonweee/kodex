@@ -57,6 +57,7 @@ This file is the directory of record for Kodex plans. Keep the status column cur
 | [Shared Markdown renderer plan](shared-markdown-renderer.md) | Complete | Shared ReactMarkdown component mapping for timeline messages and Markdown preview pane | Extracted custom timeline Markdown rendering into a reusable module and applied it to the Markdown preview pane with desktop modal presentation. |
 | [TanStack Query fetching overhaul plan](tanstack-query-fetching.md) | Complete | Frontend server-state queries, mutations, cache helpers, and SSE cache integration | Implemented Query-owned server snapshots, merge-protected SSE/cache helpers, fitting mutations, timeline boundary docs, tests, build, browser smoke, and review loop. |
 | [Subagent thread sidebar plan](subagent-thread-sidebar.md) | Complete | Gateway-owned currently loaded subagent discovery plus read-only timeline sidebar viewer | Implemented as an observer-only sidebar toggled from a robot icon in the thread header; no thread switching, resume/attach, or approval actions. |
+| [Project previews plan](project-previews.md) | Complete | Gateway-owned Caddy-backed project preview URLs for loopback dev services over trusted tailnets | Implemented manual services/previews/routes, public port allocation, isolated Caddy supervision, degraded status diagnostics, project pane UI, docs, tests, and browser smoke. |
 | [Future extensions overview](future-extensions.md) | Proposed | Non-MVP feature map linked to app-server APIs | Overview only, not an implementation plan. |
 
 ## Maintenance Rules

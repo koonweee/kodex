@@ -57,6 +57,96 @@ pub struct Project {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct ProjectPreviewService {
+    pub id: String,
+    pub project_id: String,
+    pub name: String,
+    pub protocol: String,
+    pub local_port: i64,
+    pub health_path: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewProjectPreviewService {
+    pub project_id: String,
+    pub name: String,
+    pub protocol: String,
+    pub local_port: i64,
+    pub health_path: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ProjectPreviewServiceUpdate {
+    pub name: Option<String>,
+    pub protocol: Option<String>,
+    pub local_port: Option<i64>,
+    pub health_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectPreview {
+    pub id: String,
+    pub project_id: String,
+    pub name: String,
+    pub public_port: i64,
+    pub root_service_id: String,
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewProjectPreview {
+    pub project_id: String,
+    pub name: String,
+    pub public_port: i64,
+    pub root_service_id: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ProjectPreviewUpdate {
+    pub name: Option<String>,
+    pub public_port: Option<i64>,
+    pub root_service_id: Option<String>,
+    pub enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectPreviewRoute {
+    pub id: String,
+    pub preview_id: String,
+    pub path_pattern: String,
+    pub service_id: String,
+    pub strip_prefix: bool,
+    pub sort_order: i64,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewProjectPreviewRoute {
+    pub preview_id: String,
+    pub path_pattern: String,
+    pub service_id: String,
+    pub strip_prefix: bool,
+    pub sort_order: i64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ProjectPreviewRouteUpdate {
+    pub path_pattern: Option<String>,
+    pub service_id: Option<String>,
+    pub strip_prefix: Option<bool>,
+    pub sort_order: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct Approval {
     pub id: String,
     pub request_id: String,
@@ -332,6 +422,59 @@ impl Store {
                 cwd text not null unique,
                 created_at text not null,
                 updated_at text not null
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
+            create table if not exists project_preview_services (
+                id text primary key,
+                project_id text not null,
+                name text not null,
+                protocol text not null,
+                local_port integer not null,
+                health_path text not null,
+                created_at text not null,
+                updated_at text not null,
+                foreign key (project_id) references projects(id)
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
+            create table if not exists project_previews (
+                id text primary key,
+                project_id text not null,
+                name text not null,
+                public_port integer not null unique,
+                root_service_id text not null,
+                enabled integer not null,
+                created_at text not null,
+                updated_at text not null,
+                foreign key (project_id) references projects(id),
+                foreign key (root_service_id) references project_preview_services(id)
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
+            create table if not exists project_preview_routes (
+                id text primary key,
+                preview_id text not null,
+                path_pattern text not null,
+                service_id text not null,
+                strip_prefix integer not null,
+                sort_order integer not null,
+                created_at text not null,
+                updated_at text not null,
+                foreign key (preview_id) references project_previews(id),
+                foreign key (service_id) references project_preview_services(id)
             )
             "#,
         )
@@ -860,6 +1003,529 @@ impl Store {
         row.map(row_to_project)
             .transpose()?
             .ok_or_else(|| ApiError::NotFound(format!("project {id}")))
+    }
+
+    pub async fn create_project_preview_service(
+        &self,
+        service: NewProjectPreviewService,
+    ) -> ApiResult<ProjectPreviewService> {
+        self.get_project(&service.project_id).await?;
+        let now = Utc::now();
+        let id = Uuid::new_v4().to_string();
+        sqlx::query(
+            r#"
+            insert into project_preview_services
+                (id, project_id, name, protocol, local_port, health_path, created_at, updated_at)
+            values (?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(&service.project_id)
+        .bind(service.name)
+        .bind(service.protocol)
+        .bind(service.local_port)
+        .bind(service.health_path)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        self.get_project_preview_service(&service.project_id, &id)
+            .await
+    }
+
+    pub async fn list_project_preview_services(
+        &self,
+        project_id: &str,
+    ) -> ApiResult<Vec<ProjectPreviewService>> {
+        self.get_project(project_id).await?;
+        let rows = sqlx::query(
+            r#"
+            select id, project_id, name, protocol, local_port, health_path, created_at, updated_at
+            from project_preview_services
+            where project_id = ?
+            order by created_at asc, id asc
+            "#,
+        )
+        .bind(project_id)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(row_to_project_preview_service)
+            .collect()
+    }
+
+    pub async fn get_project_preview_service(
+        &self,
+        project_id: &str,
+        service_id: &str,
+    ) -> ApiResult<ProjectPreviewService> {
+        let row = sqlx::query(
+            r#"
+            select id, project_id, name, protocol, local_port, health_path, created_at, updated_at
+            from project_preview_services
+            where project_id = ? and id = ?
+            "#,
+        )
+        .bind(project_id)
+        .bind(service_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(row_to_project_preview_service)
+            .transpose()?
+            .ok_or_else(|| ApiError::NotFound(format!("preview service {service_id}")))
+    }
+
+    pub async fn update_project_preview_service(
+        &self,
+        project_id: &str,
+        service_id: &str,
+        update: ProjectPreviewServiceUpdate,
+    ) -> ApiResult<ProjectPreviewService> {
+        let existing = self
+            .get_project_preview_service(project_id, service_id)
+            .await?;
+        let referenced = self
+            .preview_service_reference_count(project_id, service_id)
+            .await?
+            > 0;
+        if referenced && (update.protocol.is_some() || update.local_port.is_some()) {
+            return Err(ApiError::BadRequest(
+                "referenced preview services cannot change protocol or port".to_string(),
+            ));
+        }
+
+        let name = update.name.unwrap_or(existing.name);
+        let protocol = update.protocol.unwrap_or(existing.protocol);
+        let local_port = update.local_port.unwrap_or(existing.local_port);
+        let health_path = update.health_path.unwrap_or(existing.health_path);
+        let now = Utc::now();
+        let affected = sqlx::query(
+            r#"
+            update project_preview_services
+            set name = ?, protocol = ?, local_port = ?, health_path = ?, updated_at = ?
+            where project_id = ? and id = ?
+            "#,
+        )
+        .bind(name)
+        .bind(protocol)
+        .bind(local_port)
+        .bind(health_path)
+        .bind(now)
+        .bind(project_id)
+        .bind(service_id)
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+        if affected == 0 {
+            return Err(ApiError::NotFound(format!("preview service {service_id}")));
+        }
+        self.get_project_preview_service(project_id, service_id)
+            .await
+    }
+
+    pub async fn delete_project_preview_service(
+        &self,
+        project_id: &str,
+        service_id: &str,
+    ) -> ApiResult<()> {
+        self.get_project_preview_service(project_id, service_id)
+            .await?;
+        if self
+            .preview_service_reference_count(project_id, service_id)
+            .await?
+            > 0
+        {
+            return Err(ApiError::BadRequest(
+                "preview service is referenced by a preview".to_string(),
+            ));
+        }
+        let affected =
+            sqlx::query("delete from project_preview_services where project_id = ? and id = ?")
+                .bind(project_id)
+                .bind(service_id)
+                .execute(&self.pool)
+                .await?
+                .rows_affected();
+        if affected == 0 {
+            return Err(ApiError::NotFound(format!("preview service {service_id}")));
+        }
+        Ok(())
+    }
+
+    pub async fn allocate_project_preview_public_port(
+        &self,
+        preferred_port: i64,
+        start: i64,
+        end: i64,
+    ) -> ApiResult<i64> {
+        if start > end {
+            return Err(ApiError::BadRequest(
+                "invalid preview port range".to_string(),
+            ));
+        }
+        if preferred_port >= start
+            && preferred_port <= end
+            && !self
+                .project_preview_public_port_exists(preferred_port, None)
+                .await?
+        {
+            return Ok(preferred_port);
+        }
+        for port in start..=end {
+            if !self.project_preview_public_port_exists(port, None).await? {
+                return Ok(port);
+            }
+        }
+        Err(ApiError::BadRequest(
+            "no available preview public ports".to_string(),
+        ))
+    }
+
+    pub async fn create_project_preview(
+        &self,
+        preview: NewProjectPreview,
+    ) -> ApiResult<ProjectPreview> {
+        self.get_project(&preview.project_id).await?;
+        self.get_project_preview_service(&preview.project_id, &preview.root_service_id)
+            .await?;
+        if self
+            .project_preview_public_port_exists(preview.public_port, None)
+            .await?
+        {
+            return Err(ApiError::BadRequest(
+                "preview public port is already in use".to_string(),
+            ));
+        }
+
+        let now = Utc::now();
+        let id = Uuid::new_v4().to_string();
+        sqlx::query(
+            r#"
+            insert into project_previews
+                (id, project_id, name, public_port, root_service_id, enabled, created_at, updated_at)
+            values (?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(&preview.project_id)
+        .bind(preview.name)
+        .bind(preview.public_port)
+        .bind(preview.root_service_id)
+        .bind(bool_to_i64(preview.enabled))
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        self.get_project_preview(&preview.project_id, &id).await
+    }
+
+    pub async fn list_project_previews(&self, project_id: &str) -> ApiResult<Vec<ProjectPreview>> {
+        self.get_project(project_id).await?;
+        let rows = sqlx::query(
+            r#"
+            select id, project_id, name, public_port, root_service_id, enabled, created_at, updated_at
+            from project_previews
+            where project_id = ?
+            order by created_at asc, id asc
+            "#,
+        )
+        .bind(project_id)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter().map(row_to_project_preview).collect()
+    }
+
+    pub async fn list_all_project_previews(&self) -> ApiResult<Vec<ProjectPreview>> {
+        let rows = sqlx::query(
+            r#"
+            select id, project_id, name, public_port, root_service_id, enabled, created_at, updated_at
+            from project_previews
+            order by created_at asc, id asc
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter().map(row_to_project_preview).collect()
+    }
+
+    pub async fn get_project_preview(
+        &self,
+        project_id: &str,
+        preview_id: &str,
+    ) -> ApiResult<ProjectPreview> {
+        let row = sqlx::query(
+            r#"
+            select id, project_id, name, public_port, root_service_id, enabled, created_at, updated_at
+            from project_previews
+            where project_id = ? and id = ?
+            "#,
+        )
+        .bind(project_id)
+        .bind(preview_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(row_to_project_preview)
+            .transpose()?
+            .ok_or_else(|| ApiError::NotFound(format!("project preview {preview_id}")))
+    }
+
+    pub async fn update_project_preview(
+        &self,
+        project_id: &str,
+        preview_id: &str,
+        update: ProjectPreviewUpdate,
+    ) -> ApiResult<ProjectPreview> {
+        let existing = self.get_project_preview(project_id, preview_id).await?;
+        let root_service_id = update.root_service_id.unwrap_or(existing.root_service_id);
+        self.get_project_preview_service(project_id, &root_service_id)
+            .await?;
+        let public_port = update.public_port.unwrap_or(existing.public_port);
+        if self
+            .project_preview_public_port_exists(public_port, Some(preview_id))
+            .await?
+        {
+            return Err(ApiError::BadRequest(
+                "preview public port is already in use".to_string(),
+            ));
+        }
+        let name = update.name.unwrap_or(existing.name);
+        let enabled = update.enabled.unwrap_or(existing.enabled);
+        let now = Utc::now();
+        let affected = sqlx::query(
+            r#"
+            update project_previews
+            set name = ?, public_port = ?, root_service_id = ?, enabled = ?, updated_at = ?
+            where project_id = ? and id = ?
+            "#,
+        )
+        .bind(name)
+        .bind(public_port)
+        .bind(root_service_id)
+        .bind(bool_to_i64(enabled))
+        .bind(now)
+        .bind(project_id)
+        .bind(preview_id)
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+        if affected == 0 {
+            return Err(ApiError::NotFound(format!("project preview {preview_id}")));
+        }
+        self.get_project_preview(project_id, preview_id).await
+    }
+
+    pub async fn delete_project_preview(
+        &self,
+        project_id: &str,
+        preview_id: &str,
+    ) -> ApiResult<()> {
+        self.get_project_preview(project_id, preview_id).await?;
+        sqlx::query("delete from project_preview_routes where preview_id = ?")
+            .bind(preview_id)
+            .execute(&self.pool)
+            .await?;
+        let affected = sqlx::query("delete from project_previews where project_id = ? and id = ?")
+            .bind(project_id)
+            .bind(preview_id)
+            .execute(&self.pool)
+            .await?
+            .rows_affected();
+        if affected == 0 {
+            return Err(ApiError::NotFound(format!("project preview {preview_id}")));
+        }
+        Ok(())
+    }
+
+    pub async fn create_project_preview_route(
+        &self,
+        project_id: &str,
+        route: NewProjectPreviewRoute,
+    ) -> ApiResult<ProjectPreviewRoute> {
+        self.get_project_preview(project_id, &route.preview_id)
+            .await?;
+        self.get_project_preview_service(project_id, &route.service_id)
+            .await?;
+        let now = Utc::now();
+        let id = Uuid::new_v4().to_string();
+        sqlx::query(
+            r#"
+            insert into project_preview_routes
+                (id, preview_id, path_pattern, service_id, strip_prefix, sort_order, created_at, updated_at)
+            values (?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(&route.preview_id)
+        .bind(route.path_pattern)
+        .bind(route.service_id)
+        .bind(bool_to_i64(route.strip_prefix))
+        .bind(route.sort_order)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        self.get_project_preview_route(project_id, &route.preview_id, &id)
+            .await
+    }
+
+    pub async fn list_project_preview_routes(
+        &self,
+        preview_id: &str,
+    ) -> ApiResult<Vec<ProjectPreviewRoute>> {
+        let rows = sqlx::query(
+            r#"
+            select id, preview_id, path_pattern, service_id, strip_prefix, sort_order, created_at, updated_at
+            from project_preview_routes
+            where preview_id = ?
+            order by sort_order asc, created_at asc, id asc
+            "#,
+        )
+        .bind(preview_id)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter().map(row_to_project_preview_route).collect()
+    }
+
+    pub async fn list_all_project_preview_routes(&self) -> ApiResult<Vec<ProjectPreviewRoute>> {
+        let rows = sqlx::query(
+            r#"
+            select id, preview_id, path_pattern, service_id, strip_prefix, sort_order, created_at, updated_at
+            from project_preview_routes
+            order by sort_order asc, created_at asc, id asc
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter().map(row_to_project_preview_route).collect()
+    }
+
+    pub async fn get_project_preview_route(
+        &self,
+        project_id: &str,
+        preview_id: &str,
+        route_id: &str,
+    ) -> ApiResult<ProjectPreviewRoute> {
+        self.get_project_preview(project_id, preview_id).await?;
+        let row = sqlx::query(
+            r#"
+            select id, preview_id, path_pattern, service_id, strip_prefix, sort_order, created_at, updated_at
+            from project_preview_routes
+            where preview_id = ? and id = ?
+            "#,
+        )
+        .bind(preview_id)
+        .bind(route_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(row_to_project_preview_route)
+            .transpose()?
+            .ok_or_else(|| ApiError::NotFound(format!("preview route {route_id}")))
+    }
+
+    pub async fn update_project_preview_route(
+        &self,
+        project_id: &str,
+        preview_id: &str,
+        route_id: &str,
+        update: ProjectPreviewRouteUpdate,
+    ) -> ApiResult<ProjectPreviewRoute> {
+        let existing = self
+            .get_project_preview_route(project_id, preview_id, route_id)
+            .await?;
+        let service_id = update.service_id.unwrap_or(existing.service_id);
+        self.get_project_preview_service(project_id, &service_id)
+            .await?;
+        let path_pattern = update.path_pattern.unwrap_or(existing.path_pattern);
+        let strip_prefix = update.strip_prefix.unwrap_or(existing.strip_prefix);
+        let sort_order = update.sort_order.unwrap_or(existing.sort_order);
+        let now = Utc::now();
+        let affected = sqlx::query(
+            r#"
+            update project_preview_routes
+            set path_pattern = ?, service_id = ?, strip_prefix = ?, sort_order = ?, updated_at = ?
+            where preview_id = ? and id = ?
+            "#,
+        )
+        .bind(path_pattern)
+        .bind(service_id)
+        .bind(bool_to_i64(strip_prefix))
+        .bind(sort_order)
+        .bind(now)
+        .bind(preview_id)
+        .bind(route_id)
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+        if affected == 0 {
+            return Err(ApiError::NotFound(format!("preview route {route_id}")));
+        }
+        self.get_project_preview_route(project_id, preview_id, route_id)
+            .await
+    }
+
+    pub async fn delete_project_preview_route(
+        &self,
+        project_id: &str,
+        preview_id: &str,
+        route_id: &str,
+    ) -> ApiResult<()> {
+        self.get_project_preview_route(project_id, preview_id, route_id)
+            .await?;
+        let affected =
+            sqlx::query("delete from project_preview_routes where preview_id = ? and id = ?")
+                .bind(preview_id)
+                .bind(route_id)
+                .execute(&self.pool)
+                .await?
+                .rows_affected();
+        if affected == 0 {
+            return Err(ApiError::NotFound(format!("preview route {route_id}")));
+        }
+        Ok(())
+    }
+
+    async fn preview_service_reference_count(
+        &self,
+        project_id: &str,
+        service_id: &str,
+    ) -> ApiResult<i64> {
+        let root_count: i64 = sqlx::query_scalar(
+            "select count(*) from project_previews where project_id = ? and root_service_id = ?",
+        )
+        .bind(project_id)
+        .bind(service_id)
+        .fetch_one(&self.pool)
+        .await?;
+        let route_count: i64 = sqlx::query_scalar(
+            r#"
+            select count(*)
+            from project_preview_routes routes
+            join project_previews previews on previews.id = routes.preview_id
+            where previews.project_id = ? and routes.service_id = ?
+            "#,
+        )
+        .bind(project_id)
+        .bind(service_id)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(root_count + route_count)
+    }
+
+    async fn project_preview_public_port_exists(
+        &self,
+        public_port: i64,
+        except_preview_id: Option<&str>,
+    ) -> ApiResult<bool> {
+        let mut builder = QueryBuilder::<Sqlite>::new(
+            "select count(*) from project_previews where public_port = ",
+        );
+        builder.push_bind(public_port);
+        if let Some(except_preview_id) = except_preview_id {
+            builder.push(" and id <> ");
+            builder.push_bind(except_preview_id);
+        }
+        let count: i64 = builder.build_query_scalar().fetch_one(&self.pool).await?;
+        Ok(count > 0)
     }
 
     pub async fn thread_read_states(
@@ -2394,6 +3060,49 @@ fn row_to_project(row: sqlx::sqlite::SqliteRow) -> ApiResult<Project> {
     })
 }
 
+fn row_to_project_preview_service(
+    row: sqlx::sqlite::SqliteRow,
+) -> ApiResult<ProjectPreviewService> {
+    Ok(ProjectPreviewService {
+        id: row.try_get("id")?,
+        project_id: row.try_get("project_id")?,
+        name: row.try_get("name")?,
+        protocol: row.try_get("protocol")?,
+        local_port: row.try_get("local_port")?,
+        health_path: row.try_get("health_path")?,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
+fn row_to_project_preview(row: sqlx::sqlite::SqliteRow) -> ApiResult<ProjectPreview> {
+    let enabled: i64 = row.try_get("enabled")?;
+    Ok(ProjectPreview {
+        id: row.try_get("id")?,
+        project_id: row.try_get("project_id")?,
+        name: row.try_get("name")?,
+        public_port: row.try_get("public_port")?,
+        root_service_id: row.try_get("root_service_id")?,
+        enabled: enabled != 0,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
+fn row_to_project_preview_route(row: sqlx::sqlite::SqliteRow) -> ApiResult<ProjectPreviewRoute> {
+    let strip_prefix: i64 = row.try_get("strip_prefix")?;
+    Ok(ProjectPreviewRoute {
+        id: row.try_get("id")?,
+        preview_id: row.try_get("preview_id")?,
+        path_pattern: row.try_get("path_pattern")?,
+        service_id: row.try_get("service_id")?,
+        strip_prefix: strip_prefix != 0,
+        sort_order: row.try_get("sort_order")?,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
 fn row_to_automation(row: sqlx::sqlite::SqliteRow) -> ApiResult<Automation> {
     let status: String = row.try_get("status")?;
     Ok(Automation {
@@ -2491,6 +3200,14 @@ fn automation_status(status: &str) -> ApiResult<AutomationStatus> {
     }
 }
 
+fn bool_to_i64(value: bool) -> i64 {
+    if value {
+        1
+    } else {
+        0
+    }
+}
+
 pub fn next_automation_run_after(
     start_at: DateTime<Utc>,
     repeat_every_seconds: i64,
@@ -2567,7 +3284,7 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'approvals', 'thread_reads', 'thread_composer_settings', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'project_preview_services', 'project_previews', 'project_preview_routes', 'approvals', 'thread_reads', 'thread_composer_settings', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
         )
         .fetch_all(store.pool())
         .await
@@ -2580,6 +3297,9 @@ mod tests {
                 "automations",
                 "events",
                 "pending_timeline_skill_mentions",
+                "project_preview_routes",
+                "project_preview_services",
+                "project_previews",
                 "projects",
                 "queued_turn_inputs",
                 "thread_composer_settings",
@@ -3016,6 +3736,125 @@ mod tests {
             .unwrap();
         assert_eq!(automation.source_type.as_deref(), Some("automation"));
         assert_eq!(automation.source_id.as_deref(), Some("run-1"));
+    }
+
+    #[tokio::test]
+    async fn project_preview_store_enforces_ports_and_service_references() {
+        let store = Store::in_memory().await.unwrap();
+        let project = store
+            .create_project("Kodex".to_string(), "/workspace/kodex".to_string())
+            .await
+            .unwrap();
+        let frontend = store
+            .create_project_preview_service(NewProjectPreviewService {
+                project_id: project.id.clone(),
+                name: "Frontend".to_string(),
+                protocol: "http".to_string(),
+                local_port: 3000,
+                health_path: "/".to_string(),
+            })
+            .await
+            .unwrap();
+        let backend = store
+            .create_project_preview_service(NewProjectPreviewService {
+                project_id: project.id.clone(),
+                name: "Backend".to_string(),
+                protocol: "http".to_string(),
+                local_port: 4000,
+                health_path: "/health".to_string(),
+            })
+            .await
+            .unwrap();
+
+        let allocated = store
+            .allocate_project_preview_public_port(13000, 10000, 19999)
+            .await
+            .unwrap();
+        assert_eq!(allocated, 13000);
+        let preview = store
+            .create_project_preview(NewProjectPreview {
+                project_id: project.id.clone(),
+                name: "App".to_string(),
+                public_port: allocated,
+                root_service_id: frontend.id.clone(),
+                enabled: true,
+            })
+            .await
+            .unwrap();
+
+        let next_allocated = store
+            .allocate_project_preview_public_port(13000, 10000, 19999)
+            .await
+            .unwrap();
+        assert_eq!(next_allocated, 10000);
+        assert!(matches!(
+            store
+                .create_project_preview(NewProjectPreview {
+                    project_id: project.id.clone(),
+                    name: "Conflict".to_string(),
+                    public_port: 13000,
+                    root_service_id: backend.id.clone(),
+                    enabled: true,
+                })
+                .await,
+            Err(ApiError::BadRequest(_))
+        ));
+
+        let route = store
+            .create_project_preview_route(
+                &project.id,
+                NewProjectPreviewRoute {
+                    preview_id: preview.id.clone(),
+                    path_pattern: "/api/*".to_string(),
+                    service_id: backend.id.clone(),
+                    strip_prefix: true,
+                    sort_order: 0,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(route.path_pattern, "/api/*");
+
+        assert!(matches!(
+            store
+                .delete_project_preview_service(&project.id, &frontend.id)
+                .await,
+            Err(ApiError::BadRequest(_))
+        ));
+        assert!(matches!(
+            store
+                .update_project_preview_service(
+                    &project.id,
+                    &backend.id,
+                    ProjectPreviewServiceUpdate {
+                        local_port: Some(4001),
+                        ..ProjectPreviewServiceUpdate::default()
+                    },
+                )
+                .await,
+            Err(ApiError::BadRequest(_))
+        ));
+        let renamed = store
+            .update_project_preview_service(
+                &project.id,
+                &backend.id,
+                ProjectPreviewServiceUpdate {
+                    name: Some("API".to_string()),
+                    ..ProjectPreviewServiceUpdate::default()
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(renamed.name, "API");
+
+        store
+            .delete_project_preview(&project.id, &preview.id)
+            .await
+            .unwrap();
+        store
+            .delete_project_preview_service(&project.id, &frontend.id)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

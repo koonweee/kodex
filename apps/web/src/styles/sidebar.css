@@ -8,6 +8,23 @@
   background: var(--kodex-bg-raised-muted);
 }
 
+.kodex-sidebar {
+  --kodex-sidebar-action-gap: 0px;
+  --kodex-sidebar-action-size: 18px;
+  --kodex-sidebar-disclosure-icon-size: 13px;
+  --kodex-sidebar-icon-size: 15px;
+  --kodex-sidebar-leading-rail-size: 18px;
+  --kodex-sidebar-row-height: 28px;
+}
+
+.kodex-sidebar[data-density="touch"] {
+  --kodex-sidebar-action-size: 36px;
+  --kodex-sidebar-disclosure-icon-size: 14px;
+  --kodex-sidebar-icon-size: 16px;
+  --kodex-sidebar-leading-rail-size: 36px;
+  --kodex-sidebar-row-height: 40px;
+}
+
 .kodex-sidebar-desktop-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -116,11 +133,8 @@
 }
 
 .kodex-sidebar-row {
-  --kodex-sidebar-disclosure-icon-size: 13px;
-  --kodex-sidebar-icon-size: 15px;
   --kodex-sidebar-leading-rail: 0px;
-  --kodex-sidebar-row-height: 28px;
-  --kodex-sidebar-trailing-rail: 18px;
+  --kodex-sidebar-trailing-rail: var(--kodex-sidebar-action-size);
 
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--kodex-sidebar-trailing-rail);
@@ -132,8 +146,8 @@
   padding: 3px 8px;
 }
 
-.kodex-sidebar-row:hover,
-.kodex-sidebar-row:focus-within {
+.kodex-sidebar-row:has(.kodex-sidebar-row-main:hover),
+.kodex-sidebar-row:has(.kodex-sidebar-row-main:focus-visible) {
   background: var(--kodex-bg-button-hover);
 }
 
@@ -143,7 +157,7 @@
 }
 
 .kodex-sidebar-row[data-has-leading="true"] {
-  --kodex-sidebar-leading-rail: 18px;
+  --kodex-sidebar-leading-rail: var(--kodex-sidebar-leading-rail-size);
 
   grid-template-columns: var(--kodex-sidebar-leading-rail) minmax(0, 1fr) var(--kodex-sidebar-trailing-rail);
 }
@@ -186,15 +200,18 @@
 }
 
 .kodex-sidebar-row-trailing {
-  display: grid;
-  width: var(--kodex-sidebar-trailing-rail);
+  display: inline-flex;
+  gap: var(--kodex-sidebar-action-gap);
+  width: max-content;
   min-width: 0;
-  place-items: center;
+  align-items: center;
+  justify-content: flex-end;
+  justify-self: end;
 }
 
 .kodex-sidebar-row-action {
-  width: var(--kodex-sidebar-trailing-rail);
-  height: var(--kodex-sidebar-trailing-rail);
+  width: var(--kodex-sidebar-action-size);
+  height: var(--kodex-sidebar-action-size);
 }
 
 .kodex-sidebar-row-action svg {
@@ -212,8 +229,8 @@
     transform 120ms ease;
 }
 
-.kodex-sidebar-row:hover .kodex-sidebar-row-disclosure,
-.kodex-sidebar-row:focus-within .kodex-sidebar-row-disclosure,
+.kodex-sidebar-row:has(.kodex-sidebar-row-main:hover) .kodex-sidebar-row-disclosure,
+.kodex-sidebar-row:has(.kodex-sidebar-row-main:focus-visible) .kodex-sidebar-row-disclosure,
 .kodex-sidebar-row[data-collapsed="true"] .kodex-sidebar-row-disclosure {
   opacity: 1;
 }
@@ -222,8 +239,8 @@
   transform: rotate(0deg);
 }
 
-.kodex-sidebar-row:hover .kodex-sidebar-row-main,
-.kodex-sidebar-row:focus-within .kodex-sidebar-row-main {
+.kodex-sidebar-row:has(.kodex-sidebar-row-main:hover) .kodex-sidebar-row-main,
+.kodex-sidebar-row:has(.kodex-sidebar-row-main:focus-visible) .kodex-sidebar-row-main {
   color: var(--kodex-text-primary);
 }
 
@@ -363,8 +380,8 @@
   appearance: none;
   z-index: 1;
   display: grid;
-  width: 18px;
-  height: 18px;
+  width: var(--kodex-sidebar-action-size);
+  height: var(--kodex-sidebar-action-size);
   place-items: center;
   border: 0;
   border-radius: var(--kodex-radius-xs);
@@ -404,6 +421,13 @@
   animation: kodex-unread-agent-turn-pulse 1.8s ease-out infinite;
 }
 
+.kodex-thread-status-slot {
+  display: grid;
+  width: var(--kodex-sidebar-action-size);
+  height: var(--kodex-sidebar-action-size);
+  place-items: center;
+}
+
 .kodex-thread-progress-indicator {
   display: block;
   width: 12px;
@@ -417,8 +441,8 @@
 .kodex-thread-archive-button {
   appearance: none;
   display: grid;
-  width: 18px;
-  height: 18px;
+  width: var(--kodex-sidebar-action-size);
+  height: var(--kodex-sidebar-action-size);
   place-items: center;
   border: 0;
   border-radius: var(--kodex-radius-xs);
@@ -478,12 +502,17 @@
 
   .kodex-sidebar-mobile-header {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 32px 32px;
+    grid-template-columns: minmax(0, 1fr) 44px 44px;
     gap: 4px;
     align-items: center;
-    min-height: 40px;
+    min-height: 44px;
     margin: 0;
     padding: 0 6px;
+  }
+
+  .kodex-sidebar-mobile-action {
+    width: 44px;
+    height: 44px;
   }
 
   .kodex-sidebar-mobile-filter {
@@ -523,16 +552,6 @@
 
   .kodex-sidebar[data-mobile-scope="chats"] .kodex-sidebar-section {
     margin-top: 0;
-  }
-
-  .kodex-sidebar-row {
-    --kodex-sidebar-disclosure-icon-size: 14px;
-    --kodex-sidebar-icon-size: 16px;
-    --kodex-sidebar-row-height: 36px;
-  }
-
-  .kodex-thread-list-button {
-    --kodex-sidebar-icon-size: 14px;
   }
 
   .kodex-sidebar-row-disclosure {

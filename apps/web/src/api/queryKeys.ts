@@ -8,6 +8,7 @@ export const queryKeys = {
   pendingApprovals: ["approvals", "pending"] as const,
   pinnedThreadTombstones: ["threads", "pinned", "tombstones"] as const,
   pinnedThreads: ["threads", "pinned"] as const,
+  projectPreviews: (projectId: string) => ["projects", projectId, "previews"] as const,
   projectThreads: (projectId: string) => ["threads", "project", projectId] as const,
   projectThreadsRoot: ["threads", "project"] as const,
   projects: ["projects"] as const,

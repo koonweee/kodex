@@ -1,5 +1,5 @@
 import { AppShell, MantineProvider } from "@mantine/core";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -239,6 +239,36 @@ describe("WorkspaceSidebar project reorder", () => {
 
     expect(screen.getByText("Project").closest(".kodex-project-title")).not.toHaveAttribute("data-active", "true");
   });
+
+  it("applies shared touch density at the sidebar root on mobile", async () => {
+    const matchMedia = vi.spyOn(window, "matchMedia").mockImplementation((query: string): MediaQueryList => ({
+      matches: query === "(max-width: 900px)",
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    renderSidebar({
+      projects: [projectSummary("project-1", "Project")],
+      threadsByProjectId: {
+        "project-1": [threadSummary(1, { status: "active" })],
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Workspace")).toHaveAttribute("data-density", "touch");
+    });
+    expect(screen.getByText("Project").closest(".kodex-sidebar-row")).toHaveClass("kodex-project-row");
+    expect(screen.getByRole("button", { name: "Thread 1" }).closest(".kodex-sidebar-row")).toHaveClass(
+      "kodex-thread-list-button",
+    );
+
+    matchMedia.mockRestore();
+  });
 });
 
 function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar>> = {}) {
@@ -268,6 +298,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
           onSelectAutomations={vi.fn()}
           onSelectChatThread={vi.fn()}
           onSelectPinnedThread={vi.fn()}
+          onSelectProjectSettings={vi.fn()}
           onSelectThread={vi.fn()}
           onShowDebugEventsChange={vi.fn()}
           onSidebarResizeKeyDown={vi.fn()}

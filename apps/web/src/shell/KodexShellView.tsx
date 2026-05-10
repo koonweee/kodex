@@ -4,6 +4,7 @@ import { lazy, Suspense, type ComponentProps } from "react";
 import type { AutomationsPane as AutomationsPaneComponent } from "../automations/AutomationsPane";
 import { ComposerPanel } from "../composer/ComposerPanel";
 import { PreferencesModal } from "../PreferencesModal";
+import { ProjectPane } from "../projects/ProjectPane";
 import { ThreadPanel } from "../threads/ThreadPanel";
 import { WorkspaceSidebar } from "../threads/WorkspaceSidebar";
 
@@ -17,9 +18,10 @@ type KodexShellViewProps = {
   automationsPaneProps: ComponentProps<typeof AutomationsPaneComponent>;
   composerPanelProps: ComponentProps<typeof ComposerPanel>;
   isSidebarResizing: boolean;
-  mainPane: "thread" | "automations";
+  mainPane: "thread" | "automations" | "project";
   mobilePanel: MobilePanel;
   preferencesProps: ComponentProps<typeof PreferencesModal>;
+  projectPaneProps: ComponentProps<typeof ProjectPane>;
   sidebarWidth: number;
   threadPanelProps: ComponentProps<typeof ThreadPanel>;
   workspaceSidebarProps: ComponentProps<typeof WorkspaceSidebar>;
@@ -48,10 +50,13 @@ export function KodexShellView({
   mainPane,
   mobilePanel,
   preferencesProps,
+  projectPaneProps,
   sidebarWidth,
   threadPanelProps,
   workspaceSidebarProps,
 }: KodexShellViewProps) {
+  const mainLabel = mainPane === "automations" ? "Automations" : mainPane === "project" ? "Project" : "Thread";
+
   return (
     <AppShell
       navbar={{ width: sidebarWidth, breakpoint: "sm" }}
@@ -61,7 +66,7 @@ export function KodexShellView({
       data-sidebar-resizing={isSidebarResizing ? "true" : undefined}
     >
       <WorkspaceSidebar {...workspaceSidebarProps} />
-      <AppShell.Main aria-label="Thread" className="kodex-main">
+      <AppShell.Main aria-label={mainLabel} className="kodex-main">
         <Stack
           h="calc(100dvh - var(--app-shell-padding))"
           gap="md"
@@ -72,6 +77,8 @@ export function KodexShellView({
             <Suspense fallback={<AutomationsPaneFallback />}>
               <AutomationsPane {...automationsPaneProps} />
             </Suspense>
+          ) : mainPane === "project" ? (
+            <ProjectPane {...projectPaneProps} />
           ) : (
             <>
               <ThreadPanel {...threadPanelProps} />

@@ -1,6 +1,6 @@
 use std::{
     env,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
 };
 
@@ -14,6 +14,7 @@ pub struct Config {
     pub uploads: UploadsConfig,
     pub projects: ProjectsConfig,
     pub frontend: FrontendConfig,
+    pub previews: PreviewConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -48,6 +49,16 @@ pub struct FrontendConfig {
     pub dist_dir: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct PreviewConfig {
+    pub caddy_binary: String,
+    pub bind: Option<IpAddr>,
+    pub port_range_start: u16,
+    pub port_range_end: u16,
+    pub caddy_admin_bind: SocketAddr,
+    pub data_dir: PathBuf,
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -75,6 +86,16 @@ impl Default for Config {
                 home_dir: home_dir(),
             },
             frontend: FrontendConfig { dist_dir: None },
+            previews: PreviewConfig {
+                caddy_binary: "caddy".to_string(),
+                bind: None,
+                port_range_start: 10000,
+                port_range_end: 19999,
+                caddy_admin_bind: "127.0.0.1:20191"
+                    .parse()
+                    .expect("default caddy admin bind is valid"),
+                data_dir: default_data_dir().join("previews"),
+            },
         }
     }
 }
@@ -109,8 +130,75 @@ impl Config {
             config.frontend.dist_dir = Some(expand_home(dist_dir));
         }
 
+        if let Ok(binary) = env::var("KODEX_CADDY_BINARY") {
+            config.previews.caddy_binary = binary;
+        }
+
+        if let Ok(bind) = env::var("KODEX_PREVIEW_BIND") {
+            config.previews.bind = Some(
+                bind.parse()
+                    .unwrap_or_else(|err| panic!("invalid KODEX_PREVIEW_BIND: {err}")),
+            );
+        }
+
+        if let Ok(range) = env::var("KODEX_PREVIEW_PORT_RANGE") {
+            let (start, end) = parse_port_range(&range)
+                .unwrap_or_else(|err| panic!("invalid KODEX_PREVIEW_PORT_RANGE: {err}"));
+            config.previews.port_range_start = start;
+            config.previews.port_range_end = end;
+        }
+
+        if let Ok(bind) = env::var("KODEX_CADDY_ADMIN_BIND") {
+            config.previews.caddy_admin_bind = bind
+                .parse()
+                .unwrap_or_else(|err| panic!("invalid KODEX_CADDY_ADMIN_BIND: {err}"));
+        }
+        validate_caddy_admin_bind(config.previews.caddy_admin_bind)
+            .unwrap_or_else(|err| panic!("invalid KODEX_CADDY_ADMIN_BIND: {err}"));
+
+        if let Ok(path) = env::var("KODEX_PREVIEW_DATA_DIR") {
+            config.previews.data_dir = expand_home(path);
+        }
+
         config
     }
+
+    pub fn preview_bind_address(&self) -> anyhow::Result<IpAddr> {
+        if let Some(bind) = self.previews.bind {
+            return Ok(bind);
+        }
+
+        let gateway_ip = self.server.bind.ip();
+        if gateway_ip.is_unspecified() {
+            anyhow::bail!(
+                "KODEX_PREVIEW_BIND is required when KODEX_BIND uses an unspecified address"
+            );
+        }
+        Ok(gateway_ip)
+    }
+}
+
+fn parse_port_range(value: &str) -> Result<(u16, u16), String> {
+    let Some((start, end)) = value.split_once('-') else {
+        return Err("expected START-END".to_string());
+    };
+    let start = start
+        .parse::<u16>()
+        .map_err(|error| format!("invalid start port: {error}"))?;
+    let end = end
+        .parse::<u16>()
+        .map_err(|error| format!("invalid end port: {error}"))?;
+    if start == 0 || end == 0 || start > end {
+        return Err("port range must be ascending non-zero ports".to_string());
+    }
+    Ok((start, end))
+}
+
+fn validate_caddy_admin_bind(value: SocketAddr) -> Result<(), String> {
+    if !value.ip().is_loopback() {
+        return Err("must use a loopback address".to_string());
+    }
+    Ok(())
 }
 
 fn default_data_dir() -> PathBuf {
@@ -172,5 +260,41 @@ mod tests {
     fn default_uploads_live_under_temp_dir() {
         let path = Config::default().uploads.dir;
         assert_eq!(path, std::env::temp_dir().join("kodex").join("uploads"));
+    }
+
+    #[test]
+    fn preview_bind_defaults_to_concrete_gateway_bind() {
+        assert_eq!(
+            Config::default().preview_bind_address().unwrap(),
+            "127.0.0.1".parse::<IpAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn preview_bind_requires_override_for_unspecified_gateway_bind() {
+        let mut config = Config::default();
+        config.server.bind = "0.0.0.0:8787".parse().unwrap();
+        assert!(config.preview_bind_address().is_err());
+        config.previews.bind = Some("100.64.0.10".parse().unwrap());
+        assert_eq!(
+            config.preview_bind_address().unwrap(),
+            "100.64.0.10".parse::<IpAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn preview_port_range_parser_rejects_invalid_ranges() {
+        assert_eq!(parse_port_range("10000-19999").unwrap(), (10000, 19999));
+        assert!(parse_port_range("19999-10000").is_err());
+        assert!(parse_port_range("0-1").is_err());
+        assert!(parse_port_range("10000").is_err());
+    }
+
+    #[test]
+    fn caddy_admin_bind_must_be_loopback() {
+        validate_caddy_admin_bind("127.0.0.1:20191".parse().unwrap()).unwrap();
+        validate_caddy_admin_bind("[::1]:20191".parse().unwrap()).unwrap();
+        assert!(validate_caddy_admin_bind("0.0.0.0:20191".parse().unwrap()).is_err());
+        assert!(validate_caddy_admin_bind("100.64.0.10:20191".parse().unwrap()).is_err());
     }
 }

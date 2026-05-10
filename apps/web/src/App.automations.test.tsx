@@ -64,7 +64,7 @@ describe("Automations frontend", () => {
     await userEvent.click(await screen.findByRole("button", { name: /automations/i }));
 
     expect(window.location.pathname).toBe("/automations");
-    const main = screen.getByRole("main", { name: /thread/i });
+    const main = screen.getByRole("main", { name: /automations/i });
     expect(await within(main).findByRole("heading", { name: "Automations" })).toBeInTheDocument();
     expect(await within(main).findByText("Daily status", undefined, { timeout: 5000 })).toBeInTheDocument();
     expect(within(main).getByRole("table").closest(".kodex-automation-table-paper")).toHaveClass(
@@ -297,7 +297,7 @@ describe("Automations frontend", () => {
 
     render(<App />);
 
-    const main = screen.getByRole("main", { name: /thread/i });
+    const main = screen.getByRole("main", { name: /automations/i });
     const automationRow = await within(main).findByRole("row", { name: /daily status/i });
     await userEvent.click(automationRow);
     expect(await screen.findByRole("dialog", { name: /automation details/i })).toBeInTheDocument();

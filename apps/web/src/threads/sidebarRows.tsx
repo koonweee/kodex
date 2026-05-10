@@ -66,6 +66,7 @@ export function SidebarRowFrame({
       className={rootClassName}
       data-collapsed={collapsed ? "true" : undefined}
       data-has-leading={leading || reserveLeading ? "true" : undefined}
+      data-trailing-actions={trailingActionNodes.length > 0 ? String(trailingActionNodes.length) : undefined}
     >
       {leading || reserveLeading ? <span className="kodex-sidebar-row-leading">{leading}</span> : null}
       {children}

@@ -10,7 +10,7 @@ The MVP target is a Rust gateway that supervises an external `codex app-server` 
 
 ## Current Status
 
-The first Rust gateway implementation exists under `apps/gateway`. It includes the backend scaffold, SQLite project/approval/read-marker/queue/pin/automation storage, diagnostic event replay, a stdio JSON-RPC app-server supervisor, HTTP/SSE API routes, approval brokering, OpenAPI generation, an app-server adapter layer, product-shaped frontend response DTOs, and optional static frontend serving.
+The first Rust gateway implementation exists under `apps/gateway`. It includes the backend scaffold, SQLite project/approval/read-marker/queue/pin/automation/preview storage, diagnostic event replay, a stdio JSON-RPC app-server supervisor, HTTP/SSE API routes, approval brokering, OpenAPI generation, an app-server adapter layer, product-shaped frontend response DTOs, optional Caddy-backed project previews, and optional static frontend serving.
 
 The first React web client exists under `apps/web`. It includes the Vite/Mantine scaffold, generated OpenAPI TypeScript types, a typed fetch client, project/thread navigation, pinned threads, stable draggable project ordering, attention-sorted threads, snapshot-first timeline rendering, gateway-backed queued composer follow-ups, composer controls, pending approval decisions, and account/model surfaces.
 
@@ -100,6 +100,9 @@ Default gateway config:
 - Image upload path: `${TMPDIR:-/tmp}/kodex/uploads/images`
 - Codex command: `codex app-server --listen stdio://`
 - Frontend static directory: disabled unless `KODEX_FRONTEND_DIST` points at a built frontend directory
+- Project preview proxy: disabled/degraded unless `caddy` is installed; preview listeners use the concrete `KODEX_BIND` host by default
+- Preview port range: `10000-19999`
+- Caddy admin bind for the Kodex-owned preview process: `127.0.0.1:20191`
 
 Environment overrides:
 
@@ -110,6 +113,11 @@ Environment overrides:
 - `KODEX_CODEX_BINARY`
 - `KODEX_CODEX_ARGS`
 - `KODEX_FRONTEND_DIST`
+- `KODEX_CADDY_BINARY`
+- `KODEX_PREVIEW_BIND`
+- `KODEX_PREVIEW_PORT_RANGE`
+- `KODEX_CADDY_ADMIN_BIND`
+- `KODEX_PREVIEW_DATA_DIR`
 
 Local routes:
 
@@ -124,11 +132,73 @@ Local routes:
 - `GET /v1/threads/{threadId}/queued-inputs`, `POST /v1/threads/{threadId}/queued-inputs`, `POST /v1/threads/{threadId}/queued-inputs/{queueId}/retry`, `POST /v1/threads/{threadId}/queued-inputs/{queueId}/steer`, and `DELETE /v1/threads/{threadId}/queued-inputs/{queueId}` for the same-gateway persisted composer queue. Queue rows may include nullable `sourceType` and `sourceId` fields for gateway-originated work such as automations.
 - `GET /v1/automations`, `POST /v1/automations`, `GET/PATCH/DELETE /v1/automations/{automationId}`, and `POST /v1/automations/{automationId}/pause|resume` for gateway-owned recurring prompts into a target thread. Automations have a 30-second minimum interval, coalesce missed due slots, use latest stored thread composer settings, and enqueue source-labeled input for the next idle turn rather than auto-steering active turns.
 - `GET /v1/skills` for the gateway skill catalog and `GET /v1/skills/icon?path=...` for localhost/trusted-VPN skill icon previews used by enriched inline skill badges.
+- `GET /v1/projects/{projectId}/previews`, preview service/preview/route CRUD routes under `/v1/projects/{projectId}`, and `POST /v1/project-previews/reload` for gateway-owned project preview configuration and Caddy repair.
 - Frontend-critical Codex routes such as `GET /v1/threads`, `GET /v1/threads/{threadId}`, `GET /v1/models`, `GET /v1/account`, `GET /v1/account/rate-limits`, and `POST /v1/account/login` expose typed gateway DTOs with `rawPayload` retained only as an escape hatch for volatile app-server fields. `GET /v1/threads/{threadId}` reads `thread/read includeTurns:true` from app-server and is the canonical selected-thread timeline source. Selected-thread SSE is a live overlay; reconnects or uncertain stream continuity trigger another snapshot read instead of replaying persisted timeline rows.
 
 The gateway has no MVP auth and is intended only for localhost or a trusted VPN. Do not expose it directly to the public internet. ChatGPT/Codex login routes broker Codex/OpenAI auth through app-server APIs; they are not gateway access control. Queued composer rows and automations are shared only between browsers connected to the same gateway process and database; there is no multi-gateway coordination. Uploaded image files are local helper assets for app-server input and inherit the same local/trusted-network assumption. File previews intentionally serve any readable supported regular local file under those deployment assumptions, rather than enforcing a public-safe filesystem authorization model.
 
 Image uploads default to the system temp directory so Codex app-server can read `localImage` paths from its sandbox. If you override `KODEX_UPLOADS_DIR`, choose a path that app-server can read from the active sandbox profile, such as a project root or `/tmp`.
+
+## Project Previews
+
+Project previews expose local dev services on stable ports through an isolated Caddy process owned by the gateway. They are intended for localhost or trusted-tailnet access only, matching the gateway's MVP security model.
+
+Caddy is not bundled. Install it separately, then either keep `caddy` on `PATH` or set `KODEX_CADDY_BINARY`:
+
+```bash
+# macOS with Homebrew
+brew install caddy
+
+# Debian/Ubuntu
+sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt-get update
+sudo apt-get install caddy
+```
+
+Kodex does not mutate or reload an existing system/user Caddy service. It starts its own Caddy process with generated config, isolated data/config directories, and a Kodex-owned admin address. If Caddy is missing, the admin address is occupied, a preview port is occupied, or Caddy cannot start, the preview subsystem reports `disabled` or `degraded` while the main gateway continues running.
+
+Preview binding follows these rules:
+
+- `KODEX_PREVIEW_BIND` overrides the listener host for preview ports.
+- Without `KODEX_PREVIEW_BIND`, previews use the concrete host from `KODEX_BIND`.
+- If `KODEX_BIND` is a wildcard such as `0.0.0.0` or `[::]`, set `KODEX_PREVIEW_BIND` explicitly.
+- Upstreams are loopback-only by design. A service is `http://127.0.0.1:<port>` plus a health path.
+- Default public port allocation tries `10000 + root service port`, then the next free port in `KODEX_PREVIEW_PORT_RANGE`.
+
+Example for a project with a Vite frontend on `3000` and NestJS backend on `4000`:
+
+1. Bind the gateway to your trusted tailnet IP, for example `KODEX_BIND=100.64.0.10:8787`.
+2. Open the project's settings pane from the project row.
+3. Add services: `Frontend` port `3000`, `Backend` port `4000`.
+4. Add an `App` preview rooted at `Frontend`, optionally using public port `13000`.
+5. Add a route `/api/*` to `Backend`; enable strip prefix if the backend expects `/users` instead of `/api/users`.
+6. Open `http://100.64.0.10:13000/` from another tailnet device.
+
+## Kodex Proxy Evaluation Skill
+
+This repo includes a reusable Codex skill at `.codex/skills/kodex-proxy-evaluation`. It lets another agent inspect an application repo, flag hardcoded browser-facing localhost/API origins, and propose Kodex project preview services, previews, routes, and strip-prefix settings.
+
+Install it into a user-level Codex skills directory by copying or symlinking it:
+
+```bash
+mkdir -p ~/.codex/skills
+cp -R .codex/skills/kodex-proxy-evaluation ~/.codex/skills/
+```
+
+For active development, a symlink keeps the installed skill pointed at this checkout:
+
+```bash
+mkdir -p ~/.codex/skills
+ln -sfn "$PWD/.codex/skills/kodex-proxy-evaluation" ~/.codex/skills/kodex-proxy-evaluation
+```
+
+Then invoke it from another repo with a prompt such as:
+
+```text
+Use $kodex-proxy-evaluation to evaluate this repo for Kodex project preview proxy compatibility and propose proxy settings.
+```
 
 ## Full-Stack Local Startup
 
@@ -192,7 +262,7 @@ npm run build
 npm run generate:api
 ```
 
-The Vite dev server runs on `127.0.0.1:5173` and proxies `/v1` plus `/openapi.json` to the default gateway at `127.0.0.1:8787`. To target another gateway, set `VITE_KODEX_API_BASE_URL`.
+The Vite dev server runs on `127.0.0.1:5173` and proxies `/v1` plus `/openapi.json` to the default gateway at `127.0.0.1:8787`. To proxy to another local gateway port during development, set `VITE_KODEX_PROXY_TARGET`. To bypass the Vite proxy and call another gateway origin directly, set `VITE_KODEX_API_BASE_URL`.
 
 Playwright E2E tests run against mocked gateway responses and start their own Vite server on `127.0.0.1:5174`.
 

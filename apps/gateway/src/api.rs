@@ -20,6 +20,10 @@ use crate::{
     },
     config::Config,
     error::ApiErrorBody,
+    previews::{
+        PreviewRuntimeStateKind, PreviewRuntimeStatus, PreviewServiceReachability,
+        PreviewServiceStatus, PreviewSubsystemState, PreviewSubsystemStatus,
+    },
     queue::{
         QueuedInputCreateRequest, QueuedInputDeleteResponse, QueuedInputListResponse,
         QueuedInputResponse,
@@ -39,6 +43,12 @@ use crate::{
         file_preview::FilePreviewQuery,
         health::{HealthResponse, ReadyResponse},
         models::ModelsQuery,
+        project_previews::{
+            PreviewCreateRequest, PreviewListResponse, PreviewRouteCreateRequest,
+            PreviewRouteResponse, PreviewRouteUpdateRequest, PreviewServiceCreateRequest,
+            PreviewServiceResponse, PreviewServiceUpdateRequest, PreviewUpdateRequest,
+            ProjectPreviewDto, ProjectPreviewRouteDto, ProjectPreviewServiceDto,
+        },
         projects::{CreateProjectRequest, ProjectListResponse},
         skills::{SkillIconQuery, SkillsQuery},
         threads::{
@@ -50,8 +60,9 @@ use crate::{
     },
     static_assets,
     store::{
-        Approval, AutomationStatus, EventEnvelope, Project, QueuedInput, QueuedInputPriority,
-        QueuedInputStatus, Store, ThreadRead,
+        Approval, AutomationStatus, EventEnvelope, Project, ProjectPreview, ProjectPreviewRoute,
+        ProjectPreviewService, QueuedInput, QueuedInputPriority, QueuedInputStatus, Store,
+        ThreadRead,
     },
 };
 
@@ -62,13 +73,16 @@ pub struct AppState {
     pub app_server: DynAppServer,
     pub events: broadcast::Sender<EventEnvelope>,
     pub skills: crate::skills::SkillCatalogCache,
+    pub previews: crate::previews::PreviewManager,
 }
 
 impl AppState {
     pub fn new(config: Config, store: Store, app_server: DynAppServer) -> Self {
         let (events, _) = broadcast::channel(1024);
+        let config = Arc::new(config);
         Self {
-            config: Arc::new(config),
+            previews: crate::previews::PreviewManager::new(config.clone()),
+            config,
             store,
             app_server,
             events,
@@ -90,6 +104,17 @@ impl AppState {
         crate::routes::projects::list_projects,
         crate::routes::projects::create_project,
         crate::routes::projects::get_project,
+        crate::routes::project_previews::list_project_previews,
+        crate::routes::project_previews::create_preview_service,
+        crate::routes::project_previews::update_preview_service,
+        crate::routes::project_previews::delete_preview_service,
+        crate::routes::project_previews::create_preview,
+        crate::routes::project_previews::update_preview,
+        crate::routes::project_previews::delete_preview,
+        crate::routes::project_previews::create_preview_route,
+        crate::routes::project_previews::update_preview_route,
+        crate::routes::project_previews::delete_preview_route,
+        crate::routes::project_previews::reload_previews,
         crate::routes::threads::list_threads,
         crate::routes::threads::create_thread,
         crate::routes::threads::list_chat_threads,
@@ -149,6 +174,27 @@ impl AppState {
         Project,
         ProjectListResponse,
         CreateProjectRequest,
+        ProjectPreviewService,
+        ProjectPreview,
+        ProjectPreviewRoute,
+        ProjectPreviewServiceDto,
+        ProjectPreviewDto,
+        ProjectPreviewRouteDto,
+        PreviewListResponse,
+        PreviewServiceCreateRequest,
+        PreviewServiceUpdateRequest,
+        PreviewServiceResponse,
+        PreviewCreateRequest,
+        PreviewUpdateRequest,
+        PreviewRouteCreateRequest,
+        PreviewRouteUpdateRequest,
+        PreviewRouteResponse,
+        PreviewSubsystemState,
+        PreviewSubsystemStatus,
+        PreviewServiceReachability,
+        PreviewServiceStatus,
+        PreviewRuntimeStateKind,
+        PreviewRuntimeStatus,
         RawAppServerResponse,
         ThreadListResponse,
         ThreadDetailResponse,
@@ -223,6 +269,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::composer_settings::router())
         .merge(routes::events::router())
         .merge(routes::projects::router())
+        .merge(routes::project_previews::router())
         .merge(routes::threads::router())
         .merge(routes::turns::router())
         .merge(crate::queue::router())

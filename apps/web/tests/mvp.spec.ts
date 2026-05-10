@@ -45,10 +45,9 @@ test("creates and selects a project", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.locator(".kodex-project-title").filter({ hasText: "Kodex" })).toBeVisible();
-  await page.getByRole("button", { name: /new project/i }).click();
-  await page.getByLabel(/project name/i).fill("Scratch");
-  await page.getByLabel(/working directory/i).fill("/tmp/scratch");
-  await page.getByRole("button", { name: /create project/i }).click();
+  await page.getByRole("button", { name: /add project/i }).first().click();
+  await page.getByLabel(/directory/i).fill("/tmp/scratch");
+  await page.getByRole("button", { name: /add project/i }).last().click();
 
   await expect(page.locator(".kodex-project-title").filter({ hasText: "Scratch" })).toBeVisible();
 });
@@ -56,22 +55,20 @@ test("creates and selects a project", async ({ page }) => {
 test("creates a thread and submits a turn", async ({ page }) => {
   await page.goto("/");
 
-  await page.getByRole("button", { name: /new thread/i }).click();
-  await expect(page.getByRole("heading", { name: /new thread/i })).toBeVisible();
-
+  await page.getByRole("button", { name: /create thread in kodex/i }).click();
   await page.getByLabel(/message composer/i).fill("Implement the next milestone");
   await page.getByRole("button", { name: /send message/i }).click();
   await expect(page.getByLabel(/message composer/i)).toBeEmpty();
 });
 
 test("renders selected thread snapshot output", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/threads/thread-1");
 
   await expect(page.getByText(/snapshot assistant output/i)).toBeVisible();
 });
 
 test("opens idle historical snapshots without unread or stop state after refresh interval", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/threads/thread-1");
 
   await expect(page.getByText(/snapshot assistant output/i)).toBeVisible();
   await expect(page.locator(".kodex-thread-unread-agent-turn-indicator")).toHaveCount(0);
@@ -177,7 +174,7 @@ test("keeps long timeline content inside the thread viewer", async ({ page }) =>
   });
 
   await page.setViewportSize({ width: 720, height: 760 });
-  await page.goto("/");
+  await page.goto("/threads/thread-1");
   await expect(page.getByText(longWord)).toBeVisible();
 
   const viewer = page.locator(".kodex-timeline-scroll");
@@ -251,7 +248,7 @@ test("lets thread titles use the expanded sidebar width before truncating", asyn
     });
   });
 
-  await page.goto("/");
+  await page.goto("/threads/thread-1");
 
   const resizeHandle = page.getByRole("separator", { name: /resize workspace sidebar/i });
   const handleBox = await resizeHandle.boundingBox();
@@ -267,7 +264,7 @@ test("lets thread titles use the expanded sidebar width before truncating", asyn
 
   const metrics = await threadButton.evaluate((button) => {
     const titleNode = button.querySelector(".kodex-thread-list-title");
-    const actionSlot = button.querySelector(".kodex-thread-list-action-slot");
+    const actionSlot = button.querySelector(".kodex-sidebar-row-trailing");
     if (!titleNode) {
       throw new Error("Missing thread title node");
     }
@@ -293,7 +290,7 @@ test("lets thread titles use the expanded sidebar width before truncating", asyn
 });
 
 test("resolves a pending approval", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/threads/thread-1");
 
   const threadCard = page.getByRole("button", { name: /frontend mvp/i });
   await expect(threadCard.getByText(/needs approval/i)).toBeVisible();
@@ -562,13 +559,12 @@ test("restores selected thread model settings when switching threads", async ({ 
 
   await page.goto("/");
 
-  await page.getByRole("button", { name: /new thread/i }).click();
-  await expect(page.getByRole("heading", { name: /new thread/i })).toBeVisible();
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
   await page.getByLabel(/message composer/i).fill("mini thread message");
   await page.getByRole("button", { name: /send message/i }).click();
   await expect(await page.getByRole("button", { name: /model: gpt-5\.4mini/i })).toBeVisible();
 
-  await page.getByRole("button", { name: /new thread/i }).click();
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
   await page.getByLabel(/message composer/i).fill("spark thread message");
   await page.getByRole("button", { name: /send message/i }).click();
   await expect(await page.getByRole("button", { name: /model: gpt-5\.3spark/i })).toBeVisible();

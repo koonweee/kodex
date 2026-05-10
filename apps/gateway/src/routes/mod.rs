@@ -7,6 +7,7 @@ pub mod events;
 pub mod file_preview;
 pub mod health;
 pub mod models;
+pub mod project_previews;
 pub mod projects;
 pub mod skills;
 pub mod threads;
@@ -145,6 +146,13 @@ mod tests {
             "/v1/debug/events",
             "/v1/projects",
             "/v1/projects/{projectId}",
+            "/v1/projects/{projectId}/previews",
+            "/v1/projects/{projectId}/preview-services",
+            "/v1/projects/{projectId}/preview-services/{serviceId}",
+            "/v1/projects/{projectId}/previews/{previewId}",
+            "/v1/projects/{projectId}/previews/{previewId}/routes",
+            "/v1/projects/{projectId}/previews/{previewId}/routes/{routeId}",
+            "/v1/project-previews/reload",
             "/v1/threads",
             "/v1/chats/threads",
             "/v1/threads/pinned",
@@ -382,6 +390,181 @@ mod tests {
             .unwrap();
         let fetched = response_json(fetched).await;
         assert_eq!(fetched["id"], project_id);
+    }
+
+    #[tokio::test]
+    async fn project_preview_routes_persist_validate_and_report_gateway_status() {
+        let (mut state, _) = test_state().await;
+        Arc::make_mut(&mut state.config).previews.caddy_binary =
+            "__missing_kodex_test_caddy__".to_string();
+        state.previews = crate::previews::PreviewManager::new(state.config.clone());
+        let cwd = std::env::current_dir().unwrap().display().to_string();
+        let project = state
+            .store
+            .create_project("Kodex".to_string(), cwd)
+            .await
+            .unwrap();
+        let app = build_router(state);
+
+        let frontend = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/projects/{}/preview-services", project.id))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"name": "Frontend", "localPort": 3000}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(frontend.status(), StatusCode::CREATED);
+        let frontend = response_json(frontend).await;
+        assert_eq!(frontend["service"]["name"], "Frontend");
+        assert_eq!(frontend["service"]["status"]["reachability"], "unreachable");
+        assert_eq!(frontend["subsystem"]["state"], "disabled");
+        let frontend_id = frontend["service"]["id"].as_str().unwrap().to_string();
+
+        let backend = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/projects/{}/preview-services", project.id))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"name": "Backend", "localPort": 4000, "healthPath": "/health"})
+                            .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(backend.status(), StatusCode::CREATED);
+        let backend = response_json(backend).await;
+        let backend_id = backend["service"]["id"].as_str().unwrap().to_string();
+
+        let preview = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/projects/{}/previews", project.id))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"name": "App", "rootServiceId": frontend_id}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(preview.status(), StatusCode::CREATED);
+        let preview = response_json(preview).await;
+        assert_eq!(preview["publicPort"], 13000);
+        assert_eq!(preview["status"]["state"], "degraded");
+        let preview_id = preview["id"].as_str().unwrap().to_string();
+
+        let route = app
+            .clone()
+            .oneshot(
+                Request::post(format!(
+                    "/v1/projects/{}/previews/{preview_id}/routes",
+                    project.id
+                ))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"pathPattern": "/api/*", "serviceId": backend_id, "stripPrefix": true})
+                        .to_string(),
+                ))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(route.status(), StatusCode::CREATED);
+        let route = response_json(route).await;
+        assert_eq!(route["route"]["pathPattern"], "/api/*");
+
+        let invalid_route = app
+            .clone()
+            .oneshot(
+                Request::post(format!(
+                    "/v1/projects/{}/previews/{preview_id}/routes",
+                    project.id
+                ))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"pathPattern": "/", "serviceId": backend_id}).to_string(),
+                ))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invalid_route.status(), StatusCode::BAD_REQUEST);
+
+        let referenced_delete = app
+            .clone()
+            .oneshot(
+                Request::delete(format!(
+                    "/v1/projects/{}/preview-services/{frontend_id}",
+                    project.id
+                ))
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(referenced_delete.status(), StatusCode::BAD_REQUEST);
+
+        let referenced_port_edit = app
+            .clone()
+            .oneshot(
+                Request::patch(format!(
+                    "/v1/projects/{}/preview-services/{frontend_id}",
+                    project.id
+                ))
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"localPort": 3001}).to_string()))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(referenced_port_edit.status(), StatusCode::BAD_REQUEST);
+
+        let disabled = app
+            .clone()
+            .oneshot(
+                Request::patch(format!("/v1/projects/{}/previews/{preview_id}", project.id))
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"enabled": false}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(disabled.status(), StatusCode::OK);
+        let disabled = response_json(disabled).await;
+        assert_eq!(disabled["enabled"], false);
+        assert_eq!(disabled["status"]["state"], "disabled");
+
+        let listed = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/v1/projects/{}/previews", project.id))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(listed.status(), StatusCode::OK);
+        let listed = response_json(listed).await;
+        assert_eq!(listed["services"].as_array().unwrap().len(), 2);
+        assert_eq!(listed["previews"][0]["routes"].as_array().unwrap().len(), 1);
+
+        let reload = app
+            .oneshot(
+                Request::post("/v1/project-previews/reload")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(reload.status(), StatusCode::OK);
+        assert_eq!(response_json(reload).await["state"], "disabled");
     }
 
     #[tokio::test]

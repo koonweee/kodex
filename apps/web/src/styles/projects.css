@@ -1,0 +1,36 @@
+.kodex-project-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.kodex-project-pane-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding: 0 var(--kodex-shell-panel-padding, 16px) var(--kodex-shell-panel-padding, 16px);
+}
+
+.kodex-project-preview-form {
+  align-items: flex-end;
+}
+
+.kodex-project-preview-form > * {
+  min-width: 160px;
+}
+
+.kodex-project-preview-card {
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+@media (max-width: 700px) {
+  .kodex-project-preview-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .kodex-project-preview-form > * {
+    width: 100%;
+  }
+}

@@ -22,6 +22,7 @@ import {
   Pin,
   PinOff,
   Search,
+  Settings,
   SquarePen,
   X,
 } from "lucide-react";
@@ -120,6 +121,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onSelectAutomations,
   onSelectChatThread,
   onSelectPinnedThread,
+  onSelectProjectSettings,
   onSelectThread,
   onShowThread = () => undefined,
   onShowDebugEventsChange,
@@ -164,6 +166,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onSelectAutomations: () => void;
   onSelectChatThread: (threadId: string) => void;
   onSelectPinnedThread: (threadId: string) => void;
+  onSelectProjectSettings: (projectId: string) => void;
   onSelectThread: (projectId: string, threadId: string) => void;
   onShowThread?: () => void;
   onShowDebugEventsChange: (value: boolean) => void;
@@ -178,7 +181,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   projectFormOpen: boolean;
   projects: Project[];
   selectedProjectId: string | null;
-  selectedMainPane: "thread" | "automations";
+  selectedMainPane: "thread" | "automations" | "project";
   selectedThreadId: string | null;
   showDebugEvents: boolean;
   sidebarWidth: number;
@@ -312,6 +315,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       aria-label={SIDEBAR_TEXT.workspaceLabel}
       p="sm"
       className="kodex-sidebar"
+      data-density={isMobileSidebar ? "touch" : "compact"}
       data-mobile-scope={mobileSidebarScope}
       style={{ width: sidebarWidth }}
     >
@@ -564,6 +568,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                         }}
                         trailingActions={[
                           {
+                            icon: <Settings />,
+                            label: `Project settings for ${project.name}`,
+                            onClick: () => onSelectProjectSettings(project.id),
+                          },
+                          {
                             icon: <SquarePen />,
                             label: newThreadLabel,
                             onClick: () => onCreateThread(project.id),
@@ -780,20 +789,24 @@ export const ThreadListRow = memo(function ThreadListRow({
             <Tooltip label={SIDEBAR_TEXT.threadInProgress}>
               <Box
                 aria-label={SIDEBAR_TEXT.threadInProgress}
-                className="kodex-thread-progress-indicator"
+                className="kodex-thread-status-slot"
                 component="span"
                 role="status"
-              />
+              >
+                <span className="kodex-thread-progress-indicator" />
+              </Box>
             </Tooltip>
           ) : null}
           {hasUnreadAgentTurn && !isThreadInProgress && !showThreadArchiveAction ? (
             <Tooltip label={SIDEBAR_TEXT.unreadAgentTurn}>
               <Box
                 aria-label={SIDEBAR_TEXT.unreadAgentTurn}
-                className="kodex-thread-unread-agent-turn-indicator"
+                className="kodex-thread-status-slot"
                 component="span"
                 role="img"
-              />
+              >
+                <span className="kodex-thread-unread-agent-turn-indicator" />
+              </Box>
             </Tooltip>
           ) : null}
           {showThreadArchiveAction ? (
