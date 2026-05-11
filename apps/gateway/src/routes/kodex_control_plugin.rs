@@ -78,14 +78,16 @@ pub async fn install_kodex_control_plugin(
     }
     let marketplace_path = resolve_marketplace_path(&state)?;
     let marketplace_path_text = marketplace_path.to_string_lossy().to_string();
+    let marketplace_root = marketplace_root_dir(&marketplace_path)?;
+    let marketplace_root_text = marketplace_root.to_string_lossy().to_string();
     let client = app_server_api::client(&state.app_server);
     let marketplace = client
-        .marketplace_add(marketplace_path_text.clone(), None, None)
+        .marketplace_add(marketplace_root_text, None, None)
         .await?;
     let install = client
         .plugin_install(
             KODEX_CONTROL_PLUGIN_NAME.to_string(),
-            Some(marketplace_path_text),
+            Some(marketplace_path_text.clone()),
             None,
         )
         .await?;
@@ -132,6 +134,23 @@ async fn read_status(
         }
     };
     let marketplace_path_text = marketplace_path.to_string_lossy().to_string();
+    read_status_from_marketplace_path(
+        &state,
+        marketplace_added,
+        marketplace_path_text,
+        apps_needing_auth,
+        auth_policy,
+    )
+    .await
+}
+
+async fn read_status_from_marketplace_path(
+    state: &AppState,
+    marketplace_added: bool,
+    marketplace_path_text: String,
+    apps_needing_auth: Option<Vec<AppSummary>>,
+    auth_policy: Option<String>,
+) -> ApiResult<KodexControlPluginStatusResponse> {
     match app_server_api::client(&state.app_server)
         .plugin_read(
             KODEX_CONTROL_PLUGIN_NAME.to_string(),
@@ -225,6 +244,42 @@ fn resolve_marketplace_path(state: &AppState) -> ApiResult<PathBuf> {
         )));
     }
     Ok(path)
+}
+
+fn marketplace_root_dir(marketplace_path: &Path) -> ApiResult<PathBuf> {
+    let Some(plugins_dir) = marketplace_path.parent() else {
+        return Err(ApiError::BadRequest(format!(
+            "Kodex Control marketplace path has no parent directory: {}",
+            marketplace_path.display()
+        )));
+    };
+    let Some(dot_agents_dir) = plugins_dir.parent() else {
+        return Err(ApiError::BadRequest(format!(
+            "Kodex Control marketplace path must live under .agents/plugins: {}",
+            marketplace_path.display()
+        )));
+    };
+    let Some(marketplace_root) = dot_agents_dir.parent() else {
+        return Err(ApiError::BadRequest(format!(
+            "Kodex Control marketplace path must live under .agents/plugins: {}",
+            marketplace_path.display()
+        )));
+    };
+    if plugins_dir.file_name().and_then(|name| name.to_str()) != Some("plugins")
+        || dot_agents_dir.file_name().and_then(|name| name.to_str()) != Some(".agents")
+    {
+        return Err(ApiError::BadRequest(format!(
+            "Kodex Control marketplace path must live under .agents/plugins: {}",
+            marketplace_path.display()
+        )));
+    }
+    if !marketplace_root.is_dir() {
+        return Err(ApiError::BadRequest(format!(
+            "Kodex Control marketplace root directory was not found at {}",
+            marketplace_root.display()
+        )));
+    }
+    Ok(marketplace_root.to_path_buf())
 }
 
 fn default_marketplace_path() -> PathBuf {

@@ -1,0 +1,38 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(CDPATH= cd -- "$script_dir/../../.." && pwd)
+
+run_from_repo_root() {
+  candidate_root=$1
+  if [ -x "$candidate_root/target/debug/kodex-gateway" ]; then
+    exec "$candidate_root/target/debug/kodex-gateway" mcp kodex-control
+  fi
+
+  if command -v cargo >/dev/null 2>&1 && [ -f "$candidate_root/Cargo.toml" ]; then
+    cd "$candidate_root"
+    exec cargo run --quiet -p kodex-gateway -- mcp kodex-control
+  fi
+}
+
+run_from_repo_root "$repo_root"
+
+if command -v curl >/dev/null 2>&1; then
+  gateway_url=${KODEX_GATEWAY_URL:-http://127.0.0.1:8787}
+  plugin_source=$(
+    curl -fsS "$gateway_url/v1/kodex-control-plugin" \
+      | sed -n 's/.*"source":{"path":"\([^"]*\/plugins\/kodex-control\)","type":"local"}.*/\1/p'
+  )
+  if [ -n "$plugin_source" ] && [ -d "$plugin_source" ]; then
+    source_repo_root=$(CDPATH= cd -- "$plugin_source/../.." && pwd)
+    run_from_repo_root "$source_repo_root"
+  fi
+fi
+
+if command -v kodex-gateway >/dev/null 2>&1; then
+  exec kodex-gateway mcp kodex-control
+fi
+
+echo "kodex-control MCP could not find a kodex-gateway binary or Cargo workspace" >&2
+exit 127

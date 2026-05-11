@@ -1378,4 +1378,34 @@ describe("MVP composer input flows", () => {
     });
   });
 
+  it("submits on Cmd+Enter on touch input with a hardware keyboard", async () => {
+    vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
+      matches: query.includes("max-width") || query === "(any-pointer: coarse)" || query === "(pointer: coarse)",
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads/thread-1/turns": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "Hardware keyboard submit");
+    await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+    });
+  });
+
 });

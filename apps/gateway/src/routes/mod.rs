@@ -122,8 +122,10 @@ mod tests {
     #[tokio::test]
     async fn kodex_control_plugin_reports_not_installed() {
         let (mut state, app_server) = test_state().await;
-        let marketplace_dir = tempdir().unwrap();
-        let marketplace_path = marketplace_dir.path().join("marketplace.json");
+        let marketplace_root = tempdir().unwrap();
+        let marketplace_dir = marketplace_root.path().join(".agents/plugins");
+        std::fs::create_dir_all(&marketplace_dir).unwrap();
+        let marketplace_path = marketplace_dir.join("marketplace.json");
         std::fs::write(
             &marketplace_path,
             json!({"name": "kodex-local", "plugins": []}).to_string(),
@@ -136,7 +138,7 @@ mod tests {
             .queued_responses
             .lock()
             .unwrap()
-            .push(plugin_read_response(false, &marketplace_path));
+            .push(plugin_read_response(false, &marketplace_path, None));
         let app = build_router(state);
 
         let response = app
@@ -184,8 +186,10 @@ mod tests {
     #[tokio::test]
     async fn kodex_control_plugin_install_adds_marketplace_installs_and_broadcasts_skills() {
         let (mut state, app_server) = test_state().await;
-        let marketplace_dir = tempdir().unwrap();
-        let marketplace_path = marketplace_dir.path().join("marketplace.json");
+        let marketplace_root = tempdir().unwrap();
+        let marketplace_dir = marketplace_root.path().join(".agents/plugins");
+        std::fs::create_dir_all(&marketplace_dir).unwrap();
+        let marketplace_path = marketplace_dir.join("marketplace.json");
         std::fs::write(
             &marketplace_path,
             json!({
@@ -201,11 +205,19 @@ mod tests {
         app_server.queued_responses.lock().unwrap().extend([
             json!({
                 "alreadyAdded": false,
-                "installedRoot": marketplace_dir.path().display().to_string(),
+                "installedRoot": marketplace_root.path().display().to_string(),
                 "marketplaceName": "kodex-local"
             }),
             json!({"appsNeedingAuth": [], "authPolicy": "onInstall"}),
-            plugin_read_response(true, &marketplace_path),
+            plugin_read_response(
+                true,
+                &marketplace_path,
+                Some(
+                    &marketplace_root
+                        .path()
+                        .join("installed/kodex-control/0.1.0"),
+                ),
+            ),
         ]);
         let mut receiver = state.events.subscribe();
         let skills = state.skills.clone();
@@ -228,8 +240,20 @@ mod tests {
         assert_eq!(body["status"]["mcpServers"][0], "kodex-control");
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "marketplace/add");
+        assert_eq!(
+            requests[0].1["source"],
+            marketplace_root.path().display().to_string()
+        );
         assert_eq!(requests[1].0, "plugin/install");
+        assert_eq!(
+            requests[1].1["marketplacePath"],
+            marketplace_path.display().to_string()
+        );
         assert_eq!(requests[2].0, "plugin/read");
+        assert_eq!(
+            requests[2].1["marketplacePath"],
+            marketplace_path.display().to_string()
+        );
 
         let event = timeout(Duration::from_secs(2), receiver.recv())
             .await
@@ -6691,7 +6715,14 @@ mod tests {
         serde_json::from_slice(&body).unwrap()
     }
 
-    fn plugin_read_response(installed: bool, marketplace_path: &std::path::Path) -> Value {
+    fn plugin_read_response(
+        installed: bool,
+        marketplace_path: &std::path::Path,
+        plugin_root: Option<&std::path::Path>,
+    ) -> Value {
+        let skill_path = plugin_root
+            .map(|root| root.join("skills/kodex-proxy-evaluation/SKILL.md"))
+            .unwrap_or_else(|| "/tmp/kodex-proxy-evaluation/SKILL.md".into());
         json!({
             "plugin": {
                 "summary": {
@@ -6712,7 +6743,7 @@ mod tests {
                 "marketplacePath": marketplace_path.display().to_string(),
                 "skills": [{
                     "name": "kodex-proxy-evaluation",
-                    "path": "/tmp/kodex-proxy-evaluation/SKILL.md",
+                    "path": skill_path.display().to_string(),
                     "description": "Evaluate repository preview proxy compatibility.",
                     "enabled": true,
                     "scope": "plugin"

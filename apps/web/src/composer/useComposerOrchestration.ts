@@ -392,7 +392,7 @@ export function useComposerOrchestration({
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
       return;
     }
-    if (usesMobileComposerInput()) {
+    if (usesMobileComposerInput() && !event.metaKey) {
       return;
     }
 

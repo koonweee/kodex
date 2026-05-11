@@ -1,8 +1,9 @@
 {
   "mcpServers": {
     "kodex-control": {
-      "command": "kodex-gateway",
-      "args": ["mcp", "kodex-control"],
+      "command": "sh",
+      "args": ["./bin/kodex-control-mcp"],
+      "cwd": ".",
       "env": {
         "KODEX_GATEWAY_URL": "http://127.0.0.1:8787"
       }
