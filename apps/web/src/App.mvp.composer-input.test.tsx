@@ -101,6 +101,33 @@ describe("MVP composer input flows", () => {
     });
   });
 
+  it("keeps unsent composer text scoped to the selected thread", async () => {
+    mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Draft for first thread");
+
+    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
+
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Draft for second thread");
+    await userEvent.click(screen.getByRole("button", { name: /implement frontend/i }));
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toHaveValue("Draft for first thread");
+
+    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toHaveValue("Draft for second thread");
+  });
+
   it("renders selected skill icon and accent in the optimistic user message before turn confirmation", async () => {
     const turnStart = deferred<unknown>();
     mockGateway(

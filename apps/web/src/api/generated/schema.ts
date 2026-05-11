@@ -308,6 +308,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/kodex-control-plugin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["kodex_control_plugin_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/kodex-control-plugin/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["install_kodex_control_plugin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/models": {
         parameters: {
             query?: never;
@@ -466,6 +498,166 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["update_preview_route"];
+        trace?: never;
+    };
+    "/v1/self-control/automations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a Kodex automation through self-control
+         * @description Agent-facing guarded automation creation endpoint. New self-control automations default to paused unless explicitly enabled, and provenance is stored durably.
+         */
+        post: operations["create_self_control_automation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/automations/{automationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update a Kodex automation through self-control
+         * @description Agent-facing guarded automation update endpoint. It reuses gateway validation and only replaces stored provenance when a new self-control source is supplied.
+         */
+        patch: operations["update_self_control_automation"];
+        trace?: never;
+    };
+    "/v1/self-control/automations/{automationId}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause a Kodex automation through self-control
+         * @description Agent-facing guarded automation pause endpoint that uses gateway-owned automation lifecycle policy and broadcasts.
+         */
+        post: operations["pause_self_control_automation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/automations/{automationId}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume a Kodex automation through self-control
+         * @description Agent-facing guarded automation resume endpoint that uses gateway-owned automation lifecycle policy and broadcasts.
+         */
+        post: operations["resume_self_control_automation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/project-previews/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply desired preview proxy configuration through self-control
+         * @description Agent-facing guarded preview apply endpoint. It reconciles desired preview services, previews, and routes through gateway-owned policy and provenance instead of exposing raw preview CRUD semantics to MCP tools.
+         */
+        post: operations["apply_project_preview_config"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Kodex self-control readiness
+         * @description Agent-facing guarded self-control status endpoint. MCP tools use the /v1/self-control namespace instead of raw CRUD routes so gateway-owned policy, provenance, and audit behavior stay centralized.
+         */
+        get: operations["self_control_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a Kodex thread through self-control
+         * @description Agent-facing guarded thread creation endpoint. It reuses gateway-owned thread creation policy, settings overlays, broadcasts, and provenance instead of raw app-server access.
+         */
+        post: operations["create_self_control_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/threads/{threadId}/input": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send input to a Kodex thread through self-control
+         * @description Agent-facing guarded thread input endpoint. It uses composer-equivalent gateway routing: idle threads start a turn and active threads receive source-labeled queued input.
+         */
+        post: operations["send_self_control_thread_input"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/skills": {
@@ -823,6 +1015,13 @@ export interface components {
             experimentalApi: boolean;
             ready: boolean;
         };
+        AppSummary: {
+            description?: string | null;
+            id: string;
+            installUrl?: string | null;
+            name: string;
+            needsAuth: boolean;
+        };
         Approval: {
             /** Format: date-time */
             createdAt: string;
@@ -881,6 +1080,7 @@ export interface components {
             nextRunAt: string;
             pausedReason?: string | null;
             prompt: string;
+            provenance?: unknown;
             schedule: components["schemas"]["AutomationSchedule"];
             status: components["schemas"]["AutomationStatus"];
             targetThreadId: string;
@@ -1042,6 +1242,26 @@ export interface components {
         ImageUploadResponse: {
             images: components["schemas"]["ImageUpload"][];
         };
+        KodexControlPluginInstallResponse: {
+            install?: null | components["schemas"]["PluginInstallResponse"];
+            marketplace?: null | components["schemas"]["MarketplaceAddResponse"];
+            status: components["schemas"]["KodexControlPluginStatusResponse"];
+        };
+        /** @enum {string} */
+        KodexControlPluginStatusKind: "notInstalled" | "installed" | "appServerUnavailable" | "setupError";
+        KodexControlPluginStatusResponse: {
+            appServerReady: boolean;
+            appsNeedingAuth: components["schemas"]["AppSummary"][];
+            authPolicy?: string | null;
+            marketplaceAdded: boolean;
+            marketplacePath?: string | null;
+            mcpServers: string[];
+            plugin?: null | components["schemas"]["PluginSummary"];
+            pluginName: string;
+            setupError?: string | null;
+            skills: string[];
+            status: components["schemas"]["KodexControlPluginStatusKind"];
+        };
         LoginRequest: {
             codexStreamlinedLogin?: boolean | null;
         };
@@ -1056,6 +1276,15 @@ export interface components {
         MarkThreadSeenRequest: {
             /** Format: int64 */
             seenCompletedAgentTurnSeq?: number | null;
+        };
+        MarketplaceAddResponse: {
+            alreadyAdded: boolean;
+            installedRoot: string;
+            marketplaceName: string;
+        };
+        MarketplaceLoadErrorInfo: {
+            marketplacePath: string;
+            message: string;
         };
         ModelListResponse: {
             models: components["schemas"]["ModelSummary"][];
@@ -1077,6 +1306,52 @@ export interface components {
         };
         ModelsQuery: {
             includeHidden?: boolean;
+        };
+        PluginDetail: {
+            apps?: components["schemas"]["AppSummary"][];
+            description?: string | null;
+            marketplaceName: string;
+            marketplacePath?: string | null;
+            mcpServers?: string[];
+            skills?: components["schemas"]["SkillMetadata"][];
+            summary: components["schemas"]["PluginSummary"];
+        };
+        PluginInstallResponse: {
+            appsNeedingAuth: components["schemas"]["AppSummary"][];
+            authPolicy: string;
+        };
+        PluginInterface: {
+            brandColor?: string | null;
+            capabilities?: string[];
+            category?: string | null;
+            defaultPrompt?: string[] | null;
+            developerName?: string | null;
+            displayName?: string | null;
+            longDescription?: string | null;
+            shortDescription?: string | null;
+        };
+        PluginListResponse: {
+            featuredPluginIds?: string[];
+            marketplaceLoadErrors?: components["schemas"]["MarketplaceLoadErrorInfo"][];
+            marketplaces: components["schemas"]["PluginMarketplaceEntry"][];
+        };
+        PluginMarketplaceEntry: {
+            name: string;
+            path?: string | null;
+            plugins: components["schemas"]["PluginSummary"][];
+        };
+        PluginReadResponse: {
+            plugin: components["schemas"]["PluginDetail"];
+        };
+        PluginSummary: {
+            authPolicy: string;
+            enabled: boolean;
+            id: string;
+            installPolicy: string;
+            installed: boolean;
+            interface?: null | components["schemas"]["PluginInterface"];
+            name: string;
+            source: unknown;
         };
         PreviewCreateRequest: {
             enabled?: boolean | null;
@@ -1297,6 +1572,135 @@ export interface components {
             description: string;
             reasoningEffort: string;
         };
+        /** @enum {string} */
+        SelfControlApplyAction: "created" | "updated" | "unchanged" | "deletedSkipped";
+        SelfControlApplyChange: {
+            action: components["schemas"]["SelfControlApplyAction"];
+            detail?: string | null;
+            name: string;
+            resource: string;
+        };
+        SelfControlAutomationCreateRequest: {
+            enabled?: boolean | null;
+            name: string;
+            prompt: string;
+            schedule: components["schemas"]["AutomationSchedule"];
+            source?: components["schemas"]["SelfControlSource"];
+            targetThreadId: string;
+        };
+        SelfControlAutomationResponse: {
+            automation: components["schemas"]["AutomationDto"];
+            pausedByDefault: boolean;
+        };
+        SelfControlAutomationUpdateRequest: components["schemas"]["AutomationUpdateRequest"] & {
+            enabled?: boolean | null;
+            source?: null | components["schemas"]["SelfControlSource"];
+        };
+        SelfControlCapabilities: {
+            automations: boolean;
+            mcpResources: boolean;
+            projectPreviewApply: boolean;
+            threads: boolean;
+        };
+        SelfControlCreateThreadRequest: {
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            effort?: string | null;
+            /** Format: int32 */
+            maxSelfControlDepth?: number | null;
+            model?: string | null;
+            payload?: unknown;
+            projectId: string;
+            sandbox?: string | null;
+            serviceTier?: string | null;
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlDesiredPreview: {
+            enabled?: boolean | null;
+            name: string;
+            /** Format: int64 */
+            publicPort?: number | null;
+            rootServiceName: string;
+            routes?: components["schemas"]["SelfControlDesiredPreviewRoute"][];
+        };
+        SelfControlDesiredPreviewRoute: {
+            pathPattern: string;
+            serviceName: string;
+            /** Format: int64 */
+            sortOrder?: number | null;
+            stripPrefix?: boolean | null;
+        };
+        SelfControlDesiredPreviewService: {
+            healthPath?: string | null;
+            /** Format: int64 */
+            localPort: number;
+            name: string;
+            protocol?: string | null;
+        };
+        SelfControlPreviewApplyRequest: {
+            createProject?: boolean;
+            dryRun?: boolean;
+            previews?: components["schemas"]["SelfControlDesiredPreview"][];
+            projectCwd?: string | null;
+            projectId?: string | null;
+            projectName?: string | null;
+            services?: components["schemas"]["SelfControlDesiredPreviewService"][];
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlPreviewApplyResponse: {
+            diff: components["schemas"]["SelfControlApplyChange"][];
+            dryRun: boolean;
+            previews: components["schemas"]["PreviewListResponse"];
+            project: components["schemas"]["Project"];
+        };
+        /** @enum {string} */
+        SelfControlRequestedBy: "user" | "agent";
+        /**
+         * @description Provenance supplied by Kodex Control MCP tools when they call guarded self-control endpoints.
+         *
+         *     Self-control endpoints are the agent-facing product boundary for Kodex-managed mutations.
+         *     MCP tools should use these routes instead of raw preview, thread, or automation CRUD routes so
+         *     gateway-owned policy, reconciliation, provenance, and audit behavior stay centralized.
+         */
+        SelfControlSource: {
+            /** @description Short reason recorded in audit/provenance payloads. */
+            reason?: string | null;
+            requestedBy?: null | components["schemas"]["SelfControlRequestedBy"];
+            /** @description Originating Kodex thread, when this request came from another thread. */
+            sourceThreadId?: string | null;
+            /** @description Originating MCP tool call id or equivalent agent tool invocation id. */
+            sourceToolCallId?: string | null;
+            /** @description Originating Kodex turn, when this request came from a specific turn. */
+            sourceTurnId?: string | null;
+            /** @description Self-control provenance marker. The only accepted value is `kodex_control`. */
+            sourceType?: components["schemas"]["SelfControlSourceType"];
+        };
+        /**
+         * @description Allowed provenance source type for self-control requests.
+         * @enum {string}
+         */
+        SelfControlSourceType: "kodex_control";
+        SelfControlStatusResponse: {
+            appServerError?: string | null;
+            appServerReady: boolean;
+            capabilities: components["schemas"]["SelfControlCapabilities"];
+            gatewayReady: boolean;
+            previewSubsystem: components["schemas"]["PreviewSubsystemStatus"];
+            version: string;
+        };
+        /** @enum {string} */
+        SelfControlThreadInputAction: "started" | "queued";
+        SelfControlThreadInputRequest: components["schemas"]["TurnStartOptions"] & {
+            input: components["schemas"]["UserInput"][];
+            /** Format: int32 */
+            maxSelfControlDepth?: number | null;
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlThreadInputResponse: {
+            action: components["schemas"]["SelfControlThreadInputAction"];
+            queuedInput?: null | components["schemas"]["QueuedInput"];
+            turn?: null | components["schemas"]["RawAppServerResponse"];
+        };
         SkillErrorInfo: {
             message: string;
             path: string;
@@ -1318,7 +1722,7 @@ export interface components {
             interface?: null | components["schemas"]["SkillInterface"];
             name: string;
             path: string;
-            scope: string;
+            scope?: string;
             shortDescription?: string | null;
         };
         SkillsCatalogResponse: {
@@ -2044,6 +2448,44 @@ export interface operations {
             };
         };
     };
+    kodex_control_plugin_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KodexControlPluginStatusResponse"];
+                };
+            };
+        };
+    };
+    install_kodex_control_plugin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KodexControlPluginInstallResponse"];
+                };
+            };
+        };
+    };
     list_models: {
         parameters: {
             query?: {
@@ -2380,6 +2822,186 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PreviewRouteResponse"];
+                };
+            };
+        };
+    };
+    create_self_control_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlAutomationCreateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfControlAutomationResponse"];
+                };
+            };
+        };
+    };
+    update_self_control_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlAutomationUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfControlAutomationResponse"];
+                };
+            };
+        };
+    };
+    pause_self_control_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfControlAutomationResponse"];
+                };
+            };
+        };
+    };
+    resume_self_control_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfControlAutomationResponse"];
+                };
+            };
+        };
+    };
+    apply_project_preview_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlPreviewApplyRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfControlPreviewApplyResponse"];
+                };
+            };
+        };
+    };
+    self_control_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfControlStatusResponse"];
+                };
+            };
+        };
+    };
+    create_self_control_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlCreateThreadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadCommandResponse"];
+                };
+            };
+        };
+    };
+    send_self_control_thread_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlThreadInputRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfControlThreadInputResponse"];
                 };
             };
         };

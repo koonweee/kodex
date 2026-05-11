@@ -4,6 +4,7 @@ export const queryKeys = {
   automationTombstones: ["automations", "tombstones"] as const,
   chatThreads: ["threads", "chat"] as const,
   composerSettings: (projectId: string | null) => ["composer-settings", projectId ?? "global"] as const,
+  kodexControlPlugin: ["plugins", "kodex-control"] as const,
   models: ["models"] as const,
   pendingApprovals: ["approvals", "pending"] as const,
   pinnedThreadTombstones: ["threads", "pinned", "tombstones"] as const,

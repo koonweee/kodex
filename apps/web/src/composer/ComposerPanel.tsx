@@ -38,6 +38,7 @@ export type ComposerPanelProps = {
   composerSettings: ComposerSettings;
   composerSettingsError: string | null;
   composerResetToken: number;
+  composerDraftKey?: string;
   composerCwd?: string | null;
   composerShellRef?: RefObject<HTMLDivElement | null>;
   contextUsage?: ContextUsage | null;
@@ -88,6 +89,7 @@ export function ComposerPanel({
   composerSettings,
   composerSettingsError,
   composerResetToken,
+  composerDraftKey,
   composerCwd,
   composerShellRef,
   contextUsage,
@@ -119,17 +121,18 @@ export function ComposerPanel({
   queuedSteerRows,
   selectedThreadPresent,
 }: ComposerPanelProps) {
-  const draftState = useComposerDraftState(composerResetToken);
+  const draftState = useComposerDraftState(composerResetToken, composerDraftKey);
   const isMobileComposer = useIsMobileComposer();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const internalComposerShellRef = useRef<HTMLDivElement | null>(null);
   const isComposerBusy = isComposerSubmitting || Boolean(isQueuedTurnStartPending);
   const isEntryPending = selectedThreadPresent && !isSelectedTimelineReady && !isDraftComposerTransitioning;
-  const isComposerDisabled = !canCompose || isComposerBusy || isEntryPending;
+  const isComposerDisabled = !canCompose || isComposerBusy;
+  const isComposerControlsDisabled = isComposerDisabled || isEntryPending;
   const canSubmitComposer =
-    !isComposerDisabled && (Boolean(draftState.composerText.trim()) || pendingAttachments.length > 0);
+    !isComposerControlsDisabled && (Boolean(draftState.composerText.trim()) || pendingAttachments.length > 0);
   const shouldShowStopAction = activeSelectedTurnId !== null && !canSubmitComposer;
-  const skillPopupOpen = !isComposerDisabled && draftState.skillToken !== null;
+  const skillPopupOpen = !isComposerControlsDisabled && draftState.skillToken !== null;
   const skillCatalog = useSkillCatalog({
     cwd: composerCwd,
     enabled: skillPopupOpen,
@@ -243,6 +246,7 @@ export function ComposerPanel({
     filteredSkills,
     handleTextareaKeyDown,
     isComposerBusy,
+    isComposerControlsDisabled,
     isComposerDisabled,
     isComposerDragActive,
     isComposerSubmitting,

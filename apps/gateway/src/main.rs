@@ -16,6 +16,18 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if std::env::args().skip(1).collect::<Vec<_>>() == ["mcp", "kodex-control"] {
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "kodex_gateway=info".into()),
+            )
+            .with_writer(std::io::stderr)
+            .with_ansi(false)
+            .init();
+        return kodex_gateway::mcp::run_kodex_control_stdio().await;
+    }
+
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()

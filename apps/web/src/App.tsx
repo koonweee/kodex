@@ -197,7 +197,7 @@ function KodexShell({
   const [lightboxImage, setLightboxImage] = useState<ImageLightboxImage | null>(null);
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownPreviewRequest | null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
-  const [preferencesSection, setPreferencesSection] = useState<"appearance">("appearance");
+  const [preferencesSection, setPreferencesSection] = useState<"appearance" | "plugins">("appearance");
   const [hoveredThreadActionId, setHoveredThreadActionId] = useState<string | null>(null);
   const [timelineScrollElement, setTimelineScrollElement] = useState<HTMLDivElement | null>(null);
   const [subagentSidebarOpen, setSubagentSidebarOpen] = useState(false);
@@ -451,6 +451,13 @@ function KodexShell({
   const activeSelectedTurnId = selectedThread !== null ? timeline.activeTurnId : null;
   const isDraftThreadSelected =
     draftChatThreadSelected || (draftThreadProjectId !== null && draftThreadProjectId === selectedProjectId);
+  const composerDraftKey =
+    selectedThreadId ??
+    (draftChatThreadSelected
+      ? "draft:chat"
+      : draftThreadProjectId
+        ? `draft:project:${draftThreadProjectId}`
+        : "draft:none");
   const draftComposerProject = draftThreadProjectId
     ? orderedProjects.find((project) => project.id === draftThreadProjectId) ?? null
     : null;
@@ -1555,7 +1562,7 @@ function KodexShell({
           threadOptions: automationTargetThreadOptions,
         }}
           composerPanelProps={{
-          activeSelectedTurnId, attachmentInputRef, canCompose, composerResetToken, composerSettings, composerSettingsError,
+          activeSelectedTurnId, attachmentInputRef, canCompose, composerDraftKey, composerResetToken, composerSettings, composerSettingsError,
           composerCwd, composerShellRef, contextUsage: selectedContextUsage, currentProjectName: selectedProject?.name ?? null,
           draftProjectSelector: isDraftThreadSelected
             ? {

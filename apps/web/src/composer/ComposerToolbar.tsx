@@ -90,6 +90,7 @@ export function ComposerToolbar({
             size="md"
             type="button"
             variant="subtle"
+            disabled={disabled}
             onClick={onExpandComposer}
           >
             <Maximize2 size={15} />

@@ -95,7 +95,12 @@ describe("deep link navigation", () => {
     expect(container.querySelectorAll(".kodex-timeline-skeleton-user-line")).toHaveLength(2);
     expect(container.querySelectorAll(".kodex-timeline-skeleton-assistant-line")).toHaveLength(5);
     expect(container.querySelector(".kodex-timeline-skeleton-divider")).toBeInTheDocument();
-    expect(screen.getByLabelText(/message composer/i)).toBeDisabled();
+    const composer = screen.getByLabelText(/message composer/i);
+    expect(composer).toBeEnabled();
+    await userEvent.type(composer, "Draft while loading");
+    expect(composer).toHaveValue("Draft while loading");
+    expect(screen.getByRole("button", { name: /open attachment menu/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /permissions:/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
 
     await act(async () => {
@@ -106,6 +111,7 @@ describe("deep link navigation", () => {
     await waitFor(() => {
       expect(screen.queryByRole("status", { name: /loading thread timeline/i })).not.toBeInTheDocument();
     });
+    expect(screen.getByLabelText(/message composer/i)).toHaveValue("Draft while loading");
   });
 
   it("shows the timeline skeleton immediately for a deep-linked thread before the thread list resolves", async () => {
@@ -129,7 +135,12 @@ describe("deep link navigation", () => {
     const main = screen.getByRole("main", { name: /thread/i });
     expect(screen.getByRole("status", { name: /loading thread timeline/i })).toBeInTheDocument();
     expect(within(main).queryByText(/no thread selected/i)).not.toBeInTheDocument();
-    expect(screen.getByLabelText(/message composer/i)).toBeDisabled();
+    const composer = screen.getByLabelText(/message composer/i);
+    expect(composer).toBeEnabled();
+    await userEvent.type(composer, "Draft before thread list");
+    expect(composer).toHaveValue("Draft before thread list");
+    expect(screen.getByRole("button", { name: /open attachment menu/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /permissions:/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
   });
 

@@ -27,6 +27,7 @@ type InlineComposerPanelProps = ComposerPanelProps & {
   filteredSkills: SkillMetadata[];
   handleTextareaKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
   isComposerBusy: boolean;
+  isComposerControlsDisabled: boolean;
   isComposerDisabled: boolean;
   isEntryPending: boolean;
   onExpandComposer?: () => void;
@@ -57,6 +58,7 @@ export function InlineComposerPanel({
   isDraftThreadSelected,
   isDraftComposerTransitioning,
   isComposerBusy,
+  isComposerControlsDisabled,
   isComposerDisabled,
   isComposerDragActive,
   isQueuedTurnStartPending,
@@ -115,9 +117,9 @@ export function InlineComposerPanel({
       data-inline-density={density}
       data-entry-ready={isEntryPending ? "false" : "true"}
       data-drag-active={isComposerDragActive ? "true" : "false"}
-      onDragLeave={onComposerDragLeave}
-      onDragOver={onComposerDragOver}
-      onDrop={onComposerDrop}
+      onDragLeave={isComposerControlsDisabled ? undefined : onComposerDragLeave}
+      onDragOver={isComposerControlsDisabled ? undefined : onComposerDragOver}
+      onDrop={isComposerControlsDisabled ? undefined : onComposerDrop}
     >
       {shouldShowDraftHero ? (
         <Box
@@ -129,7 +131,7 @@ export function InlineComposerPanel({
       ) : null}
       {queuedSteerRows.length > 0 ? (
         <QueuedSteerCard
-          blockIdleStartActions={activeSelectedTurnId === null && Boolean(isQueuedTurnStartPending)}
+          blockIdleStartActions={activeSelectedTurnId === null && (Boolean(isQueuedTurnStartPending) || isComposerControlsDisabled)}
           hasActiveTurn={activeSelectedTurnId !== null}
           rows={queuedSteerRows}
           onAbortRow={onAbortQueuedSteer}
@@ -171,7 +173,7 @@ export function InlineComposerPanel({
           type="file"
           accept="image/*"
           multiple
-          disabled={isComposerDisabled}
+          disabled={isComposerControlsDisabled}
           onChange={onAttachmentInputChange}
         />
         {pendingAttachments.length > 0 && !isComposerBusy ? (
@@ -202,8 +204,8 @@ export function InlineComposerPanel({
               draftState.updateComposerText(event.currentTarget.value, event.currentTarget.selectionStart);
             }
           }}
-          onKeyDown={handleTextareaKeyDown}
-          onPaste={onComposerPaste}
+          onKeyDown={isComposerControlsDisabled ? undefined : handleTextareaKeyDown}
+          onPaste={isComposerControlsDisabled ? undefined : onComposerPaste}
           disabled={isComposerDisabled}
           variant="unstyled"
         />
@@ -216,7 +218,7 @@ export function InlineComposerPanel({
           attachmentInputRef={attachmentInputRef}
           canSubmitComposer={canSubmitComposer}
           contextUsage={contextUsage}
-          disabled={isComposerDisabled}
+          disabled={isComposerControlsDisabled}
           models={models}
           onExpandComposer={onExpandComposer}
           onSettingsChange={onComposerSettingsChange}

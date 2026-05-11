@@ -290,6 +290,15 @@ pub enum AutomationStatus {
     Paused,
 }
 
+impl AutomationStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Paused => "paused",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Automation {
@@ -306,6 +315,7 @@ pub struct Automation {
     pub last_queued_input_id: Option<String>,
     pub last_error: Option<String>,
     pub consecutive_failure_count: i64,
+    pub provenance: Option<Value>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -318,6 +328,9 @@ pub struct NewAutomation {
     pub start_at: DateTime<Utc>,
     pub repeat_every_seconds: i64,
     pub next_run_at: DateTime<Utc>,
+    pub status: AutomationStatus,
+    pub paused_reason: Option<String>,
+    pub provenance: Option<Value>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -328,6 +341,9 @@ pub struct AutomationUpdate {
     pub start_at: Option<DateTime<Utc>>,
     pub repeat_every_seconds: Option<i64>,
     pub next_run_at: Option<DateTime<Utc>>,
+    pub status: Option<AutomationStatus>,
+    pub paused_reason: Option<Option<String>>,
+    pub provenance: Option<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -637,6 +653,8 @@ impl Store {
         )
         .execute(&self.pool)
         .await?;
+        self.add_column_if_missing("automations", "provenance", "text")
+            .await?;
         sqlx::query(
             r#"
             create table if not exists automation_runs (
@@ -1484,7 +1502,7 @@ impl Store {
         Ok(())
     }
 
-    async fn preview_service_reference_count(
+    pub(crate) async fn preview_service_reference_count(
         &self,
         project_id: &str,
         service_id: &str,
@@ -1511,7 +1529,7 @@ impl Store {
         Ok(root_count + route_count)
     }
 
-    async fn project_preview_public_port_exists(
+    pub(crate) async fn project_preview_public_port_exists(
         &self,
         public_port: i64,
         except_preview_id: Option<&str>,
@@ -2494,9 +2512,10 @@ impl Store {
             r#"
             insert into automations (
                 id, name, prompt, target_thread_id, start_at, repeat_every_seconds,
-                next_run_at, status, consecutive_failure_count, created_at, updated_at
+                next_run_at, status, paused_reason, provenance, consecutive_failure_count,
+                created_at, updated_at
             )
-            values (?, ?, ?, ?, ?, ?, ?, 'active', 0, ?, ?)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
             "#,
         )
         .bind(&id)
@@ -2506,6 +2525,9 @@ impl Store {
         .bind(automation.start_at)
         .bind(automation.repeat_every_seconds)
         .bind(automation.next_run_at)
+        .bind(automation.status.as_str())
+        .bind(automation.paused_reason)
+        .bind(automation.provenance.map(|value| value.to_string()))
         .bind(now)
         .bind(now)
         .execute(&self.pool)
@@ -2518,7 +2540,7 @@ impl Store {
         target_thread_id: Option<&str>,
     ) -> ApiResult<Vec<Automation>> {
         let mut builder = QueryBuilder::<Sqlite>::new(
-            "select id, name, prompt, target_thread_id, start_at, repeat_every_seconds, next_run_at, status, paused_reason, last_run_at, last_queued_input_id, last_error, consecutive_failure_count, created_at, updated_at from automations where deleted_at is null",
+            "select id, name, prompt, target_thread_id, start_at, repeat_every_seconds, next_run_at, status, paused_reason, last_run_at, last_queued_input_id, last_error, consecutive_failure_count, provenance, created_at, updated_at from automations where deleted_at is null",
         );
         if let Some(target_thread_id) = target_thread_id {
             builder.push(" and target_thread_id = ");
@@ -2534,7 +2556,7 @@ impl Store {
             r#"
             select id, name, prompt, target_thread_id, start_at, repeat_every_seconds,
                    next_run_at, status, paused_reason, last_run_at, last_queued_input_id,
-                   last_error, consecutive_failure_count, created_at, updated_at
+                   last_error, consecutive_failure_count, provenance, created_at, updated_at
             from automations
             where id = ? and deleted_at is null
             "#,
@@ -2563,6 +2585,9 @@ impl Store {
                 start_at = ?,
                 repeat_every_seconds = ?,
                 next_run_at = ?,
+                status = ?,
+                paused_reason = ?,
+                provenance = ?,
                 updated_at = ?
             where id = ? and deleted_at is null
             "#,
@@ -2577,6 +2602,14 @@ impl Store {
                 .unwrap_or(existing.repeat_every_seconds),
         )
         .bind(update.next_run_at.unwrap_or(existing.next_run_at))
+        .bind(update.status.unwrap_or(existing.status).as_str())
+        .bind(update.paused_reason.unwrap_or(existing.paused_reason))
+        .bind(
+            update
+                .provenance
+                .or(existing.provenance)
+                .map(|value| value.to_string()),
+        )
         .bind(now)
         .bind(id)
         .execute(&self.pool)
@@ -2652,7 +2685,7 @@ impl Store {
             r#"
             select id, name, prompt, target_thread_id, start_at, repeat_every_seconds,
                    next_run_at, status, paused_reason, last_run_at, last_queued_input_id,
-                   last_error, consecutive_failure_count, created_at, updated_at
+                   last_error, consecutive_failure_count, provenance, created_at, updated_at
             from automations
             where deleted_at is null and status = 'active' and next_run_at <= ?
             order by next_run_at asc, created_at asc
@@ -3105,6 +3138,11 @@ fn row_to_project_preview_route(row: sqlx::sqlite::SqliteRow) -> ApiResult<Proje
 
 fn row_to_automation(row: sqlx::sqlite::SqliteRow) -> ApiResult<Automation> {
     let status: String = row.try_get("status")?;
+    let provenance_json: Option<String> = row.try_get("provenance")?;
+    let provenance = provenance_json
+        .map(|value| serde_json::from_str(&value))
+        .transpose()
+        .map_err(|error| ApiError::BadGateway(format!("invalid automation provenance: {error}")))?;
     Ok(Automation {
         id: row.try_get("id")?,
         name: row.try_get("name")?,
@@ -3119,6 +3157,7 @@ fn row_to_automation(row: sqlx::sqlite::SqliteRow) -> ApiResult<Automation> {
         last_queued_input_id: row.try_get("last_queued_input_id")?,
         last_error: row.try_get("last_error")?,
         consecutive_failure_count: row.try_get("consecutive_failure_count")?,
+        provenance,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })
@@ -3870,6 +3909,9 @@ mod tests {
                 start_at,
                 repeat_every_seconds: 60,
                 next_run_at: start_at,
+                status: AutomationStatus::Active,
+                paused_reason: None,
+                provenance: None,
             })
             .await
             .unwrap();
@@ -3933,6 +3975,9 @@ mod tests {
                 start_at,
                 repeat_every_seconds: 30,
                 next_run_at: start_at,
+                status: AutomationStatus::Active,
+                paused_reason: None,
+                provenance: None,
             })
             .await
             .unwrap();
@@ -3970,6 +4015,9 @@ mod tests {
                 start_at,
                 repeat_every_seconds: 30,
                 next_run_at: start_at,
+                status: AutomationStatus::Active,
+                paused_reason: None,
+                provenance: None,
             })
             .await
             .unwrap();
@@ -3984,6 +4032,9 @@ mod tests {
                 start_at,
                 repeat_every_seconds: 30,
                 next_run_at: start_at,
+                status: AutomationStatus::Active,
+                paused_reason: None,
+                provenance: None,
             })
             .await
             .unwrap();

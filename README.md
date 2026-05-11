@@ -10,9 +10,9 @@ The MVP target is a Rust gateway that supervises an external `codex app-server` 
 
 ## Current Status
 
-The first Rust gateway implementation exists under `apps/gateway`. It includes the backend scaffold, SQLite project/approval/read-marker/queue/pin/automation/preview storage, diagnostic event replay, a stdio JSON-RPC app-server supervisor, HTTP/SSE API routes, approval brokering, OpenAPI generation, an app-server adapter layer, product-shaped frontend response DTOs, optional Caddy-backed project previews, and optional static frontend serving.
+The first Rust gateway implementation exists under `apps/gateway`. It includes the backend scaffold, SQLite project/approval/read-marker/queue/pin/automation/preview storage, diagnostic event replay, a stdio JSON-RPC app-server supervisor, HTTP/SSE API routes, approval brokering, OpenAPI generation, an app-server adapter layer, product-shaped frontend response DTOs, optional Caddy-backed project previews, focused first-party plugin install endpoints, a Kodex Control MCP stdio subcommand, and optional static frontend serving.
 
-The first React web client exists under `apps/web`. It includes the Vite/Mantine scaffold, generated OpenAPI TypeScript types, a typed fetch client, project/thread navigation, pinned threads, stable draggable project ordering, attention-sorted threads, snapshot-first timeline rendering, gateway-backed queued composer follow-ups, composer controls, pending approval decisions, and account/model surfaces.
+The first React web client exists under `apps/web`. It includes the Vite/Mantine scaffold, generated OpenAPI TypeScript types, a typed fetch client, project/thread navigation, pinned threads, stable draggable project ordering, attention-sorted threads, snapshot-first timeline rendering, gateway-backed queued composer follow-ups, composer controls, pending approval decisions, Preferences > Plugins for Kodex Control installation, and account/model surfaces.
 
 See [plans/index.md](plans/index.md) for the plan directory and status table.
 
@@ -114,6 +114,7 @@ Environment overrides:
 - `KODEX_CODEX_ARGS`
 - `KODEX_FRONTEND_DIST`
 - `KODEX_CADDY_BINARY`
+- `KODEX_KODEX_CONTROL_MARKETPLACE_PATH`
 - `KODEX_PREVIEW_BIND`
 - `KODEX_PREVIEW_PORT_RANGE`
 - `KODEX_CADDY_ADMIN_BIND`
@@ -132,6 +133,8 @@ Local routes:
 - `GET /v1/threads/{threadId}/queued-inputs`, `POST /v1/threads/{threadId}/queued-inputs`, `POST /v1/threads/{threadId}/queued-inputs/{queueId}/retry`, `POST /v1/threads/{threadId}/queued-inputs/{queueId}/steer`, and `DELETE /v1/threads/{threadId}/queued-inputs/{queueId}` for the same-gateway persisted composer queue. Queue rows may include nullable `sourceType` and `sourceId` fields for gateway-originated work such as automations.
 - `GET /v1/automations`, `POST /v1/automations`, `GET/PATCH/DELETE /v1/automations/{automationId}`, and `POST /v1/automations/{automationId}/pause|resume` for gateway-owned recurring prompts into a target thread. Automations have a 30-second minimum interval, coalesce missed due slots, use latest stored thread composer settings, and enqueue source-labeled input for the next idle turn rather than auto-steering active turns.
 - `GET /v1/skills` for the gateway skill catalog and `GET /v1/skills/icon?path=...` for localhost/trusted-VPN skill icon previews used by enriched inline skill badges.
+- `GET /v1/kodex-control-plugin` and `POST /v1/kodex-control-plugin/install` for the transitional first-party Kodex Control plugin install surface. This focused endpoint automatically adds the bundled marketplace and installs `kodex-control`; it should be replaced by generic `/v1/plugins` APIs when generic plugin management is built.
+- `GET /v1/self-control/status`, `POST /v1/self-control/project-previews/apply`, `POST /v1/self-control/threads`, `POST /v1/self-control/threads/{threadId}/input`, and self-control automation routes under `/v1/self-control/automations` for guarded agent-facing Kodex Control mutations. MCP tools should use these routes instead of raw CRUD routes so provenance and safety policy stay gateway-owned.
 - `GET /v1/projects/{projectId}/previews`, preview service/preview/route CRUD routes under `/v1/projects/{projectId}`, and `POST /v1/project-previews/reload` for gateway-owned project preview configuration and Caddy repair.
 - Frontend-critical Codex routes such as `GET /v1/threads`, `GET /v1/threads/{threadId}`, `GET /v1/models`, `GET /v1/account`, `GET /v1/account/rate-limits`, and `POST /v1/account/login` expose typed gateway DTOs with `rawPayload` retained only as an escape hatch for volatile app-server fields. `GET /v1/threads/{threadId}` reads `thread/read includeTurns:true` from app-server and is the canonical selected-thread timeline source. Selected-thread SSE is a live overlay; reconnects or uncertain stream continuity trigger another snapshot read instead of replaying persisted timeline rows.
 
@@ -176,25 +179,30 @@ Example for a project with a Vite frontend on `3000` and NestJS backend on `4000
 5. Add a route `/api/*` to `Backend`; enable strip prefix if the backend expects `/users` instead of `/api/users`.
 6. Open `http://100.64.0.10:13000/` from another tailnet device.
 
-## Kodex Proxy Evaluation Skill
+## Kodex Control Plugin
 
-This repo includes a reusable Codex skill at `.codex/skills/kodex-proxy-evaluation`. It lets another agent inspect an application repo, flag hardcoded browser-facing localhost/API origins, and propose Kodex project preview services, previews, routes, and strip-prefix settings.
+This repo includes a first-party Codex plugin at `plugins/kodex-control`. The plugin packages the canonical `kodex-proxy-evaluation` skill and exposes a gateway-hosted MCP server for guarded self-control tools and read-only resources.
 
-Install it into a user-level Codex skills directory by copying or symlinking it:
+Install it from the web client:
+
+1. Start the gateway with a ready Codex app-server.
+2. Open the web client.
+3. Open Preferences > Plugins.
+4. Select Install on Kodex Control.
+
+The install button uses the focused gateway endpoint to add `.agents/plugins/marketplace.json`, install `kodex-control`, and emit `skills.changed`. If the app-server is unavailable, install is blocked with a degraded status. Missing Caddy does not block plugin installation.
+
+For non-web development, the bundled marketplace can be overridden with `KODEX_KODEX_CONTROL_MARKETPLACE_PATH`. The default is this checkout's `.agents/plugins/marketplace.json` when running from the repo.
+
+The plugin MCP server is hosted by the gateway binary:
 
 ```bash
-mkdir -p ~/.codex/skills
-cp -R .codex/skills/kodex-proxy-evaluation ~/.codex/skills/
+kodex-gateway mcp kodex-control
 ```
 
-For active development, a symlink keeps the installed skill pointed at this checkout:
+The MCP subcommand reads `KODEX_GATEWAY_URL`, defaulting to `http://127.0.0.1:8787`, and refuses non-loopback gateway URLs unless `KODEX_ALLOW_REMOTE_SELF_CONTROL=1` is set. It exposes tools for status, preview apply, thread input, and automation management, plus resources such as `kodex://status`, `kodex://projects`, and `kodex://automations`.
 
-```bash
-mkdir -p ~/.codex/skills
-ln -sfn "$PWD/.codex/skills/kodex-proxy-evaluation" ~/.codex/skills/kodex-proxy-evaluation
-```
-
-Then invoke it from another repo with a prompt such as:
+After installation, invoke the skill from another repo with a prompt such as:
 
 ```text
 Use $kodex-proxy-evaluation to evaluate this repo for Kodex project preview proxy compatibility and propose proxy settings.

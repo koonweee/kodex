@@ -304,6 +304,68 @@ impl CodexClient {
         SkillsListResponse::from_payload(payload)
     }
 
+    pub async fn marketplace_add(
+        &self,
+        source: String,
+        ref_name: Option<String>,
+        sparse_paths: Option<Vec<String>>,
+    ) -> ApiResult<MarketplaceAddResponse> {
+        let payload = self
+            .request(
+                "marketplace/add",
+                json!({
+                    "source": source,
+                    "refName": ref_name,
+                    "sparsePaths": sparse_paths,
+                }),
+            )
+            .await?;
+        MarketplaceAddResponse::from_payload(payload)
+    }
+
+    pub async fn plugin_list(&self, cwds: Option<Vec<String>>) -> ApiResult<PluginListResponse> {
+        let payload = self.request("plugin/list", json!({ "cwds": cwds })).await?;
+        PluginListResponse::from_payload(payload)
+    }
+
+    pub async fn plugin_read(
+        &self,
+        plugin_name: String,
+        marketplace_path: Option<String>,
+        remote_marketplace_name: Option<String>,
+    ) -> ApiResult<PluginReadResponse> {
+        let payload = self
+            .request(
+                "plugin/read",
+                json!({
+                    "pluginName": plugin_name,
+                    "marketplacePath": marketplace_path,
+                    "remoteMarketplaceName": remote_marketplace_name,
+                }),
+            )
+            .await?;
+        PluginReadResponse::from_payload(payload)
+    }
+
+    pub async fn plugin_install(
+        &self,
+        plugin_name: String,
+        marketplace_path: Option<String>,
+        remote_marketplace_name: Option<String>,
+    ) -> ApiResult<PluginInstallResponse> {
+        let payload = self
+            .request(
+                "plugin/install",
+                json!({
+                    "pluginName": plugin_name,
+                    "marketplacePath": marketplace_path,
+                    "remoteMarketplaceName": remote_marketplace_name,
+                }),
+            )
+            .await?;
+        PluginInstallResponse::from_payload(payload)
+    }
+
     async fn raw_request(&self, method: &str, params: Value) -> ApiResult<RawAppServerResponse> {
         let payload = self.request(method, params).await?;
         Ok(RawAppServerResponse { payload })
@@ -500,11 +562,16 @@ pub struct SkillMetadata {
     pub path: String,
     pub description: String,
     pub enabled: bool,
+    #[serde(default = "default_skill_scope")]
     pub scope: String,
     #[serde(default)]
     pub short_description: Option<String>,
     #[serde(default)]
     pub interface: Option<SkillInterface>,
+}
+
+fn default_skill_scope() -> String {
+    "user".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -529,6 +596,143 @@ pub struct SkillInterface {
 pub struct SkillErrorInfo {
     pub message: String,
     pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceAddResponse {
+    pub already_added: bool,
+    pub installed_root: String,
+    pub marketplace_name: String,
+}
+
+impl MarketplaceAddResponse {
+    fn from_payload(payload: Value) -> ApiResult<Self> {
+        serde_json::from_value(payload)
+            .map_err(|error| bad_gateway(format!("marketplace/add response: {error}")))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginListResponse {
+    #[serde(default)]
+    pub featured_plugin_ids: Vec<String>,
+    #[serde(default)]
+    pub marketplace_load_errors: Vec<MarketplaceLoadErrorInfo>,
+    pub marketplaces: Vec<PluginMarketplaceEntry>,
+}
+
+impl PluginListResponse {
+    fn from_payload(payload: Value) -> ApiResult<Self> {
+        serde_json::from_value(payload)
+            .map_err(|error| bad_gateway(format!("plugin/list response: {error}")))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceLoadErrorInfo {
+    pub marketplace_path: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginMarketplaceEntry {
+    pub name: String,
+    pub path: Option<String>,
+    pub plugins: Vec<PluginSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginSummary {
+    pub id: String,
+    pub name: String,
+    pub installed: bool,
+    pub enabled: bool,
+    pub install_policy: String,
+    pub auth_policy: String,
+    pub source: Value,
+    #[serde(default)]
+    pub interface: Option<PluginInterface>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginInterface {
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub short_description: Option<String>,
+    #[serde(default)]
+    pub long_description: Option<String>,
+    #[serde(default)]
+    pub developer_name: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub capabilities: Vec<String>,
+    #[serde(default)]
+    pub brand_color: Option<String>,
+    #[serde(default)]
+    pub default_prompt: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginReadResponse {
+    pub plugin: PluginDetail,
+}
+
+impl PluginReadResponse {
+    fn from_payload(payload: Value) -> ApiResult<Self> {
+        serde_json::from_value(payload)
+            .map_err(|error| bad_gateway(format!("plugin/read response: {error}")))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginDetail {
+    pub summary: PluginSummary,
+    pub marketplace_name: String,
+    pub marketplace_path: Option<String>,
+    #[serde(default)]
+    pub skills: Vec<SkillMetadata>,
+    #[serde(default)]
+    pub mcp_servers: Vec<String>,
+    #[serde(default)]
+    pub apps: Vec<AppSummary>,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginInstallResponse {
+    pub apps_needing_auth: Vec<AppSummary>,
+    pub auth_policy: String,
+}
+
+impl PluginInstallResponse {
+    fn from_payload(payload: Value) -> ApiResult<Self> {
+        serde_json::from_value(payload)
+            .map_err(|error| bad_gateway(format!("plugin/install response: {error}")))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSummary {
+    pub id: String,
+    pub name: String,
+    pub needs_auth: bool,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub install_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

@@ -299,17 +299,17 @@ pub async fn create_chat_thread(
     Ok(Json(response))
 }
 
-struct ThreadCreationOptions {
-    model: Option<String>,
-    effort: Option<String>,
-    service_tier: Option<String>,
-    approval_policy: Option<String>,
-    approvals_reviewer: Option<String>,
-    sandbox: Option<String>,
-    payload: Value,
+pub(crate) struct ThreadCreationOptions {
+    pub(crate) model: Option<String>,
+    pub(crate) effort: Option<String>,
+    pub(crate) service_tier: Option<String>,
+    pub(crate) approval_policy: Option<String>,
+    pub(crate) approvals_reviewer: Option<String>,
+    pub(crate) sandbox: Option<String>,
+    pub(crate) payload: Value,
 }
 
-fn create_thread_payload(options: &ThreadCreationOptions) -> Value {
+pub(crate) fn create_thread_payload(options: &ThreadCreationOptions) -> Value {
     let mut payload = options.payload.clone();
     if let Some(object) = payload.as_object_mut() {
         object.remove("effort");
@@ -333,7 +333,10 @@ fn create_thread_payload(options: &ThreadCreationOptions) -> Value {
     payload
 }
 
-fn overlay_thread_creation_options(thread: &mut ThreadSummary, options: &ThreadCreationOptions) {
+pub(crate) fn overlay_thread_creation_options(
+    thread: &mut ThreadSummary,
+    options: &ThreadCreationOptions,
+) {
     if thread.model.is_none() {
         thread.model = options.model.clone();
     }
@@ -357,7 +360,7 @@ fn overlay_thread_creation_options(thread: &mut ThreadSummary, options: &ThreadC
     }
 }
 
-async fn save_thread_creation_options(
+pub(crate) async fn save_thread_creation_options(
     state: &AppState,
     thread_id: &str,
     options: &ThreadCreationOptions,
@@ -865,7 +868,7 @@ async fn apply_thread_list_response_state(
     Ok(())
 }
 
-async fn apply_thread_command_response_state(
+pub(crate) async fn apply_thread_command_response_state(
     state: &AppState,
     response: &mut ThreadCommandResponse,
 ) -> ApiResult<()> {
@@ -1123,7 +1126,7 @@ async fn broadcast_thread_pin_update(
 }
 
 #[derive(Debug, Clone, Copy)]
-enum ThreadUpsertScope {
+pub(crate) enum ThreadUpsertScope {
     Project,
     Chat,
 }
@@ -1137,7 +1140,7 @@ impl ThreadUpsertScope {
     }
 }
 
-async fn broadcast_thread_upserted(
+pub(crate) async fn broadcast_thread_upserted(
     state: &AppState,
     scope: ThreadUpsertScope,
     project_id: Option<&str>,

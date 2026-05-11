@@ -28,6 +28,7 @@ type MobileComposerPanelProps = ComposerPanelProps & {
   filteredSkills: SkillMetadata[];
   handleTextareaKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
   isComposerBusy: boolean;
+  isComposerControlsDisabled: boolean;
   isComposerDisabled: boolean;
   isEntryPending: boolean;
   selectSkill: (skillIndex?: number) => void;
@@ -49,6 +50,7 @@ export function MobileComposerPanel({
   filteredSkills,
   handleTextareaKeyDown,
   isComposerBusy,
+  isComposerControlsDisabled,
   isComposerDisabled,
   isComposerDragActive,
   models,
@@ -125,7 +127,7 @@ export function MobileComposerPanel({
         type="file"
         accept="image/*"
         multiple
-        disabled={isComposerDisabled}
+        disabled={isComposerControlsDisabled}
         onChange={onAttachmentInputChange}
       />
     );
@@ -208,8 +210,8 @@ export function MobileComposerPanel({
                   draftState.updateComposerText(event.currentTarget.value, event.currentTarget.selectionStart);
                 }
               }}
-              onKeyDown={handleTextareaKeyDown}
-              onPaste={onComposerPaste}
+              onKeyDown={isComposerControlsDisabled ? undefined : handleTextareaKeyDown}
+              onPaste={isComposerControlsDisabled ? undefined : onComposerPaste}
               disabled={isComposerDisabled}
               variant="unstyled"
             />
@@ -226,7 +228,7 @@ export function MobileComposerPanel({
                 attachmentInputRef={attachmentInputRef}
                 canSubmitComposer={canSubmitComposer}
                 contextUsage={contextUsage}
-                disabled={isComposerDisabled}
+                disabled={isComposerControlsDisabled}
                 models={models}
                 onSettingsChange={onComposerSettingsChange}
                 onStopTurn={onStopTurn}
@@ -254,6 +256,7 @@ export function MobileComposerPanel({
       filteredSkills={filteredSkills}
       handleTextareaKeyDown={handleTextareaKeyDown}
       isComposerBusy={isComposerBusy}
+      isComposerControlsDisabled={isComposerControlsDisabled}
       isComposerDisabled={isComposerDisabled}
       isComposerDragActive={isComposerDragActive}
       models={models}

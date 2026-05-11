@@ -110,6 +110,53 @@ describe("useComposerDraftState", () => {
       },
     ]);
   });
+
+  it("remembers unsent text independently by draft key", () => {
+    const { result, rerender } = renderHook(
+      ({ draftKey, resetToken }: { draftKey: string; resetToken: number }) =>
+        useComposerDraftState(resetToken, draftKey),
+      { initialProps: { draftKey: "thread-1", resetToken: 0 } },
+    );
+
+    act(() => {
+      result.current.updateComposerText("First thread draft", "First thread draft".length);
+    });
+
+    rerender({ draftKey: "thread-2", resetToken: 0 });
+    expect(result.current.composerText).toBe("");
+
+    act(() => {
+      result.current.updateComposerText("Second thread draft", "Second thread draft".length);
+    });
+
+    rerender({ draftKey: "thread-1", resetToken: 0 });
+    expect(result.current.composerText).toBe("First thread draft");
+
+    rerender({ draftKey: "thread-2", resetToken: 0 });
+    expect(result.current.composerText).toBe("Second thread draft");
+  });
+
+  it("clears only the active keyed draft on reset", () => {
+    const { result, rerender } = renderHook(
+      ({ draftKey, resetToken }: { draftKey: string; resetToken: number }) =>
+        useComposerDraftState(resetToken, draftKey),
+      { initialProps: { draftKey: "thread-1", resetToken: 0 } },
+    );
+
+    act(() => {
+      result.current.updateComposerText("First thread draft", "First thread draft".length);
+    });
+    rerender({ draftKey: "thread-2", resetToken: 0 });
+    act(() => {
+      result.current.updateComposerText("Second thread draft", "Second thread draft".length);
+    });
+
+    rerender({ draftKey: "thread-2", resetToken: 1 });
+    expect(result.current.composerText).toBe("");
+
+    rerender({ draftKey: "thread-1", resetToken: 1 });
+    expect(result.current.composerText).toBe("First thread draft");
+  });
 });
 
 function skill(

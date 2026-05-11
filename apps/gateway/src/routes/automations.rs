@@ -113,6 +113,7 @@ pub struct AutomationDto {
     pub last_queued_input_id: Option<String>,
     pub last_error: Option<String>,
     pub consecutive_failure_count: i64,
+    pub provenance: Option<serde_json::Value>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -171,6 +172,9 @@ pub async fn create_automation(
             start_at: request.schedule.start_at,
             repeat_every_seconds,
             next_run_at: request.schedule.start_at,
+            status: AutomationStatus::Active,
+            paused_reason: None,
+            provenance: None,
         })
         .await?;
     broadcast_automation_upsert(&state, &automation).await?;
@@ -227,6 +231,9 @@ pub async fn update_automation(
                 start_at,
                 repeat_every_seconds,
                 next_run_at,
+                status: None,
+                paused_reason: None,
+                provenance: None,
             },
         )
         .await?;
@@ -290,19 +297,20 @@ pub(crate) fn automation_to_dto(automation: Automation) -> AutomationDto {
         last_queued_input_id: automation.last_queued_input_id,
         last_error: automation.last_error,
         consecutive_failure_count: automation.consecutive_failure_count,
+        provenance: automation.provenance,
         created_at: automation.created_at,
         updated_at: automation.updated_at,
     }
 }
 
-async fn validate_target_thread(state: &AppState, thread_id: &str) -> ApiResult<()> {
+pub(crate) async fn validate_target_thread(state: &AppState, thread_id: &str) -> ApiResult<()> {
     app_server_api::client(&state.app_server)
         .thread_read(thread_id.to_string())
         .await?;
     Ok(())
 }
 
-fn validate_name_and_prompt(name: &str, prompt: &str) -> ApiResult<()> {
+pub(crate) fn validate_name_and_prompt(name: &str, prompt: &str) -> ApiResult<()> {
     validate_non_empty("name", name)?;
     validate_non_empty("prompt", prompt)
 }
@@ -314,7 +322,7 @@ fn validate_non_empty(field: &str, value: &str) -> ApiResult<()> {
     Ok(())
 }
 
-fn repeat_every_seconds(repeat_every: &AutomationRepeatEvery) -> ApiResult<i64> {
+pub(crate) fn repeat_every_seconds(repeat_every: &AutomationRepeatEvery) -> ApiResult<i64> {
     if repeat_every.value <= 0 {
         return Err(ApiError::BadRequest(
             "repeatEvery value must be positive".to_string(),

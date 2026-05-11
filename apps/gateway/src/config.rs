@@ -15,6 +15,7 @@ pub struct Config {
     pub projects: ProjectsConfig,
     pub frontend: FrontendConfig,
     pub previews: PreviewConfig,
+    pub plugins: PluginConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -59,6 +60,11 @@ pub struct PreviewConfig {
     pub data_dir: PathBuf,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct PluginConfig {
+    pub kodex_control_marketplace_path: Option<PathBuf>,
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -95,6 +101,9 @@ impl Default for Config {
                     .parse()
                     .expect("default caddy admin bind is valid"),
                 data_dir: default_data_dir().join("previews"),
+            },
+            plugins: PluginConfig {
+                kodex_control_marketplace_path: None,
             },
         }
     }
@@ -158,6 +167,10 @@ impl Config {
 
         if let Ok(path) = env::var("KODEX_PREVIEW_DATA_DIR") {
             config.previews.data_dir = expand_home(path);
+        }
+
+        if let Ok(path) = env::var("KODEX_KODEX_CONTROL_MARKETPLACE_PATH") {
+            config.plugins.kodex_control_marketplace_path = Some(expand_home(path));
         }
 
         config

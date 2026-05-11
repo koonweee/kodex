@@ -413,7 +413,7 @@ pub async fn reload_previews(
     Ok(Json(state.previews.subsystem_status().await))
 }
 
-async fn project_preview_response(
+pub(crate) async fn project_preview_response(
     state: &AppState,
     project_id: &str,
 ) -> ApiResult<PreviewListResponse> {
@@ -456,7 +456,7 @@ async fn preview_dto(state: &AppState, preview: ProjectPreview) -> ApiResult<Pro
     })
 }
 
-fn required_text(value: String, label: &str) -> ApiResult<String> {
+pub(crate) fn required_text(value: String, label: &str) -> ApiResult<String> {
     let value = value.trim().to_string();
     if value.is_empty() {
         return Err(ApiError::BadRequest(format!("{label} is required")));
@@ -464,7 +464,7 @@ fn required_text(value: String, label: &str) -> ApiResult<String> {
     Ok(value)
 }
 
-fn validate_protocol(value: &str) -> ApiResult<String> {
+pub(crate) fn validate_protocol(value: &str) -> ApiResult<String> {
     if value != "http" {
         return Err(ApiError::BadRequest(
             "only http preview services are supported".to_string(),
@@ -473,7 +473,7 @@ fn validate_protocol(value: &str) -> ApiResult<String> {
     Ok(value.to_string())
 }
 
-fn validate_port(value: i64, label: &str) -> ApiResult<i64> {
+pub(crate) fn validate_port(value: i64, label: &str) -> ApiResult<i64> {
     if !(1..=65535).contains(&value) {
         return Err(ApiError::BadRequest(format!(
             "{label} must be a valid TCP port"
@@ -482,7 +482,7 @@ fn validate_port(value: i64, label: &str) -> ApiResult<i64> {
     Ok(value)
 }
 
-fn validate_public_port(state: &AppState, value: i64) -> ApiResult<i64> {
+pub(crate) fn validate_public_port(state: &AppState, value: i64) -> ApiResult<i64> {
     validate_port(value, "public port")?;
     if value < state.config.previews.port_range_start as i64
         || value > state.config.previews.port_range_end as i64
@@ -495,7 +495,7 @@ fn validate_public_port(state: &AppState, value: i64) -> ApiResult<i64> {
     Ok(value)
 }
 
-fn validate_path(value: &str, label: &str) -> ApiResult<String> {
+pub(crate) fn validate_path(value: &str, label: &str) -> ApiResult<String> {
     let value = value.trim();
     if !value.starts_with('/') {
         return Err(ApiError::BadRequest(format!("{label} must start with /")));
@@ -503,7 +503,7 @@ fn validate_path(value: &str, label: &str) -> ApiResult<String> {
     Ok(value.to_string())
 }
 
-fn validate_route_path(value: &str) -> ApiResult<String> {
+pub(crate) fn validate_route_path(value: &str) -> ApiResult<String> {
     let value = validate_path(value, "route path")?;
     if value == "/" {
         return Err(ApiError::BadRequest(

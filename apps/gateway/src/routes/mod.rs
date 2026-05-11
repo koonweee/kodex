@@ -6,9 +6,11 @@ pub mod composer_settings;
 pub mod events;
 pub mod file_preview;
 pub mod health;
+pub mod kodex_control_plugin;
 pub mod models;
 pub mod project_previews;
 pub mod projects;
+pub mod self_control;
 pub mod skills;
 pub mod threads;
 pub mod turns;
@@ -94,6 +96,169 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some("*")
         );
+    }
+
+    #[tokio::test]
+    async fn kodex_control_plugin_reports_unavailable_app_server() {
+        let (state, app_server) = test_state().await;
+        app_server.ready.store(false, Ordering::SeqCst);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/kodex-control-plugin")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["status"], "appServerUnavailable");
+        assert_eq!(body["appServerReady"], false);
+    }
+
+    #[tokio::test]
+    async fn kodex_control_plugin_reports_not_installed() {
+        let (mut state, app_server) = test_state().await;
+        let marketplace_dir = tempdir().unwrap();
+        let marketplace_path = marketplace_dir.path().join("marketplace.json");
+        std::fs::write(
+            &marketplace_path,
+            json!({"name": "kodex-local", "plugins": []}).to_string(),
+        )
+        .unwrap();
+        Arc::make_mut(&mut state.config)
+            .plugins
+            .kodex_control_marketplace_path = Some(marketplace_path.clone());
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(plugin_read_response(false, &marketplace_path));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/kodex-control-plugin")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["status"], "notInstalled");
+        assert_eq!(body["plugin"]["installed"], false);
+        assert_eq!(body["skills"][0], "kodex-proxy-evaluation");
+    }
+
+    #[tokio::test]
+    async fn kodex_control_plugin_reports_missing_marketplace_path() {
+        let (mut state, _) = test_state().await;
+        Arc::make_mut(&mut state.config)
+            .plugins
+            .kodex_control_marketplace_path = Some(tempdir().unwrap().path().join("missing.json"));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/kodex-control-plugin")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["status"], "setupError");
+        assert!(body["setupError"]
+            .as_str()
+            .unwrap()
+            .contains("marketplace was not found"));
+    }
+
+    #[tokio::test]
+    async fn kodex_control_plugin_install_adds_marketplace_installs_and_broadcasts_skills() {
+        let (mut state, app_server) = test_state().await;
+        let marketplace_dir = tempdir().unwrap();
+        let marketplace_path = marketplace_dir.path().join("marketplace.json");
+        std::fs::write(
+            &marketplace_path,
+            json!({
+                "name": "kodex-local",
+                "plugins": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+        Arc::make_mut(&mut state.config)
+            .plugins
+            .kodex_control_marketplace_path = Some(marketplace_path.clone());
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({
+                "alreadyAdded": false,
+                "installedRoot": marketplace_dir.path().display().to_string(),
+                "marketplaceName": "kodex-local"
+            }),
+            json!({"appsNeedingAuth": [], "authPolicy": "onInstall"}),
+            plugin_read_response(true, &marketplace_path),
+        ]);
+        let mut receiver = state.events.subscribe();
+        let skills = state.skills.clone();
+        assert_eq!(skills.generation().await, 0);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/kodex-control-plugin/install")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["status"]["status"], "installed");
+        assert_eq!(body["status"]["skills"][0], "kodex-proxy-evaluation");
+        assert_eq!(body["status"]["mcpServers"][0], "kodex-control");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "marketplace/add");
+        assert_eq!(requests[1].0, "plugin/install");
+        assert_eq!(requests[2].0, "plugin/read");
+
+        let event = timeout(Duration::from_secs(2), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(event.kind, "skills.changed");
+        assert_eq!(skills.generation().await, 1);
+    }
+
+    #[tokio::test]
+    async fn self_control_status_reports_gateway_and_app_server_readiness() {
+        let (state, app_server) = test_state().await;
+        app_server.ready.store(false, Ordering::SeqCst);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/self-control/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["gatewayReady"], true);
+        assert_eq!(body["appServerReady"], false);
+        assert_eq!(body["capabilities"]["projectPreviewApply"], true);
     }
 
     #[tokio::test]
@@ -185,6 +350,16 @@ mod tests {
             "/v1/account/rate-limits",
             "/v1/models",
             "/v1/skills",
+            "/v1/kodex-control-plugin",
+            "/v1/kodex-control-plugin/install",
+            "/v1/self-control/status",
+            "/v1/self-control/project-previews/apply",
+            "/v1/self-control/threads",
+            "/v1/self-control/threads/{threadId}/input",
+            "/v1/self-control/automations",
+            "/v1/self-control/automations/{automationId}",
+            "/v1/self-control/automations/{automationId}/pause",
+            "/v1/self-control/automations/{automationId}/resume",
         ] {
             assert!(openapi["paths"].get(path).is_some(), "missing {path}");
         }
@@ -326,6 +501,7 @@ mod tests {
         assert!(!expected_cwd.exists());
 
         let created = app
+            .clone()
             .oneshot(
                 Request::post("/v1/projects")
                     .header("content-type", "application/json")
@@ -568,6 +744,631 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn self_control_preview_apply_dry_run_create_and_second_apply_is_unchanged() {
+        let (mut state, _) = test_state().await;
+        Arc::make_mut(&mut state.config).previews.caddy_binary =
+            "__missing_kodex_test_caddy__".to_string();
+        state.previews = crate::previews::PreviewManager::new(state.config.clone());
+        let cwd = std::env::current_dir().unwrap().display().to_string();
+        let project = state
+            .store
+            .create_project("Kodex".to_string(), cwd)
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+        let desired = json!({
+            "projectId": project.id,
+            "dryRun": true,
+            "services": [
+                {"name": "frontend", "localPort": 4000},
+                {"name": "backend", "localPort": 3000, "healthPath": "/health"}
+            ],
+            "previews": [{
+                "name": "app",
+                "publicPort": 13000,
+                "rootServiceName": "frontend",
+                "routes": [{
+                    "pathPattern": "/api/*",
+                    "serviceName": "backend",
+                    "stripPrefix": true
+                }]
+            }]
+        });
+
+        let dry_run = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/project-previews/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(desired.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(dry_run.status(), StatusCode::OK);
+        let dry_run = response_json(dry_run).await;
+        assert_eq!(dry_run["dryRun"], true);
+        assert_eq!(dry_run["previews"]["services"].as_array().unwrap().len(), 0);
+        assert!(dry_run["diff"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|change| change["action"] == "created"));
+
+        let mut desired_apply = desired.clone();
+        desired_apply["dryRun"] = Value::Bool(false);
+        let apply = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/project-previews/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(desired_apply.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(apply.status(), StatusCode::OK);
+        let apply = response_json(apply).await;
+        assert_eq!(apply["previews"]["services"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            apply["previews"]["previews"][0]["routes"][0]["stripPrefix"],
+            true
+        );
+
+        let second = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/project-previews/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(desired_apply.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(second.status(), StatusCode::OK);
+        let second = response_json(second).await;
+        assert!(second["diff"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|change| change["action"] == "unchanged"));
+        assert_eq!(second["previews"]["subsystem"]["state"], "disabled");
+
+        let create_project_dir = tempdir().unwrap();
+        let project_count_before = state.store.list_projects().await.unwrap().len();
+        let dry_run_create = json!({
+            "projectCwd": create_project_dir.path().display().to_string(),
+            "projectName": "Dry Run Project",
+            "createProject": true,
+            "dryRun": true,
+            "services": [{"name": "new-web", "localPort": 4300}],
+            "previews": [{
+                "name": "new-workspace",
+                "publicPort": 13001,
+                "rootServiceName": "new-web"
+            }]
+        });
+        let dry_run = app
+            .oneshot(
+                Request::post("/v1/self-control/project-previews/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(dry_run_create.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(dry_run.status(), StatusCode::OK);
+        let dry_run = response_json(dry_run).await;
+        assert_eq!(dry_run["dryRun"], true);
+        assert_eq!(dry_run["project"]["id"], "dry-run:project");
+        assert_eq!(
+            state.store.list_projects().await.unwrap().len(),
+            project_count_before
+        );
+    }
+
+    #[tokio::test]
+    async fn self_control_preview_apply_reconciles_by_ports_and_rejects_invalid_routes() {
+        let (mut state, _) = test_state().await;
+        Arc::make_mut(&mut state.config).previews.caddy_binary =
+            "__missing_kodex_test_caddy__".to_string();
+        state.previews = crate::previews::PreviewManager::new(state.config.clone());
+        let project = state
+            .store
+            .create_project(
+                "Kodex".to_string(),
+                std::env::current_dir().unwrap().display().to_string(),
+            )
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+        let initial = json!({
+            "projectId": project.id,
+            "services": [
+                {"name": "frontend", "localPort": 4000},
+                {"name": "backend", "localPort": 3000, "healthPath": "/health"}
+            ],
+            "previews": [{
+                "name": "app",
+                "publicPort": 13000,
+                "rootServiceName": "frontend",
+                "routes": [{
+                    "pathPattern": "/api/*",
+                    "serviceName": "backend"
+                }]
+            }]
+        });
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/project-previews/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(initial.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.status(), StatusCode::OK);
+
+        let renamed = json!({
+            "projectId": project.id,
+            "services": [
+                {"name": "web", "localPort": 4000},
+                {"name": "api", "localPort": 3000, "healthPath": "/ready"}
+            ],
+            "previews": [{
+                "name": "workspace",
+                "publicPort": 13000,
+                "rootServiceName": "web",
+                "routes": [{
+                    "pathPattern": "/api/*",
+                    "serviceName": "api"
+                }]
+            }]
+        });
+        let reconciled = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/project-previews/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(renamed.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(reconciled.status(), StatusCode::OK);
+        let reconciled = response_json(reconciled).await;
+        assert_eq!(
+            reconciled["previews"]["services"].as_array().unwrap().len(),
+            2
+        );
+        assert_eq!(
+            reconciled["previews"]["previews"].as_array().unwrap().len(),
+            1
+        );
+        assert!(reconciled["diff"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|change| change["resource"] == "service"
+                && change["name"] == "web"
+                && change["action"] == "updated"));
+        assert!(reconciled["diff"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|change| change["resource"] == "preview"
+                && change["name"] == "workspace"
+                && change["action"] == "updated"));
+
+        let moved_ports = json!({
+            "projectId": project.id,
+            "services": [
+                {"name": "web", "localPort": 5173},
+                {"name": "api", "localPort": 3001, "healthPath": "/ready"}
+            ],
+            "previews": [{
+                "name": "workspace",
+                "publicPort": 13000,
+                "rootServiceName": "web",
+                "routes": [{
+                    "pathPattern": "/api/*",
+                    "serviceName": "api"
+                }]
+            }]
+        });
+        let moved = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/project-previews/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(moved_ports.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(moved.status(), StatusCode::OK);
+        let moved = response_json(moved).await;
+        let services = moved["previews"]["services"].as_array().unwrap();
+        assert!(services
+            .iter()
+            .any(|service| { service["name"] == "web" && service["localPort"] == 5173 }));
+        assert!(services
+            .iter()
+            .any(|service| { service["name"] == "api" && service["localPort"] == 3001 }));
+        let root_service_id = moved["previews"]["previews"][0]["rootServiceId"]
+            .as_str()
+            .unwrap();
+        let route_service_id = moved["previews"]["previews"][0]["routes"][0]["serviceId"]
+            .as_str()
+            .unwrap();
+        let root_port = services
+            .iter()
+            .find(|service| service["id"] == root_service_id)
+            .unwrap()["localPort"]
+            .as_i64()
+            .unwrap();
+        let route_port = services
+            .iter()
+            .find(|service| service["id"] == route_service_id)
+            .unwrap()["localPort"]
+            .as_i64()
+            .unwrap();
+        assert_eq!(root_port, 5173);
+        assert_eq!(route_port, 3001);
+
+        let reuse_old_replaced_port = json!({
+            "projectId": project.id,
+            "services": [
+                {"name": "legacy-web", "localPort": 4000},
+                {"name": "web", "localPort": 5173},
+                {"name": "api", "localPort": 3001, "healthPath": "/ready"}
+            ],
+            "previews": [{
+                "name": "workspace",
+                "publicPort": 13000,
+                "rootServiceName": "web",
+                "routes": [{
+                    "pathPattern": "/api/*",
+                    "serviceName": "api"
+                }]
+            }]
+        });
+        let reused_old_port = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/project-previews/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(reuse_old_replaced_port.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(reused_old_port.status(), StatusCode::OK);
+        let reused_old_port = response_json(reused_old_port).await;
+        let services = reused_old_port["previews"]["services"].as_array().unwrap();
+        assert!(services
+            .iter()
+            .any(|service| { service["name"] == "legacy-web" && service["localPort"] == 4000 }));
+        let root_service_id = reused_old_port["previews"]["previews"][0]["rootServiceId"]
+            .as_str()
+            .unwrap();
+        let root_port = services
+            .iter()
+            .find(|service| service["id"] == root_service_id)
+            .unwrap()["localPort"]
+            .as_i64()
+            .unwrap();
+        assert_eq!(root_port, 5173);
+
+        let add_aux = json!({
+            "projectId": project.id,
+            "services": [{"name": "aux", "localPort": 4100}]
+        });
+        let added_aux = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/project-previews/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(add_aux.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(added_aux.status(), StatusCode::OK);
+
+        let reuse_freed_port = json!({
+            "projectId": project.id,
+            "services": [
+                {"name": "aux", "localPort": 4101},
+                {"name": "reuse", "localPort": 4100}
+            ]
+        });
+        let reused = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/project-previews/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(reuse_freed_port.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(reused.status(), StatusCode::OK);
+        let reused = response_json(reused).await;
+        let services = reused["previews"]["services"].as_array().unwrap();
+        assert!(services
+            .iter()
+            .any(|service| { service["name"] == "aux" && service["localPort"] == 4101 }));
+        assert!(services
+            .iter()
+            .any(|service| { service["name"] == "reuse" && service["localPort"] == 4100 }));
+
+        let service_collision_count_before = state
+            .store
+            .list_project_preview_services(&project.id)
+            .await
+            .unwrap()
+            .len();
+        let ambiguous_service = json!({
+            "projectId": project.id,
+            "services": [{"name": "web", "localPort": 4000}]
+        });
+        let invalid = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/project-previews/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(ambiguous_service.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+        let services_after_collision = state
+            .store
+            .list_project_preview_services(&project.id)
+            .await
+            .unwrap();
+        assert_eq!(
+            services_after_collision.len(),
+            service_collision_count_before
+        );
+        assert!(services_after_collision
+            .iter()
+            .any(|service| service.name == "web" && service.local_port == 5173));
+        assert!(services_after_collision
+            .iter()
+            .any(|service| service.name == "legacy-web" && service.local_port == 4000));
+
+        let add_sidecar_preview = json!({
+            "projectId": project.id,
+            "previews": [{
+                "name": "sidecar",
+                "publicPort": 13002,
+                "rootServiceName": "web"
+            }]
+        });
+        let added_sidecar = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/project-previews/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(add_sidecar_preview.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(added_sidecar.status(), StatusCode::OK);
+        let preview_collision_count_before = state
+            .store
+            .list_project_previews(&project.id)
+            .await
+            .unwrap()
+            .len();
+        let ambiguous_preview = json!({
+            "projectId": project.id,
+            "previews": [{
+                "name": "workspace",
+                "publicPort": 13002,
+                "rootServiceName": "web"
+            }]
+        });
+        let invalid = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/project-previews/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(ambiguous_preview.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+        let previews_after_collision = state
+            .store
+            .list_project_previews(&project.id)
+            .await
+            .unwrap();
+        assert_eq!(
+            previews_after_collision.len(),
+            preview_collision_count_before
+        );
+        assert!(previews_after_collision
+            .iter()
+            .any(|preview| preview.name == "workspace" && preview.public_port == 13000));
+        assert!(previews_after_collision
+            .iter()
+            .any(|preview| preview.name == "sidecar" && preview.public_port == 13002));
+
+        let invalid_reference = json!({
+            "projectId": project.id,
+            "services": [{"name": "will-not-persist", "localPort": 4200}],
+            "previews": [{
+                "name": "workspace",
+                "publicPort": 13000,
+                "rootServiceName": "web",
+                "routes": [{"pathPattern": "/missing/*", "serviceName": "missing-service"}]
+            }]
+        });
+        let invalid = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/project-previews/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(invalid_reference.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+        let after_invalid = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/v1/projects/{}/previews", project.id))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(after_invalid.status(), StatusCode::OK);
+        let after_invalid = response_json(after_invalid).await;
+        assert!(!after_invalid["services"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|service| service["name"] == "will-not-persist"));
+
+        let create_project_dir = tempdir().unwrap();
+        let project_count_before = state.store.list_projects().await.unwrap().len();
+        let invalid_create_project = json!({
+            "projectCwd": create_project_dir.path().display().to_string(),
+            "createProject": true,
+            "services": [{"name": "new-web", "localPort": 4300}],
+            "previews": [{
+                "name": "new-workspace",
+                "publicPort": 13001,
+                "rootServiceName": "new-web",
+                "routes": [{"pathPattern": "/missing/*", "serviceName": "missing-service"}]
+            }]
+        });
+        let invalid = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/project-previews/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(invalid_create_project.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            state.store.list_projects().await.unwrap().len(),
+            project_count_before
+        );
+
+        let padded_refs_dir = tempdir().unwrap();
+        let padded_refs = json!({
+            "projectCwd": padded_refs_dir.path().display().to_string(),
+            "projectName": "Padded refs",
+            "createProject": true,
+            "services": [
+                {"name": "new-web", "localPort": 4300},
+                {"name": "new-api", "localPort": 4301}
+            ],
+            "previews": [{
+                "name": "new-workspace",
+                "publicPort": 13001,
+                "rootServiceName": " new-web ",
+                "routes": [{"pathPattern": "/api/*", "serviceName": " new-api "}]
+            }]
+        });
+        let padded = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/project-previews/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(padded_refs.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(padded.status(), StatusCode::OK);
+        let padded = response_json(padded).await;
+        let root_service_id = padded["previews"]["previews"][0]["rootServiceId"]
+            .as_str()
+            .unwrap();
+        let route_service_id = padded["previews"]["previews"][0]["routes"][0]["serviceId"]
+            .as_str()
+            .unwrap();
+        let services = padded["previews"]["services"].as_array().unwrap();
+        assert_eq!(
+            services
+                .iter()
+                .find(|service| service["id"] == root_service_id)
+                .unwrap()["name"],
+            "new-web"
+        );
+        assert_eq!(
+            services
+                .iter()
+                .find(|service| service["id"] == route_service_id)
+                .unwrap()["name"],
+            "new-api"
+        );
+        let project_count_before = state.store.list_projects().await.unwrap().len();
+
+        let port_conflict_dir = tempdir().unwrap();
+        let invalid_port_conflict = json!({
+            "projectCwd": port_conflict_dir.path().display().to_string(),
+            "createProject": true,
+            "services": [{"name": "conflict-web", "localPort": 4400}],
+            "previews": [{
+                "name": "conflict-workspace",
+                "publicPort": 13000,
+                "rootServiceName": "conflict-web"
+            }]
+        });
+        let invalid = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/project-previews/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(invalid_port_conflict.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            state.store.list_projects().await.unwrap().len(),
+            project_count_before
+        );
+
+        let invalid_route = json!({
+            "projectId": project.id,
+            "services": [{"name": "web", "localPort": 5173}],
+            "previews": [{
+                "name": "workspace",
+                "publicPort": 13000,
+                "rootServiceName": "web",
+                "routes": [{"pathPattern": "api/*", "serviceName": "web"}]
+            }]
+        });
+        let invalid = app
+            .oneshot(
+                Request::post("/v1/self-control/project-previews/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(invalid_route.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
     async fn thread_start_maps_to_app_server() {
         let (state, app_server) = test_state().await;
         let project = state
@@ -656,6 +1457,169 @@ mod tests {
             replay["events"][0]["payload"]["thread"]["id"],
             "project-thread-1"
         );
+    }
+
+    #[tokio::test]
+    async fn self_control_thread_create_and_input_use_gateway_state_and_source_labels() {
+        let (state, app_server) = test_state().await;
+        let project = state
+            .store
+            .create_project("Kodex".to_string(), "/workspace/kodex".to_string())
+            .await
+            .unwrap();
+        let mut receiver = state.events.subscribe();
+        let app = build_router(state.clone());
+
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/threads")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "projectId": project.id,
+                            "model": "gpt-5.4",
+                            "payload": {"source": "self-control-test"},
+                            "source": {"sourceToolCallId": "tool-create"}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.status(), StatusCode::OK);
+        let created = response_json(created).await;
+        assert_eq!(created["thread"]["id"], "thread-1");
+        assert_eq!(created["thread"]["model"], "gpt-5.4");
+
+        let started = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "input": [{"type": "text", "text": "start now"}],
+                            "source": {"sourceToolCallId": "tool-start"},
+                            "model": "gpt-5.4"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(started.status(), StatusCode::OK);
+        let started = response_json(started).await;
+        assert_eq!(started["action"], "started");
+        assert_eq!(started["turn"]["payload"]["method"], "turn/start");
+
+        let mut saw_started_audit = false;
+        for _ in 0..4 {
+            let event = timeout(Duration::from_secs(2), receiver.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            if event.kind == "self_control.thread_input" {
+                assert_eq!(event.payload["action"], "started");
+                assert_eq!(event.payload["source"]["sourceToolCallId"], "tool-start");
+                saw_started_audit = true;
+                break;
+            }
+        }
+        assert!(saw_started_audit);
+
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "active".to_string(),
+                active_turn_id: Some("turn-active".to_string()),
+                updated_at: chrono::Utc::now(),
+                last_event_seq: None,
+            })
+            .await
+            .unwrap();
+        let queued = app
+            .oneshot(
+                Request::post("/v1/self-control/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "input": [{"type": "text", "text": "follow up"}],
+                            "source": {"sourceToolCallId": "tool-input"},
+                            "model": "gpt-5.4"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(queued.status(), StatusCode::OK);
+        let queued = response_json(queued).await;
+        assert_eq!(queued["action"], "queued");
+        assert_eq!(queued["queuedInput"]["sourceType"], "kodex_control");
+        assert_eq!(queued["queuedInput"]["sourceId"], "tool-input");
+        assert_eq!(queued["queuedInput"]["input"][0]["text"], "follow up");
+
+        let requests = app_server.requests.lock().unwrap();
+        assert!(requests.iter().any(|(method, _)| method == "thread/start"));
+        assert!(requests.iter().any(|(method, _)| method == "turn/start"));
+    }
+
+    #[tokio::test]
+    async fn self_control_thread_input_returns_stale_thread_errors() {
+        let (state, app_server) = test_state().await;
+        app_server
+            .queued_errors
+            .lock()
+            .unwrap()
+            .push(ApiError::NotFound("thread stale-thread".to_string()));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/self-control/threads/stale-thread/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"input": [{"type": "text", "text": "hi"}]}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn self_control_source_type_must_be_kodex_control() {
+        let (state, _) = test_state().await;
+        let project = state
+            .store
+            .create_project("Kodex".to_string(), "/workspace/kodex".to_string())
+            .await
+            .unwrap();
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/self-control/threads")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "projectId": project.id,
+                            "payload": {"prompt": "hi"},
+                            "source": {"sourceType": "manual"}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(!response.status().is_success());
     }
 
     #[tokio::test]
@@ -3536,6 +4500,150 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn self_control_automation_defaults_paused_and_persists_provenance() {
+        let (state, app_server) = test_state().await;
+        let mut receiver = state.events.subscribe();
+        let app = build_router(state.clone());
+
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/automations")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{
+                            "name":"Self check",
+                            "prompt":"Summarize status",
+                            "targetThreadId":"thread-1",
+                            "schedule":{
+                                "startAt":"2026-05-07T09:00:00Z",
+                                "repeatEvery":{"value":30,"unit":"seconds"}
+                            },
+                            "source":{
+                                "sourceThreadId":"origin-thread",
+                                "sourceToolCallId":"tool-1",
+                                "requestedBy":"agent",
+                                "reason":"test"
+                            }
+                        }"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(created.status(), StatusCode::OK);
+        let body = response_json(created).await;
+        let automation_id = body["automation"]["id"].as_str().unwrap();
+        assert_eq!(body["automation"]["status"], "paused");
+        assert_eq!(body["pausedByDefault"], true);
+        assert_eq!(
+            body["automation"]["provenance"]["sourceToolCallId"],
+            "tool-1"
+        );
+
+        let stored = state.store.get_automation(automation_id).await.unwrap();
+        assert_eq!(stored.status, crate::store::AutomationStatus::Paused);
+        assert_eq!(
+            stored
+                .provenance
+                .as_ref()
+                .and_then(|value| value["sourceThreadId"].as_str()),
+            Some("origin-thread")
+        );
+        let event = timeout(Duration::from_secs(2), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(event.kind, automations::AUTOMATION_UPSERT_EVENT);
+        assert_eq!(event.payload["id"], automation_id);
+
+        let updated = app
+            .clone()
+            .oneshot(
+                Request::patch(format!("/v1/self-control/automations/{automation_id}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"name": "Self check updated"}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(updated.status(), StatusCode::OK);
+        let updated = response_json(updated).await;
+        assert_eq!(updated["automation"]["name"], "Self check updated");
+        assert_eq!(
+            updated["automation"]["provenance"]["sourceToolCallId"],
+            "tool-1"
+        );
+
+        let resumed = app
+            .clone()
+            .oneshot(
+                Request::post(format!(
+                    "/v1/self-control/automations/{automation_id}/resume"
+                ))
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resumed.status(), StatusCode::OK);
+        assert_eq!(
+            response_json(resumed).await["automation"]["status"],
+            "active"
+        );
+
+        let paused = app
+            .clone()
+            .oneshot(
+                Request::post(format!(
+                    "/v1/self-control/automations/{automation_id}/pause"
+                ))
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(paused.status(), StatusCode::OK);
+        assert_eq!(
+            response_json(paused).await["automation"]["status"],
+            "paused"
+        );
+
+        let enabled = app
+            .oneshot(
+                Request::post("/v1/self-control/automations")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "name": "Enabled self check",
+                            "prompt": "Summarize status",
+                            "targetThreadId": "thread-1",
+                            "enabled": true,
+                            "schedule": {
+                                "startAt": "2026-05-07T10:00:00Z",
+                                "repeatEvery": {"value": 30, "unit": "seconds"}
+                            },
+                            "source": {"sourceToolCallId": "tool-enabled"}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(enabled.status(), StatusCode::OK);
+        let enabled = response_json(enabled).await;
+        assert_eq!(enabled["automation"]["status"], "active");
+        assert_eq!(enabled["pausedByDefault"], false);
+
+        let requests = app_server.requests.lock().unwrap();
+        assert!(requests.iter().any(|(method, _)| method == "thread/read"));
+    }
+
+    #[tokio::test]
     async fn due_automation_queues_source_labeled_input_with_latest_thread_options() {
         let (state, app_server) = test_state().await;
         state
@@ -3554,7 +4662,7 @@ mod tests {
             .await
             .unwrap();
         let start_at = chrono::Utc.with_ymd_and_hms(2026, 5, 7, 9, 0, 0).unwrap();
-        state
+        let automation = state
             .store
             .create_automation(crate::store::NewAutomation {
                 name: "Status".to_string(),
@@ -3563,6 +4671,12 @@ mod tests {
                 start_at,
                 repeat_every_seconds: 30,
                 next_run_at: start_at,
+                status: crate::store::AutomationStatus::Active,
+                paused_reason: None,
+                provenance: Some(json!({
+                    "sourceType": "kodex_control",
+                    "sourceToolCallId": "tool-scheduler"
+                })),
             })
             .await
             .unwrap();
@@ -3618,6 +4732,14 @@ mod tests {
             turn_start.1["sandboxPolicy"],
             json!({"type": "workspaceWrite"})
         );
+        automations::recover_automations_after_restart(&state)
+            .await
+            .unwrap();
+        let automation = state.store.get_automation(&automation.id).await.unwrap();
+        assert_eq!(
+            automation.provenance.as_ref().unwrap()["sourceToolCallId"],
+            "tool-scheduler"
+        );
     }
 
     #[tokio::test]
@@ -3640,6 +4762,9 @@ mod tests {
                 start_at,
                 repeat_every_seconds: 30,
                 next_run_at: start_at,
+                status: crate::store::AutomationStatus::Active,
+                paused_reason: None,
+                provenance: None,
             })
             .await
             .unwrap();
@@ -3701,6 +4826,9 @@ mod tests {
                 start_at,
                 repeat_every_seconds: 30,
                 next_run_at: start_at,
+                status: crate::store::AutomationStatus::Active,
+                paused_reason: None,
+                provenance: None,
             })
             .await
             .unwrap();
@@ -5561,6 +6689,39 @@ mod tests {
     async fn response_json(response: axum::response::Response) -> Value {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         serde_json::from_slice(&body).unwrap()
+    }
+
+    fn plugin_read_response(installed: bool, marketplace_path: &std::path::Path) -> Value {
+        json!({
+            "plugin": {
+                "summary": {
+                    "id": "kodex-local:kodex-control",
+                    "name": "kodex-control",
+                    "installed": installed,
+                    "enabled": installed,
+                    "installPolicy": "available",
+                    "authPolicy": "onInstall",
+                    "source": {"source": "local", "path": "./plugins/kodex-control"},
+                    "interface": {
+                        "displayName": "Kodex Control",
+                        "shortDescription": "Guarded Kodex self-management tools",
+                        "capabilities": ["Interactive", "Write"]
+                    }
+                },
+                "marketplaceName": "kodex-local",
+                "marketplacePath": marketplace_path.display().to_string(),
+                "skills": [{
+                    "name": "kodex-proxy-evaluation",
+                    "path": "/tmp/kodex-proxy-evaluation/SKILL.md",
+                    "description": "Evaluate repository preview proxy compatibility.",
+                    "enabled": true,
+                    "scope": "plugin"
+                }],
+                "mcpServers": ["kodex-control"],
+                "apps": [],
+                "description": null
+            }
+        })
     }
 
     fn thread_summary(id: &str) -> Value {

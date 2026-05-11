@@ -9,14 +9,16 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::{
     app_server::DynAppServer,
     app_server_api::{
-        AccountResponse, ComposerPermissionsPreset, ComposerSettingsResponse,
+        AccountResponse, AppSummary, ComposerPermissionsPreset, ComposerSettingsResponse,
         ComposerSettingsUpdateRequest, ComposerSettingsUpdateResponse, LoginStartResponse,
-        ModelListResponse, RateLimitsResponse, RawAppServerResponse, SkillErrorInfo,
-        SkillInterface, SkillMetadata, SkillsCatalogResponse, ThreadCommandResponse,
-        ThreadDetailResponse, ThreadItemSnapshot, ThreadListResponse, ThreadLiveState,
-        ThreadTurnSnapshot, TimelineItemDeltaPayload, TimelineItemUpsertPayload,
-        TimelineSkillMention, TimelineThreadMetadataPayload, TimelineThreadStatusPayload,
-        TimelineTurnUpsertPayload, TimelineUpdateSource, UserInput,
+        MarketplaceAddResponse, ModelListResponse, PluginDetail, PluginInstallResponse,
+        PluginInterface, PluginListResponse, PluginMarketplaceEntry, PluginReadResponse,
+        PluginSummary, RateLimitsResponse, RawAppServerResponse, SkillErrorInfo, SkillInterface,
+        SkillMetadata, SkillsCatalogResponse, ThreadCommandResponse, ThreadDetailResponse,
+        ThreadItemSnapshot, ThreadListResponse, ThreadLiveState, ThreadTurnSnapshot,
+        TimelineItemDeltaPayload, TimelineItemUpsertPayload, TimelineSkillMention,
+        TimelineThreadMetadataPayload, TimelineThreadStatusPayload, TimelineTurnUpsertPayload,
+        TimelineUpdateSource, UserInput,
     },
     config::Config,
     error::ApiErrorBody,
@@ -42,6 +44,10 @@ use crate::{
         events::EventListResponse,
         file_preview::FilePreviewQuery,
         health::{HealthResponse, ReadyResponse},
+        kodex_control_plugin::{
+            KodexControlPluginInstallResponse, KodexControlPluginStatusKind,
+            KodexControlPluginStatusResponse,
+        },
         models::ModelsQuery,
         project_previews::{
             PreviewCreateRequest, PreviewListResponse, PreviewRouteCreateRequest,
@@ -50,6 +56,16 @@ use crate::{
             ProjectPreviewDto, ProjectPreviewRouteDto, ProjectPreviewServiceDto,
         },
         projects::{CreateProjectRequest, ProjectListResponse},
+        self_control::{
+            SelfControlApplyAction, SelfControlApplyChange, SelfControlAutomationCreateRequest,
+            SelfControlAutomationResponse, SelfControlAutomationUpdateRequest,
+            SelfControlCapabilities, SelfControlCreateThreadRequest, SelfControlDesiredPreview,
+            SelfControlDesiredPreviewRoute, SelfControlDesiredPreviewService,
+            SelfControlPreviewApplyRequest, SelfControlPreviewApplyResponse,
+            SelfControlRequestedBy, SelfControlSource, SelfControlSourceType,
+            SelfControlStatusResponse, SelfControlThreadInputAction, SelfControlThreadInputRequest,
+            SelfControlThreadInputResponse,
+        },
         skills::{SkillIconQuery, SkillsQuery},
         threads::{
             CreateChatThreadRequest, CreateThreadRequest, MarkThreadSeenRequest, ThreadListQuery,
@@ -155,7 +171,17 @@ impl AppState {
         crate::routes::account::read_rate_limits,
         crate::routes::models::list_models,
         crate::routes::skills::list_skills,
-        crate::routes::skills::preview_skill_icon
+        crate::routes::skills::preview_skill_icon,
+        crate::routes::kodex_control_plugin::kodex_control_plugin_status,
+        crate::routes::kodex_control_plugin::install_kodex_control_plugin,
+        crate::routes::self_control::self_control_status,
+        crate::routes::self_control::apply_project_preview_config,
+        crate::routes::self_control::create_self_control_thread,
+        crate::routes::self_control::send_self_control_thread_input,
+        crate::routes::self_control::create_self_control_automation,
+        crate::routes::self_control::update_self_control_automation,
+        crate::routes::self_control::pause_self_control_automation,
+        crate::routes::self_control::resume_self_control_automation
     ),
     components(schemas(
         ApiErrorBody,
@@ -257,7 +283,38 @@ impl AppState {
         SkillsCatalogResponse,
         SkillMetadata,
         SkillInterface,
-        SkillErrorInfo
+        SkillErrorInfo,
+        AppSummary,
+        MarketplaceAddResponse,
+        PluginDetail,
+        PluginInstallResponse,
+        PluginInterface,
+        PluginListResponse,
+        PluginMarketplaceEntry,
+        PluginReadResponse,
+        PluginSummary,
+        KodexControlPluginStatusKind,
+        KodexControlPluginStatusResponse,
+        KodexControlPluginInstallResponse,
+        SelfControlStatusResponse,
+        SelfControlCapabilities,
+        SelfControlSource,
+        SelfControlSourceType,
+        SelfControlRequestedBy,
+        SelfControlPreviewApplyRequest,
+        SelfControlDesiredPreviewService,
+        SelfControlDesiredPreview,
+        SelfControlDesiredPreviewRoute,
+        SelfControlPreviewApplyResponse,
+        SelfControlApplyChange,
+        SelfControlApplyAction,
+        SelfControlCreateThreadRequest,
+        SelfControlThreadInputRequest,
+        SelfControlThreadInputResponse,
+        SelfControlThreadInputAction,
+        SelfControlAutomationCreateRequest,
+        SelfControlAutomationUpdateRequest,
+        SelfControlAutomationResponse
     ))
 )]
 pub struct ApiDoc;
@@ -280,6 +337,8 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::account::router())
         .merge(routes::models::router())
         .merge(routes::skills::router())
+        .merge(routes::kodex_control_plugin::router())
+        .merge(routes::self_control::router())
         .merge(SwaggerUi::new("/docs").url("/openapi.json", ApiDoc::openapi()))
         .layer(TraceLayer::new_for_http())
         .with_state(state.clone());

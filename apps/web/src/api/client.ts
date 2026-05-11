@@ -13,6 +13,8 @@ export type ComposerSettingsResponse = components["schemas"]["ComposerSettingsRe
 export type ComposerSettingsUpdateRequest = components["schemas"]["ComposerSettingsUpdateRequest"];
 export type EventEnvelope = components["schemas"]["EventEnvelope"];
 export type LoginStartResponse = components["schemas"]["LoginStartResponse"];
+export type KodexControlPluginInstallResponse = components["schemas"]["KodexControlPluginInstallResponse"];
+export type KodexControlPluginStatusResponse = components["schemas"]["KodexControlPluginStatusResponse"];
 export type ModelSummary = components["schemas"]["ModelSummary"];
 export type Project = components["schemas"]["Project"];
 export type PreviewCreateRequest = components["schemas"]["PreviewCreateRequest"];
@@ -481,6 +483,14 @@ export async function getRateLimits(): Promise<RateLimitsResponse> {
 export async function listModels(): Promise<ModelSummary[]> {
   const response = await unwrap(api.GET("/v1/models", { params: { query: { includeHidden: false } } }));
   return response.models.filter((model) => !model.hidden);
+}
+
+export async function getKodexControlPluginStatus(): Promise<KodexControlPluginStatusResponse> {
+  return unwrap(api.GET("/v1/kodex-control-plugin"));
+}
+
+export async function installKodexControlPlugin(): Promise<KodexControlPluginInstallResponse> {
+  return unwrap(api.POST("/v1/kodex-control-plugin/install"));
 }
 
 export async function listSkills(cwd?: string | null, forceReload = false): Promise<SkillsCatalogResponse> {

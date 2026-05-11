@@ -1,0 +1,41 @@
+{
+  "name": "kodex-control",
+  "version": "0.1.0",
+  "description": "First-party Kodex control plugin for guarded self-management workflows.",
+  "author": {
+    "name": "OpenAI",
+    "email": "support@openai.com",
+    "url": "https://openai.com/"
+  },
+  "homepage": "https://github.com/openai/kodex",
+  "repository": "https://github.com/openai/kodex",
+  "license": "MIT",
+  "keywords": [
+    "kodex",
+    "preview",
+    "proxy",
+    "automation",
+    "self-control"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Kodex Control",
+    "shortDescription": "Guarded Kodex self-management tools",
+    "longDescription": "Install first-party Kodex skills and tools for evaluating project preview proxy compatibility and, after explicit confirmation, configuring previews, threads, and automations through gateway-owned safeguards.",
+    "developerName": "OpenAI",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/openai/kodex",
+    "privacyPolicyURL": "https://openai.com/policies/privacy-policy/",
+    "termsOfServiceURL": "https://openai.com/policies/terms-of-use/",
+    "defaultPrompt": [
+      "Evaluate this repo for Kodex preview proxy compatibility"
+    ],
+    "brandColor": "#2563EB",
+    "screenshots": []
+  }
+}

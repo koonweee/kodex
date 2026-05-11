@@ -40,6 +40,11 @@ Use this skill to produce an evaluation report for an application repo that shou
    - Do not propose database ports or non-HTTP dependencies as preview services.
    - Note a likely public port, but let Kodex allocate it when no fixed port is required.
 
+6. Apply only after explicit user confirmation:
+   - Use Kodex Control self-control tools when they are available.
+   - Start with a dry run and show the proposed diff before applying.
+   - Do not call raw preview CRUD routes directly for self-control actions; use the dedicated self-control tool or endpoint.
+
 ## Report Format
 
 Use this structure in the final answer:

@@ -282,7 +282,10 @@ function fuzzySubsequenceStart(term: string, query: string): number | null {
 }
 
 function compareSkills(left: SkillMetadata, right: SkillMetadata): number {
-  return scopeRank(left.scope) - scopeRank(right.scope) || skillDisplayName(left).localeCompare(skillDisplayName(right));
+  return (
+    scopeRank(left.scope ?? "user") - scopeRank(right.scope ?? "user") ||
+    skillDisplayName(left).localeCompare(skillDisplayName(right))
+  );
 }
 
 function cursorDeletesBinding(text: string, binding: SkillMentionBinding, cursor: number): boolean {
