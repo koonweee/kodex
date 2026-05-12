@@ -6,6 +6,7 @@ export const queryKeys = {
   composerSettings: (projectId: string | null) => ["composer-settings", projectId ?? "global"] as const,
   kodexControlPlugin: ["plugins", "kodex-control"] as const,
   models: ["models"] as const,
+  mcpConfiguredServers: ["mcp", "configured-servers"] as const,
   mcpResource: (server: string, uri: string) => ["mcp", "servers", server, "resources", uri] as const,
   mcpServers: ["mcp", "servers"] as const,
   pendingApprovals: ["approvals", "pending"] as const,

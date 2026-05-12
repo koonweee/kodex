@@ -25,6 +25,7 @@ const GATEWAY_SSE_EVENT_TYPES = [
   "automation.item_upsert",
   "codex.notification",
   "gateway.warning",
+  "mcp.config_changed",
   "mcp.oauth_login_completed",
   "mcp.server_status_updated",
   "skills.changed",

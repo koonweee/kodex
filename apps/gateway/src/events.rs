@@ -41,6 +41,7 @@ const SSE_REPLAY_PAGE_SIZE: i64 = 500;
 const SELECTED_THREAD_POLL_LIMIT: u32 = 25;
 const SELECTED_THREAD_ACTIVE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const SNAPSHOT_REQUIRED_KIND: &str = "timeline.snapshot_required";
+pub const MCP_CONFIG_CHANGED_EVENT: &str = "mcp.config_changed";
 pub const MCP_SERVER_STATUS_UPDATED_EVENT: &str = "mcp.server_status_updated";
 pub const MCP_OAUTH_LOGIN_COMPLETED_EVENT: &str = "mcp.oauth_login_completed";
 
@@ -421,6 +422,7 @@ fn is_operational_replay_event(event: &EventEnvelope) -> bool {
         "approval.created"
             | "approval.resolved"
             | "gateway.warning"
+            | MCP_CONFIG_CHANGED_EVENT
             | MCP_SERVER_STATUS_UPDATED_EVENT
             | MCP_OAUTH_LOGIN_COMPLETED_EVENT
             | skills::SKILLS_CHANGED_EVENT

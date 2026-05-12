@@ -1,6 +1,6 @@
 import { MantineProvider } from "@mantine/core";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,9 +12,14 @@ import { PreferencesModal } from "./PreferencesModal";
 const apiMocks = vi.hoisted(() => ({
   getKodexControlPluginStatus: vi.fn(),
   installKodexControlPlugin: vi.fn(),
+  addMcpServer: vi.fn(),
+  listConfiguredMcpServers: vi.fn(),
   listMcpServers: vi.fn(),
   readMcpResource: vi.fn(),
   reloadMcpServers: vi.fn(),
+  removeMcpServer: vi.fn(),
+  replaceMcpServer: vi.fn(),
+  setMcpServerEnabled: vi.fn(),
   startMcpOAuthLogin: vi.fn(),
 }));
 
@@ -22,9 +27,14 @@ vi.mock("./api/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./api/client")>()),
   getKodexControlPluginStatus: apiMocks.getKodexControlPluginStatus,
   installKodexControlPlugin: apiMocks.installKodexControlPlugin,
+  addMcpServer: apiMocks.addMcpServer,
+  listConfiguredMcpServers: apiMocks.listConfiguredMcpServers,
   listMcpServers: apiMocks.listMcpServers,
   readMcpResource: apiMocks.readMcpResource,
   reloadMcpServers: apiMocks.reloadMcpServers,
+  removeMcpServer: apiMocks.removeMcpServer,
+  replaceMcpServer: apiMocks.replaceMcpServer,
+  setMcpServerEnabled: apiMocks.setMcpServerEnabled,
   startMcpOAuthLogin: apiMocks.startMcpOAuthLogin,
 }));
 
@@ -68,9 +78,14 @@ describe("PreferencesModal plugins tab", () => {
   beforeEach(() => {
     apiMocks.getKodexControlPluginStatus.mockReset();
     apiMocks.installKodexControlPlugin.mockReset();
+    apiMocks.addMcpServer.mockReset();
+    apiMocks.listConfiguredMcpServers.mockReset();
     apiMocks.listMcpServers.mockReset();
     apiMocks.readMcpResource.mockReset();
     apiMocks.reloadMcpServers.mockReset();
+    apiMocks.removeMcpServer.mockReset();
+    apiMocks.replaceMcpServer.mockReset();
+    apiMocks.setMcpServerEnabled.mockReset();
     apiMocks.startMcpOAuthLogin.mockReset();
   });
 
@@ -189,10 +204,16 @@ describe("PreferencesModal MCP tab", () => {
   beforeEach(() => {
     apiMocks.getKodexControlPluginStatus.mockReset();
     apiMocks.installKodexControlPlugin.mockReset();
+    apiMocks.addMcpServer.mockReset();
+    apiMocks.listConfiguredMcpServers.mockReset();
     apiMocks.listMcpServers.mockReset();
     apiMocks.readMcpResource.mockReset();
     apiMocks.reloadMcpServers.mockReset();
+    apiMocks.removeMcpServer.mockReset();
+    apiMocks.replaceMcpServer.mockReset();
+    apiMocks.setMcpServerEnabled.mockReset();
     apiMocks.startMcpOAuthLogin.mockReset();
+    apiMocks.listConfiguredMcpServers.mockResolvedValue({ servers: [] });
   });
 
   it("shows MCP inventory and resource details", async () => {
@@ -378,5 +399,204 @@ describe("PreferencesModal MCP tab", () => {
     apiMocks.listMcpServers.mockRejectedValue(new Error("inventory failed"));
     renderPreferences("mcp");
     expect(await screen.findByText("inventory failed")).toBeInTheDocument();
+  });
+
+  it("adds an HTTP MCP server with inline header warning fields", async () => {
+    apiMocks.listMcpServers.mockResolvedValue({ servers: [] });
+    apiMocks.addMcpServer.mockResolvedValue({ configuredServer: null, reload: { reloaded: true } });
+
+    renderPreferences("mcp");
+
+    await userEvent.click(await screen.findByRole("button", { name: /add server/i }));
+    const installDialog = await screen.findByRole("dialog", { name: /add mcp server/i });
+    const install = within(installDialog);
+    await userEvent.type(install.getByLabelText("Name"), "remote");
+    await userEvent.type(install.getByLabelText("URL"), "https://mcp.example.test");
+    await userEvent.type(install.getByLabelText("HTTP headers"), "Authorization=Bearer secret");
+    expect(install.getByText("HTTP headers")).toBeInTheDocument();
+
+    await userEvent.click(install.getByRole("button", { name: /^add server$/i }));
+
+    await waitFor(() => expect(apiMocks.addMcpServer).toHaveBeenCalledTimes(1));
+    expect(apiMocks.addMcpServer.mock.calls[0]?.[0]).toEqual({
+      enabled: true,
+      name: "remote",
+      transport: {
+        httpHeaders: { Authorization: "Bearer secret" },
+        type: "streamableHttp",
+        url: "https://mcp.example.test",
+      },
+    });
+  });
+
+  it("confirms local command execution before adding a stdio MCP server", async () => {
+    apiMocks.listMcpServers.mockResolvedValue({ servers: [] });
+    apiMocks.addMcpServer.mockResolvedValue({ configuredServer: null, reload: { reloaded: true } });
+
+    renderPreferences("mcp");
+
+    await userEvent.click(await screen.findByRole("button", { name: /add server/i }));
+    const installDialog = await screen.findByRole("dialog", { name: /add mcp server/i });
+    const install = within(installDialog);
+    await userEvent.click(install.getByRole("radio", { name: /local command/i }));
+    await userEvent.type(install.getByLabelText("Name"), "local");
+    await userEvent.type(install.getByLabelText("Command"), "npx");
+    await userEvent.type(install.getByLabelText("Arguments"), "-y @docs/mcp");
+    await userEvent.type(install.getByLabelText("Working directory"), "/tmp/docs");
+    await userEvent.type(install.getByLabelText("Environment values"), "DOCS_TOKEN=secret");
+    await userEvent.type(install.getByLabelText("Environment variable names"), "SHARED_TOKEN");
+    await userEvent.click(install.getByLabelText("Required"));
+    await userEvent.type(install.getByLabelText("Startup timeout seconds"), "5");
+    await userEvent.type(install.getByLabelText("Tool timeout seconds"), "20");
+    await userEvent.type(install.getByLabelText("Scopes"), "read\nwrite");
+    await userEvent.type(install.getByLabelText("Enabled tools"), "search");
+
+    await userEvent.click(install.getByRole("button", { name: /^confirm$/i }));
+    expect(install.getByText("Codex will run this command locally when loading the MCP server.")).toBeInTheDocument();
+
+    await userEvent.click(install.getByRole("button", { name: /^add server$/i }));
+
+    await waitFor(() => expect(apiMocks.addMcpServer).toHaveBeenCalledTimes(1));
+    expect(apiMocks.addMcpServer.mock.calls[0]?.[0]).toEqual({
+      enabled: true,
+      enabledTools: ["search"],
+      name: "local",
+      required: true,
+      scopes: ["read", "write"],
+      startupTimeoutSec: 5,
+      toolTimeoutSec: 20,
+      transport: {
+        args: ["-y", "@docs/mcp"],
+        command: "npx",
+        cwd: "/tmp/docs",
+        env: { DOCS_TOKEN: "secret" },
+        envVars: ["SHARED_TOKEN"],
+        type: "stdio",
+      },
+    });
+  });
+
+  it("opens replace with a clean form after a canceled add draft", async () => {
+    apiMocks.listMcpServers.mockResolvedValue({ servers: [] });
+    apiMocks.listConfiguredMcpServers.mockResolvedValue({
+      servers: [
+        {
+          enabled: true,
+          hasStoredSecrets: false,
+          name: "docs",
+          transport: {
+            command: "npx",
+            type: "stdio",
+          },
+        },
+      ],
+    });
+
+    renderPreferences("mcp");
+
+    expect((await screen.findAllByText("docs")).length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole("button", { name: /add server/i }));
+    const addDialog = await screen.findByRole("dialog", { name: /add mcp server/i });
+    const add = within(addDialog);
+    await userEvent.click(add.getByRole("radio", { name: /local command/i }));
+    await userEvent.type(add.getByLabelText("Name"), "draft");
+    await userEvent.type(add.getByLabelText("Command"), "draft-command");
+    await userEvent.click(add.getByRole("button", { name: /cancel/i }));
+
+    await userEvent.click(screen.getByRole("button", { name: /replace/i }));
+    const replaceDialog = await screen.findByRole("dialog", { name: /replace mcp server/i });
+    const replace = within(replaceDialog);
+    expect(replace.getByLabelText("Name")).toHaveValue("docs");
+    expect(replace.getByRole("radio", { name: /local command/i })).toBeChecked();
+    expect(replace.getByLabelText("Command")).toHaveValue("npx");
+    expect(replace.queryByDisplayValue("draft-command")).not.toBeInTheDocument();
+  });
+
+  it("replaces and clears stored MCP secret fields without showing their values", async () => {
+    apiMocks.listMcpServers.mockResolvedValue({ servers: [] });
+    apiMocks.listConfiguredMcpServers.mockResolvedValue({
+      servers: [
+        {
+          enabled: true,
+          hasStoredSecrets: true,
+          name: "docs",
+          transport: {
+            httpHeaders: { Authorization: { configured: true, masked: true } },
+            type: "streamableHttp",
+            url: "https://mcp.example.test",
+          },
+        },
+      ],
+    });
+    apiMocks.replaceMcpServer.mockResolvedValue({ configuredServer: null, reload: { reloaded: true } });
+
+    renderPreferences("mcp");
+
+    expect((await screen.findAllByText("docs")).length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole("button", { name: /replace/i }));
+    const replaceDialog = await screen.findByRole("dialog", { name: /replace mcp server/i });
+    const replace = within(replaceDialog);
+    expect(replace.getByText("Stored HTTP headers")).toBeInTheDocument();
+    expect(replace.getByText("Authorization")).toBeInTheDocument();
+    expect(replace.getByText("Stored value")).toBeInTheDocument();
+    expect(screen.queryByText("Bearer secret")).not.toBeInTheDocument();
+
+    await userEvent.click(replace.getByRole("button", { name: /^replace$/i }));
+    await userEvent.type(replace.getByLabelText("Replacement value for Authorization"), "Bearer new");
+    await userEvent.click(replace.getByRole("button", { name: /^clear$/i }));
+    expect(replace.getByText("Will clear")).toBeInTheDocument();
+
+    await userEvent.click(replace.getByRole("button", { name: /^confirm$/i }));
+    expect(replace.getByText("Replacing this server writes exactly the submitted config. Existing stored env/header values may be replaced or cleared.")).toBeInTheDocument();
+    await userEvent.click(replace.getByRole("button", { name: /^replace server$/i }));
+
+    await waitFor(() => expect(apiMocks.replaceMcpServer).toHaveBeenCalledTimes(1));
+    expect(apiMocks.replaceMcpServer.mock.calls[0]?.[0]).toBe("docs");
+    expect(apiMocks.replaceMcpServer.mock.calls[0]?.[1]).toEqual({
+      enabled: true,
+      name: "docs",
+      transport: {
+        clearHttpHeaders: ["Authorization"],
+        httpHeaders: {},
+        type: "streamableHttp",
+        url: "https://mcp.example.test",
+      },
+    });
+  });
+
+  it("manages configured MCP rows without exposing stored secret values", async () => {
+    apiMocks.listMcpServers.mockResolvedValue({ servers: [] });
+    apiMocks.listConfiguredMcpServers.mockResolvedValue({
+      servers: [
+        {
+          enabled: true,
+          hasStoredSecrets: true,
+          name: "docs",
+          transport: {
+            command: "npx",
+            env: { DOCS_TOKEN: { configured: true, masked: true } },
+            type: "stdio",
+          },
+        },
+      ],
+    });
+    apiMocks.setMcpServerEnabled.mockResolvedValue({ configuredServer: null, reload: { reloaded: true } });
+    apiMocks.removeMcpServer.mockResolvedValue({ configuredServer: null, reload: { reloaded: true } });
+
+    renderPreferences("mcp");
+
+    expect((await screen.findAllByText("docs")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Configured").length).toBeGreaterThan(0);
+    expect(screen.getByText("This server has stored env/header values in local Codex config. Values are hidden in Kodex.")).toBeInTheDocument();
+    expect(screen.queryByText("secret")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /disable/i }));
+    await waitFor(() => expect(apiMocks.setMcpServerEnabled).toHaveBeenCalledWith("docs", false));
+
+    await userEvent.click(screen.getByRole("button", { name: /^remove$/i }));
+    expect(screen.getByRole("button", { name: /confirm remove/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /confirm remove/i }));
+    await waitFor(() => expect(apiMocks.removeMcpServer).toHaveBeenCalledTimes(1));
+    expect(apiMocks.removeMcpServer.mock.calls[0]?.[0]).toBe("docs");
   });
 });

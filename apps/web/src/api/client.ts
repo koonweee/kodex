@@ -15,9 +15,13 @@ export type EventEnvelope = components["schemas"]["EventEnvelope"];
 export type LoginStartResponse = components["schemas"]["LoginStartResponse"];
 export type KodexControlPluginInstallResponse = components["schemas"]["KodexControlPluginInstallResponse"];
 export type KodexControlPluginStatusResponse = components["schemas"]["KodexControlPluginStatusResponse"];
+export type ConfiguredMcpServer = components["schemas"]["ConfiguredMcpServer"];
+export type ConfiguredMcpServerListResponse = components["schemas"]["ConfiguredMcpServerListResponse"];
+export type McpConfigMutationResponse = components["schemas"]["McpConfigMutationResponse"];
 export type McpOAuthLoginResponse = components["schemas"]["McpOAuthLoginResponse"];
 export type McpResource = components["schemas"]["McpResource"];
 export type McpResourceReadResponse = components["schemas"]["McpResourceReadResponse"];
+export type McpServerInstallRequest = components["schemas"]["McpServerInstallRequest"];
 export type McpServerListResponse = components["schemas"]["McpServerListResponse"];
 export type McpServerStatus = components["schemas"]["McpServerStatus"];
 export type ModelSummary = components["schemas"]["ModelSummary"];
@@ -500,6 +504,34 @@ export async function installKodexControlPlugin(): Promise<KodexControlPluginIns
 
 export async function listMcpServers(): Promise<McpServerListResponse> {
   return unwrap(api.GET("/v1/mcp/servers", { params: { query: { detail: "full" } } }));
+}
+
+export async function listConfiguredMcpServers(): Promise<ConfiguredMcpServerListResponse> {
+  return unwrap(api.GET("/v1/mcp/configured-servers"));
+}
+
+export async function addMcpServer(request: McpServerInstallRequest): Promise<McpConfigMutationResponse> {
+  return unwrap(api.POST("/v1/mcp/servers", { body: request }));
+}
+
+export async function replaceMcpServer(
+  server: string,
+  request: McpServerInstallRequest,
+): Promise<McpConfigMutationResponse> {
+  return unwrap(api.POST("/v1/mcp/servers/{server}/replace", { params: { path: { server } }, body: request }));
+}
+
+export async function setMcpServerEnabled(server: string, enabled: boolean): Promise<McpConfigMutationResponse> {
+  return unwrap(
+    api.PATCH("/v1/mcp/servers/{server}/enabled", {
+      params: { path: { server } },
+      body: { enabled },
+    }),
+  );
+}
+
+export async function removeMcpServer(server: string): Promise<McpConfigMutationResponse> {
+  return unwrap(api.DELETE("/v1/mcp/servers/{server}", { params: { path: { server } } }));
 }
 
 export async function reloadMcpServers(): Promise<void> {

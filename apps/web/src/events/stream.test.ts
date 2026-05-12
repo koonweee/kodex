@@ -205,6 +205,18 @@ describe("event stream client", () => {
     });
 
     client.connect();
+    FakeEventSource.instances[0].emitNamed("mcp.config_changed", {
+      id: "event-10",
+      seq: 10,
+      kind: "mcp.config_changed",
+      codexMethod: null,
+      itemId: null,
+      threadId: null,
+      turnId: null,
+      projectId: null,
+      payload: { operation: "add", server: "docs" },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
     FakeEventSource.instances[0].emitNamed("mcp.server_status_updated", {
       id: "event-11",
       seq: 11,
@@ -230,7 +242,7 @@ describe("event stream client", () => {
       receivedAt: "2026-04-30T00:00:00Z",
     });
 
-    expect(received).toEqual(["mcp.server_status_updated", "mcp.oauth_login_completed"]);
+    expect(received).toEqual(["mcp.config_changed", "mcp.server_status_updated", "mcp.oauth_login_completed"]);
     client.close();
   });
 

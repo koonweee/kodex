@@ -333,6 +333,81 @@ impl CodexClient {
         Ok(McpReloadResponse { reloaded: true })
     }
 
+    pub async fn mcp_configured_servers(&self) -> ApiResult<ConfiguredMcpServerListResponse> {
+        let payload = self
+            .request("config/read", json!({ "cwd": null, "includeLayers": true }))
+            .await?;
+        ConfiguredMcpServerListResponse::from_config_payload(payload)
+    }
+
+    pub async fn mcp_write_server(
+        &self,
+        name: String,
+        request: McpServerInstallRequest,
+    ) -> ApiResult<ConfiguredMcpServer> {
+        validate_mcp_server_name(&name)?;
+        let value = request.config_value();
+        self.config_batch_write(vec![config_edit(&format!("mcp_servers.{name}"), value)])
+            .await?;
+        Ok(request.into_configured(name))
+    }
+
+    pub async fn mcp_replace_server(
+        &self,
+        name: String,
+        request: McpServerInstallRequest,
+    ) -> ApiResult<ConfiguredMcpServer> {
+        validate_mcp_server_name(&name)?;
+        let payload = self
+            .request("config/read", json!({ "cwd": null, "includeLayers": true }))
+            .await?;
+        let existing = payload
+            .get("config")
+            .and_then(|config| config.get("mcp_servers"))
+            .and_then(|servers| servers.get(&name));
+        let value = request.config_value_with_existing(existing);
+        self.config_batch_write(vec![config_edit(
+            &format!("mcp_servers.{name}"),
+            value.clone(),
+        )])
+        .await?;
+        Ok(
+            ConfiguredMcpServer::from_config(&name, &value).unwrap_or(ConfiguredMcpServer {
+                name,
+                enabled: true,
+                required: None,
+                startup_timeout_sec: None,
+                tool_timeout_sec: None,
+                scopes: Vec::new(),
+                enabled_tools: Vec::new(),
+                has_stored_secrets: false,
+                transport: ConfiguredMcpTransport::Unknown,
+            }),
+        )
+    }
+
+    pub async fn mcp_set_server_enabled(
+        &self,
+        name: String,
+        enabled: bool,
+    ) -> ApiResult<RawAppServerResponse> {
+        validate_mcp_server_name(&name)?;
+        self.config_batch_write(vec![config_edit(
+            &format!("mcp_servers.{name}.enabled"),
+            Value::Bool(enabled),
+        )])
+        .await
+    }
+
+    pub async fn mcp_remove_server(&self, name: String) -> ApiResult<RawAppServerResponse> {
+        validate_mcp_server_name(&name)?;
+        self.config_batch_write(vec![config_edit(
+            &format!("mcp_servers.{name}"),
+            Value::Null,
+        )])
+        .await
+    }
+
     pub async fn composer_settings(
         &self,
         cwd: Option<String>,
@@ -355,6 +430,16 @@ impl CodexClient {
         self.request("config/batchWrite", json!({ "edits": edits }))
             .await?;
         Ok(ComposerSettingsUpdateResponse { saved: true })
+    }
+
+    async fn config_batch_write(&self, edits: Vec<Value>) -> ApiResult<RawAppServerResponse> {
+        let payload = self
+            .request(
+                "config/batchWrite",
+                json!({ "edits": edits, "reloadUserConfig": true }),
+            )
+            .await?;
+        Ok(RawAppServerResponse { payload })
     }
 
     pub async fn skills_list(
@@ -663,6 +748,262 @@ impl McpOAuthLoginResponse {
 #[serde(rename_all = "camelCase")]
 pub struct McpReloadResponse {
     pub reloaded: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfiguredMcpServerListResponse {
+    pub servers: Vec<ConfiguredMcpServer>,
+}
+
+impl ConfiguredMcpServerListResponse {
+    fn from_config_payload(payload: Value) -> ApiResult<Self> {
+        let entries = payload
+            .get("config")
+            .and_then(|config| config.get("mcp_servers"))
+            .and_then(Value::as_object)
+            .into_iter()
+            .flat_map(|servers| servers.iter())
+            .filter_map(|(name, value)| ConfiguredMcpServer::from_config(name, value))
+            .collect();
+        Ok(Self { servers: entries })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfiguredMcpServer {
+    pub name: String,
+    pub enabled: bool,
+    #[serde(default)]
+    pub required: Option<bool>,
+    #[serde(default)]
+    pub startup_timeout_sec: Option<i64>,
+    #[serde(default)]
+    pub tool_timeout_sec: Option<i64>,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    #[serde(default)]
+    pub enabled_tools: Vec<String>,
+    pub has_stored_secrets: bool,
+    pub transport: ConfiguredMcpTransport,
+}
+
+impl ConfiguredMcpServer {
+    fn from_config(name: &str, value: &Value) -> Option<Self> {
+        let object = value.as_object()?;
+        let transport = if object.get("url").and_then(Value::as_str).is_some() {
+            ConfiguredMcpTransport::StreamableHttp {
+                url: optional_string(value, "url").unwrap_or_default(),
+                bearer_token_env_var: optional_string(value, "bearer_token_env_var"),
+                oauth_resource: optional_string(value, "oauth_resource"),
+                http_headers: masked_secret_map(value.get("http_headers")),
+                env_http_headers: string_map(value.get("env_http_headers")),
+            }
+        } else if object.get("command").and_then(Value::as_str).is_some() {
+            ConfiguredMcpTransport::Stdio {
+                command: optional_string(value, "command").unwrap_or_default(),
+                args: string_vec(value.get("args")),
+                cwd: optional_string(value, "cwd"),
+                env: masked_secret_map(value.get("env")),
+                env_vars: env_var_names(value.get("env_vars")),
+            }
+        } else {
+            ConfiguredMcpTransport::Unknown
+        };
+        let has_stored_secrets = match &transport {
+            ConfiguredMcpTransport::Stdio { env, .. } => !env.is_empty(),
+            ConfiguredMcpTransport::StreamableHttp { http_headers, .. } => !http_headers.is_empty(),
+            ConfiguredMcpTransport::Unknown => false,
+        };
+        Some(Self {
+            name: name.to_string(),
+            enabled: value
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+            required: value.get("required").and_then(Value::as_bool),
+            startup_timeout_sec: optional_i64(value, "startup_timeout_sec"),
+            tool_timeout_sec: optional_i64(value, "tool_timeout_sec"),
+            scopes: string_vec(value.get("scopes")),
+            enabled_tools: string_vec(value.get("enabled_tools")),
+            has_stored_secrets,
+            transport,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ConfiguredMcpTransport {
+    Stdio {
+        command: String,
+        #[serde(default)]
+        args: Vec<String>,
+        #[serde(default)]
+        cwd: Option<String>,
+        #[serde(default)]
+        env: BTreeMap<String, ConfiguredMcpSecret>,
+        #[serde(default, rename = "envVars")]
+        env_vars: Vec<String>,
+    },
+    StreamableHttp {
+        url: String,
+        #[serde(default, rename = "bearerTokenEnvVar")]
+        bearer_token_env_var: Option<String>,
+        #[serde(default, rename = "oauthResource")]
+        oauth_resource: Option<String>,
+        #[serde(default, rename = "httpHeaders")]
+        http_headers: BTreeMap<String, ConfiguredMcpSecret>,
+        #[serde(default, rename = "envHttpHeaders")]
+        env_http_headers: BTreeMap<String, String>,
+    },
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfiguredMcpSecret {
+    pub configured: bool,
+    pub masked: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerInstallRequest {
+    pub name: String,
+    pub transport: McpServerTransportRequest,
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub required: Option<bool>,
+    #[serde(default)]
+    pub startup_timeout_sec: Option<i64>,
+    #[serde(default)]
+    pub tool_timeout_sec: Option<i64>,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    #[serde(default)]
+    pub enabled_tools: Vec<String>,
+}
+
+impl McpServerInstallRequest {
+    fn config_value(&self) -> Value {
+        self.config_value_with_existing(None)
+    }
+
+    fn config_value_with_existing(&self, existing: Option<&Value>) -> Value {
+        let mut value = match &self.transport {
+            McpServerTransportRequest::Stdio {
+                command,
+                args,
+                cwd,
+                env,
+                env_vars,
+                clear_env,
+            } => json!({
+                "command": command,
+                "args": args,
+                "cwd": cwd,
+                "env": merged_secret_object(existing.and_then(|value| value.get("env")), env, clear_env),
+                "env_vars": env_vars,
+            }),
+            McpServerTransportRequest::StreamableHttp {
+                url,
+                bearer_token_env_var,
+                oauth_resource,
+                http_headers,
+                env_http_headers,
+                clear_http_headers,
+            } => json!({
+                "url": url,
+                "bearer_token_env_var": bearer_token_env_var,
+                "oauth_resource": oauth_resource,
+                "http_headers": merged_secret_object(existing.and_then(|value| value.get("http_headers")), http_headers, clear_http_headers),
+                "env_http_headers": env_http_headers,
+            }),
+        };
+        if let Some(enabled) = self.enabled {
+            value["enabled"] = Value::Bool(enabled);
+        }
+        if let Some(required) = self.required {
+            value["required"] = Value::Bool(required);
+        }
+        if let Some(timeout) = self.startup_timeout_sec {
+            value["startup_timeout_sec"] = Value::Number(timeout.into());
+        }
+        if let Some(timeout) = self.tool_timeout_sec {
+            value["tool_timeout_sec"] = Value::Number(timeout.into());
+        }
+        if !self.scopes.is_empty() {
+            value["scopes"] = json!(self.scopes);
+        }
+        if !self.enabled_tools.is_empty() {
+            value["enabled_tools"] = json!(self.enabled_tools);
+        }
+        prune_nulls(&mut value);
+        value
+    }
+
+    fn into_configured(self, name: String) -> ConfiguredMcpServer {
+        let value = self.config_value();
+        ConfiguredMcpServer::from_config(&name, &value).unwrap_or(ConfiguredMcpServer {
+            name,
+            enabled: true,
+            required: None,
+            startup_timeout_sec: None,
+            tool_timeout_sec: None,
+            scopes: Vec::new(),
+            enabled_tools: Vec::new(),
+            has_stored_secrets: false,
+            transport: ConfiguredMcpTransport::Unknown,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum McpServerTransportRequest {
+    Stdio {
+        command: String,
+        #[serde(default)]
+        args: Vec<String>,
+        #[serde(default)]
+        cwd: Option<String>,
+        #[serde(default)]
+        env: BTreeMap<String, String>,
+        #[serde(default, rename = "clearEnv")]
+        clear_env: Vec<String>,
+        #[serde(default, rename = "envVars")]
+        env_vars: Vec<String>,
+    },
+    StreamableHttp {
+        url: String,
+        #[serde(default, rename = "bearerTokenEnvVar")]
+        bearer_token_env_var: Option<String>,
+        #[serde(default, rename = "oauthResource")]
+        oauth_resource: Option<String>,
+        #[serde(default, rename = "httpHeaders")]
+        http_headers: BTreeMap<String, String>,
+        #[serde(default, rename = "clearHttpHeaders")]
+        clear_http_headers: Vec<String>,
+        #[serde(default, rename = "envHttpHeaders")]
+        env_http_headers: BTreeMap<String, String>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerToggleRequest {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct McpConfigMutationResponse {
+    #[serde(default)]
+    pub configured_server: Option<ConfiguredMcpServer>,
+    pub reload: McpReloadResponse,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -2034,6 +2375,109 @@ fn optional_string(payload: &Value, field: &str) -> Option<String> {
 
 fn optional_value(payload: &Value, field: &str) -> Option<Value> {
     payload.get(field).filter(|value| !value.is_null()).cloned()
+}
+
+fn string_vec(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_string)
+        .collect()
+}
+
+fn string_map(value: Option<&Value>) -> BTreeMap<String, String> {
+    value
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .filter_map(|(key, value)| value.as_str().map(|value| (key.clone(), value.to_string())))
+        .collect()
+}
+
+fn masked_secret_map(value: Option<&Value>) -> BTreeMap<String, ConfiguredMcpSecret> {
+    value
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .map(|(key, _)| {
+            (
+                key.clone(),
+                ConfiguredMcpSecret {
+                    configured: true,
+                    masked: true,
+                },
+            )
+        })
+        .collect()
+}
+
+fn merged_secret_object(
+    existing: Option<&Value>,
+    replacements: &BTreeMap<String, String>,
+    clear: &[String],
+) -> BTreeMap<String, Value> {
+    let mut merged = existing
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect::<BTreeMap<_, _>>();
+    for key in clear {
+        merged.remove(key);
+    }
+    for (key, value) in replacements {
+        merged.insert(key.clone(), Value::String(value.clone()));
+    }
+    merged
+}
+
+fn env_var_names(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|value| {
+            value.as_str().map(str::to_string).or_else(|| {
+                value
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+        })
+        .collect()
+}
+
+fn prune_nulls(value: &mut Value) {
+    if let Value::Object(map) = value {
+        let keys = map
+            .iter()
+            .filter_map(|(key, value)| {
+                if value.is_null() {
+                    Some(key.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        for key in keys {
+            map.remove(&key);
+        }
+    }
+}
+
+fn validate_mcp_server_name(name: &str) -> ApiResult<()> {
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
+        return Err(ApiError::BadRequest(
+            "MCP server name must contain only ASCII letters, digits, '-' or '_'".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn config_edit(key_path: &str, value: Value) -> Value {

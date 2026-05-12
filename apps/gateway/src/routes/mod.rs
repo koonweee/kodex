@@ -377,7 +377,11 @@ mod tests {
             "/v1/skills",
             "/v1/kodex-control-plugin",
             "/v1/kodex-control-plugin/install",
+            "/v1/mcp/configured-servers",
             "/v1/mcp/servers",
+            "/v1/mcp/servers/{server}",
+            "/v1/mcp/servers/{server}/enabled",
+            "/v1/mcp/servers/{server}/replace",
             "/v1/mcp/servers/{server}/resources/read",
             "/v1/mcp/servers/{server}/oauth-login",
             "/v1/mcp/reload",
@@ -2269,6 +2273,347 @@ mod tests {
 
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "mcpServerStatus/list");
+    }
+
+    #[tokio::test]
+    async fn mcp_configured_servers_masks_inline_secrets() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().push(json!({
+            "config": {
+                "mcp_servers": {
+                    "docs": {
+                        "command": "npx",
+                        "args": ["-y", "@docs/mcp"],
+                        "env": {"DOCS_TOKEN": "secret-token"},
+                        "env_vars": ["SHARED_ENV"],
+                        "enabled": false
+                    },
+                    "remote": {
+                        "url": "https://mcp.example.test",
+                        "http_headers": {"Authorization": "Bearer secret"},
+                        "bearer_token_env_var": "REMOTE_TOKEN"
+                    },
+                    "broken": "not an object"
+                }
+            },
+            "origins": {}
+        }));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/mcp/configured-servers")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        let servers = body["servers"].as_array().unwrap();
+        assert_eq!(servers.len(), 2);
+        assert!(servers.iter().any(|server| server["name"] == "docs"
+            && server["enabled"] == false
+            && server["hasStoredSecrets"] == true
+            && server["transport"]["env"]["DOCS_TOKEN"]["masked"] == true));
+        assert!(servers.iter().any(|server| {
+            server["name"] == "remote"
+                && server["transport"]["httpHeaders"]["Authorization"]["configured"] == true
+                && server["transport"]["bearerTokenEnvVar"] == "REMOTE_TOKEN"
+        }));
+        let response_text = body.to_string();
+        assert!(!response_text.contains("secret-token"));
+        assert!(!response_text.contains("Bearer secret"));
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(
+            requests[0],
+            (
+                "config/read".to_string(),
+                json!({"cwd": null, "includeLayers": true})
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn mcp_config_mutations_write_reload_and_emit_event() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"config": {"mcp_servers": {}}, "origins": {}}),
+            json!({}),
+            json!({}),
+            json!({}),
+            json!({}),
+            json!({}),
+            json!({}),
+        ]);
+        let app = build_router(state.clone());
+
+        let add = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/mcp/servers")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "name": "docs",
+                            "transport": {
+                                "type": "stdio",
+                                "command": "npx",
+                                "args": ["-y", "@docs/mcp"],
+                                "env": {"DOCS_TOKEN": "secret-token"},
+                                "envVars": ["SHARED_ENV"]
+                            },
+                            "enabled": true
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(add.status(), StatusCode::OK);
+        let add = response_json(add).await;
+        assert_eq!(add["configuredServer"]["name"], "docs");
+        assert_eq!(
+            add["configuredServer"]["transport"]["env"]["DOCS_TOKEN"]["masked"],
+            true
+        );
+        assert!(!add.to_string().contains("secret-token"));
+
+        let toggle = app
+            .clone()
+            .oneshot(
+                Request::patch("/v1/mcp/servers/docs/enabled")
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"enabled": false}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(toggle.status(), StatusCode::OK);
+
+        let remove = app
+            .oneshot(
+                Request::delete("/v1/mcp/servers/docs")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(remove.status(), StatusCode::OK);
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(
+            requests[0],
+            (
+                "config/read".to_string(),
+                json!({"cwd": null, "includeLayers": true})
+            )
+        );
+        assert_eq!(requests[1].0, "config/batchWrite");
+        assert_eq!(
+            requests[1].1,
+            json!({
+                "edits": [{
+                    "keyPath": "mcp_servers.docs",
+                    "mergeStrategy": "replace",
+                    "value": {
+                        "command": "npx",
+                        "args": ["-y", "@docs/mcp"],
+                        "env": {"DOCS_TOKEN": "secret-token"},
+                        "env_vars": ["SHARED_ENV"],
+                        "enabled": true
+                    }
+                }],
+                "reloadUserConfig": true
+            })
+        );
+        assert_eq!(
+            requests[2],
+            ("config/mcpServer/reload".to_string(), Value::Null)
+        );
+        assert_eq!(
+            requests[3].1,
+            json!({
+                "edits": [{
+                    "keyPath": "mcp_servers.docs.enabled",
+                    "mergeStrategy": "replace",
+                    "value": false
+                }],
+                "reloadUserConfig": true
+            })
+        );
+        assert_eq!(
+            requests[4],
+            ("config/mcpServer/reload".to_string(), Value::Null)
+        );
+        assert_eq!(
+            requests[5].1,
+            json!({
+                "edits": [{
+                    "keyPath": "mcp_servers.docs",
+                    "mergeStrategy": "replace",
+                    "value": null
+                }],
+                "reloadUserConfig": true
+            })
+        );
+        assert_eq!(
+            requests[6],
+            ("config/mcpServer/reload".to_string(), Value::Null)
+        );
+
+        let events = state.store.replay_events(None, None, None).await.unwrap();
+        let config_events = events
+            .iter()
+            .filter(|event| event.kind == "mcp.config_changed")
+            .collect::<Vec<_>>();
+        assert_eq!(config_events.len(), 3);
+        assert_eq!(config_events[0].payload["operation"], "add");
+        assert_eq!(config_events[1].payload["operation"], "toggle");
+        assert_eq!(config_events[2].payload["operation"], "remove");
+    }
+
+    #[tokio::test]
+    async fn mcp_replace_preserves_replaces_and_clears_stored_secrets() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({
+                "config": {
+                    "mcp_servers": {
+                        "docs": {
+                            "url": "https://old.example.test",
+                            "http_headers": {
+                                "Authorization": "Bearer old",
+                                "X-Keep": "keep-secret",
+                                "X-Remove": "remove-secret"
+                            }
+                        }
+                    }
+                },
+                "origins": {}
+            }),
+            json!({}),
+            json!({}),
+        ]);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/mcp/servers/docs/replace")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "name": "docs",
+                            "transport": {
+                                "type": "streamableHttp",
+                                "url": "https://new.example.test",
+                                "httpHeaders": {"Authorization": "Bearer new"},
+                                "clearHttpHeaders": ["X-Remove"],
+                                "envHttpHeaders": {"X-Env": "DOCS_TOKEN"}
+                            },
+                            "enabled": true,
+                            "required": true,
+                            "startupTimeoutSec": 5,
+                            "toolTimeoutSec": 20,
+                            "scopes": ["read"],
+                            "enabledTools": ["search"]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(
+            body["configuredServer"]["transport"]["httpHeaders"]["Authorization"]["masked"],
+            true
+        );
+        assert_eq!(
+            body["configuredServer"]["transport"]["httpHeaders"]["X-Keep"]["masked"],
+            true
+        );
+        assert!(body["configuredServer"]["transport"]["httpHeaders"]
+            .get("X-Remove")
+            .is_none());
+        let response_text = body.to_string();
+        assert!(!response_text.contains("Bearer new"));
+        assert!(!response_text.contains("keep-secret"));
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "config/read");
+        assert_eq!(
+            requests[1].1,
+            json!({
+                "edits": [{
+                    "keyPath": "mcp_servers.docs",
+                    "mergeStrategy": "replace",
+                    "value": {
+                        "url": "https://new.example.test",
+                        "http_headers": {
+                            "Authorization": "Bearer new",
+                            "X-Keep": "keep-secret"
+                        },
+                        "env_http_headers": {"X-Env": "DOCS_TOKEN"},
+                        "enabled": true,
+                        "required": true,
+                        "startup_timeout_sec": 5,
+                        "tool_timeout_sec": 20,
+                        "scopes": ["read"],
+                        "enabled_tools": ["search"]
+                    }
+                }],
+                "reloadUserConfig": true
+            })
+        );
+        assert_eq!(
+            requests[2],
+            ("config/mcpServer/reload".to_string(), Value::Null)
+        );
+    }
+
+    #[tokio::test]
+    async fn mcp_add_rejects_existing_configured_server_name() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().push(json!({
+            "config": {
+                "mcp_servers": {
+                    "docs": {"command": "npx"}
+                }
+            },
+            "origins": {}
+        }));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/mcp/servers")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "name": "docs",
+                            "transport": {"type": "stdio", "command": "npx"}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = response_json(response).await;
+        assert_eq!(body["code"], "bad_request");
+        assert!(body["message"].as_str().unwrap().contains("already exists"));
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0, "config/read");
     }
 
     #[tokio::test]
@@ -6511,6 +6856,19 @@ mod tests {
     #[tokio::test]
     async fn event_replay_and_sse_include_mcp_lifecycle_events() {
         let (state, _) = test_state().await;
+        let config_changed = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: None,
+                turn_id: None,
+                item_id: None,
+                kind: "mcp.config_changed".to_string(),
+                codex_method: None,
+                payload: json!({"operation": "add", "server": "docs"}),
+            })
+            .await
+            .unwrap();
         let startup = state
             .store
             .append_event(NewEvent {
@@ -6552,6 +6910,9 @@ mod tests {
         let body = response_json(response).await;
         let events = body["events"].as_array().unwrap();
         assert!(events.iter().any(|event| {
+            event["seq"] == config_changed.seq && event["kind"] == "mcp.config_changed"
+        }));
+        assert!(events.iter().any(|event| {
             event["seq"] == startup.seq && event["kind"] == "mcp.server_status_updated"
         }));
         assert!(events.iter().any(|event| {
@@ -6576,9 +6937,9 @@ mod tests {
                 thread_id: None,
                 turn_id: None,
                 item_id: None,
-                kind: "mcp.server_status_updated".to_string(),
-                codex_method: Some("mcpServer/startupStatus/updated".to_string()),
-                payload: json!({"name": "docs", "status": "reloaded"}),
+                kind: "mcp.config_changed".to_string(),
+                codex_method: None,
+                payload: json!({"operation": "replace", "server": "docs"}),
             })
             .await
             .unwrap();
@@ -6588,8 +6949,8 @@ mod tests {
         let mut body = response.into_body();
         let chunk = next_sse_chunk(&mut body).await;
         assert!(chunk.contains(&format!("id: {}", live.seq)));
-        assert!(chunk.contains("mcp.server_status_updated"));
-        assert!(chunk.contains("\"status\":\"reloaded\""));
+        assert!(chunk.contains("mcp.config_changed"));
+        assert!(chunk.contains("\"operation\":\"replace\""));
     }
 
     #[tokio::test]

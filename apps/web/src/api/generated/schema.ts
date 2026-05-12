@@ -340,6 +340,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/mcp/configured-servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_configured_mcp_servers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/mcp/reload": {
         parameters: {
             query?: never;
@@ -365,11 +381,43 @@ export interface paths {
         };
         get: operations["list_mcp_servers"];
         put?: never;
-        post?: never;
+        post: operations["add_mcp_server"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v1/mcp/servers/{server}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["remove_mcp_server"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mcp/servers/{server}/enabled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["set_mcp_server_enabled"];
         trace?: never;
     };
     "/v1/mcp/servers/{server}/oauth-login": {
@@ -382,6 +430,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["start_mcp_oauth_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mcp/servers/{server}/replace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["replace_mcp_server"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1222,6 +1286,52 @@ export interface components {
         ComposerSettingsUpdateResponse: {
             saved: boolean;
         };
+        ConfiguredMcpSecret: {
+            configured: boolean;
+            masked: boolean;
+        };
+        ConfiguredMcpServer: {
+            enabled: boolean;
+            enabledTools?: string[];
+            hasStoredSecrets: boolean;
+            name: string;
+            required?: boolean | null;
+            scopes?: string[];
+            /** Format: int64 */
+            startupTimeoutSec?: number | null;
+            /** Format: int64 */
+            toolTimeoutSec?: number | null;
+            transport: components["schemas"]["ConfiguredMcpTransport"];
+        };
+        ConfiguredMcpServerListResponse: {
+            servers: components["schemas"]["ConfiguredMcpServer"][];
+        };
+        ConfiguredMcpTransport: {
+            args?: string[];
+            command: string;
+            cwd?: string | null;
+            env?: {
+                [key: string]: components["schemas"]["ConfiguredMcpSecret"];
+            };
+            envVars?: string[];
+            /** @enum {string} */
+            type: "stdio";
+        } | {
+            bearerTokenEnvVar?: string | null;
+            envHttpHeaders?: {
+                [key: string]: string;
+            };
+            httpHeaders?: {
+                [key: string]: components["schemas"]["ConfiguredMcpSecret"];
+            };
+            oauthResource?: string | null;
+            /** @enum {string} */
+            type: "streamableHttp";
+            url: string;
+        } | {
+            /** @enum {string} */
+            type: "unknown";
+        };
         CreateChatThreadRequest: {
             approvalPolicy?: string | null;
             approvalsReviewer?: string | null;
@@ -1352,6 +1462,10 @@ export interface components {
         };
         /** @enum {string} */
         McpAuthStatus: "unsupported" | "notLoggedIn" | "bearerToken" | "oAuth";
+        McpConfigMutationResponse: {
+            configuredServer?: null | components["schemas"]["ConfiguredMcpServer"];
+            reload: components["schemas"]["McpReloadResponse"];
+        };
         McpOAuthLoginRequest: {
             scopes?: string[] | null;
             /** Format: int64 */
@@ -1390,6 +1504,18 @@ export interface components {
             title?: string | null;
             uriTemplate: string;
         };
+        McpServerInstallRequest: {
+            enabled?: boolean | null;
+            enabledTools?: string[];
+            name: string;
+            required?: boolean | null;
+            scopes?: string[];
+            /** Format: int64 */
+            startupTimeoutSec?: number | null;
+            /** Format: int64 */
+            toolTimeoutSec?: number | null;
+            transport: components["schemas"]["McpServerTransportRequest"];
+        };
         McpServerListResponse: {
             servers: components["schemas"]["McpServerStatus"][];
         };
@@ -1404,6 +1530,34 @@ export interface components {
         };
         /** @enum {string} */
         McpServerStatusDetail: "full" | "toolsAndAuthOnly";
+        McpServerToggleRequest: {
+            enabled: boolean;
+        };
+        McpServerTransportRequest: {
+            args?: string[];
+            clearEnv?: string[];
+            command: string;
+            cwd?: string | null;
+            env?: {
+                [key: string]: string;
+            };
+            envVars?: string[];
+            /** @enum {string} */
+            type: "stdio";
+        } | {
+            bearerTokenEnvVar?: string | null;
+            clearHttpHeaders?: string[];
+            envHttpHeaders?: {
+                [key: string]: string;
+            };
+            httpHeaders?: {
+                [key: string]: string;
+            };
+            oauthResource?: string | null;
+            /** @enum {string} */
+            type: "streamableHttp";
+            url: string;
+        };
         McpServersQuery: {
             detail?: null | components["schemas"]["McpServerStatusDetail"];
         };
@@ -2617,6 +2771,25 @@ export interface operations {
             };
         };
     };
+    list_configured_mcp_servers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfiguredMcpServerListResponse"];
+                };
+            };
+        };
+    };
     reload_mcp_servers: {
         parameters: {
             query?: never;
@@ -2657,6 +2830,77 @@ export interface operations {
             };
         };
     };
+    add_mcp_server: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpServerInstallRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpConfigMutationResponse"];
+                };
+            };
+        };
+    };
+    remove_mcp_server: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description MCP server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpConfigMutationResponse"];
+                };
+            };
+        };
+    };
+    set_mcp_server_enabled: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description MCP server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpServerToggleRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpConfigMutationResponse"];
+                };
+            };
+        };
+    };
     start_mcp_oauth_login: {
         parameters: {
             query?: never;
@@ -2679,6 +2923,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["McpOAuthLoginResponse"];
+                };
+            };
+        };
+    };
+    replace_mcp_server: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description MCP server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpServerInstallRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpConfigMutationResponse"];
                 };
             };
         };
