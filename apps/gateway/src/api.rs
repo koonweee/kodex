@@ -11,14 +11,16 @@ use crate::{
     app_server_api::{
         AccountResponse, AppSummary, ComposerPermissionsPreset, ComposerSettingsResponse,
         ComposerSettingsUpdateRequest, ComposerSettingsUpdateResponse, LoginStartResponse,
-        MarketplaceAddResponse, ModelListResponse, PluginDetail, PluginInstallResponse,
-        PluginInterface, PluginListResponse, PluginMarketplaceEntry, PluginReadResponse,
-        PluginSummary, RateLimitsResponse, RawAppServerResponse, SkillErrorInfo, SkillInterface,
-        SkillMetadata, SkillsCatalogResponse, ThreadCommandResponse, ThreadDetailResponse,
-        ThreadItemSnapshot, ThreadListResponse, ThreadLiveState, ThreadTurnSnapshot,
-        TimelineItemDeltaPayload, TimelineItemUpsertPayload, TimelineSkillMention,
-        TimelineThreadMetadataPayload, TimelineThreadStatusPayload, TimelineTurnUpsertPayload,
-        TimelineUpdateSource, UserInput,
+        MarketplaceAddResponse, McpAuthStatus, McpOAuthLoginRequest, McpOAuthLoginResponse,
+        McpReloadResponse, McpResource, McpResourceReadResponse, McpResourceTemplate,
+        McpServerListResponse, McpServerStatus, McpServerStatusDetail, McpTool, ModelListResponse,
+        PluginDetail, PluginInstallResponse, PluginInterface, PluginListResponse,
+        PluginMarketplaceEntry, PluginReadResponse, PluginSummary, RateLimitsResponse,
+        RawAppServerResponse, SkillErrorInfo, SkillInterface, SkillMetadata, SkillsCatalogResponse,
+        ThreadCommandResponse, ThreadDetailResponse, ThreadItemSnapshot, ThreadListResponse,
+        ThreadLiveState, ThreadTurnSnapshot, TimelineItemDeltaPayload, TimelineItemUpsertPayload,
+        TimelineSkillMention, TimelineThreadMetadataPayload, TimelineThreadStatusPayload,
+        TimelineTurnUpsertPayload, TimelineUpdateSource, UserInput,
     },
     config::Config,
     error::ApiErrorBody,
@@ -48,6 +50,7 @@ use crate::{
             KodexControlPluginInstallResponse, KodexControlPluginStatusKind,
             KodexControlPluginStatusResponse,
         },
+        mcp::{McpResourceReadQuery, McpServersQuery},
         models::ModelsQuery,
         project_previews::{
             PreviewCreateRequest, PreviewListResponse, PreviewRouteCreateRequest,
@@ -174,6 +177,10 @@ impl AppState {
         crate::routes::skills::preview_skill_icon,
         crate::routes::kodex_control_plugin::kodex_control_plugin_status,
         crate::routes::kodex_control_plugin::install_kodex_control_plugin,
+        crate::routes::mcp::list_mcp_servers,
+        crate::routes::mcp::read_mcp_resource,
+        crate::routes::mcp::start_mcp_oauth_login,
+        crate::routes::mcp::reload_mcp_servers,
         crate::routes::self_control::self_control_status,
         crate::routes::self_control::apply_project_preview_config,
         crate::routes::self_control::create_self_control_thread,
@@ -296,6 +303,19 @@ impl AppState {
         KodexControlPluginStatusKind,
         KodexControlPluginStatusResponse,
         KodexControlPluginInstallResponse,
+        McpServersQuery,
+        McpResourceReadQuery,
+        McpServerStatusDetail,
+        McpServerListResponse,
+        McpServerStatus,
+        McpAuthStatus,
+        McpTool,
+        McpResource,
+        McpResourceTemplate,
+        McpResourceReadResponse,
+        McpOAuthLoginRequest,
+        McpOAuthLoginResponse,
+        McpReloadResponse,
         SelfControlStatusResponse,
         SelfControlCapabilities,
         SelfControlSource,
@@ -338,6 +358,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::models::router())
         .merge(routes::skills::router())
         .merge(routes::kodex_control_plugin::router())
+        .merge(routes::mcp::router())
         .merge(routes::self_control::router())
         .merge(SwaggerUi::new("/docs").url("/openapi.json", ApiDoc::openapi()))
         .layer(TraceLayer::new_for_http())

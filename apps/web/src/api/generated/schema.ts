@@ -340,6 +340,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/mcp/reload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reload_mcp_servers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mcp/servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_mcp_servers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mcp/servers/{server}/oauth-login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["start_mcp_oauth_login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/mcp/servers/{server}/resources/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["read_mcp_resource"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/models": {
         parameters: {
             query?: never;
@@ -1285,6 +1349,73 @@ export interface components {
         MarketplaceLoadErrorInfo: {
             marketplacePath: string;
             message: string;
+        };
+        /** @enum {string} */
+        McpAuthStatus: "unsupported" | "notLoggedIn" | "bearerToken" | "oAuth";
+        McpOAuthLoginRequest: {
+            scopes?: string[] | null;
+            /** Format: int64 */
+            timeoutSecs?: number | null;
+        };
+        McpOAuthLoginResponse: {
+            authorizationUrl: string;
+        };
+        McpReloadResponse: {
+            reloaded: boolean;
+        };
+        McpResource: {
+            _meta?: unknown;
+            annotations?: unknown;
+            description?: string | null;
+            icons?: unknown;
+            mimeType?: string | null;
+            name: string;
+            /** Format: int64 */
+            size?: number | null;
+            title?: string | null;
+            uri: string;
+        };
+        McpResourceReadQuery: {
+            threadId?: string | null;
+            uri: string;
+        };
+        McpResourceReadResponse: {
+            contents: unknown[];
+        };
+        McpResourceTemplate: {
+            annotations?: unknown;
+            description?: string | null;
+            mimeType?: string | null;
+            name: string;
+            title?: string | null;
+            uriTemplate: string;
+        };
+        McpServerListResponse: {
+            servers: components["schemas"]["McpServerStatus"][];
+        };
+        McpServerStatus: {
+            authStatus: components["schemas"]["McpAuthStatus"];
+            name: string;
+            resourceTemplates: components["schemas"]["McpResourceTemplate"][];
+            resources: components["schemas"]["McpResource"][];
+            tools: {
+                [key: string]: components["schemas"]["McpTool"];
+            };
+        };
+        /** @enum {string} */
+        McpServerStatusDetail: "full" | "toolsAndAuthOnly";
+        McpServersQuery: {
+            detail?: null | components["schemas"]["McpServerStatusDetail"];
+        };
+        McpTool: {
+            _meta?: unknown;
+            annotations?: unknown;
+            description?: string | null;
+            icons?: unknown;
+            inputSchema: unknown;
+            name: string;
+            outputSchema?: unknown;
+            title?: string | null;
         };
         ModelListResponse: {
             models: components["schemas"]["ModelSummary"][];
@@ -2482,6 +2613,97 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KodexControlPluginInstallResponse"];
+                };
+            };
+        };
+    };
+    reload_mcp_servers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpReloadResponse"];
+                };
+            };
+        };
+    };
+    list_mcp_servers: {
+        parameters: {
+            query?: {
+                detail?: null | components["schemas"]["McpServerStatusDetail"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpServerListResponse"];
+                };
+            };
+        };
+    };
+    start_mcp_oauth_login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description MCP server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpOAuthLoginRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpOAuthLoginResponse"];
+                };
+            };
+        };
+    };
+    read_mcp_resource: {
+        parameters: {
+            query: {
+                uri: string;
+                threadId?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description MCP server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpResourceReadResponse"];
                 };
             };
         };

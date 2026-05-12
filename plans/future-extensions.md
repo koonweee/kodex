@@ -28,7 +28,7 @@ This document is not an implementation plan. It maps likely post-MVP product fea
 | Skills manager | Browse and configure skills. | `skills/list`, `skills/config/write`, `skills/changed` | Skill catalog UI, enablement editor. |
 | Hooks viewer | Show configured hooks and hook runs. | `hooks/list`, `hook/started`, `hook/completed` | Hook status panel and diagnostics. |
 | Apps/connectors browser | Discover available apps and connector availability. | `app/list`, `app/list/updated` | App catalog cache and auth-state UI. |
-| MCP manager | Inspect MCP servers, tools, resources, auth. | `mcpServerStatus/list`, `mcpServer/resource/read`, `mcpServer/tool/call`, `mcpServer/oauth/login`, `mcpServer/oauthLogin/completed`, `mcpServer/startupStatus/updated` | Tool tester, resource viewer, OAuth flow UI. |
+| MCP manager follow-ups | Extend the completed [MCP manager](mcp-manager.md) beyond inspect/auth/reload/resource viewing. | `mcpServerStatus/list`, `mcpServer/resource/read`, `mcpServer/tool/call`, `mcpServer/oauth/login`, `mcpServer/oauthLogin/completed`, `mcpServer/startupStatus/updated` | Tool tester, config mutation, project-scoped views, and resource-template expansion. |
 | Plugin marketplace | Install and manage plugins. | `marketplace/add`, `marketplace/remove`, `marketplace/upgrade`, `plugin/list`, `plugin/read`, `plugin/install`, `plugin/uninstall` | Marketplace trust policy, plugin detail UI. |
 | Config editor | Edit user/project config. | `config/read`, `config/value/write`, `config/batchWrite`, `configRequirements/read` | Schema-aware editor, version conflict handling. |
 | Experimental features UI | Toggle available feature flags. | `experimentalFeature/list`, `experimentalFeature/enablement/set` | Settings panel and restart/reload guidance. |
@@ -49,4 +49,3 @@ This document is not an implementation plan. It maps likely post-MVP product fea
 - Device-key APIs are local-transport only and should not become arbitrary browser signing endpoints.
 - Plugin APIs are marked under development upstream. Gate plugin UI behind an explicit feature flag.
 - Realtime APIs are experimental. Keep them optional until the app-server contract stabilizes.
-

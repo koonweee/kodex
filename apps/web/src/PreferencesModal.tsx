@@ -5,9 +5,10 @@ import { useRef, type KeyboardEvent as ReactKeyboardEvent, type MutableRefObject
 
 import { getKodexControlPluginStatus, installKodexControlPlugin } from "./api/client";
 import { queryKeys } from "./api/queryKeys";
+import { McpPreferencesPanel } from "./mcp/McpPreferencesPanel";
 import { KODEX_COLOR_SCHEMES, type KodexColorSchemeId } from "./theme";
 
-type PreferenceSection = "appearance" | "plugins";
+export type PreferenceSection = "appearance" | "plugins" | "mcp";
 
 type PreferencesModalProps = {
   activeSection?: PreferenceSection;
@@ -102,6 +103,15 @@ export function PreferencesModal({
           >
             Plugins
           </Button>
+          <Button
+            className="kodex-preferences-section-button"
+            data-active={activeSection === "mcp" ? "true" : undefined}
+            onClick={() => onSectionChange("mcp")}
+            type="button"
+            variant={activeSection === "mcp" ? "light" : "subtle"}
+          >
+            MCP
+          </Button>
         </Stack>
 
         {activeSection === "appearance" ? (
@@ -111,7 +121,7 @@ export function PreferencesModal({
             onColorSchemeChange={onColorSchemeChange}
             optionRefs={optionRefs}
           />
-        ) : (
+        ) : activeSection === "plugins" ? (
           <PluginsPreferencesPanel
             installError={installPluginMutation.error}
             installing={installPluginMutation.isPending}
@@ -121,6 +131,8 @@ export function PreferencesModal({
             statusError={pluginStatusQuery.error}
             statusLoading={pluginStatusQuery.isLoading}
           />
+        ) : (
+          <McpPreferencesPanel />
         )}
       </Box>
     </Modal>

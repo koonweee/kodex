@@ -263,6 +263,76 @@ impl CodexClient {
         ModelListResponse::from_payload(payload, include_hidden)
     }
 
+    pub async fn mcp_server_status_list(
+        &self,
+        detail: McpServerStatusDetail,
+    ) -> ApiResult<McpServerListResponse> {
+        let mut cursor: Option<String> = None;
+        let mut servers = Vec::new();
+        loop {
+            let payload = self
+                .request(
+                    "mcpServerStatus/list",
+                    json!({
+                        "cursor": cursor,
+                        "detail": detail,
+                        "limit": 100,
+                    }),
+                )
+                .await?;
+            let response = McpServerStatusPage::from_payload(payload)?;
+            servers.extend(response.data);
+            match response.next_cursor {
+                Some(next_cursor) => cursor = Some(next_cursor),
+                None => break,
+            }
+        }
+        Ok(McpServerListResponse { servers })
+    }
+
+    pub async fn mcp_resource_read(
+        &self,
+        server: String,
+        uri: String,
+        thread_id: Option<String>,
+    ) -> ApiResult<McpResourceReadResponse> {
+        let payload = self
+            .request(
+                "mcpServer/resource/read",
+                json!({
+                    "server": server,
+                    "threadId": thread_id,
+                    "uri": uri,
+                }),
+            )
+            .await?;
+        McpResourceReadResponse::from_payload(payload)
+    }
+
+    pub async fn mcp_oauth_login(
+        &self,
+        name: String,
+        scopes: Option<Vec<String>>,
+        timeout_secs: Option<i64>,
+    ) -> ApiResult<McpOAuthLoginResponse> {
+        let payload = self
+            .request(
+                "mcpServer/oauth/login",
+                json!({
+                    "name": name,
+                    "scopes": scopes,
+                    "timeoutSecs": timeout_secs,
+                }),
+            )
+            .await?;
+        McpOAuthLoginResponse::from_payload(payload)
+    }
+
+    pub async fn mcp_reload(&self) -> ApiResult<McpReloadResponse> {
+        self.request("config/mcpServer/reload", Value::Null).await?;
+        Ok(McpReloadResponse { reloaded: true })
+    }
+
     pub async fn composer_settings(
         &self,
         cwd: Option<String>,
@@ -450,6 +520,149 @@ impl TurnStartOptions {
 #[serde(rename_all = "camelCase")]
 pub struct RawAppServerResponse {
     pub payload: Value,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum McpServerStatusDetail {
+    Full,
+    ToolsAndAuthOnly,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerListResponse {
+    pub servers: Vec<McpServerStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpServerStatusPage {
+    data: Vec<McpServerStatus>,
+    next_cursor: Option<String>,
+}
+
+impl McpServerStatusPage {
+    fn from_payload(payload: Value) -> ApiResult<Self> {
+        serde_json::from_value(payload)
+            .map_err(|error| bad_gateway(format!("mcpServerStatus/list response: {error}")))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerStatus {
+    pub name: String,
+    pub auth_status: McpAuthStatus,
+    pub tools: BTreeMap<String, McpTool>,
+    pub resources: Vec<McpResource>,
+    pub resource_templates: Vec<McpResourceTemplate>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum McpAuthStatus {
+    Unsupported,
+    NotLoggedIn,
+    BearerToken,
+    #[serde(rename = "oAuth")]
+    OAuth,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct McpTool {
+    pub name: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub input_schema: Value,
+    #[serde(default)]
+    pub output_schema: Option<Value>,
+    #[serde(default)]
+    pub annotations: Option<Value>,
+    #[serde(default)]
+    pub icons: Option<Value>,
+    #[serde(default, rename = "_meta")]
+    pub meta: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct McpResource {
+    pub name: String,
+    pub uri: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub mime_type: Option<String>,
+    #[serde(default)]
+    pub size: Option<i64>,
+    #[serde(default)]
+    pub annotations: Option<Value>,
+    #[serde(default)]
+    pub icons: Option<Value>,
+    #[serde(default, rename = "_meta")]
+    pub meta: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct McpResourceTemplate {
+    pub name: String,
+    pub uri_template: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub mime_type: Option<String>,
+    #[serde(default)]
+    pub annotations: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct McpResourceReadResponse {
+    pub contents: Vec<Value>,
+}
+
+impl McpResourceReadResponse {
+    fn from_payload(payload: Value) -> ApiResult<Self> {
+        serde_json::from_value(payload)
+            .map_err(|error| bad_gateway(format!("mcpServer/resource/read response: {error}")))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct McpOAuthLoginRequest {
+    #[serde(default)]
+    pub scopes: Option<Vec<String>>,
+    #[serde(default)]
+    pub timeout_secs: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct McpOAuthLoginResponse {
+    pub authorization_url: String,
+}
+
+impl McpOAuthLoginResponse {
+    fn from_payload(payload: Value) -> ApiResult<Self> {
+        serde_json::from_value(payload)
+            .map_err(|error| bad_gateway(format!("mcpServer/oauth/login response: {error}")))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct McpReloadResponse {
+    pub reloaded: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

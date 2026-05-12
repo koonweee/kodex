@@ -12,15 +12,23 @@ import { PreferencesModal } from "./PreferencesModal";
 const apiMocks = vi.hoisted(() => ({
   getKodexControlPluginStatus: vi.fn(),
   installKodexControlPlugin: vi.fn(),
+  listMcpServers: vi.fn(),
+  readMcpResource: vi.fn(),
+  reloadMcpServers: vi.fn(),
+  startMcpOAuthLogin: vi.fn(),
 }));
 
 vi.mock("./api/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./api/client")>()),
   getKodexControlPluginStatus: apiMocks.getKodexControlPluginStatus,
   installKodexControlPlugin: apiMocks.installKodexControlPlugin,
+  listMcpServers: apiMocks.listMcpServers,
+  readMcpResource: apiMocks.readMcpResource,
+  reloadMcpServers: apiMocks.reloadMcpServers,
+  startMcpOAuthLogin: apiMocks.startMcpOAuthLogin,
 }));
 
-function renderPreferences(initialSection: "appearance" | "plugins" = "plugins") {
+function renderPreferences(initialSection: "appearance" | "plugins" | "mcp" = "plugins") {
   const queryClient = createKodexQueryClient();
   queryClient.setDefaultOptions({
     queries: {
@@ -37,7 +45,7 @@ function renderPreferences(initialSection: "appearance" | "plugins" = "plugins")
   }
 
   function Harness() {
-    const [section, setSection] = useState<"appearance" | "plugins">(initialSection);
+    const [section, setSection] = useState<"appearance" | "plugins" | "mcp">(initialSection);
     return (
       <PreferencesModal
         activeSection={section}
@@ -60,6 +68,10 @@ describe("PreferencesModal plugins tab", () => {
   beforeEach(() => {
     apiMocks.getKodexControlPluginStatus.mockReset();
     apiMocks.installKodexControlPlugin.mockReset();
+    apiMocks.listMcpServers.mockReset();
+    apiMocks.readMcpResource.mockReset();
+    apiMocks.reloadMcpServers.mockReset();
+    apiMocks.startMcpOAuthLogin.mockReset();
   });
 
   it("shows plugin status and install action", async () => {
@@ -170,5 +182,201 @@ describe("PreferencesModal plugins tab", () => {
     expect(screen.getByRole("radio", { name: /oled black/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Plugins" }));
     expect(await screen.findByText("Kodex Control")).toBeInTheDocument();
+  });
+});
+
+describe("PreferencesModal MCP tab", () => {
+  beforeEach(() => {
+    apiMocks.getKodexControlPluginStatus.mockReset();
+    apiMocks.installKodexControlPlugin.mockReset();
+    apiMocks.listMcpServers.mockReset();
+    apiMocks.readMcpResource.mockReset();
+    apiMocks.reloadMcpServers.mockReset();
+    apiMocks.startMcpOAuthLogin.mockReset();
+  });
+
+  it("shows MCP inventory and resource details", async () => {
+    apiMocks.listMcpServers.mockResolvedValue({
+      servers: [
+        {
+          authStatus: "notLoggedIn",
+          name: "docs",
+          resourceTemplates: [{ name: "doc-template", title: "Doc Template", uriTemplate: "file:///docs/{id}" }],
+          resources: [{ name: "readme", title: "README", uri: "file:///docs/readme.md" }],
+          tools: {
+            lookup: { inputSchema: { type: "object" }, name: "lookup" },
+          },
+        },
+      ],
+    });
+    apiMocks.readMcpResource.mockResolvedValue({
+      contents: [{ mimeType: "text/markdown", text: "# Docs", uri: "file:///docs/readme.md" }],
+    });
+
+    renderPreferences("mcp");
+
+    expect((await screen.findAllByText("docs")).length).toBeGreaterThan(0);
+    expect(screen.getByText("1 tools · 1 resources · 1 templates")).toBeInTheDocument();
+    expect(screen.getByText("lookup")).toBeInTheDocument();
+    expect(screen.getByText("Doc Template")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /README/ }));
+
+    expect(await screen.findByText("# Docs")).toBeInTheDocument();
+    expect(apiMocks.readMcpResource).toHaveBeenCalledWith("docs", "file:///docs/readme.md");
+  });
+
+  it("renders JSON-like resource content without arbitrary URI input", async () => {
+    apiMocks.listMcpServers.mockResolvedValue({
+      servers: [
+        {
+          authStatus: "unsupported",
+          name: "docs",
+          resourceTemplates: [],
+          resources: [{ name: "metadata", title: "Metadata", uri: "file:///docs/meta.json" }],
+          tools: {},
+        },
+      ],
+    });
+    apiMocks.readMcpResource.mockResolvedValue({
+      contents: [{ mimeType: "application/json", structured: { count: 2 }, uri: "file:///docs/meta.json" }],
+    });
+
+    renderPreferences("mcp");
+
+    expect(screen.queryByRole("textbox", { name: /uri/i })).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: /Metadata/ }));
+
+    expect(await screen.findByText(/"structured":/)).toBeInTheDocument();
+    expect(screen.getByText(/"count": 2/)).toBeInTheDocument();
+    expect(apiMocks.readMcpResource).toHaveBeenCalledWith("docs", "file:///docs/meta.json");
+  });
+
+  it("shows resource loading and error states", async () => {
+    apiMocks.listMcpServers.mockResolvedValue({
+      servers: [
+        {
+          authStatus: "unsupported",
+          name: "docs",
+          resourceTemplates: [],
+          resources: [{ name: "readme", title: "README", uri: "file:///docs/readme.md" }],
+          tools: {},
+        },
+      ],
+    });
+    apiMocks.readMcpResource.mockImplementation(() => new Promise(() => {}));
+    const loadingRender = renderPreferences("mcp");
+
+    await userEvent.click(await screen.findByRole("button", { name: /README/ }));
+
+    expect(await screen.findByText("Reading resource")).toBeInTheDocument();
+    loadingRender.unmount();
+
+    apiMocks.listMcpServers.mockReset();
+    apiMocks.readMcpResource.mockReset();
+    apiMocks.listMcpServers.mockResolvedValue({
+      servers: [
+        {
+          authStatus: "unsupported",
+          name: "docs",
+          resourceTemplates: [],
+          resources: [{ name: "readme", title: "README", uri: "file:///docs/readme.md" }],
+          tools: {},
+        },
+      ],
+    });
+    apiMocks.readMcpResource.mockRejectedValue(new Error("resource failed"));
+    renderPreferences("mcp");
+
+    await userEvent.click(await screen.findByRole("button", { name: /README/ }));
+
+    expect(await screen.findByText("resource failed")).toBeInTheDocument();
+  });
+
+  it("summarizes binary resource contents without dumping blob payloads", async () => {
+    apiMocks.listMcpServers.mockResolvedValue({
+      servers: [
+        {
+          authStatus: "unsupported",
+          name: "media",
+          resourceTemplates: [],
+          resources: [{ name: "logo", title: "Logo", uri: "file:///media/logo.png" }],
+          tools: {},
+        },
+      ],
+    });
+    apiMocks.readMcpResource.mockResolvedValue({
+      contents: [
+        {
+          blob: "VGhpcy1pcy1hLWJpbmFyeS1ibG9iLXBheWxvYWQtdGhhdC1zaG91bGQtbm90LXJlbmRlcg==",
+          mimeType: "image/png",
+          uri: "file:///media/logo.png",
+        },
+      ],
+    });
+
+    renderPreferences("mcp");
+
+    await userEvent.click(await screen.findByRole("button", { name: /Logo/ }));
+
+    expect(await screen.findByText(/Unsupported binary resource/)).toBeInTheDocument();
+    expect(screen.getByText(/MIME type: image\/png/)).toBeInTheDocument();
+    expect(screen.getByText(/Encoded payload length: \d+ characters/)).toBeInTheDocument();
+    expect(screen.queryByText(/VGhpcy1pcy1hLWJpbmFyeS1ibG9i/)).not.toBeInTheDocument();
+  });
+
+  it("reloads MCP servers and invalidates inventory", async () => {
+    apiMocks.listMcpServers.mockResolvedValue({ servers: [] });
+    apiMocks.reloadMcpServers.mockResolvedValue(undefined);
+
+    const { queryClient } = renderPreferences("mcp");
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    await userEvent.click(await screen.findByRole("button", { name: /reload/i }));
+
+    await waitFor(() => expect(apiMocks.reloadMcpServers).toHaveBeenCalledTimes(1));
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.mcpServers });
+  });
+
+  it("shows explicit OAuth login link after login starts", async () => {
+    apiMocks.listMcpServers.mockResolvedValue({
+      servers: [
+        {
+          authStatus: "notLoggedIn",
+          name: "docs",
+          resourceTemplates: [],
+          resources: [],
+          tools: {},
+        },
+      ],
+    });
+    apiMocks.startMcpOAuthLogin.mockResolvedValue({ authorizationUrl: "https://auth.example.test/login" });
+
+    renderPreferences("mcp");
+
+    await userEvent.click(await screen.findByRole("button", { name: /log in/i }));
+
+    const link = await screen.findByRole("link", { name: /open login/i });
+    expect(link).toHaveAttribute("href", "https://auth.example.test/login");
+    expect(apiMocks.startMcpOAuthLogin).toHaveBeenCalled();
+    expect(apiMocks.startMcpOAuthLogin.mock.calls[0][0]).toBe("docs");
+  });
+
+  it("shows MCP loading, empty, and error states", async () => {
+    apiMocks.listMcpServers.mockImplementation(() => new Promise(() => {}));
+    const { unmount } = renderPreferences("mcp");
+    expect(await screen.findByText("Loading MCP servers")).toBeInTheDocument();
+    unmount();
+
+    apiMocks.listMcpServers.mockReset();
+    apiMocks.listMcpServers.mockResolvedValue({ servers: [] });
+    const emptyRender = renderPreferences("mcp");
+    expect(await screen.findByText("No MCP servers configured")).toBeInTheDocument();
+    emptyRender.unmount();
+
+    apiMocks.listMcpServers.mockReset();
+    apiMocks.listMcpServers.mockRejectedValue(new Error("inventory failed"));
+    renderPreferences("mcp");
+    expect(await screen.findByText("inventory failed")).toBeInTheDocument();
   });
 });

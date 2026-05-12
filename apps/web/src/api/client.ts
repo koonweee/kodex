@@ -15,6 +15,11 @@ export type EventEnvelope = components["schemas"]["EventEnvelope"];
 export type LoginStartResponse = components["schemas"]["LoginStartResponse"];
 export type KodexControlPluginInstallResponse = components["schemas"]["KodexControlPluginInstallResponse"];
 export type KodexControlPluginStatusResponse = components["schemas"]["KodexControlPluginStatusResponse"];
+export type McpOAuthLoginResponse = components["schemas"]["McpOAuthLoginResponse"];
+export type McpResource = components["schemas"]["McpResource"];
+export type McpResourceReadResponse = components["schemas"]["McpResourceReadResponse"];
+export type McpServerListResponse = components["schemas"]["McpServerListResponse"];
+export type McpServerStatus = components["schemas"]["McpServerStatus"];
 export type ModelSummary = components["schemas"]["ModelSummary"];
 export type Project = components["schemas"]["Project"];
 export type PreviewCreateRequest = components["schemas"]["PreviewCreateRequest"];
@@ -491,6 +496,31 @@ export async function getKodexControlPluginStatus(): Promise<KodexControlPluginS
 
 export async function installKodexControlPlugin(): Promise<KodexControlPluginInstallResponse> {
   return unwrap(api.POST("/v1/kodex-control-plugin/install"));
+}
+
+export async function listMcpServers(): Promise<McpServerListResponse> {
+  return unwrap(api.GET("/v1/mcp/servers", { params: { query: { detail: "full" } } }));
+}
+
+export async function reloadMcpServers(): Promise<void> {
+  await unwrap(api.POST("/v1/mcp/reload"));
+}
+
+export async function startMcpOAuthLogin(server: string): Promise<McpOAuthLoginResponse> {
+  return unwrap(
+    api.POST("/v1/mcp/servers/{server}/oauth-login", {
+      params: { path: { server } },
+      body: {},
+    }),
+  );
+}
+
+export async function readMcpResource(server: string, uri: string): Promise<McpResourceReadResponse> {
+  return unwrap(
+    api.GET("/v1/mcp/servers/{server}/resources/read", {
+      params: { path: { server }, query: { uri } },
+    }),
+  );
 }
 
 export async function listSkills(cwd?: string | null, forceReload = false): Promise<SkillsCatalogResponse> {

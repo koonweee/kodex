@@ -41,6 +41,8 @@ const SSE_REPLAY_PAGE_SIZE: i64 = 500;
 const SELECTED_THREAD_POLL_LIMIT: u32 = 25;
 const SELECTED_THREAD_ACTIVE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const SNAPSHOT_REQUIRED_KIND: &str = "timeline.snapshot_required";
+pub const MCP_SERVER_STATUS_UPDATED_EVENT: &str = "mcp.server_status_updated";
+pub const MCP_OAUTH_LOGIN_COMPLETED_EVENT: &str = "mcp.oauth_login_completed";
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -110,6 +112,9 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                 })
                 .await?;
             let _ = state.events.send(event);
+            if let Some(event) = normalized_mcp_event(state, &method, &params).await? {
+                let _ = state.events.send(event);
+            }
             let normalized = normalized_timeline_events(
                 state,
                 &method,
@@ -196,6 +201,32 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
         }
     }
     Ok(())
+}
+
+async fn normalized_mcp_event(
+    state: &AppState,
+    method: &str,
+    params: &Value,
+) -> ApiResult<Option<EventEnvelope>> {
+    let kind = match method {
+        "mcpServer/startupStatus/updated" => MCP_SERVER_STATUS_UPDATED_EVENT,
+        "mcpServer/oauthLogin/completed" => MCP_OAUTH_LOGIN_COMPLETED_EVENT,
+        _ => return Ok(None),
+    };
+
+    let event = state
+        .store
+        .append_event(NewEvent {
+            project_id: None,
+            thread_id: None,
+            turn_id: None,
+            item_id: None,
+            kind: kind.to_string(),
+            codex_method: Some(method.to_string()),
+            payload: params.clone(),
+        })
+        .await?;
+    Ok(Some(event))
 }
 
 fn wants_sse(headers: &HeaderMap) -> bool {
@@ -390,6 +421,8 @@ fn is_operational_replay_event(event: &EventEnvelope) -> bool {
         "approval.created"
             | "approval.resolved"
             | "gateway.warning"
+            | MCP_SERVER_STATUS_UPDATED_EVENT
+            | MCP_OAUTH_LOGIN_COMPLETED_EVENT
             | skills::SKILLS_CHANGED_EVENT
             | THREAD_PIN_UPDATED_EVENT
             | THREAD_UPSERTED_EVENT
@@ -1112,6 +1145,69 @@ mod tests {
         assert_eq!(normalized.item_id.as_deref(), Some("item-1"));
         assert_eq!(normalized.payload["source"], "gatewayStream");
         assert_eq!(normalized.payload["delta"], "hello");
+    }
+
+    #[tokio::test]
+    async fn notification_ingest_emits_normalized_mcp_lifecycle_events() {
+        let state = test_state().await;
+        let mut receiver = state.events.subscribe();
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "mcpServer/startupStatus/updated".to_string(),
+                params: json!({
+                    "name": "docs",
+                    "status": "ready",
+                    "error": null
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let raw = receiver.recv().await.unwrap();
+        let normalized = receiver.recv().await.unwrap();
+        assert_eq!(raw.kind, "codex.notification");
+        assert_eq!(normalized.kind, MCP_SERVER_STATUS_UPDATED_EVENT);
+        assert_eq!(
+            normalized.codex_method.as_deref(),
+            Some("mcpServer/startupStatus/updated")
+        );
+        assert_eq!(normalized.payload["name"], "docs");
+        assert_eq!(normalized.payload["status"], "ready");
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "mcpServer/oauthLogin/completed".to_string(),
+                params: json!({
+                    "name": "docs",
+                    "success": true,
+                    "error": null
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let raw = receiver.recv().await.unwrap();
+        let normalized = receiver.recv().await.unwrap();
+        assert_eq!(raw.kind, "codex.notification");
+        assert_eq!(normalized.kind, MCP_OAUTH_LOGIN_COMPLETED_EVENT);
+        assert_eq!(
+            normalized.codex_method.as_deref(),
+            Some("mcpServer/oauthLogin/completed")
+        );
+        assert_eq!(normalized.payload["success"], true);
+
+        let replay = state.store.replay_events(None, None, None).await.unwrap();
+        assert!(replay
+            .iter()
+            .any(|event| event.kind == MCP_SERVER_STATUS_UPDATED_EVENT));
+        assert!(replay
+            .iter()
+            .any(|event| event.kind == MCP_OAUTH_LOGIN_COMPLETED_EVENT));
     }
 
     #[tokio::test]

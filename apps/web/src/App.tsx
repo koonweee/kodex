@@ -48,6 +48,7 @@ import {
   type ThreadSummary,
   type ThreadSubagentSummary,
 } from "./api/client";
+import { applyMcpLifecycleEvent } from "./api/mcpCache";
 import { queryClient } from "./api/queryClient";
 import { queryKeys } from "./api/queryKeys";
 import {
@@ -65,6 +66,7 @@ import { MarkdownPreviewPane } from "./files/MarkdownPreviewPane";
 import type { MarkdownPreviewRequest } from "./files/types";
 import { ImageLightbox } from "./images/ImageLightbox";
 import type { ImageLightboxImage } from "./images/types";
+import type { PreferenceSection } from "./PreferencesModal";
 import {
   applyKodexColorScheme,
   createKodexMantineTheme,
@@ -197,7 +199,7 @@ function KodexShell({
   const [lightboxImage, setLightboxImage] = useState<ImageLightboxImage | null>(null);
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownPreviewRequest | null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
-  const [preferencesSection, setPreferencesSection] = useState<"appearance" | "plugins">("appearance");
+  const [preferencesSection, setPreferencesSection] = useState<PreferenceSection>("appearance");
   const [hoveredThreadActionId, setHoveredThreadActionId] = useState<string | null>(null);
   const [timelineScrollElement, setTimelineScrollElement] = useState<HTMLDivElement | null>(null);
   const [subagentSidebarOpen, setSubagentSidebarOpen] = useState(false);
@@ -675,6 +677,7 @@ function KodexShell({
         if (event.kind === "skills.changed") {
           setSkillsInvalidationGeneration((current) => current + 1);
         }
+        applyMcpLifecycleEvent(queryClientForShell, event);
       },
     });
     client.connect();

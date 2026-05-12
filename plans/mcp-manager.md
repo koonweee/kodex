@@ -1,6 +1,6 @@
 # MCP Manager Plan
 
-Status: Proposed.
+Status: Complete.
 
 ## Context
 
@@ -187,6 +187,14 @@ Implementation should use this minimum verification set, adjusted by the actual 
 - `$agent-browser` smoke validation for Preferences > MCP after UI implementation.
 
 For lifecycle behavior, validate same-user two-tab convergence at least by test shape: after one client triggers OAuth or reload and app-server emits the corresponding notification, another client should receive the normalized SSE event, invalidate MCP inventory, and refetch from gateway/app-server state.
+
+Completed implementation:
+
+- Added typed gateway app-server helpers and `/v1/mcp/...` routes for inventory, resource reads, OAuth login, and reload.
+- Added normalized MCP lifecycle SSE events and frontend cache invalidation for startup/OAuth notifications.
+- Added a global Preferences > MCP section with inventory, refresh/reload controls, explicit OAuth link presentation, and listed concrete resource viewing.
+- Regenerated frontend OpenAPI types and updated README user-facing route/behavior notes.
+- Verified with focused gateway tests, frontend tests, frontend build, and agent-browser desktop/mobile smoke validation.
 
 ## Risks And Open Questions
 

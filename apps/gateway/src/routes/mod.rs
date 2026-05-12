@@ -7,6 +7,7 @@ pub mod events;
 pub mod file_preview;
 pub mod health;
 pub mod kodex_control_plugin;
+pub mod mcp;
 pub mod models;
 pub mod project_previews;
 pub mod projects;
@@ -376,6 +377,10 @@ mod tests {
             "/v1/skills",
             "/v1/kodex-control-plugin",
             "/v1/kodex-control-plugin/install",
+            "/v1/mcp/servers",
+            "/v1/mcp/servers/{server}/resources/read",
+            "/v1/mcp/servers/{server}/oauth-login",
+            "/v1/mcp/reload",
             "/v1/self-control/status",
             "/v1/self-control/project-previews/apply",
             "/v1/self-control/threads",
@@ -2112,6 +2117,158 @@ mod tests {
         assert!(events.iter().any(|event| {
             event.kind == "skills.changed" && event.payload["source"] == "config-write"
         }));
+    }
+
+    #[tokio::test]
+    async fn mcp_servers_route_pages_app_server_statuses() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({
+                "data": [mcp_server_status("docs", "lookup")],
+                "nextCursor": "next-page"
+            }),
+            json!({
+                "data": [mcp_server_status("files", "read")],
+                "nextCursor": null
+            }),
+        ]);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/mcp/servers?detail=toolsAndAuthOnly")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["servers"].as_array().unwrap().len(), 2);
+        assert_eq!(body["servers"][0]["name"], "docs");
+        assert_eq!(body["servers"][1]["name"], "files");
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(
+            requests[0],
+            (
+                "mcpServerStatus/list".to_string(),
+                json!({"cursor": null, "detail": "toolsAndAuthOnly", "limit": 100})
+            )
+        );
+        assert_eq!(
+            requests[1],
+            (
+                "mcpServerStatus/list".to_string(),
+                json!({"cursor": "next-page", "detail": "toolsAndAuthOnly", "limit": 100})
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn mcp_resource_oauth_and_reload_routes_map_to_app_server() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({
+                "contents": [{
+                    "uri": "file:///docs/readme.md",
+                    "mimeType": "text/markdown",
+                    "text": "# Docs"
+                }]
+            }),
+            json!({"authorizationUrl": "https://auth.example.test/login"}),
+            json!({}),
+        ]);
+        let app = build_router(state);
+
+        let resource = app
+            .clone()
+            .oneshot(
+                Request::get(
+                    "/v1/mcp/servers/docs/resources/read?uri=file%3A%2F%2F%2Fdocs%2Freadme.md",
+                )
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resource.status(), StatusCode::OK);
+        let body = response_json(resource).await;
+        assert_eq!(body["contents"][0]["text"], "# Docs");
+
+        let oauth = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/mcp/servers/docs/oauth-login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"scopes": ["read"], "timeoutSecs": 20}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(oauth.status(), StatusCode::OK);
+        assert_eq!(
+            response_json(oauth).await["authorizationUrl"],
+            "https://auth.example.test/login"
+        );
+
+        let reload = app
+            .oneshot(Request::post("/v1/mcp/reload").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(reload.status(), StatusCode::OK);
+        assert_eq!(response_json(reload).await["reloaded"], true);
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(
+            requests[0],
+            (
+                "mcpServer/resource/read".to_string(),
+                json!({
+                    "server": "docs",
+                    "threadId": null,
+                    "uri": "file:///docs/readme.md"
+                })
+            )
+        );
+        assert_eq!(
+            requests[1],
+            (
+                "mcpServer/oauth/login".to_string(),
+                json!({"name": "docs", "scopes": ["read"], "timeoutSecs": 20})
+            )
+        );
+        assert_eq!(
+            requests[2],
+            ("config/mcpServer/reload".to_string(), Value::Null)
+        );
+    }
+
+    #[tokio::test]
+    async fn mcp_servers_route_reports_app_server_errors() {
+        let (state, app_server) = test_state().await;
+        app_server
+            .queued_errors
+            .lock()
+            .unwrap()
+            .push(ApiError::BadGateway("app-server offline".to_string()));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(Request::get("/v1/mcp/servers").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        let body = response_json(response).await;
+        assert_eq!(body["code"], "bad_gateway");
+        assert_eq!(body["message"], "app-server offline");
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "mcpServerStatus/list");
     }
 
     #[tokio::test]
@@ -6352,6 +6509,90 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn event_replay_and_sse_include_mcp_lifecycle_events() {
+        let (state, _) = test_state().await;
+        let startup = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: None,
+                turn_id: None,
+                item_id: None,
+                kind: "mcp.server_status_updated".to_string(),
+                codex_method: Some("mcpServer/startupStatus/updated".to_string()),
+                payload: json!({"name": "docs", "status": "ready"}),
+            })
+            .await
+            .unwrap();
+        let oauth = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: None,
+                turn_id: None,
+                item_id: None,
+                kind: "mcp.oauth_login_completed".to_string(),
+                codex_method: Some("mcpServer/oauthLogin/completed".to_string()),
+                payload: json!({"name": "docs", "success": true}),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/events?cursor=0")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        let events = body["events"].as_array().unwrap();
+        assert!(events.iter().any(|event| {
+            event["seq"] == startup.seq && event["kind"] == "mcp.server_status_updated"
+        }));
+        assert!(events.iter().any(|event| {
+            event["seq"] == oauth.seq && event["kind"] == "mcp.oauth_login_completed"
+        }));
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let live = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: None,
+                turn_id: None,
+                item_id: None,
+                kind: "mcp.server_status_updated".to_string(),
+                codex_method: Some("mcpServer/startupStatus/updated".to_string()),
+                payload: json!({"name": "docs", "status": "reloaded"}),
+            })
+            .await
+            .unwrap();
+        state.events.send(startup).unwrap();
+        state.events.send(live.clone()).unwrap();
+
+        let mut body = response.into_body();
+        let chunk = next_sse_chunk(&mut body).await;
+        assert!(chunk.contains(&format!("id: {}", live.seq)));
+        assert!(chunk.contains("mcp.server_status_updated"));
+        assert!(chunk.contains("\"status\":\"reloaded\""));
+    }
+
+    #[tokio::test]
     async fn debug_event_replay_returns_raw_persisted_events() {
         let (state, _) = test_state().await;
         state
@@ -6752,6 +6993,32 @@ mod tests {
                 "apps": [],
                 "description": null
             }
+        })
+    }
+
+    fn mcp_server_status(name: &str, tool_name: &str) -> Value {
+        json!({
+            "name": name,
+            "authStatus": "unsupported",
+            "tools": {
+                tool_name: {
+                    "name": tool_name,
+                    "description": "Lookup docs",
+                    "inputSchema": {"type": "object", "properties": {}}
+                }
+            },
+            "resources": [{
+                "name": "docs",
+                "title": "Docs",
+                "uri": "file:///docs",
+                "mimeType": "text/plain"
+            }],
+            "resourceTemplates": [{
+                "name": "doc-template",
+                "title": "Doc Template",
+                "uriTemplate": "file:///docs/{id}",
+                "mimeType": "text/plain"
+            }]
         })
     }
 

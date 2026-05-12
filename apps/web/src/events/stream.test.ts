@@ -197,6 +197,43 @@ describe("event stream client", () => {
     client.close();
   });
 
+  it("receives gateway MCP lifecycle events", () => {
+    const received: string[] = [];
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      onEvent: (event) => received.push(event.kind),
+    });
+
+    client.connect();
+    FakeEventSource.instances[0].emitNamed("mcp.server_status_updated", {
+      id: "event-11",
+      seq: 11,
+      kind: "mcp.server_status_updated",
+      codexMethod: "mcpServer/startupStatus/updated",
+      itemId: null,
+      threadId: null,
+      turnId: null,
+      projectId: null,
+      payload: { name: "docs", status: "ready", error: null },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+    FakeEventSource.instances[0].emitNamed("mcp.oauth_login_completed", {
+      id: "event-12",
+      seq: 12,
+      kind: "mcp.oauth_login_completed",
+      codexMethod: "mcpServer/oauthLogin/completed",
+      itemId: null,
+      threadId: null,
+      turnId: null,
+      projectId: null,
+      payload: { name: "docs", success: true, error: null },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(received).toEqual(["mcp.server_status_updated", "mcp.oauth_login_completed"]);
+    client.close();
+  });
+
   it("delivers skill invalidation events to two stream clients", () => {
     const first: string[] = [];
     const second: string[] = [];
