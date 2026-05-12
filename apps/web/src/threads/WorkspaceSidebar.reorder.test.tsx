@@ -269,6 +269,32 @@ describe("WorkspaceSidebar project reorder", () => {
 
     matchMedia.mockRestore();
   });
+
+  it("applies shared touch density at the sidebar root on coarse-pointer devices", async () => {
+    const matchMedia = vi.spyOn(window, "matchMedia").mockImplementation((query: string): MediaQueryList => ({
+      matches: query === "(any-pointer: coarse)",
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    renderSidebar({
+      projects: [projectSummary("project-1", "Project")],
+      threadsByProjectId: {
+        "project-1": [threadSummary(1, { status: "active" })],
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Workspace")).toHaveAttribute("data-density", "touch");
+    });
+
+    matchMedia.mockRestore();
+  });
 });
 
 function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar>> = {}) {

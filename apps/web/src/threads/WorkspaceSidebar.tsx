@@ -199,6 +199,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const [projectsSectionCollapsed, setProjectsSectionCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const isMobileSidebar = useMediaQuery("(max-width: 900px)", false);
+  const hasCoarsePointer = useMediaQuery("(any-pointer: coarse)", false);
+  const useTouchDensity = isMobileSidebar || hasCoarsePointer;
   const projectGroupRefs = useRef<Map<string, HTMLElement>>(new Map());
   const pendingProjectAnimationRects = useRef<Map<string, DOMRect> | null>(null);
   const displayedProjects = useMemo(
@@ -315,7 +317,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       aria-label={SIDEBAR_TEXT.workspaceLabel}
       p="sm"
       className="kodex-sidebar"
-      data-density={isMobileSidebar ? "touch" : "compact"}
+      data-density={useTouchDensity ? "touch" : "compact"}
       data-mobile-scope={mobileSidebarScope}
       style={{ width: sidebarWidth }}
     >
