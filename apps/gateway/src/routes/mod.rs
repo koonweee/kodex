@@ -2489,7 +2489,9 @@ mod tests {
                                 "Authorization": "Bearer old",
                                 "X-Keep": "keep-secret",
                                 "X-Remove": "remove-secret"
-                            }
+                            },
+                            "scopes": ["old-scope"],
+                            "enabled_tools": ["old-tool"]
                         }
                     }
                 },
@@ -2517,9 +2519,7 @@ mod tests {
                             "enabled": true,
                             "required": true,
                             "startupTimeoutSec": 5,
-                            "toolTimeoutSec": 20,
-                            "scopes": ["read"],
-                            "enabledTools": ["search"]
+                            "toolTimeoutSec": 20
                         })
                         .to_string(),
                     ))
@@ -2564,8 +2564,8 @@ mod tests {
                         "required": true,
                         "startup_timeout_sec": 5,
                         "tool_timeout_sec": 20,
-                        "scopes": ["read"],
-                        "enabled_tools": ["search"]
+                        "scopes": ["old-scope"],
+                        "enabled_tools": ["old-tool"]
                     }
                 }],
                 "reloadUserConfig": true

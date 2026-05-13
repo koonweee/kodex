@@ -51,8 +51,6 @@ export function McpInstallModal({
   const [required, setRequired] = useState(false);
   const [startupTimeoutSec, setStartupTimeoutSec] = useState("");
   const [toolTimeoutSec, setToolTimeoutSec] = useState("");
-  const [scopes, setScopes] = useState("");
-  const [enabledTools, setEnabledTools] = useState("");
   const [envSecretActions, setEnvSecretActions] = useState<Record<string, SecretAction>>({});
   const [httpHeaderSecretActions, setHttpHeaderSecretActions] = useState<Record<string, SecretAction>>({});
   const [confirmReplaceSecrets, setConfirmReplaceSecrets] = useState(false);
@@ -76,8 +74,6 @@ export function McpInstallModal({
       setRequired(existingServer?.required ?? false);
       setStartupTimeoutSec(existingServer?.startupTimeoutSec?.toString() ?? "");
       setToolTimeoutSec(existingServer?.toolTimeoutSec?.toString() ?? "");
-      setScopes((existingServer?.scopes ?? []).join("\n"));
-      setEnabledTools((existingServer?.enabledTools ?? []).join("\n"));
       setEnvSecretActions(existingTransport?.type === "stdio" ? initialSecretActions(Object.keys(existingTransport.env ?? {})) : {});
       setHttpHeaderSecretActions(existingTransport?.type === "streamableHttp" ? initialSecretActions(Object.keys(existingTransport.httpHeaders ?? {})) : {});
       setConfirmReplaceSecrets(false);
@@ -94,16 +90,12 @@ export function McpInstallModal({
       setConfirmLocalCommand(true);
       return;
     }
-    const scopeList = splitList(scopes);
-    const enabledToolList = splitList(enabledTools);
     const startupTimeout = optionalNumber(startupTimeoutSec);
     const toolTimeout = optionalNumber(toolTimeoutSec);
     const request: McpServerInstallRequest = {
       enabled,
-      ...(enabledToolList.length ? { enabledTools: enabledToolList } : {}),
       name: name.trim(),
       ...(required ? { required } : {}),
-      ...(scopeList.length ? { scopes: scopeList } : {}),
       ...(startupTimeout === undefined ? {} : { startupTimeoutSec: startupTimeout }),
       ...(toolTimeout === undefined ? {} : { toolTimeoutSec: toolTimeout }),
       transport:
@@ -201,15 +193,6 @@ export function McpInstallModal({
             value={toolTimeoutSec}
           />
         </Group>
-        <Textarea autosize label="Scopes" minRows={2} onChange={(event) => setScopes(event.currentTarget.value)} placeholder={"repo\nread:org"} value={scopes} />
-        <Textarea
-          autosize
-          label="Enabled tools"
-          minRows={2}
-          onChange={(event) => setEnabledTools(event.currentTarget.value)}
-          placeholder={"search\nfetch"}
-          value={enabledTools}
-        />
 
         {confirmReplaceSecrets ? (
           <Alert color="yellow" variant="light">

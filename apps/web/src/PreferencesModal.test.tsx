@@ -448,8 +448,8 @@ describe("PreferencesModal MCP tab", () => {
     await userEvent.click(install.getByLabelText("Required"));
     await userEvent.type(install.getByLabelText("Startup timeout seconds"), "5");
     await userEvent.type(install.getByLabelText("Tool timeout seconds"), "20");
-    await userEvent.type(install.getByLabelText("Scopes"), "read\nwrite");
-    await userEvent.type(install.getByLabelText("Enabled tools"), "search");
+    expect(install.queryByLabelText("Scopes")).not.toBeInTheDocument();
+    expect(install.queryByLabelText("Enabled tools")).not.toBeInTheDocument();
 
     await userEvent.click(install.getByRole("button", { name: /^confirm$/i }));
     expect(install.getByText("Codex will run this command locally when loading the MCP server.")).toBeInTheDocument();
@@ -459,10 +459,8 @@ describe("PreferencesModal MCP tab", () => {
     await waitFor(() => expect(apiMocks.addMcpServer).toHaveBeenCalledTimes(1));
     expect(apiMocks.addMcpServer.mock.calls[0]?.[0]).toEqual({
       enabled: true,
-      enabledTools: ["search"],
       name: "local",
       required: true,
-      scopes: ["read", "write"],
       startupTimeoutSec: 5,
       toolTimeoutSec: 20,
       transport: {

@@ -1506,10 +1506,10 @@ export interface components {
         };
         McpServerInstallRequest: {
             enabled?: boolean | null;
-            enabledTools?: string[];
+            enabledTools?: string[] | null;
             name: string;
             required?: boolean | null;
-            scopes?: string[];
+            scopes?: string[] | null;
             /** Format: int64 */
             startupTimeoutSec?: number | null;
             /** Format: int64 */

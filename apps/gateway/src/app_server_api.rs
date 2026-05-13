@@ -882,9 +882,9 @@ pub struct McpServerInstallRequest {
     #[serde(default)]
     pub tool_timeout_sec: Option<i64>,
     #[serde(default)]
-    pub scopes: Vec<String>,
+    pub scopes: Option<Vec<String>>,
     #[serde(default)]
-    pub enabled_tools: Vec<String>,
+    pub enabled_tools: Option<Vec<String>>,
 }
 
 impl McpServerInstallRequest {
@@ -935,11 +935,13 @@ impl McpServerInstallRequest {
         if let Some(timeout) = self.tool_timeout_sec {
             value["tool_timeout_sec"] = Value::Number(timeout.into());
         }
-        if !self.scopes.is_empty() {
-            value["scopes"] = json!(self.scopes);
+        match &self.scopes {
+            Some(scopes) => value["scopes"] = json!(scopes),
+            None => preserve_existing_field(existing, &mut value, "scopes"),
         }
-        if !self.enabled_tools.is_empty() {
-            value["enabled_tools"] = json!(self.enabled_tools);
+        match &self.enabled_tools {
+            Some(enabled_tools) => value["enabled_tools"] = json!(enabled_tools),
+            None => preserve_existing_field(existing, &mut value, "enabled_tools"),
         }
         prune_nulls(&mut value);
         value
@@ -2431,6 +2433,12 @@ fn merged_secret_object(
         merged.insert(key.clone(), Value::String(value.clone()));
     }
     merged
+}
+
+fn preserve_existing_field(existing: Option<&Value>, value: &mut Value, field: &str) {
+    if let Some(existing_value) = existing.and_then(|existing| existing.get(field)) {
+        value[field] = existing_value.clone();
+    }
 }
 
 fn env_var_names(value: Option<&Value>) -> Vec<String> {
