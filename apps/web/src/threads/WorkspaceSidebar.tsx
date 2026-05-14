@@ -51,6 +51,11 @@ import {
   type ThreadsByProjectId,
 } from "./helpers";
 import { moveProjectInSidebarOrderAt } from "./projectOrder";
+import {
+  loadSidebarDisclosureState,
+  saveSidebarDisclosureState,
+  type SidebarDisclosureState,
+} from "./sidebarDisclosureState";
 import { SidebarActionDisclosureRow, SidebarRowFrame, SidebarSectionDisclosureRow } from "./sidebarRows";
 
 const SIDEBAR_TEXT = {
@@ -189,14 +194,13 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   usageLimitLines?: UsageLimitLines | null;
 }) {
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
+  const [sidebarDisclosureState, setSidebarDisclosureState] = useState<SidebarDisclosureState>(() =>
+    loadSidebarDisclosureState(),
+  );
   const [chatThreadsExpanded, setChatThreadsExpanded] = useState(false);
-  const [chatsSectionCollapsed, setChatsSectionCollapsed] = useState(false);
-  const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(() => new Set());
   const [expandedThreadProjectIds, setExpandedThreadProjectIds] = useState<Set<string>>(() => new Set());
   const [mobileSidebarScope, setMobileSidebarScope] = useState<"projects" | "chats">("projects");
-  const [pinnedSectionCollapsed, setPinnedSectionCollapsed] = useState(false);
   const [previewProjectIds, setPreviewProjectIds] = useState<string[] | null>(null);
-  const [projectsSectionCollapsed, setProjectsSectionCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const isMobileSidebar = useMediaQuery("(max-width: 900px)", false);
   const hasCoarsePointer = useMediaQuery("(any-pointer: coarse)", false);
@@ -222,6 +226,12 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const visibleChatThreads = normalizedSearchQuery
     ? sortedChatThreads.filter((thread) => threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds))
     : sortedChatThreads;
+  const {
+    chatsSectionCollapsed,
+    collapsedProjectIds,
+    pinnedSectionCollapsed,
+    projectsSectionCollapsed,
+  } = sidebarDisclosureState;
 
   useLayoutEffect(() => {
     const beforeRects = pendingProjectAnimationRects.current;
@@ -297,13 +307,33 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   }
 
   function handleProjectCollapseToggle(projectId: string) {
-    setCollapsedProjectIds((current) => {
-      const next = new Set(current);
-      if (next.has(projectId)) {
-        next.delete(projectId);
+    updateSidebarDisclosureState((current) => {
+      const nextCollapsedProjectIds = new Set(current.collapsedProjectIds);
+      if (nextCollapsedProjectIds.has(projectId)) {
+        nextCollapsedProjectIds.delete(projectId);
       } else {
-        next.add(projectId);
+        nextCollapsedProjectIds.add(projectId);
       }
+      return {
+        ...current,
+        collapsedProjectIds: nextCollapsedProjectIds,
+      };
+    });
+  }
+
+  function handleSectionCollapseToggle(
+    section: "chatsSectionCollapsed" | "pinnedSectionCollapsed" | "projectsSectionCollapsed",
+  ) {
+    updateSidebarDisclosureState((current) => ({
+      ...current,
+      [section]: !current[section],
+    }));
+  }
+
+  function updateSidebarDisclosureState(updater: (current: SidebarDisclosureState) => SidebarDisclosureState) {
+    setSidebarDisclosureState((current) => {
+      const next = updater(current);
+      saveSidebarDisclosureState(next);
       return next;
     });
   }
@@ -432,7 +462,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 className="kodex-pinned-section-row"
                 collapsed={pinnedSectionCollapsed}
                 label={SIDEBAR_TEXT.pinned}
-                onToggle={() => setPinnedSectionCollapsed((collapsed) => !collapsed)}
+                onToggle={() => handleSectionCollapseToggle("pinnedSectionCollapsed")}
               />
               {!pinnedSectionCollapsed ? (
                 <ThreadList
@@ -457,7 +487,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             className="kodex-projects-section-row"
             collapsed={projectsSectionCollapsed}
             label={SIDEBAR_TEXT.projects}
-            onToggle={() => setProjectsSectionCollapsed((collapsed) => !collapsed)}
+            onToggle={() => handleSectionCollapseToggle("projectsSectionCollapsed")}
             trailingActions={[
               {
                 icon: <FolderPlus />,
@@ -622,7 +652,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
               className="kodex-chats-section-row"
               collapsed={chatsSectionCollapsed}
               label={SIDEBAR_TEXT.chats}
-              onToggle={() => setChatsSectionCollapsed((collapsed) => !collapsed)}
+              onToggle={() => handleSectionCollapseToggle("chatsSectionCollapsed")}
               trailingActions={[{ icon: <SquarePen />, label: SIDEBAR_TEXT.newChat, onClick: onCreateChat }]}
             />
             {!chatsSectionCollapsed && visibleChatThreads.length > 0 ? (

@@ -991,9 +991,10 @@ describe("MVP shell flows", () => {
 
     const runningThreadButton = await screen.findByRole("button", { name: /running thread/i });
     const runningThreadRow = runningThreadButton.closest(".kodex-thread-list-button");
+    const progressIndicator = runningThreadRow?.querySelector<HTMLElement>(".kodex-thread-progress-indicator") ?? null;
     expect(runningThreadRow).toBeInTheDocument();
     expect(within(runningThreadRow as HTMLElement).getByLabelText(/thread in progress/i)).toContainElement(
-      runningThreadRow?.querySelector(".kodex-thread-progress-indicator"),
+      progressIndicator,
     );
     expect(within(runningThreadRow as HTMLElement).queryByRole("button", { name: /archive running thread/i })).not.toBeInTheDocument();
 

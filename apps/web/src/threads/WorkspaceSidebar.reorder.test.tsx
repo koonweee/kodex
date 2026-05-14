@@ -1,12 +1,16 @@
 import { AppShell, MantineProvider } from "@mantine/core";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Project, ThreadSummary } from "../api/client";
 import { WorkspaceSidebar } from "./WorkspaceSidebar";
 
 describe("WorkspaceSidebar project reorder", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
   it("emits a persisted order when a project is dragged before another project", () => {
     const onReorderProjects = vi.fn();
     const { container } = renderSidebar({
@@ -213,6 +217,55 @@ describe("WorkspaceSidebar project reorder", () => {
     fireEvent.click(screen.getByRole("button", { name: "Expand Chats section" }));
 
     expect(screen.getByRole("button", { name: "Thread 1" })).toBeInTheDocument();
+  });
+
+  it("rehydrates collapsed project and chat sections from local storage", () => {
+    const first = renderSidebar({
+      chatThreads: [threadSummary(2, { id: "chat-thread", name: "Chat thread" })],
+      projects: [projectSummary("project-1", "Project")],
+      threadsByProjectId: {
+        "project-1": [threadSummary(1, { id: "project-thread", name: "Project thread" })],
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Projects section" }));
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Chats section" }));
+    first.unmount();
+
+    renderSidebar({
+      chatThreads: [threadSummary(2, { id: "chat-thread", name: "Chat thread" })],
+      projects: [projectSummary("project-1", "Project")],
+      threadsByProjectId: {
+        "project-1": [threadSummary(1, { id: "project-thread", name: "Project thread" })],
+      },
+    });
+
+    expect(screen.getByRole("button", { name: "Expand Projects section" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "Expand Chats section" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Project thread" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Chat thread" })).not.toBeInTheDocument();
+  });
+
+  it("rehydrates collapsed project rows from local storage", () => {
+    const first = renderSidebar({
+      projects: [projectSummary("project-1", "Project")],
+      threadsByProjectId: {
+        "project-1": [threadSummary(1)],
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Project" }));
+    first.unmount();
+
+    renderSidebar({
+      projects: [projectSummary("project-1", "Project")],
+      threadsByProjectId: {
+        "project-1": [threadSummary(1)],
+      },
+    });
+
+    expect(screen.getByRole("button", { name: "Expand Project" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Thread 1" })).not.toBeInTheDocument();
   });
 
   it("does not mark the project title active when a thread or draft thread is selected", () => {
