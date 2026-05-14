@@ -750,6 +750,23 @@ export const ThreadListRow = memo(function ThreadListRow({
   const pinnedAt = thread.pinnedAt ?? null;
   const isPinned = Boolean(pinnedAt);
   const pinLabel = isPinned ? SIDEBAR_TEXT.unpinThread : SIDEBAR_TEXT.pinThread;
+  const focusPointerType = useRef<string | null>(null);
+
+  function handleHoverPointerDown(event: ReactPointerEvent<HTMLElement>) {
+    focusPointerType.current = event.pointerType;
+  }
+
+  function handleHoverPointerEnter(event: ReactPointerEvent<HTMLElement>) {
+    if (event.pointerType === "mouse") {
+      onThreadActionHoverChange(thread.id);
+    }
+  }
+
+  function handleHoverPointerLeave(event: ReactPointerEvent<HTMLElement>) {
+    if (event.pointerType === "mouse") {
+      onThreadActionHoverChange(null);
+    }
+  }
 
   return (
     <SidebarRowFrame
@@ -777,13 +794,19 @@ export const ThreadListRow = memo(function ThreadListRow({
         "data-active": isSelected ? "true" : undefined,
         "data-pinned": isPinned ? "true" : undefined,
         onBlur: (event) => {
+          focusPointerType.current = null;
           if (!event.currentTarget.contains(event.relatedTarget)) {
             onThreadActionHoverChange(null);
           }
         },
-        onFocus: () => onThreadActionHoverChange(thread.id),
-        onMouseEnter: () => onThreadActionHoverChange(thread.id),
-        onMouseLeave: () => onThreadActionHoverChange(null),
+        onFocus: () => {
+          if (focusPointerType.current !== "touch" && focusPointerType.current !== "pen") {
+            onThreadActionHoverChange(thread.id);
+          }
+        },
+        onPointerDown: handleHoverPointerDown,
+        onPointerEnter: handleHoverPointerEnter,
+        onPointerLeave: handleHoverPointerLeave,
       }}
       trailingContent={
         <>

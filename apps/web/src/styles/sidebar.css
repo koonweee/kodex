@@ -18,14 +18,15 @@
 }
 
 .kodex-sidebar[data-density="touch"] {
-  --kodex-sidebar-action-size: 36px;
+  --kodex-sidebar-action-size: 40px;
   --kodex-sidebar-disclosure-icon-size: 14px;
   --kodex-sidebar-icon-size: 16px;
-  --kodex-sidebar-leading-rail-size: 36px;
-  --kodex-sidebar-row-height: 40px;
+  --kodex-sidebar-leading-rail-size: 40px;
+  --kodex-sidebar-row-height: 44px;
 }
 
 .kodex-sidebar-desktop-header {
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 4px;
@@ -47,6 +48,7 @@
 
 .kodex-sidebar-mobile-header,
 .kodex-sidebar-mobile-filter {
+  flex: 0 0 auto;
   display: none;
 }
 
@@ -110,11 +112,6 @@
   cursor: pointer;
 }
 
-.kodex-list-button:hover {
-  border-color: var(--kodex-border-strong);
-  background: var(--kodex-bg-button-hover);
-}
-
 .kodex-project-group {
   display: grid;
   gap: 6px;
@@ -146,14 +143,8 @@
   padding: 3px 8px;
 }
 
-.kodex-sidebar-row:has(.kodex-sidebar-row-main:hover),
 .kodex-sidebar-row:has(.kodex-sidebar-row-main:focus-visible) {
   background: var(--kodex-bg-button-hover);
-}
-
-.kodex-sidebar-row > .kodex-ui-button:hover {
-  background: transparent;
-  color: inherit;
 }
 
 .kodex-sidebar-row[data-has-leading="true"] {
@@ -191,6 +182,7 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .kodex-sidebar-row-label {
@@ -229,7 +221,6 @@
     transform 120ms ease;
 }
 
-.kodex-sidebar-row:has(.kodex-sidebar-row-main:hover) .kodex-sidebar-row-disclosure,
 .kodex-sidebar-row:has(.kodex-sidebar-row-main:focus-visible) .kodex-sidebar-row-disclosure,
 .kodex-sidebar-row[data-collapsed="true"] .kodex-sidebar-row-disclosure {
   opacity: 1;
@@ -239,7 +230,6 @@
   transform: rotate(0deg);
 }
 
-.kodex-sidebar-row:has(.kodex-sidebar-row-main:hover) .kodex-sidebar-row-main,
 .kodex-sidebar-row:has(.kodex-sidebar-row-main:focus-visible) .kodex-sidebar-row-main {
   color: var(--kodex-text-primary);
 }
@@ -258,10 +248,6 @@
 
 .kodex-project-title:active {
   cursor: grabbing;
-}
-
-.kodex-project-title:hover {
-  color: var(--kodex-text-primary);
 }
 
 .kodex-project-title svg {
@@ -303,10 +289,6 @@
   cursor: default;
 }
 
-.kodex-thread-list-button:hover {
-  background: var(--kodex-bg-button-hover);
-}
-
 .kodex-thread-list-button[data-active="true"] {
   background: var(--kodex-bg-selected);
 }
@@ -324,6 +306,7 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .kodex-thread-select-button:focus-visible,
@@ -347,11 +330,6 @@
   font-size: var(--mantine-font-size-xs);
   text-align: left;
   cursor: pointer;
-}
-
-.kodex-thread-list-more-button:hover {
-  background: var(--kodex-bg-button-hover);
-  color: var(--kodex-text-primary);
 }
 
 .kodex-thread-list-row {
@@ -398,12 +376,6 @@
   height: var(--kodex-sidebar-icon-size);
 }
 
-.kodex-thread-pin-button:hover {
-  background: var(--kodex-bg-button-hover);
-  color: var(--kodex-text-primary);
-}
-
-.kodex-thread-list-button:hover .kodex-thread-pin-button,
 .kodex-thread-list-button:focus-within .kodex-thread-pin-button,
 .kodex-thread-list-button[data-pinned="true"] .kodex-thread-pin-button {
   opacity: 1;
@@ -459,20 +431,94 @@
   height: var(--kodex-sidebar-icon-size);
 }
 
-.kodex-thread-archive-button:hover {
-  background: var(--kodex-bg-button-hover);
-  color: var(--kodex-text-primary);
-}
-
-.kodex-thread-list-button:hover .kodex-thread-archive-button,
 .kodex-thread-list-button:focus-within .kodex-thread-archive-button {
   opacity: 1;
   pointer-events: auto;
 }
 
-.kodex-thread-list-button:hover .kodex-thread-unread-agent-turn-indicator,
 .kodex-thread-list-button:focus-within .kodex-thread-unread-agent-turn-indicator {
   opacity: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kodex-list-button:hover {
+    border-color: var(--kodex-border-strong);
+    background: var(--kodex-bg-button-hover);
+  }
+
+  .kodex-sidebar-row:has(.kodex-sidebar-row-main:hover) {
+    background: var(--kodex-bg-button-hover);
+  }
+
+  .kodex-sidebar-row > .kodex-ui-button:hover {
+    background: transparent;
+    color: inherit;
+  }
+
+  .kodex-sidebar-row:has(.kodex-sidebar-row-main:hover) .kodex-sidebar-row-disclosure {
+    opacity: 1;
+  }
+
+  .kodex-sidebar-row:has(.kodex-sidebar-row-main:hover) .kodex-sidebar-row-main,
+  .kodex-project-title:hover,
+  .kodex-thread-list-more-button:hover,
+  .kodex-thread-pin-button:hover,
+  .kodex-thread-archive-button:hover {
+    color: var(--kodex-text-primary);
+  }
+
+  .kodex-thread-list-button:hover,
+  .kodex-thread-list-more-button:hover,
+  .kodex-thread-pin-button:hover,
+  .kodex-thread-archive-button:hover {
+    background: var(--kodex-bg-button-hover);
+  }
+
+  .kodex-thread-list-button:hover .kodex-thread-pin-button,
+  .kodex-thread-list-button:hover .kodex-thread-archive-button {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .kodex-thread-list-button:hover .kodex-thread-unread-agent-turn-indicator {
+    opacity: 0;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .kodex-sidebar .kodex-ui-button:hover,
+  .kodex-sidebar .kodex-ui-selectable:hover {
+    background: transparent;
+    color: inherit;
+  }
+
+  .kodex-sidebar .kodex-ui-selectable[data-active="true"]:hover,
+  .kodex-sidebar .kodex-ui-selectable[aria-selected="true"]:hover,
+  .kodex-sidebar .kodex-ui-selectable[aria-checked="true"]:hover,
+  .kodex-sidebar .kodex-sidebar-filter-pill[data-active="true"]:hover {
+    background: var(--kodex-bg-selected);
+    color: var(--kodex-text-primary);
+  }
+
+  .kodex-sidebar-row:has(.kodex-sidebar-row-main:active),
+  .kodex-thread-list-button:active,
+  .kodex-thread-list-more-button:active {
+    background: var(--kodex-bg-button-hover);
+  }
+
+  .kodex-sidebar .kodex-ui-selectable[data-active="true"]:active,
+  .kodex-sidebar .kodex-ui-selectable[aria-selected="true"]:active,
+  .kodex-sidebar .kodex-ui-selectable[aria-checked="true"]:active,
+  .kodex-thread-list-button[data-active="true"]:active,
+  .kodex-sidebar .kodex-sidebar-filter-pill[data-active="true"]:active {
+    background: var(--kodex-bg-selected);
+    color: var(--kodex-text-primary);
+  }
+
+  .kodex-project-row,
+  .kodex-project-title {
+    cursor: default;
+  }
 }
 
 @keyframes kodex-thread-progress-spin {
@@ -594,16 +640,18 @@
 }
 
 .kodex-sidebar-scroll {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  touch-action: pan-y;
   margin-right: calc(var(--app-shell-padding) * -1);
   padding-left: 6px;
   padding-right: calc(var(--app-shell-padding) + 6px);
 }
 
 .kodex-sidebar-footer {
+  flex: 0 0 auto;
   margin-top: auto;
   border-top: 1px solid var(--kodex-border-subtle);
   padding-top: 12px;

@@ -21,8 +21,8 @@ export function McpServerList({ onSelect, selectedName, servers }: McpServerList
           variant={server.name === selectedName ? "light" : "subtle"}
         >
           <Box className="kodex-mcp-server-row-copy">
-            <Group gap={8} wrap="wrap">
-              <Text fw={650} size="sm">
+            <Group className="kodex-mcp-server-row-title" gap={6} wrap="wrap">
+              <Text className="kodex-mcp-server-name" fw={650} size="sm">
                 {server.name}
               </Text>
               {server.runtime ? (

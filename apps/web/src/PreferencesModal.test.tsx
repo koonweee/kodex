@@ -446,10 +446,10 @@ describe("PreferencesModal MCP tab", () => {
     await userEvent.type(install.getByLabelText("Environment values"), "DOCS_TOKEN=secret");
     await userEvent.type(install.getByLabelText("Environment variable names"), "SHARED_TOKEN");
     await userEvent.click(install.getByLabelText("Required"));
-    await userEvent.type(install.getByLabelText("Startup timeout seconds"), "5");
-    await userEvent.type(install.getByLabelText("Tool timeout seconds"), "20");
     expect(install.queryByLabelText("Scopes")).not.toBeInTheDocument();
     expect(install.queryByLabelText("Enabled tools")).not.toBeInTheDocument();
+    expect(install.queryByLabelText("Startup timeout seconds")).not.toBeInTheDocument();
+    expect(install.queryByLabelText("Tool timeout seconds")).not.toBeInTheDocument();
 
     await userEvent.click(install.getByRole("button", { name: /^confirm$/i }));
     expect(install.getByText("Codex will run this command locally when loading the MCP server.")).toBeInTheDocument();
@@ -461,8 +461,6 @@ describe("PreferencesModal MCP tab", () => {
       enabled: true,
       name: "local",
       required: true,
-      startupTimeoutSec: 5,
-      toolTimeoutSec: 20,
       transport: {
         args: ["-y", "@docs/mcp"],
         command: "npx",

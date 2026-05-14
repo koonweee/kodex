@@ -931,9 +931,13 @@ impl McpServerInstallRequest {
         }
         if let Some(timeout) = self.startup_timeout_sec {
             value["startup_timeout_sec"] = Value::Number(timeout.into());
+        } else {
+            preserve_existing_field(existing, &mut value, "startup_timeout_sec");
         }
         if let Some(timeout) = self.tool_timeout_sec {
             value["tool_timeout_sec"] = Value::Number(timeout.into());
+        } else {
+            preserve_existing_field(existing, &mut value, "tool_timeout_sec");
         }
         match &self.scopes {
             Some(scopes) => value["scopes"] = json!(scopes),

@@ -94,6 +94,41 @@ describe("ThreadListRow layout and actions", () => {
     fireEvent.click(screen.getByRole("button", { name: "thread-1" }));
     expect(onSelect).toHaveBeenCalledWith("thread-1");
   });
+
+  it("only exposes hover actions for mouse pointers", () => {
+    const onHoverChange = vi.fn();
+    renderThreadRow({ onThreadActionHoverChange: onHoverChange });
+
+    const row = screen.getByRole("button", { name: "thread-1" }).closest(".kodex-thread-list-button");
+    expect(row).toBeInTheDocument();
+
+    fireEvent.pointerEnter(row!, { pointerType: "touch" });
+    fireEvent.pointerLeave(row!, { pointerType: "touch" });
+    expect(onHoverChange).not.toHaveBeenCalled();
+
+    fireEvent.pointerEnter(row!, { pointerType: "mouse" });
+    expect(onHoverChange).toHaveBeenCalledWith("thread-1");
+
+    fireEvent.pointerLeave(row!, { pointerType: "mouse" });
+    expect(onHoverChange).toHaveBeenLastCalledWith(null);
+  });
+
+  it("does not expose hover actions from touch-driven focus", () => {
+    const onHoverChange = vi.fn();
+    renderThreadRow({ onThreadActionHoverChange: onHoverChange });
+
+    const selectButton = screen.getByRole("button", { name: "thread-1" });
+    const row = selectButton.closest(".kodex-thread-list-button");
+    expect(row).toBeInTheDocument();
+
+    fireEvent.pointerDown(row!, { pointerType: "touch" });
+    fireEvent.focus(selectButton);
+    expect(onHoverChange).not.toHaveBeenCalled();
+
+    fireEvent.blur(selectButton, { relatedTarget: null });
+    fireEvent.focus(selectButton);
+    expect(onHoverChange).toHaveBeenCalledWith("thread-1");
+  });
 });
 
 function renderThreadRow(overrides: Partial<ThreadListRowProps> = {}) {

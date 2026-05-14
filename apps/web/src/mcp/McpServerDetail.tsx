@@ -47,7 +47,7 @@ export function McpServerDetail({
   return (
     <Stack className="kodex-mcp-detail" gap={12}>
       <Group justify="space-between" wrap="wrap">
-        <Box>
+        <Box className="kodex-mcp-detail-heading">
           <Text fw={650} size="sm">
             {serverName}
           </Text>
@@ -107,7 +107,7 @@ export function McpServerDetail({
           Tools
         </Text>
         {toolNames.length ? (
-          <Text c="dimmed" size="xs">
+          <Text className="kodex-mcp-wrapping-text" c="dimmed" size="xs">
             {toolNames.join(", ")}
           </Text>
         ) : (
@@ -133,7 +133,7 @@ export function McpServerDetail({
                 type="button"
                 variant={resource?.uri === item.uri ? "light" : "subtle"}
               >
-                {item.title ?? item.name} ({item.uri})
+                <span className="kodex-mcp-resource-row-label">{item.title ?? item.name} ({item.uri})</span>
               </Button>
             ))}
           </Stack>
@@ -149,7 +149,7 @@ export function McpServerDetail({
           Resource templates
         </Text>
         {server?.resourceTemplates.length ? (
-          <Text c="dimmed" size="xs">
+          <Text className="kodex-mcp-wrapping-text" c="dimmed" size="xs">
             {server.resourceTemplates.map((template) => template.title ?? template.name).join(", ")}
           </Text>
         ) : (
@@ -164,7 +164,7 @@ export function McpServerDetail({
           <Text fw={650} size="xs">
             {resource.title ?? resource.name}
           </Text>
-          <Text c="dimmed" size="xs">
+          <Text className="kodex-mcp-wrapping-text" c="dimmed" size="xs">
             {resource.uri}
           </Text>
           {resourceLoading ? (

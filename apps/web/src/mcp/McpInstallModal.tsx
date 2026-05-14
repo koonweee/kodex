@@ -49,8 +49,6 @@ export function McpInstallModal({
   const [envVars, setEnvVars] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [required, setRequired] = useState(false);
-  const [startupTimeoutSec, setStartupTimeoutSec] = useState("");
-  const [toolTimeoutSec, setToolTimeoutSec] = useState("");
   const [envSecretActions, setEnvSecretActions] = useState<Record<string, SecretAction>>({});
   const [httpHeaderSecretActions, setHttpHeaderSecretActions] = useState<Record<string, SecretAction>>({});
   const [confirmReplaceSecrets, setConfirmReplaceSecrets] = useState(false);
@@ -72,8 +70,6 @@ export function McpInstallModal({
       setEnvVars(existingTransport?.type === "stdio" ? (existingTransport.envVars ?? []).join("\n") : "");
       setEnabled(existingServer?.enabled ?? true);
       setRequired(existingServer?.required ?? false);
-      setStartupTimeoutSec(existingServer?.startupTimeoutSec?.toString() ?? "");
-      setToolTimeoutSec(existingServer?.toolTimeoutSec?.toString() ?? "");
       setEnvSecretActions(existingTransport?.type === "stdio" ? initialSecretActions(Object.keys(existingTransport.env ?? {})) : {});
       setHttpHeaderSecretActions(existingTransport?.type === "streamableHttp" ? initialSecretActions(Object.keys(existingTransport.httpHeaders ?? {})) : {});
       setConfirmReplaceSecrets(false);
@@ -90,14 +86,10 @@ export function McpInstallModal({
       setConfirmLocalCommand(true);
       return;
     }
-    const startupTimeout = optionalNumber(startupTimeoutSec);
-    const toolTimeout = optionalNumber(toolTimeoutSec);
     const request: McpServerInstallRequest = {
       enabled,
       name: name.trim(),
       ...(required ? { required } : {}),
-      ...(startupTimeout === undefined ? {} : { startupTimeoutSec: startupTimeout }),
-      ...(toolTimeout === undefined ? {} : { toolTimeoutSec: toolTimeout }),
       transport:
         transport === "stdio"
           ? buildStdioTransport(command, args, cwd, env, envVars, envSecretActions)
@@ -179,20 +171,6 @@ export function McpInstallModal({
 
         <Switch checked={enabled} label="Enabled" onChange={(event) => setEnabled(event.currentTarget.checked)} />
         <Switch checked={required} label="Required" onChange={(event) => setRequired(event.currentTarget.checked)} />
-        <Group grow>
-          <TextInput
-            label="Startup timeout seconds"
-            onChange={(event) => setStartupTimeoutSec(event.currentTarget.value)}
-            placeholder="10"
-            value={startupTimeoutSec}
-          />
-          <TextInput
-            label="Tool timeout seconds"
-            onChange={(event) => setToolTimeoutSec(event.currentTarget.value)}
-            placeholder="60"
-            value={toolTimeoutSec}
-          />
-        </Group>
 
         {confirmReplaceSecrets ? (
           <Alert color="yellow" variant="light">
@@ -309,15 +287,6 @@ function parseKeyValueLines(value: string): Record<string, string> {
 function emptyToUndefined(value: string): string | undefined {
   const trimmed = value.trim();
   return trimmed.length ? trimmed : undefined;
-}
-
-function optionalNumber(value: string): number | undefined {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-  const parsed = Number.parseInt(trimmed, 10);
-  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function formatKeyValueLines(value: Record<string, string> | undefined): string {

@@ -2491,7 +2491,9 @@ mod tests {
                                 "X-Remove": "remove-secret"
                             },
                             "scopes": ["old-scope"],
-                            "enabled_tools": ["old-tool"]
+                            "enabled_tools": ["old-tool"],
+                            "startup_timeout_sec": 5,
+                            "tool_timeout_sec": 20
                         }
                     }
                 },
@@ -2517,9 +2519,7 @@ mod tests {
                                 "envHttpHeaders": {"X-Env": "DOCS_TOKEN"}
                             },
                             "enabled": true,
-                            "required": true,
-                            "startupTimeoutSec": 5,
-                            "toolTimeoutSec": 20
+                            "required": true
                         })
                         .to_string(),
                     ))
