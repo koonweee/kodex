@@ -36,6 +36,7 @@ export type TimelineItem = {
   text: string;
   turnId: string | null;
   displayOrder: number;
+  timestampMs?: number;
   payload: unknown;
   debugEvents: EventEnvelope[];
   action?: string;

@@ -62,6 +62,7 @@ describe("timeline reducer lifecycle", () => {
     expect(state.items[0]).toMatchObject({
       id: "item-1",
       status: "completed",
+      timestampMs: Date.parse("2026-04-30T00:00:00Z"),
       text: "Hello world",
     });
   });

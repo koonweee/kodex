@@ -15,7 +15,7 @@ import {
   type TimelineRow,
 } from "./derive";
 import { TimelineActivityGroupRenderer, TimelineFileChangesRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
-import type { TimelineState } from "./reducer";
+import type { TimelineItem, TimelineState } from "./reducer";
 
 const EMPTY_APPROVALS: Approval[] = [];
 const INITIAL_BOTTOM_STABLE_FRAMES = 3;
@@ -51,6 +51,7 @@ export function TimelineView({
   timeline: TimelineState;
 }) {
   const rows = useMemo(() => deriveTimelineRows(timeline, { showDebug }), [showDebug, timeline]);
+  const messageTimestamps = useMemo(() => visibleMessageTimestamps(rows), [rows]);
   const approvalIndex = useMemo(() => buildApprovalIndex(approvals), [approvals]);
   const unanchoredApprovals = useMemo(
     () => getUnanchoredApprovals(rows, approvalIndex),
@@ -120,6 +121,7 @@ export function TimelineView({
                 row={row}
                 showDebug={showDebug}
                 threadId={threadId}
+                toolbarTimestamps={messageTimestamps}
               />
             </Box>
           );
@@ -384,6 +386,7 @@ const TimelineRowView = memo(function TimelineRowView({
   row,
   showDebug,
   threadId,
+  toolbarTimestamps,
 }: {
   approvals: Approval[];
   imagePreviewUrlsByPath: Record<string, string>;
@@ -393,6 +396,7 @@ const TimelineRowView = memo(function TimelineRowView({
   row: TimelineRow;
   showDebug: boolean;
   threadId?: string;
+  toolbarTimestamps: Map<string, number>;
 }) {
   return (
     <Box className="kodex-turn-group">
@@ -427,6 +431,7 @@ const TimelineRowView = memo(function TimelineRowView({
           onMarkdownOpen={onMarkdownOpen}
           showDebug={showDebug}
           threadId={threadId}
+          toolbarTimestampMs={toolbarTimestamps.get(row.item.id)}
         />
       )}
       {approvals.length > 0 ? (
@@ -439,6 +444,24 @@ const TimelineRowView = memo(function TimelineRowView({
     </Box>
   );
 });
+
+function visibleMessageTimestamps(rows: TimelineRow[]): Map<string, number> {
+  const timestamps = new Map<string, number>();
+  for (const row of rows) {
+    if (row.type !== "item") {
+      continue;
+    }
+    if (!isTimestampedMessage(row.item) || row.item.timestampMs === undefined) {
+      continue;
+    }
+    timestamps.set(row.item.id, row.item.timestampMs);
+  }
+  return timestamps;
+}
+
+function isTimestampedMessage(item: TimelineItem): boolean {
+  return item.kind === "user_message" || ((item.kind === "assistant_message" || item.kind === "agent_message") && item.messagePhase === "final_answer");
+}
 
 function fallbackVirtualItems(rows: TimelineRow[], preferBottom: boolean) {
   const fallbackCount = Math.min(rows.length, 12);

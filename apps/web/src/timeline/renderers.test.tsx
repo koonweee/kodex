@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const reactMarkdownRenderSpy = vi.hoisted(() => vi.fn());
 
@@ -57,6 +57,10 @@ function openDetails(details: HTMLDetailsElement) {
 }
 
 describe("timeline renderer registry", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     reactMarkdownRenderSpy.mockClear();
   });
@@ -338,6 +342,30 @@ describe("timeline renderer registry", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Inspect this exact text"));
     expect(screen.getByRole("button", { name: /copied message/i })).toBeInTheDocument();
     expect(container.querySelector(".lucide-check")).toBeInTheDocument();
+  });
+
+  it("renders the user timestamp before the copy button", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 4, 13, 12, 0, 0));
+    const { container } = render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "user_message",
+            text: "Inspect this exact text",
+            timestampMs: new Date(2026, 4, 13, 9, 8, 7).getTime(),
+          })}
+          toolbarTimestampMs={new Date(2026, 4, 13, 9, 8, 7).getTime()}
+        />
+      </MantineProvider>,
+    );
+
+    const toolbar = container.querySelector(".kodex-message-toolbar");
+    const timestamp = screen.getByText("9:08:07 AM");
+    const copyButton = screen.getByRole("button", { name: /copy message/i });
+    expect(toolbar).toContainElement(timestamp);
+    expect(toolbar).toContainElement(copyButton);
+    expect(timestamp.compareDocumentPosition(copyButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("renders user skill mentions as inline badges from structured ranges only", () => {
@@ -923,6 +951,32 @@ describe("timeline renderer registry", () => {
     expect(container.querySelector(".lucide-check")).toBeInTheDocument();
   });
 
+  it("renders the assistant timestamp after the copy button", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 4, 13, 12, 0, 0));
+    const timestampMs = new Date(2026, 4, 12, 9, 8, 7).getTime();
+    const { container } = render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "assistant_message",
+            messagePhase: "final_answer",
+            text: "Use **bold**.",
+            timestampMs,
+          })}
+          toolbarTimestampMs={timestampMs}
+        />
+      </MantineProvider>,
+    );
+
+    const toolbar = container.querySelector(".kodex-message-toolbar");
+    const timestamp = screen.getByText("yesterday 9:08:07 AM");
+    const copyButton = screen.getByRole("button", { name: /copy message/i });
+    expect(toolbar).toContainElement(timestamp);
+    expect(toolbar).toContainElement(copyButton);
+    expect(copyButton.compareDocumentPosition(timestamp) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("does not render copy controls for non-final assistant messages", () => {
     render(
       <MantineProvider>
@@ -932,11 +986,13 @@ describe("timeline renderer registry", () => {
             status: "running",
             text: "Streaming...",
           })}
+          toolbarTimestampMs={new Date(2026, 4, 13, 9, 8, 7).getTime()}
         />
       </MantineProvider>,
     );
 
     expect(screen.queryByRole("button", { name: /copy message/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("9:08:07 AM")).not.toBeInTheDocument();
   });
 
   it("keeps assistant markdown output stable for links, code, lists, breaks, and skipped HTML", () => {

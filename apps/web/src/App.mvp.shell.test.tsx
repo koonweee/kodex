@@ -558,6 +558,51 @@ describe("MVP shell flows", () => {
     expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
   });
 
+  it("keeps unread project threads visible when their project is collapsed", async () => {
+    const unreadThread = {
+      ...thread,
+      id: "thread-unread",
+      name: "Unread thread",
+      unreadCompletedAgentTurn: true,
+      updatedAt: thread.updatedAt + 1,
+    };
+    const readThread = {
+      ...secondThread,
+      id: "thread-read",
+      name: "Read thread",
+      unreadCompletedAgentTurn: false,
+    };
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [unreadThread, readThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+      }),
+    );
+
+    render(<App />);
+
+    const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
+    expect(within(kodexGroup).getByRole("button", { name: /unread thread/i })).toBeInTheDocument();
+    expect(within(kodexGroup).getByRole("button", { name: /^read thread$/i })).toBeInTheDocument();
+
+    await userEvent.click(within(kodexGroup).getByRole("button", { name: /collapse kodex/i }));
+
+    const unreadRow = within(kodexGroup).getByRole("button", { name: /unread thread/i });
+    const unreadThreadRow = unreadRow.closest(".kodex-thread-list-button");
+    expect(unreadRow).toBeInTheDocument();
+    expect(unreadThreadRow).toBeInTheDocument();
+    expect(within(kodexGroup).queryByRole("button", { name: /^read thread$/i })).not.toBeInTheDocument();
+    expect(
+      within(unreadThreadRow as HTMLElement).getByRole("img", {
+        name: /unread completed agent turn/i,
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("loads pinned threads from the gateway and filters them out of normal project lists", async () => {
     const pinnedThread = { ...thread, pinnedAt: "2026-05-06T12:00:00Z" };
     mockGateway(
@@ -947,8 +992,8 @@ describe("MVP shell flows", () => {
     const runningThreadButton = await screen.findByRole("button", { name: /running thread/i });
     const runningThreadRow = runningThreadButton.closest(".kodex-thread-list-button");
     expect(runningThreadRow).toBeInTheDocument();
-    expect(within(runningThreadRow as HTMLElement).getByLabelText(/thread in progress/i)).toHaveClass(
-      "kodex-thread-progress-indicator",
+    expect(within(runningThreadRow as HTMLElement).getByLabelText(/thread in progress/i)).toContainElement(
+      runningThreadRow?.querySelector(".kodex-thread-progress-indicator"),
     );
     expect(within(runningThreadRow as HTMLElement).queryByRole("button", { name: /archive running thread/i })).not.toBeInTheDocument();
 
@@ -1114,7 +1159,7 @@ describe("MVP shell flows", () => {
     expect(appCss).toMatch(/\.kodex-shell\s*\{[^}]*height:\s*100dvh;[^}]*overflow:\s*hidden;/s);
     expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-main\s*\{[^}]*overflow:\s*hidden;/s);
     expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-thread-sidebar-button\s*\{[^}]*display:\s*inline-flex;/s);
-    expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-sidebar-mobile-header\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*32px\s*32px;/s);
+    expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-sidebar-mobile-header\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*44px\s*44px;/s);
     expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-sidebar-mobile-filter\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(0,\s*1fr\);/s);
   });
 

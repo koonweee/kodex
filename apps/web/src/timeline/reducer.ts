@@ -143,6 +143,7 @@ export function addOptimisticUserMessage(state: TimelineState, input: Optimistic
     text: input.text,
     turnId: input.turnId,
     displayOrder: nextOptimisticDisplayOrder(next.indexes),
+    timestampMs: Date.now(),
     payload: { optimistic: true },
     debugEvents: [],
     images: input.images,
@@ -157,6 +158,7 @@ export function addOptimisticUserMessage(state: TimelineState, input: Optimistic
       ...item,
       id: existing.id,
       displayOrder: existing.displayOrder,
+      timestampMs: existing.timestampMs ?? item.timestampMs,
     });
     return createTimelineStateFromDraft(next);
   }
@@ -252,6 +254,7 @@ function snapshotItemEvent(
   item: ThreadDetailResponse["turns"][number]["items"][number],
   displayOrder: number,
 ): EventEnvelope {
+  const timestampMs = snapshotItemTimestampMs(turn, item);
   return {
     id: `snapshot-${turn.id}-${item.id}`,
     seq: displayOrder,
@@ -262,8 +265,22 @@ function snapshotItemEvent(
     itemId: item.id,
     projectId: null,
     payload: { item: item.rawPayload, itemSnapshot: item },
-    receivedAt: new Date(0).toISOString(),
+    receivedAt: timestampMs !== undefined ? new Date(timestampMs).toISOString() : new Date(0).toISOString(),
   };
+}
+
+function snapshotItemTimestampMs(
+  turn: ThreadDetailResponse["turns"][number],
+  item: ThreadDetailResponse["turns"][number]["items"][number],
+): number | undefined {
+  const itemType = item.itemType.toLowerCase();
+  if (itemType.includes("user")) {
+    return unixSecondsToMs(turn.startedAt);
+  }
+  if (itemType.includes("agent") || itemType.includes("assistant")) {
+    return unixSecondsToMs(turn.completedAt) ?? unixSecondsToMs(turn.startedAt);
+  }
+  return unixSecondsToMs(turn.startedAt);
 }
 
 function snapshotItemShouldSkipLocalUserMessageMatch(
@@ -541,6 +558,7 @@ function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event
     payload: event.payload,
     resultSummary: incoming.resultSummary || existing.resultSummary,
     displayOrder: mergeTimelineDisplayOrder(existing),
+    timestampMs: existing.timestampMs ?? incoming.timestampMs,
     status: mergeTimelineStatus(existing, incoming, event),
     toolName: incoming.toolName || existing.toolName,
     text,

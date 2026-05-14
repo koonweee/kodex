@@ -2,6 +2,7 @@ import type { EventEnvelope } from "../api/client";
 import type { TimelineItem, TimelineStatus } from "./state";
 
 export function createBaseItem(event: EventEnvelope, id: string, kind: string, status: TimelineStatus): TimelineItem {
+  const timestampMs = eventReceivedAtMs(event);
   return {
     id,
     kind,
@@ -9,9 +10,15 @@ export function createBaseItem(event: EventEnvelope, id: string, kind: string, s
     text: "",
     turnId: event.turnId ?? null,
     displayOrder: event.seq,
+    timestampMs,
     payload: event.payload,
     debugEvents: [event],
   };
+}
+
+function eventReceivedAtMs(event: EventEnvelope): number | undefined {
+  const parsed = Date.parse(event.receivedAt);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 export function eventStatus(event: EventEnvelope): TimelineStatus {

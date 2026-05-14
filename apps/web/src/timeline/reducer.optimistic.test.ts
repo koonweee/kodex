@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   addOptimisticUserMessage,
@@ -9,7 +9,13 @@ import {
 import { applyTimelineEvent } from "./reducer.testUtils";
 
 describe("timeline reducer optimistic", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("adds optimistic user messages and reconciles matching app-server events", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-30T00:00:05Z"));
     let state = createTimelineState();
 
     state = addOptimisticUserMessage(state, {
@@ -27,6 +33,7 @@ describe("timeline reducer optimistic", () => {
       source: "optimistic",
       clientRequestId: "client-message-1",
       confirmationState: "sending",
+      timestampMs: Date.parse("2026-04-30T00:00:05Z"),
       text: "Ship it",
     });
 
@@ -50,6 +57,7 @@ describe("timeline reducer optimistic", () => {
       kind: "user_message",
       source: "app_server",
       confirmationState: "sent",
+      timestampMs: Date.parse("2026-04-30T00:00:05Z"),
       text: "Ship it",
       turnId: "turn-1",
     });

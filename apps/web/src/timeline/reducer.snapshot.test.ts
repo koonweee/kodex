@@ -16,6 +16,7 @@ describe("timeline reducer snapshots", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot("First answer", "agent-1"));
 
     expect(state.items.map((item) => item.text)).toEqual(["Hello", "First answer"]);
+    expect(state.items.map((item) => item.timestampMs)).toEqual([1_000, 2_000]);
     expect(state.turns).toMatchObject([{ turnId: "turn-1", itemIds: ["user-1", "agent-1"] }]);
 
     state = applyTimelineSnapshot(state, snapshot("Updated answer", "agent-2"));

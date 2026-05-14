@@ -530,6 +530,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                   }
                   const projectCollapsed = collapsedProjectIds.has(project.id);
                   const showAllProjectThreads = expandedThreadProjectIds.has(project.id);
+                  const displayedProjectThreads = projectMatchesSearch ? projectThreads : visibleProjectThreads;
+                  const collapsedProjectThreads = displayedProjectThreads.filter(threadHasUnreadAgentTurn);
+                  const renderedProjectThreads = projectCollapsed ? collapsedProjectThreads : displayedProjectThreads;
                   const newThreadLabel =
                     project.id === selectedProjectId ? SIDEBAR_TEXT.newThread : `Create thread in ${project.name}`;
                   return (
@@ -581,11 +584,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                           },
                         ]}
                       />
-                      {!projectCollapsed && projectThreads.length > 0 ? (
+                      {renderedProjectThreads.length > 0 ? (
                         <ThreadList
                           approvals={approvals}
                           className="kodex-project-thread-list"
-                          expanded={showAllProjectThreads}
+                          expanded={projectCollapsed || showAllProjectThreads}
                           hoveredThreadActionId={hoveredThreadActionId}
                           onArchiveThread={onArchiveThread}
                           onPinThread={onPinThread}
@@ -605,7 +608,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                           onUnpinThread={onUnpinThread}
                           pendingTitleThreadIds={pendingTitleThreadIds}
                           selectedThreadId={selectedThreadId}
-                          threads={projectMatchesSearch ? projectThreads : visibleProjectThreads}
+                          threads={renderedProjectThreads}
                         />
                       ) : null}
                     </Box>
@@ -712,6 +715,10 @@ function sameOrder(left: string[] | null, right: string[]): boolean {
 
 function threadMatchesSearch(thread: ThreadSummary, query: string, pendingTitleThreadIds: Set<string>): boolean {
   return threadDisplayTitleWithPending(thread, pendingTitleThreadIds).toLowerCase().includes(query);
+}
+
+function threadHasUnreadAgentTurn(thread: ThreadSummary): boolean {
+  return thread.unreadCompletedAgentTurn === true;
 }
 
 function threadDisplayTitleWithPending(thread: ThreadSummary, pendingTitleThreadIds: Set<string>): string {

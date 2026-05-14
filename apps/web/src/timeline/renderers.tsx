@@ -20,6 +20,7 @@ type TimelineRendererOptions = {
   onImageOpen?: (image: ImageLightboxImage) => void;
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   threadId?: string;
+  toolbarTimestampMs?: number;
 };
 type TimelineRenderer = (item: TimelineItem, options: TimelineRendererOptions) => ReactNode;
 
@@ -31,6 +32,7 @@ const rendererRegistry: Record<string, TimelineRenderer> = {
       onMarkdownOpen={options.onMarkdownOpen}
       text={item.text || "No assistant content yet"}
       threadId={options.threadId}
+      toolbarTimestampMs={options.toolbarTimestampMs}
     />
   ),
   assistant_message: (item, options) => (
@@ -40,6 +42,7 @@ const rendererRegistry: Record<string, TimelineRenderer> = {
       onMarkdownOpen={options.onMarkdownOpen}
       text={item.text || "No assistant content yet"}
       threadId={options.threadId}
+      toolbarTimestampMs={options.toolbarTimestampMs}
     />
   ),
   user_message: (item, options) => (
@@ -48,6 +51,7 @@ const rendererRegistry: Record<string, TimelineRenderer> = {
       imagePreviewUrlsByPath={options.imagePreviewUrlsByPath}
       onImageOpen={options.onImageOpen}
       threadId={options.threadId}
+      toolbarTimestampMs={options.toolbarTimestampMs}
     />
   ),
   reasoning_summary: (item) => <ReasoningBlock item={item} />,
@@ -113,6 +117,7 @@ type TimelineItemRendererProps = {
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   showDebug?: boolean;
   threadId?: string;
+  toolbarTimestampMs?: number;
 };
 
 function TimelineItemRendererImpl({
@@ -122,6 +127,7 @@ function TimelineItemRendererImpl({
   onMarkdownOpen,
   showDebug = false,
   threadId,
+  toolbarTimestampMs,
 }: TimelineItemRendererProps) {
   const render = rendererRegistry[item.kind] ?? unknownRenderer;
   const label = labels[item.kind] ?? "Unsupported item";
@@ -147,7 +153,7 @@ function TimelineItemRendererImpl({
           ) : null}
         </Group>
       ) : null}
-      {render(item, { imagePreviewUrlsByPath, onImageOpen, onMarkdownOpen, threadId })}
+      {render(item, { imagePreviewUrlsByPath, onImageOpen, onMarkdownOpen, threadId, toolbarTimestampMs })}
       {showDebug ? <DebugDisclosure item={item} /> : null}
     </Box>
   );
@@ -419,11 +425,13 @@ function UserMessageBubble({
   item,
   onImageOpen,
   threadId,
+  toolbarTimestampMs,
 }: {
   imagePreviewUrlsByPath: Record<string, string>;
   item: TimelineItem;
   onImageOpen?: (image: ImageLightboxImage) => void;
   threadId?: string;
+  toolbarTimestampMs?: number;
 }) {
   const images = item.images ?? [];
   return (
@@ -455,7 +463,7 @@ function UserMessageBubble({
             {optimisticStatusText(item)}
           </Text>
         ) : null}
-        {item.text ? <MessageCopyToolbar align="end" text={item.text} /> : null}
+        {item.text ? <MessageToolbar align="end" text={item.text} timestampMs={toolbarTimestampMs} /> : null}
       </Box>
     </Box>
   );
@@ -672,12 +680,14 @@ const AssistantMessageMarkdown = memo(
     onMarkdownOpen,
     text,
     threadId,
+    toolbarTimestampMs,
   }: {
     item: TimelineItem;
     onImageOpen?: (image: ImageLightboxImage) => void;
     onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
     text: string;
     threadId?: string;
+    toolbarTimestampMs?: number;
   }) {
     return (
       <Box className="kodex-assistant-message-stack">
@@ -688,7 +698,9 @@ const AssistantMessageMarkdown = memo(
           text={text}
           threadId={threadId}
         />
-        {isFinalAssistantMessage(item) ? <MessageCopyToolbar align="start" text={text} /> : null}
+        {isFinalAssistantMessage(item) ? (
+          <MessageToolbar align="start" text={text} timestampMs={toolbarTimestampMs} />
+        ) : null}
       </Box>
     );
   },
@@ -699,11 +711,20 @@ const AssistantMessageMarkdown = memo(
     prev.onImageOpen === next.onImageOpen &&
     prev.onMarkdownOpen === next.onMarkdownOpen &&
     prev.threadId === next.threadId &&
+    prev.toolbarTimestampMs === next.toolbarTimestampMs &&
     prev.text === next.text,
 );
 AssistantMessageMarkdown.displayName = "AssistantMessageMarkdown";
 
-function MessageCopyToolbar({ align, text }: { align: "end" | "start"; text: string }) {
+function MessageToolbar({
+  align,
+  text,
+  timestampMs,
+}: {
+  align: "end" | "start";
+  text: string;
+  timestampMs?: number;
+}) {
   const [copied, setCopied] = useState(false);
   const resetTimerRef = useRef<number | null>(null);
 
@@ -730,22 +751,76 @@ function MessageCopyToolbar({ align, text }: { align: "end" | "start"; text: str
     }, 1_300);
   }
 
+  const copyButton = (
+    <button
+      aria-label={copied ? "Copied message" : "Copy message"}
+      className="kodex-ui-button kodex-ui-icon-button kodex-message-toolbar-item kodex-message-copy-button"
+      onClick={handleCopy}
+      type="button"
+      key="copy"
+    >
+      {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+    </button>
+  );
+  const timestamp = timestampMs !== undefined ? <MessageToolbarTimestamp key="timestamp" timestampMs={timestampMs} /> : null;
+  const items = align === "end" ? [timestamp, copyButton] : [copyButton, timestamp];
+
   return (
     <Box className="kodex-message-toolbar" data-align={align}>
-      <button
-        aria-label={copied ? "Copied message" : "Copy message"}
-        className="kodex-ui-button kodex-ui-icon-button kodex-message-copy-button"
-        onClick={handleCopy}
-        type="button"
-      >
-        {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
-      </button>
+      {items}
     </Box>
   );
 }
 
+function MessageToolbarTimestamp({ timestampMs }: { timestampMs: number }) {
+  const date = new Date(timestampMs);
+  const label = formatMessageToolbarTimestamp(date, new Date());
+  if (!label) {
+    return null;
+  }
+  return (
+    <span
+      aria-label={`Message timestamp ${date.toLocaleString()}`}
+      className="kodex-message-toolbar-item kodex-message-timestamp"
+      title={date.toLocaleString()}
+    >
+      {label}
+    </span>
+  );
+}
+
+function formatMessageToolbarTimestamp(date: Date, now: Date): string {
+  if (!Number.isFinite(date.getTime())) {
+    return "";
+  }
+  const time = formatMessageToolbarTime(date);
+  const dateDay = localDayStart(date).getTime();
+  const nowDay = localDayStart(now).getTime();
+  const dayDiff = Math.max(0, Math.floor((nowDay - dateDay) / 86_400_000));
+  if (dayDiff === 0) {
+    return time;
+  }
+  if (dayDiff === 1) {
+    return `yesterday ${time}`;
+  }
+  return `${dayDiff}d ago ${time}`;
+}
+
+function formatMessageToolbarTime(date: Date): string {
+  const hours = date.getHours();
+  const displayHours = hours % 12 || 12;
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  const meridiem = hours < 12 ? "AM" : "PM";
+  return `${displayHours}:${minutes}:${seconds} ${meridiem}`;
+}
+
+function localDayStart(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
 function isFinalAssistantMessage(item: TimelineItem): boolean {
-  return item.kind === "assistant_message" && item.messagePhase === "final_answer";
+  return (item.kind === "assistant_message" || item.kind === "agent_message") && item.messagePhase === "final_answer";
 }
 
 function ReasoningBlock({ item }: { item: TimelineItem }) {
