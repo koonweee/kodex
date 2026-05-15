@@ -156,7 +156,7 @@ function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
   return routes;
 }
 
-type TestThreadSummary = typeof thread & Record<string, unknown>;
+type TestThreadSummary = Omit<typeof thread, "name"> & { name: string | null } & Record<string, unknown>;
 
 async function threadDetailFromSnapshot(
   routes: GatewayRouteMap,

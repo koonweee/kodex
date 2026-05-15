@@ -114,8 +114,13 @@ export function mergeChatThreadData(
   if (!current || current.length === 0) {
     return loadedThreads;
   }
+  const currentById = threadsById(current);
   const loadedIds = new Set(loadedThreads.map((thread) => thread.id));
-  return [...current.filter((thread) => !loadedIds.has(thread.id)), ...loadedThreads];
+  const mergedLoadedThreads = loadedThreads.map((loadedThread) => {
+    const currentThread = currentById.get(loadedThread.id);
+    return currentThread && currentThread.updatedAt > loadedThread.updatedAt ? currentThread : loadedThread;
+  });
+  return [...current.filter((thread) => !loadedIds.has(thread.id)), ...mergedLoadedThreads];
 }
 
 export function setPinnedThreadSnapshot(queryClient: QueryClient, loadedThreads: ThreadSummary[]) {
@@ -190,8 +195,13 @@ function mergeProjectThreads(
   selectedThreadId: string | null,
 ): ThreadSummary[] {
   const hydratedThreads = mergeRouteSelectedThreadIntoList(loadedThreads, routeSelectedThread, selectedThreadId);
+  const currentById = threadsById(current);
+  const mergedHydratedThreads = hydratedThreads.map((hydratedThread) => {
+    const currentThread = currentById.get(hydratedThread.id);
+    return currentThread && currentThread.updatedAt > hydratedThread.updatedAt ? currentThread : hydratedThread;
+  });
   const hydratedIds = new Set(hydratedThreads.map((thread) => thread.id));
-  return [...current.filter((thread) => !hydratedIds.has(thread.id)), ...hydratedThreads];
+  return [...current.filter((thread) => !hydratedIds.has(thread.id)), ...mergedHydratedThreads];
 }
 
 function mergeRouteSelectedThreadIntoList(

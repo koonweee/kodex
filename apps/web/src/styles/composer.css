@@ -636,7 +636,9 @@
   .kodex-composer-hero {
     font-size: 30px;
   }
+}
 
+@media (max-width: 700px) and (pointer: coarse), (max-width: 700px) and (any-pointer: coarse) {
   .kodex-run-settings-menu {
     position: fixed !important;
     top: auto !important;

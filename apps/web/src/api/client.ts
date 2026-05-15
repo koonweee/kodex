@@ -46,6 +46,7 @@ export type SkillMetadata = components["schemas"]["SkillMetadata"];
 export type SkillsCatalogResponse = components["schemas"]["SkillsCatalogResponse"];
 export type ThreadRead = components["schemas"]["ThreadRead"];
 export type ThreadDetailResponse = components["schemas"]["ThreadDetailResponse"];
+export type RenameThreadRequest = components["schemas"]["RenameThreadRequest"];
 export type ThreadSubagentListResponse = components["schemas"]["ThreadSubagentListResponse"];
 export type ThreadSubagentSummary = components["schemas"]["ThreadSubagentSummary"];
 export type TextElement = components["schemas"]["TextElement"];
@@ -291,6 +292,13 @@ export async function listThreadSubagents(threadId: string): Promise<ThreadSubag
 
 export async function archiveThread(threadId: string): Promise<void> {
   await unwrap(api.POST("/v1/threads/{threadId}/archive", { params: { path: { threadId } } }));
+}
+
+export async function renameThread(threadId: string, name: string): Promise<ThreadSummary> {
+  const response = await unwrap(
+    api.PATCH("/v1/threads/{threadId}/name", { params: { path: { threadId } }, body: { name } }),
+  );
+  return response.thread;
 }
 
 export async function pinThread(threadId: string): Promise<string | null> {

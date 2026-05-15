@@ -55,6 +55,14 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - When a feature needs app-server raw payload interpretation, isolate it in a named normalization helper and cover it with focused tests.
 - Use plain Mantine controls first for baseline form, menu, modal, drawer, button, badge, tab, segmented-control, and alert chrome. Add app-wide control defaults in `apps/web/src/theme/components.ts` and `apps/web/src/styles/mantine-components.css`; keep feature CSS for layout, density, and one-off behavior.
 
+## Frontend Responsive Styling
+
+- Treat viewport width and input modality as separate concerns. Use width breakpoints for structural layout and content fit, such as the single-panel shell, table-to-card transforms, stacked forms, hidden side panes, and bounded image grids.
+- Use shared frontend input-capability helpers or hooks for touch/coarse-pointer decisions instead of ad hoc `matchMedia` or `navigator.maxTouchPoints` checks in feature components.
+- Scope touch ergonomics to touch/coarse-pointer devices: 44px tap targets, 16px editable inputs for iOS zoom avoidance, safe-area and visual-viewport keyboard handling, touch scrolling, bottom sheets, and controls that must be visible without hover.
+- Keep fine-pointer hover affordances behind hover-capable media queries or explicit pointer handling, and make sure touch users have a non-hover path to the same actions.
+- When changing responsive UI behavior, test at least desktop fine pointer, narrow fine pointer, and narrow touch/mobile shapes if the feature has both layout and input-modality behavior.
+
 ## Multi-Client State Ownership
 
 - Design the web client as a thin projection of gateway-owned state. Any state that must be correct across two browser tabs, reloads, reconnects, or future clients must live in the gateway or upstream app-server, not only in React state.

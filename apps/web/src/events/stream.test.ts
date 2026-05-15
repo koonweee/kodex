@@ -107,7 +107,7 @@ describe("event stream client", () => {
       id: "event-7",
       seq: 7,
       kind: "codex.notification",
-      codexMethod: "thread/nameUpdated",
+      codexMethod: "thread/name/updated",
       itemId: null,
       threadId: "thread-1",
       turnId: null,
@@ -116,7 +116,7 @@ describe("event stream client", () => {
       receivedAt: "2026-04-30T00:00:00Z",
     });
 
-    expect(received).toEqual(["thread/nameUpdated"]);
+    expect(received).toEqual(["thread/name/updated"]);
     client.close();
   });
 

@@ -13,7 +13,6 @@ import {
 import { useMediaQuery } from "@mantine/hooks";
 import {
   Archive,
-  Clock,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -41,6 +40,7 @@ import {
 import type { AccountResponse, Approval, Project, ThreadSummary } from "../api/client";
 import type { UsageLimitLines } from "../account/rateLimits";
 import { SidebarAccountFooter, type LoginState } from "../account/SidebarAccountFooter";
+import { useInputCapabilities } from "../shared/inputCapabilities";
 import { EmptyPanel } from "../ui/EmptyPanel";
 import {
   threadDisplayTitle,
@@ -68,7 +68,6 @@ const SIDEBAR_TEXT = {
   newThread: "New thread",
   noProjectsText: "Create a project to begin.",
   noProjectsTitle: "No projects",
-  automations: "Automations",
   pinned: "Pinned",
   pinThread: "Pin thread",
   projects: "Projects",
@@ -86,6 +85,7 @@ const SIDEBAR_TEXT = {
 };
 
 const VISIBLE_THREAD_LIMIT = 5;
+type SidebarScope = "projects" | "chats";
 type SidebarDataLoadState = "error" | "loaded" | "loading" | "refetching";
 
 export type WorkspaceSidebarDataState = {
@@ -199,12 +199,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   );
   const [chatThreadsExpanded, setChatThreadsExpanded] = useState(false);
   const [expandedThreadProjectIds, setExpandedThreadProjectIds] = useState<Set<string>>(() => new Set());
-  const [mobileSidebarScope, setMobileSidebarScope] = useState<"projects" | "chats">("projects");
+  const [sidebarScope, setSidebarScope] = useState<SidebarScope>("projects");
   const [previewProjectIds, setPreviewProjectIds] = useState<string[] | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const isMobileSidebar = useMediaQuery("(max-width: 900px)", false);
-  const hasCoarsePointer = useMediaQuery("(any-pointer: coarse)", false);
-  const useTouchDensity = isMobileSidebar || hasCoarsePointer;
+  const useTouchDensity = useInputCapabilities().hasTouchInput;
   const projectGroupRefs = useRef<Map<string, HTMLElement>>(new Map());
   const pendingProjectAnimationRects = useRef<Map<string, DOMRect> | null>(null);
   const displayedProjects = useMemo(
@@ -219,10 +218,14 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     () => sortPinnedThreadsForSidebar(pinnedThreads, approvals, pendingTitleThreadIds),
     [approvals, pendingTitleThreadIds, pinnedThreads],
   );
+  const projectScopeLookup = useMemo(() => sidebarProjectScopeLookup(projects), [projects]);
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const scopedPinnedThreads = sortedPinnedThreads.filter((thread) =>
+    pinnedThreadMatchesSidebarScope(thread, sidebarScope, projectScopeLookup),
+  );
   const visiblePinnedThreads = normalizedSearchQuery
-    ? sortedPinnedThreads.filter((thread) => threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds))
-    : sortedPinnedThreads;
+    ? scopedPinnedThreads.filter((thread) => threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds))
+    : scopedPinnedThreads;
   const visibleChatThreads = normalizedSearchQuery
     ? sortedChatThreads.filter((thread) => threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds))
     : sortedChatThreads;
@@ -339,6 +342,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   }
 
   function handleHeaderCreateChat() {
+    setSidebarScope("chats");
     onCreateChat();
   }
 
@@ -348,7 +352,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       p="sm"
       className="kodex-sidebar"
       data-density={useTouchDensity ? "touch" : "compact"}
-      data-mobile-scope={mobileSidebarScope}
+      data-main-pane={selectedMainPane}
+      data-sidebar-scope={sidebarScope}
       style={{ width: sidebarWidth }}
     >
       <Stack gap={isMobileSidebar ? "md" : "lg"} h="100%">
@@ -417,19 +422,21 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             </ActionIcon>
           </Tooltip>
         </Box>
-        <Box className="kodex-sidebar-mobile-filter">
+        <Box className="kodex-sidebar-scope-switch">
           <button
+            aria-pressed={sidebarScope === "projects"}
             className="kodex-ui-button kodex-sidebar-filter-pill"
-            data-active={mobileSidebarScope === "projects" ? "true" : undefined}
-            onClick={() => setMobileSidebarScope("projects")}
+            data-active={sidebarScope === "projects" ? "true" : undefined}
+            onClick={() => setSidebarScope("projects")}
             type="button"
           >
             {SIDEBAR_TEXT.projects}
           </button>
           <button
+            aria-pressed={sidebarScope === "chats"}
             className="kodex-ui-button kodex-sidebar-filter-pill"
-            data-active={mobileSidebarScope === "chats" ? "true" : undefined}
-            onClick={() => setMobileSidebarScope("chats")}
+            data-active={sidebarScope === "chats" ? "true" : undefined}
+            onClick={() => setSidebarScope("chats")}
             type="button"
           >
             {SIDEBAR_TEXT.chats}
@@ -441,21 +448,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           data-pinned-state={dataState.pinnedThreads}
           data-projects-state={dataState.projects}
         >
-          <SidebarRowFrame
-            className="kodex-ui-selectable"
-            leadingIcon={<Clock />}
-            rootProps={{ "data-active": selectedMainPane === "automations" ? "true" : undefined }}
-          >
-            <button
-              className="kodex-ui-button kodex-sidebar-row-main"
-              onClick={onSelectAutomations}
-              type="button"
-            >
-              <Text component="span" className="kodex-sidebar-row-label" fw={400} size="xs" lineClamp={1}>
-                {SIDEBAR_TEXT.automations}
-              </Text>
-            </button>
-          </SidebarRowFrame>
           {visiblePinnedThreads.length > 0 ? (
             <Box className="kodex-pinned-section">
               <SidebarSectionDisclosureRow
@@ -483,203 +475,211 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
               ) : null}
             </Box>
           ) : null}
-          <SidebarSectionDisclosureRow
-            className="kodex-projects-section-row"
-            collapsed={projectsSectionCollapsed}
-            label={SIDEBAR_TEXT.projects}
-            onToggle={() => handleSectionCollapseToggle("projectsSectionCollapsed")}
-            trailingActions={[
-              {
-                icon: <FolderPlus />,
-                label: SIDEBAR_TEXT.newProject,
-                onClick: () => onProjectFormOpenChange((open) => !open),
-              },
-            ]}
-          />
-          {!projectsSectionCollapsed && projectFormOpen ? (
-            <Box
-              component="form"
-              className="kodex-project-form"
-              onSubmit={(event: FormEvent) => {
-                event.preventDefault();
-                onCreateProject();
-              }}
-            >
-              <TextInput
-                label={SIDEBAR_TEXT.cwd}
-                required
-                value={projectCwd}
-                onChange={(event) => onProjectCwdChange(event.currentTarget.value)}
+          {sidebarScope === "projects" ? (
+            <>
+              <SidebarSectionDisclosureRow
+                className="kodex-projects-section-row"
+                collapsed={projectsSectionCollapsed}
+                label={SIDEBAR_TEXT.projects}
+                onToggle={() => handleSectionCollapseToggle("projectsSectionCollapsed")}
+                trailingActions={[
+                  {
+                    icon: <FolderPlus />,
+                    label: SIDEBAR_TEXT.newProject,
+                    onClick: () => onProjectFormOpenChange((open) => !open),
+                  },
+                ]}
               />
-              {projectDirectoryCreatePending ? (
-                <Group className="kodex-project-create-confirm" gap="xs" wrap="nowrap">
-                  <Button size="xs" type="button" onClick={() => onCreateProject({ createDirectory: true })}>
-                    {`Create ${projectDirectoryDisplayPath(projectCwd)}?`}
-                  </Button>
-                  <Button
-                    aria-label="Cancel directory create"
-                    color="gray"
-                    onClick={onProjectDirectoryCreateCancel}
-                    size="xs"
-                    type="button"
-                    variant="light"
-                  >
-                    <X size={14} />
-                  </Button>
-                </Group>
-              ) : (
-                <Button type="submit" size="xs" disabled={!projectCwd.trim()}>
-                  {SIDEBAR_TEXT.createProject}
-                </Button>
-              )}
+              {!projectsSectionCollapsed && projectFormOpen ? (
+                <Box
+                  component="form"
+                  className="kodex-project-form"
+                  onSubmit={(event: FormEvent) => {
+                    event.preventDefault();
+                    onCreateProject();
+                  }}
+                >
+                  <TextInput
+                    label={SIDEBAR_TEXT.cwd}
+                    required
+                    value={projectCwd}
+                    onChange={(event) => onProjectCwdChange(event.currentTarget.value)}
+                  />
+                  {projectDirectoryCreatePending ? (
+                    <Group className="kodex-project-create-confirm" gap="xs" wrap="nowrap">
+                      <Button size="xs" type="button" onClick={() => onCreateProject({ createDirectory: true })}>
+                        {`Create ${projectDirectoryDisplayPath(projectCwd)}?`}
+                      </Button>
+                      <Button
+                        aria-label="Cancel directory create"
+                        color="gray"
+                        onClick={onProjectDirectoryCreateCancel}
+                        size="xs"
+                        type="button"
+                        variant="light"
+                      >
+                        <X size={14} />
+                      </Button>
+                    </Group>
+                  ) : (
+                    <Button type="submit" size="xs" disabled={!projectCwd.trim()}>
+                      {SIDEBAR_TEXT.createProject}
+                    </Button>
+                  )}
+                </Box>
+              ) : null}
+              {!projectsSectionCollapsed ? (
+                <Stack gap="sm" className="kodex-project-tree">
+                  {projects.length === 0 && dataState.projects === "loaded" ? (
+                    <EmptyPanel
+                      icon={<Inbox size={20} />}
+                      title={SIDEBAR_TEXT.noProjectsTitle}
+                      text={SIDEBAR_TEXT.noProjectsText}
+                    />
+                  ) : projects.length > 0 ? (
+                    displayedProjects.map((project) => {
+                      const projectThreads = sortThreadsForSidebar(
+                        threadsByProjectId[project.id] ?? [],
+                        approvals,
+                        pendingTitleThreadIds,
+                      );
+                      const visibleProjectThreads = normalizedSearchQuery
+                        ? projectThreads.filter((thread) =>
+                            threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds),
+                          )
+                        : projectThreads;
+                      const projectMatchesSearch = project.name.toLowerCase().includes(normalizedSearchQuery);
+                      if (normalizedSearchQuery && !projectMatchesSearch && visibleProjectThreads.length === 0) {
+                        return null;
+                      }
+                      const projectCollapsed = collapsedProjectIds.has(project.id);
+                      const showAllProjectThreads = expandedThreadProjectIds.has(project.id);
+                      const displayedProjectThreads = projectMatchesSearch ? projectThreads : visibleProjectThreads;
+                      const collapsedProjectThreads = displayedProjectThreads.filter((thread) =>
+                        threadSurfacesWhenProjectCollapsed(thread, selectedThreadId),
+                      );
+                      const renderedProjectThreads = projectCollapsed ? collapsedProjectThreads : displayedProjectThreads;
+                      const newThreadLabel =
+                        project.id === selectedProjectId ? SIDEBAR_TEXT.newThread : `Create thread in ${project.name}`;
+                      return (
+                        <Box
+                          className="kodex-project-group"
+                          data-threads-state={dataState.projectThreadsById[project.id] ?? "loading"}
+                          key={project.id}
+                          ref={(element: HTMLDivElement | null) => {
+                            if (element) {
+                              projectGroupRefs.current.set(project.id, element);
+                            } else {
+                              projectGroupRefs.current.delete(project.id);
+                            }
+                          }}
+                          role="group"
+                          aria-label={project.name}
+                          onDrop={(event) => handleProjectDrop(event, project.id)}
+                        >
+                          <SidebarActionDisclosureRow
+                            className="kodex-project-row"
+                            collapsed={projectCollapsed}
+                            disclosureLabel={`${projectCollapsed ? "Expand" : "Collapse"} ${project.name}`}
+                            label={project.name}
+                            leadingIcon={
+                              projectCollapsed ? (
+                                <Folder className="kodex-project-folder-icon" data-collapsed="true" />
+                              ) : (
+                                <FolderOpen className="kodex-project-folder-icon" />
+                              )
+                            }
+                            mainClassName="kodex-ui-selectable kodex-project-title"
+                            onToggle={() => handleProjectCollapseToggle(project.id)}
+                            rootProps={{
+                              draggable: true,
+                              onDragEnd: handleProjectDragEnd,
+                              onDragOver: (event) => handleProjectDragOver(event, project.id),
+                              onDragStart: (event) => handleProjectDragStart(event, project.id),
+                            }}
+                            trailingActions={[
+                              {
+                                icon: <Settings />,
+                                label: `Project settings for ${project.name}`,
+                                onClick: () => onSelectProjectSettings(project.id),
+                              },
+                              {
+                                icon: <SquarePen />,
+                                label: newThreadLabel,
+                                onClick: () => onCreateThread(project.id),
+                              },
+                            ]}
+                          />
+                          {renderedProjectThreads.length > 0 ? (
+                            <ThreadList
+                              approvals={approvals}
+                              className="kodex-project-thread-list"
+                              expanded={projectCollapsed || showAllProjectThreads}
+                              hoveredThreadActionId={hoveredThreadActionId}
+                              onArchiveThread={onArchiveThread}
+                              onPinThread={onPinThread}
+                              onSelectThread={(threadId) => onSelectThread(project.id, threadId)}
+                              onThreadActionHoverChange={onThreadActionHoverChange}
+                              onToggleExpanded={() => {
+                                setExpandedThreadProjectIds((current) => {
+                                  const next = new Set(current);
+                                  if (next.has(project.id)) {
+                                    next.delete(project.id);
+                                  } else {
+                                    next.add(project.id);
+                                  }
+                                  return next;
+                                });
+                              }}
+                              onUnpinThread={onUnpinThread}
+                              pendingTitleThreadIds={pendingTitleThreadIds}
+                              selectedThreadId={selectedThreadId}
+                              threads={renderedProjectThreads}
+                            />
+                          ) : null}
+                        </Box>
+                      );
+                    })
+                  ) : null}
+                </Stack>
+              ) : null}
+            </>
+          ) : null}
+          {sidebarScope === "chats" ? (
+            <Box className="kodex-sidebar-section">
+              <SidebarSectionDisclosureRow
+                className="kodex-chats-section-row"
+                collapsed={chatsSectionCollapsed}
+                label={SIDEBAR_TEXT.chats}
+                onToggle={() => handleSectionCollapseToggle("chatsSectionCollapsed")}
+                trailingActions={[{ icon: <SquarePen />, label: SIDEBAR_TEXT.newChat, onClick: onCreateChat }]}
+              />
+              {!chatsSectionCollapsed && visibleChatThreads.length > 0 ? (
+                <ThreadList
+                  approvals={approvals}
+                  className="kodex-chat-thread-list"
+                  expanded={chatThreadsExpanded}
+                  hoveredThreadActionId={hoveredThreadActionId}
+                  onArchiveThread={onArchiveThread}
+                  onPinThread={onPinThread}
+                  onSelectThread={onSelectChatThread}
+                  onThreadActionHoverChange={onThreadActionHoverChange}
+                  onToggleExpanded={() => setChatThreadsExpanded((expanded) => !expanded)}
+                  onUnpinThread={onUnpinThread}
+                  pendingTitleThreadIds={pendingTitleThreadIds}
+                  selectedThreadId={selectedThreadId}
+                  threads={visibleChatThreads}
+                />
+              ) : !chatsSectionCollapsed && dataState.chatThreads === "loaded" ? (
+                <Box className="kodex-chat-empty">
+                  <MessageSquare size={14} />
+                  <Text c="dimmed" size="xs">
+                    No chats
+                  </Text>
+                </Box>
+              ) : null}
             </Box>
           ) : null}
-          {!projectsSectionCollapsed ? (
-            <Stack gap="sm" className="kodex-project-tree">
-              {projects.length === 0 && dataState.projects === "loaded" ? (
-                <EmptyPanel icon={<Inbox size={20} />} title={SIDEBAR_TEXT.noProjectsTitle} text={SIDEBAR_TEXT.noProjectsText} />
-              ) : projects.length > 0 ? (
-                displayedProjects.map((project) => {
-                  const projectThreads = sortThreadsForSidebar(
-                    threadsByProjectId[project.id] ?? [],
-                    approvals,
-                    pendingTitleThreadIds,
-                  );
-                  const visibleProjectThreads = normalizedSearchQuery
-                    ? projectThreads.filter((thread) =>
-                        threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds),
-                      )
-                    : projectThreads;
-                  const projectMatchesSearch = project.name.toLowerCase().includes(normalizedSearchQuery);
-                  if (
-                    normalizedSearchQuery &&
-                    !projectMatchesSearch &&
-                    visibleProjectThreads.length === 0
-                  ) {
-                    return null;
-                  }
-                  const projectCollapsed = collapsedProjectIds.has(project.id);
-                  const showAllProjectThreads = expandedThreadProjectIds.has(project.id);
-                  const displayedProjectThreads = projectMatchesSearch ? projectThreads : visibleProjectThreads;
-                  const collapsedProjectThreads = displayedProjectThreads.filter(threadSurfacesWhenProjectCollapsed);
-                  const renderedProjectThreads = projectCollapsed ? collapsedProjectThreads : displayedProjectThreads;
-                  const newThreadLabel =
-                    project.id === selectedProjectId ? SIDEBAR_TEXT.newThread : `Create thread in ${project.name}`;
-                  return (
-                    <Box
-                      className="kodex-project-group"
-                      data-threads-state={dataState.projectThreadsById[project.id] ?? "loading"}
-                      key={project.id}
-                      ref={(element: HTMLDivElement | null) => {
-                        if (element) {
-                          projectGroupRefs.current.set(project.id, element);
-                        } else {
-                          projectGroupRefs.current.delete(project.id);
-                        }
-                      }}
-                      role="group"
-                      aria-label={project.name}
-                      onDrop={(event) => handleProjectDrop(event, project.id)}
-                    >
-                      <SidebarActionDisclosureRow
-                        className="kodex-project-row"
-                        collapsed={projectCollapsed}
-                        disclosureLabel={`${projectCollapsed ? "Expand" : "Collapse"} ${project.name}`}
-                        label={project.name}
-                        leadingIcon={
-                          projectCollapsed ? (
-                            <Folder className="kodex-project-folder-icon" data-collapsed="true" />
-                          ) : (
-                            <FolderOpen className="kodex-project-folder-icon" />
-                          )
-                        }
-                        mainClassName="kodex-ui-selectable kodex-project-title"
-                        onToggle={() => handleProjectCollapseToggle(project.id)}
-                        rootProps={{
-                          draggable: true,
-                          onDragEnd: handleProjectDragEnd,
-                          onDragOver: (event) => handleProjectDragOver(event, project.id),
-                          onDragStart: (event) => handleProjectDragStart(event, project.id),
-                        }}
-                        trailingActions={[
-                          {
-                            icon: <Settings />,
-                            label: `Project settings for ${project.name}`,
-                            onClick: () => onSelectProjectSettings(project.id),
-                          },
-                          {
-                            icon: <SquarePen />,
-                            label: newThreadLabel,
-                            onClick: () => onCreateThread(project.id),
-                          },
-                        ]}
-                      />
-                      {renderedProjectThreads.length > 0 ? (
-                        <ThreadList
-                          approvals={approvals}
-                          className="kodex-project-thread-list"
-                          expanded={projectCollapsed || showAllProjectThreads}
-                          hoveredThreadActionId={hoveredThreadActionId}
-                          onArchiveThread={onArchiveThread}
-                          onPinThread={onPinThread}
-                          onSelectThread={(threadId) => onSelectThread(project.id, threadId)}
-                          onThreadActionHoverChange={onThreadActionHoverChange}
-                          onToggleExpanded={() => {
-                            setExpandedThreadProjectIds((current) => {
-                              const next = new Set(current);
-                              if (next.has(project.id)) {
-                                next.delete(project.id);
-                              } else {
-                                next.add(project.id);
-                              }
-                              return next;
-                            });
-                          }}
-                          onUnpinThread={onUnpinThread}
-                          pendingTitleThreadIds={pendingTitleThreadIds}
-                          selectedThreadId={selectedThreadId}
-                          threads={renderedProjectThreads}
-                        />
-                      ) : null}
-                    </Box>
-                  );
-                })
-              ) : null}
-            </Stack>
-          ) : null}
-          <Box className="kodex-sidebar-section">
-            <SidebarSectionDisclosureRow
-              className="kodex-chats-section-row"
-              collapsed={chatsSectionCollapsed}
-              label={SIDEBAR_TEXT.chats}
-              onToggle={() => handleSectionCollapseToggle("chatsSectionCollapsed")}
-              trailingActions={[{ icon: <SquarePen />, label: SIDEBAR_TEXT.newChat, onClick: onCreateChat }]}
-            />
-            {!chatsSectionCollapsed && visibleChatThreads.length > 0 ? (
-              <ThreadList
-                approvals={approvals}
-                className="kodex-chat-thread-list"
-                expanded={chatThreadsExpanded}
-                hoveredThreadActionId={hoveredThreadActionId}
-                onArchiveThread={onArchiveThread}
-                onPinThread={onPinThread}
-                onSelectThread={onSelectChatThread}
-                onThreadActionHoverChange={onThreadActionHoverChange}
-                onToggleExpanded={() => setChatThreadsExpanded((expanded) => !expanded)}
-                onUnpinThread={onUnpinThread}
-                pendingTitleThreadIds={pendingTitleThreadIds}
-                selectedThreadId={selectedThreadId}
-                threads={visibleChatThreads}
-              />
-            ) : !chatsSectionCollapsed && dataState.chatThreads === "loaded" ? (
-              <Box className="kodex-chat-empty">
-                <MessageSquare size={14} />
-                <Text c="dimmed" size="xs">
-                  No chats
-                </Text>
-              </Box>
-            ) : null}
-          </Box>
         </Box>
         <SidebarAccountFooter
           account={account}
@@ -687,6 +687,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           onCancelLogin={onCancelLogin}
           onLogin={onLogin}
           onLogout={onLogout}
+          onSelectAutomations={onSelectAutomations}
           onOpenPreferences={onOpenPreferences}
           onShowDebugEventsChange={onShowDebugEventsChange}
           showDebugEvents={showDebugEvents}
@@ -718,6 +719,30 @@ function projectDirectoryDisplayPath(projectCwd: string): string {
   return `~/${cwd}`;
 }
 
+function sidebarProjectScopeLookup(projects: Project[]): { projectCwds: Set<string>; projectIds: Set<string> } {
+  return {
+    projectCwds: new Set(projects.map((project) => project.cwd)),
+    projectIds: new Set(projects.map((project) => project.id)),
+  };
+}
+
+function pinnedThreadMatchesSidebarScope(
+  thread: ThreadSummary,
+  scope: SidebarScope,
+  lookup: { projectCwds: Set<string>; projectIds: Set<string> },
+): boolean {
+  const isProjectThread = pinnedThreadBelongsToProject(thread, lookup);
+  return scope === "projects" ? isProjectThread : !isProjectThread;
+}
+
+function pinnedThreadBelongsToProject(
+  thread: ThreadSummary,
+  { projectCwds, projectIds }: { projectCwds: Set<string>; projectIds: Set<string> },
+): boolean {
+  const projectId = (thread as { projectId?: unknown }).projectId;
+  return (typeof projectId === "string" && projectIds.has(projectId)) || projectCwds.has(thread.cwd);
+}
+
 function projectsFromPreviewOrder(projects: Project[], previewProjectIds: string[] | null): Project[] {
   if (!previewProjectIds) {
     return projects;
@@ -747,8 +772,8 @@ function threadMatchesSearch(thread: ThreadSummary, query: string, pendingTitleT
   return threadDisplayTitleWithPending(thread, pendingTitleThreadIds).toLowerCase().includes(query);
 }
 
-function threadSurfacesWhenProjectCollapsed(thread: ThreadSummary): boolean {
-  return thread.unreadCompletedAgentTurn === true || threadInProgress(thread);
+function threadSurfacesWhenProjectCollapsed(thread: ThreadSummary, selectedThreadId: string | null): boolean {
+  return thread.id === selectedThreadId || thread.unreadCompletedAgentTurn === true || threadInProgress(thread);
 }
 
 function threadDisplayTitleWithPending(thread: ThreadSummary, pendingTitleThreadIds: Set<string>): string {

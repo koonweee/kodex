@@ -46,10 +46,21 @@
   flex: 0 0 auto;
 }
 
-.kodex-sidebar-mobile-header,
-.kodex-sidebar-mobile-filter {
+.kodex-sidebar-mobile-header {
   flex: 0 0 auto;
   display: none;
+}
+
+.kodex-sidebar-scope-switch {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 2px;
+  align-items: center;
+  margin: -4px 6px -2px;
+  border-radius: var(--kodex-radius-md);
+  padding: 3px;
+  background: var(--kodex-bg-raised-muted);
 }
 
 .kodex-sidebar-mobile-title {
@@ -74,6 +85,17 @@
 .kodex-sidebar-filter-pill[data-active="true"] {
   background: var(--kodex-bg-selected);
   color: var(--kodex-text-primary);
+}
+
+.kodex-sidebar[data-sidebar-scope="projects"] .kodex-sidebar-section,
+.kodex-sidebar[data-sidebar-scope="chats"] .kodex-projects-section-row,
+.kodex-sidebar[data-sidebar-scope="chats"] .kodex-project-tree,
+.kodex-sidebar[data-sidebar-scope="chats"] .kodex-project-form {
+  display: none;
+}
+
+.kodex-sidebar[data-sidebar-scope="chats"] .kodex-sidebar-section {
+  margin-top: 0;
 }
 
 .kodex-sidebar-search {
@@ -556,20 +578,8 @@
     padding: 0 6px;
   }
 
-  .kodex-sidebar-mobile-action {
-    width: 44px;
-    height: 44px;
-  }
-
-  .kodex-sidebar-mobile-filter {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 2px;
-    align-items: center;
+  .kodex-sidebar-scope-switch {
     margin: 0 6px;
-    border-radius: var(--kodex-radius-md);
-    padding: 3px;
-    background: var(--kodex-bg-raised-muted);
   }
 
   .kodex-sidebar-search {
@@ -578,30 +588,12 @@
   }
 
   .kodex-sidebar-search input {
-    min-height: 34px;
-    font-size: 16px;
     line-height: 1.2;
   }
 
   .kodex-sidebar-filter-pill {
     justify-content: center;
     width: 100%;
-    padding: 8px 10px;
-  }
-
-  .kodex-sidebar[data-mobile-scope="projects"] .kodex-sidebar-section,
-  .kodex-sidebar[data-mobile-scope="chats"] .kodex-projects-section-row,
-  .kodex-sidebar[data-mobile-scope="chats"] .kodex-project-tree,
-  .kodex-sidebar[data-mobile-scope="chats"] .kodex-project-form {
-    display: none;
-  }
-
-  .kodex-sidebar[data-mobile-scope="chats"] .kodex-sidebar-section {
-    margin-top: 0;
-  }
-
-  .kodex-sidebar-row-disclosure {
-    opacity: 1;
   }
 
   .kodex-project-title .kodex-sidebar-row-label,
@@ -624,6 +616,27 @@
   .kodex-pinned-thread-list,
   .kodex-chat-thread-list {
     gap: 4px !important;
+  }
+
+}
+
+@media (pointer: coarse), (any-pointer: coarse) {
+  .kodex-sidebar-mobile-action {
+    width: 44px;
+    height: 44px;
+  }
+
+  .kodex-sidebar-search input {
+    min-height: 34px;
+    font-size: 16px;
+  }
+
+  .kodex-sidebar-filter-pill {
+    padding: 8px 10px;
+  }
+
+  .kodex-sidebar-row-disclosure {
+    opacity: 1;
   }
 
   .kodex-thread-pin-button {

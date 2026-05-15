@@ -74,7 +74,7 @@ describe("Mobile composer panel", () => {
 
     await userEvent.click(screen.getByLabelText(/message composer/i));
 
-    expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile");
+    expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "desktop");
     expect(screen.queryByRole("dialog", { name: /compose/i })).not.toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toHaveFocus();
   });

@@ -1,10 +1,11 @@
-import { ActionIcon, Badge, Box, Button, Group, Menu, Skeleton, Title, Tooltip } from "@mantine/core";
-import { AlertCircle, Archive, Bot, MoreHorizontal, PanelLeftOpen, PanelRightOpen, Pin, PinOff } from "lucide-react";
-import type { ReactNode } from "react";
+import { ActionIcon, Badge, Box, Button, Group, Menu, Modal, Skeleton, TextInput, Title, Tooltip } from "@mantine/core";
+import { AlertCircle, Archive, Bot, MoreHorizontal, PanelLeftOpen, PanelRightOpen, Pencil, Pin, PinOff } from "lucide-react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import type { Approval, ApprovalResponse, ThreadSummary } from "../api/client";
 import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
+import { errorMessageFrom } from "../shared/values";
 import { EmptyPanel } from "../ui/EmptyPanel";
 import { TimelineView } from "../timeline/TimelineView";
 import type { TimelineEntry } from "../timeline/entry";
@@ -14,6 +15,12 @@ const THREAD_PANEL_TEXT = {
   actions: "Thread actions",
   archive: "Archive thread",
   browseThreads: "Browse threads",
+  cancelRename: "Cancel",
+  rename: "Rename thread",
+  renameErrorEmpty: "Thread name cannot be empty.",
+  renameHelp: "Type a name and press Enter.",
+  renameInput: "Thread name",
+  renameSubmit: "Rename",
   pin: "Pin thread",
   showSidebar: "Show sidebar",
   threadUnavailableText: "This thread could not be loaded. It may have been archived, deleted, or unavailable from this gateway.",
@@ -33,6 +40,7 @@ export function ThreadPanel({
   onImageOpen,
   onMarkdownOpen,
   onPinThread,
+  onRenameThread,
   onShowMobileSidebar,
   onSubagentSidebarToggle,
   onTimelineReady,
@@ -60,6 +68,7 @@ export function ThreadPanel({
   onImageOpen: (image: ImageLightboxImage) => void;
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   onPinThread: (threadId: string) => void;
+  onRenameThread: (threadId: string, name: string) => Promise<void>;
   onShowMobileSidebar: () => void;
   onSubagentSidebarToggle?: () => void;
   onTimelineReady: () => void;
@@ -81,9 +90,84 @@ export function ThreadPanel({
   const selectedThreadTitleIsPending = selectedThread ? pendingTitleThreadIds.has(selectedThread.id) : false;
   const shouldShowThreadTitle = selectedThread !== null && !selectedThreadTitleIsPending;
   const shouldShowThreadPane = selectedThread !== null || isSelectedTimelineLoading || isDraftThreadSelected;
+  const [renameModalOpen, setRenameModalOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [renamePending, setRenamePending] = useState(false);
+
+  useEffect(() => {
+    if (!renameModalOpen || !selectedThread) {
+      return;
+    }
+    setRenameValue(selectedThread.name ?? "");
+    setRenameError(null);
+  }, [renameModalOpen, selectedThread?.id]);
+
+  function closeRenameModal() {
+    if (renamePending) {
+      return;
+    }
+    setRenameModalOpen(false);
+    setRenameError(null);
+  }
+
+  async function handleRenameSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedThread) {
+      return;
+    }
+    const name = renameValue.trim();
+    if (!name) {
+      setRenameError(THREAD_PANEL_TEXT.renameErrorEmpty);
+      return;
+    }
+    setRenamePending(true);
+    setRenameError(null);
+    try {
+      await onRenameThread(selectedThread.id, name);
+      setRenameModalOpen(false);
+    } catch (error) {
+      setRenameError(errorMessageFrom(error));
+    } finally {
+      setRenamePending(false);
+    }
+  }
 
   return (
     <>
+      <Modal
+        centered
+        onClose={closeRenameModal}
+        opened={renameModalOpen && selectedThread !== null}
+        title={THREAD_PANEL_TEXT.rename}
+      >
+        <Box component="form" onSubmit={handleRenameSubmit}>
+          <TextInput
+            autoFocus
+            data-autofocus
+            description={THREAD_PANEL_TEXT.renameHelp}
+            disabled={renamePending}
+            error={renameError}
+            label={THREAD_PANEL_TEXT.renameInput}
+            onChange={(event) => {
+              setRenameValue(event.currentTarget.value);
+              if (renameError) {
+                setRenameError(null);
+              }
+            }}
+            placeholder={selectedThreadTitle}
+            value={renameValue}
+          />
+          <Group justify="flex-end" mt="md">
+            <Button color="gray" disabled={renamePending} onClick={closeRenameModal} type="button" variant="light">
+              {THREAD_PANEL_TEXT.cancelRename}
+            </Button>
+            <Button loading={renamePending} type="submit">
+              {THREAD_PANEL_TEXT.renameSubmit}
+            </Button>
+          </Group>
+        </Box>
+      </Modal>
       {errorMessage ? (
         <Badge
           className="kodex-main-column"
@@ -157,6 +241,9 @@ export function ThreadPanel({
                       }}
                     >
                       {selectedThread.pinnedAt ? THREAD_PANEL_TEXT.unpin : THREAD_PANEL_TEXT.pin}
+                    </Menu.Item>
+                    <Menu.Item leftSection={<Pencil size={14} />} onClick={() => setRenameModalOpen(true)}>
+                      {THREAD_PANEL_TEXT.rename}
                     </Menu.Item>
                     <Menu.Item leftSection={<Archive size={14} />} onClick={onArchiveThread}>
                       {THREAD_PANEL_TEXT.archive}

@@ -924,6 +924,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads/{threadId}/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["rename_thread"];
+        trace?: never;
+    };
     "/v1/threads/{threadId}/pin": {
         parameters: {
             query?: never;
@@ -1856,6 +1872,12 @@ export interface components {
         ReasoningEffortOption: {
             description: string;
             reasoningEffort: string;
+        };
+        RenameThreadRequest: {
+            name: string;
+        };
+        RenameThreadResponse: {
+            thread: components["schemas"]["ThreadSummary"];
         };
         /** @enum {string} */
         SelfControlApplyAction: "created" | "updated" | "unchanged" | "deletedSkipped";
@@ -3719,6 +3741,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadCommandResponse"];
+                };
+            };
+        };
+    };
+    rename_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameThreadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenameThreadResponse"];
                 };
             };
         };

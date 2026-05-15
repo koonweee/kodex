@@ -129,25 +129,6 @@
 }
 
 @media (max-width: 900px) {
-  .kodex-automations-header .kodex-mantine-button-root {
-    min-height: 44px;
-  }
-
-  .kodex-automations-add-button {
-    min-height: 44px;
-  }
-
-  .kodex-automations-empty-action {
-    min-height: 44px;
-  }
-
-  .kodex-automations-header .kodex-thread-sidebar-button {
-    width: 44px;
-    min-width: 44px;
-    height: 44px;
-    min-height: 44px;
-  }
-
   .kodex-automation-table-paper {
     border-radius: var(--kodex-radius-sm);
   }
@@ -184,10 +165,6 @@
 
   .kodex-automation-table-row > td:not(:first-child) {
     display: none;
-  }
-
-  .kodex-automation-sort-button {
-    min-height: 44px;
   }
 
   .kodex-automation-modal .kodex-mantine-modal-content {
@@ -245,17 +222,8 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
-  .kodex-automation-mobile-input input,
-  .kodex-automation-mobile-input textarea,
-  .kodex-automation-mobile-input button,
-  .kodex-automation-prompt-editor .kodex-mantine-tabs-tab {
-    min-height: 44px;
-    font-size: 16px;
-  }
-
   .kodex-automation-prompt-textarea textarea {
     min-height: clamp(180px, 32dvh, 300px);
-    font-size: 16px;
   }
 
   .kodex-automation-prompt-preview {
@@ -293,11 +261,51 @@
   }
 
   .kodex-automation-modal-footer {
-    bottom: calc(env(safe-area-inset-bottom) * -1);
     margin-top: auto;
-    margin-bottom: calc(env(safe-area-inset-bottom) * -1);
     align-items: stretch;
     gap: var(--mantine-spacing-xs);
+  }
+}
+
+@media (pointer: coarse), (any-pointer: coarse) {
+  .kodex-automations-header .kodex-mantine-button-root {
+    min-height: 44px;
+  }
+
+  .kodex-automations-add-button {
+    min-height: 44px;
+  }
+
+  .kodex-automations-empty-action {
+    min-height: 44px;
+  }
+
+  .kodex-automations-header .kodex-thread-sidebar-button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .kodex-automation-sort-button {
+    min-height: 44px;
+  }
+
+  .kodex-automation-mobile-input input,
+  .kodex-automation-mobile-input textarea,
+  .kodex-automation-mobile-input button,
+  .kodex-automation-prompt-editor .kodex-mantine-tabs-tab {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .kodex-automation-prompt-textarea textarea {
+    font-size: 16px;
+  }
+
+  .kodex-automation-modal-footer {
+    bottom: calc(env(safe-area-inset-bottom) * -1);
+    margin-bottom: calc(env(safe-area-inset-bottom) * -1);
     padding-bottom: calc(var(--mantine-spacing-sm) + env(safe-area-inset-bottom));
   }
 

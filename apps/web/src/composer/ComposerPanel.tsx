@@ -14,6 +14,7 @@ import {
 } from "../ComposerFooterControls";
 import type { ModelSummary, TextElement, TimelineSkillMention, UserInput } from "../api/client";
 import type { ImageLightboxImage } from "../images/types";
+import { useInputCapabilities } from "../shared/inputCapabilities";
 import { InlineComposerPanel } from "./InlineComposerPanel";
 import { MobileComposerPanel } from "./MobileComposerPanel";
 import { filterSkillsForQuery } from "./skillMentions";
@@ -122,7 +123,9 @@ export function ComposerPanel({
   selectedThreadPresent,
 }: ComposerPanelProps) {
   const draftState = useComposerDraftState(composerResetToken, composerDraftKey);
-  const isMobileComposer = useIsMobileComposer();
+  const isNarrowComposer = useIsNarrowComposer();
+  const inputCapabilities = useInputCapabilities();
+  const isMobileComposer = isNarrowComposer && inputCapabilities.hasTouchInput;
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const internalComposerShellRef = useRef<HTMLDivElement | null>(null);
   const isComposerBusy = isComposerSubmitting || Boolean(isQueuedTurnStartPending);
@@ -289,8 +292,8 @@ export function ComposerPanel({
   );
 }
 
-function useIsMobileComposer() {
-  const [isMobile, setIsMobile] = useState(() => readIsMobileComposer());
+function useIsNarrowComposer() {
+  const [isNarrow, setIsNarrow] = useState(() => readIsNarrowComposer());
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") {
@@ -298,18 +301,18 @@ function useIsMobileComposer() {
     }
 
     const mediaQuery = window.matchMedia("(max-width: 900px)");
-    function updateMobileComposer() {
-      setIsMobile(mediaQuery.matches);
+    function updateNarrowComposer() {
+      setIsNarrow(mediaQuery.matches);
     }
 
-    updateMobileComposer();
-    mediaQuery.addEventListener("change", updateMobileComposer);
-    return () => mediaQuery.removeEventListener("change", updateMobileComposer);
+    updateNarrowComposer();
+    mediaQuery.addEventListener("change", updateNarrowComposer);
+    return () => mediaQuery.removeEventListener("change", updateNarrowComposer);
   }, []);
 
-  return isMobile;
+  return isNarrow;
 }
 
-function readIsMobileComposer() {
+function readIsNarrowComposer() {
   return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 900px)").matches;
 }

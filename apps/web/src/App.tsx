@@ -34,6 +34,7 @@ import {
   listThreads,
   pauseAutomation,
   pinThread,
+  renameThread,
   resumeThread,
   resumeAutomation,
   unpinThread,
@@ -348,6 +349,10 @@ function KodexShell({
   });
   const createProjectMutation = useMutation({ mutationFn: createProject });
   const archiveThreadMutation = useMutation({ mutationFn: archiveThread });
+  const renameThreadMutation = useMutation({
+    mutationFn: ({ threadId, name }: { threadId: string; name: string }) => renameThread(threadId, name),
+    onSuccess: (thread) => replaceThread(thread),
+  });
   const pinThreadMutation = useMutation({ mutationFn: pinThread });
   const unpinThreadMutation = useMutation({ mutationFn: unpinThread });
   const chatThreads = chatThreadsQuery.data ?? [];
@@ -1233,6 +1238,10 @@ function KodexShell({
     }
   }
 
+  async function handleRenameThread(threadId: string, name: string) {
+    await renameThreadMutation.mutateAsync({ threadId, name });
+  }
+
   function applyThreadPinEvent(event: EventEnvelope) {
     const update = threadPinUpdateFromEvent(event);
     if (!update) {
@@ -1285,7 +1294,7 @@ function KodexShell({
       return;
     }
 
-    if (threadHasDisplayTitle(location.thread)) {
+    if (!eventShouldRefreshKnownSidebarThread(event, location.thread)) {
       return;
     }
 
@@ -1294,6 +1303,14 @@ function KodexShell({
     } else {
       void queryClientForShell.invalidateQueries({ queryKey: queryKeys.chatThreads });
     }
+  }
+
+  function eventShouldRefreshKnownSidebarThread(event: EventEnvelope, thread: ThreadSummary) {
+    return (
+      !threadHasDisplayTitle(thread) ||
+      event.kind === "timeline.thread_status" ||
+      event.kind === "timeline.turn_upsert"
+    );
   }
 
   function findThreadSidebarLocation(
@@ -1484,6 +1501,9 @@ function KodexShell({
   const stableHandleCreateThread = useEventCallback(handleCreateThread);
   const stableHandleDraftProjectChange = useEventCallback(handleDraftProjectChange);
   const stableHandlePinThread = useEventCallback((threadId: string) => void handlePinThread(threadId));
+  const stableHandleRenameThread = useEventCallback((threadId: string, name: string) =>
+    handleRenameThread(threadId, name),
+  );
   const stableHandleSelectAutomations = useEventCallback(handleSelectAutomations);
   const stableHandleSelectProjectSettings = useEventCallback(handleSelectProjectSettings);
   const stableHandleSelectChatThread = useEventCallback(handleSelectChatThread);
@@ -1600,6 +1620,7 @@ function KodexShell({
           onArchiveThread: handleArchiveSelectedThread, onApprovalDecision: handleApprovalDecision, onImageOpen: setLightboxImage,
           onMarkdownOpen: setMarkdownPreview,
           onPinThread: stableHandlePinThread,
+          onRenameThread: stableHandleRenameThread,
           onShowMobileSidebar: handleShowMobileSidebar, onTimelineReady: handleTimelineReadyForSelectedThread,
           onSubagentSidebarToggle: () => setSubagentSidebarOpen((current) => !current),
           onUnpinThread: stableHandleUnpinThread, pendingTitleThreadIds,

@@ -148,12 +148,24 @@ describe("MVP composer settings flows", () => {
     expect(appCss).toMatch(
       /\.kodex-composer-control:is\(:disabled,\s*\[data-disabled\]\)\s+\.kodex-composer-model-name,\s*\.kodex-composer-control:is\(:disabled,\s*\[data-disabled\]\)\s+\.kodex-composer-model-effort\s*\{[^}]*opacity:\s*1;/s,
     );
-    expect(appCss).toMatch(/@media \(max-width: 700px\)\s*\{[\s\S]*?\.kodex-run-settings-menu\s*\{[^}]*position:\s*fixed/s);
-    expect(appCss).toMatch(/@media \(max-width: 700px\)\s*\{[\s\S]*?\.kodex-run-settings-menu\s*\{[^}]*top:\s*auto\s*!important;/s);
-    expect(appCss).toMatch(/@media \(max-width: 700px\)\s*\{[\s\S]*?\.kodex-run-settings-chip-row\s*\{[^}]*display:\s*flex/s);
-    expect(appCss).toMatch(/@media \(max-width: 700px\)\s*\{[\s\S]*?\.kodex-permissions-row-list\s*\{[^}]*display:\s*grid/s);
-    expect(appCss).toMatch(/@media \(max-width: 700px\)\s*\{[\s\S]*?\.kodex-permission-row\s*\{[^}]*width:\s*100%/s);
-    expect(appCss).toMatch(/@media \(max-width: 700px\)\s*\{[\s\S]*?\.kodex-run-settings-menu\s+\.mantine-Menu-label\s*\{[^}]*padding:/s);
+    expect(appCss).toMatch(
+      /@media \(max-width: 700px\) and \(pointer: coarse\), \(max-width: 700px\) and \(any-pointer: coarse\)\s*\{[\s\S]*?\.kodex-run-settings-menu\s*\{[^}]*position:\s*fixed/s,
+    );
+    expect(appCss).toMatch(
+      /@media \(max-width: 700px\) and \(pointer: coarse\), \(max-width: 700px\) and \(any-pointer: coarse\)\s*\{[\s\S]*?\.kodex-run-settings-menu\s*\{[^}]*top:\s*auto\s*!important;/s,
+    );
+    expect(appCss).toMatch(
+      /@media \(max-width: 700px\) and \(pointer: coarse\), \(max-width: 700px\) and \(any-pointer: coarse\)\s*\{[\s\S]*?\.kodex-run-settings-chip-row\s*\{[^}]*display:\s*flex/s,
+    );
+    expect(appCss).toMatch(
+      /@media \(max-width: 700px\) and \(pointer: coarse\), \(max-width: 700px\) and \(any-pointer: coarse\)\s*\{[\s\S]*?\.kodex-permissions-row-list\s*\{[^}]*display:\s*grid/s,
+    );
+    expect(appCss).toMatch(
+      /@media \(max-width: 700px\) and \(pointer: coarse\), \(max-width: 700px\) and \(any-pointer: coarse\)\s*\{[\s\S]*?\.kodex-permission-row\s*\{[^}]*width:\s*100%/s,
+    );
+    expect(appCss).toMatch(
+      /@media \(max-width: 700px\) and \(pointer: coarse\), \(max-width: 700px\) and \(any-pointer: coarse\)\s*\{[\s\S]*?\.kodex-run-settings-menu\s+\.mantine-Menu-label\s*\{[^}]*padding:/s,
+    );
 
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, high/i }));
     await clickMenuItem(/^medium$/i);

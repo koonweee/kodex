@@ -459,7 +459,10 @@ fn is_thread_metadata_live_event(event: &EventEnvelope) -> bool {
             let method = method.to_ascii_lowercase();
             matches!(
                 method.as_str(),
-                "thread/nameupdated" | "thread/name_updated" | "thread/tokenusage/updated"
+                "thread/name/updated"
+                    | "thread/nameupdated"
+                    | "thread/name_updated"
+                    | "thread/tokenusage/updated"
             )
         })
 }

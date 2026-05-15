@@ -92,11 +92,13 @@ describe("WorkspaceSidebar project reorder", () => {
       projectFormOpen: true,
     });
 
-    expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
-    expect(onCreateChat).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: "Collapse Chats section" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start new chat from desktop header" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Add project" })).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Start new chat from desktop header" }));
+    expect(onCreateChat).toHaveBeenCalledTimes(1);
+
+    expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Collapse Chats section" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Thread 7" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Thread 3" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Thread 2" })).not.toBeInTheDocument();
@@ -131,6 +133,56 @@ describe("WorkspaceSidebar project reorder", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Unpin thread" }));
     expect(onUnpinThread).toHaveBeenCalledWith("thread-pinned");
+  });
+
+  it("uses one projects/chats switch on desktop and filters pinned threads by scope", () => {
+    renderSidebar({
+      chatThreads: [threadSummary(3, { id: "chat-thread", name: "Chat thread", cwd: "/workspace/chats/2026-05-06" })],
+      pinnedThreads: [
+        threadSummary(1, {
+          id: "project-pinned",
+          name: "Pinned project thread",
+          cwd: "/workspace/project-1",
+          pinnedAt: "2026-05-06T12:00:00Z",
+        }),
+        threadSummary(2, {
+          id: "chat-pinned",
+          name: "Pinned chat thread",
+          cwd: "/workspace/chats/2026-05-06",
+          pinnedAt: "2026-05-06T12:01:00Z",
+        }),
+      ],
+      projects: [projectSummary("project-1", "Project")],
+      threadsByProjectId: {
+        "project-1": [threadSummary(4, { id: "project-thread", name: "Project thread" })],
+      },
+    });
+
+    expect(screen.getByRole("button", { name: "Projects" })).toHaveAttribute("data-active", "true");
+    expect(screen.getByRole("button", { name: "Pinned project thread" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pinned chat thread" })).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Project" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Chat thread" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Chats" }));
+
+    expect(screen.getByRole("button", { name: "Chats" })).toHaveAttribute("data-active", "true");
+    expect(screen.getByRole("button", { name: "Pinned chat thread" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pinned project thread" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Project" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Chat thread" })).toBeInTheDocument();
+  });
+
+  it("opens automations from the sidebar settings menu", async () => {
+    const onSelectAutomations = vi.fn();
+    renderSidebar({ onSelectAutomations });
+
+    expect(screen.queryByRole("button", { name: "Automations" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Account settings" }));
+    fireEvent.click(await screen.findByText("Automations"));
+
+    expect(onSelectAutomations).toHaveBeenCalledTimes(1);
   });
 
   it("collapses a project when its title row is clicked", () => {
@@ -186,6 +238,7 @@ describe("WorkspaceSidebar project reorder", () => {
   it("collapses and expands the Pinned section from the section row", () => {
     renderSidebar({
       pinnedThreads: [threadSummary(1, { id: "thread-pinned", name: "Pinned thread", pinnedAt: "2026-05-06T12:00:00Z" })],
+      projects: [projectSummary("project-1", "Project")],
     });
 
     const pinnedToggle = screen.getByRole("button", { name: "Collapse Pinned section" });
@@ -206,6 +259,7 @@ describe("WorkspaceSidebar project reorder", () => {
       chatThreads: [threadSummary(1)],
     });
 
+    fireEvent.click(screen.getByRole("button", { name: "Chats" }));
     const chatsToggle = screen.getByRole("button", { name: "Collapse Chats section" });
     expect(screen.getByRole("button", { name: "Thread 1" })).toBeInTheDocument();
 
@@ -229,6 +283,7 @@ describe("WorkspaceSidebar project reorder", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse Projects section" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chats" }));
     fireEvent.click(screen.getByRole("button", { name: "Collapse Chats section" }));
     first.unmount();
 
@@ -241,6 +296,7 @@ describe("WorkspaceSidebar project reorder", () => {
     });
 
     expect(screen.getByRole("button", { name: "Expand Projects section" })).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(screen.getByRole("button", { name: "Chats" }));
     expect(screen.getByRole("button", { name: "Expand Chats section" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("button", { name: "Project thread" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Chat thread" })).not.toBeInTheDocument();
@@ -293,9 +349,39 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(screen.getByText("Project").closest(".kodex-project-title")).not.toHaveAttribute("data-active", "true");
   });
 
-  it("applies shared touch density at the sidebar root on mobile", async () => {
+  it("keeps compact density at the sidebar root on narrow fine-pointer viewports", async () => {
     const matchMedia = vi.spyOn(window, "matchMedia").mockImplementation((query: string): MediaQueryList => ({
-      matches: query === "(max-width: 900px)",
+      matches: query === "(max-width: 900px)" || query === "(hover: hover) and (pointer: fine)",
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    renderSidebar({
+      projects: [projectSummary("project-1", "Project")],
+      threadsByProjectId: {
+        "project-1": [threadSummary(1, { status: "active" })],
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Workspace")).toHaveAttribute("data-density", "compact");
+    });
+    expect(screen.getByText("Project").closest(".kodex-sidebar-row")).toHaveClass("kodex-project-row");
+    expect(screen.getByRole("button", { name: "Thread 1" }).closest(".kodex-sidebar-row")).toHaveClass(
+      "kodex-thread-list-button",
+    );
+
+    matchMedia.mockRestore();
+  });
+
+  it("applies shared touch density at the sidebar root on narrow coarse-pointer devices", async () => {
+    const matchMedia = vi.spyOn(window, "matchMedia").mockImplementation((query: string): MediaQueryList => ({
+      matches: query === "(max-width: 900px)" || query === "(any-pointer: coarse)",
       media: query,
       onchange: null,
       addEventListener: vi.fn(),
@@ -315,10 +401,6 @@ describe("WorkspaceSidebar project reorder", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("Workspace")).toHaveAttribute("data-density", "touch");
     });
-    expect(screen.getByText("Project").closest(".kodex-sidebar-row")).toHaveClass("kodex-project-row");
-    expect(screen.getByRole("button", { name: "Thread 1" }).closest(".kodex-sidebar-row")).toHaveClass(
-      "kodex-thread-list-button",
-    );
 
     matchMedia.mockRestore();
   });

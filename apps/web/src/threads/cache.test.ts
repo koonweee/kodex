@@ -63,6 +63,28 @@ describe("thread query cache helpers", () => {
     expect(queryClient.getQueryData(queryKeys.chatThreads)).toEqual([localChat]);
   });
 
+  it("keeps a newer cached chat when a stale chat snapshot resolves later", () => {
+    const queryClient = createKodexQueryClient();
+    const staleChat = thread("chat-live", { name: "Stale", updatedAt: 1 });
+    const liveChat = thread("chat-live", { name: "Live", updatedAt: 2 });
+    upsertChatThread(queryClient, liveChat);
+
+    mergeChatThreadSnapshot(queryClient, [staleChat]);
+
+    expect(queryClient.getQueryData(queryKeys.chatThreads)).toEqual([liveChat]);
+  });
+
+  it("accepts a newer chat snapshot over a stale cached chat", () => {
+    const queryClient = createKodexQueryClient();
+    const staleChat = thread("chat-live", { name: "Stale", updatedAt: 1 });
+    const snapshotChat = thread("chat-live", { name: "Snapshot", updatedAt: 2 });
+    upsertChatThread(queryClient, staleChat);
+
+    mergeChatThreadSnapshot(queryClient, [snapshotChat]);
+
+    expect(queryClient.getQueryData(queryKeys.chatThreads)).toEqual([snapshotChat]);
+  });
+
   it("keeps a live-created project thread when the initial project snapshot resolves later", () => {
     const queryClient = createKodexQueryClient();
     const liveThread = thread("thread-live", { preview: "Live prompt" });
@@ -74,6 +96,28 @@ describe("thread query cache helpers", () => {
       liveThread,
       thread("thread-old"),
     ]);
+  });
+
+  it("keeps a newer cached project thread when a stale project snapshot resolves later", () => {
+    const queryClient = createKodexQueryClient();
+    const staleThread = thread("thread-live", { name: "Stale", updatedAt: 1 });
+    const liveThread = thread("thread-live", { name: "Live", updatedAt: 2 });
+    upsertProjectThread(queryClient, "project-1", liveThread);
+
+    mergeProjectThreadSnapshot(queryClient, "project-1", [staleThread], null, null);
+
+    expect(queryClient.getQueryData(queryKeys.projectThreads("project-1"))).toEqual([liveThread]);
+  });
+
+  it("accepts a newer project snapshot over a stale cached project thread", () => {
+    const queryClient = createKodexQueryClient();
+    const staleThread = thread("thread-live", { name: "Stale", updatedAt: 1 });
+    const snapshotThread = thread("thread-live", { name: "Snapshot", updatedAt: 2 });
+    upsertProjectThread(queryClient, "project-1", staleThread);
+
+    mergeProjectThreadSnapshot(queryClient, "project-1", [snapshotThread], null, null);
+
+    expect(queryClient.getQueryData(queryKeys.projectThreads("project-1"))).toEqual([snapshotThread]);
   });
 
   it("replaces duplicate live upserts without adding another row", () => {

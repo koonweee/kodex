@@ -82,7 +82,7 @@ export function threadStatusUpdateFromEvent(event: EventEnvelope): { threadId: s
 
 export function threadNameUpdateFromEvent(event: EventEnvelope): { threadId: string; name: string | null } | null {
   const method = (event.codexMethod ?? "").toLowerCase();
-  if (method !== "thread/nameupdated" && method !== "thread/name_updated") {
+  if (method !== "thread/name/updated" && method !== "thread/nameupdated" && method !== "thread/name_updated") {
     return null;
   }
 

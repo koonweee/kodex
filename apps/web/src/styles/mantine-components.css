@@ -46,6 +46,14 @@
   color: var(--kodex-text-muted);
 }
 
+@media (pointer: coarse), (any-pointer: coarse) {
+  .kodex-mantine-input,
+  .kodex-mantine-combobox-search,
+  .kodex-mantine-multi-select-input-field {
+    font-size: 16px;
+  }
+}
+
 .kodex-mantine-number-input-control {
   border-color: var(--kodex-border-subtle);
 }

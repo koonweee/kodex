@@ -180,6 +180,18 @@ impl CodexClient {
             .await
     }
 
+    pub async fn thread_set_name(
+        &self,
+        thread_id: String,
+        name: String,
+    ) -> ApiResult<RawAppServerResponse> {
+        self.raw_request(
+            "thread/name/set",
+            json!({ "threadId": thread_id, "name": name }),
+        )
+        .await
+    }
+
     pub async fn turn_start(
         &self,
         thread_id: String,

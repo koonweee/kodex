@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   App,
@@ -41,6 +41,10 @@ function deferred<T>() {
 }
 
 describe("MVP shell flows", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -407,7 +411,7 @@ describe("MVP shell flows", () => {
 
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /^new chat$/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /start new chat from desktop header/i }));
     expect(gateway.callsFor("POST", "/v1/chats/threads")).toHaveLength(0);
     expect(within(screen.getByRole("main", { name: /thread/i })).queryByRole("heading", { name: /new thread/i })).not.toBeInTheDocument();
 
@@ -467,7 +471,7 @@ describe("MVP shell flows", () => {
 
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /^new chat$/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /start new chat from desktop header/i }));
     await userEvent.type(screen.getByLabelText(/message composer/i), "Keep local chat");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
@@ -551,20 +555,27 @@ describe("MVP shell flows", () => {
     await userEvent.click(kodexProjectTitle);
 
     expect(within(kodexGroup).getByRole("button", { name: /expand kodex/i })).toHaveAttribute("aria-expanded", "false");
-    expect(within(kodexGroup).queryByRole("button", { name: /implement frontend/i })).not.toBeInTheDocument();
+    expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
 
     await userEvent.click(within(kodexGroup).getByRole("button", { name: /expand kodex/i }));
 
     expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
   });
 
-  it("keeps unread and in-progress project threads visible when their project is collapsed", async () => {
+  it("keeps unread, in-progress, and selected project threads visible when their project is collapsed", async () => {
     const inProgressThread = {
       ...activeThread,
       id: "thread-in-progress",
       name: "Running thread",
       unreadCompletedAgentTurn: false,
       updatedAt: thread.updatedAt + 2,
+    };
+    const selectedIdleThread = {
+      ...thread,
+      id: "thread-1",
+      name: "Selected idle thread",
+      unreadCompletedAgentTurn: false,
+      updatedAt: thread.updatedAt,
     };
     const unreadThread = {
       ...thread,
@@ -582,7 +593,7 @@ describe("MVP shell flows", () => {
     mockGateway(
       baseRoutes({
         "GET /v1/threads": {
-          threads: [inProgressThread, unreadThread, readThread],
+          threads: [inProgressThread, unreadThread, selectedIdleThread, readThread],
           nextCursor: null,
           backwardsCursor: null,
           rawPayload: {},
@@ -595,6 +606,7 @@ describe("MVP shell flows", () => {
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
     expect(within(kodexGroup).getByRole("button", { name: /running thread/i })).toBeInTheDocument();
     expect(within(kodexGroup).getByRole("button", { name: /unread thread/i })).toBeInTheDocument();
+    expect(within(kodexGroup).getByRole("button", { name: /selected idle thread/i })).toBeInTheDocument();
     expect(within(kodexGroup).getByRole("button", { name: /^read thread$/i })).toBeInTheDocument();
 
     await userEvent.click(within(kodexGroup).getByRole("button", { name: /collapse kodex/i }));
@@ -603,10 +615,12 @@ describe("MVP shell flows", () => {
     const runningThreadRow = runningRow.closest(".kodex-thread-list-button");
     const unreadRow = within(kodexGroup).getByRole("button", { name: /unread thread/i });
     const unreadThreadRow = unreadRow.closest(".kodex-thread-list-button");
+    const selectedRow = within(kodexGroup).getByRole("button", { name: /selected idle thread/i });
     expect(runningRow).toBeInTheDocument();
     expect(runningThreadRow).toBeInTheDocument();
     expect(unreadRow).toBeInTheDocument();
     expect(unreadThreadRow).toBeInTheDocument();
+    expect(selectedRow).toBeInTheDocument();
     expect(within(kodexGroup).queryByRole("button", { name: /^read thread$/i })).not.toBeInTheDocument();
     expect(
       within(runningThreadRow as HTMLElement).getByRole("status", {
@@ -780,6 +794,7 @@ describe("MVP shell flows", () => {
       });
     });
 
+    await userEvent.click(screen.getByRole("button", { name: /^chats$/i }));
     await waitFor(() => expect(screen.getByRole("button", { name: /live chat thread/i })).toBeInTheDocument());
   });
 
@@ -832,6 +847,7 @@ describe("MVP shell flows", () => {
       });
     });
 
+    await userEvent.click(screen.getByRole("button", { name: /^chats$/i }));
     await waitFor(() => expect(screen.getByRole("button", { name: /new thread/i })).toBeInTheDocument());
     await waitFor(() => expect(chatListCalls).toBeGreaterThanOrEqual(2));
 
@@ -855,6 +871,74 @@ describe("MVP shell flows", () => {
       expect(screen.getByRole("button", { name: /first message from another tab/i })).toBeInTheDocument(),
     );
     expect(chatListCalls).toBeGreaterThanOrEqual(3);
+  });
+
+  it("refreshes titled chat threads after live timeline events so updatedAt ordering converges", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const staleActiveChat = {
+      ...thread,
+      id: "thread-chat-active",
+      name: "Active chat",
+      cwd: "/home/example/Documents/Codex/2026-05-09/active-chat",
+      preview: "Active chat",
+      seenCompletedAgentTurnSeq: 0,
+      unreadCompletedAgentTurn: false,
+      updatedAt: thread.updatedAt + 1,
+    };
+    const refreshedActiveChat = {
+      ...staleActiveChat,
+      updatedAt: thread.updatedAt + 3,
+    };
+    const recentChat = {
+      ...thread,
+      id: "thread-chat-recent",
+      name: "Recent chat",
+      cwd: "/home/example/Documents/Codex/2026-05-09/recent-chat",
+      preview: "Recent chat",
+      seenCompletedAgentTurnSeq: 0,
+      unreadCompletedAgentTurn: false,
+      updatedAt: thread.updatedAt + 2,
+    };
+    let chatListCalls = 0;
+    mockGateway(
+      baseRoutes({
+        "GET /v1/chats/threads": () => {
+          chatListCalls += 1;
+          const activeChat = chatListCalls === 1 ? staleActiveChat : refreshedActiveChat;
+          return { threads: [recentChat, activeChat], nextCursor: null, backwardsCursor: null, rawPayload: {} };
+        },
+      }),
+    );
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /^chats$/i }));
+    await waitFor(() => expect(chatListCalls).toBeGreaterThanOrEqual(1));
+    let activeRow = screen.getByRole("button", { name: /active chat/i }).closest(".kodex-thread-list-button");
+    let recentRow = screen.getByRole("button", { name: /recent chat/i }).closest(".kodex-thread-list-button");
+    expect(activeRow).toBeInTheDocument();
+    expect(recentRow).toBeInTheDocument();
+    expect(recentRow!.compareDocumentPosition(activeRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
+    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    act(() => {
+      globalStream?.emitNamed("timeline.turn_upsert", {
+        id: "event-chat-active-completed",
+        seq: 2,
+        kind: "timeline.turn_upsert",
+        codexMethod: "turn/upsert",
+        projectId: null,
+        threadId: staleActiveChat.id,
+        payload: { turn: { id: "turn-1", status: "completed", items: [] } },
+        receivedAt: "2026-05-09T12:00:01Z",
+      });
+    });
+
+    await waitFor(() => expect(chatListCalls).toBeGreaterThanOrEqual(2));
+    activeRow = screen.getByRole("button", { name: /active chat/i }).closest(".kodex-thread-list-button");
+    recentRow = screen.getByRole("button", { name: /recent chat/i }).closest(".kodex-thread-list-button");
+    expect(activeRow!.compareDocumentPosition(recentRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("shows compact thread actions without fork or path subtitle", async () => {
@@ -912,6 +996,134 @@ describe("MVP shell flows", () => {
     await waitFor(() => {
       expect(screen.queryByText("Pinned")).not.toBeInTheDocument();
     });
+  });
+
+  it("renames the selected thread from the thread actions menu", async () => {
+    const gateway = mockGateway(
+      baseRoutes({
+        "PATCH /v1/threads/thread-1/name": async (request: Request) => {
+          const body = (await requestJson(request)) as { name: string };
+          return { thread: { ...thread, name: body.name, updatedAt: thread.updatedAt + 1 } };
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /thread actions/i }));
+    await clickMenuItem(/rename thread/i);
+    const input = await screen.findByLabelText(/thread name/i);
+    expect(input).toHaveValue("Implement frontend");
+
+    await userEvent.clear(input);
+    await userEvent.type(input, "  Renamed from menu  ");
+    await userEvent.click(screen.getByRole("button", { name: /^rename$/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/name")).toHaveLength(1);
+    });
+    await expect(requestJson(gateway.callsFor("PATCH", "/v1/threads/thread-1/name")[0])).resolves.toEqual({
+      name: "Renamed from menu",
+    });
+    expect(await screen.findByRole("heading", { name: /renamed from menu/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /renamed from menu/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: /rename thread/i })).not.toBeInTheDocument();
+    });
+  });
+
+  it("validates and preserves rename input when the gateway rejects the request", async () => {
+    const gateway = mockGateway(
+      baseRoutes({
+        "PATCH /v1/threads/thread-1/name": new Response(
+          JSON.stringify({ message: "app-server refused the thread name" }),
+          { status: 502, headers: { "Content-Type": "application/json" } },
+        ),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /thread actions/i }));
+    await clickMenuItem(/rename thread/i);
+    const input = await screen.findByLabelText(/thread name/i);
+    await userEvent.clear(input);
+    await userEvent.type(input, "   ");
+    await userEvent.click(screen.getByRole("button", { name: /^rename$/i }));
+
+    expect(await screen.findByText(/thread name cannot be empty/i)).toBeInTheDocument();
+    expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/name")).toHaveLength(0);
+
+    await userEvent.clear(input);
+    await userEvent.type(input, "Rejected rename");
+    await userEvent.click(screen.getByRole("button", { name: /^rename$/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/name")).toHaveLength(1);
+    });
+    expect(await screen.findByText(/app-server refused the thread name/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/thread name/i)).toHaveValue("Rejected rename");
+    expect(screen.getByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+  });
+
+  it("starts unnamed thread renames from an empty field while using preview as the placeholder", async () => {
+    const unnamedThread = {
+      ...thread,
+      name: null,
+      preview: "Preview title for unnamed thread",
+    };
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": { threads: [unnamedThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/threads/thread-1": threadDetail(unnamedThread, []),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /preview title for unnamed thread/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /thread actions/i }));
+    await clickMenuItem(/rename thread/i);
+
+    const input = await screen.findByLabelText(/thread name/i);
+    expect(input).toHaveValue("");
+    expect(input).toHaveAttribute("placeholder", "Preview title for unnamed thread");
+  });
+
+  it("converges selected and sidebar thread titles from another client's name event", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(baseRoutes());
+
+    render(<App />);
+
+    const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
+    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    expect(globalStream).toBeDefined();
+
+    act(() => {
+      globalStream?.emit({
+        id: "event-thread-name-sidebar",
+        seq: 10,
+        kind: "codex.notification",
+        codexMethod: "thread/name/updated",
+        threadId: "thread-1",
+        turnId: null,
+        itemId: null,
+        projectId: project.id,
+        payload: { threadId: "thread-1", threadName: "Renamed in another tab" },
+        receivedAt: "2026-04-30T00:00:01Z",
+      });
+    });
+
+    expect(await screen.findByRole("heading", { name: /renamed in another tab/i })).toBeInTheDocument();
+    expect(within(kodexGroup).getByRole("button", { name: /renamed in another tab/i })).toBeInTheDocument();
   });
 
   it("archives a thread from the thread selector hover action", async () => {
@@ -1178,7 +1390,7 @@ describe("MVP shell flows", () => {
     expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-main\s*\{[^}]*overflow:\s*hidden;/s);
     expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-thread-sidebar-button\s*\{[^}]*display:\s*inline-flex;/s);
     expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-sidebar-mobile-header\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*44px\s*44px;/s);
-    expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-sidebar-mobile-filter\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(0,\s*1fr\);/s);
+    expect(appCss).toMatch(/\.kodex-sidebar-scope-switch\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(0,\s*1fr\);/s);
   });
 
   it("keeps a sidebar escape hatch on the root draft chat pane", async () => {

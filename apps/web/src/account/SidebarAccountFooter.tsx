@@ -1,5 +1,5 @@
 import { ActionIcon, Box, Button, Group, Menu, Tooltip } from "@mantine/core";
-import { Bug, Check, LogIn, LogOut, Palette, Settings } from "lucide-react";
+import { Bug, Check, Clock, LogIn, LogOut, Palette, Settings } from "lucide-react";
 import { useState } from "react";
 
 import type { AccountResponse } from "../api/client";
@@ -15,6 +15,7 @@ const ACCOUNT_TEXT = {
   cancel: "Cancel login",
   connect: "Connect ChatGPT",
   debugEvents: "Show debug events",
+  automations: "Automations",
   logout: "Logout",
   open: "Open ChatGPT auth",
   preferences: "Preferences",
@@ -27,6 +28,7 @@ export function SidebarAccountFooter({
   onCancelLogin,
   onLogin,
   onLogout,
+  onSelectAutomations,
   onOpenPreferences,
   onShowDebugEventsChange,
   showDebugEvents,
@@ -37,6 +39,7 @@ export function SidebarAccountFooter({
   onCancelLogin: () => void;
   onLogin: () => void;
   onLogout: () => void;
+  onSelectAutomations: () => void;
   onOpenPreferences: () => void;
   onShowDebugEventsChange: (value: boolean) => void;
   showDebugEvents: boolean;
@@ -80,6 +83,7 @@ export function SidebarAccountFooter({
       <SettingsMenu
         isAuthenticated={Boolean(account?.account)}
         onLogout={onLogout}
+        onSelectAutomations={onSelectAutomations}
         onOpenPreferences={onOpenPreferences}
         onShowDebugEventsChange={onShowDebugEventsChange}
         showDebugEvents={showDebugEvents}
@@ -92,6 +96,7 @@ export function SidebarAccountFooter({
 function SettingsMenu({
   isAuthenticated,
   onLogout,
+  onSelectAutomations,
   onOpenPreferences,
   onShowDebugEventsChange,
   showDebugEvents,
@@ -99,6 +104,7 @@ function SettingsMenu({
 }: {
   isAuthenticated: boolean;
   onLogout: () => void;
+  onSelectAutomations: () => void;
   onOpenPreferences: () => void;
   onShowDebugEventsChange: (value: boolean) => void;
   showDebugEvents: boolean;
@@ -125,6 +131,16 @@ function SettingsMenu({
             {usageLimitLines.secondary ? <span>{usageLimitLines.secondary}</span> : null}
           </Box>
         ) : null}
+        <Menu.Item
+          className="kodex-settings-menu-item"
+          leftSection={<Clock size={14} />}
+          onClick={() => {
+            setOpened(false);
+            onSelectAutomations();
+          }}
+        >
+          {ACCOUNT_TEXT.automations}
+        </Menu.Item>
         <Menu.Item
           className="kodex-settings-menu-item"
           leftSection={<Palette size={14} />}

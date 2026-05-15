@@ -5,7 +5,7 @@ use std::{
 
 use axum::{
     extract::{Path, Query, State},
-    routing::{get, post},
+    routing::{get, patch, post},
     Json, Router,
 };
 use chrono::{DateTime, Utc};
@@ -39,6 +39,7 @@ pub fn router() -> Router<AppState> {
         .route("/v1/threads/pinned", get(list_pinned_threads))
         .route("/v1/threads/{thread_id}/subagents", get(list_subagents))
         .route("/v1/threads/{thread_id}", get(get_thread))
+        .route("/v1/threads/{thread_id}/name", patch(rename_thread))
         .route("/v1/threads/{thread_id}/resume", post(resume_thread))
         .route("/v1/threads/{thread_id}/fork", post(fork_thread))
         .route("/v1/threads/{thread_id}/archive", post(archive_thread))
@@ -105,6 +106,18 @@ pub struct MarkThreadSeenRequest {
 }
 
 pub type MarkThreadSeenResponse = ThreadRead;
+
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameThreadRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameThreadResponse {
+    pub thread: ThreadSummary,
+}
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -665,6 +678,21 @@ pub async fn get_thread(
     Ok(Json(response))
 }
 
+#[utoipa::path(patch, path = "/v1/threads/{threadId}/name", request_body = RenameThreadRequest, responses((status = 200, body = RenameThreadResponse)))]
+pub async fn rename_thread(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+    Json(request): Json<RenameThreadRequest>,
+) -> ApiResult<Json<RenameThreadResponse>> {
+    let name = normalize_thread_name(&request.name)
+        .ok_or_else(|| ApiError::BadRequest("thread name cannot be empty".to_string()))?;
+    let client = app_server_api::client(&state.app_server);
+    client.thread_set_name(thread_id.clone(), name).await?;
+    let mut thread = client.thread_read_summary(thread_id).await?;
+    apply_thread_summary_state(&state, std::slice::from_mut(&mut thread)).await?;
+    Ok(Json(RenameThreadResponse { thread }))
+}
+
 #[utoipa::path(get, path = "/v1/threads/{threadId}/subagents", responses((status = 200, body = ThreadSubagentListResponse)))]
 pub async fn list_subagents(
     State(state): State<AppState>,
@@ -1037,6 +1065,15 @@ fn sync_thread_command_response(response: &mut ThreadCommandResponse) {
         sandbox: response.thread.sandbox.clone(),
     };
     sync_raw_thread_composer_settings(&mut response.raw_payload, &settings);
+}
+
+fn normalize_thread_name(name: &str) -> Option<String> {
+    let name = name.trim();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
 }
 
 fn sync_raw_response_thread(raw_payload: &mut Value, thread: &ThreadSummary) {

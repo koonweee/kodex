@@ -1434,6 +1434,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rename_thread_rejects_blank_name_before_app_server_call() {
+        let (state, app_server) = test_state().await;
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::patch("/v1/threads/thread-1/name")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"name":"   "}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(app_server.requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn rename_thread_sets_trimmed_name_and_returns_canonical_summary() {
+        let (state, app_server) = test_state().await;
+        let mut renamed_thread = thread_summary("thread-1");
+        renamed_thread["name"] = json!("Renamed thread");
+        renamed_thread["updatedAt"] = json!(1_767_225_700_i64);
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .extend([json!({}), json!({ "thread": renamed_thread })]);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::patch("/v1/threads/thread-1/name")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"name":"  Renamed thread  "}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["thread"]["id"], "thread-1");
+        assert_eq!(body["thread"]["name"], "Renamed thread");
+        assert_eq!(body["thread"]["updatedAt"], 1_767_225_700_i64);
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].0, "thread/name/set");
+        assert_eq!(requests[0].1["threadId"], "thread-1");
+        assert_eq!(requests[0].1["name"], "Renamed thread");
+        assert_eq!(requests[1].0, "thread/read");
+        assert_eq!(requests[1].1["threadId"], "thread-1");
+        assert_eq!(requests[1].1["includeTurns"], false);
+    }
+
+    #[tokio::test]
     async fn thread_start_broadcasts_and_replays_thread_upserted_event() {
         let (state, app_server) = test_state().await;
         let project = state
@@ -7321,7 +7379,7 @@ mod tests {
                 turn_id: None,
                 item_id: None,
                 kind: "codex.notification".to_string(),
-                codex_method: Some("thread/nameUpdated".to_string()),
+                codex_method: Some("thread/name/updated".to_string()),
                 payload: json!({"threadId": "t1", "threadName": "New title"}),
             })
             .await
@@ -7331,7 +7389,7 @@ mod tests {
         let mut body = response.into_body();
         let chunk = next_sse_chunk(&mut body).await;
         assert!(chunk.contains(&format!("id: {}", title.seq)));
-        assert!(chunk.contains("thread/nameUpdated"));
+        assert!(chunk.contains("thread/name/updated"));
         assert!(chunk.contains("New title"));
     }
 

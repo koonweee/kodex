@@ -44,7 +44,7 @@ import {
   userInputImages,
 } from "./attachmentUtils";
 import type { ComposerDraftControls } from "./ComposerPanel";
-import { isTouchInputDevice } from "./inputCapabilities";
+import { isTouchInputDevice } from "../shared/inputCapabilities";
 import type { PendingAttachment, QueuedSteerRow } from "./types";
 
 type DraftThreadCreateRequest = { firstMessageText: string; projectId?: string };

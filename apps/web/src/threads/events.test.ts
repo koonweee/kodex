@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { EventEnvelope } from "../api/client";
-import { completedAgentTurnEvent, threadStatusUpdateFromEvent, threadUpsertFromEvent } from "./events";
+import {
+  completedAgentTurnEvent,
+  threadNameUpdateFromEvent,
+  threadStatusUpdateFromEvent,
+  threadUpsertFromEvent,
+} from "./events";
 
 describe("thread events", () => {
   it("ignores legacy raw completion notifications", () => {
@@ -49,6 +54,39 @@ describe("thread events", () => {
         }),
       ),
     ).toEqual({ threadId: "thread-1", status: "idle" });
+  });
+
+  it("parses current and legacy thread name update notifications", () => {
+    expect(
+      threadNameUpdateFromEvent(
+        event({
+          codexMethod: "thread/name/updated",
+          threadId: "thread-1",
+          payload: { threadName: "Renamed thread" },
+        }),
+      ),
+    ).toEqual({ threadId: "thread-1", name: "Renamed thread" });
+
+    expect(
+      threadNameUpdateFromEvent(
+        event({
+          codexMethod: "thread/nameUpdated",
+          payload: { thread_id: "thread-2", thread_name: "Legacy title" },
+        }),
+      ),
+    ).toEqual({ threadId: "thread-2", name: "Legacy title" });
+  });
+
+  it("keeps null thread name updates explicit", () => {
+    expect(
+      threadNameUpdateFromEvent(
+        event({
+          codexMethod: "thread/name/updated",
+          threadId: "thread-1",
+          payload: { threadName: null },
+        }),
+      ),
+    ).toEqual({ threadId: "thread-1", name: null });
   });
 
   it("parses project and chat thread upsert events", () => {
