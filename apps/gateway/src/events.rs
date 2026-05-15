@@ -739,6 +739,24 @@ async fn timeline_turn_upsert_event(
             )
             .await?,
         );
+        let planned = state
+            .store
+            .append_event(NewEvent {
+                project_id: metadata.project_id.clone(),
+                thread_id: Some(thread_id.clone()),
+                turn_id: Some(turn.id.clone()),
+                item_id: None,
+                kind: "notification.planned".to_string(),
+                codex_method: None,
+                payload: crate::notifications::notification_planning_event_payload(&thread_id),
+            })
+            .await?;
+        events.push(planned);
+        state.notifications.schedule_unread_agent_message_recheck(
+            state.clone(),
+            thread_id.clone(),
+            Duration::from_millis(state.config.notifications.recheck_delay_ms),
+        );
     }
     let runtime = if terminal {
         ThreadRuntimeState {

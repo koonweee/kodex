@@ -11,6 +11,7 @@ import { PreferencesModal } from "./PreferencesModal";
 
 const apiMocks = vi.hoisted(() => ({
   getKodexControlPluginStatus: vi.fn(),
+  getNotificationStatus: vi.fn(),
   installKodexControlPlugin: vi.fn(),
   addMcpServer: vi.fn(),
   listConfiguredMcpServers: vi.fn(),
@@ -26,6 +27,7 @@ const apiMocks = vi.hoisted(() => ({
 vi.mock("./api/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./api/client")>()),
   getKodexControlPluginStatus: apiMocks.getKodexControlPluginStatus,
+  getNotificationStatus: apiMocks.getNotificationStatus,
   installKodexControlPlugin: apiMocks.installKodexControlPlugin,
   addMcpServer: apiMocks.addMcpServer,
   listConfiguredMcpServers: apiMocks.listConfiguredMcpServers,
@@ -38,7 +40,7 @@ vi.mock("./api/client", async (importOriginal) => ({
   startMcpOAuthLogin: apiMocks.startMcpOAuthLogin,
 }));
 
-function renderPreferences(initialSection: "appearance" | "plugins" | "mcp" = "plugins") {
+function renderPreferences(initialSection: "appearance" | "notifications" | "plugins" | "mcp" = "plugins") {
   const queryClient = createKodexQueryClient();
   queryClient.setDefaultOptions({
     queries: {
@@ -55,7 +57,7 @@ function renderPreferences(initialSection: "appearance" | "plugins" | "mcp" = "p
   }
 
   function Harness() {
-    const [section, setSection] = useState<"appearance" | "plugins" | "mcp">(initialSection);
+    const [section, setSection] = useState<"appearance" | "notifications" | "plugins" | "mcp">(initialSection);
     return (
       <PreferencesModal
         activeSection={section}
@@ -77,6 +79,7 @@ function renderPreferences(initialSection: "appearance" | "plugins" | "mcp" = "p
 describe("PreferencesModal plugins tab", () => {
   beforeEach(() => {
     apiMocks.getKodexControlPluginStatus.mockReset();
+    apiMocks.getNotificationStatus.mockReset();
     apiMocks.installKodexControlPlugin.mockReset();
     apiMocks.addMcpServer.mockReset();
     apiMocks.listConfiguredMcpServers.mockReset();
@@ -197,6 +200,106 @@ describe("PreferencesModal plugins tab", () => {
     expect(screen.getByRole("radio", { name: /oled black/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Plugins" }));
     expect(await screen.findByText("Kodex Control")).toBeInTheDocument();
+  });
+});
+
+describe("PreferencesModal notifications tab", () => {
+  beforeEach(() => {
+    apiMocks.getKodexControlPluginStatus.mockReset();
+    apiMocks.getNotificationStatus.mockReset();
+  });
+
+  it("shows notification availability without iOS-specific guidance", async () => {
+    const originalNotification = Object.getOwnPropertyDescriptor(globalThis, "Notification");
+    const originalPushManager = Object.getOwnPropertyDescriptor(globalThis, "PushManager");
+    const originalServiceWorker = Object.getOwnPropertyDescriptor(navigator, "serviceWorker");
+    const notificationConstructor = vi.fn();
+    Object.defineProperty(notificationConstructor, "permission", {
+      configurable: true,
+      value: "default",
+    });
+    Object.defineProperty(globalThis, "Notification", {
+      configurable: true,
+      value: notificationConstructor,
+    });
+    Object.defineProperty(globalThis, "PushManager", {
+      configurable: true,
+      value: function PushManager() {},
+    });
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: {},
+    });
+
+    apiMocks.getNotificationStatus.mockResolvedValue({
+      configured: true,
+      subscriptionsEnabled: true,
+      vapidPublicKey: "AQIDBA",
+    });
+
+    try {
+      renderPreferences("notifications");
+
+      await waitFor(() => expect(screen.getAllByText("Notifications").length).toBeGreaterThan(1));
+      expect(await screen.findByText("Available")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /enable/i })).toBeInTheDocument();
+      expect(screen.queryByText(/ios/i)).not.toBeInTheDocument();
+    } finally {
+      if (originalNotification) {
+        Object.defineProperty(globalThis, "Notification", originalNotification);
+      } else {
+        Reflect.deleteProperty(globalThis, "Notification");
+      }
+      if (originalPushManager) {
+        Object.defineProperty(globalThis, "PushManager", originalPushManager);
+      } else {
+        Reflect.deleteProperty(globalThis, "PushManager");
+      }
+      if (originalServiceWorker) {
+        Object.defineProperty(navigator, "serviceWorker", originalServiceWorker);
+      } else {
+        Reflect.deleteProperty(navigator, "serviceWorker");
+      }
+    }
+  });
+
+  it("keeps notification enablement unavailable without Push API support", async () => {
+    const originalNotification = Object.getOwnPropertyDescriptor(globalThis, "Notification");
+    const originalPushManager = Object.getOwnPropertyDescriptor(globalThis, "PushManager");
+    const notificationConstructor = vi.fn();
+    Object.defineProperty(notificationConstructor, "permission", {
+      configurable: true,
+      value: "default",
+    });
+    Object.defineProperty(globalThis, "Notification", {
+      configurable: true,
+      value: notificationConstructor,
+    });
+    Reflect.deleteProperty(globalThis, "PushManager");
+
+    apiMocks.getNotificationStatus.mockResolvedValue({
+      configured: true,
+      subscriptionsEnabled: true,
+      vapidPublicKey: "AQIDBA",
+    });
+
+    try {
+      renderPreferences("notifications");
+
+      expect(await screen.findByText("Unavailable")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /enable/i })).toBeDisabled();
+    } finally {
+      if (originalNotification) {
+        Object.defineProperty(globalThis, "Notification", originalNotification);
+      } else {
+        Reflect.deleteProperty(globalThis, "Notification");
+      }
+      if (originalPushManager) {
+        Object.defineProperty(globalThis, "PushManager", originalPushManager);
+      } else {
+        Reflect.deleteProperty(globalThis, "PushManager");
+      }
+    }
   });
 });
 

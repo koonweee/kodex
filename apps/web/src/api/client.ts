@@ -63,6 +63,9 @@ export type UserInput = components["schemas"]["UserInput"];
 export type ImageUpload = components["schemas"]["ImageUpload"];
 export type CreateThreadOptions = Omit<components["schemas"]["CreateThreadRequest"], "payload" | "projectId">;
 export type TurnStartOptions = Omit<components["schemas"]["TurnStartRequest"], "input">;
+export type NotificationStatusResponse = components["schemas"]["NotificationStatusResponse"];
+export type PushSubscriptionDeleteResponse = components["schemas"]["PushSubscriptionDeleteResponse"];
+export type PushSubscriptionUpsertResponse = components["schemas"]["PushSubscriptionUpsertResponse"];
 
 type GatewayErrorBody = {
   message?: unknown;
@@ -319,6 +322,43 @@ export async function markThreadSeen(threadId: string, seenCompletedAgentTurnSeq
           seenCompletedAgentTurnSeq,
         };
   return unwrap(api.POST("/v1/threads/{threadId}/seen", { params: { path: { threadId } }, body }));
+}
+
+export async function getNotificationStatus(): Promise<NotificationStatusResponse> {
+  return unwrap(api.GET("/v1/notifications/status"));
+}
+
+export async function upsertPushSubscription(
+  subscription: PushSubscription,
+  userAgent: string | null = typeof navigator === "undefined" ? null : navigator.userAgent,
+): Promise<PushSubscriptionUpsertResponse> {
+  const value = subscription.toJSON();
+  const endpoint = value.endpoint;
+  const auth = value.keys?.auth;
+  const p256dh = value.keys?.p256dh;
+  if (!endpoint || !auth || !p256dh) {
+    throw new Error("Push subscription is missing endpoint or keys");
+  }
+  return unwrap(
+    api.POST("/v1/notifications/subscriptions", {
+      body: {
+        endpoint,
+        keys: {
+          auth,
+          p256dh,
+        },
+        userAgent,
+      },
+    }),
+  );
+}
+
+export async function deletePushSubscription(subscriptionId: string): Promise<PushSubscriptionDeleteResponse> {
+  return unwrap(
+    api.DELETE("/v1/notifications/subscriptions/{subscriptionId}", {
+      params: { path: { subscriptionId } },
+    }),
+  );
 }
 
 export async function startTurn(threadId: string, input: UserInput[], options: TurnStartOptions = {}): Promise<void> {

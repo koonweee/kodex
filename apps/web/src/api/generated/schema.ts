@@ -484,6 +484,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/notifications/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["notification_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/notifications/subscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["upsert_push_subscription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/notifications/subscriptions/{subscriptionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_push_subscription"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/project-previews/reload": {
         parameters: {
             query?: never;
@@ -1608,6 +1656,11 @@ export interface components {
         ModelsQuery: {
             includeHidden?: boolean;
         };
+        NotificationStatusResponse: {
+            configured: boolean;
+            subscriptionsEnabled: boolean;
+            vapidPublicKey?: string | null;
+        };
         PluginDetail: {
             apps?: components["schemas"]["AppSummary"][];
             description?: string | null;
@@ -1798,6 +1851,31 @@ export interface components {
         };
         ProjectPreviewServiceDto: components["schemas"]["ProjectPreviewService"] & {
             status: components["schemas"]["PreviewServiceStatus"];
+        };
+        PushSubscriptionDeleteResponse: {
+            subscription?: null | components["schemas"]["PushSubscriptionResponse"];
+        };
+        PushSubscriptionKeysRequest: {
+            auth: string;
+            p256dh: string;
+        };
+        PushSubscriptionResponse: {
+            /** Format: date-time */
+            createdAt: string;
+            enabled: boolean;
+            endpoint: string;
+            id: string;
+            /** Format: date-time */
+            updatedAt: string;
+            userAgent?: string | null;
+        };
+        PushSubscriptionUpsertRequest: {
+            endpoint: string;
+            keys: components["schemas"]["PushSubscriptionKeysRequest"];
+            userAgent?: string | null;
+        };
+        PushSubscriptionUpsertResponse: {
+            subscription: components["schemas"]["PushSubscriptionResponse"];
         };
         QueuedInput: {
             /** Format: date-time */
@@ -3017,6 +3095,69 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelListResponse"];
+                };
+            };
+        };
+    };
+    notification_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationStatusResponse"];
+                };
+            };
+        };
+    };
+    upsert_push_subscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushSubscriptionUpsertRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushSubscriptionUpsertResponse"];
+                };
+            };
+        };
+    };
+    delete_push_subscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subscriptionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushSubscriptionDeleteResponse"];
                 };
             };
         };

@@ -55,6 +55,10 @@ use crate::{
         },
         mcp::{McpResourceReadQuery, McpServersQuery},
         models::ModelsQuery,
+        notifications::{
+            NotificationStatusResponse, PushSubscriptionDeleteResponse, PushSubscriptionResponse,
+            PushSubscriptionUpsertRequest, PushSubscriptionUpsertResponse,
+        },
         project_previews::{
             PreviewCreateRequest, PreviewListResponse, PreviewRouteCreateRequest,
             PreviewRouteResponse, PreviewRouteUpdateRequest, PreviewServiceCreateRequest,
@@ -97,11 +101,14 @@ pub struct AppState {
     pub events: broadcast::Sender<EventEnvelope>,
     pub skills: crate::skills::SkillCatalogCache,
     pub previews: crate::previews::PreviewManager,
+    pub notifications: crate::notifications::NotificationService,
 }
 
 impl AppState {
     pub fn new(config: Config, store: Store, app_server: DynAppServer) -> Self {
         let (events, _) = broadcast::channel(1024);
+        let notifications =
+            crate::notifications::NotificationService::from_config(&config.notifications);
         let config = Arc::new(config);
         Self {
             previews: crate::previews::PreviewManager::new(config.clone()),
@@ -110,7 +117,16 @@ impl AppState {
             app_server,
             events,
             skills: crate::skills::SkillCatalogCache::default(),
+            notifications,
         }
+    }
+
+    pub fn with_notification_sender(
+        mut self,
+        sender: Arc<dyn crate::notifications::PushSender>,
+    ) -> Self {
+        self.notifications = crate::notifications::NotificationService::new(sender);
+        self
     }
 }
 
@@ -178,6 +194,9 @@ impl AppState {
         crate::routes::account::logout,
         crate::routes::account::read_rate_limits,
         crate::routes::models::list_models,
+        crate::routes::notifications::notification_status,
+        crate::routes::notifications::upsert_push_subscription,
+        crate::routes::notifications::delete_push_subscription,
         crate::routes::skills::list_skills,
         crate::routes::skills::preview_skill_icon,
         crate::routes::kodex_control_plugin::kodex_control_plugin_status,
@@ -297,6 +316,11 @@ impl AppState {
         RateLimitsResponse,
         ModelsQuery,
         ModelListResponse,
+        NotificationStatusResponse,
+        PushSubscriptionResponse,
+        PushSubscriptionUpsertRequest,
+        PushSubscriptionUpsertResponse,
+        PushSubscriptionDeleteResponse,
         SkillsQuery,
         SkillIconQuery,
         SkillsCatalogResponse,
@@ -376,6 +400,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::automations::router())
         .merge(routes::account::router())
         .merge(routes::models::router())
+        .merge(routes::notifications::router())
         .merge(routes::skills::router())
         .merge(routes::kodex_control_plugin::router())
         .merge(routes::mcp::router())

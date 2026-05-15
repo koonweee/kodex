@@ -118,7 +118,13 @@ export function mergeChatThreadData(
   const loadedIds = new Set(loadedThreads.map((thread) => thread.id));
   const mergedLoadedThreads = loadedThreads.map((loadedThread) => {
     const currentThread = currentById.get(loadedThread.id);
-    return currentThread && currentThread.updatedAt > loadedThread.updatedAt ? currentThread : loadedThread;
+    if (!currentThread) {
+      return loadedThread;
+    }
+    if (currentThread.updatedAt > loadedThread.updatedAt) {
+      return currentThread;
+    }
+    return mergeNewerReadProjection(loadedThread, currentThread);
   });
   return [...current.filter((thread) => !loadedIds.has(thread.id)), ...mergedLoadedThreads];
 }
@@ -198,7 +204,13 @@ function mergeProjectThreads(
   const currentById = threadsById(current);
   const mergedHydratedThreads = hydratedThreads.map((hydratedThread) => {
     const currentThread = currentById.get(hydratedThread.id);
-    return currentThread && currentThread.updatedAt > hydratedThread.updatedAt ? currentThread : hydratedThread;
+    if (!currentThread) {
+      return hydratedThread;
+    }
+    if (currentThread.updatedAt > hydratedThread.updatedAt) {
+      return currentThread;
+    }
+    return mergeNewerReadProjection(hydratedThread, currentThread);
   });
   const hydratedIds = new Set(hydratedThreads.map((thread) => thread.id));
   return [...current.filter((thread) => !hydratedIds.has(thread.id)), ...mergedHydratedThreads];
@@ -217,6 +229,26 @@ function mergeRouteSelectedThreadIntoList(
     return threads;
   }
   return threads.map((thread) => (thread.id === routeSelectedThread.id ? routeSelectedThread : thread));
+}
+
+function mergeNewerReadProjection(loadedThread: ThreadSummary, currentThread: ThreadSummary): ThreadSummary {
+  const loadedLastCompleted = loadedThread.lastCompletedAgentTurnSeq ?? 0;
+  const currentLastCompleted = currentThread.lastCompletedAgentTurnSeq ?? 0;
+  const loadedSeen = loadedThread.seenCompletedAgentTurnSeq ?? 0;
+  const currentSeen = currentThread.seenCompletedAgentTurnSeq ?? 0;
+  if (currentLastCompleted <= loadedLastCompleted && currentSeen <= loadedSeen) {
+    return loadedThread;
+  }
+
+  const lastCompletedAgentTurnSeq = Math.max(loadedLastCompleted, currentLastCompleted);
+  const seenCompletedAgentTurnSeq = Math.max(loadedSeen, currentSeen);
+  return {
+    ...loadedThread,
+    lastCompletedAgentTurnSeq,
+    seenCompletedAgentTurnSeq,
+    status: currentThread.status,
+    unreadCompletedAgentTurn: lastCompletedAgentTurnSeq > seenCompletedAgentTurnSeq,
+  };
 }
 
 function upsertThreadInList(current: ThreadSummary[], thread: ThreadSummary): ThreadSummary[] {

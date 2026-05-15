@@ -33,6 +33,17 @@ describe("thread events", () => {
         }),
       ),
     ).toEqual({ threadId: "thread-1", seq: 10 });
+
+    expect(
+      completedAgentTurnEvent(
+        event({
+          kind: "timeline.turn_upsert",
+          codexMethod: "turn/upsert",
+          threadId: "thread-1",
+          payload: { turn: { id: "turn-1", status: { type: "completed" } } },
+        }),
+      ),
+    ).toEqual({ threadId: "thread-1", seq: 10 });
   });
 
   it("recognizes running and terminal thread status updates", () => {
@@ -50,7 +61,7 @@ describe("thread events", () => {
       threadStatusUpdateFromEvent(
         event({
           kind: "timeline.turn_upsert",
-          payload: { threadId: "thread-1", turn: { id: "turn-1", status: "completed" } },
+          payload: { threadId: "thread-1", turn: { id: "turn-1", status: { type: "completed" } } },
         }),
       ),
     ).toEqual({ threadId: "thread-1", status: "idle" });

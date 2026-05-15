@@ -9,6 +9,7 @@ pub mod health;
 pub mod kodex_control_plugin;
 pub mod mcp;
 pub mod models;
+pub mod notifications;
 pub mod project_previews;
 pub mod projects;
 pub mod self_control;
@@ -41,8 +42,12 @@ mod tests {
         config::Config,
         error::{ApiError, ApiResult},
         events::ingest_inbound,
+        notifications::{NotificationKind, NotificationPayload, PushDeliveryOutcome, PushSender},
         queue,
-        store::{NewApproval, NewEvent, Store, ThreadComposerSettings, ThreadRuntimeState},
+        store::{
+            NewApproval, NewEvent, NewPushSubscription, PushSubscription, Store,
+            ThreadComposerSettings, ThreadRuntimeState,
+        },
     };
 
     async fn test_state() -> (AppState, Arc<RecordingAppServer>) {
@@ -118,6 +123,255 @@ mod tests {
         let body = response_json(response).await;
         assert_eq!(body["status"], "appServerUnavailable");
         assert_eq!(body["appServerReady"], false);
+    }
+
+    #[tokio::test]
+    async fn notification_status_reports_vapid_configuration() {
+        let (mut state, _) = test_state().await;
+        Arc::make_mut(&mut state.config)
+            .notifications
+            .vapid_public_key = Some("public-key".to_string());
+        Arc::make_mut(&mut state.config)
+            .notifications
+            .vapid_private_key = Some("private-key".to_string());
+        Arc::make_mut(&mut state.config).notifications.vapid_subject =
+            Some("mailto:admin@example.test".to_string());
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/notifications/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["configured"], true);
+        assert_eq!(body["subscriptionsEnabled"], true);
+        assert_eq!(body["vapidPublicKey"], "public-key");
+    }
+
+    #[tokio::test]
+    async fn notification_subscription_routes_create_update_and_delete() {
+        let (state, _) = test_state().await;
+        let app = build_router(state);
+        let create_body = json!({
+            "endpoint": "https://push.example/sub-1",
+            "keys": {
+                "p256dh": "public-1",
+                "auth": "auth-1"
+            },
+            "userAgent": "browser one"
+        });
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/notifications/subscriptions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(create_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let body = response_json(response).await;
+        let subscription_id = body["subscription"]["id"].as_str().unwrap().to_string();
+        assert_eq!(
+            body["subscription"]["endpoint"],
+            "https://push.example/sub-1"
+        );
+
+        let update_body = json!({
+            "endpoint": "https://push.example/sub-1",
+            "keys": {
+                "p256dh": "public-2",
+                "auth": "auth-2"
+            },
+            "userAgent": "browser two"
+        });
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/notifications/subscriptions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(update_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let body = response_json(response).await;
+        assert_eq!(body["subscription"]["id"], subscription_id);
+        assert!(body["subscription"].get("p256dh").is_none());
+        assert!(body["subscription"].get("auth").is_none());
+        assert_eq!(body["subscription"]["enabled"], true);
+
+        let response = app
+            .oneshot(
+                Request::delete(format!("/v1/notifications/subscriptions/{subscription_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["subscription"]["id"], subscription_id);
+        assert_eq!(body["subscription"]["enabled"], false);
+    }
+
+    #[tokio::test]
+    async fn terminal_turn_upsert_schedules_unread_agent_message_delivery() {
+        let (mut state, app_server) = test_state().await;
+        Arc::make_mut(&mut state.config)
+            .notifications
+            .recheck_delay_ms = 0;
+        let sender = Arc::new(RecordingPushSender::new(PushDeliveryOutcome::Sent));
+        state = state.with_notification_sender(sender.clone());
+        state
+            .store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/sub-1".to_string(),
+                p256dh: "public".to_string(),
+                auth: "auth".to_string(),
+                user_agent: None,
+            })
+            .await
+            .unwrap();
+        app_server.queued_responses.lock().unwrap().extend([
+            thread_read_response("thread-1", 1),
+            json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
+        ]);
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "turn/upsert".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turn": {
+                        "id": "turn-1",
+                        "status": {"type": "completed"},
+                        "items": []
+                    }
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        timeout(Duration::from_secs(2), sender.notified.notified())
+            .await
+            .unwrap();
+        let payloads = sender.payloads.lock().unwrap();
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0].kind, NotificationKind::UnreadAgentMessage);
+        assert_eq!(payloads[0].thread_id, "thread-1");
+        assert_eq!(payloads[0].route, "/threads/thread-1");
+        assert_eq!(payloads[0].badge_count, 1);
+
+        let events = state
+            .store
+            .replay_events(None, None, Some("thread-1".to_string()))
+            .await
+            .unwrap();
+        assert!(events
+            .iter()
+            .any(|event| event.kind == "notification.planned"));
+    }
+
+    #[tokio::test]
+    async fn already_seen_recheck_skips_unread_agent_message_delivery() {
+        let (mut state, app_server) = test_state().await;
+        Arc::make_mut(&mut state.config)
+            .notifications
+            .recheck_delay_ms = 0;
+        let sender = Arc::new(RecordingPushSender::new(PushDeliveryOutcome::Sent));
+        state = state.with_notification_sender(sender.clone());
+        state
+            .store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/sub-1".to_string(),
+                p256dh: "public".to_string(),
+                auth: "auth".to_string(),
+                user_agent: None,
+            })
+            .await
+            .unwrap();
+        state
+            .store
+            .mark_thread_seen_completed_agent_turns("thread-1", 1)
+            .await
+            .unwrap();
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(thread_read_response("thread-1", 1));
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "turn/upsert".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turn": {
+                        "id": "turn-1",
+                        "status": {"type": "completed"},
+                        "items": []
+                    }
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(sender.payloads.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn permanent_push_failure_disables_stale_subscription() {
+        let (state, _) = test_state().await;
+        let sender = Arc::new(RecordingPushSender::new(
+            PushDeliveryOutcome::PermanentFailure,
+        ));
+        let state = state.with_notification_sender(sender);
+        state
+            .store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/stale".to_string(),
+                p256dh: "public".to_string(),
+                auth: "auth".to_string(),
+                user_agent: None,
+            })
+            .await
+            .unwrap();
+
+        state
+            .notifications
+            .deliver_payload(
+                &state,
+                NotificationPayload {
+                    kind: NotificationKind::UnreadAgentMessage,
+                    thread_id: "thread-1".to_string(),
+                    title: "Thread".to_string(),
+                    route: "/threads/thread-1".to_string(),
+                    badge_count: 1,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(state
+            .store
+            .list_enabled_push_subscriptions()
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]
@@ -374,6 +628,9 @@ mod tests {
             "/v1/account/logout",
             "/v1/account/rate-limits",
             "/v1/models",
+            "/v1/notifications/status",
+            "/v1/notifications/subscriptions",
+            "/v1/notifications/subscriptions/{subscriptionId}",
             "/v1/skills",
             "/v1/kodex-control-plugin",
             "/v1/kodex-control-plugin/install",
@@ -7673,6 +7930,61 @@ mod tests {
         assert!(chunk.contains(&format!("id: {}", rate_limits.seq)));
         assert!(chunk.contains("account/rateLimits/updated"));
         assert!(chunk.contains("\"usedPercent\":12"));
+    }
+
+    struct RecordingPushSender {
+        outcome: PushDeliveryOutcome,
+        payloads: StdMutex<Vec<NotificationPayload>>,
+        notified: Notify,
+    }
+
+    impl RecordingPushSender {
+        fn new(outcome: PushDeliveryOutcome) -> Self {
+            Self {
+                outcome,
+                payloads: StdMutex::new(Vec::new()),
+                notified: Notify::new(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl PushSender for RecordingPushSender {
+        async fn send(
+            &self,
+            _subscription: &PushSubscription,
+            payload: &NotificationPayload,
+        ) -> PushDeliveryOutcome {
+            self.payloads.lock().unwrap().push(payload.clone());
+            self.notified.notify_waiters();
+            self.outcome.clone()
+        }
+    }
+
+    fn thread_read_response(thread_id: &str, completed_turns: usize) -> Value {
+        let turns = (0..completed_turns)
+            .map(|index| {
+                json!({
+                    "id": format!("turn-{index}"),
+                    "status": {"type": "completed"},
+                    "items": []
+                })
+            })
+            .collect::<Vec<_>>();
+        json!({
+            "thread": {
+                "id": thread_id,
+                "cliVersion": "0.130.0",
+                "cwd": "/workspace",
+                "ephemeral": false,
+                "modelProvider": "openai",
+                "source": "cli",
+                "status": {"type": "idle"},
+                "turns": turns,
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_600_i64
+            }
+        })
     }
 
     async fn response_json(response: axum::response::Response) -> Value {

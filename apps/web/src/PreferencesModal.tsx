@@ -1,14 +1,24 @@
 import { Alert, Badge, Box, Button, Group, Loader, Modal, Stack, Text } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Package, RefreshCw } from "lucide-react";
+import { Bell, BellOff, Check, Package, RefreshCw } from "lucide-react";
 import { useRef, type KeyboardEvent as ReactKeyboardEvent, type MutableRefObject } from "react";
 
-import { getKodexControlPluginStatus, installKodexControlPlugin } from "./api/client";
+import { getKodexControlPluginStatus, getNotificationStatus, installKodexControlPlugin } from "./api/client";
 import { queryKeys } from "./api/queryKeys";
 import { McpPreferencesPanel } from "./mcp/McpPreferencesPanel";
+import {
+  notificationPermission,
+  requestKodexNotificationPermission,
+} from "./notifications/browserNotifications";
+import type { BrowserNotificationPermission } from "./notifications/notificationTypes";
+import {
+  browserPushNotificationsSupported,
+  disableBrowserPushNotifications,
+  enableBrowserPushNotifications,
+} from "./notifications/pushSubscriptions";
 import { KODEX_COLOR_SCHEMES, type KodexColorSchemeId } from "./theme";
 
-export type PreferenceSection = "appearance" | "plugins" | "mcp";
+export type PreferenceSection = "appearance" | "notifications" | "plugins" | "mcp";
 
 type PreferencesModalProps = {
   activeSection?: PreferenceSection;
@@ -34,6 +44,11 @@ export function PreferencesModal({
     queryFn: getKodexControlPluginStatus,
     queryKey: queryKeys.kodexControlPlugin,
   });
+  const notificationStatusQuery = useQuery({
+    enabled: opened && activeSection === "notifications",
+    queryFn: getNotificationStatus,
+    queryKey: queryKeys.notificationStatus,
+  });
   const installPluginMutation = useMutation({
     mutationFn: installKodexControlPlugin,
     onSuccess: async () => {
@@ -41,6 +56,29 @@ export function PreferencesModal({
         queryClient.invalidateQueries({ queryKey: queryKeys.kodexControlPlugin }),
         queryClient.invalidateQueries({ queryKey: ["skills"] }),
       ]);
+    },
+  });
+  const enableNotificationsMutation = useMutation({
+    mutationFn: async () => {
+      const status = notificationStatusQuery.data ?? (await getNotificationStatus());
+      if (!status.vapidPublicKey) {
+        throw new Error("Notifications are not configured");
+      }
+      const permission = await requestKodexNotificationPermission();
+      if (permission !== "granted") {
+        return permission;
+      }
+      await enableBrowserPushNotifications(status.vapidPublicKey);
+      return permission;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.notificationStatus });
+    },
+  });
+  const disableNotificationsMutation = useMutation({
+    mutationFn: disableBrowserPushNotifications,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.notificationStatus });
     },
   });
 
@@ -96,6 +134,15 @@ export function PreferencesModal({
           </Button>
           <Button
             className="kodex-preferences-section-button"
+            data-active={activeSection === "notifications" ? "true" : undefined}
+            onClick={() => onSectionChange("notifications")}
+            type="button"
+            variant={activeSection === "notifications" ? "light" : "subtle"}
+          >
+            Notifications
+          </Button>
+          <Button
+            className="kodex-preferences-section-button"
             data-active={activeSection === "plugins" ? "true" : undefined}
             onClick={() => onSectionChange("plugins")}
             type="button"
@@ -121,6 +168,18 @@ export function PreferencesModal({
             onColorSchemeChange={onColorSchemeChange}
             optionRefs={optionRefs}
           />
+        ) : activeSection === "notifications" ? (
+          <NotificationsPreferencesPanel
+            disabling={disableNotificationsMutation.isPending}
+            enableError={enableNotificationsMutation.error}
+            enabling={enableNotificationsMutation.isPending}
+            onDisable={() => disableNotificationsMutation.mutate()}
+            onEnable={() => enableNotificationsMutation.mutate()}
+            permission={notificationPermission()}
+            status={notificationStatusQuery.data}
+            statusError={notificationStatusQuery.error}
+            statusLoading={notificationStatusQuery.isLoading}
+          />
         ) : activeSection === "plugins" ? (
           <PluginsPreferencesPanel
             installError={installPluginMutation.error}
@@ -136,6 +195,98 @@ export function PreferencesModal({
         )}
       </Box>
     </Modal>
+  );
+}
+
+function NotificationsPreferencesPanel({
+  disabling,
+  enableError,
+  enabling,
+  onDisable,
+  onEnable,
+  permission,
+  status,
+  statusError,
+  statusLoading,
+}: {
+  disabling: boolean;
+  enableError: Error | null;
+  enabling: boolean;
+  onDisable: () => void;
+  onEnable: () => void;
+  permission: BrowserNotificationPermission;
+  status?: Awaited<ReturnType<typeof getNotificationStatus>>;
+  statusError: Error | null;
+  statusLoading: boolean;
+}) {
+  const pushSupported = browserPushNotificationsSupported();
+  const unavailable =
+    !pushSupported ||
+    permission === "unsupported" ||
+    status?.subscriptionsEnabled === false ||
+    status?.configured === false;
+  const statusText = statusLoading
+    ? "Checking"
+    : statusError
+      ? "Unavailable"
+      : permission === "granted"
+        ? "Enabled"
+        : unavailable
+          ? "Unavailable"
+          : "Available";
+
+  return (
+    <Stack className="kodex-preferences-panel" gap={14}>
+      <Group justify="space-between" wrap="nowrap">
+        <Text className="kodex-preferences-panel-title" fw={650}>
+          Notifications
+        </Text>
+        <Badge data-tone={permission === "granted" ? "success" : unavailable ? "neutral" : "info"}>{statusText}</Badge>
+      </Group>
+
+      <Stack className="kodex-preferences-setting" gap={10}>
+        {statusLoading ? (
+          <Group gap="xs">
+            <Loader size="xs" />
+            <Text c="dimmed" size="sm">
+              Checking notification status
+            </Text>
+          </Group>
+        ) : null}
+        {statusError ? (
+          <Alert color="red" variant="light">
+            {statusError.message}
+          </Alert>
+        ) : null}
+        {enableError ? (
+          <Alert color="red" variant="light">
+            {enableError.message}
+          </Alert>
+        ) : null}
+        <Group gap="xs">
+          <Button
+            disabled={unavailable || enabling || permission === "granted"}
+            leftSection={<Bell size={15} />}
+            loading={enabling}
+            onClick={onEnable}
+            type="button"
+            variant="light"
+          >
+            Enable
+          </Button>
+          <Button
+            disabled={disabling || permission !== "granted"}
+            leftSection={<BellOff size={15} />}
+            loading={disabling}
+            onClick={onDisable}
+            type="button"
+            variant="subtle"
+          >
+            Disable
+          </Button>
+        </Group>
+      </Stack>
+    </Stack>
   );
 }
 

@@ -119,6 +119,10 @@ Environment overrides:
 - `KODEX_PREVIEW_PORT_RANGE`
 - `KODEX_CADDY_ADMIN_BIND`
 - `KODEX_PREVIEW_DATA_DIR`
+- `KODEX_VAPID_PUBLIC_KEY`
+- `KODEX_VAPID_PRIVATE_KEY`
+- `KODEX_VAPID_SUBJECT`
+- `KODEX_NOTIFICATIONS_RECHECK_DELAY_MS`
 
 Local routes:
 
@@ -132,6 +136,7 @@ Local routes:
 - `GET /v1/threads/{threadId}/files/preview?path=...` for local/VPN-only image and Markdown previews of supported readable regular files.
 - `GET /v1/threads/{threadId}/queued-inputs`, `POST /v1/threads/{threadId}/queued-inputs`, `POST /v1/threads/{threadId}/queued-inputs/{queueId}/retry`, `POST /v1/threads/{threadId}/queued-inputs/{queueId}/steer`, and `DELETE /v1/threads/{threadId}/queued-inputs/{queueId}` for the same-gateway persisted composer queue. Queue rows may include nullable `sourceType` and `sourceId` fields for gateway-originated work such as automations.
 - `GET /v1/automations`, `POST /v1/automations`, `GET/PATCH/DELETE /v1/automations/{automationId}`, and `POST /v1/automations/{automationId}/pause|resume` for gateway-owned recurring prompts into a target thread. Automations have a 30-second minimum interval, coalesce missed due slots, use latest stored thread composer settings, and enqueue source-labeled input for the next idle turn rather than auto-steering active turns.
+- `GET /v1/notifications/status`, `POST /v1/notifications/subscriptions`, and `DELETE /v1/notifications/subscriptions/{subscriptionId}` for optional Web Push subscription management. Push payloads are minimal unread-agent-message notices and do not include agent message text.
 - `GET /v1/skills` for the gateway skill catalog and `GET /v1/skills/icon?path=...` for localhost/trusted-VPN skill icon previews used by enriched inline skill badges.
 - `GET /v1/kodex-control-plugin` and `POST /v1/kodex-control-plugin/install` for the transitional first-party Kodex Control plugin install surface. This focused endpoint automatically adds the bundled marketplace and installs `kodex-control`; it should be replaced by generic `/v1/plugins` APIs when generic plugin management is built.
 - `GET /v1/mcp/servers`, `GET /v1/mcp/configured-servers`, `POST /v1/mcp/servers`, `POST /v1/mcp/servers/{server}/replace`, `PATCH /v1/mcp/servers/{server}/enabled`, `DELETE /v1/mcp/servers/{server}`, `GET /v1/mcp/servers/{server}/resources/read`, `POST /v1/mcp/servers/{server}/oauth-login`, and `POST /v1/mcp/reload` for app-server MCP runtime inventory, global MCP config management, listed-resource reads, explicit OAuth login URL generation, and runtime MCP reload. These routes do not call MCP tools.
@@ -276,6 +281,18 @@ npm run generate:api
 The Vite dev server runs on `127.0.0.1:5173` and proxies `/v1` plus `/openapi.json` to the default gateway at `127.0.0.1:8787`. To proxy to another local gateway port during development, set `VITE_KODEX_PROXY_TARGET`. To bypass the Vite proxy and call another gateway origin directly, set `VITE_KODEX_API_BASE_URL`.
 
 Playwright E2E tests run against mocked gateway responses and start their own Vite server on `127.0.0.1:5174`.
+
+The web app is built as an installable PWA. The service worker precaches built static assets only; API routes, SSE, OpenAPI, uploads, and file previews stay network-owned. App badge updates use gateway-owned unread completed-agent-turn state and silently no-op in browsers without the Badging API.
+
+Browser notifications are optional. To enable Web Push, configure VAPID keys on the gateway:
+
+```bash
+KODEX_VAPID_PUBLIC_KEY=<base64url-public-key>
+KODEX_VAPID_PRIVATE_KEY=<base64url-private-key>
+KODEX_VAPID_SUBJECT=mailto:you@example.com
+```
+
+`KODEX_NOTIFICATIONS_RECHECK_DELAY_MS` defaults to `2000`; the gateway waits that long, rereads thread/read state, and skips the push if the thread has already been seen. Device push requires a secure browser context; localhost works for development, while phone/tablet testing over a tailnet or trusted VPN needs HTTPS termination in front of the local gateway. This does not change the MVP access model: keep the gateway on localhost or a trusted VPN, not the public internet.
 
 Frontend API types are generated from the gateway OpenAPI contract and committed at `apps/web/src/api/generated/schema.ts` so the client remains buildable from a fresh checkout. Regenerate them after backend DTO or route contract changes:
 

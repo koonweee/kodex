@@ -7,6 +7,7 @@ pub mod config;
 pub mod error;
 pub mod events;
 pub mod mcp;
+pub mod notifications;
 pub mod previews;
 pub mod queue;
 pub mod routes;

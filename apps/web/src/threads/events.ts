@@ -49,7 +49,7 @@ export function completedAgentTurnEvent(event: EventEnvelope): { threadId: strin
   }
 
   const turnPayload = asRecord(asRecord(event.payload).turn);
-  const status = stringValue(turnPayload.status)?.toLowerCase();
+  const status = statusTypeValue(turnPayload.status)?.toLowerCase();
   if (!status || !["completed", "failed", "cancelled", "canceled", "interrupted"].includes(status)) {
     return null;
   }
@@ -73,11 +73,15 @@ export function threadStatusUpdateFromEvent(event: EventEnvelope): { threadId: s
 
   if (event.kind === "timeline.turn_upsert") {
     const turnPayload = asRecord(payload.turn);
-    const status = normalizeRuntimeStatus(stringValue(turnPayload.status));
+    const status = normalizeRuntimeStatus(statusTypeValue(turnPayload.status));
     return status ? { threadId, status } : null;
   }
 
   return null;
+}
+
+function statusTypeValue(value: unknown): string | null {
+  return stringValue(value) ?? stringValue(asRecord(value).type);
 }
 
 export function threadNameUpdateFromEvent(event: EventEnvelope): { threadId: string; name: string | null } | null {

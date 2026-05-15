@@ -67,6 +67,7 @@ import { MarkdownPreviewPane } from "./files/MarkdownPreviewPane";
 import type { MarkdownPreviewRequest } from "./files/types";
 import { ImageLightbox } from "./images/ImageLightbox";
 import type { ImageLightboxImage } from "./images/types";
+import { useKodexNotifications } from "./notifications/useKodexNotifications";
 import type { PreferenceSection } from "./PreferencesModal";
 import {
   applyKodexColorScheme,
@@ -432,6 +433,13 @@ function KodexShell({
     pinnedThreads,
     updateThreadEverywhere: patchThreadEverywhere,
   });
+  const { applyNotificationEvent } = useKodexNotifications({
+    chatThreads,
+    pinnedThreads,
+    routeSelectedThread,
+    selectedThreadId,
+    threadsByProjectId,
+  });
   const {
     applyThreadMetadataEvent,
     applyThreadMetadataEvents,
@@ -668,8 +676,9 @@ function KodexShell({
         applyThreadPinEvent(event);
         applyThreadUpsertEvent(event);
         applyThreadMetadataEvent(event);
-        refreshSidebarThreadsForLiveEvent(event);
         applyCompletedAgentTurnEvent(event);
+        applyNotificationEvent(event);
+        refreshSidebarThreadsForLiveEvent(event);
         invalidateSelectedSubagentsForEvent(event);
         const nextUsageLimitSnapshot = usageLimitSnapshotFromEvent(event);
         if (nextUsageLimitSnapshot) {

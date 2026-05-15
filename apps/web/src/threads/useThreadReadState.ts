@@ -1,4 +1,4 @@
-import { useEffect, useRef, type MutableRefObject } from "react";
+import { useRef, type MutableRefObject } from "react";
 
 import { markThreadSeen, type EventEnvelope, type ThreadSummary } from "../api/client";
 import { completedAgentTurnEvent } from "./events";
@@ -28,11 +28,9 @@ export function useThreadReadState({
   const chatThreadsRef = useRef<ThreadSummary[]>([]);
   const pinnedThreadsRef = useRef<ThreadSummary[]>([]);
 
-  useEffect(() => {
-    threadsByProjectIdRef.current = threadsByProjectId;
-    chatThreadsRef.current = chatThreads;
-    pinnedThreadsRef.current = pinnedThreads;
-  }, [chatThreads, pinnedThreads, threadsByProjectId]);
+  threadsByProjectIdRef.current = threadsByProjectId;
+  chatThreadsRef.current = chatThreads;
+  pinnedThreadsRef.current = pinnedThreads;
 
   function applyCompletedAgentTurnEvent(event: EventEnvelope) {
     const completedTurn = completedAgentTurnEvent(event);

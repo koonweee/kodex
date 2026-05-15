@@ -177,6 +177,27 @@ pub struct ThreadPin {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PushSubscription {
+    pub id: String,
+    pub endpoint: String,
+    pub p256dh: String,
+    pub auth: String,
+    pub user_agent: Option<String>,
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewPushSubscription {
+    pub endpoint: String,
+    pub p256dh: String,
+    pub auth: String,
+    pub user_agent: Option<String>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ThreadReadState {
     pub seen_completed_agent_turn_seq: i64,
@@ -520,6 +541,22 @@ impl Store {
             create table if not exists thread_reads (
                 thread_id text primary key,
                 seen_completed_agent_turn_seq integer not null default 0,
+                updated_at text not null
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
+            create table if not exists push_subscriptions (
+                id text primary key,
+                endpoint text not null unique,
+                p256dh text not null,
+                auth text not null,
+                user_agent text,
+                enabled integer not null default 1,
+                created_at text not null,
                 updated_at text not null
             )
             "#,
@@ -1791,6 +1828,101 @@ impl Store {
         row.map(row_to_thread_read)
             .transpose()?
             .ok_or_else(|| ApiError::NotFound(format!("thread read state {thread_id}")))
+    }
+
+    pub async fn upsert_push_subscription(
+        &self,
+        subscription: NewPushSubscription,
+    ) -> ApiResult<PushSubscription> {
+        let now = Utc::now();
+        let id = Uuid::new_v4().to_string();
+        sqlx::query(
+            r#"
+            insert into push_subscriptions (
+                id, endpoint, p256dh, auth, user_agent, enabled, created_at, updated_at
+            )
+            values (?, ?, ?, ?, ?, 1, ?, ?)
+            on conflict(endpoint) do update set
+                p256dh = excluded.p256dh,
+                auth = excluded.auth,
+                user_agent = excluded.user_agent,
+                enabled = 1,
+                updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(id)
+        .bind(&subscription.endpoint)
+        .bind(&subscription.p256dh)
+        .bind(&subscription.auth)
+        .bind(&subscription.user_agent)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_push_subscription_by_endpoint(&subscription.endpoint)
+            .await
+    }
+
+    pub async fn get_push_subscription_by_endpoint(
+        &self,
+        endpoint: &str,
+    ) -> ApiResult<PushSubscription> {
+        let row = sqlx::query(
+            r#"
+            select id, endpoint, p256dh, auth, user_agent, enabled, created_at, updated_at
+            from push_subscriptions
+            where endpoint = ?
+            "#,
+        )
+        .bind(endpoint)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.map(row_to_push_subscription)
+            .transpose()?
+            .ok_or_else(|| ApiError::NotFound(format!("push subscription endpoint {endpoint}")))
+    }
+
+    pub async fn list_enabled_push_subscriptions(&self) -> ApiResult<Vec<PushSubscription>> {
+        let rows = sqlx::query(
+            r#"
+            select id, endpoint, p256dh, auth, user_agent, enabled, created_at, updated_at
+            from push_subscriptions
+            where enabled = 1
+            order by created_at, id
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter().map(row_to_push_subscription).collect()
+    }
+
+    pub async fn disable_push_subscription(&self, id: &str) -> ApiResult<Option<PushSubscription>> {
+        let now = Utc::now();
+        sqlx::query(
+            r#"
+            update push_subscriptions
+            set enabled = 0, updated_at = ?
+            where id = ?
+            "#,
+        )
+        .bind(now)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+
+        let row = sqlx::query(
+            r#"
+            select id, endpoint, p256dh, auth, user_agent, enabled, created_at, updated_at
+            from push_subscriptions
+            where id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(row_to_push_subscription).transpose()
     }
 
     pub async fn create_queued_input(
@@ -3287,6 +3419,19 @@ fn row_to_thread_pin(row: sqlx::sqlite::SqliteRow) -> ApiResult<ThreadPin> {
     })
 }
 
+fn row_to_push_subscription(row: sqlx::sqlite::SqliteRow) -> ApiResult<PushSubscription> {
+    Ok(PushSubscription {
+        id: row.try_get("id")?,
+        endpoint: row.try_get("endpoint")?,
+        p256dh: row.try_get("p256dh")?,
+        auth: row.try_get("auth")?,
+        user_agent: row.try_get("user_agent")?,
+        enabled: row.try_get::<i64, _>("enabled")? != 0,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
 fn row_to_approval(row: sqlx::sqlite::SqliteRow) -> ApiResult<Approval> {
     let payload_json: String = row.try_get("payload_json")?;
     let response_json: Option<String> = row.try_get("response_json")?;
@@ -3323,7 +3468,7 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'project_preview_services', 'project_previews', 'project_preview_routes', 'approvals', 'thread_reads', 'thread_composer_settings', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'project_preview_services', 'project_previews', 'project_preview_routes', 'approvals', 'thread_reads', 'push_subscriptions', 'thread_composer_settings', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
         )
         .fetch_all(store.pool())
         .await
@@ -3340,6 +3485,7 @@ mod tests {
                 "project_preview_services",
                 "project_previews",
                 "projects",
+                "push_subscriptions",
                 "queued_turn_inputs",
                 "thread_composer_settings",
                 "thread_pins",
@@ -3507,6 +3653,64 @@ mod tests {
         let thread_ids = vec!["thread-1".to_string()];
         let states = store.thread_read_states(&thread_ids).await.unwrap();
         assert!(!states.contains_key("thread-1"));
+    }
+
+    #[tokio::test]
+    async fn push_subscription_upsert_is_idempotent_by_endpoint() {
+        let store = Store::in_memory().await.unwrap();
+        let first = store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/sub-1".to_string(),
+                p256dh: "public-1".to_string(),
+                auth: "auth-1".to_string(),
+                user_agent: Some("first browser".to_string()),
+            })
+            .await
+            .unwrap();
+        let second = store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/sub-1".to_string(),
+                p256dh: "public-2".to_string(),
+                auth: "auth-2".to_string(),
+                user_agent: Some("second browser".to_string()),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(second.id, first.id);
+        assert_eq!(second.p256dh, "public-2");
+        assert_eq!(second.auth, "auth-2");
+        assert_eq!(second.user_agent.as_deref(), Some("second browser"));
+        assert!(second.enabled);
+        let enabled = store.list_enabled_push_subscriptions().await.unwrap();
+        assert_eq!(enabled.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn disabled_push_subscription_is_removed_from_enabled_lookup() {
+        let store = Store::in_memory().await.unwrap();
+        let subscription = store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/stale".to_string(),
+                p256dh: "public".to_string(),
+                auth: "auth".to_string(),
+                user_agent: None,
+            })
+            .await
+            .unwrap();
+
+        let disabled = store
+            .disable_push_subscription(&subscription.id)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(!disabled.enabled);
+        assert!(store
+            .list_enabled_push_subscriptions()
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]

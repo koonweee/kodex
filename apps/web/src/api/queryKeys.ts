@@ -10,6 +10,7 @@ export const queryKeys = {
   mcpConfiguredServers: ["mcp", "configured-servers"] as const,
   mcpResource: (server: string, uri: string) => ["mcp", "servers", server, "resources", uri] as const,
   mcpServers: ["mcp", "servers"] as const,
+  notificationStatus: ["notifications", "status"] as const,
   pendingApprovals: ["approvals", "pending"] as const,
   pinnedThreadTombstones: ["threads", "pinned", "tombstones"] as const,
   pinnedThreads: ["threads", "pinned"] as const,
