@@ -555,6 +555,7 @@ fn is_rollout_load_error(error: &ApiError) -> bool {
     };
     let normalized = message.to_ascii_lowercase();
     normalized.contains("failed to load rollout")
+        || normalized.contains("failed to load thread history")
 }
 
 pub fn client(app_server: &DynAppServer) -> CodexClient {

@@ -3048,6 +3048,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn thread_detail_retries_transient_thread_history_load_error() {
+        let (state, app_server) = test_state().await;
+        app_server
+            .queued_errors
+            .lock()
+            .unwrap()
+            .push(ApiError::BadGateway(
+                "app-server error -32603: FAILED TO LOAD THREAD HISTORY".to_string(),
+            ));
+        app_server.queued_responses.lock().unwrap().push(json!({
+            "thread": {
+                "id": "thread-1",
+                "cliVersion": "0.128.0",
+                "cwd": "/workspace",
+                "ephemeral": false,
+                "modelProvider": "openai",
+                "preview": "hi",
+                "source": "cli",
+                "status": {"type": "idle"},
+                "turns": [],
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_610_i64
+            }
+        }));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(requests.iter().all(|(method, params)| {
+            method == "thread/read"
+                && *params == json!({"threadId": "thread-1", "includeTurns": true})
+        }));
+    }
+
+    #[tokio::test]
     async fn thread_detail_revalidates_persisted_skill_mentions_against_catalog() {
         let (state, app_server) = test_state().await;
         state
@@ -3794,6 +3839,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn turn_start_retries_transient_thread_history_load_error() {
+        let (state, app_server) = test_state().await;
+        app_server
+            .queued_errors
+            .lock()
+            .unwrap()
+            .push(ApiError::BadGateway(
+                "app-server error -32603: FAILED TO LOAD THREAD HISTORY".to_string(),
+            ));
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"ok": true}));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/turns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":[{"type":"text","text":"hi"}]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(requests.iter().all(|(method, params)| {
+            method == "turn/start"
+                && *params
+                    == json!({"threadId": "thread-1", "input": [{"type": "text", "text": "hi"}]})
+        }));
+    }
+
+    #[tokio::test]
     async fn skills_route_maps_to_app_server_skills_list() {
         let (state, app_server) = test_state().await;
         *app_server.next_response.lock().unwrap() = Some(json!({
@@ -3974,6 +4056,45 @@ mod tests {
         app_server.queued_errors.lock().unwrap().push(ApiError::BadGateway(
             "app-server error -32603: failed to load rollout `/Users/example/.codex/sessions/2026/05/07/rollout-2026-05-07T16-08-24-019e042c-2a66-73c1-8b68-94e5be3f51af.jsonl`".to_string(),
         ));
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"thread": thread_summary("thread-1")}),
+            skills_list_response("/workspace", "review-fix", "/skills/review-fix/SKILL.md"),
+            json!({"ok": true}),
+        ]);
+        let app = build_router(state);
+
+        assert_ok(
+            app.oneshot(
+                Request::post("/v1/threads/thread-1/turns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"Run $review-fix"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+        );
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[0].1["includeTurns"], false);
+        assert_eq!(requests[1].0, "thread/read");
+        assert_eq!(requests[1].1["includeTurns"], false);
+        assert_eq!(requests[2].0, "skills/list");
+        assert_eq!(requests[3].0, "turn/start");
+    }
+
+    #[tokio::test]
+    async fn turn_start_retries_transient_thread_history_load_error_while_resolving_thread_cwd() {
+        let (state, app_server) = test_state().await;
+        app_server
+            .queued_errors
+            .lock()
+            .unwrap()
+            .push(ApiError::BadGateway(
+                "app-server error -32603: FAILED TO LOAD THREAD HISTORY".to_string(),
+            ));
         app_server.queued_responses.lock().unwrap().extend([
             json!({"thread": thread_summary("thread-1")}),
             skills_list_response("/workspace", "review-fix", "/skills/review-fix/SKILL.md"),

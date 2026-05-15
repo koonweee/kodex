@@ -868,6 +868,47 @@ describe("MVP composer input flows", () => {
     expect(within(timelineElement(container)).getAllByText("Materialize this")).toHaveLength(1);
   });
 
+  it("retries thread history load failures after a draft thread first turn starts", async () => {
+    let detailReads = 0;
+    const draftThread = { ...thread, id: "thread-2", name: "New thread", preview: null };
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads": { thread: draftThread, rawPayload: {} },
+        "POST /v1/threads/thread-2/turns": { payload: {} },
+        "GET /v1/threads/thread-2": () => {
+          detailReads += 1;
+          if (detailReads === 1) {
+            throw new Error('APP-SERVER ERROR -32603 "FAILED TO LOAD THREAD HISTORY"');
+          }
+          return threadDetail(
+            { ...draftThread, preview: "Materialize this" },
+            [
+              snapshotTurn("turn-1", [
+                snapshotItem("user-1", "userMessage", {
+                  content: [{ type: "text", text: "Materialize this" }],
+                }),
+                snapshotItem("agent-1", "agentMessage", { text: "Materialized response" }),
+              ]),
+            ],
+          );
+        },
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Materialize this");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    expect(await within(timelineElement(container)).findByText("Materialized response")).toBeInTheDocument();
+    expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(2);
+    expect(screen.queryByText(/failed to load thread history/i)).not.toBeInTheDocument();
+    expect(within(timelineElement(container)).getAllByText("Materialize this")).toHaveLength(1);
+  });
+
   it("keeps failed draft thread image uploads visible and retryable", async () => {
     let rejectUpload: (reason?: unknown) => void = () => undefined;
     let uploadAttempts = 0;

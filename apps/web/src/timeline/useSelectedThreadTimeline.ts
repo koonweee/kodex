@@ -218,7 +218,7 @@ export function useSelectedThreadTimeline({
           if (cancelled) {
             return;
           }
-          if (isThreadMaterializingError(error)) {
+          if (isTransientThreadSnapshotLoadError(error)) {
             materializingThreadRetry = setTimeout(loadInitialSnapshot, MATERIALIZING_THREAD_SNAPSHOT_RETRY_MS);
             return;
           }
@@ -246,8 +246,12 @@ function isQueueEvent(event: EventEnvelope): boolean {
   return event.kind === "turn_queue.item_upsert" || event.kind === "turn_queue.item_deleted";
 }
 
-function isThreadMaterializingError(error: unknown): boolean {
+function isTransientThreadSnapshotLoadError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();
-  return normalized.includes("not materialized yet");
+  return (
+    normalized.includes("not materialized yet") ||
+    normalized.includes("failed to load rollout") ||
+    normalized.includes("failed to load thread history")
+  );
 }
