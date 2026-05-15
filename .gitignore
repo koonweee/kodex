@@ -5,3 +5,6 @@ apps/web/dist/
 *.tsbuildinfo
 playwright-report/
 test-results/
+*.env
+*.env.local
+apps/gateway/config/production.env

@@ -15,6 +15,7 @@ endpoint="${KODEX_PROD_ENDPOINT:-http://127.0.0.1:8787}"
 log_path="${KODEX_PROD_RESTART_LOG:-/tmp/kodex-prod-restart.log}"
 curl_out="${KODEX_PROD_CURL_OUT:-/tmp/kodex-prod-curl.out}"
 curl_err="${KODEX_PROD_CURL_ERR:-/tmp/kodex-prod-curl.err}"
+prod_env_file="${KODEX_PROD_ENV_FILE:-$HOME/.kodex/production.env}"
 
 if [[ "${KODEX_PROD_RESTART_PHASE:-}" != "child" ]]; then
   if [[ "$restart_session" == "$session_name" ]]; then
@@ -31,13 +32,14 @@ if [[ "${KODEX_PROD_RESTART_PHASE:-}" != "child" ]]; then
   fi
 
   child_command=$(
-    printf 'env KODEX_PROD_RESTART_PHASE=child KODEX_PROD_SESSION=%q KODEX_PROD_RESTART_SESSION=%q KODEX_PROD_ENDPOINT=%q KODEX_PROD_RESTART_LOG=%q KODEX_PROD_CURL_OUT=%q KODEX_PROD_CURL_ERR=%q %q' \
+    printf 'env KODEX_PROD_RESTART_PHASE=child KODEX_PROD_SESSION=%q KODEX_PROD_RESTART_SESSION=%q KODEX_PROD_ENDPOINT=%q KODEX_PROD_RESTART_LOG=%q KODEX_PROD_CURL_OUT=%q KODEX_PROD_CURL_ERR=%q KODEX_PROD_ENV_FILE=%q %q' \
       "$session_name" \
       "$restart_session" \
       "$endpoint" \
       "$log_path" \
       "$curl_out" \
       "$curl_err" \
+      "$prod_env_file" \
       "$script_path"
     for arg in "$@"; do
       printf ' %q' "$arg"
@@ -55,6 +57,11 @@ fi
 
 log_step "Restarting $session_name from $repo_root"
 log_step "Endpoint: $endpoint"
+if [[ -f "$prod_env_file" ]]; then
+  log_step "Production environment: $prod_env_file"
+else
+  log_step "Production environment: $prod_env_file not found; using process environment only"
+fi
 
 cd "$repo_root/apps/web"
 log_step "Building frontend bundle"
@@ -67,9 +74,14 @@ if tmux has-session -t "$session_name" 2>/dev/null; then
 fi
 
 log_step "Starting tmux session $session_name"
+session_command=$(
+  printf 'set -euo pipefail; '
+  printf 'if [[ -f %q ]]; then set -a; source %q; set +a; fi; ' "$prod_env_file" "$prod_env_file"
+  printf 'KODEX_FRONTEND_DIST=apps/web/dist exec cargo run -p kodex-gateway'
+)
 tmux new-session -d -s "$session_name" \
   -c "$repo_root" \
-  "KODEX_FRONTEND_DIST=apps/web/dist cargo run -p kodex-gateway"
+  "bash -lc $(printf '%q' "$session_command")"
 
 log_step "Waiting for $endpoint"
 for _ in $(seq 1 30); do
