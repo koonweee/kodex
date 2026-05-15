@@ -558,7 +558,14 @@ describe("MVP shell flows", () => {
     expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
   });
 
-  it("keeps unread project threads visible when their project is collapsed", async () => {
+  it("keeps unread and in-progress project threads visible when their project is collapsed", async () => {
+    const inProgressThread = {
+      ...activeThread,
+      id: "thread-in-progress",
+      name: "Running thread",
+      unreadCompletedAgentTurn: false,
+      updatedAt: thread.updatedAt + 2,
+    };
     const unreadThread = {
       ...thread,
       id: "thread-unread",
@@ -575,7 +582,7 @@ describe("MVP shell flows", () => {
     mockGateway(
       baseRoutes({
         "GET /v1/threads": {
-          threads: [unreadThread, readThread],
+          threads: [inProgressThread, unreadThread, readThread],
           nextCursor: null,
           backwardsCursor: null,
           rawPayload: {},
@@ -586,16 +593,26 @@ describe("MVP shell flows", () => {
     render(<App />);
 
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
+    expect(within(kodexGroup).getByRole("button", { name: /running thread/i })).toBeInTheDocument();
     expect(within(kodexGroup).getByRole("button", { name: /unread thread/i })).toBeInTheDocument();
     expect(within(kodexGroup).getByRole("button", { name: /^read thread$/i })).toBeInTheDocument();
 
     await userEvent.click(within(kodexGroup).getByRole("button", { name: /collapse kodex/i }));
 
+    const runningRow = within(kodexGroup).getByRole("button", { name: /running thread/i });
+    const runningThreadRow = runningRow.closest(".kodex-thread-list-button");
     const unreadRow = within(kodexGroup).getByRole("button", { name: /unread thread/i });
     const unreadThreadRow = unreadRow.closest(".kodex-thread-list-button");
+    expect(runningRow).toBeInTheDocument();
+    expect(runningThreadRow).toBeInTheDocument();
     expect(unreadRow).toBeInTheDocument();
     expect(unreadThreadRow).toBeInTheDocument();
     expect(within(kodexGroup).queryByRole("button", { name: /^read thread$/i })).not.toBeInTheDocument();
+    expect(
+      within(runningThreadRow as HTMLElement).getByRole("status", {
+        name: /thread in progress/i,
+      }),
+    ).toBeInTheDocument();
     expect(
       within(unreadThreadRow as HTMLElement).getByRole("img", {
         name: /unread completed agent turn/i,

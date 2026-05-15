@@ -561,7 +561,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                   const projectCollapsed = collapsedProjectIds.has(project.id);
                   const showAllProjectThreads = expandedThreadProjectIds.has(project.id);
                   const displayedProjectThreads = projectMatchesSearch ? projectThreads : visibleProjectThreads;
-                  const collapsedProjectThreads = displayedProjectThreads.filter(threadHasUnreadAgentTurn);
+                  const collapsedProjectThreads = displayedProjectThreads.filter(threadSurfacesWhenProjectCollapsed);
                   const renderedProjectThreads = projectCollapsed ? collapsedProjectThreads : displayedProjectThreads;
                   const newThreadLabel =
                     project.id === selectedProjectId ? SIDEBAR_TEXT.newThread : `Create thread in ${project.name}`;
@@ -747,8 +747,8 @@ function threadMatchesSearch(thread: ThreadSummary, query: string, pendingTitleT
   return threadDisplayTitleWithPending(thread, pendingTitleThreadIds).toLowerCase().includes(query);
 }
 
-function threadHasUnreadAgentTurn(thread: ThreadSummary): boolean {
-  return thread.unreadCompletedAgentTurn === true;
+function threadSurfacesWhenProjectCollapsed(thread: ThreadSummary): boolean {
+  return thread.unreadCompletedAgentTurn === true || threadInProgress(thread);
 }
 
 function threadDisplayTitleWithPending(thread: ThreadSummary, pendingTitleThreadIds: Set<string>): string {
