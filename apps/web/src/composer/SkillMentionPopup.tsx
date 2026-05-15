@@ -100,7 +100,12 @@ export function SkillMentionPopup({
                     )}
                   </span>
                   <span className="kodex-skill-popup-body">
-                    <Group justify="space-between" gap={8} wrap="nowrap">
+                    <Group
+                      className="kodex-skill-popup-title"
+                      justify="space-between"
+                      gap={8}
+                      wrap="nowrap"
+                    >
                       <span className="kodex-skill-popup-name">{skillDisplayName(skill)}</span>
                       <span className="kodex-skill-popup-scope">{skill.scope}</span>
                     </Group>

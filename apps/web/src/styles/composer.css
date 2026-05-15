@@ -243,7 +243,10 @@
   align-items: center;
   column-gap: 8px;
   width: 100%;
+  height: 48px;
   min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
   border: 0;
   border-radius: var(--kodex-radius-sm);
   padding: 8px 9px;
@@ -259,6 +262,12 @@
   display: grid;
   gap: 3px;
   min-width: 0;
+  overflow: hidden;
+}
+
+.kodex-skill-popup-title {
+  min-width: 0;
+  overflow: hidden;
 }
 
 .kodex-skill-option-icon {
@@ -328,6 +337,8 @@
 
 .kodex-skill-popup-scope {
   flex: 0 0 auto;
+  max-width: 42%;
+  overflow: hidden;
   border: 1px solid var(--kodex-border-subtle);
   border-radius: var(--kodex-radius-round);
   padding: 2px 6px;
@@ -335,11 +346,14 @@
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
+  text-overflow: ellipsis;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .kodex-skill-popup-meta {
   min-width: 0;
+  overflow: hidden;
   color: var(--kodex-text-secondary);
   font-size: 11px;
   line-height: 1.2;

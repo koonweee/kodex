@@ -262,6 +262,8 @@ describe("Mobile composer panel", () => {
     expect(document.querySelector(".kodex-skill-popup")).not.toBeInTheDocument();
     expect(screen.queryByText("Generate raster images")).not.toBeInTheDocument();
     expect(document.querySelector(".kodex-mobile-skill-command-description")).not.toBeInTheDocument();
+    expect(mobileComposerCss).toMatch(/\.kodex-mobile-skill-command-row\s*\{[^}]*height:\s*48px;/s);
+    expect(mobileComposerCss).toMatch(/\.kodex-mobile-skill-command-row\s*\{[^}]*overflow:\s*hidden;/s);
 
     await userEvent.click(option);
 

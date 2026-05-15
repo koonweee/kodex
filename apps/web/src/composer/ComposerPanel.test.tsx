@@ -199,6 +199,9 @@ describe("ComposerPanel", () => {
     expect(popup?.parentElement).toHaveClass("kodex-composer");
     expect(composerCss).toMatch(/\.kodex-skill-popup\s*\{[^}]*position:\s*absolute;/s);
     expect(composerCss).toMatch(/\.kodex-skill-popup\s*\{[^}]*bottom:\s*calc\(100% \+ 8px\);/s);
+    expect(composerCss).toMatch(/\.kodex-skill-popup-row\s*\{[^}]*height:\s*48px;/s);
+    expect(composerCss).toMatch(/\.kodex-skill-popup-row\s*\{[^}]*overflow:\s*hidden;/s);
+    expect(composerCss).toMatch(/\.kodex-skill-popup-scope\s*\{[^}]*white-space:\s*nowrap;/s);
   });
 
   it("renders a generated first-character icon for skill suggestions without icon assets", async () => {
