@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ThreadDetailResponse } from "../api/client";
-import { timelineItemsInDisplayOrder } from "./derive";
+import { deriveTimelineRows, timelineItemsInDisplayOrder } from "./derive";
 import {
   addOptimisticUserMessage,
   applyDebugEvent,
@@ -23,6 +23,27 @@ describe("timeline reducer snapshots", () => {
 
     expect(state.items.map((item) => item.text)).toEqual(["Hello", "Updated answer"]);
     expect(state.items.map((item) => item.id)).toEqual(["user-1", "agent-2"]);
+  });
+
+  it("loads command and reasoning items from full app-server snapshots into worked rows", () => {
+    const state = applyTimelineSnapshot(createTimelineState(), snapshotWithWorkedItems());
+
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.kind)).toEqual([
+      "user_message",
+      "reasoning_summary",
+      "command_execution",
+      "assistant_message",
+    ]);
+
+    const rows = deriveTimelineRows(state);
+    expect(rows.map((row) => row.key)).toEqual(["item-user-1", "work-turn-1", "item-agent-1"]);
+    expect(rows[1]).toMatchObject({
+      type: "work",
+      collapsedRows: [
+        { type: "item", item: { id: "reasoning-1" } },
+        { type: "activity", items: [{ id: "cmd-1" }] },
+      ],
+    });
   });
 
   it("keeps snapshot display order separate from the live event cursor", () => {
@@ -1148,6 +1169,51 @@ function snapshot(agentText: string, agentId: string): ThreadDetailResponse {
             id: agentId,
             itemType: "agentMessage",
             rawPayload: { id: agentId, type: "agentMessage", text: agentText },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function snapshotWithWorkedItems(): ThreadDetailResponse {
+  return {
+    ...snapshot("Done", "agent-1"),
+    turns: [
+      {
+        id: "turn-1",
+        status: "completed",
+        startedAt: 1,
+        completedAt: 2,
+        rawPayload: {},
+        items: [
+          {
+            id: "user-1",
+            itemType: "userMessage",
+            rawPayload: { id: "user-1", type: "userMessage", content: [{ type: "text", text: "Hello" }] },
+          },
+          {
+            id: "reasoning-1",
+            itemType: "reasoning",
+            rawPayload: { id: "reasoning-1", type: "reasoning", summary: ["Need context."] },
+          },
+          {
+            id: "cmd-1",
+            itemType: "commandExecution",
+            rawPayload: {
+              id: "cmd-1",
+              type: "commandExecution",
+              command: "rg issue",
+              commandActions: [],
+              cwd: "/workspace",
+              status: "completed",
+              aggregatedOutput: "match",
+            },
+          },
+          {
+            id: "agent-1",
+            itemType: "agentMessage",
+            rawPayload: { id: "agent-1", type: "agentMessage", text: "Done", phase: "final_answer" },
           },
         ],
       },

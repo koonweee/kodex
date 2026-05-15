@@ -3,6 +3,7 @@ export const queryKeys = {
   automations: ["automations"] as const,
   automationTombstones: ["automations", "tombstones"] as const,
   chatThreads: ["threads", "chat"] as const,
+  composerSettingsRoot: ["composer-settings"] as const,
   composerSettings: (projectId: string | null) => ["composer-settings", projectId ?? "global"] as const,
   kodexControlPlugin: ["plugins", "kodex-control"] as const,
   models: ["models"] as const,

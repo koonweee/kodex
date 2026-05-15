@@ -46,9 +46,11 @@ export function useComposerSettingsState({
     },
     onSuccess: (_response, patch) => {
       setComposerDefaults((current) => mergeDurableComposerSettings(current, patch));
-      queryClient.setQueriesData({ queryKey: ["composer-settings"] }, (current) =>
+      queryClient.setQueriesData({ queryKey: queryKeys.composerSettingsRoot }, (current) =>
         current && typeof current === "object" ? { ...current, ...patch } : current,
       );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.composerSettingsRoot, refetchType: "all" });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.models, refetchType: "all" });
     },
   });
 

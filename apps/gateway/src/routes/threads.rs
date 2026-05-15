@@ -672,7 +672,7 @@ pub async fn get_thread(
     Path(thread_id): Path<String>,
 ) -> ApiResult<Json<ThreadDetailResponse>> {
     let mut response = app_server_api::client(&state.app_server)
-        .thread_read(thread_id)
+        .thread_read_full_history(thread_id)
         .await?;
     apply_thread_detail_response_state(&state, &mut response).await?;
     Ok(Json(response))
@@ -1207,13 +1207,54 @@ fn overlay_stored_thread_composer_settings(
     thread: &mut ThreadSummary,
     settings: &ThreadComposerSettings,
 ) {
-    thread.model = settings.model.clone();
-    thread.reasoning_effort = settings.reasoning_effort.clone();
-    thread.service_tier = settings.service_tier.clone();
-    thread.approval_policy = settings.approval_policy.clone();
-    thread.approvals_reviewer = settings.approvals_reviewer.clone();
-    thread.sandbox = settings.sandbox.clone();
-    sync_raw_thread_composer_settings(&mut thread.raw_payload, settings);
+    let mut overlay = ThreadComposerSettings::default();
+    if thread.model.is_none() {
+        thread.model = settings.model.clone();
+        overlay.model = settings.model.clone();
+    }
+    if thread.reasoning_effort.is_none() {
+        thread.reasoning_effort = settings.reasoning_effort.clone();
+        overlay.reasoning_effort = settings.reasoning_effort.clone();
+    }
+    if thread.service_tier.is_none() {
+        thread.service_tier = settings.service_tier.clone();
+        overlay.service_tier = settings.service_tier.clone();
+    }
+    if thread.approval_policy.is_none() {
+        thread.approval_policy = settings.approval_policy.clone();
+        overlay.approval_policy = settings.approval_policy.clone();
+    }
+    if thread.approvals_reviewer.is_none() {
+        thread.approvals_reviewer = settings.approvals_reviewer.clone();
+        overlay.approvals_reviewer = settings.approvals_reviewer.clone();
+    }
+    if thread.sandbox.is_none() {
+        thread.sandbox = settings.sandbox.clone();
+        overlay.sandbox = settings.sandbox.clone();
+    }
+    sync_raw_thread_composer_settings_present(&mut thread.raw_payload, &overlay);
+}
+
+fn sync_raw_thread_composer_settings_present(
+    raw_payload: &mut Value,
+    settings: &ThreadComposerSettings,
+) {
+    let Some(raw_payload) = raw_payload.as_object_mut() else {
+        return;
+    };
+
+    sync_raw_optional_string_present(raw_payload, "model", &settings.model);
+    sync_raw_optional_string_present(raw_payload, "reasoningEffort", &settings.reasoning_effort);
+    sync_raw_optional_string_present(raw_payload, "serviceTier", &settings.service_tier);
+    sync_raw_optional_string_present(raw_payload, "approvalPolicy", &settings.approval_policy);
+    sync_raw_optional_string_present(
+        raw_payload,
+        "approvalsReviewer",
+        &settings.approvals_reviewer,
+    );
+    if let Some(sandbox) = settings.sandbox.as_ref() {
+        raw_payload.insert("sandbox".to_string(), sandbox.clone());
+    }
 }
 
 fn sync_raw_thread_composer_settings(raw_payload: &mut Value, settings: &ThreadComposerSettings) {
@@ -1234,6 +1275,16 @@ fn sync_raw_thread_composer_settings(raw_payload: &mut Value, settings: &ThreadC
         raw_payload.insert("sandbox".to_string(), sandbox.clone());
     } else {
         raw_payload.remove("sandbox");
+    }
+}
+
+fn sync_raw_optional_string_present(
+    raw_payload: &mut serde_json::Map<String, Value>,
+    key: &str,
+    value: &Option<String>,
+) {
+    if let Some(value) = value.as_ref() {
+        raw_payload.insert(key.to_string(), Value::String(value.clone()));
     }
 }
 

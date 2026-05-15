@@ -2171,10 +2171,10 @@ mod tests {
                     {"keyPath": "model", "mergeStrategy": "replace", "value": "gpt-5.4"},
                     {"keyPath": "model_reasoning_effort", "mergeStrategy": "replace", "value": "medium"},
                     {"keyPath": "service_tier", "mergeStrategy": "replace", "value": null}
-                ]
+                ],
+                "reloadUserConfig": true
             })
         );
-        assert!(requests[1].1.get("reloadUserConfig").is_none());
         let events = state.store.replay_events(None, None, None).await.unwrap();
         assert!(events.iter().any(|event| {
             event.kind == "skills.changed" && event.payload["source"] == "config-write"
@@ -2724,15 +2724,18 @@ mod tests {
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "thread/read");
         assert_eq!(requests[0].1["threadId"], "thread-1");
-        assert_eq!(requests[0].1["includeTurns"], true);
-        assert_eq!(requests[1].0, "thread/resume");
+        assert_eq!(requests[0].1["includeTurns"], false);
+        assert_eq!(requests[1].0, "thread/turns/list");
         assert_eq!(requests[1].1["threadId"], "thread-1");
-        assert_eq!(requests[1].1["persistExtendedHistory"], true);
-        assert_eq!(requests[2].0, "thread/fork");
+        assert_eq!(requests[1].1["itemsView"], "full");
+        assert_eq!(requests[2].0, "thread/resume");
         assert_eq!(requests[2].1["threadId"], "thread-1");
         assert_eq!(requests[2].1["persistExtendedHistory"], true);
-        assert_eq!(requests[3].0, "thread/archive");
+        assert_eq!(requests[3].0, "thread/fork");
         assert_eq!(requests[3].1["threadId"], "thread-1");
+        assert_eq!(requests[3].1["persistExtendedHistory"], true);
+        assert_eq!(requests[4].0, "thread/archive");
+        assert_eq!(requests[4].1["threadId"], "thread-1");
     }
 
     #[tokio::test]
@@ -3008,33 +3011,112 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stored_thread_settings_fill_only_missing_app_server_fields() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .save_thread_composer_settings(
+                "thread-1",
+                &ThreadComposerSettings {
+                    model: Some("stored-model".to_string()),
+                    reasoning_effort: Some("high".to_string()),
+                    service_tier: Some("fast".to_string()),
+                    approval_policy: None,
+                    approvals_reviewer: None,
+                    sandbox: None,
+                },
+            )
+            .await
+            .unwrap();
+        app_server.queued_responses.lock().unwrap().push(json!({
+            "data": [{
+                "id": "thread-1",
+                "cliVersion": "0.130.0",
+                "cwd": "/workspace",
+                "status": {"type": "idle"},
+                "source": "cli",
+                "preview": "hello",
+                "model": "app-server-model",
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_600_i64
+            }],
+            "nextCursor": null,
+            "backwardsCursor": null
+        }));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(Request::get("/v1/threads").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["threads"][0]["model"], "app-server-model");
+        assert_eq!(body["threads"][0]["reasoningEffort"], "high");
+        assert_eq!(
+            body["threads"][0]["rawPayload"]["model"],
+            "app-server-model"
+        );
+        assert_eq!(body["threads"][0]["rawPayload"]["reasoningEffort"], "high");
+    }
+
+    #[tokio::test]
     async fn thread_detail_returns_app_server_snapshot_turns_without_gateway_events() {
         let (state, app_server) = test_state().await;
+        state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("thread-1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                item_id: Some("item-stored-cmd".to_string()),
+                kind: "timeline.item_upsert".to_string(),
+                codex_method: Some("item/completed".to_string()),
+                payload: json!({
+                    "item": {
+                        "id": "item-stored-cmd",
+                        "type": "commandExecution",
+                        "command": "echo from gateway event store"
+                    }
+                }),
+            })
+            .await
+            .unwrap();
         let app = build_router(state);
-        *app_server.next_response.lock().unwrap() = Some(json!({
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({
             "thread": {
                 "id": "thread-1",
-                "cliVersion": "0.128.0",
+                "cliVersion": "0.130.0",
                 "cwd": "/workspace",
                 "ephemeral": false,
                 "modelProvider": "openai",
                 "preview": "hello",
                 "source": "cli",
                 "status": {"type": "idle"},
-                "turns": [{
+                "turns": [],
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_610_i64
+            }
+        }),
+            json!({
+                "data": [{
                     "id": "turn-1",
                     "status": {"type": "completed"},
                     "startedAt": 1_767_225_600_i64,
                     "completedAt": 1_767_225_610_i64,
                     "items": [
                         {"id": "item-user-1", "type": "userMessage", "content": [{"type": "text", "text": "hello"}]},
+                        {"id": "item-reasoning-1", "type": "reasoning", "summary": ["Need to inspect the code."]},
+                        {"id": "item-cmd-1", "type": "commandExecution", "command": "rg issue", "commandActions": [], "cwd": "/workspace", "status": "completed", "aggregatedOutput": "match"},
                         {"id": "item-agent-1", "type": "agentMessage", "text": "world"}
                     ]
                 }],
-                "createdAt": 1_767_225_600_i64,
-                "updatedAt": 1_767_225_610_i64
-            }
-        }));
+                "nextCursor": null,
+                "backwardsCursor": "cursor-prev"
+            }),
+        ]);
 
         let response = app
             .oneshot(
@@ -3050,6 +3132,9 @@ mod tests {
         assert_eq!(body["thread"]["id"], "thread-1");
         assert_eq!(body["turns"][0]["id"], "turn-1");
         assert_eq!(body["turns"][0]["items"][0]["id"], "item-user-1");
+        assert_eq!(body["turns"][0]["items"][1]["itemType"], "reasoning");
+        assert_eq!(body["turns"][0]["items"][2]["itemType"], "commandExecution");
+        assert!(!body.to_string().contains("item-stored-cmd"));
         assert_eq!(body["thread"]["lastCompletedAgentTurnSeq"], 1);
         assert_eq!(body["thread"]["unreadCompletedAgentTurn"], true);
         assert_eq!(body["liveState"], "idle");
@@ -3059,9 +3144,84 @@ mod tests {
             requests[0],
             (
                 "thread/read".to_string(),
-                json!({"threadId": "thread-1", "includeTurns": true})
+                json!({"threadId": "thread-1", "includeTurns": false})
             )
         );
+        assert_eq!(
+            requests[1],
+            (
+                "thread/turns/list".to_string(),
+                json!({
+                    "threadId": "thread-1",
+                    "cursor": null,
+                    "sortDirection": "asc",
+                    "itemsView": "full",
+                    "limit": null
+                })
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn thread_detail_paginates_full_app_server_turn_history() {
+        let (state, app_server) = test_state().await;
+        let app = build_router(state);
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({
+                "thread": {
+                    "id": "thread-1",
+                    "cliVersion": "0.130.0",
+                    "cwd": "/workspace",
+                    "ephemeral": false,
+                    "modelProvider": "openai",
+                    "preview": "hello",
+                    "source": "cli",
+                    "status": {"type": "idle"},
+                    "turns": [],
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_610_i64
+                }
+            }),
+            json!({
+                "data": [{
+                    "id": "turn-1",
+                    "status": {"type": "completed"},
+                    "items": [{"id": "item-agent-1", "type": "agentMessage", "text": "first"}]
+                }],
+                "nextCursor": "cursor-2",
+                "backwardsCursor": "cursor-prev"
+            }),
+            json!({
+                "data": [{
+                    "id": "turn-2",
+                    "status": {"type": "completed"},
+                    "items": [{"id": "item-agent-2", "type": "agentMessage", "text": "second"}]
+                }],
+                "nextCursor": null,
+                "backwardsCursor": "cursor-prev-2"
+            }),
+        ]);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["turns"][0]["id"], "turn-1");
+        assert_eq!(body["turns"][1]["id"], "turn-2");
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[1].0, "thread/turns/list");
+        assert_eq!(requests[1].1["cursor"], Value::Null);
+        assert_eq!(requests[2].0, "thread/turns/list");
+        assert_eq!(requests[2].1["cursor"], "cursor-2");
+        assert_eq!(requests[2].1["itemsView"], "full");
     }
 
     #[tokio::test]
@@ -3073,7 +3233,7 @@ mod tests {
         app_server.queued_responses.lock().unwrap().push(json!({
             "thread": {
                 "id": "thread-1",
-                "cliVersion": "0.128.0",
+                "cliVersion": "0.130.0",
                 "cwd": "/workspace",
                 "ephemeral": false,
                 "modelProvider": "openai",
@@ -3098,11 +3258,23 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 2);
-        assert!(requests.iter().all(|(method, params)| {
-            method == "thread/read"
-                && *params == json!({"threadId": "thread-1", "includeTurns": true})
-        }));
+        assert_eq!(requests.len(), 3);
+        assert_eq!(
+            requests[0],
+            (
+                "thread/read".to_string(),
+                json!({"threadId": "thread-1", "includeTurns": false})
+            )
+        );
+        assert_eq!(
+            requests[1],
+            (
+                "thread/read".to_string(),
+                json!({"threadId": "thread-1", "includeTurns": false})
+            )
+        );
+        assert_eq!(requests[2].0, "thread/turns/list");
+        assert_eq!(requests[2].1["itemsView"], "full");
     }
 
     #[tokio::test]
@@ -3118,7 +3290,7 @@ mod tests {
         app_server.queued_responses.lock().unwrap().push(json!({
             "thread": {
                 "id": "thread-1",
-                "cliVersion": "0.128.0",
+                "cliVersion": "0.130.0",
                 "cwd": "/workspace",
                 "ephemeral": false,
                 "modelProvider": "openai",
@@ -3143,11 +3315,23 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 2);
-        assert!(requests.iter().all(|(method, params)| {
-            method == "thread/read"
-                && *params == json!({"threadId": "thread-1", "includeTurns": true})
-        }));
+        assert_eq!(requests.len(), 3);
+        assert_eq!(
+            requests[0],
+            (
+                "thread/read".to_string(),
+                json!({"threadId": "thread-1", "includeTurns": false})
+            )
+        );
+        assert_eq!(
+            requests[1],
+            (
+                "thread/read".to_string(),
+                json!({"threadId": "thread-1", "includeTurns": false})
+            )
+        );
+        assert_eq!(requests[2].0, "thread/turns/list");
+        assert_eq!(requests[2].1["itemsView"], "full");
     }
 
     #[tokio::test]
@@ -3173,17 +3357,24 @@ mod tests {
             .await
             .unwrap();
         let app = build_router(state);
-        *app_server.next_response.lock().unwrap() = Some(json!({
-            "thread": {
-                "id": "thread-1",
-                "cliVersion": "0.128.0",
-                "cwd": "/workspace",
-                "ephemeral": false,
-                "modelProvider": "openai",
-                "preview": "Use $agent-browser",
-                "source": "cli",
-                "status": {"type": "idle"},
-                "turns": [{
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({
+                "thread": {
+                    "id": "thread-1",
+                    "cliVersion": "0.130.0",
+                    "cwd": "/workspace",
+                    "ephemeral": false,
+                    "modelProvider": "openai",
+                    "preview": "Use $agent-browser",
+                    "source": "cli",
+                    "status": {"type": "idle"},
+                    "turns": [],
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_610_i64
+                }
+            }),
+            json!({
+                "data": [{
                     "id": "turn-1",
                     "status": {"type": "completed"},
                     "startedAt": 1_767_225_600_i64,
@@ -3192,10 +3383,10 @@ mod tests {
                         {"id": "item-user-1", "type": "userMessage", "content": [{"type": "text", "text": "Use $agent-browser"}]}
                     ]
                 }],
-                "createdAt": 1_767_225_600_i64,
-                "updatedAt": 1_767_225_610_i64
-            }
-        }));
+                "nextCursor": null,
+                "backwardsCursor": null
+            }),
+        ]);
 
         let response = app
             .oneshot(
@@ -3226,14 +3417,20 @@ mod tests {
             json!({
                 "thread": {
                     "id": "thread-1",
-                    "cliVersion": "0.128.0",
+                    "cliVersion": "0.130.0",
                     "cwd": "/workspace",
                     "ephemeral": false,
                     "modelProvider": "openai",
                     "preview": "Use $browser-use:browser",
                     "source": "cli",
                     "status": {"type": "idle"},
-                    "turns": [{
+                    "turns": [],
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_610_i64
+                }
+            }),
+            json!({
+                "data": [{
                         "id": "turn-1",
                         "status": {"type": "completed"},
                         "startedAt": 1_767_225_600_i64,
@@ -3242,9 +3439,8 @@ mod tests {
                             {"id": "item-user-1", "type": "userMessage", "content": [{"type": "text", "text": "Use $browser-use:browser"}]}
                         ]
                     }],
-                    "createdAt": 1_767_225_600_i64,
-                    "updatedAt": 1_767_225_610_i64
-                }
+                "nextCursor": null,
+                "backwardsCursor": null
             }),
             skills_list_response_with_interface(
                 "/workspace",
@@ -4432,12 +4628,6 @@ mod tests {
                 "cwd": "/workspace",
                 "status": {"type": "idle"},
                 "source": "cli",
-                "model": "gpt-5.4",
-                "reasoningEffort": "high",
-                "serviceTier": "fast",
-                "approvalPolicy": "never",
-                "approvalsReviewer": "user",
-                "sandbox": {"type": "dangerFullAccess"},
                 "preview": "hello",
                 "createdAt": 1_767_225_600_i64,
                 "updatedAt": 1_767_225_600_i64
@@ -4512,12 +4702,6 @@ mod tests {
                 "cwd": "/workspace",
                 "status": {"type": "idle"},
                 "source": "cli",
-                "model": "gpt-5.4-mini",
-                "reasoningEffort": "medium",
-                "serviceTier": "fast",
-                "approvalPolicy": "on-request",
-                "approvalsReviewer": "auto_review",
-                "sandbox": {"type":"workspaceWrite","networkAccess":false,"writableRoots":[]},
                 "preview": "hello",
                 "createdAt": 1_767_225_600_i64,
                 "updatedAt": 1_767_225_600_i64
@@ -5595,7 +5779,7 @@ mod tests {
         *app_server.next_response.lock().unwrap() = Some(json!({
             "thread": {
                 "id": "thread-1",
-                "cliVersion": "0.128.0",
+                "cliVersion": "0.130.0",
                 "cwd": "/workspace",
                 "ephemeral": false,
                 "modelProvider": "openai",
@@ -6716,7 +6900,7 @@ mod tests {
         *app_server.next_response.lock().unwrap() = Some(json!({
             "data": [{
                 "id": "thread-1",
-                "cliVersion": "0.128.0",
+                "cliVersion": "0.130.0",
                 "name": "Build gateway",
                 "cwd": cwd,
                 "ephemeral": false,
@@ -7565,7 +7749,7 @@ mod tests {
     fn thread_summary(id: &str) -> Value {
         json!({
             "id": id,
-            "cliVersion": "0.128.0",
+            "cliVersion": "0.130.0",
             "cwd": "/workspace",
             "ephemeral": false,
             "modelProvider": "openai",

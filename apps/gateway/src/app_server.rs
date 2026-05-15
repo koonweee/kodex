@@ -683,6 +683,7 @@ done
             "thread/list" => json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
             "thread/loaded/list" => json!({"data": [], "nextCursor": null}),
             "thread/read" => json!({"thread": test_thread("thread-1")}),
+            "thread/turns/list" => json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
             "thread/start" | "thread/resume" | "thread/fork" => json!({
                 "thread": test_thread("thread-1"),
                 "cwd": "/workspace",
@@ -708,7 +709,7 @@ done
     fn test_thread(id: &str) -> Value {
         json!({
             "id": id,
-            "cliVersion": "0.128.0",
+            "cliVersion": "0.130.0",
             "cwd": "/workspace",
             "ephemeral": false,
             "modelProvider": "openai",

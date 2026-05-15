@@ -121,6 +121,68 @@ impl CodexClient {
         ThreadDetailResponse::from_payload(payload)
     }
 
+    pub async fn thread_read_full_history(
+        &self,
+        thread_id: String,
+    ) -> ApiResult<ThreadDetailResponse> {
+        let payload = self
+            .request_retrying_rollout_load(
+                "thread/read",
+                json!({ "threadId": thread_id, "includeTurns": false }),
+            )
+            .await?;
+        let turns = self.thread_turns_list_full(thread_id).await?;
+        ThreadDetailResponse::from_thread_payload_and_turns(payload, turns)
+    }
+
+    pub async fn thread_turns_list_page(
+        &self,
+        thread_id: String,
+        cursor: Option<String>,
+        sort_direction: SortDirection,
+        items_view: ThreadTurnItemsView,
+        limit: Option<u32>,
+    ) -> ApiResult<ThreadTurnsListPage> {
+        let payload = self
+            .request_retrying_rollout_load(
+                "thread/turns/list",
+                json!({
+                    "threadId": thread_id,
+                    "cursor": cursor,
+                    "sortDirection": sort_direction.as_str(),
+                    "itemsView": items_view.as_str(),
+                    "limit": limit,
+                }),
+            )
+            .await?;
+        ThreadTurnsListPage::from_payload(payload)
+    }
+
+    pub async fn thread_turns_list_full(
+        &self,
+        thread_id: String,
+    ) -> ApiResult<Vec<ThreadTurnSnapshot>> {
+        let mut turns = Vec::new();
+        let mut cursor = None;
+        loop {
+            let page = self
+                .thread_turns_list_page(
+                    thread_id.clone(),
+                    cursor,
+                    SortDirection::Asc,
+                    ThreadTurnItemsView::Full,
+                    None,
+                )
+                .await?;
+            turns.extend(page.data);
+            let Some(next_cursor) = page.next_cursor else {
+                break;
+            };
+            cursor = Some(next_cursor);
+        }
+        Ok(turns)
+    }
+
     pub async fn thread_read_summary(&self, thread_id: String) -> ApiResult<ThreadSummary> {
         let payload = self
             .request_retrying_rollout_load(
@@ -439,8 +501,7 @@ impl CodexClient {
             return Ok(ComposerSettingsUpdateResponse { saved: true });
         }
 
-        self.request("config/batchWrite", json!({ "edits": edits }))
-            .await?;
+        self.config_batch_write(edits).await?;
         Ok(ComposerSettingsUpdateResponse { saved: true })
     }
 
@@ -1624,6 +1685,91 @@ impl ThreadDetailResponse {
             raw_payload: payload,
         })
     }
+
+    fn from_thread_payload_and_turns(
+        mut payload: Value,
+        turns: Vec<ThreadTurnSnapshot>,
+    ) -> ApiResult<Self> {
+        let thread = payload
+            .get_mut("thread")
+            .ok_or_else(|| bad_gateway("thread/read response missing thread"))?;
+        if let Some(thread) = thread.as_object_mut() {
+            thread.insert(
+                "turns".to_string(),
+                Value::Array(turns.iter().map(|turn| turn.raw_payload.clone()).collect()),
+            );
+        } else {
+            return Err(bad_gateway("thread/read response thread is not an object"));
+        }
+
+        Self::from_payload(payload)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortDirection {
+    Asc,
+    Desc,
+}
+
+impl SortDirection {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Asc => "asc",
+            Self::Desc => "desc",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThreadTurnItemsView {
+    NotLoaded,
+    Summary,
+    Full,
+}
+
+impl ThreadTurnItemsView {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::NotLoaded => "notLoaded",
+            Self::Summary => "summary",
+            Self::Full => "full",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ThreadTurnsListPage {
+    pub data: Vec<ThreadTurnSnapshot>,
+    pub next_cursor: Option<String>,
+    pub backwards_cursor: Option<String>,
+    pub raw_payload: Value,
+}
+
+impl ThreadTurnsListPage {
+    fn from_payload(payload: Value) -> ApiResult<Self> {
+        let data = payload
+            .get("data")
+            .and_then(Value::as_array)
+            .ok_or_else(|| bad_gateway("thread/turns/list response missing data array"))?
+            .iter()
+            .map(ThreadTurnSnapshot::from_payload)
+            .collect::<ApiResult<Vec<_>>>()?;
+        let next_cursor = payload
+            .get("nextCursor")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let backwards_cursor = payload
+            .get("backwardsCursor")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        Ok(Self {
+            data,
+            next_cursor,
+            backwards_cursor,
+            raw_payload: payload,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -2681,6 +2827,7 @@ mod tests {
     struct RecordingServer {
         ready: AtomicBool,
         requests: StdMutex<Vec<(String, Value)>>,
+        queued_responses: StdMutex<Vec<Value>>,
         response: StdMutex<Value>,
     }
 
@@ -2699,6 +2846,11 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push((method.to_string(), params));
+            let mut queued_responses = self.queued_responses.lock().unwrap();
+            if !queued_responses.is_empty() {
+                return Ok(queued_responses.remove(0));
+            }
+            drop(queued_responses);
             Ok(self.response.lock().unwrap().clone())
         }
 
@@ -2871,6 +3023,66 @@ mod tests {
                 json!({"threadId": "thread-1", "turnId": "turn-1"})
             )
         );
+    }
+
+    #[tokio::test]
+    async fn adapter_uses_schema_values_for_thread_turns_list() {
+        let server = Arc::new(RecordingServer {
+            ready: AtomicBool::new(true),
+            response: StdMutex::new(
+                json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
+            ),
+            ..Default::default()
+        });
+        let client = CodexClient::new(server.clone());
+
+        client
+            .thread_turns_list_page(
+                "thread-1".to_string(),
+                Some("cursor-1".to_string()),
+                SortDirection::Desc,
+                ThreadTurnItemsView::NotLoaded,
+                Some(10),
+            )
+            .await
+            .unwrap();
+        client
+            .thread_turns_list_page(
+                "thread-1".to_string(),
+                None,
+                SortDirection::Asc,
+                ThreadTurnItemsView::Summary,
+                None,
+            )
+            .await
+            .unwrap();
+        client
+            .thread_turns_list_page(
+                "thread-1".to_string(),
+                None,
+                SortDirection::Asc,
+                ThreadTurnItemsView::Full,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let requests = server.requests.lock().unwrap();
+        assert_eq!(
+            requests[0],
+            (
+                "thread/turns/list".to_string(),
+                json!({
+                    "threadId": "thread-1",
+                    "cursor": "cursor-1",
+                    "sortDirection": "desc",
+                    "itemsView": "notLoaded",
+                    "limit": 10
+                })
+            )
+        );
+        assert_eq!(requests[1].1["itemsView"], "summary");
+        assert_eq!(requests[2].1["itemsView"], "full");
     }
 
     #[test]
@@ -3083,10 +3295,10 @@ mod tests {
                     {"keyPath": "model", "mergeStrategy": "replace", "value": "gpt-5.4"},
                     {"keyPath": "model_reasoning_effort", "mergeStrategy": "replace", "value": "medium"},
                     {"keyPath": "service_tier", "mergeStrategy": "replace", "value": null}
-                ]
+                ],
+                "reloadUserConfig": true
             })
         );
-        assert!(requests[1].1.get("reloadUserConfig").is_none());
     }
 
     #[test]
@@ -3170,7 +3382,7 @@ mod tests {
         let response = ThreadListResponse::from_payload(json!({
             "data": [{
                 "id": "thread-1",
-                "cliVersion": "0.128.0",
+                "cliVersion": "0.130.0",
                 "cwd": "/workspace",
                 "ephemeral": false,
                 "gitInfo": {
@@ -3235,7 +3447,7 @@ mod tests {
         let response = ThreadDetailResponse::from_payload(json!({
             "thread": {
                 "id": "thread-1",
-                "cliVersion": "0.128.0",
+                "cliVersion": "0.130.0",
                 "cwd": "/workspace",
                 "ephemeral": false,
                 "modelProvider": "openai",
@@ -3257,7 +3469,7 @@ mod tests {
         let response = ThreadDetailResponse::from_payload(json!({
             "thread": {
                 "id": "thread-1",
-                "cliVersion": "0.128.0",
+                "cliVersion": "0.130.0",
                 "cwd": "/workspace",
                 "ephemeral": false,
                 "modelProvider": "openai",
@@ -3411,7 +3623,7 @@ mod tests {
     fn thread_summary_payload(id: &str) -> Value {
         json!({
             "id": id,
-            "cliVersion": "0.128.0",
+            "cliVersion": "0.130.0",
             "cwd": "/workspace",
             "ephemeral": false,
             "modelProvider": "openai",

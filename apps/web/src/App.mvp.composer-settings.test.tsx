@@ -183,6 +183,10 @@ describe("MVP composer settings flows", () => {
     await expect(requestJson(gateway.callsFor("PATCH", "/v1/composer-settings")[1])).resolves.toEqual({
       serviceTier: null,
     });
+    await waitFor(() => {
+      expect(gateway.callsFor("GET", "/v1/composer-settings").length).toBeGreaterThan(1);
+      expect(gateway.callsFor("GET", "/v1/models").length).toBeGreaterThan(1);
+    });
     expect(storageSpy).not.toHaveBeenCalled();
   });
 
@@ -463,7 +467,7 @@ describe("MVP composer settings flows", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /^new chat$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /start new chat from desktop header/i }));
     await userEvent.type(screen.getByLabelText(/message composer/i), "Use global defaults");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
@@ -516,6 +520,7 @@ describe("MVP composer settings flows", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^chats$/i }));
     await userEvent.click(await screen.findByRole("button", { name: /chat without settings/i }));
 
     expect(await screen.findByRole("button", { name: /permissions: default permissions/i })).toBeInTheDocument();
@@ -555,6 +560,7 @@ describe("MVP composer settings flows", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^chats$/i }));
     await userEvent.click(await screen.findByRole("button", { name: /chat without settings/i }));
     await userEvent.type(screen.getByLabelText(/message composer/i), "Send before global hydration");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
@@ -895,6 +901,108 @@ describe("MVP composer settings flows", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /plain one/i }));
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i })).toBeInTheDocument();
+  });
+
+  it("replaces stale local thread settings overrides from refreshed metadata in two clients", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const models = [
+      highReasoningModel,
+      {
+        id: "gpt-5.4-mini",
+        model: "gpt-5.4-mini",
+        displayName: "GPT-5.4 Mini",
+        description: "Fast coding model",
+        defaultReasoningEffort: "medium",
+        hidden: false,
+        inputModalities: ["text"],
+        isDefault: false,
+        rawPayload: {},
+        supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }],
+        upgrade: null,
+      },
+      {
+        id: "gpt-5.3spark",
+        model: "gpt-5.3spark",
+        displayName: "GPT-5.3 Spark",
+        description: "Balanced coding model",
+        defaultReasoningEffort: "medium",
+        hidden: false,
+        inputModalities: ["text"],
+        isDefault: false,
+        rawPayload: {},
+        supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }],
+        upgrade: null,
+      },
+    ];
+    const initialThread = {
+      ...thread,
+      model: "gpt-5.4",
+      reasoningEffort: "medium",
+      serviceTier: null,
+      rawPayload: {},
+    };
+    const refreshedThread = {
+      ...initialThread,
+      model: "gpt-5.3spark",
+      updatedAt: initialThread.updatedAt + 1,
+      rawPayload: { model: "gpt-5.3spark", reasoningEffort: "medium" },
+    };
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/models": { models, nextCursor: null, rawPayload: {} },
+        "GET /v1/threads": {
+          threads: [initialThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "GET /v1/threads/thread-1": threadDetail(initialThread),
+        "PATCH /v1/composer-settings": { saved: true },
+      }),
+    );
+
+    const firstClient = render(<App />);
+    const secondClient = render(<App />);
+
+    expect(
+      await within(firstClient.container).findByRole("button", { name: /model: gpt-5\.4, medium/i }),
+    ).toBeInTheDocument();
+    expect(
+      await within(secondClient.container).findByRole("button", { name: /model: gpt-5\.4, medium/i }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(within(firstClient.container).getByRole("button", { name: /model: gpt-5\.4, medium/i }));
+    await clickMenuItem(/^gpt-5\.4-mini$/i);
+    expect(
+      await within(firstClient.container).findByRole("button", { name: /model: gpt-5\.4-mini, medium/i }),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(gateway.callsFor("PATCH", "/v1/composer-settings")).toHaveLength(1);
+    });
+
+    const globalStreams = FakeEventSource.instances.filter((instance) => !instance.url.includes("threadId="));
+    expect(globalStreams).toHaveLength(2);
+    act(() => {
+      for (const stream of globalStreams) {
+        stream.emitNamed("timeline.thread_metadata", {
+          id: `event-refreshed-${stream.url}`,
+          seq: 12,
+          kind: "timeline.thread_metadata",
+          codexMethod: "thread/metadata",
+          projectId: project.id,
+          threadId: thread.id,
+          payload: { thread: refreshedThread },
+          receivedAt: "2026-05-15T00:00:00Z",
+        });
+      }
+    });
+
+    expect(
+      await within(firstClient.container).findByRole("button", { name: /model: gpt-5\.3spark, medium/i }),
+    ).toBeInTheDocument();
+    expect(
+      await within(secondClient.container).findByRole("button", { name: /model: gpt-5\.3spark, medium/i }),
+    ).toBeInTheDocument();
   });
 
   it("shows sidebar login without model or status summaries", async () => {

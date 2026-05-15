@@ -1313,7 +1313,7 @@ mod tests {
     fn thread_metadata_summary_preserves_git_branch() {
         let thread = thread_summary_from_value(&json!({
             "id": "thread-1",
-            "cliVersion": "0.128.0",
+            "cliVersion": "0.130.0",
             "cwd": "/workspace",
             "ephemeral": false,
             "gitInfo": {
@@ -1412,7 +1412,7 @@ mod tests {
         *app_server.next_response.lock().unwrap() = Some(json!({
             "data": [{
                 "id": "thread-1",
-                "cliVersion": "0.128.0",
+                "cliVersion": "0.130.0",
                 "cwd": "/workspace",
                 "ephemeral": false,
                 "modelProvider": "openai",
@@ -1437,7 +1437,7 @@ mod tests {
         *app_server.next_response.lock().unwrap() = Some(json!({
             "data": [{
                 "id": "thread-1",
-                "cliVersion": "0.128.0",
+                "cliVersion": "0.130.0",
                 "cwd": "/workspace",
                 "ephemeral": false,
                 "modelProvider": "openai",
