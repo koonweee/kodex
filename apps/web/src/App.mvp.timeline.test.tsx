@@ -131,13 +131,13 @@ describe("MVP timeline flows", () => {
       globalStream?.emit({
         id: "event-other-thread-completed",
         seq: 3,
-        kind: "timeline.turn_upsert",
-        codexMethod: "turn/upsert",
+        kind: "timeline.projection_patch",
+        codexMethod: "timeline/projection_patch",
         projectId: project.id,
         threadId: "thread-2",
-        turnId: "turn-2",
+        turnId: null,
         itemId: null,
-        payload: { threadId: "thread-2", turn: { id: "turn-2", status: "completed", items: [] } },
+        payload: { revision: 3, threadId: "thread-2", activeTurnId: null, liveState: "idle", items: [] },
         receivedAt: "2026-04-30T00:00:02Z",
       });
     });
@@ -182,13 +182,13 @@ describe("MVP timeline flows", () => {
       globalStream?.emit({
         id: "event-running-thread-completed",
         seq: 3,
-        kind: "timeline.turn_upsert",
-        codexMethod: "turn/upsert",
+        kind: "timeline.projection_patch",
+        codexMethod: "timeline/projection_patch",
         projectId: project.id,
         threadId: "thread-2",
-        turnId: "turn-2",
+        turnId: null,
         itemId: null,
-        payload: { threadId: "thread-2", turn: { id: "turn-2", status: "completed", items: [] } },
+        payload: { revision: 3, threadId: "thread-2", activeTurnId: null, liveState: "idle", items: [] },
         receivedAt: "2026-04-30T00:00:02Z",
       });
     });
@@ -286,13 +286,13 @@ describe("MVP timeline flows", () => {
       globalStream?.emit({
         id: "event-background-completed-after-reload",
         seq: 4,
-        kind: "timeline.turn_upsert",
-        codexMethod: "turn/upsert",
+        kind: "timeline.projection_patch",
+        codexMethod: "timeline/projection_patch",
         projectId: project.id,
         threadId: "thread-2",
-        turnId: "turn-2",
+        turnId: null,
         itemId: null,
-        payload: { threadId: "thread-2", turn: { id: "turn-2", status: "completed", items: [] } },
+        payload: { revision: 4, threadId: "thread-2", activeTurnId: null, liveState: "idle", items: [] },
         receivedAt: "2026-04-30T00:00:02Z",
       });
     });
@@ -569,20 +569,39 @@ describe("MVP timeline flows", () => {
 
     act(() => {
       selectedThreadStream?.emit({
-        id: "historical-item-upsert-external",
+        id: "historical-projection-external",
         seq: 2,
-        kind: "timeline.item_upsert",
-        codexMethod: "item/upsert",
+        kind: "timeline.projection_patch",
+        codexMethod: "timeline/projection_patch",
         projectId: project.id,
         threadId: "thread-2",
-        turnId: "turn-2",
-        itemId: "agent-2",
+        turnId: null,
+        itemId: null,
         payload: {
-          source: "appServerSnapshot",
-          turnId: "turn-2",
-          itemId: "agent-2",
-          item: { id: "agent-2", type: "agentMessage", text: "External recovered snapshot" },
-          itemSnapshot: { id: "agent-2", itemType: "agentMessage", rawPayload: {} },
+          revision: 2,
+          threadId: "thread-2",
+          activeTurnId: null,
+          liveState: "idle",
+          items: [
+            {
+              id: "projection-turn-2-agent-2",
+              threadId: "thread-2",
+              turnId: "turn-2",
+              itemId: "agent-2",
+              itemType: "agentMessage",
+              displayOrder: 2,
+              status: "completed",
+              codexMethod: "item/completed",
+              timestampMs: 2,
+              payload: {
+                source: "appServerSnapshot",
+                turnId: "turn-2",
+                itemId: "agent-2",
+                item: { id: "agent-2", type: "agentMessage", text: "External recovered snapshot" },
+                itemSnapshot: { id: "agent-2", itemType: "agentMessage", rawPayload: {} },
+              },
+            },
+          ],
         },
         receivedAt: "2026-04-30T00:00:03Z",
       });

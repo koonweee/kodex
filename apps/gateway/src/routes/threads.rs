@@ -932,11 +932,25 @@ async fn apply_thread_detail_response_state(
 ) -> ApiResult<()> {
     apply_thread_summary_state(state, std::slice::from_mut(&mut response.thread)).await?;
     apply_thread_detail_skill_mentions(state, response).await?;
-    response.timeline = timeline_projection::build_thread_timeline(
+    let timeline = timeline_projection::build_thread_timeline(
         &state.thread_sessions,
         &response.thread.id,
         &response.turns,
         timeline_revision,
+    )
+    .await?;
+    let pending_approvals = state
+        .store
+        .list_approvals(
+            Some("pending".to_string()),
+            Some(response.thread.id.clone()),
+        )
+        .await?;
+    response.timeline = timeline_projection::record_pending_requests(
+        &state.thread_sessions,
+        &response.thread.id,
+        &pending_approvals,
+        timeline.revision,
     )
     .await?;
     response.live_state = response.timeline.live_state;

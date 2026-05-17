@@ -857,19 +857,16 @@ describe("MVP shell flows", () => {
     await waitFor(() => expect(chatListCalls).toBeGreaterThanOrEqual(2));
 
     act(() => {
-      globalStream?.emitNamed("timeline.item_upsert", {
+      globalStream?.emitNamed("timeline.projection_patch", projectionPatchEvent({
         id: "event-chat-first-item",
         seq: 3,
-        kind: "timeline.item_upsert",
-        codexMethod: "item/upsert",
         projectId: null,
         threadId: pendingChatThread.id,
-        payload: {
-          item: { id: "item-1", type: "userMessage", content: [{ type: "text", text: "First message from another tab" }] },
-          source: "gatewayStream",
-        },
-        receivedAt: "2026-05-09T12:00:02Z",
-      });
+        turnId: "turn-1",
+        itemId: "item-1",
+        itemType: "userMessage",
+        text: "First message from another tab",
+      }));
     });
 
     await waitFor(() =>
@@ -928,14 +925,22 @@ describe("MVP shell flows", () => {
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
     const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
     act(() => {
-      globalStream?.emitNamed("timeline.turn_upsert", {
+      globalStream?.emitNamed("timeline.projection_patch", {
         id: "event-chat-active-completed",
         seq: 2,
-        kind: "timeline.turn_upsert",
-        codexMethod: "turn/upsert",
+        kind: "timeline.projection_patch",
+        codexMethod: "timeline/projection_patch",
         projectId: null,
         threadId: staleActiveChat.id,
-        payload: { turn: { id: "turn-1", status: "completed", items: [] } },
+        turnId: null,
+        itemId: null,
+        payload: {
+          revision: 2,
+          threadId: staleActiveChat.id,
+          activeTurnId: null,
+          liveState: "idle",
+          items: [],
+        },
         receivedAt: "2026-05-09T12:00:01Z",
       });
     });
@@ -1689,7 +1694,7 @@ describe("MVP shell flows", () => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
     expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
-    expect(within(timelineElement(container)).getAllByText("Inspect this")).toHaveLength(1);
+    expect(within(timelineElement(container)).queryByText("Inspect this")).not.toBeInTheDocument();
   });
 
   it("renders authenticated account state and logs out", async () => {

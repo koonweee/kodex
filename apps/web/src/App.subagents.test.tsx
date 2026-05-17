@@ -161,21 +161,16 @@ describe("subagent thread viewer", () => {
     subagents = [subagent, secondSubagent];
     const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
     act(() => {
-      globalStream?.emitNamed("timeline.item_upsert", {
+      globalStream?.emitNamed("timeline.projection_patch", projectionPatchEvent({
         id: "main-collab-refresh",
         seq: 10,
-        kind: "timeline.item_upsert",
-        codexMethod: "item/upsert",
         projectId: project.id,
         threadId: "thread-1",
         turnId: "turn-1",
         itemId: "collab-refresh",
-        payload: {
-          source: "gatewayStream",
-          item: { id: "collab-refresh", type: "collabAgentToolCall", tool: "wait" },
-        },
-        receivedAt: "2026-04-30T00:00:02Z",
-      });
+        itemType: "collabAgentToolCall",
+        text: "Subagent list changed",
+      }));
     });
     await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/thread-1/subagents").length).toBeGreaterThan(1));
 
@@ -212,21 +207,16 @@ describe("subagent thread viewer", () => {
     subagents = [secondSubagent];
     const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
     act(() => {
-      globalStream?.emitNamed("timeline.item_upsert", {
+      globalStream?.emitNamed("timeline.projection_patch", projectionPatchEvent({
         id: "main-collab-change",
         seq: 10,
-        kind: "timeline.item_upsert",
-        codexMethod: "item/upsert",
         projectId: project.id,
         threadId: "thread-1",
         turnId: "turn-1",
         itemId: "collab-1",
-        payload: {
-          source: "gatewayStream",
-          item: { id: "collab-1", type: "collabAgentToolCall", tool: "wait" },
-        },
-        receivedAt: "2026-04-30T00:00:02Z",
-      });
+        itemType: "collabAgentToolCall",
+        text: "Subagent list changed",
+      }));
     });
     await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/thread-1/subagents").length).toBeGreaterThan(1));
 

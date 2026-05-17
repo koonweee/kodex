@@ -1,5 +1,4 @@
-import type { EventEnvelope } from "../api/client";
-import type { TimelineSkillMention } from "../api/client";
+import type { EventEnvelope, PendingTimelineRequestSummary, TimelineSkillMention } from "../api/client";
 
 export type TimelineStatus = "running" | "completed" | "failed" | "waiting" | "cancelled" | "approval_required";
 export type TimelineItemSource = "app_server" | "optimistic";
@@ -90,6 +89,8 @@ export type TimelineState = {
   items: TimelineItem[];
   hiddenItems: TimelineItem[];
   turns: TimelineTurn[];
+  pendingApprovalRequests: PendingTimelineRequestSummary[];
+  pendingUserInputRequests: PendingTimelineRequestSummary[];
   lastSeq: number;
   projectionRevision: number;
 };
@@ -108,6 +109,8 @@ export type TimelineIndexes = {
 export type TimelineDraft = {
   activeTurnId: string | null;
   indexes: TimelineIndexes;
+  pendingApprovalRequests?: PendingTimelineRequestSummary[];
+  pendingUserInputRequests?: PendingTimelineRequestSummary[];
   lastSeq: number;
   projectionRevision: number;
 };
@@ -119,6 +122,8 @@ export function createTimelineState(): TimelineState {
   return createTimelineStateFromDraft({
     activeTurnId: null,
     indexes: createEmptyTimelineIndexes(),
+    pendingApprovalRequests: [],
+    pendingUserInputRequests: [],
     lastSeq: 0,
     projectionRevision: 0,
   });
@@ -127,6 +132,8 @@ export function createTimelineState(): TimelineState {
 export function createTimelineStateFromDraft(draft: TimelineDraft): TimelineState {
   const state = {
     activeTurnId: draft.activeTurnId,
+    pendingApprovalRequests: draft.pendingApprovalRequests ?? [],
+    pendingUserInputRequests: draft.pendingUserInputRequests ?? [],
     lastSeq: draft.lastSeq,
     projectionRevision: draft.projectionRevision,
   } as TimelineState;

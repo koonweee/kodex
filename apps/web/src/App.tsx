@@ -523,7 +523,6 @@ function KodexShell({
     queuedSteerRows: selectedQueuedInputs,
     selectedProjectId,
     selectedThreadId,
-    setTimeline,
   });
   const selectedThreadTitle = selectedThread
     ? pendingTitleThreadIds.has(selectedThread.id)
@@ -1340,9 +1339,7 @@ function KodexShell({
   function eventShouldRefreshKnownSidebarThread(event: EventEnvelope, thread: ThreadSummary) {
     return (
       !threadHasDisplayTitle(thread) ||
-      event.kind === "timeline.projection_patch" ||
-      event.kind === "timeline.thread_status" ||
-      event.kind === "timeline.turn_upsert"
+      event.kind === "timeline.projection_patch"
     );
   }
 
@@ -1361,11 +1358,8 @@ function KodexShell({
 
   function eventCanRefreshSidebarThread(event: EventEnvelope) {
     return (
-      event.kind === "timeline.item_upsert" ||
       event.kind === "timeline.projection_patch" ||
-      event.kind === "timeline.thread_metadata" ||
-      event.kind === "timeline.thread_status" ||
-      event.kind === "timeline.turn_upsert"
+      event.kind === "timeline.thread_metadata"
     );
   }
 
@@ -1702,10 +1696,7 @@ function defaultSubagent(subagents: ThreadSubagentSummary[]): ThreadSubagentSumm
 
 function eventCanAffectSubagentDiscovery(event: EventEnvelope): boolean {
   return (
-    event.kind === "timeline.item_upsert" ||
     event.kind === "timeline.projection_patch" ||
-    event.kind === "timeline.turn_upsert" ||
-    event.kind === "timeline.thread_status" ||
     event.kind === "timeline.thread_metadata" ||
     event.kind === "timeline.snapshot_required" ||
     event.kind === "codex.notification"

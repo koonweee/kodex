@@ -243,7 +243,7 @@ function timelineFromTurns(sourceThread: TestThreadSummary, turns: TestSnapshotT
         const snapshot = item as { id?: string; itemType?: string; rawPayload?: unknown };
         displayOrder += 1;
         return {
-          id: `snapshot-${turn.id}-${snapshot.id ?? displayOrder}`,
+          id: `projection-${turn.id}-${snapshot.id ?? displayOrder}`,
           threadId: sourceThread.id,
           turnId: turn.id,
           itemId: snapshot.id ?? `item-${displayOrder}`,
@@ -276,6 +276,8 @@ function projectionPatchEvent({
   text = "Live update",
   displayOrder = seq,
   status = "running",
+  skillMentions,
+  imagePath,
 }: {
   id?: string;
   seq?: number;
@@ -287,7 +289,13 @@ function projectionPatchEvent({
   text?: string;
   displayOrder?: number;
   status?: string;
+  skillMentions?: unknown[];
+  imagePath?: string;
 }) {
+  const userContent = [
+    ...(imagePath ? [{ type: "localImage", path: imagePath }] : []),
+    { type: "text", text },
+  ];
   return {
     id,
     seq,
@@ -317,13 +325,14 @@ function projectionPatchEvent({
             turnId,
             itemId,
             item: itemType === "userMessage"
-              ? { id: itemId, type: "userMessage", content: [{ type: "text", text }] }
+              ? { id: itemId, type: "userMessage", content: userContent }
               : { id: itemId, type: "agentMessage", text },
             itemSnapshot: {
               id: itemId,
               itemType,
+              ...(skillMentions ? { skillMentions } : {}),
               rawPayload: itemType === "userMessage"
-                ? { id: itemId, type: "userMessage", content: [{ type: "text", text }] }
+                ? { id: itemId, type: "userMessage", content: userContent }
                 : { id: itemId, type: "agentMessage", text },
             },
           },

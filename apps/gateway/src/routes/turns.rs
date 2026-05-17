@@ -276,15 +276,30 @@ async fn active_turn_id_for_submit(state: &AppState, thread_id: &str) -> ApiResu
     if let Some(active_turn_id) = state.thread_sessions.active_turn_id(thread_id).await {
         return Ok(Some(active_turn_id));
     }
-    let snapshot = app_server_api::client(&state.app_server)
+    let snapshot = match app_server_api::client(&state.app_server)
         .thread_read(thread_id.to_string())
-        .await?;
+        .await
+    {
+        Ok(snapshot) => snapshot,
+        Err(error) if is_thread_not_materialized_before_first_user_message(&error) => {
+            return Ok(None);
+        }
+        Err(error) => return Err(error),
+    };
     let revision = state.store.latest_event_seq().await?;
     let timeline = state
         .thread_sessions
         .refresh_from_turns(thread_id, &snapshot.turns, revision)
         .await;
     Ok(timeline.active_turn_id)
+}
+
+fn is_thread_not_materialized_before_first_user_message(error: &ApiError) -> bool {
+    let ApiError::BadGateway(message) = error else {
+        return false;
+    };
+    let normalized = message.to_ascii_lowercase();
+    normalized.contains("not materialized yet") && normalized.contains("before first user message")
 }
 
 async fn record_pending_user_projection(

@@ -4,11 +4,9 @@ import {
   useState,
   type ChangeEvent as ReactChangeEvent,
   type ClipboardEvent as ReactClipboardEvent,
-  type Dispatch,
   type DragEvent as ReactDragEvent,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
-  type SetStateAction,
 } from "react";
 import { useMutation } from "@tanstack/react-query";
 
@@ -26,21 +24,12 @@ import {
 } from "../api/client";
 import type { ComposerSettings } from "../ComposerFooterControls";
 import { errorMessageFrom } from "../shared/values";
-import {
-  addOptimisticUserMessage,
-  removeOptimisticUserMessage,
-  updateOptimisticUserMessage,
-  type TimelineImage,
-  type TimelineState,
-} from "../timeline/reducer";
 import { composerTurnOptions, sameComposerContext, type ComposerContext } from "./settings";
 import {
-  attachmentPreviewImages,
   createObjectUrl,
   hasImageFiles,
   imageFilesFromDataTransfer,
   revokeObjectUrl,
-  userInputImages,
 } from "./attachmentUtils";
 import type { ComposerDraftControls } from "./ComposerPanel";
 import { isTouchInputDevice } from "../shared/inputCapabilities";
@@ -70,7 +59,6 @@ type UseComposerOrchestrationParams = {
   queuedSteerRows: QueuedSteerRow[];
   selectedProjectId: string | null;
   selectedThreadId: string | null;
-  setTimeline: Dispatch<SetStateAction<TimelineState>>;
 };
 
 export function useComposerOrchestration({
@@ -90,7 +78,6 @@ export function useComposerOrchestration({
   queuedSteerRows,
   selectedProjectId,
   selectedThreadId,
-  setTimeline,
 }: UseComposerOrchestrationParams) {
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [isComposerSubmitting, setIsComposerSubmitting] = useState(false);
@@ -103,7 +90,6 @@ export function useComposerOrchestration({
   const imagePreviewUrlsByPathRef = useRef<Record<string, string>>({});
   const previousActiveSelectedTurnIdRef = useRef<string | null>(activeSelectedTurnId);
   const nextAttachmentId = useRef(0);
-  const nextOptimisticMessageId = useRef(0);
   const retryQueuedInputMutation = useMutation({
     mutationFn: ({ queueId, threadId }: QueuedInputMutation) => retryQueuedInput(threadId, queueId),
     onSuccess: onQueuedInputUpsert,
@@ -169,9 +155,6 @@ export function useComposerOrchestration({
 
     const text = composerText.trim();
     const attachments = pendingAttachments;
-    const optimisticImages = attachmentPreviewImages(attachments);
-    const initialConfirmationState = attachments.length > 0 ? "uploading" : "sending";
-    let optimisticClientRequestId: string | null = null;
     let startedThreadId: string | null = null;
     let retryRestoreContext: ComposerContext = {
       activeSelectedTurnId,
@@ -183,29 +166,18 @@ export function useComposerOrchestration({
     setIsComposerSubmitting(true);
     try {
       if (selectedThreadId) {
-        optimisticClientRequestId = addOptimisticMessage(text, optimisticImages, null, initialConfirmationState, skillMentions);
         startedThreadId = selectedThreadId;
         onThreadTurnStarted(selectedThreadId);
         draftControls.clearText();
         const input = await buildTurnInput(text, attachments, skillInputs, skillTextElements);
-        const uploadedImages = userInputImages(input);
-        if (uploadedImages.length > 0) {
-          updateOptimisticMessage(optimisticClientRequestId, {
-            images: uploadedImages,
-            confirmationState: "sending",
-            error: undefined,
-          });
-        }
         const response = await submitThreadInput(selectedThreadId, input, composerTurnOptions(composerSettings));
         if (response.queuedInput) {
           onQueuedInputUpsert(response.queuedInput);
-          setTimeline((current) => removeOptimisticUserMessage(current, optimisticClientRequestId!));
           clearPendingAttachments();
           setIsComposerSubmitting(false);
           return;
         }
         onThreadMaterialized(selectedThreadId);
-        updateOptimisticMessage(optimisticClientRequestId, { confirmationState: "sent", error: undefined });
         clearPendingAttachments();
         setIsComposerSubmitting(false);
         return;
@@ -230,43 +202,21 @@ export function useComposerOrchestration({
       };
       latestComposerContextRef.current = retryRestoreContext;
       composerContextRef.current = retryRestoreContext;
-      optimisticClientRequestId = addOptimisticMessage(text, optimisticImages, null, initialConfirmationState, skillMentions);
       startedThreadId = threadId;
       onThreadTurnStarted(threadId);
       draftControls.clearText();
       const input = await buildTurnInput(text, attachments, skillInputs, skillTextElements);
-      const uploadedImages = userInputImages(input);
-      if (uploadedImages.length > 0) {
-        updateOptimisticMessage(optimisticClientRequestId, {
-          images: uploadedImages,
-          confirmationState: "sending",
-          error: undefined,
-        });
-      }
       const response = await submitThreadInput(threadId, input, composerTurnOptions(createdThread.composerSettings));
       if (response.queuedInput) {
         onQueuedInputUpsert(response.queuedInput);
-        setTimeline((current) => removeOptimisticUserMessage(current, optimisticClientRequestId!));
         clearPendingAttachments();
         setIsComposerSubmitting(false);
         return;
       }
       onThreadMaterialized(threadId);
-      updateOptimisticMessage(optimisticClientRequestId, { confirmationState: "sent", error: undefined });
       clearPendingAttachments();
       setIsComposerSubmitting(false);
     } catch (error) {
-      const failedClientRequestId = optimisticClientRequestId;
-      if (failedClientRequestId) {
-        if (skillMentions.length > 0) {
-          updateOptimisticMessage(failedClientRequestId, {
-            confirmationState: "failed",
-            error: errorMessageFrom(error),
-          });
-        } else {
-          setTimeline((current) => removeOptimisticUserMessage(current, failedClientRequestId));
-        }
-      }
       if (startedThreadId) {
         onThreadTurnStartFailed(startedThreadId);
       }
@@ -507,32 +457,6 @@ export function useComposerOrchestration({
       return;
     }
     revokeObjectUrl(attachment.objectUrl);
-  }
-
-  function addOptimisticMessage(
-    text: string,
-    images: TimelineImage[],
-    turnId: string | null,
-    confirmationState: "uploading" | "sending" | "sent" | "failed",
-    skillMentions: TimelineSkillMention[] = [],
-  ) {
-    nextOptimisticMessageId.current += 1;
-    const clientRequestId = `client-message-${nextOptimisticMessageId.current}`;
-    setTimeline((current) =>
-      addOptimisticUserMessage(current, {
-        clientRequestId,
-        text,
-        images,
-        skillMentions,
-        turnId,
-        confirmationState,
-      }),
-    );
-    return clientRequestId;
-  }
-
-  function updateOptimisticMessage(clientRequestId: string, update: Parameters<typeof updateOptimisticUserMessage>[2]) {
-    setTimeline((current) => updateOptimisticUserMessage(current, clientRequestId, update));
   }
 
   return {

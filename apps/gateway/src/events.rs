@@ -101,18 +101,7 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
     match message {
         InboundMessage::Notification { method, params } => {
             let metadata = EventMetadata::from_payload(&params);
-            let event = state
-                .store
-                .append_event(NewEvent {
-                    project_id: metadata.project_id.clone(),
-                    thread_id: metadata.thread_id.clone(),
-                    turn_id: metadata.turn_id.clone(),
-                    item_id: metadata.item_id.clone(),
-                    kind: "codex.notification".to_string(),
-                    codex_method: Some(method.clone()),
-                    payload: params.clone(),
-                })
-                .await?;
+            let event = persist_notification_cursor(state, &method, &params, &metadata).await?;
             let _ = state.events.send(event);
             if let Some(event) = normalized_mcp_event(state, &method, &params).await? {
                 let _ = state.events.send(event);
@@ -199,10 +188,66 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                     payload: serde_json::to_value(&approval)?,
                 })
                 .await?;
+            timeline_projection::record_approval_created(
+                &state.thread_sessions,
+                &approval,
+                event.seq,
+            )
+            .await?;
             let _ = state.events.send(event);
+            if let Some(thread_id) = approval.thread_id.as_deref() {
+                let patch = timeline_projection_patch_event(state, thread_id).await?;
+                let _ = state.events.send(patch);
+            }
         }
     }
     Ok(())
+}
+
+async fn persist_notification_cursor(
+    state: &AppState,
+    method: &str,
+    params: &Value,
+    metadata: &EventMetadata,
+) -> ApiResult<EventEnvelope> {
+    let payload = if is_transcript_notification_method(method) {
+        json!({
+            "threadId": metadata.thread_id,
+            "turnId": metadata.turn_id,
+            "itemId": metadata.item_id,
+            "sourceMethod": method,
+        })
+    } else {
+        params.clone()
+    };
+    state
+        .store
+        .append_event(NewEvent {
+            project_id: metadata.project_id.clone(),
+            thread_id: metadata.thread_id.clone(),
+            turn_id: metadata.turn_id.clone(),
+            item_id: metadata.item_id.clone(),
+            kind: "codex.notification".to_string(),
+            codex_method: Some(method.to_string()),
+            payload,
+        })
+        .await
+}
+
+fn is_transcript_notification_method(method: &str) -> bool {
+    matches!(
+        method,
+        "item/agentMessage/delta"
+            | "item/completed"
+            | "item/started"
+            | "item/updated"
+            | "turn/completed"
+            | "turn/started"
+            | "turn/upsert"
+            | "thread/status"
+    ) || method.starts_with("item/")
+        || method.starts_with("turn/")
+        || method.starts_with("thread/realtime/transcript/")
 }
 
 async fn normalized_mcp_event(
@@ -441,7 +486,11 @@ fn is_operational_replay_event(event: &EventEnvelope) -> bool {
 
 fn is_selected_thread_sse_replay_event(event: &EventEnvelope, query: &EventsQuery) -> bool {
     is_operational_replay_event(event)
-        || (query.thread_id.is_some() && event.kind == TIMELINE_PROJECTION_PATCH_KIND)
+        || (query.thread_id.is_some()
+            && matches!(
+                event.kind.as_str(),
+                TIMELINE_PROJECTION_PATCH_KIND | SNAPSHOT_REQUIRED_KIND
+            ))
 }
 
 fn is_normal_live_event(event: &EventEnvelope) -> bool {
@@ -450,11 +499,7 @@ fn is_normal_live_event(event: &EventEnvelope) -> bool {
         || is_account_live_event(event)
         || matches!(
             event.kind.as_str(),
-            "timeline.item_delta"
-                | "timeline.item_upsert"
-                | TIMELINE_PROJECTION_PATCH_KIND
-                | "timeline.turn_upsert"
-                | "timeline.thread_status"
+            TIMELINE_PROJECTION_PATCH_KIND
                 | "timeline.thread_metadata"
                 | SNAPSHOT_REQUIRED_KIND
                 | skills::SKILLS_CHANGED_EVENT
@@ -819,7 +864,7 @@ async fn timeline_turn_upsert_event(
         ThreadRuntimeState {
             thread_id: metadata.thread_id.clone().unwrap_or_default(),
             status: "active".to_string(),
-            active_turn_id: Some(turn.id),
+            active_turn_id: None,
             updated_at: Utc::now(),
             last_event_seq: Some(event.seq),
         }
@@ -992,7 +1037,48 @@ async fn timeline_thread_status_event(
 }
 
 async fn append_timeline_event(state: &AppState, event: NewEvent) -> ApiResult<EventEnvelope> {
+    if is_transcript_timeline_event(&event.kind) {
+        let persisted = state
+            .store
+            .append_event(NewEvent {
+                project_id: event.project_id.clone(),
+                thread_id: event.thread_id.clone(),
+                turn_id: event.turn_id.clone(),
+                item_id: event.item_id.clone(),
+                kind: SNAPSHOT_REQUIRED_KIND.to_string(),
+                codex_method: Some("thread/snapshot_required".to_string()),
+                payload: json!({
+                    "threadId": event.thread_id.clone(),
+                    "reason": "timeline_changed",
+                    "sourceKind": event.kind.clone(),
+                }),
+            })
+            .await?;
+        return Ok(EventEnvelope {
+            id: persisted.id,
+            seq: persisted.seq,
+            project_id: event.project_id,
+            thread_id: event.thread_id,
+            turn_id: event.turn_id,
+            item_id: event.item_id,
+            kind: event.kind,
+            codex_method: event.codex_method,
+            payload: event.payload,
+            received_at: persisted.received_at,
+        });
+    }
     state.store.append_event(event).await
+}
+
+fn is_transcript_timeline_event(kind: &str) -> bool {
+    matches!(
+        kind,
+        "timeline.item_delta"
+            | "timeline.item_upsert"
+            | TIMELINE_PROJECTION_PATCH_KIND
+            | "timeline.turn_upsert"
+            | "timeline.thread_status"
+    )
 }
 
 fn turn_snapshot_from_value(turn: &Value) -> ApiResult<ThreadTurnSnapshot> {
@@ -1257,6 +1343,40 @@ mod tests {
             patch.payload["items"][0]["payload"]["item"]["text"],
             "hello"
         );
+    }
+
+    #[tokio::test]
+    async fn realtime_transcript_notifications_persist_only_cursor_metadata() {
+        let state = test_state().await;
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "thread/realtime/transcript/delta".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "delta": "secret live transcript"
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let replay = state.store.replay_events(None, None, None).await.unwrap();
+        let raw = replay
+            .iter()
+            .find(|event| event.codex_method.as_deref() == Some("thread/realtime/transcript/delta"))
+            .unwrap();
+        assert_eq!(raw.kind, "codex.notification");
+        assert_eq!(raw.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(raw.turn_id.as_deref(), Some("turn-1"));
+        assert_eq!(
+            raw.payload["sourceMethod"],
+            "thread/realtime/transcript/delta"
+        );
+        assert!(raw.payload.get("delta").is_none());
+        assert!(raw.payload.get("text").is_none());
     }
 
     #[tokio::test]

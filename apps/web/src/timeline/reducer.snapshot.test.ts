@@ -1201,6 +1201,19 @@ describe("timeline reducer snapshots", () => {
     ]);
   });
 
+  it("reconciles snapshot and projection rows with the same app-server item id", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshotWithLegacySnapshotRowId());
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent(2, "agent-live-1", "Hello world"));
+
+    const liveItems = timelineItemsInDisplayOrder(state).filter((item) => item.serverItemId === "agent-live-1");
+    expect(liveItems).toHaveLength(1);
+    expect(liveItems[0]).toMatchObject({
+      id: "projection-turn-2-agent-live-1",
+      text: "Hello world",
+    });
+  });
+
   it("ignores stale snapshots that resolve after a newer projection patch", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot("Previous answer", "agent-1"));
     state = applyLiveTimelineUpdate(state, projectionPatchEvent(2, "agent-live-1", "Still working"));
@@ -1260,6 +1273,23 @@ describe("timeline reducer snapshots", () => {
       "New question",
       "Next answer",
     ]);
+  });
+
+  it("removes provisional rows omitted by a newer canonical projection patch", () => {
+    let state = applyLiveTimelineUpdate(
+      createTimelineState(),
+      projectionPatchEvent(2, "pending-user-8", "New question"),
+    );
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
+      "projection-turn-2-pending-user-8",
+    ]);
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent(3, "user-8", "New question"));
+
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
+      "projection-turn-2-user-8",
+    ]);
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.text)).toEqual(["New question"]);
   });
 
   it("uses payload item ids to merge completed items when the event item id is absent", () => {
@@ -1326,6 +1356,55 @@ function snapshot(agentText: string, agentId: string): ThreadDetailResponse {
       },
     ],
   });
+}
+
+function snapshotWithLegacySnapshotRowId(): ThreadDetailResponse {
+  const response = withCanonicalTimeline({
+    thread: {
+      id: "thread-1",
+      name: "Active snapshot thread",
+      cwd: "/workspace",
+      status: "active",
+      source: "local",
+      preview: "Hello",
+      createdAt: 1,
+      updatedAt: 2,
+      lastCompletedAgentTurnSeq: null,
+      seenCompletedAgentTurnSeq: 0,
+      unreadCompletedAgentTurn: false,
+      rawPayload: {},
+    },
+    liveState: "streaming",
+    rawPayload: {},
+    turns: [
+      {
+        id: "turn-2",
+        status: "inProgress",
+        startedAt: 1,
+        completedAt: null,
+        rawPayload: {},
+        items: [
+          {
+            id: "agent-live-1",
+            itemType: "agentMessage",
+            rawPayload: { id: "agent-live-1", type: "agentMessage", text: "Hello" },
+          },
+        ],
+      },
+    ],
+  });
+  return {
+    ...response,
+    timeline: {
+      ...response.timeline,
+      activeTurnId: "turn-2",
+      liveState: "streaming",
+      items: response.timeline.items.map((item) => ({
+        ...item,
+        id: item.itemId === "agent-live-1" ? "snapshot-turn-2-agent-live-1" : item.id,
+      })),
+    },
+  };
 }
 
 function snapshotWithWorkedItems(): ThreadDetailResponse {
@@ -1570,11 +1649,12 @@ function withCanonicalTimeline(snapshot: Omit<ThreadDetailResponse, "timeline"> 
             ? (turn.startedAt ?? 0) * 1000
             : (turn.completedAt ?? turn.startedAt ?? 0) * 1000;
           return {
-            id: `snapshot-${turn.id}-${item.id}`,
+            id: item.id,
             threadId: snapshot.thread.id,
             turnId: turn.id,
             itemId: item.id,
             itemType: item.itemType,
+            status: turn.status === "completed" ? "completed" : turn.status,
             displayOrder,
             codexMethod: turn.status === "completed" ? "item/completed" : "item/upsert",
             timestampMs,

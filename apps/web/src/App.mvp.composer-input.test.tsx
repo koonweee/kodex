@@ -172,7 +172,8 @@ describe("MVP composer input flows", () => {
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("Draft for second thread");
   }, 20_000);
 
-  it("renders selected skill icon and accent in the optimistic user message before turn confirmation", async () => {
+  it("sends selected skill metadata and renders the skill row only from gateway patches", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
     const turnStart = deferred<unknown>();
     mockGateway(
       baseRoutes({
@@ -211,6 +212,38 @@ describe("MVP composer input flows", () => {
     expect(await screen.findByRole("option", { name: /documents/i })).toBeInTheDocument();
     await userEvent.keyboard("{Enter}");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
+    });
+    expect(container.querySelector(".kodex-inline-skill-badge")).not.toBeInTheDocument();
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    expect(selectedThreadStream).toBeDefined();
+    act(() => {
+      selectedThreadStream?.emit(projectionPatchEvent({
+        id: "projection-skill-user",
+        seq: 3,
+        threadId: thread.id,
+        turnId: "turn-2",
+        itemId: "user-skill-1",
+        itemType: "userMessage",
+        text: "$documents",
+        displayOrder: 3,
+        status: "completed",
+        skillMentions: [
+          {
+            start: 0,
+            end: "$documents".length,
+            name: "documents",
+            path: "/skills/documents/SKILL.md",
+            displayName: "Documents",
+            shortDescription: "Create and edit document files",
+            brandColor: "#2563EB",
+            iconSmallUrl: "/skills/documents/assets/file-document.png",
+          },
+        ],
+      }));
+    });
 
     await waitFor(() => {
       const badge = container.querySelector(".kodex-inline-skill-badge");
@@ -480,7 +513,8 @@ describe("MVP composer input flows", () => {
     });
   });
 
-  it("optimistically renders text sends before the turn request resolves", async () => {
+  it("waits for a gateway projection patch before rendering sent text", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
     let resolveTurn: (value: unknown) => void = () => undefined;
     const gateway = mockGateway(
       baseRoutes({
@@ -498,15 +532,30 @@ describe("MVP composer input flows", () => {
     await userEvent.type(screen.getByLabelText(/message composer/i), "Ship it");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
-    expect(await screen.findByText("Ship it")).toBeInTheDocument();
-    expect(screen.getByText("Sending")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
+    });
+    expect(within(timelineElement(document.body)).queryByText("Ship it")).not.toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
     expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    act(() => {
+      selectedThreadStream?.emit(projectionPatchEvent({
+        id: "projection-sent-text",
+        seq: 3,
+        threadId: thread.id,
+        turnId: "turn-2",
+        itemId: "user-2",
+        itemType: "userMessage",
+        text: "Ship it",
+        displayOrder: 3,
+        status: "completed",
+      }));
+    });
+    expect(await screen.findByText("Ship it")).toBeInTheDocument();
 
     act(() => resolveTurn({ payload: {} }));
-    await waitFor(() => {
-      expect(screen.queryByText("Sending")).not.toBeInTheDocument();
-    });
+    await waitFor(() => expect(screen.getByLabelText(/message composer/i)).toBeEnabled());
   });
 
   it("keeps a background send in progress after switching threads and renders one materialized prompt", async () => {
@@ -559,13 +608,13 @@ describe("MVP composer input flows", () => {
       globalStream?.emit({
         id: "event-background-send-completed",
         seq: 3,
-        kind: "timeline.turn_upsert",
-        codexMethod: "turn/upsert",
+        kind: "timeline.projection_patch",
+        codexMethod: "timeline/projection_patch",
         projectId: project.id,
         threadId: thread.id,
-        turnId: "turn-3",
+        turnId: null,
         itemId: null,
-        payload: { threadId: thread.id, turn: { id: "turn-3", status: "completed", items: [] } },
+        payload: { revision: 3, threadId: thread.id, activeTurnId: null, liveState: "idle", items: [] },
         receivedAt: "2026-05-02T00:00:02Z",
       });
     });
@@ -616,7 +665,7 @@ describe("MVP composer input flows", () => {
       expect(screen.queryByText("Sending")).not.toBeInTheDocument();
     });
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
-    expect(within(timelineElement(container)).getAllByText("Retry text")).toHaveLength(1);
+    expect(within(timelineElement(container)).queryByText("Retry text")).not.toBeInTheDocument();
     expect(within(timelineElement(container)).queryByText("Failed")).not.toBeInTheDocument();
   });
 
@@ -639,7 +688,6 @@ describe("MVP composer input flows", () => {
     await userEvent.type(composer, "Retry text");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
-    expect(await screen.findByText("Retry text")).toBeInTheDocument();
     expect(composer).toBeDisabled();
     await userEvent.type(composer, "New draft");
     expect(composer).toHaveValue("");
@@ -671,7 +719,7 @@ describe("MVP composer input flows", () => {
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/message composer/i), "Retry in first thread");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
-    expect(await screen.findByText("Retry in first thread")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText(/message composer/i)).toHaveValue(""));
 
     await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
     expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
@@ -720,7 +768,7 @@ describe("MVP composer input flows", () => {
     });
   });
 
-  it("optimistically renders image sends while upload is pending", async () => {
+  it("keeps image sends local while upload is pending", async () => {
     let resolveUpload: (value: unknown) => void = () => undefined;
     const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:pending-diagram");
     const gateway = mockGateway(
@@ -746,15 +794,15 @@ describe("MVP composer input flows", () => {
     await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
-    expect(await within(timelineElement(container)).findByText("Inspect this")).toBeInTheDocument();
-    expect(screen.getByText("Uploading")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText(/message composer/i)).toHaveValue(""));
+    expect(within(timelineElement(container)).queryByText("Inspect this")).not.toBeInTheDocument();
     expect(input).toBeDisabled();
     fireEvent.change(input!, {
       target: { files: [new File(["fake"], "second-diagram.png", { type: "image/png" })] },
     });
     expect(createObjectUrl).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: /remove second-diagram.png/i })).not.toBeInTheDocument();
-    expect(container.querySelector(".kodex-user-image-grid img")).toHaveAttribute("src", "blob:pending-diagram");
+    expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
     expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(0);
 
     act(() =>
@@ -764,11 +812,11 @@ describe("MVP composer input flows", () => {
     );
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
-      expect(screen.queryByText("Uploading")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
     });
   });
 
-  it("optimistically renders draft thread image sends before upload resolves", async () => {
+  it("keeps draft thread image sends local before upload resolves", async () => {
     let resolveUpload: (value: unknown) => void = () => undefined;
     const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:draft-diagram");
     const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL");
@@ -798,9 +846,9 @@ describe("MVP composer input flows", () => {
     await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
-    expect(await within(timelineElement(container)).findByText("Inspect this")).toBeInTheDocument();
-    expect(screen.getByText("Uploading")).toBeInTheDocument();
-    expect(container.querySelector(".kodex-user-image-grid img")).toHaveAttribute("src", "blob:draft-diagram");
+    await waitFor(() => expect(screen.getByLabelText(/message composer/i)).toHaveValue(""));
+    expect(within(timelineElement(container)).queryByText("Inspect this")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
     expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
     expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(0);
     expect(revokeObjectUrl).not.toHaveBeenCalledWith("blob:draft-diagram");
@@ -812,7 +860,7 @@ describe("MVP composer input flows", () => {
     );
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(1);
-      expect(screen.queryByText("Uploading")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
     });
   });
 
@@ -1001,8 +1049,8 @@ describe("MVP composer input flows", () => {
     await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
-    expect(await within(timelineElement(container)).findByText("Inspect this")).toBeInTheDocument();
-    expect(screen.getByText("Uploading")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText(/message composer/i)).toHaveValue(""));
+    expect(within(timelineElement(container)).queryByText("Inspect this")).not.toBeInTheDocument();
     expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
     expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(0);
     expect(revokeObjectUrl).not.toHaveBeenCalledWith("blob:draft-retry-diagram");
@@ -1053,7 +1101,7 @@ describe("MVP composer input flows", () => {
     expect(createObjectUrl).toHaveBeenCalled();
     await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
-    expect(await screen.findByText("Inspect this")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText(/message composer/i)).toHaveValue(""));
 
     await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
     expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
@@ -1119,7 +1167,7 @@ describe("MVP composer input flows", () => {
         { type: "localImage", path: "/tmp/diagram.png" },
       ],
     });
-    expect(within(timelineElement(container)).getAllByText("Inspect this")).toHaveLength(1);
+    expect(within(timelineElement(container)).queryByText("Inspect this")).not.toBeInTheDocument();
     expect(within(timelineElement(container)).queryByText("Failed")).not.toBeInTheDocument();
   });
 
@@ -1161,27 +1209,18 @@ describe("MVP composer input flows", () => {
       expect(selectedThreadStream).toBeDefined();
     });
     act(() => {
-      selectedThreadStream?.emit({
+      selectedThreadStream?.emit(projectionPatchEvent({
         id: "event-user-image",
         seq: 2,
-        kind: "codex",
-        codexMethod: "item/completed",
-        projectId: project.id,
         threadId: thread.id,
         turnId: "turn-1",
         itemId: "user-image-1",
-        payload: {
-          item: {
-            id: "user-image-1",
-            type: "userMessage",
-            content: [
-              { type: "localImage", path: "/tmp/diagram.png" },
-              { type: "text", text: "Inspect this" },
-            ],
-          },
-        },
-        receivedAt: "2026-04-30T00:00:01Z",
-      });
+        itemType: "userMessage",
+        text: "Inspect this",
+        displayOrder: 2,
+        status: "completed",
+        imagePath: "/tmp/diagram.png",
+      }));
     });
 
     expect(await screen.findByText("Inspect this")).toBeInTheDocument();

@@ -3,8 +3,10 @@ use serde_json::Value;
 use crate::{
     api::AppState,
     error::{ApiError, ApiResult},
+    events,
     schema::validate_approval_response,
     store::{Approval, NewEvent},
+    timeline_projection,
 };
 
 pub async fn decide_approval(
@@ -46,6 +48,12 @@ pub async fn decide_approval(
             payload: serde_json::to_value(&resolved)?,
         })
         .await?;
+    timeline_projection::record_approval_resolved(&state.thread_sessions, &resolved, event.seq)
+        .await?;
     let _ = state.events.send(event);
+    if let Some(thread_id) = resolved.thread_id.as_deref() {
+        let patch = events::timeline_projection_patch_event(state, thread_id).await?;
+        let _ = state.events.send(patch);
+    }
     Ok(resolved)
 }

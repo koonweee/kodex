@@ -25,6 +25,7 @@ export type McpServerInstallRequest = components["schemas"]["McpServerInstallReq
 export type McpServerListResponse = components["schemas"]["McpServerListResponse"];
 export type McpServerStatus = components["schemas"]["McpServerStatus"];
 export type ModelSummary = components["schemas"]["ModelSummary"];
+export type PendingTimelineRequestSummary = components["schemas"]["PendingTimelineRequestSummary"];
 export type Project = components["schemas"]["Project"];
 export type PreviewCreateRequest = components["schemas"]["PreviewCreateRequest"];
 export type PreviewListResponse = components["schemas"]["PreviewListResponse"];

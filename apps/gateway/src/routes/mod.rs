@@ -5311,6 +5311,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn thread_input_starts_when_thread_is_not_materialized_yet() {
+        let (state, app_server) = test_state().await;
+        app_server
+            .queued_errors
+            .lock()
+            .unwrap()
+            .push(ApiError::BadGateway(
+                "app-server error -32600: thread thread-1 is not materialized yet; includeTurns is unavailable before first user message".to_string(),
+            ));
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"turnId": "turn-started"}));
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":[{"type":"text","text":"hello"}]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "started");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[1].0, "turn/start");
+    }
+
+    #[tokio::test]
     async fn thread_input_steers_when_app_server_has_active_turn() {
         let (state, app_server) = test_state().await;
         app_server.queued_responses.lock().unwrap().extend([
@@ -8055,8 +8090,8 @@ mod tests {
                 thread_id: Some("t1".to_string()),
                 turn_id: None,
                 item_id: None,
-                kind: "timeline.item_delta".to_string(),
-                codex_method: Some("item/agentMessage/delta".to_string()),
+                kind: "timeline.projection_patch".to_string(),
+                codex_method: Some("timeline/projection_patch".to_string()),
                 payload: json!({"threadId": "t1", "phase": "live"}),
             })
             .await
@@ -8102,7 +8137,7 @@ mod tests {
 
         let response = app
             .oneshot(
-                Request::get("/v1/events?threadId=t1")
+                Request::get(format!("/v1/events?threadId=t1&cursor={}", replay.seq))
                     .header("accept", "text/event-stream")
                     .body(Body::empty())
                     .unwrap(),
@@ -8154,7 +8189,7 @@ mod tests {
 
         let response = app
             .oneshot(
-                Request::get("/v1/events?threadId=t1")
+                Request::get(format!("/v1/events?threadId=t1&cursor={}", replay.seq))
                     .header("accept", "text/event-stream")
                     .body(Body::empty())
                     .unwrap(),
@@ -8172,8 +8207,8 @@ mod tests {
                 thread_id: Some("t1".to_string()),
                 turn_id: None,
                 item_id: None,
-                kind: "timeline.item_delta".to_string(),
-                codex_method: Some("item/agentMessage/delta".to_string()),
+                kind: "timeline.projection_patch".to_string(),
+                codex_method: Some("timeline/projection_patch".to_string()),
                 payload: json!({"threadId": "t1", "phase": "live"}),
             })
             .await

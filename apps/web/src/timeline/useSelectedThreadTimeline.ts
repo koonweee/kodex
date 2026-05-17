@@ -201,6 +201,9 @@ export function useSelectedThreadTimeline({
             latestCallbacks.current.onQueueEvent(event);
             return;
           }
+          if (!isCanonicalTimelineRenderEvent(event)) {
+            return;
+          }
           queuedTimelineEvents.current.push(event);
           scheduleQueuedTimelineFlush();
         },
@@ -249,6 +252,10 @@ export function useSelectedThreadTimeline({
 
 function isQueueEvent(event: EventEnvelope): boolean {
   return event.kind === "turn_queue.item_upsert" || event.kind === "turn_queue.item_deleted";
+}
+
+function isCanonicalTimelineRenderEvent(event: EventEnvelope): boolean {
+  return event.kind === "timeline.snapshot" || event.kind === "timeline.projection_patch";
 }
 
 function isTransientThreadSnapshotLoadError(error: unknown): boolean {

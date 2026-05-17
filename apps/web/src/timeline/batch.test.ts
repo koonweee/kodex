@@ -65,7 +65,7 @@ describe("timeline event batching", () => {
 
     expect(applyTimelineEventBatch(createTimelineState(), events)).toEqual(expected);
     expect(applyTimelineEventBatch(createTimelineState(), events).items[0]).toMatchObject({
-      id: "answer-1",
+      id: "projection-turn-1-answer-1",
       displayOrder: 1,
       text: "Hello world!",
     });

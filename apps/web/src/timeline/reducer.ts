@@ -83,6 +83,8 @@ export function applyDebugEvent(state: TimelineState, event: EventEnvelope): Tim
   const next: TimelineDraft = {
     activeTurnId: state.activeTurnId,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    pendingApprovalRequests: state.pendingApprovalRequests,
+    pendingUserInputRequests: state.pendingUserInputRequests,
     lastSeq: Math.max(state.lastSeq, event.seq),
     projectionRevision: state.projectionRevision,
   };
@@ -111,6 +113,8 @@ function applyTimelineEventInternal(
   const next: TimelineDraft = {
     activeTurnId: nextActiveTurnId(state.activeTurnId, event, currentIndexes),
     indexes: prepareTimelineIndexesForUpdate(currentIndexes),
+    pendingApprovalRequests: state.pendingApprovalRequests,
+    pendingUserInputRequests: state.pendingUserInputRequests,
     lastSeq: Math.max(state.lastSeq, event.seq),
     projectionRevision: state.projectionRevision,
   };
@@ -140,6 +144,8 @@ export function addOptimisticUserMessage(state: TimelineState, input: Optimistic
   const next: TimelineDraft = {
     activeTurnId: state.activeTurnId,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    pendingApprovalRequests: state.pendingApprovalRequests,
+    pendingUserInputRequests: state.pendingUserInputRequests,
     lastSeq: state.lastSeq,
     projectionRevision: state.projectionRevision,
   };
@@ -182,6 +188,8 @@ export function updateOptimisticUserMessage(
   const next: TimelineDraft = {
     activeTurnId: state.activeTurnId,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    pendingApprovalRequests: state.pendingApprovalRequests,
+    pendingUserInputRequests: state.pendingUserInputRequests,
     lastSeq: state.lastSeq,
     projectionRevision: state.projectionRevision,
   };
@@ -202,6 +210,8 @@ export function removeOptimisticUserMessage(state: TimelineState, clientRequestI
   const next: TimelineDraft = {
     activeTurnId: state.activeTurnId,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    pendingApprovalRequests: state.pendingApprovalRequests,
+    pendingUserInputRequests: state.pendingUserInputRequests,
     lastSeq: state.lastSeq,
     projectionRevision: state.projectionRevision,
   };
@@ -263,10 +273,21 @@ function applyCanonicalSnapshotItem(
   const next: TimelineDraft = {
     activeTurnId: state.activeTurnId,
     indexes: prepareTimelineIndexesForUpdate(currentIndexes),
+    pendingApprovalRequests: state.pendingApprovalRequests,
+    pendingUserInputRequests: state.pendingUserInputRequests,
     lastSeq: state.lastSeq,
     projectionRevision: state.projectionRevision,
   };
-  return applyTimelineItemEventToDraft(state, next, event, {
+  const existingItem = timelineItemById(next.indexes, item.id);
+  const presentation = createPresentationItem(event, existingItem, {
+    collabAgentNames: collabAgentNameMap(next.indexes),
+  });
+  if (!presentation) {
+    addHiddenDebugItem(next, event);
+    return createTimelineStateFromDraft(next);
+  }
+
+  return applyPresentedTimelineItem(state, next, event, canonicalPresentationItem(presentation, item), {
     disableEquivalentCompletedItemMatch: true,
     preserveIncomingDisplayOrderOnConfirm: true,
     skipOptimisticUserMessageMatch: canonicalItemShouldSkipLocalUserMessageMatch(item, options),
@@ -291,11 +312,52 @@ function canonicalSnapshotItemEvent(threadId: string, item: ThreadTimelineSnapsh
     codexMethod: item.codexMethod ?? "item/upsert",
     threadId: item.threadId ?? threadId,
     turnId: item.turnId,
-    itemId: item.itemId,
+    itemId: item.id,
     projectId: null,
     payload: item.payload,
     receivedAt: canonicalSnapshotItemReceivedAt(item),
   };
+}
+
+function canonicalPresentationItem(
+  presentation: TimelinePresentationItem,
+  item: ThreadTimelineSnapshotItem,
+): TimelinePresentationItem {
+  return {
+    ...presentation,
+    item: {
+      ...presentation.item,
+      id: item.id,
+      serverItemId: item.itemId,
+      source: "app_server",
+      displayOrder: item.displayOrder,
+      status: canonicalTimelineStatus(item.status, presentation.item.status),
+      timestampMs: item.timestampMs ?? presentation.item.timestampMs,
+    },
+  };
+}
+
+function canonicalTimelineStatus(status: string | undefined, fallback: TimelineItem["status"]): TimelineItem["status"] {
+  const normalized = status?.toLowerCase() ?? "";
+  if (normalized.includes("fail") || normalized.includes("error")) {
+    return "failed";
+  }
+  if (normalized.includes("wait")) {
+    return "waiting";
+  }
+  if (normalized.includes("cancel")) {
+    return "cancelled";
+  }
+  if (normalized.includes("approval")) {
+    return "approval_required";
+  }
+  if (normalized === "completed" || normalized === "complete") {
+    return "completed";
+  }
+  if (normalized === "running" || normalized === "streaming" || normalized === "pending") {
+    return "running";
+  }
+  return fallback;
 }
 
 function canonicalSnapshotItemReceivedAt(item: ThreadTimelineSnapshotItem): string {
@@ -303,9 +365,6 @@ function canonicalSnapshotItemReceivedAt(item: ThreadTimelineSnapshotItem): stri
 }
 
 function applyTimelineProjectionPatch(state: TimelineState, event: EventEnvelope): TimelineState {
-  if (event.seq <= state.lastSeq) {
-    return state;
-  }
   const patch = event.payload as TimelineProjectionPatch;
   if ((patch.revision ?? 0) <= state.projectionRevision) {
     return withIgnoredProjectionPatchCursor(state, patch, event.seq);
@@ -322,8 +381,35 @@ function applyTimelineProjectionPatch(state: TimelineState, event: EventEnvelope
       knownAppServerItemIds: appServerItemIdsForState(next),
     });
   }
+  next = removeItemsMissingFromCanonicalPatch(next, patch);
   next = withProjectionPatchLiveState(next, patch, event.seq);
   return withTimelineLastSeq(next, Math.max(event.seq, patch.revision ?? 0));
+}
+
+function removeItemsMissingFromCanonicalPatch(state: TimelineState, patch: TimelineProjectionPatch): TimelineState {
+  const patchItemIds = new Set((patch.items ?? []).map((item) => item.id));
+  const patchServerItemIds = new Set((patch.items ?? []).map((item) => item.itemId));
+  const activeTurnId = patch.activeTurnId ?? state.activeTurnId;
+  const next: TimelineDraft = {
+    activeTurnId: state.activeTurnId,
+    indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    pendingApprovalRequests: state.pendingApprovalRequests,
+    pendingUserInputRequests: state.pendingUserInputRequests,
+    lastSeq: state.lastSeq,
+    projectionRevision: state.projectionRevision,
+  };
+  let changed = false;
+  for (const item of timelineItems(next.indexes)) {
+    if (item.turnId !== activeTurnId) {
+      continue;
+    }
+    if (patchItemIds.has(item.id) || (item.serverItemId && patchServerItemIds.has(item.serverItemId))) {
+      continue;
+    }
+    removeItem(next, item.id);
+    changed = true;
+  }
+  return changed ? createTimelineStateFromDraft(next) : state;
 }
 
 function appServerItemIdsForState(state: TimelineState): Set<string> {
@@ -341,6 +427,8 @@ function optimisticOnlyTimeline(state: TimelineState): TimelineState {
   const next: TimelineDraft = {
     activeTurnId: null,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(createTimelineState())),
+    pendingApprovalRequests: state.pendingApprovalRequests,
+    pendingUserInputRequests: state.pendingUserInputRequests,
     lastSeq: 0,
     projectionRevision: state.projectionRevision,
   };
@@ -374,6 +462,8 @@ function moveUnmatchedLocalUserMessagesAfterSnapshot(state: TimelineState, snaps
   const next: TimelineDraft = {
     activeTurnId: state.activeTurnId,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    pendingApprovalRequests: state.pendingApprovalRequests,
+    pendingUserInputRequests: state.pendingUserInputRequests,
     lastSeq: state.lastSeq,
     projectionRevision: state.projectionRevision,
   };
@@ -394,6 +484,8 @@ function withSnapshotTurnMetadata(state: TimelineState, snapshot: ThreadDetailRe
   const next: TimelineDraft = {
     activeTurnId: state.activeTurnId,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    pendingApprovalRequests: state.pendingApprovalRequests,
+    pendingUserInputRequests: state.pendingUserInputRequests,
     lastSeq: state.lastSeq,
     projectionRevision: state.projectionRevision,
   };
@@ -420,6 +512,8 @@ function withCanonicalSnapshotLiveState(state: TimelineState, timeline: ThreadTi
   return createTimelineStateFromDraft({
     activeTurnId: timeline.activeTurnId ?? null,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    pendingApprovalRequests: timeline.pendingApprovalRequests ?? [],
+    pendingUserInputRequests: timeline.pendingUserInputRequests ?? [],
     lastSeq: state.lastSeq,
     projectionRevision: Math.max(state.projectionRevision, timeline.revision ?? 0),
   });
@@ -432,6 +526,8 @@ function withProjectionPatchLiveState(state: TimelineState, patch: TimelineProje
   return createTimelineStateFromDraft({
     activeTurnId: patch.liveState === "idle" ? null : (patch.activeTurnId ?? state.activeTurnId),
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    pendingApprovalRequests: patch.pendingApprovalRequests ?? state.pendingApprovalRequests,
+    pendingUserInputRequests: patch.pendingUserInputRequests ?? state.pendingUserInputRequests,
     lastSeq: state.lastSeq,
     projectionRevision: Math.max(state.projectionRevision, patch.revision ?? 0, eventSeq),
   });
@@ -445,6 +541,8 @@ function withIgnoredProjectionPatchCursor(
   return createTimelineStateFromDraft({
     activeTurnId: state.activeTurnId,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    pendingApprovalRequests: state.pendingApprovalRequests,
+    pendingUserInputRequests: state.pendingUserInputRequests,
     lastSeq: Math.max(state.lastSeq, eventSeq),
     projectionRevision: Math.max(state.projectionRevision, patch.revision ?? 0, eventSeq),
   });
@@ -457,6 +555,8 @@ function withTimelineLastSeq(state: TimelineState, lastSeq: number): TimelineSta
   return createTimelineStateFromDraft({
     activeTurnId: state.activeTurnId,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    pendingApprovalRequests: state.pendingApprovalRequests,
+    pendingUserInputRequests: state.pendingUserInputRequests,
     lastSeq,
     projectionRevision: state.projectionRevision,
   });
@@ -571,8 +671,13 @@ function applyPresentedTimelineItem(
       !exactConfirmedUserItem && presentation.item.kind === "user_message" && !options.skipOptimisticUserMessageMatch
         ? matchingOptimisticUserMessage(next.indexes, presentation.item)
         : undefined;
+    const exactConfirmedAppServerItem =
+      !exactConfirmedUserItem && !optimisticItem
+        ? matchingConfirmedAppServerItemByServerId(next.indexes, presentation.item)
+        : undefined;
     const confirmedItem =
       exactConfirmedUserItem ??
+      exactConfirmedAppServerItem ??
       (optimisticItem || options.disableEquivalentCompletedItemMatch
         ? undefined
         : matchingConfirmedAppServerItem(next.indexes, presentation.item, {
@@ -587,8 +692,19 @@ function applyPresentedTimelineItem(
           ? mergeTimelineItem(pendingItem, presentation.item, event)
           : presentation.item;
     if (confirmedItem) {
-      next.indexes.itemUpdatesById.set(confirmedItem.id, item);
-      addToTurn(next, item);
+      const confirmedByServerId =
+        confirmedItem.id !== presentation.item.id &&
+        confirmedItem.source === "app_server" &&
+        confirmedItem.serverItemId &&
+        confirmedItem.serverItemId === presentation.item.serverItemId;
+      const storedItem = confirmedByServerId ? { ...item, id: presentation.item.id } : item;
+      if (confirmedByServerId) {
+        removeItem(next, confirmedItem.id);
+        addItem(next, storedItem);
+      } else {
+        next.indexes.itemUpdatesById.set(confirmedItem.id, storedItem);
+      }
+      addToTurn(next, storedItem);
       return createTimelineStateFromDraft(next);
     }
     if (optimisticItem) {
@@ -790,6 +906,23 @@ function matchingConfirmedAppServerItem(
   return undefined;
 }
 
+function matchingConfirmedAppServerItemByServerId(
+  indexes: TimelineIndexes,
+  incoming: TimelineItem,
+): TimelineItem | undefined {
+  if (!incoming.serverItemId) {
+    return undefined;
+  }
+  return timelineItems(indexes).find(
+    (item) =>
+      item.source === "app_server" &&
+      item.kind === incoming.kind &&
+      item.id !== incoming.id &&
+      item.serverItemId === incoming.serverItemId &&
+      sameEquivalentItemTurn(item, incoming),
+  );
+}
+
 function matchingConfirmedUserMessage(indexes: TimelineIndexes, incoming: TimelineItem): TimelineItem | undefined {
   return timelineItems(indexes).find(
     (item) =>
@@ -808,6 +941,17 @@ function matchingEquivalentCompletedItem(
     return undefined;
   }
   for (const item of timelineItems(indexes)) {
+    if (
+      item.kind === incoming.kind &&
+      item.id !== incoming.id &&
+      (options.allowUntetheredUserMessageMatch || !isUntetheredUserMessage(item)) &&
+      sameEquivalentItemTurn(item, incoming) &&
+      item.serverItemId &&
+      incoming.serverItemId &&
+      item.serverItemId === incoming.serverItemId
+    ) {
+      return item;
+    }
     if (
       item.kind === incoming.kind &&
       item.id !== incoming.id &&

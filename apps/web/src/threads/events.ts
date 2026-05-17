@@ -44,19 +44,14 @@ export function threadUpsertFromEvent(event: EventEnvelope): ThreadUpsert | null
 }
 
 export function completedAgentTurnEvent(event: EventEnvelope): { threadId: string; seq: number } | null {
-  if (event.kind !== "timeline.turn_upsert") {
+  if (event.kind !== "timeline.projection_patch") {
     return null;
   }
-
-  const turnPayload = asRecord(asRecord(event.payload).turn);
-  const status = statusTypeValue(turnPayload.status)?.toLowerCase();
-  if (!status || !["completed", "failed", "cancelled", "canceled", "interrupted"].includes(status)) {
-    return null;
-  }
-
   const payload = asRecord(event.payload);
   const threadId = event.threadId ?? stringValue(payload.threadId) ?? stringValue(payload.thread_id);
-  return threadId ? { threadId, seq: event.seq } : null;
+  const liveState = normalizeRuntimeStatus(stringValue(payload.liveState));
+  const activeTurnId = stringValue(payload.activeTurnId);
+  return threadId && liveState === "idle" && !activeTurnId ? { threadId, seq: event.seq } : null;
 }
 
 export function threadStatusUpdateFromEvent(event: EventEnvelope): { threadId: string; status: ThreadRuntimeStatus } | null {
@@ -66,22 +61,12 @@ export function threadStatusUpdateFromEvent(event: EventEnvelope): { threadId: s
     return null;
   }
 
-  if (event.kind === "timeline.thread_status") {
-    const status = normalizeRuntimeStatus(stringValue(payload.status) ?? stringValue(payload.liveState));
-    return status ? { threadId, status } : null;
-  }
-
-  if (event.kind === "timeline.turn_upsert") {
-    const turnPayload = asRecord(payload.turn);
-    const status = normalizeRuntimeStatus(statusTypeValue(turnPayload.status));
+  if (event.kind === "timeline.projection_patch") {
+    const status = normalizeRuntimeStatus(stringValue(payload.liveState));
     return status ? { threadId, status } : null;
   }
 
   return null;
-}
-
-function statusTypeValue(value: unknown): string | null {
-  return stringValue(value) ?? stringValue(asRecord(value).type);
 }
 
 export function threadNameUpdateFromEvent(event: EventEnvelope): { threadId: string; name: string | null } | null {

@@ -153,6 +153,9 @@ export function useReadonlyThreadTimeline({
           if (isApprovalEvent(event) || isQueueEvent(event)) {
             return;
           }
+          if (!isCanonicalTimelineRenderEvent(event)) {
+            return;
+          }
           queuedTimelineEvents.current.push(event);
           scheduleQueuedTimelineFlush();
         },
@@ -194,4 +197,8 @@ export function useReadonlyThreadTimeline({
 
 function isQueueEvent(event: EventEnvelope): boolean {
   return event.kind === "turn_queue.item_upsert" || event.kind === "turn_queue.item_deleted";
+}
+
+function isCanonicalTimelineRenderEvent(event: EventEnvelope): boolean {
+  return event.kind === "timeline.snapshot" || event.kind === "timeline.projection_patch";
 }

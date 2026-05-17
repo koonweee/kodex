@@ -4,9 +4,29 @@ import { applyTimelineEventBatch } from "./batch";
 import { replayTimeline } from "./reducer";
 import { applyTimelineEvent, event } from "./reducer.testUtils";
 
-function projectionPatch(seq: number, itemId: string, text: string, displayOrder: number) {
+function projectionPatchItem(itemId: string, text: string, displayOrder: number) {
+  return {
+    id: `projection-turn-1-${itemId}`,
+    threadId: "thread-1",
+    turnId: "turn-1",
+    itemId,
+    itemType: "agentMessage",
+    displayOrder,
+    status: "running",
+    timestampMs: displayOrder,
+    payload: {
+      source: "gatewayStream",
+      turnId: "turn-1",
+      itemId,
+      item: { id: itemId, type: "agentMessage", text },
+      itemSnapshot: { id: itemId, itemType: "agentMessage", rawPayload: { id: itemId, type: "agentMessage", text } },
+    },
+  };
+}
+
+function projectionPatch(seq: number, items: Array<ReturnType<typeof projectionPatchItem>>) {
   return event({
-    id: `projection-${itemId}-${seq}`,
+    id: `projection-${seq}`,
     seq,
     kind: "timeline.projection_patch",
     codexMethod: "timeline/projection_patch",
@@ -16,25 +36,7 @@ function projectionPatch(seq: number, itemId: string, text: string, displayOrder
       threadId: "thread-1",
       activeTurnId: "turn-1",
       liveState: "streaming",
-      items: [
-        {
-          id: `projection-turn-1-${itemId}`,
-          threadId: "thread-1",
-          turnId: "turn-1",
-          itemId,
-          itemType: "agentMessage",
-          displayOrder,
-          status: "running",
-          timestampMs: displayOrder,
-          payload: {
-            source: "gatewayStream",
-            turnId: "turn-1",
-            itemId,
-            item: { id: itemId, type: "agentMessage", text },
-            itemSnapshot: { id: itemId, itemType: "agentMessage", rawPayload: { id: itemId, type: "agentMessage", text } },
-          },
-        },
-      ],
+      items,
     },
   });
 }
@@ -172,8 +174,11 @@ describe("timeline reducer performance", () => {
       }),
     ]);
     const queuedEvents = [
-      projectionPatch(2, "item-1", "Initial updated", 1),
-      projectionPatch(3, "item-2", "Second", 2),
+      projectionPatch(2, [projectionPatchItem("item-1", "Initial updated", 1)]),
+      projectionPatch(3, [
+        projectionPatchItem("item-1", "Initial updated", 1),
+        projectionPatchItem("item-2", "Second", 2),
+      ]),
     ];
 
     const first = applyTimelineEventBatch(previous, queuedEvents);

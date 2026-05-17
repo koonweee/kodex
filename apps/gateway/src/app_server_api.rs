@@ -1729,6 +1729,8 @@ pub struct ThreadTimelineSnapshot {
     pub revision: i64,
     pub active_turn_id: Option<String>,
     pub live_state: ThreadLiveState,
+    pub pending_approval_requests: Vec<PendingTimelineRequestSummary>,
+    pub pending_user_input_requests: Vec<PendingTimelineRequestSummary>,
     pub items: Vec<ThreadTimelineSnapshotItem>,
 }
 
@@ -1759,9 +1761,27 @@ impl ThreadTimelineSnapshot {
             revision: 0,
             active_turn_id,
             live_state: live_state_from_turns(turns),
+            pending_approval_requests: Vec::new(),
+            pending_user_input_requests: Vec::new(),
             items,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingTimelineRequestSummary {
+    pub id: String,
+    pub request_id: String,
+    pub thread_id: Option<String>,
+    pub turn_id: Option<String>,
+    pub item_id: Option<String>,
+    pub method: String,
+    pub status: String,
+    pub request_kind: String,
+    pub title: String,
+    pub summary: Option<String>,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -1795,7 +1815,7 @@ impl ThreadTimelineSnapshotItem {
         }
         .to_string();
         Self {
-            id: format!("snapshot-{}-{}", turn.id, item.id),
+            id: canonical_timeline_item_id(&turn.id, &item.id),
             thread_id: thread_id.to_string(),
             turn_id: turn.id.clone(),
             item_id: item.id.clone(),
@@ -1817,6 +1837,10 @@ impl ThreadTimelineSnapshotItem {
             },
         }
     }
+}
+
+pub(crate) fn canonical_timeline_item_id(turn_id: &str, item_id: &str) -> String {
+    format!("projection-{turn_id}-{item_id}")
 }
 
 fn live_state_from_turns(turns: &[ThreadTurnSnapshot]) -> ThreadLiveState {
@@ -3692,7 +3716,7 @@ mod tests {
 
         assert_eq!(response.timeline.revision, 0);
         assert_eq!(response.timeline.items.len(), 2);
-        assert_eq!(response.timeline.items[0].id, "snapshot-turn-1-user-1");
+        assert_eq!(response.timeline.items[0].id, "projection-turn-1-user-1");
         assert_eq!(response.timeline.items[0].display_order, 1);
         assert_eq!(response.timeline.items[0].codex_method, "item/completed");
         assert_eq!(response.timeline.items[0].timestamp_ms, Some(10_000));
@@ -3700,7 +3724,7 @@ mod tests {
             response.timeline.items[0].payload.source,
             TimelineUpdateSource::AppServerSnapshot
         );
-        assert_eq!(response.timeline.items[1].id, "snapshot-turn-1-agent-1");
+        assert_eq!(response.timeline.items[1].id, "projection-turn-1-agent-1");
         assert_eq!(response.timeline.items[1].display_order, 2);
         assert_eq!(response.timeline.items[1].timestamp_ms, Some(12_000));
     }

@@ -35,7 +35,7 @@ function timelineFromTurns(thread: Record<string, unknown>, turns: ReturnType<ty
         const snapshot = item as { id?: string; itemType?: string; rawPayload?: unknown };
         displayOrder += 1;
         return {
-          id: `snapshot-${turn.id}-${snapshot.id ?? displayOrder}`,
+          id: `projection-${turn.id}-${snapshot.id ?? displayOrder}`,
           threadId: String(thread.id),
           turnId: turn.id,
           itemId: snapshot.id ?? `item-${displayOrder}`,
@@ -711,7 +711,7 @@ describe("App shell", () => {
           ),
         ],
       ),
-      "POST /v1/threads/thread-1/turns": { payload: {} },
+      "POST /v1/threads/thread-1/input": { payload: {} },
       "GET /v1/approvals": { approvals: [] },
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     });
@@ -734,7 +734,7 @@ describe("App shell", () => {
     expect(scrollRegion.scrollTop).toBe(600);
     expect(screen.getByRole("button", { name: /scroll to bottom/i })).toBeInTheDocument();
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
   });
 

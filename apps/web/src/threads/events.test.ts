@@ -22,14 +22,14 @@ describe("thread events", () => {
     ).toBeNull();
   });
 
-  it("recognizes normalized terminal turn upserts", () => {
+  it("recognizes canonical idle projection patches as completed agent turns", () => {
     expect(
       completedAgentTurnEvent(
         event({
-          kind: "timeline.turn_upsert",
-          codexMethod: "turn/upsert",
+          kind: "timeline.projection_patch",
+          codexMethod: "timeline/projection_patch",
           threadId: "thread-1",
-          payload: { turn: { id: "turn-1", status: "completed" } },
+          payload: { threadId: "thread-1", liveState: "idle", activeTurnId: null, items: [] },
         }),
       ),
     ).toEqual({ threadId: "thread-1", seq: 10 });
@@ -37,22 +37,22 @@ describe("thread events", () => {
     expect(
       completedAgentTurnEvent(
         event({
-          kind: "timeline.turn_upsert",
-          codexMethod: "turn/upsert",
+          kind: "timeline.projection_patch",
+          codexMethod: "timeline/projection_patch",
           threadId: "thread-1",
-          payload: { turn: { id: "turn-1", status: { type: "completed" } } },
+          payload: { threadId: "thread-1", liveState: "streaming", activeTurnId: "turn-1", items: [] },
         }),
       ),
-    ).toEqual({ threadId: "thread-1", seq: 10 });
+    ).toBeNull();
   });
 
-  it("recognizes running and terminal thread status updates", () => {
+  it("recognizes running and idle status from canonical projection patches", () => {
     expect(
       threadStatusUpdateFromEvent(
         event({
-          kind: "timeline.thread_status",
+          kind: "timeline.projection_patch",
           threadId: "thread-1",
-          payload: { status: "running" },
+          payload: { liveState: "streaming" },
         }),
       ),
     ).toEqual({ threadId: "thread-1", status: "active" });
@@ -60,8 +60,8 @@ describe("thread events", () => {
     expect(
       threadStatusUpdateFromEvent(
         event({
-          kind: "timeline.turn_upsert",
-          payload: { threadId: "thread-1", turn: { id: "turn-1", status: { type: "completed" } } },
+          kind: "timeline.projection_patch",
+          payload: { threadId: "thread-1", liveState: "idle", activeTurnId: null },
         }),
       ),
     ).toEqual({ threadId: "thread-1", status: "idle" });

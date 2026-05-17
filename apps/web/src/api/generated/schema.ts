@@ -1677,6 +1677,20 @@ export interface components {
             subscriptionsEnabled: boolean;
             vapidPublicKey?: string | null;
         };
+        PendingTimelineRequestSummary: {
+            /** Format: date-time */
+            createdAt: string;
+            id: string;
+            itemId?: string | null;
+            method: string;
+            requestId: string;
+            requestKind: string;
+            status: string;
+            summary?: string | null;
+            threadId?: string | null;
+            title: string;
+            turnId?: string | null;
+        };
         PluginDetail: {
             apps?: components["schemas"]["AppSummary"][];
             description?: string | null;
@@ -2250,6 +2264,8 @@ export interface components {
             activeTurnId?: string | null;
             items: components["schemas"]["ThreadTimelineSnapshotItem"][];
             liveState: components["schemas"]["ThreadLiveState"];
+            pendingApprovalRequests: components["schemas"]["PendingTimelineRequestSummary"][];
+            pendingUserInputRequests: components["schemas"]["PendingTimelineRequestSummary"][];
             /** Format: int64 */
             revision: number;
         };
@@ -2293,6 +2309,8 @@ export interface components {
             activeTurnId?: string | null;
             items: components["schemas"]["ThreadTimelineSnapshotItem"][];
             liveState: components["schemas"]["ThreadLiveState"];
+            pendingApprovalRequests: components["schemas"]["PendingTimelineRequestSummary"][];
+            pendingUserInputRequests: components["schemas"]["PendingTimelineRequestSummary"][];
             /** Format: int64 */
             revision: number;
             threadId: string;

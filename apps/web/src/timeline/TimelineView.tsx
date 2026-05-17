@@ -1,9 +1,9 @@
-import { ActionIcon, Box, Stack, Tooltip } from "@mantine/core";
+import { ActionIcon, Box, Stack, Text, Tooltip } from "@mantine/core";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDownToLine } from "lucide-react";
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, useEffect } from "react";
 
-import type { Approval, ApprovalResponse } from "../api/client";
+import type { Approval, ApprovalResponse, PendingTimelineRequestSummary } from "../api/client";
 import type { MarkdownPreviewRequest } from "../files/types";
 import { ApprovalCard, ThreadApprovalStack } from "../approvals/ApprovalCard";
 import type { ImageLightboxImage } from "../images/types";
@@ -53,6 +53,10 @@ export function TimelineView({
   const rows = useMemo(() => deriveTimelineRows(timeline, { showDebug }), [showDebug, timeline]);
   const messageTimestamps = useMemo(() => visibleMessageTimestamps(rows), [rows]);
   const approvalIndex = useMemo(() => buildApprovalIndex(approvals), [approvals]);
+  const pendingRequestSummaries = useMemo(
+    () => pendingTimelineRequestSummaries(timeline, approvals),
+    [approvals, timeline],
+  );
   const unanchoredApprovals = useMemo(
     () => getUnanchoredApprovals(rows, approvalIndex),
     [approvalIndex, rows],
@@ -83,6 +87,7 @@ export function TimelineView({
           threadId={threadId}
         />
         {approvals.length > 0 ? <ThreadApprovalStack approvals={approvals} onDecision={onApprovalDecision} /> : null}
+        <PendingRequestSummaryStack requests={pendingRequestSummaries} />
       </>
     );
   }
@@ -93,6 +98,7 @@ export function TimelineView({
 
   return (
     <Box className="kodex-timeline-virtual-root" data-initial-bottom-aligned={initialBottomAligned ? "true" : "false"}>
+      <PendingRequestSummaryStack requests={pendingRequestSummaries} />
       <Box className="kodex-timeline-virtual-spacer" style={{ height: rowVirtualizer.getTotalSize() }}>
         {renderedVirtualItems.map((virtualItem) => {
           const row = rows[virtualItem.index];
@@ -153,6 +159,38 @@ export function TimelineView({
         </Tooltip>
       ) : null}
     </Box>
+  );
+}
+
+function pendingTimelineRequestSummaries(
+  timeline: TimelineState,
+  approvals: Approval[],
+): PendingTimelineRequestSummary[] {
+  const renderedApprovalIds = new Set(approvals.map((approval) => approval.id));
+  return [...(timeline.pendingApprovalRequests ?? []), ...(timeline.pendingUserInputRequests ?? [])].filter(
+    (request) => !renderedApprovalIds.has(request.id),
+  );
+}
+
+function PendingRequestSummaryStack({ requests }: { requests: PendingTimelineRequestSummary[] }) {
+  if (requests.length === 0) {
+    return null;
+  }
+  return (
+    <Stack gap="xs" className="kodex-thread-approvals kodex-main-column">
+      {requests.map((request) => (
+        <Box className="kodex-approval-card" key={request.id}>
+          <Text fw={600} size="sm">
+            {request.title}
+          </Text>
+          {request.summary ? (
+            <Text c="dimmed" size="sm">
+              {request.summary}
+            </Text>
+          ) : null}
+        </Box>
+      ))}
+    </Stack>
   );
 }
 

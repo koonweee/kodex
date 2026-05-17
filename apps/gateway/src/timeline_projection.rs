@@ -11,11 +11,13 @@ use utoipa::ToSchema;
 
 use crate::{
     app_server_api::{
-        timeline_skill_mentions_from_user_input, visible_text_from_thread_item, ThreadItemSnapshot,
+        canonical_timeline_item_id, timeline_skill_mentions_from_user_input,
+        visible_text_from_thread_item, PendingTimelineRequestSummary, ThreadItemSnapshot,
         ThreadLiveState, ThreadTimelineSnapshot, ThreadTimelineSnapshotItem, ThreadTurnSnapshot,
         TimelineItemUpsertPayload, TimelineUpdateSource, UserInput,
     },
     error::ApiResult,
+    store::Approval,
 };
 
 pub const TIMELINE_PROJECTION_PATCH_KIND: &str = "timeline.projection_patch";
@@ -27,6 +29,8 @@ pub struct TimelineProjectionPatch {
     pub thread_id: String,
     pub active_turn_id: Option<String>,
     pub live_state: ThreadLiveState,
+    pub pending_approval_requests: Vec<PendingTimelineRequestSummary>,
+    pub pending_user_input_requests: Vec<PendingTimelineRequestSummary>,
     pub items: Vec<ThreadTimelineSnapshotItem>,
 }
 
@@ -58,6 +62,8 @@ impl ThreadSessionStore {
                 thread_id: thread_id.to_string(),
                 active_turn_id: None,
                 live_state: ThreadLiveState::Idle,
+                pending_approval_requests: Vec::new(),
+                pending_user_input_requests: Vec::new(),
                 items: Vec::new(),
             })
     }
@@ -96,6 +102,8 @@ struct ThreadSessionView {
     revision: i64,
     active_turn_id: Option<String>,
     live_state: ThreadLiveState,
+    pending_approval_requests: Vec<PendingTimelineRequestSummary>,
+    pending_user_input_requests: Vec<PendingTimelineRequestSummary>,
     items: Vec<ThreadTimelineSnapshotItem>,
 }
 
@@ -107,6 +115,12 @@ impl ThreadSessionView {
         revision: i64,
     ) -> ThreadTimelineSnapshot {
         let existing_items = std::mem::take(&mut self.items);
+        let mut base_item_indexes = base
+            .items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| (scoped_item_key(&item.turn_id, &item.item_id), index))
+            .collect::<HashMap<_, _>>();
         let mut base_keys = base
             .items
             .iter()
@@ -120,6 +134,7 @@ impl ThreadSessionView {
                 *counts.entry(key).or_insert(0) += 1;
                 counts
             });
+        let base_text_keys = base_text_counts.keys().cloned().collect::<HashSet<_>>();
 
         let mut display_order = base
             .items
@@ -128,8 +143,17 @@ impl ThreadSessionView {
             .max()
             .unwrap_or(0);
         for item in existing_items {
-            if base_keys.contains(&scoped_item_key(&item.turn_id, &item.item_id)) {
-                consume_text_match(&item, &mut base_text_counts);
+            let key = scoped_item_key(&item.turn_id, &item.item_id);
+            if let Some(base_index) = base_item_indexes.get(&key).copied() {
+                if should_preserve_live_item_over_snapshot(&item, &base.items[base_index]) {
+                    let display_order = base.items[base_index].display_order;
+                    let mut preserved_item = item.clone();
+                    preserved_item.display_order = display_order;
+                    base.items[base_index] = preserved_item;
+                }
+                continue;
+            }
+            if text_key_for_snapshot_item(&item).is_some_and(|key| base_text_keys.contains(&key)) {
                 continue;
             }
             if consume_text_match(&item, &mut base_text_counts) {
@@ -145,11 +169,15 @@ impl ThreadSessionView {
             display_order += 1;
             let mut item = item;
             item.display_order = display_order;
-            base_keys.insert(scoped_item_key(&item.turn_id, &item.item_id));
+            let inserted_key = scoped_item_key(&item.turn_id, &item.item_id);
+            base_keys.insert(inserted_key.clone());
+            base_item_indexes.insert(inserted_key, base.items.len());
             base.items.push(item);
         }
 
         base.revision = self.revision.max(revision);
+        base.pending_approval_requests = self.pending_approval_requests.clone();
+        base.pending_user_input_requests = self.pending_user_input_requests.clone();
         self.thread_id = thread_id.to_string();
         self.revision = base.revision;
         self.active_turn_id = base.active_turn_id.clone();
@@ -180,7 +208,7 @@ impl ThreadSessionView {
             .map(|existing| existing.display_order)
             .unwrap_or_else(|| next_display_order(&self.items));
         let next_item = ThreadTimelineSnapshotItem {
-            id: format!("projection-{turn_id}-{}", item_snapshot.id),
+            id: canonical_timeline_item_id(turn_id, &item_snapshot.id),
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
             item_id: item_snapshot.id.clone(),
@@ -281,6 +309,65 @@ impl ThreadSessionView {
         }
     }
 
+    fn set_pending_requests(&mut self, approvals: &[Approval]) {
+        let mut pending_approval_requests = Vec::new();
+        let mut pending_user_input_requests = Vec::new();
+        for approval in approvals
+            .iter()
+            .filter(|approval| approval.status == "pending")
+        {
+            let summary = pending_request_summary(approval);
+            if summary.request_kind == "userInput" {
+                pending_user_input_requests.push(summary);
+            } else {
+                pending_approval_requests.push(summary);
+            }
+        }
+        pending_approval_requests.sort_by_key(|request| request.created_at);
+        pending_user_input_requests.sort_by_key(|request| request.created_at);
+        self.pending_approval_requests = pending_approval_requests;
+        self.pending_user_input_requests = pending_user_input_requests;
+    }
+
+    fn upsert_pending_request(&mut self, approval: &Approval) {
+        if approval.status != "pending" {
+            self.remove_pending_request(&approval.id);
+            return;
+        }
+        let summary = pending_request_summary(approval);
+        let requests = if summary.request_kind == "userInput" {
+            &mut self.pending_user_input_requests
+        } else {
+            &mut self.pending_approval_requests
+        };
+        if let Some(existing) = requests.iter_mut().find(|request| request.id == summary.id) {
+            *existing = summary;
+        } else {
+            requests.push(summary);
+            requests.sort_by_key(|request| request.created_at);
+        }
+    }
+
+    fn remove_pending_request(&mut self, approval_id: &str) {
+        self.pending_approval_requests
+            .retain(|request| request.id != approval_id);
+        self.pending_user_input_requests
+            .retain(|request| request.id != approval_id);
+    }
+
+    fn to_snapshot(&self) -> ThreadTimelineSnapshot {
+        let mut items = self.items.clone();
+        items.sort_by_key(|item| item.display_order);
+        ThreadTimelineSnapshot {
+            revision: self.revision,
+            active_turn_id: self.active_turn_id.clone(),
+            live_state: self.live_state,
+            pending_approval_requests: self.pending_approval_requests.clone(),
+            pending_user_input_requests: self.pending_user_input_requests.clone(),
+            items,
+        }
+    }
+
     fn to_patch(&self) -> TimelineProjectionPatch {
         let mut items = self.items.clone();
         items.sort_by_key(|item| item.display_order);
@@ -289,6 +376,8 @@ impl ThreadSessionView {
             thread_id: self.thread_id.clone(),
             active_turn_id: self.active_turn_id.clone(),
             live_state: self.live_state,
+            pending_approval_requests: self.pending_approval_requests.clone(),
+            pending_user_input_requests: self.pending_user_input_requests.clone(),
             items,
         }
     }
@@ -305,11 +394,57 @@ pub async fn build_thread_timeline(
         .await)
 }
 
+pub async fn record_pending_requests(
+    sessions: &ThreadSessionStore,
+    thread_id: &str,
+    approvals: &[Approval],
+    revision: i64,
+) -> ApiResult<ThreadTimelineSnapshot> {
+    Ok(sessions
+        .with_thread_view(thread_id, revision, |view| {
+            view.set_pending_requests(approvals);
+            view.to_snapshot()
+        })
+        .await)
+}
+
 pub async fn projection_patch_for_thread(
     sessions: &ThreadSessionStore,
     thread_id: &str,
 ) -> ApiResult<TimelineProjectionPatch> {
     Ok(sessions.patch_for_thread(thread_id).await)
+}
+
+pub async fn record_approval_created(
+    sessions: &ThreadSessionStore,
+    approval: &Approval,
+    updated_seq: i64,
+) -> ApiResult<()> {
+    let Some(thread_id) = approval.thread_id.as_deref() else {
+        return Ok(());
+    };
+    sessions
+        .with_thread_view(thread_id, updated_seq, |view| {
+            view.upsert_pending_request(approval);
+        })
+        .await;
+    Ok(())
+}
+
+pub async fn record_approval_resolved(
+    sessions: &ThreadSessionStore,
+    approval: &Approval,
+    updated_seq: i64,
+) -> ApiResult<()> {
+    let Some(thread_id) = approval.thread_id.as_deref() else {
+        return Ok(());
+    };
+    sessions
+        .with_thread_view(thread_id, updated_seq, |view| {
+            view.remove_pending_request(&approval.id);
+        })
+        .await;
+    Ok(())
 }
 
 pub async fn record_item_upsert(
@@ -335,6 +470,88 @@ pub async fn record_item_upsert(
         })
         .await;
     Ok(())
+}
+
+fn pending_request_summary(approval: &Approval) -> PendingTimelineRequestSummary {
+    PendingTimelineRequestSummary {
+        id: approval.id.clone(),
+        request_id: approval.request_id.clone(),
+        thread_id: approval.thread_id.clone(),
+        turn_id: approval.turn_id.clone(),
+        item_id: approval.item_id.clone(),
+        method: approval.method.clone(),
+        status: approval.status.clone(),
+        request_kind: request_kind(&approval.method).to_string(),
+        title: request_title(approval),
+        summary: request_summary(approval),
+        created_at: approval.created_at,
+    }
+}
+
+fn request_kind(method: &str) -> &'static str {
+    if method == "item/tool/requestUserInput" {
+        "userInput"
+    } else {
+        "approval"
+    }
+}
+
+fn request_title(approval: &Approval) -> String {
+    match approval.method.as_str() {
+        "item/commandExecution/requestApproval" => "Command approval".to_string(),
+        "item/fileChange/requestApproval" => "File change approval".to_string(),
+        "item/permissions/requestApproval" => "Permission approval".to_string(),
+        "mcpServer/elicitation/request" => approval
+            .payload
+            .get("serverName")
+            .and_then(Value::as_str)
+            .map(|server| format!("{server} request"))
+            .unwrap_or_else(|| "MCP request".to_string()),
+        "item/tool/requestUserInput" => approval
+            .payload
+            .get("questions")
+            .and_then(Value::as_array)
+            .and_then(|questions| questions.first())
+            .and_then(|question| question.get("header").and_then(Value::as_str))
+            .filter(|header| !header.trim().is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| "User input requested".to_string()),
+        _ => "Approval requested".to_string(),
+    }
+}
+
+fn request_summary(approval: &Approval) -> Option<String> {
+    match approval.method.as_str() {
+        "item/commandExecution/requestApproval" => {
+            string_payload_field(&approval.payload, &["reason", "command"])
+        }
+        "item/fileChange/requestApproval" => {
+            string_payload_field(&approval.payload, &["reason", "grantRoot"])
+        }
+        "item/permissions/requestApproval" => {
+            string_payload_field(&approval.payload, &["reason", "cwd"])
+        }
+        "mcpServer/elicitation/request" => string_payload_field(&approval.payload, &["message"]),
+        "item/tool/requestUserInput" => approval
+            .payload
+            .get("questions")
+            .and_then(Value::as_array)
+            .and_then(|questions| questions.first())
+            .and_then(|question| question.get("question").and_then(Value::as_str))
+            .filter(|question| !question.trim().is_empty())
+            .map(str::to_string),
+        _ => None,
+    }
+}
+
+fn string_payload_field(payload: &Value, fields: &[&str]) -> Option<String> {
+    fields.iter().find_map(|field| {
+        payload
+            .get(*field)
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_string)
+    })
 }
 
 pub async fn record_item_delta(
@@ -470,9 +687,43 @@ fn consume_text_match(
     true
 }
 
+fn should_preserve_live_item_over_snapshot(
+    live_item: &ThreadTimelineSnapshotItem,
+    snapshot_item: &ThreadTimelineSnapshotItem,
+) -> bool {
+    if !is_live_status(&live_item.status) || !is_live_status(&snapshot_item.status) {
+        return false;
+    }
+    if live_item
+        .timestamp_ms
+        .zip(snapshot_item.timestamp_ms)
+        .is_some_and(|(live_timestamp, snapshot_timestamp)| live_timestamp > snapshot_timestamp)
+    {
+        return true;
+    }
+    let Some(live_text) = text_for_timeline_item_match(live_item) else {
+        return false;
+    };
+    let Some(snapshot_text) = text_for_timeline_item_match(snapshot_item) else {
+        return !live_text.is_empty();
+    };
+    live_text.len() > snapshot_text.len() && live_text.starts_with(&snapshot_text)
+}
+
 fn text_key_for_snapshot_item(item: &ThreadTimelineSnapshotItem) -> Option<String> {
-    let text = visible_text_from_thread_item(&item.payload.item)?;
+    let text = text_for_timeline_item_match(item)?;
     Some(scoped_text_key(&item.turn_id, &item.item_type, &text))
+}
+
+fn text_for_timeline_item_match(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+    visible_text_from_thread_item(&item.payload.item).or_else(|| {
+        item.payload
+            .item
+            .get("text")
+            .and_then(Value::as_str)
+            .filter(|text| !text.trim().is_empty())
+            .map(str::to_string)
+    })
 }
 
 fn scoped_item_key(turn_id: &str, item_id: &str) -> String {
@@ -619,5 +870,64 @@ mod tests {
         assert_eq!(timeline.items.len(), 1);
         assert_eq!(timeline.items[0].item_id, "agent-1");
         assert_eq!(timeline.active_turn_id, None);
+    }
+
+    #[tokio::test]
+    async fn active_snapshot_does_not_truncate_newer_live_text() {
+        let sessions = ThreadSessionStore::default();
+        record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", "Hello", 1)
+            .await
+            .unwrap();
+        record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", " world", 2)
+            .await
+            .unwrap();
+
+        let stale_active_turn = ThreadTurnSnapshot {
+            id: "turn-1".to_string(),
+            status: "inProgress".to_string(),
+            started_at: Some(1),
+            completed_at: None,
+            raw_payload: json!({}),
+            items: vec![
+                ThreadItemSnapshot::from_payload(&agent_message_item("agent-1", "Hello")).unwrap(),
+            ],
+        };
+        let timeline = build_thread_timeline(&sessions, "thread-1", &[stale_active_turn], 3)
+            .await
+            .unwrap();
+
+        assert_eq!(timeline.items.len(), 1);
+        assert_eq!(timeline.items[0].id, "projection-turn-1-agent-1");
+        assert_eq!(timeline.items[0].payload.item["text"], "Hello world");
+        assert_eq!(timeline.active_turn_id.as_deref(), Some("turn-1"));
+    }
+
+    #[tokio::test]
+    async fn completed_snapshot_collapses_live_duplicate_assistant_text() {
+        let sessions = ThreadSessionStore::default();
+        record_item_delta(&sessions, "thread-1", "turn-1", "item-2", "Done", 1)
+            .await
+            .unwrap();
+        record_item_delta(&sessions, "thread-1", "turn-1", "msg-final", "Done", 2)
+            .await
+            .unwrap();
+
+        let completed_turn = ThreadTurnSnapshot {
+            id: "turn-1".to_string(),
+            status: "completed".to_string(),
+            started_at: Some(1),
+            completed_at: Some(2),
+            raw_payload: json!({}),
+            items: vec![
+                ThreadItemSnapshot::from_payload(&agent_message_item("item-2", "Done")).unwrap(),
+            ],
+        };
+        let timeline = build_thread_timeline(&sessions, "thread-1", &[completed_turn], 3)
+            .await
+            .unwrap();
+
+        assert_eq!(timeline.items.len(), 1);
+        assert_eq!(timeline.items[0].item_id, "item-2");
+        assert_eq!(timeline.items[0].payload.item["text"], "Done");
     }
 }

@@ -21,6 +21,8 @@ export function timelineState(overrides: Partial<TimelineState> = {}): TimelineS
     items: overrides.items ?? [],
     hiddenItems: overrides.hiddenItems ?? [],
     turns: overrides.turns ?? [],
+    pendingApprovalRequests: overrides.pendingApprovalRequests ?? [],
+    pendingUserInputRequests: overrides.pendingUserInputRequests ?? [],
     lastSeq: 0,
     projectionRevision: 0,
     ...overrides,
