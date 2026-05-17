@@ -16,5 +16,6 @@ pub mod skills;
 pub mod static_assets;
 pub mod store;
 pub mod timeline_projection;
+pub mod turn_lifecycle;
 
 pub use api::{build_router, AppState};

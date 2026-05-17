@@ -55,7 +55,7 @@ describe("rate limit usage formatting", () => {
     const event: EventEnvelope = {
       id: "event-1",
       seq: 1,
-      kind: "codex.notification",
+      kind: "account.rate_limits_updated",
       codexMethod: "account/rateLimits/updated",
       itemId: null,
       threadId: null,

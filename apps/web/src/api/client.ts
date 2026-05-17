@@ -46,7 +46,7 @@ export type RateLimitsResponse = components["schemas"]["RateLimitsResponse"];
 export type SkillMetadata = components["schemas"]["SkillMetadata"];
 export type SkillsCatalogResponse = components["schemas"]["SkillsCatalogResponse"];
 export type ThreadRead = components["schemas"]["ThreadRead"];
-export type ThreadDetailResponse = components["schemas"]["ThreadDetailResponse"];
+export type ThreadViewResponse = components["schemas"]["ThreadViewResponse"];
 export type RenameThreadRequest = components["schemas"]["RenameThreadRequest"];
 export type ThreadSubagentListResponse = components["schemas"]["ThreadSubagentListResponse"];
 export type ThreadSubagentSummary = components["schemas"]["ThreadSubagentSummary"];
@@ -274,7 +274,7 @@ export async function createChatThread(
   return response.thread;
 }
 
-export async function resumeThread(threadId: string): Promise<ThreadCommandResponse> {
+export async function resumeThread(threadId: string): Promise<ThreadViewResponse> {
   return unwrap(
     api.POST("/v1/threads/{threadId}/resume", { params: { path: { threadId } }, body: {} }),
   );
@@ -287,7 +287,7 @@ export async function forkThread(threadId: string): Promise<ThreadSummary> {
   return response.thread;
 }
 
-export async function getThreadDetail(threadId: string): Promise<ThreadDetailResponse> {
+export async function getThreadDetail(threadId: string): Promise<ThreadViewResponse> {
   return unwrap(api.GET("/v1/threads/{threadId}", { params: { path: { threadId } } }));
 }
 

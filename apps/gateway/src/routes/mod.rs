@@ -3409,10 +3409,10 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
         assert_eq!(body["thread"]["id"], "thread-1");
-        assert_eq!(body["turns"][0]["id"], "turn-1");
-        assert_eq!(body["turns"][0]["items"][0]["id"], "item-user-1");
-        assert_eq!(body["turns"][0]["items"][1]["itemType"], "reasoning");
-        assert_eq!(body["turns"][0]["items"][2]["itemType"], "commandExecution");
+        assert_eq!(body["timeline"]["items"][0]["turnId"], "turn-1");
+        assert_eq!(body["timeline"]["items"][0]["itemId"], "item-user-1");
+        assert_eq!(body["timeline"]["items"][1]["itemType"], "reasoning");
+        assert_eq!(body["timeline"]["items"][2]["itemType"], "commandExecution");
         assert!(!body.to_string().contains("item-stored-cmd"));
         assert_eq!(body["thread"]["lastCompletedAgentTurnSeq"], 1);
         assert_eq!(body["thread"]["unreadCompletedAgentTurn"], true);
@@ -3492,8 +3492,8 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["turns"][0]["id"], "turn-1");
-        assert_eq!(body["turns"][1]["id"], "turn-2");
+        assert_eq!(body["timeline"]["items"][0]["turnId"], "turn-1");
+        assert_eq!(body["timeline"]["items"][1]["turnId"], "turn-2");
 
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[1].0, "thread/turns/list");
@@ -3655,7 +3655,6 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["turns"], json!([]));
         assert_eq!(body["liveState"], "streaming");
         assert_eq!(body["timeline"]["liveState"], "streaming");
         assert_eq!(body["timeline"]["items"][0]["itemId"], "pending-user-1");
@@ -3734,7 +3733,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
         assert_eq!(
-            body["turns"][0]["items"][0]["skillMentions"],
+            body["timeline"]["items"][0]["payload"]["itemSnapshot"]["skillMentions"],
             json!([{
                 "start": 4,
                 "end": 18,
@@ -3852,7 +3851,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
         assert_eq!(
-            body["turns"][0]["items"][0]["skillMentions"],
+            body["timeline"]["items"][0]["payload"]["itemSnapshot"]["skillMentions"],
             json!([{
                 "start": 4,
                 "end": 24,
@@ -4030,10 +4029,6 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
         assert_eq!(body["thread"]["pinnedAt"], json!(pin.pinned_at));
-        assert_eq!(
-            body["rawPayload"]["thread"]["pinnedAt"],
-            json!(pin.pinned_at)
-        );
     }
 
     #[tokio::test]
@@ -6815,8 +6810,10 @@ mod tests {
             let mut delete_event = None;
             loop {
                 let event = receiver.recv().await.unwrap();
-                if event.kind == "timeline.item_upsert"
-                    && event.item_id.as_deref() == Some("item-user-1")
+                if event.kind == timeline_projection::TIMELINE_PROJECTION_PATCH_KIND
+                    && event.payload["items"].as_array().is_some_and(|items| {
+                        items.iter().any(|item| item["itemId"] == "item-user-1")
+                    })
                 {
                     timeline_event = Some(event);
                 } else if event.kind == queue::QUEUE_DELETE_EVENT && event.payload["id"] == queue_id
@@ -6902,7 +6899,9 @@ mod tests {
             let mut saw_thread_status = false;
             loop {
                 let event = receiver.recv().await.unwrap();
-                if event.kind == "timeline.thread_status" {
+                if event.kind == timeline_projection::TIMELINE_PROJECTION_PATCH_KIND
+                    && event.payload["liveState"] == "idle"
+                {
                     saw_thread_status = true;
                 }
                 if event.kind == queue::QUEUE_UPSERT_EVENT && event.payload["id"] == queue_id {
@@ -6998,7 +6997,9 @@ mod tests {
             let mut saw_turn_upsert = false;
             loop {
                 let event = receiver.recv().await.unwrap();
-                if event.kind == "timeline.turn_upsert" {
+                if event.kind == timeline_projection::TIMELINE_PROJECTION_PATCH_KIND
+                    && event.payload["liveState"] == "idle"
+                {
                     saw_turn_upsert = true;
                 }
                 if event.kind == queue::QUEUE_UPSERT_EVENT && event.payload["id"] == queue_id {
@@ -7760,6 +7761,7 @@ mod tests {
             vec![
                 "account/login/completed",
                 "account/updated",
+                "account/rateLimits/updated",
                 "account/rateLimits/updated"
             ]
         );
@@ -8179,7 +8181,7 @@ mod tests {
                 thread_id: Some("t1".to_string()),
                 turn_id: None,
                 item_id: None,
-                kind: "codex.notification".to_string(),
+                kind: crate::events::ACCOUNT_RATE_LIMITS_UPDATED_EVENT.to_string(),
                 codex_method: Some("turn/completed".to_string()),
                 payload: json!({"threadId": "t1", "phase": "replay"}),
             })
@@ -8319,7 +8321,7 @@ mod tests {
                 thread_id: Some("t1".to_string()),
                 turn_id: None,
                 item_id: None,
-                kind: "codex.notification".to_string(),
+                kind: "timeline.thread_metadata".to_string(),
                 codex_method: Some("thread/name/updated".to_string()),
                 payload: json!({"threadId": "t1", "threadName": "New title"}),
             })
@@ -8357,7 +8359,7 @@ mod tests {
                 thread_id: Some("t1".to_string()),
                 turn_id: Some("turn-1".to_string()),
                 item_id: None,
-                kind: "codex.notification".to_string(),
+                kind: "timeline.thread_metadata".to_string(),
                 codex_method: Some("thread/tokenUsage/updated".to_string()),
                 payload: json!({
                     "threadId": "t1",
@@ -8403,7 +8405,7 @@ mod tests {
                 thread_id: None,
                 turn_id: None,
                 item_id: None,
-                kind: "codex.notification".to_string(),
+                kind: crate::events::ACCOUNT_RATE_LIMITS_UPDATED_EVENT.to_string(),
                 codex_method: Some("account/rateLimits/updated".to_string()),
                 payload: json!({
                     "rateLimits": {

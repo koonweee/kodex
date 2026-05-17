@@ -13,8 +13,9 @@ use crate::{
     app_server_api::{
         canonical_timeline_item_id, timeline_skill_mentions_from_user_input,
         visible_text_from_thread_item, PendingTimelineRequestSummary, ThreadItemSnapshot,
-        ThreadLiveState, ThreadTimelineSnapshot, ThreadTimelineSnapshotItem, ThreadTurnSnapshot,
-        TimelineItemUpsertPayload, TimelineUpdateSource, UserInput,
+        ThreadLiveState, ThreadTimelineSnapshot, ThreadTimelineSnapshotItem,
+        ThreadTimelineSnapshotTurn, ThreadTurnSnapshot, TimelineItemUpsertPayload,
+        TimelineUpdateSource, UserInput,
     },
     error::ApiResult,
     store::Approval,
@@ -31,6 +32,7 @@ pub struct TimelineProjectionPatch {
     pub live_state: ThreadLiveState,
     pub pending_approval_requests: Vec<PendingTimelineRequestSummary>,
     pub pending_user_input_requests: Vec<PendingTimelineRequestSummary>,
+    pub turns: Vec<ThreadTimelineSnapshotTurn>,
     pub items: Vec<ThreadTimelineSnapshotItem>,
 }
 
@@ -64,6 +66,7 @@ impl ThreadSessionStore {
                 live_state: ThreadLiveState::Idle,
                 pending_approval_requests: Vec::new(),
                 pending_user_input_requests: Vec::new(),
+                turns: Vec::new(),
                 items: Vec::new(),
             })
     }
@@ -178,6 +181,7 @@ impl ThreadSessionView {
         base.revision = self.revision.max(revision);
         base.pending_approval_requests = self.pending_approval_requests.clone();
         base.pending_user_input_requests = self.pending_user_input_requests.clone();
+        merge_missing_turns_from_items(&mut base.turns, &base.items);
         self.thread_id = thread_id.to_string();
         self.revision = base.revision;
         self.active_turn_id = base.active_turn_id.clone();
@@ -364,6 +368,7 @@ impl ThreadSessionView {
             live_state: self.live_state,
             pending_approval_requests: self.pending_approval_requests.clone(),
             pending_user_input_requests: self.pending_user_input_requests.clone(),
+            turns: timeline_turns_from_items(&items),
             items,
         }
     }
@@ -378,9 +383,48 @@ impl ThreadSessionView {
             live_state: self.live_state,
             pending_approval_requests: self.pending_approval_requests.clone(),
             pending_user_input_requests: self.pending_user_input_requests.clone(),
+            turns: timeline_turns_from_items(&items),
             items,
         }
     }
+}
+
+fn merge_missing_turns_from_items(
+    turns: &mut Vec<ThreadTimelineSnapshotTurn>,
+    items: &[ThreadTimelineSnapshotItem],
+) {
+    let mut known = turns
+        .iter()
+        .map(|turn| turn.id.clone())
+        .collect::<HashSet<_>>();
+    for turn in timeline_turns_from_items(items) {
+        if known.insert(turn.id.clone()) {
+            turns.push(turn);
+        }
+    }
+}
+
+fn timeline_turns_from_items(
+    items: &[ThreadTimelineSnapshotItem],
+) -> Vec<ThreadTimelineSnapshotTurn> {
+    let mut turns = Vec::new();
+    let mut seen = HashSet::new();
+    for item in items {
+        if !seen.insert(item.turn_id.clone()) {
+            continue;
+        }
+        turns.push(ThreadTimelineSnapshotTurn {
+            id: item.turn_id.clone(),
+            status: item.status.clone(),
+            started_at: item.timestamp_ms.map(|timestamp| timestamp / 1_000),
+            completed_at: if is_terminal_turn_status(&item.status) {
+                item.timestamp_ms.map(|timestamp| timestamp / 1_000)
+            } else {
+                None
+            },
+        });
+    }
+    turns
 }
 
 pub async fn build_thread_timeline(

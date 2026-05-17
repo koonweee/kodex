@@ -64,17 +64,6 @@ export type TimelineImage = {
   path?: string;
 };
 
-export type OptimisticUserMessageInput = {
-  clientRequestId: string;
-  text: string;
-  images: TimelineImage[];
-  skillMentions?: TimelineSkillMention[];
-  turnId: string | null;
-  confirmationState: TimelineConfirmationState;
-};
-
-export type OptimisticUserMessageUpdate = Partial<Pick<TimelineItem, "confirmationState" | "error" | "images" | "turnId">>;
-
 export type TimelineTurn = {
   turnId: string;
   // Membership list for turn bookkeeping; render order is owned by TimelineItem.displayOrder.
@@ -92,7 +81,7 @@ export type TimelineState = {
   pendingApprovalRequests: PendingTimelineRequestSummary[];
   pendingUserInputRequests: PendingTimelineRequestSummary[];
   lastSeq: number;
-  projectionRevision: number;
+  viewRevision: number;
 };
 
 export type TimelineIndexes = {
@@ -112,7 +101,7 @@ export type TimelineDraft = {
   pendingApprovalRequests?: PendingTimelineRequestSummary[];
   pendingUserInputRequests?: PendingTimelineRequestSummary[];
   lastSeq: number;
-  projectionRevision: number;
+  viewRevision: number;
 };
 
 const stateIndexes = new WeakMap<TimelineState, TimelineIndexes>();
@@ -125,7 +114,7 @@ export function createTimelineState(): TimelineState {
     pendingApprovalRequests: [],
     pendingUserInputRequests: [],
     lastSeq: 0,
-    projectionRevision: 0,
+    viewRevision: 0,
   });
 }
 
@@ -135,7 +124,7 @@ export function createTimelineStateFromDraft(draft: TimelineDraft): TimelineStat
     pendingApprovalRequests: draft.pendingApprovalRequests ?? [],
     pendingUserInputRequests: draft.pendingUserInputRequests ?? [],
     lastSeq: draft.lastSeq,
-    projectionRevision: draft.projectionRevision,
+    viewRevision: draft.viewRevision,
   } as TimelineState;
   let itemsCache: TimelineItem[] | null = null;
   let hiddenItemsCache: TimelineItem[] | null = null;

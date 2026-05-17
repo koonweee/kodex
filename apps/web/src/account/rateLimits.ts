@@ -23,7 +23,7 @@ export function usageLimitSnapshotFromResponse(response: RateLimitsResponse): Ra
 }
 
 export function usageLimitSnapshotFromEvent(event: EventEnvelope): RateLimitSnapshot | null {
-  if (event.kind !== "codex.notification" || event.codexMethod !== "account/rateLimits/updated") {
+  if (event.kind !== "account.rate_limits_updated" || event.codexMethod !== "account/rateLimits/updated") {
     return null;
   }
 

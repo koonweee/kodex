@@ -20,7 +20,7 @@ use crate::{
         self, enrich_timeline_skill_mentions, timeline_skill_mentions_from_text,
         visible_text_from_thread_item, RawAppServerResponse, ThreadCommandResponse,
         ThreadDetailResponse, ThreadItemSnapshot, ThreadListResponse, ThreadLiveState,
-        ThreadStatus, ThreadSummary, TimelineSkillMention,
+        ThreadStatus, ThreadSummary, ThreadViewResponse, TimelineSkillMention,
     },
     error::{ApiError, ApiResult},
     store::{EventEnvelope, NewEvent, ThreadComposerSettings, ThreadRead},
@@ -667,17 +667,17 @@ mod tests {
     }
 }
 
-#[utoipa::path(get, path = "/v1/threads/{threadId}", responses((status = 200, body = ThreadDetailResponse)))]
+#[utoipa::path(get, path = "/v1/threads/{threadId}", responses((status = 200, body = ThreadViewResponse)))]
 pub async fn get_thread(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
-) -> ApiResult<Json<ThreadDetailResponse>> {
+) -> ApiResult<Json<ThreadViewResponse>> {
     let timeline_revision = state.store.latest_event_seq().await?;
     let mut response = app_server_api::client(&state.app_server)
         .thread_read_full_history(thread_id)
         .await?;
     apply_thread_detail_response_state(&state, &mut response, timeline_revision).await?;
-    Ok(Json(response))
+    Ok(Json(ThreadViewResponse::from_detail(response)))
 }
 
 #[utoipa::path(patch, path = "/v1/threads/{threadId}/name", request_body = RenameThreadRequest, responses((status = 200, body = RenameThreadResponse)))]
@@ -733,18 +733,18 @@ pub async fn list_subagents(
     }))
 }
 
-#[utoipa::path(post, path = "/v1/threads/{threadId}/resume", responses((status = 200, body = ThreadCommandResponse)))]
+#[utoipa::path(post, path = "/v1/threads/{threadId}/resume", responses((status = 200, body = ThreadViewResponse)))]
 pub async fn resume_thread(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
     Json(payload): Json<Value>,
-) -> ApiResult<Json<ThreadCommandResponse>> {
+) -> ApiResult<Json<ThreadViewResponse>> {
     let mut response = app_server_api::client(&state.app_server)
         .thread_resume(thread_id.clone(), payload)
         .await?;
     apply_thread_command_response_state(&state, &mut response).await?;
-    attach_thread_detail_to_command_response(&state, &thread_id, &mut response).await?;
-    Ok(Json(response))
+    let detail = thread_view_response(&state, &thread_id).await?;
+    Ok(Json(detail))
 }
 
 #[utoipa::path(post, path = "/v1/threads/{threadId}/fork", responses((status = 200, body = ThreadCommandResponse)))]
@@ -908,21 +908,13 @@ pub(crate) async fn apply_thread_command_response_state(
     Ok(())
 }
 
-async fn attach_thread_detail_to_command_response(
-    state: &AppState,
-    thread_id: &str,
-    response: &mut ThreadCommandResponse,
-) -> ApiResult<()> {
+async fn thread_view_response(state: &AppState, thread_id: &str) -> ApiResult<ThreadViewResponse> {
     let timeline_revision = state.store.latest_event_seq().await?;
     let mut detail = app_server_api::client(&state.app_server)
         .thread_read_full_history(thread_id.to_string())
         .await?;
     apply_thread_detail_response_state(state, &mut detail, timeline_revision).await?;
-    response.thread = detail.thread;
-    response.live_state = Some(detail.live_state);
-    response.turns = Some(detail.turns);
-    response.timeline = Some(detail.timeline);
-    Ok(())
+    Ok(ThreadViewResponse::from_detail(detail))
 }
 
 async fn apply_thread_detail_response_state(

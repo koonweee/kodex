@@ -24,9 +24,8 @@ use crate::{
     app_server::InboundMessage,
     app_server_api::{
         self, visible_text_from_thread_item, ThreadItemSnapshot, ThreadLiveState, ThreadStatus,
-        ThreadSummary, ThreadTurnSnapshot, TimelineItemDeltaPayload, TimelineItemUpsertPayload,
-        TimelineThreadMetadataPayload, TimelineThreadStatusPayload, TimelineTurnUpsertPayload,
-        TimelineUpdateSource,
+        ThreadSummary, ThreadTurnSnapshot, TimelineItemUpsertPayload,
+        TimelineThreadMetadataPayload, TimelineUpdateSource,
     },
     automations,
     error::{ApiError, ApiResult},
@@ -45,6 +44,7 @@ const SNAPSHOT_REQUIRED_KIND: &str = "timeline.snapshot_required";
 pub const MCP_CONFIG_CHANGED_EVENT: &str = "mcp.config_changed";
 pub const MCP_SERVER_STATUS_UPDATED_EVENT: &str = "mcp.server_status_updated";
 pub const MCP_OAUTH_LOGIN_COMPLETED_EVENT: &str = "mcp.oauth_login_completed";
+pub const ACCOUNT_RATE_LIMITS_UPDATED_EVENT: &str = "account.rate_limits_updated";
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -104,6 +104,11 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             let event = persist_notification_cursor(state, &method, &params, &metadata).await?;
             let _ = state.events.send(event);
             if let Some(event) = normalized_mcp_event(state, &method, &params).await? {
+                let _ = state.events.send(event);
+            }
+            if let Some(event) =
+                normalized_account_event(state, &method, &params, &metadata).await?
+            {
                 let _ = state.events.send(event);
             }
             let normalized = normalized_timeline_events(
@@ -471,7 +476,9 @@ fn is_operational_replay_event(event: &EventEnvelope) -> bool {
         "approval.created"
             | "approval.resolved"
             | "gateway.warning"
+            | "timeline.thread_metadata"
             | MCP_CONFIG_CHANGED_EVENT
+            | ACCOUNT_RATE_LIMITS_UPDATED_EVENT
             | MCP_SERVER_STATUS_UPDATED_EVENT
             | MCP_OAUTH_LOGIN_COMPLETED_EVENT
             | skills::SKILLS_CHANGED_EVENT
@@ -495,39 +502,16 @@ fn is_selected_thread_sse_replay_event(event: &EventEnvelope, query: &EventsQuer
 
 fn is_normal_live_event(event: &EventEnvelope) -> bool {
     is_operational_replay_event(event)
-        || is_thread_metadata_live_event(event)
-        || is_account_live_event(event)
         || matches!(
             event.kind.as_str(),
             TIMELINE_PROJECTION_PATCH_KIND
                 | "timeline.thread_metadata"
                 | SNAPSHOT_REQUIRED_KIND
+                | ACCOUNT_RATE_LIMITS_UPDATED_EVENT
                 | skills::SKILLS_CHANGED_EVENT
                 | queue::QUEUE_UPSERT_EVENT
                 | queue::QUEUE_DELETE_EVENT
         )
-}
-
-fn is_thread_metadata_live_event(event: &EventEnvelope) -> bool {
-    event.kind == "codex.notification"
-        && event.codex_method.as_deref().is_some_and(|method| {
-            let method = method.to_ascii_lowercase();
-            matches!(
-                method.as_str(),
-                "thread/name/updated"
-                    | "thread/nameupdated"
-                    | "thread/name_updated"
-                    | "thread/tokenusage/updated"
-            )
-        })
-}
-
-fn is_account_live_event(event: &EventEnvelope) -> bool {
-    event.kind == "codex.notification"
-        && event
-            .codex_method
-            .as_deref()
-            .is_some_and(|method| method.eq_ignore_ascii_case("account/rateLimits/updated"))
 }
 
 fn snapshot_required_event(seq: i64, thread_id: String, reason: &str) -> ApiResult<EventEnvelope> {
@@ -589,7 +573,9 @@ async fn normalized_timeline_events(
     let turn_upsert = timeline_turn_upsert_event(state, params, metadata, source).await?;
     events.extend(turn_upsert.events);
     drain_thread_ids.extend(turn_upsert.drain_thread_ids);
-    if let Some(event) = timeline_thread_metadata_event(state, params, metadata, source).await? {
+    if let Some(event) =
+        timeline_thread_metadata_event(state, method, params, metadata, source).await?
+    {
         events.push(event);
     }
     let thread_status = timeline_thread_status_event(state, params, metadata, source).await?;
@@ -621,7 +607,7 @@ async fn timeline_item_delta_event(
     method: &str,
     params: &Value,
     metadata: &EventMetadata,
-    source: TimelineUpdateSource,
+    _source: TimelineUpdateSource,
 ) -> ApiResult<Vec<EventEnvelope>> {
     if !method.ends_with("/delta") {
         return Ok(Vec::new());
@@ -636,35 +622,20 @@ async fn timeline_item_delta_event(
         return Ok(Vec::new());
     };
     let delta = string_field(params, &["delta", "text", "content"]).unwrap_or_default();
-    let payload = TimelineItemDeltaPayload {
-        source,
-        delta: delta.clone(),
-        raw_payload: params.clone(),
-    };
-    let event = append_timeline_event(
-        state,
-        NewEvent {
-            project_id: metadata.project_id.clone(),
-            thread_id: Some(thread_id.clone()),
-            turn_id: Some(turn_id.clone()),
-            item_id: Some(item_id),
-            kind: "timeline.item_delta".to_string(),
-            codex_method: Some(method.to_string()),
-            payload: serde_json::to_value(&payload)?,
-        },
-    )
-    .await?;
+    let cursor =
+        append_timeline_changed_cursor(state, metadata, "timeline.item_delta", Some(method))
+            .await?;
     timeline_projection::record_item_delta(
         &state.thread_sessions,
         &thread_id,
         &turn_id,
-        event.item_id.as_deref().unwrap_or_default(),
+        &item_id,
         &delta,
-        event.seq,
+        cursor.seq,
     )
     .await?;
     let patch = timeline_projection_patch_event(state, &thread_id).await?;
-    Ok(vec![event, patch])
+    Ok(vec![patch])
 }
 
 async fn timeline_item_upsert_event(
@@ -694,17 +665,11 @@ async fn timeline_item_upsert_event(
         item: item.clone(),
         item_snapshot,
     };
-    let event = append_timeline_event(
+    let cursor = append_timeline_changed_cursor(
         state,
-        NewEvent {
-            project_id: metadata.project_id.clone(),
-            thread_id: Some(thread_id.clone()),
-            turn_id: Some(turn_id.clone()),
-            item_id: Some(payload.item_id.clone()),
-            kind: "timeline.item_upsert".to_string(),
-            codex_method: Some("item/upsert".to_string()),
-            payload: serde_json::to_value(&payload)?,
-        },
+        metadata,
+        "timeline.item_upsert",
+        Some("item/upsert"),
     )
     .await?;
     timeline_projection::record_item_upsert(
@@ -714,13 +679,10 @@ async fn timeline_item_upsert_event(
         item.clone(),
         payload.item_snapshot.clone(),
         item_upsert_turn_status(method),
-        event.seq,
+        cursor.seq,
     )
     .await?;
-    let mut events = vec![
-        event,
-        timeline_projection_patch_event(state, &thread_id).await?,
-    ];
+    let mut events = vec![timeline_projection_patch_event(state, &thread_id).await?];
     if let Some(event) =
         queue::reconcile_pending_steer_commit_event(state, &thread_id, &turn_id, item).await?
     {
@@ -792,7 +754,7 @@ async fn timeline_turn_upsert_event(
     state: &AppState,
     params: &Value,
     metadata: &EventMetadata,
-    source: TimelineUpdateSource,
+    _source: TimelineUpdateSource,
 ) -> ApiResult<NormalizedTimelineEvents> {
     let Some(thread_id) = metadata.thread_id.clone() else {
         return Ok(NormalizedTimelineEvents::default());
@@ -803,27 +765,16 @@ async fn timeline_turn_upsert_event(
     let Ok(turn) = turn_snapshot_from_value(turn) else {
         return Ok(NormalizedTimelineEvents::default());
     };
-    let payload = TimelineTurnUpsertPayload {
-        source,
-        live_state: live_state_from_turn_status(&turn.status),
-        turn: turn.clone(),
-    };
-    let event = append_timeline_event(
+    let cursor = append_timeline_changed_cursor(
         state,
-        NewEvent {
-            project_id: metadata.project_id.clone(),
-            thread_id: Some(thread_id.clone()),
-            turn_id: Some(turn.id.clone()),
-            item_id: None,
-            kind: "timeline.turn_upsert".to_string(),
-            codex_method: Some("turn/upsert".to_string()),
-            payload: serde_json::to_value(payload)?,
-        },
+        metadata,
+        "timeline.turn_upsert",
+        Some("turn/upsert"),
     )
     .await?;
-    let mut events = vec![event.clone()];
+    let mut events = Vec::new();
     let terminal = is_terminal_turn_status(&turn.status);
-    timeline_projection::record_turn_status(&state.thread_sessions, &thread_id, &turn, event.seq)
+    timeline_projection::record_turn_status(&state.thread_sessions, &thread_id, &turn, cursor.seq)
         .await?;
     events.push(timeline_projection_patch_event(state, &thread_id).await?);
     if terminal {
@@ -858,7 +809,7 @@ async fn timeline_turn_upsert_event(
             status: "idle".to_string(),
             active_turn_id: None,
             updated_at: Utc::now(),
-            last_event_seq: Some(event.seq),
+            last_event_seq: Some(cursor.seq),
         }
     } else {
         ThreadRuntimeState {
@@ -866,7 +817,7 @@ async fn timeline_turn_upsert_event(
             status: "active".to_string(),
             active_turn_id: None,
             updated_at: Utc::now(),
-            last_event_seq: Some(event.seq),
+            last_event_seq: Some(cursor.seq),
         }
     };
     let runtime_thread_id = runtime.thread_id.clone();
@@ -887,23 +838,20 @@ pub(crate) async fn timeline_projection_patch_event(
 ) -> ApiResult<EventEnvelope> {
     let patch =
         timeline_projection::projection_patch_for_thread(&state.thread_sessions, thread_id).await?;
-    append_timeline_event(
-        state,
-        NewEvent {
-            project_id: None,
-            thread_id: Some(thread_id.to_string()),
-            turn_id: patch.active_turn_id.clone(),
-            item_id: None,
-            kind: TIMELINE_PROJECTION_PATCH_KIND.to_string(),
-            codex_method: Some("timeline/projection_patch".to_string()),
-            payload: serde_json::to_value(patch)?,
-        },
+    synthetic_event(
+        state.store.latest_event_seq().await?,
+        Some(thread_id.to_string()),
+        patch.active_turn_id.clone(),
+        None,
+        TIMELINE_PROJECTION_PATCH_KIND,
+        Some("timeline/projection_patch"),
+        patch,
     )
-    .await
 }
 
 async fn timeline_thread_metadata_event(
     state: &AppState,
+    method: &str,
     params: &Value,
     metadata: &EventMetadata,
     source: TimelineUpdateSource,
@@ -911,6 +859,23 @@ async fn timeline_thread_metadata_event(
     let Some(thread_id) = metadata.thread_id.clone() else {
         return Ok(None);
     };
+    if is_raw_thread_metadata_method(method) {
+        return append_timeline_event(
+            state,
+            NewEvent {
+                project_id: metadata.project_id.clone(),
+                thread_id: Some(thread_id),
+                turn_id: None,
+                item_id: None,
+                kind: "timeline.thread_metadata".to_string(),
+                codex_method: Some(method.to_string()),
+                payload: params.clone(),
+            },
+        )
+        .await
+        .map(Some);
+    }
+
     let thread = params.get("thread").filter(|thread| thread.is_object());
     let thread = match thread {
         Some(thread) => match thread_summary_from_value(thread) {
@@ -952,11 +917,46 @@ async fn timeline_thread_metadata_event(
     .map(Some)
 }
 
+fn is_raw_thread_metadata_method(method: &str) -> bool {
+    let method = method.to_ascii_lowercase();
+    matches!(
+        method.as_str(),
+        "thread/name/updated"
+            | "thread/nameupdated"
+            | "thread/name_updated"
+            | "thread/tokenusage/updated"
+    )
+}
+
+async fn normalized_account_event(
+    state: &AppState,
+    method: &str,
+    params: &Value,
+    metadata: &EventMetadata,
+) -> ApiResult<Option<EventEnvelope>> {
+    if !method.eq_ignore_ascii_case("account/rateLimits/updated") {
+        return Ok(None);
+    }
+    state
+        .store
+        .append_event(NewEvent {
+            project_id: metadata.project_id.clone(),
+            thread_id: metadata.thread_id.clone(),
+            turn_id: metadata.turn_id.clone(),
+            item_id: metadata.item_id.clone(),
+            kind: ACCOUNT_RATE_LIMITS_UPDATED_EVENT.to_string(),
+            codex_method: Some(method.to_string()),
+            payload: params.clone(),
+        })
+        .await
+        .map(Some)
+}
+
 async fn timeline_thread_status_event(
     state: &AppState,
     params: &Value,
     metadata: &EventMetadata,
-    source: TimelineUpdateSource,
+    _source: TimelineUpdateSource,
 ) -> ApiResult<NormalizedTimelineEvents> {
     let Some(thread_id) = metadata.thread_id.clone() else {
         return Ok(NormalizedTimelineEvents::default());
@@ -967,31 +967,19 @@ async fn timeline_thread_status_event(
     let Some(status) = status_value.and_then(thread_status_from_value) else {
         return Ok(NormalizedTimelineEvents::default());
     };
-    let payload = TimelineThreadStatusPayload {
-        source,
-        status,
-        live_state: live_state_from_thread_status(status),
-        raw_payload: params.clone(),
-    };
-    let event = append_timeline_event(
+    let cursor = append_timeline_changed_cursor(
         state,
-        NewEvent {
-            project_id: metadata.project_id.clone(),
-            thread_id: Some(thread_id.clone()),
-            turn_id: None,
-            item_id: None,
-            kind: "timeline.thread_status".to_string(),
-            codex_method: Some("thread/status".to_string()),
-            payload: serde_json::to_value(payload)?,
-        },
+        metadata,
+        "timeline.thread_status",
+        Some("thread/status"),
     )
     .await?;
-    let mut events = vec![event.clone()];
+    let mut events = Vec::new();
     timeline_projection::record_thread_live_state(
         &state.thread_sessions,
         &thread_id,
         live_state_from_thread_status(status),
-        event.seq,
+        cursor.seq,
     )
     .await?;
     events.push(timeline_projection_patch_event(state, &thread_id).await?);
@@ -1004,7 +992,7 @@ async fn timeline_thread_status_event(
                     status: "idle".to_string(),
                     active_turn_id: None,
                     updated_at: Utc::now(),
-                    last_event_seq: Some(event.seq),
+                    last_event_seq: Some(cursor.seq),
                 })
                 .await?;
             events.extend(
@@ -1024,7 +1012,7 @@ async fn timeline_thread_status_event(
                     status: "active".to_string(),
                     active_turn_id: None,
                     updated_at: Utc::now(),
-                    last_event_seq: Some(event.seq),
+                    last_event_seq: Some(cursor.seq),
                 })
                 .await?;
         }
@@ -1070,12 +1058,36 @@ async fn append_timeline_event(state: &AppState, event: NewEvent) -> ApiResult<E
     state.store.append_event(event).await
 }
 
+async fn append_timeline_changed_cursor(
+    state: &AppState,
+    metadata: &EventMetadata,
+    source_kind: &str,
+    codex_method: Option<&str>,
+) -> ApiResult<EventEnvelope> {
+    state
+        .store
+        .append_event(NewEvent {
+            project_id: metadata.project_id.clone(),
+            thread_id: metadata.thread_id.clone(),
+            turn_id: metadata.turn_id.clone(),
+            item_id: metadata.item_id.clone(),
+            kind: SNAPSHOT_REQUIRED_KIND.to_string(),
+            codex_method: Some("thread/snapshot_required".to_string()),
+            payload: json!({
+                "threadId": metadata.thread_id.clone(),
+                "reason": "timeline_changed",
+                "sourceKind": source_kind,
+                "sourceMethod": codex_method,
+            }),
+        })
+        .await
+}
+
 fn is_transcript_timeline_event(kind: &str) -> bool {
     matches!(
         kind,
         "timeline.item_delta"
             | "timeline.item_upsert"
-            | TIMELINE_PROJECTION_PATCH_KIND
             | "timeline.turn_upsert"
             | "timeline.thread_status"
     )
@@ -1156,14 +1168,6 @@ fn live_state_from_thread_status(status: ThreadStatus) -> ThreadLiveState {
         ThreadStatus::Active => ThreadLiveState::Streaming,
         ThreadStatus::Idle | ThreadStatus::SystemError => ThreadLiveState::Idle,
         ThreadStatus::NotLoaded => ThreadLiveState::NotLoaded,
-    }
-}
-
-fn live_state_from_turn_status(status: &str) -> ThreadLiveState {
-    match status {
-        "completed" | "failed" | "cancelled" | "canceled" | "interrupted" => ThreadLiveState::Idle,
-        "unknown" => ThreadLiveState::NotLoaded,
-        _ => ThreadLiveState::Streaming,
     }
 }
 
@@ -1323,17 +1327,8 @@ mod tests {
         .unwrap();
 
         let raw = receiver.recv().await.unwrap();
-        let normalized = receiver.recv().await.unwrap();
-        assert_eq!(raw.kind, "codex.notification");
-        assert_eq!(normalized.kind, "timeline.item_delta");
-        assert_eq!(normalized.seq, raw.seq + 1);
-        assert_eq!(normalized.thread_id.as_deref(), Some("thread-1"));
-        assert_eq!(normalized.turn_id.as_deref(), Some("turn-1"));
-        assert_eq!(normalized.item_id.as_deref(), Some("item-1"));
-        assert_eq!(normalized.payload["source"], "gatewayStream");
-        assert_eq!(normalized.payload["delta"], "hello");
-
         let patch = receiver.recv().await.unwrap();
+        assert_eq!(raw.kind, "codex.notification");
         assert_eq!(patch.kind, TIMELINE_PROJECTION_PATCH_KIND);
         assert_eq!(patch.thread_id.as_deref(), Some("thread-1"));
         assert_eq!(patch.payload["threadId"], "thread-1");
@@ -1498,10 +1493,10 @@ mod tests {
         .unwrap();
 
         let _raw = receiver.recv().await.unwrap();
-        let normalized = receiver.recv().await.unwrap();
-        assert_eq!(normalized.kind, "timeline.item_upsert");
+        let patch = receiver.recv().await.unwrap();
+        assert_eq!(patch.kind, TIMELINE_PROJECTION_PATCH_KIND);
         assert_eq!(
-            normalized.payload["itemSnapshot"]["skillMentions"],
+            patch.payload["items"][0]["payload"]["itemSnapshot"]["skillMentions"],
             json!([{
                 "start": 4,
                 "end": 18,

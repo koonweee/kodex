@@ -1677,6 +1677,24 @@ pub struct ThreadDetailResponse {
     pub raw_payload: Value,
 }
 
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadViewResponse {
+    pub thread: ThreadSummary,
+    pub live_state: ThreadLiveState,
+    pub timeline: ThreadTimelineSnapshot,
+}
+
+impl ThreadViewResponse {
+    pub(crate) fn from_detail(detail: ThreadDetailResponse) -> Self {
+        Self {
+            thread: detail.thread,
+            live_state: detail.live_state,
+            timeline: detail.timeline,
+        }
+    }
+}
+
 impl ThreadDetailResponse {
     fn from_payload(payload: Value) -> ApiResult<Self> {
         let thread = payload
@@ -1731,6 +1749,7 @@ pub struct ThreadTimelineSnapshot {
     pub live_state: ThreadLiveState,
     pub pending_approval_requests: Vec<PendingTimelineRequestSummary>,
     pub pending_user_input_requests: Vec<PendingTimelineRequestSummary>,
+    pub turns: Vec<ThreadTimelineSnapshotTurn>,
     pub items: Vec<ThreadTimelineSnapshotItem>,
 }
 
@@ -1739,11 +1758,13 @@ impl ThreadTimelineSnapshot {
         let mut display_order = 0;
         let mut items = Vec::new();
         let mut active_turn_id = None;
+        let mut timeline_turns = Vec::new();
         for turn in turns {
             let turn_terminal = is_terminal_turn_status(&turn.status);
             if !turn_terminal {
                 active_turn_id = Some(turn.id.clone());
             }
+            timeline_turns.push(ThreadTimelineSnapshotTurn::from_turn(turn));
             for item in &turn.items {
                 display_order += 1;
                 items.push(ThreadTimelineSnapshotItem::from_turn_item(
@@ -1763,7 +1784,28 @@ impl ThreadTimelineSnapshot {
             live_state: live_state_from_turns(turns),
             pending_approval_requests: Vec::new(),
             pending_user_input_requests: Vec::new(),
+            turns: timeline_turns,
             items,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadTimelineSnapshotTurn {
+    pub id: String,
+    pub status: String,
+    pub started_at: Option<i64>,
+    pub completed_at: Option<i64>,
+}
+
+impl ThreadTimelineSnapshotTurn {
+    pub(crate) fn from_turn(turn: &ThreadTurnSnapshot) -> Self {
+        Self {
+            id: turn.id.clone(),
+            status: turn.status.clone(),
+            started_at: turn.started_at,
+            completed_at: turn.completed_at,
         }
     }
 }
@@ -2369,12 +2411,6 @@ pub enum ThreadLiveState {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadCommandResponse {
     pub thread: ThreadSummary,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub live_state: Option<ThreadLiveState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub turns: Option<Vec<ThreadTurnSnapshot>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timeline: Option<ThreadTimelineSnapshot>,
     pub cwd: Option<String>,
     pub model: Option<String>,
     pub model_provider: Option<String>,
@@ -2395,9 +2431,6 @@ impl ThreadCommandResponse {
         overlay_thread_composer_state(&mut thread, &payload);
         Ok(Self {
             thread,
-            live_state: None,
-            turns: None,
-            timeline: None,
             cwd: optional_string(&payload, "cwd"),
             model: optional_string(&payload, "model"),
             model_provider: optional_string(&payload, "modelProvider"),

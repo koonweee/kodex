@@ -2159,7 +2159,6 @@ export interface components {
             approvalPolicy?: string | null;
             approvalsReviewer?: string | null;
             cwd?: string | null;
-            liveState?: null | components["schemas"]["ThreadLiveState"];
             model?: string | null;
             modelProvider?: string | null;
             rawPayload: unknown;
@@ -2167,15 +2166,6 @@ export interface components {
             sandbox?: unknown;
             serviceTier?: string | null;
             thread: components["schemas"]["ThreadSummary"];
-            timeline?: null | components["schemas"]["ThreadTimelineSnapshot"];
-            turns?: components["schemas"]["ThreadTurnSnapshot"][] | null;
-        };
-        ThreadDetailResponse: {
-            liveState: components["schemas"]["ThreadLiveState"];
-            rawPayload: unknown;
-            thread: components["schemas"]["ThreadSummary"];
-            timeline: components["schemas"]["ThreadTimelineSnapshot"];
-            turns: components["schemas"]["ThreadTurnSnapshot"][];
         };
         /** @enum {string} */
         ThreadInputDisposition: "started" | "steered" | "queued";
@@ -2268,6 +2258,7 @@ export interface components {
             pendingUserInputRequests: components["schemas"]["PendingTimelineRequestSummary"][];
             /** Format: int64 */
             revision: number;
+            turns: components["schemas"]["ThreadTimelineSnapshotTurn"][];
         };
         ThreadTimelineSnapshotItem: {
             codexMethod: string;
@@ -2283,6 +2274,14 @@ export interface components {
             timestampMs?: number | null;
             turnId: string;
         };
+        ThreadTimelineSnapshotTurn: {
+            /** Format: int64 */
+            completedAt?: number | null;
+            id: string;
+            /** Format: int64 */
+            startedAt?: number | null;
+            status: string;
+        };
         ThreadTurnSnapshot: {
             /** Format: int64 */
             completedAt?: number | null;
@@ -2292,6 +2291,11 @@ export interface components {
             /** Format: int64 */
             startedAt?: number | null;
             status: string;
+        };
+        ThreadViewResponse: {
+            liveState: components["schemas"]["ThreadLiveState"];
+            thread: components["schemas"]["ThreadSummary"];
+            timeline: components["schemas"]["ThreadTimelineSnapshot"];
         };
         TimelineItemDeltaPayload: {
             delta: string;
@@ -2314,6 +2318,7 @@ export interface components {
             /** Format: int64 */
             revision: number;
             threadId: string;
+            turns: components["schemas"]["ThreadTimelineSnapshotTurn"][];
         };
         TimelineSkillMention: {
             brandColor?: string | null;
@@ -3872,7 +3877,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ThreadDetailResponse"];
+                    "application/json": components["schemas"]["ThreadViewResponse"];
                 };
             };
         };
@@ -4184,7 +4189,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ThreadCommandResponse"];
+                    "application/json": components["schemas"]["ThreadViewResponse"];
                 };
             };
         };

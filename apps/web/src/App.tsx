@@ -46,8 +46,6 @@ import {
   type EventEnvelope,
   type Project,
   type QueuedInput,
-  type ThreadCommandResponse,
-  type ThreadDetailResponse,
   type ThreadSummary,
   type ThreadSubagentSummary,
 } from "./api/client";
@@ -736,7 +734,10 @@ function KodexShell({
         attachedThreadIdsRef.current.add(response.thread.id);
         if (!cancelled) {
           replaceThread(response.thread);
-          applyResumeTimelineSnapshot(response);
+          if (response.timeline) {
+            setTimeline((current) => applyTimelineSnapshot(current, response));
+            setTimelineEntry({ phase: "streamingLive", threadId: response.thread.id });
+          }
         }
       })
       .catch((error) => {
@@ -1187,21 +1188,6 @@ function KodexShell({
     }
     replaceThread(thread);
     markCompletedAgentTurnSeen(thread.id, thread.lastCompletedAgentTurnSeq);
-  }
-
-  function applyResumeTimelineSnapshot(response: ThreadCommandResponse) {
-    if (!response.timeline || !response.turns || !response.liveState) {
-      return;
-    }
-    const snapshot: ThreadDetailResponse = {
-      thread: response.thread,
-      turns: response.turns,
-      liveState: response.liveState,
-      timeline: response.timeline,
-      rawPayload: response.rawPayload,
-    };
-    setTimeline((current) => applyTimelineSnapshot(current, snapshot));
-    setTimelineEntry({ phase: "streamingLive", threadId: response.thread.id });
   }
 
   function handleSelectedThreadLoadFailed(threadId: string) {
@@ -1698,8 +1684,7 @@ function eventCanAffectSubagentDiscovery(event: EventEnvelope): boolean {
   return (
     event.kind === "timeline.projection_patch" ||
     event.kind === "timeline.thread_metadata" ||
-    event.kind === "timeline.snapshot_required" ||
-    event.kind === "codex.notification"
+    event.kind === "timeline.snapshot_required"
   );
 }
 

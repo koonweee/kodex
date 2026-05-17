@@ -103,10 +103,10 @@ describe("event stream client", () => {
     });
 
     client.connect();
-    FakeEventSource.instances[0].emitNamed("codex.notification", {
+    FakeEventSource.instances[0].emitNamed("timeline.thread_metadata", {
       id: "event-7",
       seq: 7,
-      kind: "codex.notification",
+      kind: "timeline.thread_metadata",
       codexMethod: "thread/name/updated",
       itemId: null,
       threadId: "thread-1",

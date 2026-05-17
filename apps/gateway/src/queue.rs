@@ -10,17 +10,14 @@ use utoipa::ToSchema;
 
 use crate::{
     api::AppState,
-    app_server_api::{
-        self, timeline_skill_mentions_from_user_input, SkillMetadata, ThreadLiveState,
-        TurnStartOptions, UserInput,
-    },
+    app_server_api::{self, ThreadLiveState, TurnStartOptions, UserInput},
     error::{ApiError, ApiResult},
-    events, skills,
+    skills,
     store::{
         EventEnvelope, NewEvent, QueuedInput, QueuedInputPriority, QueuedInputStatus,
         ThreadRuntimeState,
     },
-    timeline_projection,
+    turn_lifecycle,
 };
 
 pub const QUEUE_UPSERT_EVENT: &str = "turn_queue.item_upsert";
@@ -121,7 +118,8 @@ pub async fn steer_queued_input(
     State(state): State<AppState>,
     Path((thread_id, queue_id)): Path<(String, String)>,
 ) -> ApiResult<Json<QueuedInputResponse>> {
-    let Some(active_turn_id) = current_active_turn_id(&state, &thread_id).await? else {
+    let Some(active_turn_id) = turn_lifecycle::current_active_turn_id(&state, &thread_id).await?
+    else {
         return Err(ApiError::BadRequest(format!(
             "thread {thread_id} has no active turn to steer"
         )));
@@ -149,9 +147,13 @@ pub async fn steer_queued_input(
             return Err(error);
         }
     };
-    let pending_skill_mentions_id =
-        insert_pending_skill_mentions(&state, &thread_id, &resolved.input, &resolved.skills)
-            .await?;
+    let pending_skill_mentions_id = turn_lifecycle::insert_pending_skill_mentions(
+        &state,
+        &thread_id,
+        &resolved.input,
+        &resolved.skills,
+    )
+    .await?;
     let result = app_server_api::client(&state.app_server)
         .turn_steer(
             thread_id.clone(),
@@ -161,8 +163,13 @@ pub async fn steer_queued_input(
         .await;
     match result {
         Ok(_) => {
-            record_pending_user_projection(&state, &thread_id, &active_turn_id, &resolved.input)
-                .await?;
+            turn_lifecycle::record_pending_user_projection(
+                &state,
+                &thread_id,
+                &active_turn_id,
+                &resolved.input,
+            )
+            .await?;
             let queued_input = state
                 .store
                 .mark_queued_input_pending_commit(
@@ -176,8 +183,12 @@ pub async fn steer_queued_input(
             broadcast_queue_upsert(&state, &queued_input).await?;
             Ok(Json(QueuedInputResponse { queued_input }))
         }
-        Err(error) if is_non_steerable_error(&error) => {
-            delete_pending_skill_mentions(&state, pending_skill_mentions_id.as_deref()).await?;
+        Err(error) if turn_lifecycle::is_non_steerable_error(&error) => {
+            turn_lifecycle::delete_pending_skill_mentions(
+                &state,
+                pending_skill_mentions_id.as_deref(),
+            )
+            .await?;
             let queued_input = state
                 .store
                 .mark_queued_input_rejected_steer(&thread_id, &queue_id, error.to_string())
@@ -188,7 +199,11 @@ pub async fn steer_queued_input(
             ))
         }
         Err(error) => {
-            delete_pending_skill_mentions(&state, pending_skill_mentions_id.as_deref()).await?;
+            turn_lifecycle::delete_pending_skill_mentions(
+                &state,
+                pending_skill_mentions_id.as_deref(),
+            )
+            .await?;
             let queued_input = state
                 .store
                 .mark_queued_input_failed(&thread_id, &queue_id, error.to_string())
@@ -381,8 +396,13 @@ async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<
         }
     };
 
-    let pending_skill_mentions_id =
-        insert_pending_skill_mentions(state, thread_id, &resolved.input, &resolved.skills).await?;
+    let pending_skill_mentions_id = turn_lifecycle::insert_pending_skill_mentions(
+        state,
+        thread_id,
+        &resolved.input,
+        &resolved.skills,
+    )
+    .await?;
 
     let result = app_server_api::client(&state.app_server)
         .turn_start(
@@ -393,8 +413,14 @@ async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<
         .await;
     match result {
         Ok(response) => {
-            if let Some(turn_id) = pending_projection_turn_id(&response.payload) {
-                record_pending_user_projection(state, thread_id, &turn_id, &resolved.input).await?;
+            if let Some(turn_id) = turn_lifecycle::pending_projection_turn_id(&response.payload) {
+                turn_lifecycle::record_pending_user_projection(
+                    state,
+                    thread_id,
+                    &turn_id,
+                    &resolved.input,
+                )
+                .await?;
             }
             state
                 .store
@@ -403,7 +429,11 @@ async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<
             broadcast_queue_delete(state, thread_id, &queued_input.id).await?;
         }
         Err(error) => {
-            delete_pending_skill_mentions(state, pending_skill_mentions_id.as_deref()).await?;
+            turn_lifecycle::delete_pending_skill_mentions(
+                state,
+                pending_skill_mentions_id.as_deref(),
+            )
+            .await?;
             let failed = state
                 .store
                 .mark_queued_input_failed(thread_id, &queued_input.id, error.to_string())
@@ -414,47 +444,6 @@ async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<
                 .await?;
             broadcast_queue_upsert(state, &failed).await?;
         }
-    }
-    Ok(())
-}
-
-fn pending_projection_turn_id(payload: &serde_json::Value) -> Option<String> {
-    payload
-        .get("turnId")
-        .and_then(serde_json::Value::as_str)
-        .or_else(|| {
-            payload
-                .get("turn")
-                .and_then(|turn| turn.get("id"))
-                .and_then(serde_json::Value::as_str)
-        })
-        .map(str::to_string)
-}
-
-async fn insert_pending_skill_mentions(
-    state: &AppState,
-    thread_id: &str,
-    input: &[UserInput],
-    skills: &[SkillMetadata],
-) -> ApiResult<Option<String>> {
-    let Some((text, mentions)) = timeline_skill_mentions_from_user_input(input, skills) else {
-        return Ok(None);
-    };
-    state
-        .store
-        .insert_pending_timeline_skill_mentions(thread_id, &text, &mentions)
-        .await
-}
-
-async fn delete_pending_skill_mentions(
-    state: &AppState,
-    pending_id: Option<&str>,
-) -> ApiResult<()> {
-    if let Some(pending_id) = pending_id {
-        state
-            .store
-            .delete_pending_timeline_skill_mentions(pending_id)
-            .await?;
     }
     Ok(())
 }
@@ -488,21 +477,6 @@ pub(crate) async fn reconcile_thread_runtime_from_app_server(
         .upsert_thread_runtime_state_unless_draining(runtime)
         .await?;
     Ok(Some(runtime))
-}
-
-async fn current_active_turn_id(state: &AppState, thread_id: &str) -> ApiResult<Option<String>> {
-    if let Some(active_turn_id) = state.thread_sessions.active_turn_id(thread_id).await {
-        return Ok(Some(active_turn_id));
-    }
-    let snapshot = app_server_api::client(&state.app_server)
-        .thread_read(thread_id.to_string())
-        .await?;
-    let revision = state.store.latest_event_seq().await?;
-    let timeline = state
-        .thread_sessions
-        .refresh_from_turns(thread_id, &snapshot.turns, revision)
-        .await;
-    Ok(timeline.active_turn_id)
 }
 
 async fn thread_is_idle_for_queue(state: &AppState, thread_id: &str) -> ApiResult<bool> {
@@ -557,40 +531,6 @@ async fn append_queue_upsert_event(
             payload: serde_json::to_value(queued_input)?,
         })
         .await
-}
-
-async fn record_pending_user_projection(
-    state: &AppState,
-    thread_id: &str,
-    turn_id: &str,
-    input: &[UserInput],
-) -> ApiResult<()> {
-    let event = state
-        .store
-        .append_event(NewEvent {
-            project_id: None,
-            thread_id: Some(thread_id.to_string()),
-            turn_id: Some(turn_id.to_string()),
-            item_id: None,
-            kind: "timeline.pending_user_input".to_string(),
-            codex_method: Some("turn/input".to_string()),
-            payload: json!({ "threadId": thread_id, "turnId": turn_id }),
-        })
-        .await?;
-    if timeline_projection::record_pending_user_input(
-        &state.thread_sessions,
-        thread_id,
-        turn_id,
-        input,
-        event.seq,
-    )
-    .await?
-    .is_some()
-    {
-        let patch = events::timeline_projection_patch_event(state, thread_id).await?;
-        let _ = state.events.send(patch);
-    }
-    Ok(())
 }
 
 async fn broadcast_queue_delete(
@@ -682,16 +622,6 @@ fn is_user_message_item(item: &Value) -> bool {
         .or_else(|| item.get("itemType"))
         .and_then(Value::as_str)
         .is_some_and(|item_type| item_type == "userMessage")
-}
-
-fn is_non_steerable_error(error: &ApiError) -> bool {
-    let message = error.to_string().to_ascii_lowercase();
-    message.contains("not steerable")
-        || message.contains("activeturnnotsteerable")
-        || message.contains("cannot steer")
-        || message.contains("no active turn")
-        || message.contains("expectedturnid")
-        || message.contains("expected turn")
 }
 
 impl QueuedInput {

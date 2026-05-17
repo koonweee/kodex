@@ -24,7 +24,7 @@ export function timelineState(overrides: Partial<TimelineState> = {}): TimelineS
     pendingApprovalRequests: overrides.pendingApprovalRequests ?? [],
     pendingUserInputRequests: overrides.pendingUserInputRequests ?? [],
     lastSeq: 0,
-    projectionRevision: 0,
+    viewRevision: 0,
     ...overrides,
   };
 }

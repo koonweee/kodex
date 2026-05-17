@@ -75,7 +75,7 @@ describe("MVP composer settings flows", () => {
       threadStream?.emit({
         id: "usage-1",
         seq: 3,
-        kind: "codex.notification",
+        kind: "timeline.thread_metadata",
         codexMethod: "thread/tokenUsage/updated",
         projectId: project.id,
         threadId: thread.id,
@@ -252,7 +252,7 @@ describe("MVP composer settings flows", () => {
       threadStream?.emit({
         id: "usage-1",
         seq: 3,
-        kind: "codex.notification",
+        kind: "timeline.thread_metadata",
         codexMethod: "thread/tokenUsage/updated",
         projectId: project.id,
         threadId: thread.id,
@@ -301,10 +301,10 @@ describe("MVP composer settings flows", () => {
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
     const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
     act(() => {
-      globalStream?.emitNamed("codex.notification", {
+      globalStream?.emitNamed("account.rate_limits_updated", {
         id: "rate-limit-update-1",
         seq: 5,
-        kind: "codex.notification",
+        kind: "account.rate_limits_updated",
         codexMethod: "account/rateLimits/updated",
         projectId: null,
         threadId: null,
@@ -349,10 +349,10 @@ describe("MVP composer settings flows", () => {
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
     const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
     act(() => {
-      globalStream?.emitNamed("codex.notification", {
+      globalStream?.emitNamed("account.rate_limits_updated", {
         id: "rate-limit-update-1",
         seq: 5,
-        kind: "codex.notification",
+        kind: "account.rate_limits_updated",
         codexMethod: "account/rateLimits/updated",
         projectId: null,
         threadId: null,

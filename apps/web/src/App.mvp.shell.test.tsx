@@ -162,7 +162,7 @@ describe("MVP shell flows", () => {
         createdThreadStream?.emit({
           id: "event-title",
           seq: 2,
-          kind: "codex.notification",
+          kind: "timeline.thread_metadata",
           codexMethod: "thread/nameUpdated",
           projectId: project.id,
           threadId: "thread-2",
@@ -1121,7 +1121,7 @@ describe("MVP shell flows", () => {
       globalStream?.emit({
         id: "event-thread-name-sidebar",
         seq: 10,
-        kind: "codex.notification",
+        kind: "timeline.thread_metadata",
         codexMethod: "thread/name/updated",
         threadId: "thread-1",
         turnId: null,

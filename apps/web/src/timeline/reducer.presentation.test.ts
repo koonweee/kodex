@@ -82,8 +82,8 @@ describe("timeline reducer presentation", () => {
       action: "modify",
     });
     expect(state.hiddenItems).toHaveLength(1);
-    expect(state.hiddenItems[0]).toMatchObject({ id: "debug-reasoning-empty", kind: "debug_event" });
-    expect(state.items[0].debugEvents[0].payload).toEqual({
+    expect(state.hiddenItems[0]).toMatchObject({ id: "debug-reasoning-empty", kind: "warning" });
+    expect(state.items[0].debugEvents[0].payload).toMatchObject({
       item: { id: "user-1", type: "userMessage", text: "Search for current docs" },
     });
   });
@@ -595,7 +595,7 @@ describe("timeline reducer presentation", () => {
 
     expect(state.activeTurnId).toBeNull();
     expect(state.items).toEqual([]);
-    expect(state.hiddenItems.map((item) => item.id)).toEqual(["debug-turn-start", "debug-turn-completed", "debug-token-usage"]);
+    expect(state.hiddenItems).toEqual([]);
   });
 
   it("groups presentation blocks by turn while preserving item order", () => {

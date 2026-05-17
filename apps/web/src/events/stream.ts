@@ -21,9 +21,9 @@ type EventStreamClientOptions = {
 const GATEWAY_SSE_EVENT_TYPES = [
   "approval.created",
   "approval.resolved",
+  "account.rate_limits_updated",
   "automation.item_deleted",
   "automation.item_upsert",
-  "codex.notification",
   "gateway.warning",
   "mcp.config_changed",
   "mcp.oauth_login_completed",
