@@ -80,6 +80,22 @@ export function applyThreadReadState(queryClient: QueryClient, threadId: string,
   }));
 }
 
+export function replaceThreadEverywhere(queryClient: QueryClient, thread: ThreadSummary) {
+  updateThreadEverywhere(queryClient, thread.id, (current) => mergeSelectedThreadDetailIntoSidebarSummary(current, thread));
+}
+
+export function mergeSelectedThreadDetailIntoSidebarSummary(
+  currentThread: ThreadSummary,
+  detailThread: ThreadSummary,
+): ThreadSummary {
+  const merged = mergeNewerReadProjection(detailThread, currentThread);
+  return {
+    ...merged,
+    createdAt: currentThread.createdAt,
+    updatedAt: Math.max(currentThread.updatedAt, detailThread.updatedAt),
+  };
+}
+
 export function mergeProjectThreadSnapshot(
   queryClient: QueryClient,
   projectId: string,

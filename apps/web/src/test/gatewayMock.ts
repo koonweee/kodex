@@ -166,6 +166,12 @@ async function fallbackThreadDetail(routes: GatewayRouteMap, request: Request) {
     thread,
     turns,
     liveState: thread.status === "active" ? "streaming" : "idle",
+    timeline: {
+      revision: 1,
+      activeTurnId: null,
+      liveState: thread.status === "active" ? "streaming" : "idle",
+      items: [],
+    },
     rawPayload: {},
   };
 }

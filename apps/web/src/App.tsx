@@ -94,10 +94,12 @@ import {
   applyThreadPinState as applyThreadPinStateToCache,
   findCachedThread,
   mergeChatThreadData,
+  mergeSelectedThreadDetailIntoSidebarSummary,
   mergePinnedThreadData,
   mergeProjectThreadData,
   pinnedTombstonesAddedDuringSnapshot,
   removeThreadEverywhere,
+  replaceThreadEverywhere,
   updateThreadEverywhere,
   upsertChatThread,
   upsertPinnedThread,
@@ -1211,9 +1213,11 @@ function KodexShell({
     if (thread.id === selectedThreadIdRef.current) {
       setRouteSelectedThreadState(thread);
     }
-    updateThreadEverywhere(queryClientForShell, thread.id, () => thread);
-    if (thread.pinnedAt) {
-      upsertPinnedThread(queryClientForShell, thread);
+    const cachedThread = findKnownThread(thread.id);
+    const sidebarThread = cachedThread ? mergeSelectedThreadDetailIntoSidebarSummary(cachedThread, thread) : thread;
+    replaceThreadEverywhere(queryClientForShell, thread);
+    if (sidebarThread.pinnedAt) {
+      upsertPinnedThread(queryClientForShell, sidebarThread);
     } else {
       removeThreadEverywhere(queryClientForShell, thread.id, { pinnedOnly: true });
     }
@@ -1317,6 +1321,7 @@ function KodexShell({
   function eventShouldRefreshKnownSidebarThread(event: EventEnvelope, thread: ThreadSummary) {
     return (
       !threadHasDisplayTitle(thread) ||
+      event.kind === "timeline.projection_patch" ||
       event.kind === "timeline.thread_status" ||
       event.kind === "timeline.turn_upsert"
     );
@@ -1338,6 +1343,7 @@ function KodexShell({
   function eventCanRefreshSidebarThread(event: EventEnvelope) {
     return (
       event.kind === "timeline.item_upsert" ||
+      event.kind === "timeline.projection_patch" ||
       event.kind === "timeline.thread_metadata" ||
       event.kind === "timeline.thread_status" ||
       event.kind === "timeline.turn_upsert"
@@ -1678,6 +1684,7 @@ function defaultSubagent(subagents: ThreadSubagentSummary[]): ThreadSubagentSumm
 function eventCanAffectSubagentDiscovery(event: EventEnvelope): boolean {
   return (
     event.kind === "timeline.item_upsert" ||
+    event.kind === "timeline.projection_patch" ||
     event.kind === "timeline.turn_upsert" ||
     event.kind === "timeline.thread_status" ||
     event.kind === "timeline.thread_metadata" ||

@@ -12,6 +12,7 @@ import {
   highReasoningModel,
   mockGateway,
   project,
+  projectionPatchEvent,
   requestJson,
   secondThread,
   snapshotItem,
@@ -353,7 +354,7 @@ describe("MVP timeline flows", () => {
       expect(screen.queryByText(/stale first snapshot/i)).not.toBeInTheDocument();
     });
     expect(gateway.callsFor("GET", "/v1/events")).toHaveLength(0);
-    const threadStreams = FakeEventSource.instances.filter((instance) => instance.url.includes("threadId="));
+    const threadStreams = FakeEventSource.instances.filter((instance) => instance.url.includes("threadId=") && !instance.closed);
     expect(threadStreams).toHaveLength(1);
     expect(threadStreams[0].url).toContain("threadId=thread-2");
   });
@@ -413,27 +414,51 @@ describe("MVP timeline flows", () => {
     expect(selectedThreadStream).toBeDefined();
 
     act(() => {
-      selectedThreadStream?.emit({
+      selectedThreadStream?.emit(projectionPatchEvent({
         id: "historical-replay-1",
-        seq: 1,
-        kind: "timeline.item_upsert",
-        codexMethod: "item/upsert",
+        seq: 2,
         projectId: project.id,
         threadId: thread.id,
         turnId: "turn-1",
         itemId: "historical-agent-1",
-        payload: {
-          source: "gatewayStream",
-          item: { id: "historical-agent-1", type: "agentMessage", text: "Snapshot race live event" },
-        },
-        receivedAt: "2026-04-30T00:00:00Z",
-      });
+        text: "Snapshot race live event",
+        displayOrder: 2,
+      }));
     });
 
     expect(await screen.findByText(/snapshot race live event/i)).toBeInTheDocument();
   });
 
-  it("accepts selected-thread live events with low gateway seq after a high completed-turn marker", async () => {
+  it("connects selected-thread stream after the initial snapshot is loaded", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let resolveDetail: (value: unknown) => void = () => undefined;
+    const detail = new Promise((resolve) => {
+      resolveDetail = resolve;
+    });
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads/thread-1": () => detail,
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(FakeEventSource.instances.some((instance) => instance.url.includes("threadId=thread-1"))).toBe(false);
+
+    resolveDetail(
+      threadDetail(thread, [
+        snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "Snapshot before live" })]),
+      ]),
+    );
+
+    expect(await screen.findByText(/snapshot before live/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(FakeEventSource.instances.some((instance) => instance.url.includes("threadId=thread-1"))).toBe(true);
+    });
+  });
+
+  it("uses snapshot revision as the selected-thread stream cursor instead of completed-turn markers", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const markerThread = { ...thread, lastCompletedAgentTurnSeq: 100 };
     mockGateway(
@@ -455,24 +480,19 @@ describe("MVP timeline flows", () => {
     expect(await screen.findByText(/high marker snapshot/i)).toBeInTheDocument();
     const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
     expect(selectedThreadStream).toBeDefined();
-    expect(selectedThreadStream?.url).toContain("cursor=0");
+    expect(selectedThreadStream?.url).toContain("cursor=1");
 
     act(() => {
-      selectedThreadStream?.emit({
+      selectedThreadStream?.emit(projectionPatchEvent({
         id: "low-seq-live-event-1",
-        seq: 1,
-        kind: "timeline.item_upsert",
-        codexMethod: "item/upsert",
+        seq: 2,
         projectId: project.id,
         threadId: thread.id,
         turnId: "turn-2",
         itemId: "low-seq-live-agent-1",
-        payload: {
-          source: "gatewayStream",
-          item: { id: "low-seq-live-agent-1", type: "agentMessage", text: "Low seq live event" },
-        },
-        receivedAt: new Date(Date.now() + 1000).toISOString(),
-      });
+        text: "Low seq live event",
+        displayOrder: 2,
+      }));
     });
 
     expect(await screen.findByText(/low seq live event/i)).toBeInTheDocument();
@@ -661,6 +681,49 @@ describe("MVP timeline flows", () => {
     await waitFor(() => {
       expect(screen.queryByText(/stale closed stream delta/i)).not.toBeInTheDocument();
     });
+  });
+
+  it("converges after switching away and back while a live projection patch is missed", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let threadOneDetailCall = 0;
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, secondThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "GET /v1/threads/thread-1": () => {
+          threadOneDetailCall += 1;
+          return threadDetail(
+            thread,
+            threadOneDetailCall === 1
+              ? [snapshotTurn("turn-1", [snapshotItem("agent-1", "agentMessage", { text: "Initial snapshot" })])]
+              : [
+                  snapshotTurn("turn-1", [snapshotItem("agent-1", "agentMessage", { text: "Initial snapshot" })]),
+                  snapshotTurn("turn-2", [snapshotItem("agent-2", "agentMessage", { text: "Recovered live message" })]),
+                ],
+          );
+        },
+        "GET /v1/threads/thread-2": threadDetail(secondThread, [
+          snapshotTurn("turn-3", [snapshotItem("agent-3", "agentMessage", { text: "Other thread snapshot" })]),
+        ]),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/initial snapshot/i)).toBeInTheDocument();
+    const firstThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    expect(firstThreadStream).toBeDefined();
+
+    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    expect(await screen.findByText(/other thread snapshot/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /implement frontend/i }));
+    expect(await screen.findByText(/recovered live message/i)).toBeInTheDocument();
+    expect(screen.getByText(/initial snapshot/i)).toBeInTheDocument();
   });
 
 });

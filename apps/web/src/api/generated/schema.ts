@@ -2141,6 +2141,7 @@ export interface components {
             liveState: components["schemas"]["ThreadLiveState"];
             rawPayload: unknown;
             thread: components["schemas"]["ThreadSummary"];
+            timeline: components["schemas"]["ThreadTimelineSnapshot"];
             turns: components["schemas"]["ThreadTurnSnapshot"][];
         };
         ThreadItemSnapshot: {
@@ -2219,6 +2220,27 @@ export interface components {
             /** Format: int64 */
             updatedAt: number;
         };
+        ThreadTimelineSnapshot: {
+            activeTurnId?: string | null;
+            items: components["schemas"]["ThreadTimelineSnapshotItem"][];
+            liveState: components["schemas"]["ThreadLiveState"];
+            /** Format: int64 */
+            revision: number;
+        };
+        ThreadTimelineSnapshotItem: {
+            codexMethod: string;
+            /** Format: int64 */
+            displayOrder: number;
+            id: string;
+            itemId: string;
+            itemType: string;
+            payload: components["schemas"]["TimelineItemUpsertPayload"];
+            status: string;
+            threadId: string;
+            /** Format: int64 */
+            timestampMs?: number | null;
+            turnId: string;
+        };
         ThreadTurnSnapshot: {
             /** Format: int64 */
             completedAt?: number | null;
@@ -2240,6 +2262,14 @@ export interface components {
             itemSnapshot: components["schemas"]["ThreadItemSnapshot"];
             source: components["schemas"]["TimelineUpdateSource"];
             turnId: string;
+        };
+        TimelineProjectionPatch: {
+            activeTurnId?: string | null;
+            items: components["schemas"]["ThreadTimelineSnapshotItem"][];
+            liveState: components["schemas"]["ThreadLiveState"];
+            /** Format: int64 */
+            revision: number;
+            threadId: string;
         };
         TimelineSkillMention: {
             brandColor?: string | null;

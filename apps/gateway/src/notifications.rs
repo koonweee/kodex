@@ -21,6 +21,8 @@ pub struct NotificationPayload {
     pub kind: NotificationKind,
     pub thread_id: String,
     pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
     pub route: String,
     pub badge_count: i64,
 }
@@ -37,6 +39,11 @@ pub enum PushDeliveryOutcome {
     PermanentFailure,
     TemporaryFailure,
 }
+
+const UNREAD_AGENT_MESSAGE_FALLBACK_THREAD_TITLE: &str = "New message";
+const UNREAD_AGENT_MESSAGE_FALLBACK_BODY: &str = "Agent has a new message.";
+const UNREAD_AGENT_MESSAGE_PREVIEW_MAX_CHARS: usize = 240;
+const UNREAD_AGENT_MESSAGE_TITLE_MAX_CHARS: usize = 48;
 
 #[async_trait]
 pub trait PushSender: Send + Sync {
@@ -226,20 +233,148 @@ async fn deliver_unread_agent_message_if_still_unread(
         .await
         .unwrap_or(1)
         .max(1);
-    let title = snapshot
+    let thread_title = snapshot
         .thread
         .name
-        .clone()
-        .filter(|name| !name.trim().is_empty())
-        .unwrap_or_else(|| "Unread Kodex message".to_string());
+        .as_deref()
+        .and_then(notification_title_text)
+        .unwrap_or_else(|| UNREAD_AGENT_MESSAGE_FALLBACK_THREAD_TITLE.to_string());
+    let body = unread_agent_message_body(&snapshot);
     let payload = NotificationPayload {
         kind: NotificationKind::UnreadAgentMessage,
         thread_id: thread_id.clone(),
-        title,
+        title: thread_title.clone(),
+        body: Some(body),
         route: format!("/threads/{thread_id}"),
         badge_count,
     };
     state.notifications.deliver_payload(&state, payload).await
+}
+
+fn unread_agent_message_body(snapshot: &app_server_api::ThreadDetailResponse) -> String {
+    match final_agent_message_preview(snapshot) {
+        Some(preview) => preview,
+        None => UNREAD_AGENT_MESSAGE_FALLBACK_BODY.to_string(),
+    }
+}
+
+fn final_agent_message_preview(snapshot: &app_server_api::ThreadDetailResponse) -> Option<String> {
+    snapshot
+        .turns
+        .iter()
+        .rev()
+        .filter(|turn| is_terminal_turn_status(&turn.status))
+        .find_map(final_agent_message_preview_from_turn)
+}
+
+fn final_agent_message_preview_from_turn(
+    turn: &app_server_api::ThreadTurnSnapshot,
+) -> Option<String> {
+    let mut fallback = None;
+    for item in turn.items.iter().rev() {
+        if !is_agent_message_item(&item.item_type) {
+            continue;
+        }
+        let Some(text) = agent_message_text(&item.raw_payload) else {
+            continue;
+        };
+        if is_final_answer_item(&item.raw_payload) {
+            return Some(text);
+        }
+        if fallback.is_none() {
+            fallback = Some(text);
+        }
+    }
+    fallback
+}
+
+fn is_agent_message_item(item_type: &str) -> bool {
+    matches!(
+        item_type.to_ascii_lowercase().as_str(),
+        "agentmessage" | "agent_message" | "assistantmessage" | "assistant_message"
+    )
+}
+
+fn is_terminal_turn_status(status: &str) -> bool {
+    matches!(
+        status.to_ascii_lowercase().as_str(),
+        "completed" | "failed" | "cancelled" | "canceled" | "interrupted"
+    )
+}
+
+fn is_final_answer_item(item: &serde_json::Value) -> bool {
+    item.get("phase")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|phase| phase.eq_ignore_ascii_case("final_answer"))
+}
+
+fn agent_message_text(item: &serde_json::Value) -> Option<String> {
+    string_field(item, &["text", "message"])
+        .and_then(|text| notification_preview_text(&text))
+        .or_else(|| {
+            content_array_text(item.get("content"))
+                .and_then(|text| notification_preview_text(&text))
+        })
+}
+
+fn content_array_text(value: Option<&serde_json::Value>) -> Option<String> {
+    let parts = value?
+        .as_array()?
+        .iter()
+        .filter_map(|part| string_field(part, &["text", "content"]))
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        return None;
+    }
+    Some(parts.join(" "))
+}
+
+fn string_field(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| value.get(*key).and_then(serde_json::Value::as_str))
+        .map(str::to_string)
+}
+
+fn notification_preview_text(text: &str) -> Option<String> {
+    notification_text(text, UNREAD_AGENT_MESSAGE_PREVIEW_MAX_CHARS)
+}
+
+fn notification_title_text(text: &str) -> Option<String> {
+    notification_text(text, UNREAD_AGENT_MESSAGE_TITLE_MAX_CHARS)
+}
+
+fn notification_text(text: &str, max_chars: usize) -> Option<String> {
+    let mut normalized = String::new();
+    let mut previous_was_space = false;
+    for ch in text.chars() {
+        if ch.is_whitespace() {
+            if !previous_was_space {
+                normalized.push(' ');
+                previous_was_space = true;
+            }
+            continue;
+        }
+        if ch.is_control() {
+            continue;
+        }
+        normalized.push(ch);
+        previous_was_space = false;
+    }
+    let normalized = normalized.trim();
+    if normalized.is_empty() {
+        return None;
+    }
+    Some(truncate_preview(normalized, max_chars))
+}
+
+fn truncate_preview(text: &str, max_chars: usize) -> String {
+    let mut chars = text.chars();
+    let truncated = chars.by_ref().take(max_chars).collect::<String>();
+    if chars.next().is_none() {
+        return truncated;
+    }
+    let trimmed = truncated.trim_end();
+    format!("{trimmed}...")
 }
 
 async fn unread_badge_count(state: &AppState, fallback_thread_id: &str) -> ApiResult<i64> {

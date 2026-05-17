@@ -35,6 +35,7 @@ use crate::{
     schema::is_supported_approval_method,
     skills,
     store::{EventEnvelope, NewApproval, NewEvent, ThreadRuntimeState},
+    timeline_projection::{self, TIMELINE_PROJECTION_PATCH_KIND},
 };
 
 const SSE_REPLAY_PAGE_SIZE: i64 = 500;
@@ -264,7 +265,10 @@ async fn event_stream(
                 break;
             };
             replay_high_water = last.seq;
-            replay.extend(page.into_iter().filter(is_operational_replay_event));
+            replay.extend(
+                page.into_iter()
+                    .filter(|event| is_selected_thread_sse_replay_event(event, &query)),
+            );
             if page_len < SSE_REPLAY_PAGE_SIZE as usize {
                 break;
             }
@@ -435,6 +439,11 @@ fn is_operational_replay_event(event: &EventEnvelope) -> bool {
     )
 }
 
+fn is_selected_thread_sse_replay_event(event: &EventEnvelope, query: &EventsQuery) -> bool {
+    is_operational_replay_event(event)
+        || (query.thread_id.is_some() && event.kind == TIMELINE_PROJECTION_PATCH_KIND)
+}
+
 fn is_normal_live_event(event: &EventEnvelope) -> bool {
     is_operational_replay_event(event)
         || is_thread_metadata_live_event(event)
@@ -443,6 +452,7 @@ fn is_normal_live_event(event: &EventEnvelope) -> bool {
             event.kind.as_str(),
             "timeline.item_delta"
                 | "timeline.item_upsert"
+                | TIMELINE_PROJECTION_PATCH_KIND
                 | "timeline.turn_upsert"
                 | "timeline.thread_status"
                 | "timeline.thread_metadata"
@@ -529,10 +539,8 @@ async fn normalized_timeline_events(
         });
     }
 
-    if let Some(event) = timeline_item_delta_event(state, method, params, metadata, source).await? {
-        events.push(event);
-    }
-    events.extend(timeline_item_upsert_event(state, params, metadata, source).await?);
+    events.extend(timeline_item_delta_event(state, method, params, metadata, source).await?);
+    events.extend(timeline_item_upsert_event(state, method, params, metadata, source).await?);
     let turn_upsert = timeline_turn_upsert_event(state, params, metadata, source).await?;
     events.extend(turn_upsert.events);
     drain_thread_ids.extend(turn_upsert.drain_thread_ids);
@@ -569,19 +577,23 @@ async fn timeline_item_delta_event(
     params: &Value,
     metadata: &EventMetadata,
     source: TimelineUpdateSource,
-) -> ApiResult<Option<EventEnvelope>> {
+) -> ApiResult<Vec<EventEnvelope>> {
     if !method.ends_with("/delta") {
-        return Ok(None);
+        return Ok(Vec::new());
     }
     let Some(thread_id) = metadata.thread_id.clone() else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let Some(item_id) = metadata.item_id.clone() else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
+    let Some(turn_id) = metadata.turn_id.clone() else {
+        return Ok(Vec::new());
+    };
+    let delta = string_field(params, &["delta", "text", "content"]).unwrap_or_default();
     let payload = TimelineItemDeltaPayload {
         source,
-        delta: string_field(params, &["delta", "text", "content"]).unwrap_or_default(),
+        delta: delta.clone(),
         raw_payload: params.clone(),
     };
     let event = append_timeline_event(
@@ -589,19 +601,30 @@ async fn timeline_item_delta_event(
         NewEvent {
             project_id: metadata.project_id.clone(),
             thread_id: Some(thread_id.clone()),
-            turn_id: metadata.turn_id.clone(),
+            turn_id: Some(turn_id.clone()),
             item_id: Some(item_id),
             kind: "timeline.item_delta".to_string(),
             codex_method: Some(method.to_string()),
-            payload: serde_json::to_value(payload)?,
+            payload: serde_json::to_value(&payload)?,
         },
     )
     .await?;
-    Ok(Some(event))
+    timeline_projection::record_item_delta(
+        &state.store,
+        &thread_id,
+        &turn_id,
+        event.item_id.as_deref().unwrap_or_default(),
+        &delta,
+        event.seq,
+    )
+    .await?;
+    let patch = timeline_projection_patch_event(state, &thread_id).await?;
+    Ok(vec![event, patch])
 }
 
 async fn timeline_item_upsert_event(
     state: &AppState,
+    method: &str,
     params: &Value,
     metadata: &EventMetadata,
     source: TimelineUpdateSource,
@@ -635,17 +658,40 @@ async fn timeline_item_upsert_event(
             item_id: Some(payload.item_id.clone()),
             kind: "timeline.item_upsert".to_string(),
             codex_method: Some("item/upsert".to_string()),
-            payload: serde_json::to_value(payload)?,
+            payload: serde_json::to_value(&payload)?,
         },
     )
     .await?;
-    let mut events = vec![event];
+    timeline_projection::record_item_upsert(
+        &state.store,
+        &thread_id,
+        &turn_id,
+        item.clone(),
+        payload.item_snapshot.clone(),
+        item_upsert_turn_status(method),
+        event.seq,
+    )
+    .await?;
+    let mut events = vec![
+        event,
+        timeline_projection_patch_event(state, &thread_id).await?,
+    ];
     if let Some(event) =
         queue::reconcile_pending_steer_commit_event(state, &thread_id, &turn_id, item).await?
     {
         events.push(event);
     }
     Ok(events)
+}
+
+fn item_upsert_turn_status(method: &str) -> Option<&'static str> {
+    if method.ends_with("/completed") {
+        Some("completed")
+    } else if method.ends_with("/started") {
+        Some("running")
+    } else {
+        None
+    }
 }
 
 async fn apply_live_item_skill_mentions(
@@ -733,6 +779,8 @@ async fn timeline_turn_upsert_event(
     let mut events = vec![event.clone()];
     let terminal = is_terminal_turn_status(&turn.status);
     if terminal {
+        timeline_projection::record_turn_status(&state.store, &thread_id, &turn, event.seq).await?;
+        events.push(timeline_projection_patch_event(state, &thread_id).await?);
         events.extend(
             queue::requeue_unmatched_pending_commit_input_events_for_turn(
                 state, &thread_id, &turn.id,
@@ -785,6 +833,26 @@ async fn timeline_turn_upsert_event(
             Vec::new()
         },
     })
+}
+
+pub(crate) async fn timeline_projection_patch_event(
+    state: &AppState,
+    thread_id: &str,
+) -> ApiResult<EventEnvelope> {
+    let patch = timeline_projection::projection_patch_for_thread(&state.store, thread_id).await?;
+    append_timeline_event(
+        state,
+        NewEvent {
+            project_id: None,
+            thread_id: Some(thread_id.to_string()),
+            turn_id: patch.active_turn_id.clone(),
+            item_id: None,
+            kind: TIMELINE_PROJECTION_PATCH_KIND.to_string(),
+            codex_method: Some("timeline/projection_patch".to_string()),
+            payload: serde_json::to_value(patch)?,
+        },
+    )
+    .await
 }
 
 async fn timeline_thread_metadata_event(
@@ -1168,6 +1236,17 @@ mod tests {
         assert_eq!(normalized.item_id.as_deref(), Some("item-1"));
         assert_eq!(normalized.payload["source"], "gatewayStream");
         assert_eq!(normalized.payload["delta"], "hello");
+
+        let patch = receiver.recv().await.unwrap();
+        assert_eq!(patch.kind, TIMELINE_PROJECTION_PATCH_KIND);
+        assert_eq!(patch.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(patch.payload["threadId"], "thread-1");
+        assert_eq!(patch.payload["activeTurnId"], "turn-1");
+        assert_eq!(patch.payload["items"][0]["itemId"], "item-1");
+        assert_eq!(
+            patch.payload["items"][0]["payload"]["item"]["text"],
+            "hello"
+        );
     }
 
     #[tokio::test]

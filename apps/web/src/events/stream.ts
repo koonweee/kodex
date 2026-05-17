@@ -31,6 +31,7 @@ const GATEWAY_SSE_EVENT_TYPES = [
   "skills.changed",
   "timeline.item_delta",
   "timeline.item_upsert",
+  "timeline.projection_patch",
   "timeline.snapshot",
   "timeline.snapshot_required",
   "thread.pin_updated",

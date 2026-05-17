@@ -119,7 +119,7 @@ export function useReadonlyThreadTimeline({
       setTimeline((current) => applyTimelineSnapshot(current, snapshot));
       latestCallbacks.current.onSnapshotThread?.(snapshot.thread);
       markStreaming(currentThreadId);
-      return true;
+      return snapshot.timeline?.revision ?? 0;
     }
 
     const refetchSnapshot = () => {
@@ -130,9 +130,9 @@ export function useReadonlyThreadTimeline({
       });
     };
 
-    const connectStream = () => {
+    const connectStream = (cursor: number) => {
       const client = createEventStreamClient({
-        cursor: 0,
+        cursor,
         threadId: currentThreadId,
         onStatusChange: (status) => {
           if (status === "reconnecting" && streamToken.current === currentToken) {
@@ -162,9 +162,9 @@ export function useReadonlyThreadTimeline({
     };
 
     void refreshSnapshot("loadingSnapshot")
-      .then((loaded) => {
-        if (loaded && !cancelled) {
-          connectStream();
+      .then((revision) => {
+        if (revision !== false && !cancelled) {
+          connectStream(revision);
         }
       })
       .catch((error) => {

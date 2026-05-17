@@ -4,6 +4,41 @@ import { applyTimelineEventBatch } from "./batch";
 import { replayTimeline } from "./reducer";
 import { applyTimelineEvent, event } from "./reducer.testUtils";
 
+function projectionPatch(seq: number, itemId: string, text: string, displayOrder: number) {
+  return event({
+    id: `projection-${itemId}-${seq}`,
+    seq,
+    kind: "timeline.projection_patch",
+    codexMethod: "timeline/projection_patch",
+    itemId: null,
+    payload: {
+      revision: seq,
+      threadId: "thread-1",
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      items: [
+        {
+          id: `projection-turn-1-${itemId}`,
+          threadId: "thread-1",
+          turnId: "turn-1",
+          itemId,
+          itemType: "agentMessage",
+          displayOrder,
+          status: "running",
+          timestampMs: displayOrder,
+          payload: {
+            source: "gatewayStream",
+            turnId: "turn-1",
+            itemId,
+            item: { id: itemId, type: "agentMessage", text },
+            itemSnapshot: { id: itemId, itemType: "agentMessage", rawPayload: { id: itemId, type: "agentMessage", text } },
+          },
+        },
+      ],
+    },
+  });
+}
+
 describe("timeline reducer performance", () => {
   it("updates and appends items in long active turns without array scan helpers", () => {
     const initialEvents = Array.from({ length: 150 }, (_, index) =>
@@ -137,28 +172,8 @@ describe("timeline reducer performance", () => {
       }),
     ]);
     const queuedEvents = [
-      event({
-        id: "delta-1",
-        seq: 2,
-        kind: "timeline.item_delta",
-        codexMethod: "item/agentMessage/delta",
-        itemId: "item-1",
-        payload: { source: "gatewayStream", delta: " updated", rawPayload: { delta: " updated" } },
-      }),
-      event({
-        id: "append-1",
-        seq: 3,
-        kind: "timeline.item_upsert",
-        codexMethod: "item/upsert",
-        itemId: "item-2",
-        payload: {
-          source: "gatewayStream",
-          turnId: "turn-1",
-          itemId: "item-2",
-          item: { id: "item-2", type: "agentMessage", text: "Second" },
-          itemSnapshot: { id: "item-2", itemType: "agentMessage", rawPayload: {} },
-        },
-      }),
+      projectionPatch(2, "item-1", "Initial updated", 1),
+      projectionPatch(3, "item-2", "Second", 2),
     ];
 
     const first = applyTimelineEventBatch(previous, queuedEvents);

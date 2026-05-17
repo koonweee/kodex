@@ -157,7 +157,7 @@ export function useSelectedThreadTimeline({
       setTimeline((current) => applyTimelineSnapshot(current, snapshot));
       latestCallbacks.current.onSnapshotThread(snapshot.thread);
       markEntryStreaming(threadId);
-      return true;
+      return snapshot.timeline?.revision ?? 0;
     }
 
     const refetchSnapshot = () => {
@@ -169,9 +169,12 @@ export function useSelectedThreadTimeline({
       });
     };
 
-    const connectSelectedThreadStream = () => {
+    const connectSelectedThreadStream = (cursor: number) => {
+      if (closeStream) {
+        return;
+      }
       const client = createEventStreamClient({
-        cursor: 0,
+        cursor,
         threadId,
         onStatusChange: (status) => {
           if (status === "reconnecting" && selectedThreadStreamToken.current === streamToken) {
@@ -208,11 +211,10 @@ export function useSelectedThreadTimeline({
 
     const loadInitialSnapshot = () => {
       void refreshSnapshot("loadingSnapshot")
-        .then((loaded) => {
-          if (!loaded || cancelled) {
-            return;
+        .then((revision) => {
+          if (revision !== false && !cancelled) {
+            connectSelectedThreadStream(revision);
           }
-          connectSelectedThreadStream();
         })
         .catch((error) => {
           if (cancelled) {
@@ -222,6 +224,9 @@ export function useSelectedThreadTimeline({
             materializingThreadRetry = setTimeout(loadInitialSnapshot, MATERIALIZING_THREAD_SNAPSHOT_RETRY_MS);
             return;
           }
+          closeStream?.();
+          closeStream = null;
+          cancelQueuedTimelineEvents();
           clearEntryForThread(threadId);
           latestCallbacks.current.onThreadLoadFailed?.(threadId, error);
           latestCallbacks.current.onError(error);

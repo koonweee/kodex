@@ -14,11 +14,12 @@ use crate::{
         self, timeline_skill_mentions_from_user_input, SkillMetadata, TurnStartOptions, UserInput,
     },
     error::{ApiError, ApiResult},
-    skills,
+    events, skills,
     store::{
         EventEnvelope, NewEvent, QueuedInput, QueuedInputPriority, QueuedInputStatus,
         ThreadRuntimeState,
     },
+    timeline_projection,
 };
 
 pub const QUEUE_UPSERT_EVENT: &str = "turn_queue.item_upsert";
@@ -159,10 +160,16 @@ pub async fn steer_queued_input(
         insert_pending_skill_mentions(&state, &thread_id, &resolved.input, &resolved.skills)
             .await?;
     let result = app_server_api::client(&state.app_server)
-        .turn_steer(thread_id.clone(), active_turn_id.clone(), resolved.input)
+        .turn_steer(
+            thread_id.clone(),
+            active_turn_id.clone(),
+            resolved.input.clone(),
+        )
         .await;
     match result {
         Ok(_) => {
+            record_pending_user_projection(&state, &thread_id, &active_turn_id, &resolved.input)
+                .await?;
             let queued_input = state
                 .store
                 .mark_queued_input_pending_commit(
@@ -384,12 +391,15 @@ async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<
     let result = app_server_api::client(&state.app_server)
         .turn_start(
             thread_id.to_string(),
-            resolved.input,
+            resolved.input.clone(),
             queued_input.options.clone(),
         )
         .await;
     match result {
-        Ok(_) => {
+        Ok(response) => {
+            if let Some(turn_id) = pending_projection_turn_id(&response.payload) {
+                record_pending_user_projection(state, thread_id, &turn_id, &resolved.input).await?;
+            }
             state
                 .store
                 .delete_queued_input_for_gateway(thread_id, &queued_input.id)
@@ -410,6 +420,19 @@ async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<
         }
     }
     Ok(())
+}
+
+fn pending_projection_turn_id(payload: &serde_json::Value) -> Option<String> {
+    payload
+        .get("turnId")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            payload
+                .get("turn")
+                .and_then(|turn| turn.get("id"))
+                .and_then(serde_json::Value::as_str)
+        })
+        .map(str::to_string)
 }
 
 async fn insert_pending_skill_mentions(
@@ -499,6 +522,40 @@ async fn append_queue_upsert_event(
             payload: serde_json::to_value(queued_input)?,
         })
         .await
+}
+
+async fn record_pending_user_projection(
+    state: &AppState,
+    thread_id: &str,
+    turn_id: &str,
+    input: &[UserInput],
+) -> ApiResult<()> {
+    let event = state
+        .store
+        .append_event(NewEvent {
+            project_id: None,
+            thread_id: Some(thread_id.to_string()),
+            turn_id: Some(turn_id.to_string()),
+            item_id: None,
+            kind: "timeline.pending_user_input".to_string(),
+            codex_method: Some("turn/input".to_string()),
+            payload: json!({ "threadId": thread_id, "turnId": turn_id }),
+        })
+        .await?;
+    if timeline_projection::record_pending_user_input(
+        &state.store,
+        thread_id,
+        turn_id,
+        input,
+        event.seq,
+    )
+    .await?
+    .is_some()
+    {
+        let patch = events::timeline_projection_patch_event(state, thread_id).await?;
+        let _ = state.events.send(patch);
+    }
+    Ok(())
 }
 
 async fn broadcast_queue_delete(

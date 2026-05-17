@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
-    app_server_api::{TimelineSkillMention, TurnStartOptions, UserInput},
+    app_server_api::{ThreadItemSnapshot, TimelineSkillMention, TurnStartOptions, UserInput},
     error::{ApiError, ApiResult},
 };
 
@@ -43,6 +43,32 @@ pub struct NewEvent {
     pub kind: String,
     pub codex_method: Option<String>,
     pub payload: Value,
+}
+
+#[derive(Debug, Clone)]
+pub struct TimelineProjectionItemRecord {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub item_id: String,
+    pub item_type: String,
+    pub status: String,
+    pub item: Value,
+    pub item_snapshot: ThreadItemSnapshot,
+    pub timestamp_ms: Option<i64>,
+    pub updated_seq: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewTimelineProjectionItemRecord {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub item_id: String,
+    pub item_type: String,
+    pub status: String,
+    pub item: Value,
+    pub item_snapshot: ThreadItemSnapshot,
+    pub timestamp_ms: Option<i64>,
+    pub updated_seq: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -620,6 +646,25 @@ impl Store {
         .await?;
         sqlx::query(
             r#"
+            create table if not exists timeline_projection_items (
+                thread_id text not null,
+                turn_id text not null,
+                item_id text not null,
+                item_type text not null,
+                status text not null,
+                item_json text not null,
+                item_snapshot_json text not null,
+                timestamp_ms integer,
+                updated_seq integer not null,
+                updated_at text not null,
+                primary key (thread_id, turn_id, item_id)
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
             create table if not exists queued_turn_inputs (
                 id text primary key,
                 thread_id text not null,
@@ -739,6 +784,11 @@ impl Store {
         )
         .execute(&self.pool)
         .await?;
+        sqlx::query(
+            "create index if not exists timeline_projection_items_thread_idx on timeline_projection_items (thread_id, updated_seq)",
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
@@ -812,6 +862,193 @@ impl Store {
             codex_method: event.codex_method,
             payload: event.payload,
         })
+    }
+
+    pub async fn upsert_timeline_projection_item(
+        &self,
+        item: NewTimelineProjectionItemRecord,
+    ) -> ApiResult<()> {
+        let now = Utc::now();
+        let item_json = serde_json::to_string(&item.item)?;
+        let item_snapshot_json = serde_json::to_string(&item.item_snapshot)?;
+        sqlx::query(
+            r#"
+            insert into timeline_projection_items (
+                thread_id, turn_id, item_id, item_type, status, item_json,
+                item_snapshot_json, timestamp_ms, updated_seq, updated_at
+            )
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            on conflict(thread_id, turn_id, item_id) do update set
+                item_type = excluded.item_type,
+                status = excluded.status,
+                item_json = excluded.item_json,
+                item_snapshot_json = excluded.item_snapshot_json,
+                timestamp_ms = excluded.timestamp_ms,
+                updated_seq = excluded.updated_seq,
+                updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(&item.thread_id)
+        .bind(&item.turn_id)
+        .bind(&item.item_id)
+        .bind(&item.item_type)
+        .bind(&item.status)
+        .bind(item_json)
+        .bind(item_snapshot_json)
+        .bind(item.timestamp_ms)
+        .bind(item.updated_seq)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn append_timeline_projection_item_delta(
+        &self,
+        thread_id: &str,
+        turn_id: &str,
+        item_id: &str,
+        delta: &str,
+        updated_seq: i64,
+    ) -> ApiResult<()> {
+        let existing = self
+            .timeline_projection_item(thread_id, turn_id, item_id)
+            .await?;
+        let mut item = existing
+            .as_ref()
+            .map(|record| record.item.clone())
+            .unwrap_or_else(
+                || serde_json::json!({"id": item_id, "type": "agentMessage", "text": ""}),
+            );
+        let current = item
+            .get("text")
+            .and_then(Value::as_str)
+            .or_else(|| item.get("delta").and_then(Value::as_str))
+            .unwrap_or_default()
+            .to_string();
+        if let Some(object) = item.as_object_mut() {
+            object.insert("id".to_string(), Value::String(item_id.to_string()));
+            object.insert(
+                "type".to_string(),
+                Value::String("agentMessage".to_string()),
+            );
+            object.insert(
+                "text".to_string(),
+                Value::String(format!("{current}{delta}")),
+            );
+        }
+        let item_snapshot = ThreadItemSnapshot::from_payload(&item)?;
+        self.upsert_timeline_projection_item(NewTimelineProjectionItemRecord {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item_id: item_id.to_string(),
+            item_type: item_snapshot.item_type.clone(),
+            status: "running".to_string(),
+            item,
+            item_snapshot,
+            timestamp_ms: Some(Utc::now().timestamp_millis()),
+            updated_seq,
+        })
+        .await
+    }
+
+    pub async fn update_timeline_projection_turn_status(
+        &self,
+        thread_id: &str,
+        turn_id: &str,
+        status: &str,
+        updated_seq: i64,
+    ) -> ApiResult<()> {
+        let now = Utc::now();
+        sqlx::query(
+            r#"
+            update timeline_projection_items
+            set status = ?, updated_seq = ?, updated_at = ?
+            where thread_id = ? and turn_id = ?
+            "#,
+        )
+        .bind(status)
+        .bind(updated_seq)
+        .bind(now)
+        .bind(thread_id)
+        .bind(turn_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn delete_timeline_projection_items(
+        &self,
+        thread_id: &str,
+        items: &[(String, String)],
+        high_water: i64,
+    ) -> ApiResult<()> {
+        for (turn_id, item_id) in items {
+            sqlx::query(
+                "delete from timeline_projection_items where thread_id = ? and turn_id = ? and item_id = ? and updated_seq <= ?",
+            )
+            .bind(thread_id)
+            .bind(turn_id)
+            .bind(item_id)
+            .bind(high_water)
+            .execute(&self.pool)
+            .await?;
+        }
+        Ok(())
+    }
+
+    pub async fn timeline_projection_items(
+        &self,
+        thread_id: &str,
+    ) -> ApiResult<Vec<TimelineProjectionItemRecord>> {
+        self.timeline_projection_items_through_seq(thread_id, None)
+            .await
+    }
+
+    pub async fn timeline_projection_items_through_seq(
+        &self,
+        thread_id: &str,
+        high_water: Option<i64>,
+    ) -> ApiResult<Vec<TimelineProjectionItemRecord>> {
+        let rows = sqlx::query(
+            r#"
+            select thread_id, turn_id, item_id, item_type, status, item_json,
+                item_snapshot_json, timestamp_ms, updated_seq
+            from timeline_projection_items
+            where thread_id = ? and (? is null or updated_seq <= ?)
+            order by updated_seq asc, item_id asc
+            "#,
+        )
+        .bind(thread_id)
+        .bind(high_water)
+        .bind(high_water)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(row_to_timeline_projection_item)
+            .collect()
+    }
+
+    async fn timeline_projection_item(
+        &self,
+        thread_id: &str,
+        turn_id: &str,
+        item_id: &str,
+    ) -> ApiResult<Option<TimelineProjectionItemRecord>> {
+        let row = sqlx::query(
+            r#"
+            select thread_id, turn_id, item_id, item_type, status, item_json,
+                item_snapshot_json, timestamp_ms, updated_seq
+            from timeline_projection_items
+            where thread_id = ? and turn_id = ? and item_id = ?
+            "#,
+        )
+        .bind(thread_id)
+        .bind(turn_id)
+        .bind(item_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(row_to_timeline_projection_item).transpose()
     }
 
     pub async fn insert_pending_timeline_skill_mentions(
@@ -3215,6 +3452,24 @@ fn row_to_event(row: sqlx::sqlite::SqliteRow) -> ApiResult<EventEnvelope> {
     })
 }
 
+fn row_to_timeline_projection_item(
+    row: sqlx::sqlite::SqliteRow,
+) -> ApiResult<TimelineProjectionItemRecord> {
+    let item_json: String = row.try_get("item_json")?;
+    let item_snapshot_json: String = row.try_get("item_snapshot_json")?;
+    Ok(TimelineProjectionItemRecord {
+        thread_id: row.try_get("thread_id")?,
+        turn_id: row.try_get("turn_id")?,
+        item_id: row.try_get("item_id")?,
+        item_type: row.try_get("item_type")?,
+        status: row.try_get("status")?,
+        item: serde_json::from_str(&item_json)?,
+        item_snapshot: serde_json::from_str(&item_snapshot_json)?,
+        timestamp_ms: row.try_get("timestamp_ms")?,
+        updated_seq: row.try_get("updated_seq")?,
+    })
+}
+
 fn row_to_project(row: sqlx::sqlite::SqliteRow) -> ApiResult<Project> {
     Ok(Project {
         id: row.try_get("id")?,
@@ -3532,6 +3787,65 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(loaded.get("item-user-1"), Some(&mentions));
+    }
+
+    #[tokio::test]
+    async fn projection_delete_does_not_remove_rows_updated_after_high_water() {
+        let store = Store::in_memory().await.unwrap();
+        let item = json!({
+            "id": "reasoning-1",
+            "type": "reasoning",
+            "content": [],
+            "summary": []
+        });
+        store
+            .upsert_timeline_projection_item(NewTimelineProjectionItemRecord {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                item_id: "reasoning-1".to_string(),
+                item_type: "reasoning".to_string(),
+                status: "completed".to_string(),
+                item: item.clone(),
+                item_snapshot: ThreadItemSnapshot::from_payload(&item).unwrap(),
+                timestamp_ms: Some(1),
+                updated_seq: 1,
+            })
+            .await
+            .unwrap();
+        let updated_item = json!({
+            "id": "reasoning-1",
+            "type": "reasoning",
+            "content": [],
+            "summary": [{"type": "summary_text", "text": "Need current sources."}]
+        });
+        store
+            .upsert_timeline_projection_item(NewTimelineProjectionItemRecord {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+                item_id: "reasoning-1".to_string(),
+                item_type: "reasoning".to_string(),
+                status: "completed".to_string(),
+                item: updated_item.clone(),
+                item_snapshot: ThreadItemSnapshot::from_payload(&updated_item).unwrap(),
+                timestamp_ms: Some(2),
+                updated_seq: 2,
+            })
+            .await
+            .unwrap();
+
+        store
+            .delete_timeline_projection_items(
+                "thread-1",
+                &[("turn-1".to_string(), "reasoning-1".to_string())],
+                1,
+            )
+            .await
+            .unwrap();
+        let items = store.timeline_projection_items("thread-1").await.unwrap();
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].updated_seq, 2);
+        assert_eq!(items[0].item["summary"][0]["text"], "Need current sources.");
     }
 
     #[tokio::test]

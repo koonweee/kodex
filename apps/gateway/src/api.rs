@@ -20,10 +20,10 @@ use crate::{
         PluginInterface, PluginListResponse, PluginMarketplaceEntry, PluginReadResponse,
         PluginSummary, RateLimitsResponse, RawAppServerResponse, SkillErrorInfo, SkillInterface,
         SkillMetadata, SkillsCatalogResponse, ThreadCommandResponse, ThreadDetailResponse,
-        ThreadItemSnapshot, ThreadListResponse, ThreadLiveState, ThreadTurnSnapshot,
-        TimelineItemDeltaPayload, TimelineItemUpsertPayload, TimelineSkillMention,
-        TimelineThreadMetadataPayload, TimelineThreadStatusPayload, TimelineTurnUpsertPayload,
-        TimelineUpdateSource, UserInput,
+        ThreadItemSnapshot, ThreadListResponse, ThreadLiveState, ThreadTimelineSnapshot,
+        ThreadTimelineSnapshotItem, ThreadTurnSnapshot, TimelineItemDeltaPayload,
+        TimelineItemUpsertPayload, TimelineSkillMention, TimelineThreadMetadataPayload,
+        TimelineThreadStatusPayload, TimelineTurnUpsertPayload, TimelineUpdateSource, UserInput,
     },
     config::Config,
     error::ApiErrorBody,
@@ -91,6 +91,7 @@ use crate::{
         ProjectPreviewService, QueuedInput, QueuedInputPriority, QueuedInputStatus, Store,
         ThreadRead,
     },
+    timeline_projection::TimelineProjectionPatch,
 };
 
 #[derive(Clone)]
@@ -260,6 +261,9 @@ impl AppState {
         RawAppServerResponse,
         ThreadListResponse,
         ThreadDetailResponse,
+        ThreadTimelineSnapshot,
+        ThreadTimelineSnapshotItem,
+        TimelineProjectionPatch,
         ThreadTurnSnapshot,
         ThreadItemSnapshot,
         ThreadLiveState,

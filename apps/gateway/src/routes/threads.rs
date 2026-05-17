@@ -24,6 +24,7 @@ use crate::{
     },
     error::{ApiError, ApiResult},
     store::{EventEnvelope, NewEvent, ThreadComposerSettings, ThreadRead},
+    timeline_projection,
 };
 
 pub const THREAD_PIN_UPDATED_EVENT: &str = "thread.pin_updated";
@@ -671,10 +672,11 @@ pub async fn get_thread(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
 ) -> ApiResult<Json<ThreadDetailResponse>> {
+    let timeline_revision = state.store.latest_event_seq().await?;
     let mut response = app_server_api::client(&state.app_server)
         .thread_read_full_history(thread_id)
         .await?;
-    apply_thread_detail_response_state(&state, &mut response).await?;
+    apply_thread_detail_response_state(&state, &mut response, timeline_revision).await?;
     Ok(Json(response))
 }
 
@@ -908,9 +910,18 @@ pub(crate) async fn apply_thread_command_response_state(
 async fn apply_thread_detail_response_state(
     state: &AppState,
     response: &mut ThreadDetailResponse,
+    timeline_revision: i64,
 ) -> ApiResult<()> {
     apply_thread_summary_state(state, std::slice::from_mut(&mut response.thread)).await?;
     apply_thread_detail_skill_mentions(state, response).await?;
+    response.timeline = timeline_projection::build_thread_timeline(
+        &state.store,
+        &response.thread.id,
+        &response.turns,
+        timeline_revision,
+    )
+    .await?;
+    response.live_state = response.timeline.live_state;
     sync_raw_response_thread(&mut response.raw_payload, &response.thread);
     Ok(())
 }

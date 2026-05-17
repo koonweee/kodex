@@ -8,6 +8,7 @@ import {
   baseRoutes,
   mockGateway,
   project,
+  projectionPatchEvent,
   snapshotItem,
   snapshotTurn,
   thread,
@@ -113,21 +114,16 @@ describe("subagent thread viewer", () => {
     });
 
     act(() => {
-      subagentStream?.emitNamed("timeline.item_upsert", {
+      subagentStream?.emitNamed("timeline.projection_patch", projectionPatchEvent({
         id: "subagent-live-event",
         seq: 9,
-        kind: "timeline.item_upsert",
-        codexMethod: "item/upsert",
         projectId: project.id,
         threadId: "subagent-1",
         turnId: "sub-turn-2",
         itemId: "sub-live-answer",
-        payload: {
-          source: "gatewayStream",
-          item: { id: "sub-live-answer", type: "agentMessage", text: "Subagent live update" },
-        },
-        receivedAt: "2026-04-30T00:00:02Z",
-      });
+        text: "Subagent live update",
+        displayOrder: 9,
+      }));
     });
 
     const viewer = await screen.findByRole("complementary", { name: /subagent thread viewer/i });

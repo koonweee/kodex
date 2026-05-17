@@ -91,6 +91,7 @@ export type TimelineState = {
   hiddenItems: TimelineItem[];
   turns: TimelineTurn[];
   lastSeq: number;
+  projectionRevision: number;
 };
 
 export type TimelineIndexes = {
@@ -108,6 +109,7 @@ export type TimelineDraft = {
   activeTurnId: string | null;
   indexes: TimelineIndexes;
   lastSeq: number;
+  projectionRevision: number;
 };
 
 const stateIndexes = new WeakMap<TimelineState, TimelineIndexes>();
@@ -118,6 +120,7 @@ export function createTimelineState(): TimelineState {
     activeTurnId: null,
     indexes: createEmptyTimelineIndexes(),
     lastSeq: 0,
+    projectionRevision: 0,
   });
 }
 
@@ -125,6 +128,7 @@ export function createTimelineStateFromDraft(draft: TimelineDraft): TimelineStat
   const state = {
     activeTurnId: draft.activeTurnId,
     lastSeq: draft.lastSeq,
+    projectionRevision: draft.projectionRevision,
   } as TimelineState;
   let itemsCache: TimelineItem[] | null = null;
   let hiddenItemsCache: TimelineItem[] | null = null;

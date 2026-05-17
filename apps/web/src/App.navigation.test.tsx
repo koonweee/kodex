@@ -177,6 +177,53 @@ describe("deep link navigation", () => {
     expect(screen.queryByRole("heading", { name: /stale sidebar title/i })).not.toBeInTheDocument();
   });
 
+  it("does not let selected detail regress sidebar thread ordering timestamps", async () => {
+    goTo("/");
+    const frameworkThread = {
+      ...thread,
+      id: "thread-framework",
+      name: "Framework thread",
+      updatedAt: 300,
+    };
+    const middleThread = {
+      ...thread,
+      id: "thread-middle",
+      name: "Middle thread",
+      updatedAt: 200,
+    };
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [frameworkThread, middleThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "GET /v1/threads/thread-framework": threadDetail({
+          ...frameworkThread,
+          name: "Framework detail title",
+          updatedAt: 100,
+        }),
+        "GET /v1/threads/thread-framework/queued-inputs": { queuedInputs: [] },
+      }),
+    );
+
+    render(<App />);
+
+    const frameworkButton = await screen.findByRole("button", { name: /framework thread/i });
+    const middleButton = screen.getByRole("button", { name: /middle thread/i });
+    expect(frameworkButton.compareDocumentPosition(middleButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await userEvent.click(frameworkButton);
+    expect(await screen.findByRole("heading", { name: /framework detail title/i })).toBeInTheDocument();
+
+    const updatedFrameworkButton = screen
+      .getAllByRole("button", { name: /framework detail title/i })
+      .find((button) => button.classList.contains("kodex-thread-select-button"));
+    expect(updatedFrameworkButton).toBeDefined();
+    expect(updatedFrameworkButton!.compareDocumentPosition(middleButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("returns to the draft chat composer when browser navigation returns to the root route", async () => {
     goTo("/");
     mockGateway(

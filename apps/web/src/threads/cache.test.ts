@@ -12,6 +12,7 @@ import {
   mergeProjectThreadSnapshot,
   pinnedTombstonesAddedDuringSnapshot,
   removeThreadEverywhere,
+  replaceThreadEverywhere,
   upsertChatThread,
   upsertProjectThread,
 } from "./cache";
@@ -128,6 +129,39 @@ describe("thread query cache helpers", () => {
 
     expect(queryClient.getQueryData(queryKeys.projectThreads("project-1"))).toEqual([
       thread("thread-live", { name: "Updated" }),
+    ]);
+  });
+
+  it("merges selected detail without regressing sidebar ordering timestamps", () => {
+    const queryClient = createKodexQueryClient();
+    const sidebarThread = thread("thread-selected", {
+      createdAt: 50,
+      name: "Sidebar title",
+      updatedAt: 300,
+    });
+    upsertProjectThread(queryClient, "project-1", sidebarThread);
+
+    replaceThreadEverywhere(
+      queryClient,
+      thread("thread-selected", {
+        createdAt: 40,
+        lastCompletedAgentTurnSeq: 2,
+        name: "Detail title",
+        seenCompletedAgentTurnSeq: 1,
+        unreadCompletedAgentTurn: true,
+        updatedAt: 100,
+      }),
+    );
+
+    expect(queryClient.getQueryData(queryKeys.projectThreads("project-1"))).toEqual([
+      thread("thread-selected", {
+        createdAt: 50,
+        lastCompletedAgentTurnSeq: 2,
+        name: "Detail title",
+        seenCompletedAgentTurnSeq: 1,
+        unreadCompletedAgentTurn: true,
+        updatedAt: 300,
+      }),
     ]);
   });
 

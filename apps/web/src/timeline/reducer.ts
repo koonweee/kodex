@@ -1,4 +1,11 @@
-import type { EventEnvelope, ThreadDetailResponse, TimelineSkillMention } from "../api/client";
+import type {
+  EventEnvelope,
+  ThreadDetailResponse,
+  ThreadTimelineSnapshot,
+  ThreadTimelineSnapshotItem,
+  TimelineProjectionPatch,
+  TimelineSkillMention,
+} from "../api/client";
 import {
   createBaseItem,
   createDiagnosticItem,
@@ -51,13 +58,13 @@ export type {
 } from "./state";
 
 const LIVE_TIMELINE_EVENT_KINDS = new Set([
-  "timeline.item_delta",
-  "timeline.item_upsert",
+  "timeline.projection_patch",
   "timeline.turn_upsert",
   "timeline.thread_status",
 ]);
 
 type TimelineEventApplyOptions = {
+  disableEquivalentCompletedItemMatch?: boolean;
   skipOptimisticUserMessageMatch?: boolean;
   preserveIncomingDisplayOrderOnConfirm?: boolean;
 };
@@ -68,6 +75,9 @@ export function applyLiveTimelineUpdate(state: TimelineState, event: EventEnvelo
   }
   if (event.kind === "timeline.snapshot") {
     return applyTimelineSnapshot(state, event.payload as ThreadDetailResponse);
+  }
+  if (event.kind === "timeline.projection_patch") {
+    return applyTimelineProjectionPatch(state, event);
   }
   if (!LIVE_TIMELINE_EVENT_KINDS.has(event.kind)) {
     return applyDebugEvent(state, event);
@@ -80,6 +90,7 @@ export function applyDebugEvent(state: TimelineState, event: EventEnvelope): Tim
     activeTurnId: state.activeTurnId,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
     lastSeq: Math.max(state.lastSeq, event.seq),
+    projectionRevision: state.projectionRevision,
   };
   if (isWarningEvent(event) || isErrorEvent(event)) {
     addOrReplaceItem(next, createDiagnosticItem(event));
@@ -107,6 +118,7 @@ function applyTimelineEventInternal(
     activeTurnId: nextActiveTurnId(state.activeTurnId, event, currentIndexes),
     indexes: prepareTimelineIndexesForUpdate(currentIndexes),
     lastSeq: Math.max(state.lastSeq, event.seq),
+    projectionRevision: state.projectionRevision,
   };
   if (event.kind === "timeline.turn_upsert") {
     upsertTimelineTurn(next, event);
@@ -135,6 +147,7 @@ export function addOptimisticUserMessage(state: TimelineState, input: Optimistic
     activeTurnId: state.activeTurnId,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
     lastSeq: state.lastSeq,
+    projectionRevision: state.projectionRevision,
   };
   const item: TimelineItem = {
     id: `optimistic-${input.clientRequestId}`,
@@ -176,6 +189,7 @@ export function updateOptimisticUserMessage(
     activeTurnId: state.activeTurnId,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
     lastSeq: state.lastSeq,
+    projectionRevision: state.projectionRevision,
   };
   const item = timelineItems(next.indexes).find((candidate) => candidate.clientRequestId === clientRequestId);
   if (!item) {
@@ -195,6 +209,7 @@ export function removeOptimisticUserMessage(state: TimelineState, clientRequestI
     activeTurnId: state.activeTurnId,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
     lastSeq: state.lastSeq,
+    projectionRevision: state.projectionRevision,
   };
   const item = timelineItems(next.indexes).find(
     (candidate) => candidate.source === "optimistic" && candidate.clientRequestId === clientRequestId,
@@ -213,85 +228,108 @@ export function replayTimeline(events: EventEnvelope[]): TimelineState {
 }
 
 export function applyTimelineSnapshot(state: TimelineState, snapshot: ThreadDetailResponse): TimelineState {
+  return applyCanonicalTimelineSnapshot(state, snapshot, snapshot.timeline);
+}
+
+function applyCanonicalTimelineSnapshot(
+  state: TimelineState,
+  snapshot: ThreadDetailResponse,
+  canonicalTimeline: ThreadTimelineSnapshot,
+): TimelineState {
+  if ((canonicalTimeline.revision ?? 0) < state.projectionRevision) {
+    return state;
+  }
   let next = optimisticOnlyTimeline(state);
   let displayOrder = 0;
-  const knownAppServerItemIds = appServerItemIdsForState(state);
-  for (const turn of snapshot.turns) {
-    for (const item of turn.items) {
-      displayOrder += 1;
-      next = applySnapshotItem(next, snapshot.thread.id, turn, item, displayOrder, knownAppServerItemIds);
-    }
+  for (const item of canonicalTimelineItemsInDisplayOrder(canonicalTimeline)) {
+    displayOrder = Math.max(displayOrder, item.displayOrder);
+    next = applyCanonicalSnapshotItem(next, snapshot.thread.id, item, {
+      allowOptimisticUserMessageMatch: false,
+      knownAppServerItemIds: new Set(),
+    });
   }
   next = moveUnmatchedLocalUserMessagesAfterSnapshot(next, displayOrder);
   next = withSnapshotTurnMetadata(next, snapshot);
-  return withSnapshotLiveState(next, snapshot);
+  next = withCanonicalSnapshotLiveState(next, canonicalTimeline);
+  return withTimelineLastSeq(next, Math.max(state.lastSeq, canonicalTimeline.revision ?? 0));
 }
 
-function applySnapshotItem(
+function canonicalTimelineItemsInDisplayOrder(timeline: ThreadTimelineSnapshot): ThreadTimelineSnapshotItem[] {
+  return [...timeline.items].sort((left, right) => left.displayOrder - right.displayOrder);
+}
+
+function applyCanonicalSnapshotItem(
   state: TimelineState,
   threadId: string,
-  turn: ThreadDetailResponse["turns"][number],
-  item: ThreadDetailResponse["turns"][number]["items"][number],
-  displayOrder: number,
-  knownAppServerItemIds: Set<string>,
+  item: ThreadTimelineSnapshotItem,
+  options: { allowOptimisticUserMessageMatch: boolean; knownAppServerItemIds: Set<string> },
 ): TimelineState {
-  const event = snapshotItemEvent(threadId, turn, item, displayOrder);
+  const event = canonicalSnapshotItemEvent(threadId, item);
   const currentIndexes = indexesForState(state);
   const next: TimelineDraft = {
     activeTurnId: state.activeTurnId,
     indexes: prepareTimelineIndexesForUpdate(currentIndexes),
     lastSeq: state.lastSeq,
+    projectionRevision: state.projectionRevision,
   };
   return applyTimelineItemEventToDraft(state, next, event, {
+    disableEquivalentCompletedItemMatch: true,
     preserveIncomingDisplayOrderOnConfirm: true,
-    skipOptimisticUserMessageMatch: snapshotItemShouldSkipLocalUserMessageMatch(item, knownAppServerItemIds),
+    skipOptimisticUserMessageMatch: canonicalItemShouldSkipLocalUserMessageMatch(item, options),
   });
 }
 
-function snapshotItemEvent(
-  threadId: string,
-  turn: ThreadDetailResponse["turns"][number],
-  item: ThreadDetailResponse["turns"][number]["items"][number],
-  displayOrder: number,
-): EventEnvelope {
-  const timestampMs = snapshotItemTimestampMs(turn, item);
+function canonicalItemShouldSkipLocalUserMessageMatch(
+  item: ThreadTimelineSnapshotItem,
+  options: { allowOptimisticUserMessageMatch: boolean; knownAppServerItemIds: Set<string> },
+): boolean {
+  if (!item.itemType.toLowerCase().includes("user")) {
+    return false;
+  }
+  return !options.allowOptimisticUserMessageMatch || options.knownAppServerItemIds.has(item.itemId);
+}
+
+function canonicalSnapshotItemEvent(threadId: string, item: ThreadTimelineSnapshotItem): EventEnvelope {
   return {
-    id: `snapshot-${turn.id}-${item.id}`,
-    seq: displayOrder,
+    id: item.id,
+    seq: item.displayOrder,
     kind: "timeline.item_upsert",
-    codexMethod: turn.status === "completed" ? "item/completed" : "item/started",
-    threadId,
-    turnId: turn.id,
-    itemId: item.id,
+    codexMethod: item.codexMethod ?? "item/upsert",
+    threadId: item.threadId ?? threadId,
+    turnId: item.turnId,
+    itemId: item.itemId,
     projectId: null,
-    payload: { item: item.rawPayload, itemSnapshot: item },
-    receivedAt: timestampMs !== undefined ? new Date(timestampMs).toISOString() : new Date(0).toISOString(),
+    payload: item.payload,
+    receivedAt: canonicalSnapshotItemReceivedAt(item),
   };
 }
 
-function snapshotItemTimestampMs(
-  turn: ThreadDetailResponse["turns"][number],
-  item: ThreadDetailResponse["turns"][number]["items"][number],
-): number | undefined {
-  const itemType = item.itemType.toLowerCase();
-  if (itemType.includes("user")) {
-    return unixSecondsToMs(turn.startedAt);
-  }
-  if (itemType.includes("agent") || itemType.includes("assistant")) {
-    return unixSecondsToMs(turn.completedAt) ?? unixSecondsToMs(turn.startedAt);
-  }
-  return unixSecondsToMs(turn.startedAt);
+function canonicalSnapshotItemReceivedAt(item: ThreadTimelineSnapshotItem): string {
+  return typeof item.timestampMs === "number" ? new Date(item.timestampMs).toISOString() : new Date(0).toISOString();
 }
 
-function snapshotItemShouldSkipLocalUserMessageMatch(
-  item: ThreadDetailResponse["turns"][number]["items"][number],
-  knownAppServerItemIds: Set<string>,
-): boolean {
-  return snapshotItemIsUserMessage(item) && knownAppServerItemIds.has(item.id);
-}
+function applyTimelineProjectionPatch(state: TimelineState, event: EventEnvelope): TimelineState {
+  if (event.seq <= state.lastSeq) {
+    return state;
+  }
+  const patch = event.payload as TimelineProjectionPatch;
+  if ((patch.revision ?? 0) <= state.projectionRevision) {
+    return withIgnoredProjectionPatchCursor(state, patch, event.seq);
+  }
+  const threadId = event.threadId ?? patch.threadId;
+  if (!threadId) {
+    return applyDebugEvent(state, event);
+  }
 
-function snapshotItemIsUserMessage(item: ThreadDetailResponse["turns"][number]["items"][number]): boolean {
-  return item.itemType.toLowerCase().includes("user");
+  let next = state;
+  for (const item of [...(patch.items ?? [])].sort((left, right) => left.displayOrder - right.displayOrder)) {
+    next = applyCanonicalSnapshotItem(next, threadId, item, {
+      allowOptimisticUserMessageMatch: true,
+      knownAppServerItemIds: appServerItemIdsForState(next),
+    });
+  }
+  next = withProjectionPatchLiveState(next, patch, event.seq);
+  return withTimelineLastSeq(next, Math.max(event.seq, patch.revision ?? 0));
 }
 
 function appServerItemIdsForState(state: TimelineState): Set<string> {
@@ -310,6 +348,7 @@ function optimisticOnlyTimeline(state: TimelineState): TimelineState {
     activeTurnId: null,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(createTimelineState())),
     lastSeq: 0,
+    projectionRevision: state.projectionRevision,
   };
   for (const item of state.items) {
     if (!shouldCarryLocalUserMessageAcrossSnapshot(item)) {
@@ -326,8 +365,10 @@ function shouldCarryLocalUserMessageAcrossSnapshot(item: TimelineItem): boolean 
   return (
     item.kind === "user_message" &&
     Boolean(item.clientRequestId) &&
-    (item.confirmationState !== "failed" || hasSkillMentions) &&
-    (item.source === "optimistic" || item.confirmationState === "sent")
+    item.source === "optimistic" &&
+    !item.serverItemId &&
+    item.confirmationState !== "sent" &&
+    (item.confirmationState !== "failed" || hasSkillMentions)
   );
 }
 
@@ -340,6 +381,7 @@ function moveUnmatchedLocalUserMessagesAfterSnapshot(state: TimelineState, snaps
     activeTurnId: state.activeTurnId,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
     lastSeq: state.lastSeq,
+    projectionRevision: state.projectionRevision,
   };
   let displayOrder = snapshotMaxDisplayOrder;
   let changed = false;
@@ -359,6 +401,7 @@ function withSnapshotTurnMetadata(state: TimelineState, snapshot: ThreadDetailRe
     activeTurnId: state.activeTurnId,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
     lastSeq: state.lastSeq,
+    projectionRevision: state.projectionRevision,
   };
   for (const turn of snapshot.turns) {
     upsertTimelineTurnSnapshot(next, {
@@ -379,15 +422,49 @@ function shouldMoveLocalUserMessageAfterSnapshot(item: TimelineItem, snapshotMax
   );
 }
 
-function withSnapshotLiveState(state: TimelineState, snapshot: ThreadDetailResponse): TimelineState {
-  const activeTurn = [...snapshot.turns].reverse().find((turn) => !isTerminalTurnStatus(turn.status));
-  if (!activeTurn && state.activeTurnId === null) {
+function withCanonicalSnapshotLiveState(state: TimelineState, timeline: ThreadTimelineSnapshot): TimelineState {
+  return createTimelineStateFromDraft({
+    activeTurnId: timeline.activeTurnId ?? null,
+    indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    lastSeq: state.lastSeq,
+    projectionRevision: Math.max(state.projectionRevision, timeline.revision ?? 0),
+  });
+}
+
+function withProjectionPatchLiveState(state: TimelineState, patch: TimelineProjectionPatch, eventSeq: number): TimelineState {
+  if (patch.activeTurnId === undefined && patch.liveState !== "idle") {
     return state;
   }
   return createTimelineStateFromDraft({
-    activeTurnId: activeTurn ? activeTurn.id : null,
+    activeTurnId: patch.liveState === "idle" ? null : (patch.activeTurnId ?? state.activeTurnId),
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
     lastSeq: state.lastSeq,
+    projectionRevision: Math.max(state.projectionRevision, patch.revision ?? 0, eventSeq),
+  });
+}
+
+function withIgnoredProjectionPatchCursor(
+  state: TimelineState,
+  patch: TimelineProjectionPatch,
+  eventSeq: number,
+): TimelineState {
+  return createTimelineStateFromDraft({
+    activeTurnId: state.activeTurnId,
+    indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    lastSeq: Math.max(state.lastSeq, eventSeq),
+    projectionRevision: Math.max(state.projectionRevision, patch.revision ?? 0, eventSeq),
+  });
+}
+
+function withTimelineLastSeq(state: TimelineState, lastSeq: number): TimelineState {
+  if (state.lastSeq === lastSeq) {
+    return state;
+  }
+  return createTimelineStateFromDraft({
+    activeTurnId: state.activeTurnId,
+    indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
+    lastSeq,
+    projectionRevision: state.projectionRevision,
   });
 }
 
@@ -502,7 +579,7 @@ function applyPresentedTimelineItem(
         : undefined;
     const confirmedItem =
       exactConfirmedUserItem ??
-      (optimisticItem
+      (optimisticItem || options.disableEquivalentCompletedItemMatch
         ? undefined
         : matchingConfirmedAppServerItem(next.indexes, presentation.item, {
             allowUntetheredUserMessageMatch: !options.skipOptimisticUserMessageMatch,

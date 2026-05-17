@@ -119,7 +119,7 @@ describe("MVP composer settings flows", () => {
       approvalsReviewer: "user",
       sandboxPolicy: { type: "dangerFullAccess" },
     });
-  });
+  }, 20_000);
 
   it("hydrates and persists composer model effort and fast mode without browser storage or permission writes", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);

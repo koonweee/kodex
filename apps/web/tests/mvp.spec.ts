@@ -37,6 +37,58 @@ const approval = {
   resolvedAt: null,
 };
 
+type TestTurn = {
+  id: string;
+  status: string;
+  items: Array<{ id: string; itemType: string; rawPayload: unknown }>;
+  startedAt?: number;
+  completedAt?: number;
+  rawPayload?: unknown;
+};
+
+function threadDetailBody(sourceThread: Record<string, unknown>, turns: TestTurn[] = [], liveState = "idle") {
+  return {
+    thread: sourceThread,
+    turns,
+    liveState,
+    timeline: timelineFromTurns(sourceThread, turns, liveState),
+    rawPayload: {},
+  };
+}
+
+function timelineFromTurns(sourceThread: Record<string, unknown>, turns: TestTurn[], liveState: string) {
+  let displayOrder = 0;
+  const activeTurn = [...turns].reverse().find((turn) => !["completed", "failed", "cancelled"].includes(turn.status));
+  return {
+    revision: 1,
+    activeTurnId: activeTurn?.id ?? null,
+    liveState,
+    items: turns.flatMap((turn) =>
+      turn.items.map((item) => {
+        displayOrder += 1;
+        return {
+          id: `snapshot-${turn.id}-${item.id}`,
+          threadId: String(sourceThread.id),
+          turnId: turn.id,
+          itemId: item.id,
+          itemType: item.itemType,
+          status: turn.status === "completed" ? "completed" : turn.status,
+          displayOrder,
+          codexMethod: turn.status === "completed" ? "item/completed" : "item/upsert",
+          timestampMs: displayOrder,
+          payload: {
+            source: "appServerSnapshot",
+            turnId: turn.id,
+            itemId: item.id,
+            item: item.rawPayload,
+            itemSnapshot: item,
+          },
+        };
+      }),
+    ),
+  };
+}
+
 test.beforeEach(async ({ page }) => {
   await mockGateway(page);
 });
@@ -142,10 +194,7 @@ test("keeps long timeline content inside the thread viewer", async ({ page }) =>
       status: 200,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        thread,
-        liveState: "idle",
-        rawPayload: {},
-        turns: [
+        ...threadDetailBody(thread, [
           {
             id: "turn-1",
             status: "completed",
@@ -168,7 +217,7 @@ test("keeps long timeline content inside the thread viewer", async ({ page }) =>
               },
             ],
           },
-        ],
+        ]),
       }),
     });
   });
@@ -230,12 +279,7 @@ test("lets thread titles use the expanded sidebar width before truncating", asyn
           }
         : key === "GET /v1/threads/thread-1"
           ? {
-              body: {
-                thread: { ...thread, name: longTitle, status: "idle" },
-                turns: [],
-                liveState: "idle",
-                rawPayload: {},
-              },
+              body: threadDetailBody({ ...thread, name: longTitle, status: "idle" }),
             }
         : key === "GET /v1/approvals"
           ? { body: { approvals: [] } }
@@ -261,6 +305,7 @@ test("lets thread titles use the expanded sidebar width before truncating", asyn
 
   const threadButton = page.locator(".kodex-thread-list-button").first();
   await expect(threadButton).toBeVisible();
+  await threadButton.hover();
 
   const metrics = await threadButton.evaluate((button) => {
     const titleNode = button.querySelector(".kodex-thread-list-title");
@@ -475,6 +520,24 @@ test("restores selected thread model settings when switching threads", async ({ 
       return;
     }
 
+    if (key === "GET /v1/chats/threads" || key === "GET /v1/threads/pinned") {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} }),
+      });
+      return;
+    }
+
+    if (key === "GET /v1/approvals") {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approvals: [] }),
+      });
+      return;
+    }
+
     if (key.startsWith("GET /v1/threads/") && !key.endsWith("/resume") && !key.endsWith("/queued-inputs")) {
       const threadId = url.pathname.split("/").at(-1);
       const thread = threadId ? threadsById[threadId] : null;
@@ -485,8 +548,7 @@ test("restores selected thread model settings when switching threads", async ({ 
       await route.fulfill({
         status: 200,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          thread: {
+        body: JSON.stringify(threadDetailBody({
             id: thread.id,
             name: thread.name,
             cwd: "/tmp",
@@ -499,11 +561,7 @@ test("restores selected thread model settings when switching threads", async ({ 
             rawPayload: { model: thread.model },
             createdAt: 1777500000,
             updatedAt: 1777501000,
-          },
-          turns: [],
-          liveState: "idle",
-          rawPayload: {},
-        }),
+          })),
       });
       return;
     }
@@ -559,12 +617,12 @@ test("restores selected thread model settings when switching threads", async ({ 
 
   await page.goto("/");
 
-  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.getByRole("button", { name: /start new chat from desktop header/i }).click();
   await page.getByLabel(/message composer/i).fill("mini thread message");
   await page.getByRole("button", { name: /send message/i }).click();
   await expect(await page.getByRole("button", { name: /model: gpt-5\.4mini/i })).toBeVisible();
 
-  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.getByRole("button", { name: /start new chat from desktop header/i }).click();
   await page.getByLabel(/message composer/i).fill("spark thread message");
   await page.getByRole("button", { name: /send message/i }).click();
   await expect(await page.getByRole("button", { name: /model: gpt-5\.3spark/i })).toBeVisible();
@@ -583,18 +641,7 @@ async function mockGateway(page: Page) {
       await route.fulfill({
         status: 200,
         headers: { "Content-Type": "text/event-stream" },
-        body: sse({
-          id: "event-2",
-          seq: Number(url.searchParams.get("cursor") ?? "1") + 1,
-          kind: "timeline.item_delta",
-          codexMethod: "item/agentMessage/delta",
-          projectId: project.id,
-          threadId: thread.id,
-          turnId: "turn-1",
-          itemId: "item-stream",
-          payload: { source: "gatewayStream", delta: "Streamed assistant output", rawPayload: { delta: "Streamed assistant output" } },
-          receivedAt: "2026-04-30T00:00:01Z",
-        }),
+        body: "",
       });
       return;
     }
@@ -644,9 +691,9 @@ async function responseFor(key: string, route: Route): Promise<{ status?: number
   }
   if (key === "GET /v1/threads/thread-1") {
     return {
-      body: {
-        thread: { ...thread, lastCompletedAgentTurnSeq: 1, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: true },
-        turns: [
+      body: threadDetailBody(
+        { ...thread, lastCompletedAgentTurnSeq: 1, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: true },
+        [
           {
             id: "turn-1",
             status: "completed",
@@ -662,9 +709,7 @@ async function responseFor(key: string, route: Route): Promise<{ status?: number
             rawPayload: {},
           },
         ],
-        liveState: "idle",
-        rawPayload: {},
-      },
+      ),
     };
   }
   if (key === "POST /v1/threads") {

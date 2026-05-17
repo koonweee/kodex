@@ -5,6 +5,7 @@ import { deriveTimelineRows, timelineItemsInDisplayOrder } from "./derive";
 import {
   addOptimisticUserMessage,
   applyDebugEvent,
+  applyLiveTimelineUpdate,
   applyTimelineEvent,
   applyTimelineSnapshot,
   createTimelineState,
@@ -46,10 +47,17 @@ describe("timeline reducer snapshots", () => {
     });
   });
 
+  it("keeps distinct canonical rows that share the same text", () => {
+    const state = applyTimelineSnapshot(createTimelineState(), snapshotWithDuplicateAssistantText());
+
+    expect(state.items.map((item) => item.id)).toEqual(["user-1", "agent-1", "agent-2"]);
+    expect(state.items.map((item) => item.text)).toEqual(["Hello", "Repeated", "Repeated"]);
+  });
+
   it("keeps snapshot display order separate from the live event cursor", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot("First answer", "agent-1"));
 
-    expect(state.lastSeq).toBe(0);
+    expect(state.lastSeq).toBe(1);
     expect(timelineItemsInDisplayOrder(state).map((item) => item.displayOrder)).toEqual([1, 2]);
 
     state = applyTimelineEvent(state, liveAgentEvent(20, "agent-2", "Streaming answer"));
@@ -83,7 +91,7 @@ describe("timeline reducer snapshots", () => {
     expect(timelineItemsInDisplayOrder(state).map((item) => item.displayOrder)).toEqual([0.1]);
   });
 
-  it("reconciles optimistic user messages when the snapshot includes the server item", () => {
+  it("keeps in-flight optimistic user messages separate from canonical snapshot rows", () => {
     let state = addOptimisticUserMessage(createTimelineState(), {
       clientRequestId: "client-message-1",
       images: [],
@@ -94,14 +102,14 @@ describe("timeline reducer snapshots", () => {
 
     state = applyTimelineSnapshot(state, snapshot("Agent response", "agent-1"));
 
-    expect(state.items).toHaveLength(2);
+    expect(state.items).toHaveLength(3);
     expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
-      "optimistic-client-message-1",
+      "user-1",
       "agent-1",
+      "optimistic-client-message-1",
     ]);
     expect(timelineItemsInDisplayOrder(state)[0]).toMatchObject({
-      serverItemId: "user-1",
-      source: "app_server",
+      id: "user-1",
     });
   });
 
@@ -122,7 +130,7 @@ describe("timeline reducer snapshots", () => {
     });
   });
 
-  it("replaces optimistic skill mentions with confirmed snapshot metadata", () => {
+  it("keeps canonical skill mention metadata separate from local optimistic metadata", () => {
     let state = addOptimisticUserMessage(createTimelineState(), {
       clientRequestId: "client-message-1",
       images: [],
@@ -144,7 +152,7 @@ describe("timeline reducer snapshots", () => {
     state = applyTimelineSnapshot(state, snapshotWithSkillMention());
 
     expect(timelineItemsInDisplayOrder(state)[0]).toMatchObject({
-      serverItemId: "user-skill",
+      id: "user-skill",
       skillMentions: [
         {
           name: "agent-browser",
@@ -154,9 +162,18 @@ describe("timeline reducer snapshots", () => {
         },
       ],
     });
+    expect(timelineItemsInDisplayOrder(state).at(-1)).toMatchObject({
+      id: "optimistic-client-message-1",
+      skillMentions: [
+        {
+          path: "/stale/SKILL.md",
+          displayName: "Stale Agent Browser",
+        },
+      ],
+    });
   });
 
-  it("preserves provisional skill mentions when confirmation has matching text but no normalized mentions", () => {
+  it("preserves provisional skill mentions on the separate local optimistic row", () => {
     let state = addOptimisticUserMessage(createTimelineState(), {
       clientRequestId: "client-message-1",
       images: [],
@@ -176,11 +193,10 @@ describe("timeline reducer snapshots", () => {
     state = applyTimelineSnapshot(state, snapshotWithUserOnlyTurn("Use $agent-browser now"));
 
     expect(timelineItemsInDisplayOrder(state)[0]).toMatchObject({
-      serverItemId: "user-1",
-      source: "app_server",
+      id: "user-1",
       text: "Use $agent-browser now",
     });
-    expect(timelineItemsInDisplayOrder(state)[0]?.skillMentions).toEqual([
+    expect(timelineItemsInDisplayOrder(state).at(-1)?.skillMentions).toEqual([
       {
         start: "Use ".length,
         end: "Use $agent-browser".length,
@@ -386,7 +402,7 @@ describe("timeline reducer snapshots", () => {
     });
   });
 
-  it("reconciles optimistic user messages when a running snapshot has only the user item", () => {
+  it("keeps in-flight optimistic messages separate when a running snapshot has only the user item", () => {
     let state = addOptimisticUserMessage(createTimelineState(), {
       clientRequestId: "client-message-1",
       images: [],
@@ -398,17 +414,16 @@ describe("timeline reducer snapshots", () => {
     state = applyTimelineSnapshot(state, snapshotWithUserOnlyTurn("Hello"));
 
     expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
+      "user-1",
       "optimistic-client-message-1",
     ]);
     expect(timelineItemsInDisplayOrder(state)[0]).toMatchObject({
-      serverItemId: "user-1",
-      source: "app_server",
-      confirmationState: "sent",
+      id: "user-1",
       turnId: "turn-1",
     });
   });
 
-  it("retains locally confirmed user messages across stale snapshots", () => {
+  it("drops locally confirmed user messages when canonical snapshots do not include them", () => {
     let state = addOptimisticUserMessage(createTimelineState(), {
       clientRequestId: "client-message-1",
       images: [],
@@ -436,19 +451,12 @@ describe("timeline reducer snapshots", () => {
       confirmationState: "sent",
     });
 
-    state = applyTimelineSnapshot(state, {
+    state = applyTimelineSnapshot(state, withCanonicalTimeline({
       ...snapshot("Agent response", "agent-1"),
       turns: [],
-    });
+    }));
 
-    expect(state.items).toHaveLength(1);
-    expect(state.items[0]).toMatchObject({
-      kind: "user_message",
-      clientRequestId: "client-message-1",
-      confirmationState: "sent",
-      text: "Hello",
-      turnId: "turn-1",
-    });
+    expect(state.items).toHaveLength(0);
   });
 
   it("keeps locally optimistic user messages after stale snapshot rows", () => {
@@ -494,7 +502,7 @@ describe("timeline reducer snapshots", () => {
     ]);
   });
 
-  it("reconciles same-text local user messages when a response snapshot was not loaded first", () => {
+  it("does not reconcile same-text in-flight local user messages from canonical snapshots", () => {
     let state = addOptimisticUserMessage(createTimelineState(), {
       clientRequestId: "client-message-1",
       images: [],
@@ -508,14 +516,15 @@ describe("timeline reducer snapshots", () => {
     expect(timelineItemsInDisplayOrder(state).map((item) => item.text)).toEqual([
       "Hello",
       "Previous answer",
+      "Hello",
     ]);
     expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
-      "optimistic-client-message-1",
+      "user-1",
       "agent-1",
+      "optimistic-client-message-1",
     ]);
     expect(timelineItemsInDisplayOrder(state)[0]).toMatchObject({
-      serverItemId: "user-1",
-      source: "app_server",
+      id: "user-1",
     });
   });
 
@@ -536,16 +545,15 @@ describe("timeline reducer snapshots", () => {
       "Previous answer",
     ]);
     expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
-      "optimistic-client-message-1",
+      "user-1",
       "agent-1",
     ]);
     expect(timelineItemsInDisplayOrder(state)[0]).toMatchObject({
-      serverItemId: "user-1",
-      source: "app_server",
+      id: "user-1",
     });
   });
 
-  it("reconciles the local user message when a refreshed snapshot includes a response", () => {
+  it("does not reconcile a local user message when a refreshed canonical snapshot includes a response", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot("Previous answer", "agent-1"));
     state = addOptimisticUserMessage(state, {
       clientRequestId: "client-message-1",
@@ -562,20 +570,21 @@ describe("timeline reducer snapshots", () => {
       "Previous answer",
       "New question",
       "Next answer",
+      "New question",
     ]);
     expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
       "user-1",
       "agent-1",
-      "optimistic-client-message-1",
+      "user-2",
       "agent-2",
+      "optimistic-client-message-1",
     ]);
     expect(timelineItemsInDisplayOrder(state)[2]).toMatchObject({
-      serverItemId: "user-2",
-      source: "app_server",
+      id: "user-2",
     });
   });
 
-  it("keeps the reconciled local user message when a direct server event replays after a response snapshot", () => {
+  it("keeps the separate local user message when a direct server event replays after a response snapshot", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot("Previous answer", "agent-1"));
     state = addOptimisticUserMessage(state, {
       clientRequestId: "client-message-1",
@@ -604,16 +613,17 @@ describe("timeline reducer snapshots", () => {
       "Previous answer",
       "New question",
       "Next answer",
+      "New question",
     ]);
     expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
       "user-1",
       "agent-1",
-      "optimistic-client-message-1",
+      "user-2",
       "agent-2",
+      "optimistic-client-message-1",
     ]);
     expect(timelineItemsInDisplayOrder(state)[2]).toMatchObject({
-      serverItemId: "user-2",
-      source: "app_server",
+      id: "user-2",
     });
   });
 
@@ -711,12 +721,11 @@ describe("timeline reducer snapshots", () => {
     state = applyTimelineSnapshot(state, snapshot("Previous answer", "agent-1"));
 
     expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
-      "optimistic-client-message-1",
+      "user-1",
       "agent-1",
     ]);
     expect(timelineItemsInDisplayOrder(state)[0]).toMatchObject({
-      serverItemId: "user-1",
-      source: "app_server",
+      id: "user-1",
     });
   });
 
@@ -1110,6 +1119,149 @@ describe("timeline reducer snapshots", () => {
     ]);
   });
 
+  it("uses gateway-projected active rows when an active-thread snapshot refreshes", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("Previous answer", "agent-1"));
+    state = applyTimelineEvent(state, {
+      id: "live-turn-upsert-1",
+      seq: 100,
+      kind: "timeline.turn_upsert",
+      codexMethod: "turn/upsert",
+      threadId: "thread-1",
+      turnId: "turn-2",
+      itemId: null,
+      projectId: null,
+      payload: {
+        source: "gatewayStream",
+        liveState: "streaming",
+        turn: { id: "turn-2", status: "inProgress", items: [] },
+      },
+      receivedAt: "2026-04-30T00:00:01Z",
+    });
+    state = applyTimelineEvent(state, {
+      id: "live-agent-delta-1",
+      seq: 101,
+      kind: "timeline.item_delta",
+      codexMethod: "item/agentMessage/delta",
+      threadId: "thread-1",
+      turnId: "turn-2",
+      itemId: "agent-live-1",
+      projectId: null,
+      payload: {
+        source: "gatewayStream",
+        type: "agentMessage",
+        delta: "I'll investigate",
+        rawPayload: { delta: "I'll investigate" },
+      },
+      receivedAt: "2026-04-30T00:00:02Z",
+    });
+
+    state = applyTimelineSnapshot(state, snapshotWithPreviousRunningUserAndProjectedAgent("New question"));
+
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.text)).toEqual([
+      "Hello",
+      "Previous answer",
+      "New question",
+      "I'll investigate",
+    ]);
+  });
+
+  it("uses gateway canonical snapshots as the source of truth after an active turn completes", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("Previous answer", "agent-1"));
+    state = applyTimelineEvent(state, liveAgentEvent(100, "live-only-agent", "stale live-only row"));
+
+    state = applyTimelineSnapshot(state, canonicalSnapshotWithCompletedImplementationTurn());
+
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.text)).toEqual([
+      "Hello",
+      "Previous answer",
+      "Ok implement",
+      "I'll update the push payload.",
+      "Implemented the ChatGPT-style notification content.",
+    ]);
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.id)).toEqual([
+      "user-1",
+      "agent-1",
+      "user-2",
+      "agent-progress-1",
+      "agent-final-1",
+    ]);
+  });
+
+  it("applies gateway projection patches after the canonical snapshot revision", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("Previous answer", "agent-1"));
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent(2, "agent-live-1", "Still working"));
+
+    expect(state.activeTurnId).toBe("turn-2");
+    expect(state.lastSeq).toBe(2);
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.text)).toEqual([
+      "Hello",
+      "Previous answer",
+      "Still working",
+    ]);
+  });
+
+  it("ignores stale snapshots that resolve after a newer projection patch", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("Previous answer", "agent-1"));
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent(2, "agent-live-1", "Still working"));
+
+    state = applyTimelineSnapshot(state, {
+      ...snapshot("Previous answer", "agent-1"),
+      timeline: {
+        ...snapshot("Previous answer", "agent-1").timeline,
+        revision: 1,
+      },
+    });
+
+    expect(state.lastSeq).toBe(2);
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.text)).toEqual([
+      "Hello",
+      "Previous answer",
+      "Still working",
+    ]);
+  });
+
+  it("ignores equal-revision stale snapshots after a newer projection patch event", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot("Previous answer", "agent-1"));
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent(3, "agent-live-1", "Still working", 2));
+
+    state = applyTimelineSnapshot(state, {
+      ...snapshot("Previous answer", "agent-1"),
+      timeline: {
+        ...snapshot("Previous answer", "agent-1").timeline,
+        revision: 2,
+      },
+    });
+
+    expect(state.lastSeq).toBe(3);
+    expect(state.projectionRevision).toBe(3);
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.text)).toEqual([
+      "Hello",
+      "Previous answer",
+      "Still working",
+    ]);
+  });
+
+  it("ignores projection patches whose revision is already included by the snapshot", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), {
+      ...snapshotWithSecondUser("New question", "Next answer"),
+      timeline: {
+        ...snapshotWithSecondUser("New question", "Next answer").timeline,
+        revision: 10,
+      },
+    });
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent(11, "pending-user-8", "New question", 10));
+
+    expect(state.activeTurnId).toBeNull();
+    expect(timelineItemsInDisplayOrder(state).map((item) => item.text)).toEqual([
+      "Hello",
+      "Previous answer",
+      "New question",
+      "Next answer",
+    ]);
+  });
+
   it("uses payload item ids to merge completed items when the event item id is absent", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot("Done", "agent-1"));
 
@@ -1135,7 +1287,7 @@ describe("timeline reducer snapshots", () => {
 });
 
 function snapshot(agentText: string, agentId: string): ThreadDetailResponse {
-  return {
+  return withCanonicalTimeline({
     thread: {
       id: "thread-1",
       name: "Snapshot thread",
@@ -1173,11 +1325,11 @@ function snapshot(agentText: string, agentId: string): ThreadDetailResponse {
         ],
       },
     ],
-  };
+  });
 }
 
 function snapshotWithWorkedItems(): ThreadDetailResponse {
-  return {
+  return withCanonicalTimeline({
     ...snapshot("Done", "agent-1"),
     turns: [
       {
@@ -1218,11 +1370,43 @@ function snapshotWithWorkedItems(): ThreadDetailResponse {
         ],
       },
     ],
-  };
+  });
+}
+
+function snapshotWithDuplicateAssistantText(): ThreadDetailResponse {
+  return withCanonicalTimeline({
+    ...snapshot("Repeated", "agent-1"),
+    turns: [
+      {
+        id: "turn-1",
+        status: "completed",
+        startedAt: 1,
+        completedAt: 2,
+        rawPayload: {},
+        items: [
+          {
+            id: "user-1",
+            itemType: "userMessage",
+            rawPayload: { id: "user-1", type: "userMessage", content: [{ type: "text", text: "Hello" }] },
+          },
+          {
+            id: "agent-1",
+            itemType: "agentMessage",
+            rawPayload: { id: "agent-1", type: "agentMessage", text: "Repeated" },
+          },
+          {
+            id: "agent-2",
+            itemType: "agentMessage",
+            rawPayload: { id: "agent-2", type: "agentMessage", text: "Repeated" },
+          },
+        ],
+      },
+    ],
+  });
 }
 
 function snapshotWithSkillMention(): ThreadDetailResponse {
-  return {
+  return withCanonicalTimeline({
     ...snapshot("Done", "agent-1"),
     turns: [
       {
@@ -1259,11 +1443,11 @@ function snapshotWithSkillMention(): ThreadDetailResponse {
         ],
       },
     ],
-  };
+  });
 }
 
 function snapshotWithSecondUser(userText: string, agentText: string): ThreadDetailResponse {
-  return {
+  return withCanonicalTimeline({
     ...snapshot("Previous answer", "agent-1"),
     turns: [
       ...snapshot("Previous answer", "agent-1").turns,
@@ -1287,11 +1471,129 @@ function snapshotWithSecondUser(userText: string, agentText: string): ThreadDeta
         ],
       },
     ],
-  };
+  });
+}
+
+function canonicalSnapshotWithCompletedImplementationTurn(): ThreadDetailResponse {
+  return withCanonicalTimeline({
+    ...snapshot("Previous answer", "agent-1"),
+    turns: [
+      ...snapshot("Previous answer", "agent-1").turns,
+      {
+        id: "turn-2",
+        status: "completed",
+        startedAt: 3,
+        completedAt: 4,
+        rawPayload: {},
+        items: [
+          {
+            id: "user-2",
+            itemType: "userMessage",
+            rawPayload: { id: "user-2", type: "userMessage", content: [{ type: "text", text: "Ok implement" }] },
+          },
+          {
+            id: "agent-progress-1",
+            itemType: "agentMessage",
+            rawPayload: { id: "agent-progress-1", type: "agentMessage", text: "I'll update the push payload." },
+          },
+          {
+            id: "agent-final-1",
+            itemType: "agentMessage",
+            rawPayload: {
+              id: "agent-final-1",
+              type: "agentMessage",
+              text: "Implemented the ChatGPT-style notification content.",
+              phase: "final_answer",
+            },
+          },
+        ],
+      },
+    ],
+    liveState: "idle",
+  });
+}
+
+function projectionPatchEvent(seq: number, itemId: string, text: string, revision = seq) {
+  return {
+    id: `projection-patch-${seq}`,
+    seq,
+    kind: "timeline.projection_patch",
+    codexMethod: "timeline/projection_patch",
+    threadId: "thread-1",
+    turnId: "turn-2",
+    itemId: null,
+    projectId: null,
+    payload: {
+      revision,
+      threadId: "thread-1",
+      activeTurnId: "turn-2",
+      liveState: "streaming",
+      items: [
+        {
+          id: `projection-turn-2-${itemId}`,
+          threadId: "thread-1",
+          turnId: "turn-2",
+          itemId,
+          itemType: "agentMessage",
+          displayOrder: 3,
+          codexMethod: "item/upsert",
+          status: "running",
+          timestampMs: 3_000,
+          payload: {
+            source: "gatewayStream",
+            turnId: "turn-2",
+            itemId,
+            item: { id: itemId, type: "agentMessage", text },
+            itemSnapshot: {
+              id: itemId,
+              itemType: "agentMessage",
+              rawPayload: { id: itemId, type: "agentMessage", text },
+            },
+          },
+        },
+      ],
+    },
+    receivedAt: "2026-04-30T00:00:02Z",
+  } as const;
+}
+
+function withCanonicalTimeline(snapshot: Omit<ThreadDetailResponse, "timeline"> | ThreadDetailResponse): ThreadDetailResponse {
+  let displayOrder = 0;
+  return {
+    ...snapshot,
+    timeline: {
+      revision: 1,
+      items: snapshot.turns.flatMap((turn) =>
+        turn.items.map((item) => {
+          displayOrder += 1;
+          const timestampMs = item.itemType.toLowerCase().includes("user")
+            ? (turn.startedAt ?? 0) * 1000
+            : (turn.completedAt ?? turn.startedAt ?? 0) * 1000;
+          return {
+            id: `snapshot-${turn.id}-${item.id}`,
+            threadId: snapshot.thread.id,
+            turnId: turn.id,
+            itemId: item.id,
+            itemType: item.itemType,
+            displayOrder,
+            codexMethod: turn.status === "completed" ? "item/completed" : "item/upsert",
+            timestampMs,
+            payload: {
+              source: "appServerSnapshot",
+              turnId: turn.id,
+              itemId: item.id,
+              item: item.rawPayload,
+              itemSnapshot: item,
+            },
+          };
+        }),
+      ),
+    },
+  } as ThreadDetailResponse;
 }
 
 function snapshotWithUserOnlyTurn(userText: string): ThreadDetailResponse {
-  return {
+  return withCanonicalTimeline({
     ...snapshot("Previous answer", "agent-1"),
     liveState: "streaming",
     turns: [
@@ -1310,12 +1612,12 @@ function snapshotWithUserOnlyTurn(userText: string): ThreadDetailResponse {
         ],
       },
     ],
-  };
+  });
 }
 
 function snapshotWithPreviousAndRunningUser(userText: string): ThreadDetailResponse {
   const previous = snapshot("Previous answer", "agent-1");
-  return {
+  return withCanonicalTimeline({
     ...previous,
     liveState: "streaming",
     turns: [
@@ -1335,7 +1637,43 @@ function snapshotWithPreviousAndRunningUser(userText: string): ThreadDetailRespo
         ],
       },
     ],
-  };
+  });
+}
+
+function snapshotWithPreviousRunningUserAndProjectedAgent(userText: string): ThreadDetailResponse {
+  const snapshot = snapshotWithPreviousAndRunningUser(userText);
+  return {
+    ...snapshot,
+    timeline: {
+      ...snapshot.timeline,
+      activeTurnId: "turn-2",
+      liveState: "streaming",
+      items: [
+        ...snapshot.timeline.items,
+        {
+          id: "projection-turn-2-agent-live-1",
+          threadId: snapshot.thread.id,
+          turnId: "turn-2",
+          itemId: "agent-live-1",
+          itemType: "agentMessage",
+          displayOrder: snapshot.timeline.items.length + 1,
+          codexMethod: "item/upsert",
+          timestampMs: 3_000,
+          payload: {
+            source: "gatewayStream",
+            turnId: "turn-2",
+            itemId: "agent-live-1",
+            item: { id: "agent-live-1", type: "agentMessage", text: "I'll investigate" },
+            itemSnapshot: {
+              id: "agent-live-1",
+              itemType: "agentMessage",
+              rawPayload: { id: "agent-live-1", type: "agentMessage", text: "I'll investigate" },
+            },
+          },
+        },
+      ],
+    },
+  } as ThreadDetailResponse;
 }
 
 function liveAgentEvent(seq: number, itemId: string, text: string) {

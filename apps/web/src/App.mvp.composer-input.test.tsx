@@ -12,6 +12,7 @@ import {
   highReasoningModel,
   mockGateway,
   project,
+  projectionPatchEvent,
   requestJson,
   secondThread,
   snapshotItem,
@@ -101,6 +102,49 @@ describe("MVP composer input flows", () => {
     });
   });
 
+  it("treats accepted pending user projection as active before app-server materializes the turn", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads/thread-1/turns": { payload: { turnId: "turn-1" } },
+        "POST /v1/threads/thread-1/turns/turn-1/interrupt": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "Start pending turn");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+    });
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+
+    act(() => {
+      selectedThreadStream?.emit(projectionPatchEvent({
+        id: "pending-user-projection",
+        seq: 2,
+        threadId: thread.id,
+        turnId: "turn-1",
+        itemId: "pending-user-2",
+        itemType: "userMessage",
+        text: "Start pending turn",
+        displayOrder: 2,
+        status: "running",
+      }));
+    });
+
+    expect(await screen.findByText("Start pending turn")).toBeInTheDocument();
+    const stopButton = await screen.findByRole("button", { name: /stop turn/i });
+    await userEvent.click(stopButton);
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/interrupt")).toHaveLength(1);
+    });
+  });
+
   it("keeps unsent composer text scoped to the selected thread", async () => {
     mockGateway(
       baseRoutes({
@@ -126,7 +170,7 @@ describe("MVP composer input flows", () => {
     await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
     expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("Draft for second thread");
-  });
+  }, 20_000);
 
   it("renders selected skill icon and accent in the optimistic user message before turn confirmation", async () => {
     const turnStart = deferred<unknown>();

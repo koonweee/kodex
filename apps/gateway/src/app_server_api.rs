@@ -131,7 +131,11 @@ impl CodexClient {
                 json!({ "threadId": thread_id, "includeTurns": false }),
             )
             .await?;
-        let turns = self.thread_turns_list_full(thread_id).await?;
+        let turns = match self.thread_turns_list_full(thread_id).await {
+            Ok(turns) => turns,
+            Err(error) if is_thread_history_not_materialized_error(&error) => Vec::new(),
+            Err(error) => return Err(error),
+        };
         ThreadDetailResponse::from_thread_payload_and_turns(payload, turns)
     }
 
@@ -629,6 +633,16 @@ fn is_rollout_load_error(error: &ApiError) -> bool {
     let normalized = message.to_ascii_lowercase();
     normalized.contains("failed to load rollout")
         || normalized.contains("failed to load thread history")
+}
+
+fn is_thread_history_not_materialized_error(error: &ApiError) -> bool {
+    let ApiError::BadGateway(message) = error else {
+        return false;
+    };
+    let normalized = message.to_ascii_lowercase();
+    normalized.contains("not materialized yet")
+        && normalized.contains("thread/turns/list")
+        && normalized.contains("before first user message")
 }
 
 pub fn client(app_server: &DynAppServer) -> CodexClient {
@@ -1659,6 +1673,7 @@ pub struct ThreadDetailResponse {
     pub thread: ThreadSummary,
     pub turns: Vec<ThreadTurnSnapshot>,
     pub live_state: ThreadLiveState,
+    pub timeline: ThreadTimelineSnapshot,
     pub raw_payload: Value,
 }
 
@@ -1678,10 +1693,12 @@ impl ThreadDetailResponse {
         let last_completed_agent_turn_seq = completed_turn_count(&turns);
         let mut thread = ThreadSummary::from_payload(thread)?;
         thread.apply_completed_agent_turn_read_state(last_completed_agent_turn_seq, 0);
+        let timeline = ThreadTimelineSnapshot::from_turns(&thread.id, &turns);
         Ok(Self {
             thread,
             turns,
             live_state,
+            timeline,
             raw_payload: payload,
         })
     }
@@ -1704,6 +1721,137 @@ impl ThreadDetailResponse {
 
         Self::from_payload(payload)
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadTimelineSnapshot {
+    pub revision: i64,
+    pub active_turn_id: Option<String>,
+    pub live_state: ThreadLiveState,
+    pub items: Vec<ThreadTimelineSnapshotItem>,
+}
+
+impl ThreadTimelineSnapshot {
+    pub(crate) fn from_turns(thread_id: &str, turns: &[ThreadTurnSnapshot]) -> Self {
+        let mut display_order = 0;
+        let mut items = Vec::new();
+        let mut active_turn_id = None;
+        for turn in turns {
+            let turn_terminal = is_terminal_turn_status(&turn.status);
+            if !turn_terminal {
+                active_turn_id = Some(turn.id.clone());
+            }
+            for item in &turn.items {
+                display_order += 1;
+                items.push(ThreadTimelineSnapshotItem::from_turn_item(
+                    thread_id,
+                    turn,
+                    item,
+                    display_order,
+                    turn_terminal,
+                ));
+            }
+        }
+        Self {
+            // Adapter-only snapshots start at zero; routes replace this with the gateway
+            // projection high-water once gateway overlays are applied.
+            revision: 0,
+            active_turn_id,
+            live_state: live_state_from_turns(turns),
+            items,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadTimelineSnapshotItem {
+    pub id: String,
+    pub thread_id: String,
+    pub turn_id: String,
+    pub item_id: String,
+    pub item_type: String,
+    pub status: String,
+    pub display_order: i64,
+    pub codex_method: String,
+    pub timestamp_ms: Option<i64>,
+    pub payload: TimelineItemUpsertPayload,
+}
+
+impl ThreadTimelineSnapshotItem {
+    pub(crate) fn from_turn_item(
+        thread_id: &str,
+        turn: &ThreadTurnSnapshot,
+        item: &ThreadItemSnapshot,
+        display_order: i64,
+        turn_terminal: bool,
+    ) -> Self {
+        let timestamp_ms = snapshot_item_timestamp_ms(turn, item);
+        let codex_method = if turn_terminal {
+            "item/completed"
+        } else {
+            "item/upsert"
+        }
+        .to_string();
+        Self {
+            id: format!("snapshot-{}-{}", turn.id, item.id),
+            thread_id: thread_id.to_string(),
+            turn_id: turn.id.clone(),
+            item_id: item.id.clone(),
+            item_type: item.item_type.clone(),
+            status: if turn_terminal {
+                "completed".to_string()
+            } else {
+                turn.status.clone()
+            },
+            display_order,
+            codex_method,
+            timestamp_ms,
+            payload: TimelineItemUpsertPayload {
+                source: TimelineUpdateSource::AppServerSnapshot,
+                turn_id: turn.id.clone(),
+                item_id: item.id.clone(),
+                item: item.raw_payload.clone(),
+                item_snapshot: item.clone(),
+            },
+        }
+    }
+}
+
+fn live_state_from_turns(turns: &[ThreadTurnSnapshot]) -> ThreadLiveState {
+    turns
+        .iter()
+        .rev()
+        .find(|turn| !is_terminal_turn_status(&turn.status))
+        .map(|turn| thread_live_state_from_turn_status(&turn.status))
+        .unwrap_or(ThreadLiveState::Idle)
+}
+
+pub(crate) fn thread_live_state_from_turn_status(status: &str) -> ThreadLiveState {
+    match status {
+        "completed" | "failed" | "cancelled" | "canceled" | "interrupted" => ThreadLiveState::Idle,
+        "unknown" => ThreadLiveState::NotLoaded,
+        _ => ThreadLiveState::Streaming,
+    }
+}
+
+fn snapshot_item_timestamp_ms(turn: &ThreadTurnSnapshot, item: &ThreadItemSnapshot) -> Option<i64> {
+    let item_type = item.item_type.to_lowercase();
+    if item_type.contains("user") {
+        return turn.started_at.map(unix_seconds_to_ms);
+    }
+    if item_type.contains("agent") || item_type.contains("assistant") {
+        return turn
+            .completed_at
+            .or(turn.started_at)
+            .map(unix_seconds_to_ms);
+    }
+    turn.started_at.map(unix_seconds_to_ms)
+}
+
+fn unix_seconds_to_ms(seconds: i64) -> i64 {
+    seconds.saturating_mul(1000)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2819,7 +2967,10 @@ mod tests {
 
     use async_trait::async_trait;
 
-    use crate::{app_server::AppServer, error::ApiResult};
+    use crate::{
+        app_server::AppServer,
+        error::{ApiError, ApiResult},
+    };
 
     use super::*;
 
@@ -2852,6 +3003,52 @@ mod tests {
             }
             drop(queued_responses);
             Ok(self.response.lock().unwrap().clone())
+        }
+
+        async fn respond(&self, _request_id: &str, _result: Value) -> ApiResult<()> {
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct NotMaterializedHistoryServer {
+        requests: StdMutex<Vec<(String, Value)>>,
+    }
+
+    #[async_trait]
+    impl AppServer for NotMaterializedHistoryServer {
+        fn is_ready(&self) -> bool {
+            true
+        }
+
+        fn readiness_error(&self) -> Option<String> {
+            None
+        }
+
+        async fn request(&self, method: &str, params: Value) -> ApiResult<Value> {
+            self.requests
+                .lock()
+                .unwrap()
+                .push((method.to_string(), params));
+            if method == "thread/turns/list" {
+                return Err(ApiError::BadGateway(
+                    "app-server error -32600: thread thread-1 is not materialized yet; thread/turns/list is unavailable before first user message".to_string(),
+                ));
+            }
+            Ok(json!({
+                "thread": {
+                    "id": "thread-1",
+                    "cliVersion": "0.130.0",
+                    "cwd": "/workspace",
+                    "ephemeral": false,
+                    "modelProvider": "openai",
+                    "preview": "pending",
+                    "source": "cli",
+                    "status": {"type": "active"},
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_600_i64
+                }
+            }))
         }
 
         async fn respond(&self, _request_id: &str, _result: Value) -> ApiResult<()> {
@@ -3083,6 +3280,24 @@ mod tests {
         );
         assert_eq!(requests[1].1["itemsView"], "summary");
         assert_eq!(requests[2].1["itemsView"], "full");
+    }
+
+    #[tokio::test]
+    async fn thread_read_full_history_returns_thread_shell_when_turns_not_materialized() {
+        let server = Arc::new(NotMaterializedHistoryServer::default());
+        let client = CodexClient::new(server.clone());
+
+        let response = client
+            .thread_read_full_history("thread-1".to_string())
+            .await
+            .unwrap();
+
+        assert_eq!(response.thread.id, "thread-1");
+        assert!(response.turns.is_empty());
+        assert_eq!(response.timeline.items.len(), 0);
+        let requests = server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[1].0, "thread/turns/list");
     }
 
     #[test]
@@ -3440,6 +3655,45 @@ mod tests {
         assert_eq!(response.thread.source.as_deref(), Some("cli"));
         assert!(ThreadDetailResponse::from_payload(json!({"thread": {"id": "thread-1"}})).is_err());
         assert!(ThreadDetailResponse::from_payload(json!({})).is_err());
+    }
+
+    #[test]
+    fn thread_detail_builds_canonical_timeline_snapshot_from_turns() {
+        let mut thread = thread_summary_payload("thread-1");
+        thread["turns"] = json!([{
+            "id": "turn-1",
+            "status": {"type": "completed"},
+            "startedAt": 10,
+            "completedAt": 12,
+            "items": [
+                {
+                    "id": "user-1",
+                    "type": "userMessage",
+                    "content": [{"type": "text", "text": "Hello"}]
+                },
+                {
+                    "id": "agent-1",
+                    "type": "agentMessage",
+                    "text": "Hi"
+                }
+            ]
+        }]);
+
+        let response = ThreadDetailResponse::from_payload(json!({ "thread": thread })).unwrap();
+
+        assert_eq!(response.timeline.revision, 0);
+        assert_eq!(response.timeline.items.len(), 2);
+        assert_eq!(response.timeline.items[0].id, "snapshot-turn-1-user-1");
+        assert_eq!(response.timeline.items[0].display_order, 1);
+        assert_eq!(response.timeline.items[0].codex_method, "item/completed");
+        assert_eq!(response.timeline.items[0].timestamp_ms, Some(10_000));
+        assert_eq!(
+            response.timeline.items[0].payload.source,
+            TimelineUpdateSource::AppServerSnapshot
+        );
+        assert_eq!(response.timeline.items[1].id, "snapshot-turn-1-agent-1");
+        assert_eq!(response.timeline.items[1].display_order, 2);
+        assert_eq!(response.timeline.items[1].timestamp_ms, Some(12_000));
     }
 
     #[test]

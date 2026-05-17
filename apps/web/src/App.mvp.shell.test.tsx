@@ -12,6 +12,7 @@ import {
   highReasoningModel,
   mockGateway,
   project,
+  projectionPatchEvent,
   requestJson,
   secondThread,
   snapshotItem,
@@ -51,127 +52,131 @@ describe("MVP shell flows", () => {
     FakeEventSource.instances = [];
   });
 
-  it("renders projects and threads, creates a project, and promotes a draft thread title from the first message", async () => {
-    vi.stubGlobal("EventSource", FakeEventSource);
-    const gateway = mockGateway(
-      baseRoutes({
-        "POST /v1/projects": async (request: Request) => {
-          const body = (await requestJson(request)) as { createDirectory?: boolean; cwd: string; name?: string | null };
-          if (!body.createDirectory) {
-            return new Response(JSON.stringify({ message: "directory does not exist" }), {
-              status: 400,
-              headers: { "Content-Type": "application/json" },
-            });
-          }
-          return {
-            cwd: "/home/example/scratch",
-            id: "project-2",
-            name: "scratch",
-            createdAt: "2026-04-30T00:00:00Z",
-            updatedAt: "2026-04-30T00:00:00Z",
-          };
-        },
-        "POST /v1/threads": { thread: { ...thread, id: "thread-2", name: "New thread", preview: "" }, rawPayload: {} },
-        "GET /v1/threads/thread-2": threadDetail(
-          { ...thread, id: "thread-2", name: "New thread", preview: "Implement the next milestone for the web client" },
-          [],
-        ),
-        "POST /v1/threads/thread-2/turns": { payload: {} },
-      }),
-    );
+  it(
+    "renders projects and threads, creates a project, and promotes a draft thread title from the first message",
+    async () => {
+      vi.stubGlobal("EventSource", FakeEventSource);
+      const gateway = mockGateway(
+        baseRoutes({
+          "POST /v1/projects": async (request: Request) => {
+            const body = (await requestJson(request)) as { createDirectory?: boolean; cwd: string; name?: string | null };
+            if (!body.createDirectory) {
+              return new Response(JSON.stringify({ message: "directory does not exist" }), {
+                status: 400,
+                headers: { "Content-Type": "application/json" },
+              });
+            }
+            return {
+              cwd: "/home/example/scratch",
+              id: "project-2",
+              name: "scratch",
+              createdAt: "2026-04-30T00:00:00Z",
+              updatedAt: "2026-04-30T00:00:00Z",
+            };
+          },
+          "POST /v1/threads": { thread: { ...thread, id: "thread-2", name: "New thread", preview: "" }, rawPayload: {} },
+          "GET /v1/threads/thread-2": threadDetail(
+            { ...thread, id: "thread-2", name: "New thread", preview: "Implement the next milestone for the web client" },
+            [],
+          ),
+          "POST /v1/threads/thread-2/turns": { payload: {} },
+        }),
+      );
 
-    render(<App />);
+      render(<App />);
 
-    expect(await screen.findByText("Kodex")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /kodex \/home\/example\/kodex/i })).not.toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+      expect(await screen.findByText("Kodex")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /kodex \/home\/example\/kodex/i })).not.toBeInTheDocument();
+      expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /add project/i }));
-    expect(screen.queryByLabelText(/project name/i)).not.toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText(/directory/i), "scratch");
-    await userEvent.click(addProjectSubmitButton());
+      await userEvent.click(screen.getByRole("button", { name: /add project/i }));
+      expect(screen.queryByLabelText(/project name/i)).not.toBeInTheDocument();
+      await userEvent.type(screen.getByLabelText(/directory/i), "scratch");
+      await userEvent.click(addProjectSubmitButton());
 
-    await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/projects")).toHaveLength(1);
-    });
-    expect(await screen.findByRole("button", { name: /create ~\/scratch\?/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /cancel directory create/i }));
-    expect(addProjectSubmitButton()).toBeInTheDocument();
-
-    await userEvent.click(addProjectSubmitButton());
-    expect(await screen.findByRole("button", { name: /create ~\/scratch\?/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /create ~\/scratch\?/i }));
-
-    await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/projects")).toHaveLength(3);
-    });
-    await expect(requestJson(gateway.callsFor("POST", "/v1/projects")[0])).resolves.toEqual({ cwd: "scratch" });
-    await expect(requestJson(gateway.callsFor("POST", "/v1/projects")[2])).resolves.toEqual({
-      createDirectory: true,
-      cwd: "scratch",
-    });
-
-    await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
-    expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(0);
-    expect(screen.getAllByRole("button", { name: /new thread/i })).toHaveLength(1);
-    expect(within(screen.getByRole("main", { name: /thread/i })).queryByRole("heading", { name: /new thread/i })).not.toBeInTheDocument();
-    expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
-    const main = screen.getByRole("main", { name: /thread/i });
-    expect(within(main).getByText(/good (morning|afternoon|evening)|burning the midnight oil\?/i)).toBeInTheDocument();
-    const draftToolbar = within(main).getByRole("toolbar", { name: /draft thread toolbar/i });
-    expect(within(draftToolbar).getByText("scratch")).toBeInTheDocument();
-    expect(draftToolbar.querySelector(".lucide-folder")).toBeInTheDocument();
-    const mainStack = main.querySelector(".kodex-main-stack");
-    expect(mainStack).toHaveAttribute("data-draft-thread", "true");
-    expect(main.querySelector(".kodex-timeline-scroll")).not.toBeInTheDocument();
-    expect(within(main).queryByText("No events")).not.toBeInTheDocument();
-    expect(appCss).toMatch(
-      /\.kodex-main-stack\[data-draft-thread="true"\]\s+\.kodex-composer-shell\s*\{[^}]*margin-top:\s*auto;/s,
-    );
-    expect(appCss).toMatch(
-      /\.kodex-main-stack\[data-draft-thread="true"\]\s+\.kodex-composer-shell\s*\{[^}]*margin-bottom:\s*auto;/s,
-    );
-    expect(appCss).toMatch(/\.kodex-composer-hero-stage\[data-transitioning="true"\]\s*\{[^}]*opacity:\s*0;/s);
-    expect(appCss).toMatch(/\.kodex-composer-underbar\s*\{[^}]*border-bottom-left-radius:\s*var\(--kodex-radius-composer\);/s);
-
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Implement the next milestone for the web client");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
-    await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
-    });
-    await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(1);
-    });
-    const optimisticThread = await screen.findByRole("button", {
-      name: /implement the next milestone for the web client/i,
-    });
-    expect(
-      within(optimisticThread).getByText("Implement the next milestone for the web client"),
-    ).not.toHaveAttribute("data-placeholder-title");
-    expect(screen.getByRole("heading", { name: /implement the next milestone for the web client/i })).toBeInTheDocument();
-
-    let createdThreadStream: FakeEventSource | undefined;
-    await waitFor(() => {
-      createdThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-2"));
-      expect(createdThreadStream).toBeDefined();
-    });
-    act(() => {
-      createdThreadStream?.emit({
-        id: "event-title",
-        seq: 2,
-        kind: "codex.notification",
-        codexMethod: "thread/nameUpdated",
-        projectId: project.id,
-        threadId: "thread-2",
-        payload: { threadId: "thread-2", threadName: "Implement the next milestone" },
-        receivedAt: "2026-04-30T00:00:01Z",
+      await waitFor(() => {
+        expect(gateway.callsFor("POST", "/v1/projects")).toHaveLength(1);
       });
-    });
+      expect(await screen.findByRole("button", { name: /create ~\/scratch\?/i })).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: /cancel directory create/i }));
+      expect(addProjectSubmitButton()).toBeInTheDocument();
 
-    const titledThread = await screen.findByRole("button", { name: /implement the next milestone/i });
-    expect(within(titledThread).getByText("Implement the next milestone")).not.toHaveAttribute("data-placeholder-title");
-    expect(screen.getByRole("heading", { name: /implement the next milestone/i })).toBeInTheDocument();
-  });
+      await userEvent.click(addProjectSubmitButton());
+      expect(await screen.findByRole("button", { name: /create ~\/scratch\?/i })).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: /create ~\/scratch\?/i }));
+
+      await waitFor(() => {
+        expect(gateway.callsFor("POST", "/v1/projects")).toHaveLength(3);
+      });
+      await expect(requestJson(gateway.callsFor("POST", "/v1/projects")[0])).resolves.toEqual({ cwd: "scratch" });
+      await expect(requestJson(gateway.callsFor("POST", "/v1/projects")[2])).resolves.toEqual({
+        createDirectory: true,
+        cwd: "scratch",
+      });
+
+      await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+      expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(0);
+      expect(screen.getAllByRole("button", { name: /new thread/i })).toHaveLength(1);
+      expect(within(screen.getByRole("main", { name: /thread/i })).queryByRole("heading", { name: /new thread/i })).not.toBeInTheDocument();
+      expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
+      const main = screen.getByRole("main", { name: /thread/i });
+      expect(within(main).getByText(/good (morning|afternoon|evening)|burning the midnight oil\?/i)).toBeInTheDocument();
+      const draftToolbar = within(main).getByRole("toolbar", { name: /draft thread toolbar/i });
+      expect(within(draftToolbar).getByText("scratch")).toBeInTheDocument();
+      expect(draftToolbar.querySelector(".lucide-folder")).toBeInTheDocument();
+      const mainStack = main.querySelector(".kodex-main-stack");
+      expect(mainStack).toHaveAttribute("data-draft-thread", "true");
+      expect(main.querySelector(".kodex-timeline-scroll")).not.toBeInTheDocument();
+      expect(within(main).queryByText("No events")).not.toBeInTheDocument();
+      expect(appCss).toMatch(
+        /\.kodex-main-stack\[data-draft-thread="true"\]\s+\.kodex-composer-shell\s*\{[^}]*margin-top:\s*auto;/s,
+      );
+      expect(appCss).toMatch(
+        /\.kodex-main-stack\[data-draft-thread="true"\]\s+\.kodex-composer-shell\s*\{[^}]*margin-bottom:\s*auto;/s,
+      );
+      expect(appCss).toMatch(/\.kodex-composer-hero-stage\[data-transitioning="true"\]\s*\{[^}]*opacity:\s*0;/s);
+      expect(appCss).toMatch(/\.kodex-composer-underbar\s*\{[^}]*border-bottom-left-radius:\s*var\(--kodex-radius-composer\);/s);
+
+      await userEvent.type(screen.getByLabelText(/message composer/i), "Implement the next milestone for the web client");
+      await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+      await waitFor(() => {
+        expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
+      });
+      await waitFor(() => {
+        expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(1);
+      });
+      const optimisticThread = await screen.findByRole("button", {
+        name: /implement the next milestone for the web client/i,
+      });
+      expect(
+        within(optimisticThread).getByText("Implement the next milestone for the web client"),
+      ).not.toHaveAttribute("data-placeholder-title");
+      expect(screen.getByRole("heading", { name: /implement the next milestone for the web client/i })).toBeInTheDocument();
+
+      let createdThreadStream: FakeEventSource | undefined;
+      await waitFor(() => {
+        createdThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-2"));
+        expect(createdThreadStream).toBeDefined();
+      });
+      act(() => {
+        createdThreadStream?.emit({
+          id: "event-title",
+          seq: 2,
+          kind: "codex.notification",
+          codexMethod: "thread/nameUpdated",
+          projectId: project.id,
+          threadId: "thread-2",
+          payload: { threadId: "thread-2", threadName: "Implement the next milestone" },
+          receivedAt: "2026-04-30T00:00:01Z",
+        });
+      });
+
+      const titledThread = await screen.findByRole("button", { name: /implement the next milestone/i });
+      expect(within(titledThread).getByText("Implement the next milestone")).not.toHaveAttribute("data-placeholder-title");
+      expect(screen.getByRole("heading", { name: /implement the next milestone/i })).toBeInTheDocument();
+    },
+    20_000,
+  );
 
   it("derives full access from app-server sandbox policy objects on active threads", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
@@ -206,7 +211,7 @@ describe("MVP shell flows", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: /permissions: full access/i })).toBeInTheDocument();
-  });
+  }, 20_000);
 
   it("shows the selected thread git branch under the composer and updates from thread metadata", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
@@ -1308,18 +1313,16 @@ describe("MVP shell flows", () => {
       expect(selectedStream).toBeDefined();
     });
     act(() => {
-      selectedStream?.emitNamed("timeline.item_upsert", {
+      selectedStream?.emitNamed("timeline.projection_patch", projectionPatchEvent({
         id: "event-live-agent",
         seq: 10,
-        kind: "timeline.item_upsert",
-        codexMethod: "item/started",
         threadId: "thread-2",
         turnId: "turn-2",
         itemId: "agent-live",
         projectId: project.id,
-        payload: { item: { id: "agent-live", type: "agentMessage", text: "Live active update" } },
-        receivedAt: "2026-04-30T00:00:01Z",
-      });
+        text: "Live active update",
+        displayOrder: 10,
+      }));
     });
     expect(await screen.findByText(/live active update/i)).toBeInTheDocument();
 

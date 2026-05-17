@@ -37,7 +37,7 @@ mod tests {
     use crate::{
         api::{build_router, AppState},
         app_server::{tests::RecordingAppServer, AppServer, InboundMessage},
-        app_server_api::TimelineSkillMention,
+        app_server_api::{TimelineSkillMention, UserInput},
         automations,
         config::Config,
         error::{ApiError, ApiResult},
@@ -48,6 +48,7 @@ mod tests {
             NewApproval, NewEvent, NewPushSubscription, PushSubscription, Store,
             ThreadComposerSettings, ThreadRuntimeState,
         },
+        timeline_projection,
     };
 
     async fn test_state() -> (AppState, Arc<RecordingAppServer>) {
@@ -243,7 +244,12 @@ mod tests {
             .await
             .unwrap();
         app_server.queued_responses.lock().unwrap().extend([
-            thread_read_response("thread-1", 1),
+            thread_read_response_with_agent_message(
+                "thread-1",
+                "Octopus Heart Facts With An Overly Long Thread Title That Should Not Fill The Banner",
+                "Tool output should stay hidden.",
+                "Yes, octopuses actually have three hearts.\n\nThey use two for their gills.",
+            ),
             json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
         ]);
 
@@ -271,6 +277,14 @@ mod tests {
         assert_eq!(payloads.len(), 1);
         assert_eq!(payloads[0].kind, NotificationKind::UnreadAgentMessage);
         assert_eq!(payloads[0].thread_id, "thread-1");
+        assert_eq!(
+            payloads[0].title,
+            "Octopus Heart Facts With An Overly Long Thread T..."
+        );
+        assert_eq!(
+            payloads[0].body.as_deref(),
+            Some("Yes, octopuses actually have three hearts. They use two for their gills.")
+        );
         assert_eq!(payloads[0].route, "/threads/thread-1");
         assert_eq!(payloads[0].badge_count, 1);
 
@@ -360,6 +374,7 @@ mod tests {
                     kind: NotificationKind::UnreadAgentMessage,
                     thread_id: "thread-1".to_string(),
                     title: "Thread".to_string(),
+                    body: Some("Thread\nAgent has a new message.".to_string()),
                     route: "/threads/thread-1".to_string(),
                     badge_count: 1,
                 },
@@ -3592,6 +3607,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn thread_detail_returns_projection_when_turn_history_is_not_materialized() {
+        let store = Store::in_memory().await.unwrap();
+        let pending = store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("thread-1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                item_id: None,
+                kind: "timeline.pending_user_input".to_string(),
+                codex_method: Some("turn/input".to_string()),
+                payload: json!({}),
+            })
+            .await
+            .unwrap();
+        timeline_projection::record_pending_user_input(
+            &store,
+            "thread-1",
+            "turn-1",
+            &[UserInput::Text {
+                text: "Search Google for OpenAI news".to_string(),
+                text_elements: Vec::new(),
+            }],
+            pending.seq,
+        )
+        .await
+        .unwrap();
+        let app_server = Arc::new(NotMaterializedThreadHistoryAppServer::default());
+        let app = build_router(AppState::new(Config::default(), store, app_server.clone()));
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["turns"], json!([]));
+        assert_eq!(body["liveState"], "streaming");
+        assert_eq!(body["timeline"]["liveState"], "streaming");
+        assert_eq!(body["timeline"]["items"][0]["itemId"], "pending-user-1");
+        assert_eq!(
+            body["timeline"]["items"][0]["payload"]["item"]["content"][0]["text"],
+            "Search Google for OpenAI news"
+        );
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[1].0, "thread/turns/list");
+    }
+
+    #[tokio::test]
     async fn thread_detail_revalidates_persisted_skill_mentions_against_catalog() {
         let (state, app_server) = test_state().await;
         state
@@ -3665,6 +3734,62 @@ mod tests {
                 "path": "/skills/agent-browser/SKILL.md"
             }])
         );
+    }
+
+    #[tokio::test]
+    async fn thread_detail_revision_is_captured_before_app_server_history_read() {
+        let store = Store::in_memory().await.unwrap();
+        let initial = store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("thread-1".to_string()),
+                turn_id: None,
+                item_id: None,
+                kind: "gateway.warning".to_string(),
+                codex_method: None,
+                payload: json!({"phase": "before-read"}),
+            })
+            .await
+            .unwrap();
+        let app_server = Arc::new(BlockingThreadReadAppServer::default());
+        let state = AppState::new(Config::default(), store, app_server.clone());
+        let app = build_router(state.clone());
+
+        let response = tokio::spawn(async move {
+            app.oneshot(
+                Request::get("/v1/threads/thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+        });
+        timeout(
+            Duration::from_secs(2),
+            app_server.thread_read_started.notified(),
+        )
+        .await
+        .unwrap();
+        let newer = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("thread-1".to_string()),
+                turn_id: Some("turn-newer".to_string()),
+                item_id: Some("item-newer".to_string()),
+                kind: "timeline.projection_patch".to_string(),
+                codex_method: Some("timeline/projection_patch".to_string()),
+                payload: json!({"phase": "after-read-started"}),
+            })
+            .await
+            .unwrap();
+        assert!(newer.seq > initial.seq);
+        app_server.release_thread_read.notify_one();
+
+        let response = response.await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["timeline"]["revision"], initial.seq);
     }
 
     #[tokio::test]
@@ -4787,6 +4912,20 @@ mod tests {
         assert_eq!(mentions[0].display_name.as_deref(), Some("Review Fix"));
         assert_eq!(mentions[0].brand_color.as_deref(), Some("#23a55a"));
 
+        let projection_items = state
+            .store
+            .timeline_projection_items("thread-1")
+            .await
+            .unwrap();
+        assert_eq!(projection_items.len(), 1);
+        assert_eq!(projection_items[0].turn_id, "turn-1");
+        assert!(projection_items[0].item_id.starts_with("pending-user-"));
+        assert_eq!(projection_items[0].item_type, "userMessage");
+        assert_eq!(
+            projection_items[0].item["content"][0]["text"],
+            "Use $agent-browser"
+        );
+
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[2].0, "turn/steer");
         assert_eq!(
@@ -5213,6 +5352,10 @@ mod tests {
     #[tokio::test]
     async fn queued_input_drains_one_row_when_thread_is_idle() {
         let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"thread": thread_summary("thread-1")}),
+            json!({"turnId": "turn-drain-1"}),
+        ]);
         state
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
@@ -5224,7 +5367,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let app = build_router(state);
+        let app = build_router(state.clone());
 
         assert_ok(
             app.oneshot(
@@ -5274,6 +5417,36 @@ mod tests {
                 "input": [{"type": "text", "text": "drain me"}]
             })
         );
+        drop(requests);
+
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if state
+                    .store
+                    .timeline_projection_items("thread-1")
+                    .await
+                    .unwrap()
+                    .len()
+                    == 1
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let projection_items = state
+            .store
+            .timeline_projection_items("thread-1")
+            .await
+            .unwrap();
+        assert_eq!(projection_items.len(), 1);
+        assert_eq!(projection_items[0].turn_id, "turn-drain-1");
+        assert!(projection_items[0].item_id.starts_with("pending-user-"));
+        assert_eq!(projection_items[0].item_type, "userMessage");
+        assert_eq!(projection_items[0].status, "running");
+        assert_eq!(projection_items[0].item["content"][0]["text"], "drain me");
     }
 
     #[tokio::test]
@@ -7797,6 +7970,80 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sse_replays_selected_thread_projection_patches_after_cursor() {
+        let (state, _) = test_state().await;
+        let projection = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("t1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                item_id: Some("item-1".to_string()),
+                kind: "timeline.projection_patch".to_string(),
+                codex_method: Some("timeline/projection_patch".to_string()),
+                payload: json!({
+                    "revision": 1,
+                    "threadId": "t1",
+                    "activeTurnId": "turn-1",
+                    "liveState": "running",
+                    "items": [
+                        {
+                            "id": "turn-1:item-1",
+                            "threadId": "t1",
+                            "turnId": "turn-1",
+                            "itemId": "item-1",
+                            "itemType": "agent_message",
+                            "displayOrder": 1.0,
+                            "status": "running",
+                            "timestampMs": 1,
+                            "payload": {
+                                "kind": "agent_message",
+                                "text": "hello",
+                                "source": "gateway_projection"
+                            }
+                        }
+                    ]
+                }),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?cursor=0&threadId=t1")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let live = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("t1".to_string()),
+                turn_id: None,
+                item_id: None,
+                kind: "gateway.warning".to_string(),
+                codex_method: None,
+                payload: json!({"threadId": "t1", "phase": "live"}),
+            })
+            .await
+            .unwrap();
+        state.events.send(live).unwrap();
+
+        let mut body = response.into_body();
+        let first = next_sse_chunk(&mut body).await;
+        assert!(first.contains(&format!("id: {}", projection.seq)));
+        assert!(first.contains("timeline.projection_patch"));
+        assert!(first.contains("\"hello\""));
+        assert!(!first.contains("\"phase\":\"live\""));
+    }
+
+    #[tokio::test]
     async fn sse_allows_live_thread_title_notifications() {
         let (state, _) = test_state().await;
         let app = build_router(state.clone());
@@ -7981,6 +8228,37 @@ mod tests {
                 "source": "cli",
                 "status": {"type": "idle"},
                 "turns": turns,
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_600_i64
+            }
+        })
+    }
+
+    fn thread_read_response_with_agent_message(
+        thread_id: &str,
+        name: &str,
+        tool_output: &str,
+        agent_text: &str,
+    ) -> Value {
+        json!({
+            "thread": {
+                "id": thread_id,
+                "name": name,
+                "cliVersion": "0.130.0",
+                "cwd": "/workspace",
+                "ephemeral": false,
+                "modelProvider": "openai",
+                "source": "cli",
+                "status": {"type": "idle"},
+                "turns": [{
+                    "id": "turn-0",
+                    "status": {"type": "completed"},
+                    "items": [
+                        {"id": "item-user-1", "type": "userMessage", "content": [{"type": "text", "text": "Question"}]},
+                        {"id": "item-tool-1", "type": "commandExecution", "aggregatedOutput": tool_output},
+                        {"id": "item-agent-1", "type": "agentMessage", "phase": "final_answer", "text": agent_text}
+                    ]
+                }],
                 "createdAt": 1_767_225_600_i64,
                 "updatedAt": 1_767_225_600_i64
             }
@@ -8216,6 +8494,17 @@ mod tests {
     struct MissingRolloutAppServer;
 
     #[derive(Default)]
+    struct NotMaterializedThreadHistoryAppServer {
+        requests: StdMutex<Vec<(String, Value)>>,
+    }
+
+    #[derive(Default)]
+    struct BlockingThreadReadAppServer {
+        thread_read_started: Notify,
+        release_thread_read: Notify,
+    }
+
+    #[derive(Default)]
     struct BlockingRespondAppServer {
         ready: std::sync::atomic::AtomicBool,
         responses: StdMutex<Vec<(String, Value)>>,
@@ -8257,6 +8546,78 @@ mod tests {
                 "app-server error -32602: no rollout found for thread id thread-missing"
                     .to_string(),
             ))
+        }
+
+        async fn respond(&self, _request_id: &str, _result: Value) -> ApiResult<()> {
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl AppServer for NotMaterializedThreadHistoryAppServer {
+        fn is_ready(&self) -> bool {
+            true
+        }
+
+        fn readiness_error(&self) -> Option<String> {
+            None
+        }
+
+        async fn request(&self, method: &str, params: Value) -> ApiResult<Value> {
+            self.requests
+                .lock()
+                .unwrap()
+                .push((method.to_string(), params));
+            if method == "thread/turns/list" {
+                return Err(ApiError::BadGateway(
+                    "app-server error -32600: thread thread-1 is not materialized yet; thread/turns/list is unavailable before first user message".to_string(),
+                ));
+            }
+            Ok(json!({
+                "thread": {
+                    "id": "thread-1",
+                    "cliVersion": "0.130.0",
+                    "cwd": "/workspace",
+                    "ephemeral": false,
+                    "modelProvider": "openai",
+                    "preview": "pending",
+                    "source": "cli",
+                    "status": {"type": "active"},
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_600_i64
+                }
+            }))
+        }
+
+        async fn respond(&self, _request_id: &str, _result: Value) -> ApiResult<()> {
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl AppServer for BlockingThreadReadAppServer {
+        fn is_ready(&self) -> bool {
+            true
+        }
+
+        fn readiness_error(&self) -> Option<String> {
+            None
+        }
+
+        async fn request(&self, method: &str, _params: Value) -> ApiResult<Value> {
+            if method == "thread/read" {
+                self.thread_read_started.notify_one();
+                self.release_thread_read.notified().await;
+                return Ok(thread_read_response("thread-1", 0));
+            }
+            if method == "thread/turns/list" {
+                return Ok(json!({
+                    "data": [],
+                    "nextCursor": null,
+                    "backwardsCursor": null
+                }));
+            }
+            Ok(json!({}))
         }
 
         async fn respond(&self, _request_id: &str, _result: Value) -> ApiResult<()> {

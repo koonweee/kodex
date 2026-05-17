@@ -47,4 +47,16 @@ describe("unread agent message notifications", () => {
       title: "thread-1",
     });
   });
+
+  it("truncates long thread titles in notification intents", () => {
+    expect(
+      unreadAgentMessageIntent(
+        {
+          ...thread("thread-1", true),
+          name: "Octopus Heart Facts With An Overly Long Thread Title That Should Not Fill The Banner",
+        },
+        1,
+      ).title,
+    ).toBe("Octopus Heart Facts With An Overly Long Thread T...");
+  });
 });

@@ -22,6 +22,7 @@ export function timelineState(overrides: Partial<TimelineState> = {}): TimelineS
     hiddenItems: overrides.hiddenItems ?? [],
     turns: overrides.turns ?? [],
     lastSeq: 0,
+    projectionRevision: 0,
     ...overrides,
   };
 }

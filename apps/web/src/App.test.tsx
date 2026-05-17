@@ -14,7 +14,106 @@ function snapshotTurn(id: string, items: unknown[], status = "completed") {
 }
 
 function threadDetail(thread: Record<string, unknown>, turns: ReturnType<typeof snapshotTurn>[]) {
-  return { thread, turns, liveState: thread.status === "active" ? "streaming" : "idle", rawPayload: {} };
+  return {
+    thread,
+    turns,
+    liveState: thread.status === "active" ? "streaming" : "idle",
+    timeline: timelineFromTurns(thread, turns),
+    rawPayload: {},
+  };
+}
+
+function timelineFromTurns(thread: Record<string, unknown>, turns: ReturnType<typeof snapshotTurn>[]) {
+  let displayOrder = 0;
+  const activeTurn = [...turns].reverse().find((turn) => !["completed", "failed", "cancelled"].includes(turn.status));
+  return {
+    revision: 1,
+    activeTurnId: activeTurn?.id ?? null,
+    liveState: thread.status === "active" ? "streaming" : "idle",
+    items: turns.flatMap((turn) =>
+      turn.items.map((item) => {
+        const snapshot = item as { id?: string; itemType?: string; rawPayload?: unknown };
+        displayOrder += 1;
+        return {
+          id: `snapshot-${turn.id}-${snapshot.id ?? displayOrder}`,
+          threadId: String(thread.id),
+          turnId: turn.id,
+          itemId: snapshot.id ?? `item-${displayOrder}`,
+          itemType: snapshot.itemType ?? "unknown",
+          status: turn.status === "completed" ? "completed" : turn.status,
+          displayOrder,
+          codexMethod: turn.status === "completed" ? "item/completed" : "item/upsert",
+          timestampMs: displayOrder,
+          payload: {
+            source: "appServerSnapshot",
+            turnId: turn.id,
+            itemId: snapshot.id ?? `item-${displayOrder}`,
+            item: snapshot.rawPayload ?? item,
+            itemSnapshot: item,
+          },
+        };
+      }),
+    ),
+  };
+}
+
+function projectionPatchEvent({
+  id = "projection-patch-1",
+  seq = 2,
+  threadId = "thread-1",
+  turnId = "turn-live",
+  itemId = "agent-live",
+  text = "Live update",
+  displayOrder = seq,
+}: {
+  id?: string;
+  seq?: number;
+  threadId?: string;
+  turnId?: string;
+  itemId?: string;
+  text?: string;
+  displayOrder?: number;
+}) {
+  return {
+    id,
+    seq,
+    kind: "timeline.projection_patch",
+    codexMethod: "timeline/projection_patch",
+    projectId: "project-1",
+    threadId,
+    turnId,
+    itemId: null,
+    payload: {
+      revision: seq,
+      threadId,
+      activeTurnId: turnId,
+      liveState: "streaming",
+      items: [
+        {
+          id: `projection-${turnId}-${itemId}`,
+          threadId,
+          turnId,
+          itemId,
+          itemType: "agentMessage",
+          displayOrder,
+          status: "running",
+          timestampMs: displayOrder,
+          payload: {
+            source: "gatewayStream",
+            turnId,
+            itemId,
+            item: { id: itemId, type: "agentMessage", text },
+            itemSnapshot: {
+              id: itemId,
+              itemType: "agentMessage",
+              rawPayload: { id: itemId, type: "agentMessage", text },
+            },
+          },
+        },
+      ],
+    },
+    receivedAt: "2026-04-30T00:00:02Z",
+  };
 }
 
 class FakeEventSource {
@@ -703,21 +802,15 @@ describe("App shell", () => {
     expect(await screen.findByRole("button", { name: /scroll to bottom/i })).toBeInTheDocument();
 
     act(() => {
-      selectedThreadStream?.emit({
+      selectedThreadStream?.emit(projectionPatchEvent({
         id: "live-message-1",
-        seq: 1,
-        kind: "timeline.item_upsert",
-        codexMethod: "item/upsert",
-        projectId: "project-1",
+        seq: 2,
         threadId: "thread-1",
         turnId: "turn-2",
         itemId: "live-agent-1",
-        payload: {
-          source: "gatewayStream",
-          item: { id: "live-agent-1", type: "agentMessage", text: "Live update while reading history" },
-        },
-        receivedAt: "2026-04-30T00:00:00Z",
-      });
+        text: "Live update while reading history",
+        displayOrder: 1,
+      }));
     });
 
     expect(await screen.findByText(/live update while reading history/i)).toBeInTheDocument();

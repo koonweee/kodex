@@ -157,12 +157,13 @@ function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
 }
 
 type TestThreadSummary = Omit<typeof thread, "name"> & { name: string | null } & Record<string, unknown>;
+type TestSnapshotTurn = { id: string; status: string; items: unknown[]; rawPayload?: unknown };
 
 async function threadDetailFromSnapshot(
   routes: GatewayRouteMap,
   _request: Request,
   sourceThread: TestThreadSummary,
-  turns = [] as Array<{ id: string; status: string; items: unknown[]; rawPayload: unknown }>,
+  turns = [] as TestSnapshotTurn[],
 ) {
   sourceThread = await listedThreadFor(routes, sourceThread);
   if (sourceThread.status === "active") {
@@ -175,6 +176,7 @@ async function threadDetailFromSnapshot(
     thread: sourceThread,
     turns,
     liveState: sourceThread.status === "active" ? "streaming" : "idle",
+    timeline: timelineFromTurns(sourceThread, turns),
     rawPayload: {},
   };
 }
@@ -215,7 +217,111 @@ function threadDetail(sourceThread: TestThreadSummary, turns: ReturnType<typeof 
     thread: sourceThread,
     turns,
     liveState: sourceThread.status === "active" ? "streaming" : "idle",
+    timeline: timelineFromTurns(sourceThread, turns),
     rawPayload: {},
+  };
+}
+
+function timelineFromTurns(sourceThread: TestThreadSummary, turns: TestSnapshotTurn[]) {
+  let displayOrder = 0;
+  const activeTurn = [...turns].reverse().find((turn) => !["completed", "failed", "cancelled"].includes(turn.status));
+  return {
+    revision: 1,
+    activeTurnId: activeTurn?.id ?? null,
+    liveState: sourceThread.status === "active" ? "streaming" : "idle",
+    items: turns.flatMap((turn) =>
+      turn.items.map((item) => {
+        const snapshot = item as { id?: string; itemType?: string; rawPayload?: unknown };
+        displayOrder += 1;
+        return {
+          id: `snapshot-${turn.id}-${snapshot.id ?? displayOrder}`,
+          threadId: sourceThread.id,
+          turnId: turn.id,
+          itemId: snapshot.id ?? `item-${displayOrder}`,
+          itemType: snapshot.itemType ?? "unknown",
+          status: turn.status === "completed" ? "completed" : turn.status,
+          displayOrder,
+          codexMethod: turn.status === "completed" ? "item/completed" : "item/upsert",
+          timestampMs: displayOrder,
+          payload: {
+            source: "appServerSnapshot",
+            turnId: turn.id,
+            itemId: snapshot.id ?? `item-${displayOrder}`,
+            item: snapshot.rawPayload ?? item,
+            itemSnapshot: item,
+          },
+        };
+      }),
+    ),
+  };
+}
+
+function projectionPatchEvent({
+  id = "projection-patch-1",
+  seq = 2,
+  projectId = project.id,
+  threadId = thread.id,
+  turnId = "turn-live",
+  itemId = "agent-live",
+  itemType = "agentMessage",
+  text = "Live update",
+  displayOrder = seq,
+  status = "running",
+}: {
+  id?: string;
+  seq?: number;
+  projectId?: string | null;
+  threadId?: string;
+  turnId?: string;
+  itemId?: string;
+  itemType?: string;
+  text?: string;
+  displayOrder?: number;
+  status?: string;
+}) {
+  return {
+    id,
+    seq,
+    kind: "timeline.projection_patch",
+    codexMethod: "timeline/projection_patch",
+    projectId,
+    threadId,
+    turnId,
+    itemId: null,
+    payload: {
+      revision: seq,
+      threadId,
+      activeTurnId: turnId,
+      liveState: "streaming",
+      items: [
+        {
+          id: `projection-${turnId}-${itemId}`,
+          threadId,
+          turnId,
+          itemId,
+          itemType,
+          displayOrder,
+          status,
+          timestampMs: displayOrder,
+          payload: {
+            source: "gatewayStream",
+            turnId,
+            itemId,
+            item: itemType === "userMessage"
+              ? { id: itemId, type: "userMessage", content: [{ type: "text", text }] }
+              : { id: itemId, type: "agentMessage", text },
+            itemSnapshot: {
+              id: itemId,
+              itemType,
+              rawPayload: itemType === "userMessage"
+                ? { id: itemId, type: "userMessage", content: [{ type: "text", text }] }
+                : { id: itemId, type: "agentMessage", text },
+            },
+          },
+        },
+      ],
+    },
+    receivedAt: "2026-04-30T00:00:02Z",
   };
 }
 
@@ -280,6 +386,7 @@ export {
   mockGateway,
   model,
   project,
+  projectionPatchEvent,
   requestJson,
   secondThread,
   snapshotItem,
