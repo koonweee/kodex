@@ -47,7 +47,7 @@ describe("MVP composer input flows", () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [activeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "POST /v1/threads/thread-1/turns": { payload: {} },
+        "POST /v1/threads/thread-1/input": { payload: {} },
         "POST /v1/threads/thread-1/turns/turn-1/steer": { payload: {} },
         "POST /v1/threads/thread-1/turns/turn-1/interrupt": { payload: {} },
       }),
@@ -74,7 +74,7 @@ describe("MVP composer input flows", () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/events": { events: [] },
-        "POST /v1/threads/thread-1/turns": { payload: {} },
+        "POST /v1/threads/thread-1/input": { payload: {} },
       }),
     );
 
@@ -98,7 +98,7 @@ describe("MVP composer input flows", () => {
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
   });
 
@@ -107,7 +107,7 @@ describe("MVP composer input flows", () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/events": { events: [] },
-        "POST /v1/threads/thread-1/turns": { payload: { turnId: "turn-1" } },
+        "POST /v1/threads/thread-1/input": { payload: { turnId: "turn-1" } },
         "POST /v1/threads/thread-1/turns/turn-1/interrupt": { payload: {} },
       }),
     );
@@ -119,7 +119,7 @@ describe("MVP composer input flows", () => {
     await userEvent.type(composer, "Start pending turn");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
     const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
 
@@ -200,7 +200,7 @@ describe("MVP composer input flows", () => {
           errors: [],
           invalidationGeneration: 0,
         },
-        "POST /v1/threads/thread-1/turns": () => turnStart.promise,
+        "POST /v1/threads/thread-1/input": () => turnStart.promise,
       }),
     );
 
@@ -239,11 +239,11 @@ describe("MVP composer input flows", () => {
 
     expect(screen.getByLabelText(/queued steer messages/i)).toBeInTheDocument();
     expect(screen.getByText("Queued follow-up")).toBeInTheDocument();
-    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs")).toHaveLength(0);
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs")[0])).resolves.toMatchObject({
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toMatchObject({
       input: [{ type: "text", text: "Queued follow-up" }],
     });
   });
@@ -454,7 +454,7 @@ describe("MVP composer input flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs/queue-failed/retry")).toHaveLength(1);
     });
-    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(0);
   });
 
   it("steers queued composer messages into the active turn when requested", async () => {
@@ -474,7 +474,7 @@ describe("MVP composer input flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs/queue-1/steer")).toHaveLength(1);
     });
-    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     await waitFor(() => {
       expect(screen.getByRole("region", { name: /queued steer messages/i })).toHaveTextContent("Steering...");
     });
@@ -485,7 +485,7 @@ describe("MVP composer input flows", () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/events": { events: [] },
-        "POST /v1/threads/thread-1/turns": () =>
+        "POST /v1/threads/thread-1/input": () =>
           new Promise((resolve) => {
             resolveTurn = resolve;
           }),
@@ -501,7 +501,7 @@ describe("MVP composer input flows", () => {
     expect(await screen.findByText("Ship it")).toBeInTheDocument();
     expect(screen.getByText("Sending")).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
-    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
 
     act(() => resolveTurn({ payload: {} }));
     await waitFor(() => {
@@ -520,7 +520,7 @@ describe("MVP composer input flows", () => {
         "GET /v1/threads/thread-2": threadDetail(secondThread, [
           snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Second thread snapshot" })]),
         ]),
-        "POST /v1/threads/thread-1/turns": () =>
+        "POST /v1/threads/thread-1/input": () =>
           new Promise((resolve) => {
             resolveTurn = resolve;
           }),
@@ -536,7 +536,7 @@ describe("MVP composer input flows", () => {
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
       expect(firstThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument();
     });
 
@@ -585,7 +585,7 @@ describe("MVP composer input flows", () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/events": { events: [] },
-        "POST /v1/threads/thread-1/turns": () => {
+        "POST /v1/threads/thread-1/input": () => {
           turnAttempts += 1;
           if (turnAttempts === 1) {
             throw new Error("start turn failed");
@@ -602,7 +602,7 @@ describe("MVP composer input flows", () => {
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
     expect(await screen.findByText(/gateway request failed|start turn failed/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("Retry text");
@@ -612,7 +612,7 @@ describe("MVP composer input flows", () => {
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(2);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(2);
       expect(screen.queryByText("Sending")).not.toBeInTheDocument();
     });
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
@@ -625,7 +625,7 @@ describe("MVP composer input flows", () => {
     mockGateway(
       baseRoutes({
         "GET /v1/events": { events: [] },
-        "POST /v1/threads/thread-1/turns": () =>
+        "POST /v1/threads/thread-1/input": () =>
           new Promise((_resolve, reject) => {
             rejectTurn = reject;
           }),
@@ -659,7 +659,7 @@ describe("MVP composer input flows", () => {
       baseRoutes({
         "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         "GET /v1/events": { events: [] },
-        "POST /v1/threads/thread-1/turns": () =>
+        "POST /v1/threads/thread-1/input": () =>
           new Promise((_resolve, reject) => {
             rejectTurn = reject;
           }),
@@ -683,7 +683,7 @@ describe("MVP composer input flows", () => {
     expect(await screen.findByText(/gateway request failed|start turn failed/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
     expect(within(timelineElement(container)).queryByText("Retry in first thread")).not.toBeInTheDocument();
-    expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(0);
   });
 
   it("attaches image files, uploads them on send, and posts local image inputs", async () => {
@@ -691,7 +691,7 @@ describe("MVP composer input flows", () => {
       baseRoutes({
         "GET /v1/events": { events: [] },
         "POST /v1/uploads/images": { images: [{ id: "upload-1", fileName: "diagram.png", mimeType: "image/png", sizeBytes: 4, path: "/tmp/diagram.png" }] },
-        "POST /v1/threads/thread-1/turns": { payload: {} },
+        "POST /v1/threads/thread-1/input": { payload: {} },
       }),
     );
 
@@ -710,9 +710,9 @@ describe("MVP composer input flows", () => {
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(1);
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/turns")[0])).resolves.toEqual({
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({
       input: [
         { type: "text", text: "Inspect this" },
         { type: "localImage", path: "/tmp/diagram.png" },
@@ -730,7 +730,7 @@ describe("MVP composer input flows", () => {
           new Promise((resolve) => {
             resolveUpload = resolve;
           }),
-        "POST /v1/threads/thread-1/turns": { payload: {} },
+        "POST /v1/threads/thread-1/input": { payload: {} },
       }),
     );
 
@@ -755,7 +755,7 @@ describe("MVP composer input flows", () => {
     expect(createObjectUrl).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: /remove second-diagram.png/i })).not.toBeInTheDocument();
     expect(container.querySelector(".kodex-user-image-grid img")).toHaveAttribute("src", "blob:pending-diagram");
-    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(0);
 
     act(() =>
       resolveUpload({
@@ -763,7 +763,7 @@ describe("MVP composer input flows", () => {
       }),
     );
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
       expect(screen.queryByText("Uploading")).not.toBeInTheDocument();
     });
   });
@@ -780,7 +780,7 @@ describe("MVP composer input flows", () => {
           new Promise((resolve) => {
             resolveUpload = resolve;
           }),
-        "POST /v1/threads/thread-2/turns": { payload: {} },
+        "POST /v1/threads/thread-2/input": { payload: {} },
       }),
     );
 
@@ -802,7 +802,7 @@ describe("MVP composer input flows", () => {
     expect(screen.getByText("Uploading")).toBeInTheDocument();
     expect(container.querySelector(".kodex-user-image-grid img")).toHaveAttribute("src", "blob:draft-diagram");
     expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
-    expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(0);
     expect(revokeObjectUrl).not.toHaveBeenCalledWith("blob:draft-diagram");
 
     act(() =>
@@ -811,7 +811,7 @@ describe("MVP composer input flows", () => {
       }),
     );
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(1);
       expect(screen.queryByText("Uploading")).not.toBeInTheDocument();
     });
   });
@@ -825,7 +825,7 @@ describe("MVP composer input flows", () => {
       baseRoutes({
         "GET /v1/events": { events: [] },
         "POST /v1/threads": { thread: draftThread, rawPayload: {} },
-        "POST /v1/threads/thread-2/turns": () =>
+        "POST /v1/threads/thread-2/input": () =>
           new Promise((resolve) => {
             resolveTurn = (value) => {
               materialized = true;
@@ -859,7 +859,7 @@ describe("MVP composer input flows", () => {
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(1);
     });
     expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(0);
     expect(screen.queryByText(/not materialized yet/i)).not.toBeInTheDocument();
@@ -878,7 +878,7 @@ describe("MVP composer input flows", () => {
       baseRoutes({
         "GET /v1/events": { events: [] },
         "POST /v1/threads": { thread: draftThread, rawPayload: {} },
-        "POST /v1/threads/thread-2/turns": { payload: {} },
+        "POST /v1/threads/thread-2/input": { payload: {} },
         "GET /v1/threads/thread-2": () => {
           detailReads += 1;
           if (detailReads === 1) {
@@ -919,7 +919,7 @@ describe("MVP composer input flows", () => {
       baseRoutes({
         "GET /v1/events": { events: [] },
         "POST /v1/threads": { thread: draftThread, rawPayload: {} },
-        "POST /v1/threads/thread-2/turns": { payload: {} },
+        "POST /v1/threads/thread-2/input": { payload: {} },
         "GET /v1/threads/thread-2": () => {
           detailReads += 1;
           if (detailReads === 1) {
@@ -975,7 +975,7 @@ describe("MVP composer input flows", () => {
             ],
           };
         },
-        "POST /v1/threads/thread-2/turns": { payload: {} },
+        "POST /v1/threads/thread-2/input": { payload: {} },
         "GET /v1/threads/thread-2": threadDetail(
           { ...thread, id: "thread-2", name: "New thread", preview: "Inspect this" },
           [
@@ -1004,7 +1004,7 @@ describe("MVP composer input flows", () => {
     expect(await within(timelineElement(container)).findByText("Inspect this")).toBeInTheDocument();
     expect(screen.getByText("Uploading")).toBeInTheDocument();
     expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
-    expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(0);
     expect(revokeObjectUrl).not.toHaveBeenCalledWith("blob:draft-retry-diagram");
 
     await act(async () => {
@@ -1023,7 +1023,7 @@ describe("MVP composer input flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(2);
       expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
-      expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(1);
     });
     expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
     expect(within(timelineElement(container)).getAllByText("Inspect this")).toHaveLength(1);
@@ -1040,7 +1040,7 @@ describe("MVP composer input flows", () => {
           new Promise((_resolve, reject) => {
             rejectUpload = reject;
           }),
-        "POST /v1/threads/thread-1/turns": { payload: {} },
+        "POST /v1/threads/thread-1/input": { payload: {} },
       }),
     );
 
@@ -1066,7 +1066,7 @@ describe("MVP composer input flows", () => {
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
     expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
     expect(within(timelineElement(container)).queryByText("Inspect this")).not.toBeInTheDocument();
-    expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(0);
   });
 
   it("removes failed optimistic image sends after upload before retrying the turn start", async () => {
@@ -1077,7 +1077,7 @@ describe("MVP composer input flows", () => {
         "POST /v1/uploads/images": {
           images: [{ id: "upload-1", fileName: "diagram.png", mimeType: "image/png", sizeBytes: 4, path: "/tmp/diagram.png" }],
         },
-        "POST /v1/threads/thread-1/turns": () => {
+        "POST /v1/threads/thread-1/input": () => {
           turnAttempts += 1;
           if (turnAttempts === 1) {
             throw new Error("start turn failed");
@@ -1098,7 +1098,7 @@ describe("MVP composer input flows", () => {
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(1);
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
     expect(await screen.findByText(/gateway request failed|start turn failed/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("Inspect this");
@@ -1110,10 +1110,10 @@ describe("MVP composer input flows", () => {
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(1);
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(2);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(2);
       expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
     });
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/turns")[1])).resolves.toEqual({
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[1])).resolves.toEqual({
       input: [
         { type: "text", text: "Inspect this" },
         { type: "localImage", path: "/tmp/diagram.png" },
@@ -1133,7 +1133,7 @@ describe("MVP composer input flows", () => {
         "POST /v1/uploads/images": {
           images: [{ id: "upload-1", fileName: "diagram.png", mimeType: "image/png", sizeBytes: 4, path: "/tmp/diagram.png" }],
         },
-        "POST /v1/threads/thread-1/turns": { payload: {} },
+        "POST /v1/threads/thread-1/input": { payload: {} },
       }),
     );
 
@@ -1150,7 +1150,7 @@ describe("MVP composer input flows", () => {
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(1);
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
       expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
     });
     expect(revokeObjectUrl).not.toHaveBeenCalledWith("blob:diagram-preview");
@@ -1376,7 +1376,7 @@ describe("MVP composer input flows", () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/events": { events: [] },
-        "POST /v1/threads/thread-1/turns": { payload: {} },
+        "POST /v1/threads/thread-1/input": { payload: {} },
       }),
     );
 
@@ -1389,11 +1389,11 @@ describe("MVP composer input flows", () => {
     await userEvent.type(composer, "Line two");
 
     expect(composer).toHaveValue("Line one\nLine two");
-    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(0);
 
     await userEvent.keyboard("{Enter}");
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
   });
 
@@ -1411,7 +1411,7 @@ describe("MVP composer input flows", () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/events": { events: [] },
-        "POST /v1/threads/thread-1/turns": { payload: {} },
+        "POST /v1/threads/thread-1/input": { payload: {} },
       }),
     );
 
@@ -1423,7 +1423,7 @@ describe("MVP composer input flows", () => {
     await userEvent.keyboard("{Enter}");
 
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
   });
 
@@ -1441,7 +1441,7 @@ describe("MVP composer input flows", () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/events": { events: [] },
-        "POST /v1/threads/thread-1/turns": { payload: {} },
+        "POST /v1/threads/thread-1/input": { payload: {} },
       }),
     );
 
@@ -1455,11 +1455,11 @@ describe("MVP composer input flows", () => {
     await userEvent.type(composer, "Line two");
 
     expect(composer).toHaveValue("Line one\nLine two");
-    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(0);
 
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
   });
 
@@ -1477,7 +1477,7 @@ describe("MVP composer input flows", () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/events": { events: [] },
-        "POST /v1/threads/thread-1/turns": { payload: {} },
+        "POST /v1/threads/thread-1/input": { payload: {} },
       }),
     );
 
@@ -1489,7 +1489,7 @@ describe("MVP composer input flows", () => {
     await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
 
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
   });
 

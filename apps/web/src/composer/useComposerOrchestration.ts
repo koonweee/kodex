@@ -13,12 +13,11 @@ import {
 import { useMutation } from "@tanstack/react-query";
 
 import {
-  createQueuedInput,
   deleteQueuedInput,
   interruptTurn,
   retryQueuedInput,
-  startTurn,
   steerQueuedInput,
+  submitThreadInput,
   uploadImages,
   type ImageUpload,
   type TextElement,
@@ -49,11 +48,6 @@ import type { PendingAttachment, QueuedSteerRow } from "./types";
 
 type DraftThreadCreateRequest = { firstMessageText: string; projectId?: string };
 type DraftThreadCreateResult = { threadId: string; composerSettings: ComposerSettings };
-type CreateQueuedInputMutation = {
-  input: UserInput[];
-  options: Parameters<typeof createQueuedInput>[2];
-  threadId: string;
-};
 type QueuedInputMutation = {
   queueId: string;
   threadId: string;
@@ -110,10 +104,6 @@ export function useComposerOrchestration({
   const previousActiveSelectedTurnIdRef = useRef<string | null>(activeSelectedTurnId);
   const nextAttachmentId = useRef(0);
   const nextOptimisticMessageId = useRef(0);
-  const createQueuedInputMutation = useMutation({
-    mutationFn: ({ input, options, threadId }: CreateQueuedInputMutation) => createQueuedInput(threadId, input, options),
-    onSuccess: onQueuedInputUpsert,
-  });
   const retryQueuedInputMutation = useMutation({
     mutationFn: ({ queueId, threadId }: QueuedInputMutation) => retryQueuedInput(threadId, queueId),
     onSuccess: onQueuedInputUpsert,
@@ -179,30 +169,6 @@ export function useComposerOrchestration({
 
     const text = composerText.trim();
     const attachments = pendingAttachments;
-    if (selectedThreadId && activeSelectedTurnId) {
-      setIsComposerSubmitting(true);
-      setIsQueuedTurnStartPending(true);
-      try {
-        const input = await buildTurnInput(text, attachments, skillInputs, skillTextElements);
-        await createQueuedInputMutation.mutateAsync({
-          input,
-          options: composerTurnOptions(composerSettings),
-          threadId: selectedThreadId,
-        });
-        for (const attachment of attachments) {
-          releaseAttachmentObjectUrl(attachment);
-        }
-        draftControls.clearText();
-        setPendingAttachments([]);
-      } catch (error) {
-        onError(error);
-      } finally {
-        setIsQueuedTurnStartPending(false);
-        setIsComposerSubmitting(false);
-      }
-      return;
-    }
-
     const optimisticImages = attachmentPreviewImages(attachments);
     const initialConfirmationState = attachments.length > 0 ? "uploading" : "sending";
     let optimisticClientRequestId: string | null = null;
@@ -230,7 +196,14 @@ export function useComposerOrchestration({
             error: undefined,
           });
         }
-        await startTurn(selectedThreadId, input, composerTurnOptions(composerSettings));
+        const response = await submitThreadInput(selectedThreadId, input, composerTurnOptions(composerSettings));
+        if (response.queuedInput) {
+          onQueuedInputUpsert(response.queuedInput);
+          setTimeline((current) => removeOptimisticUserMessage(current, optimisticClientRequestId!));
+          clearPendingAttachments();
+          setIsComposerSubmitting(false);
+          return;
+        }
         onThreadMaterialized(selectedThreadId);
         updateOptimisticMessage(optimisticClientRequestId, { confirmationState: "sent", error: undefined });
         clearPendingAttachments();
@@ -270,7 +243,14 @@ export function useComposerOrchestration({
           error: undefined,
         });
       }
-      await startTurn(threadId, input, composerTurnOptions(createdThread.composerSettings));
+      const response = await submitThreadInput(threadId, input, composerTurnOptions(createdThread.composerSettings));
+      if (response.queuedInput) {
+        onQueuedInputUpsert(response.queuedInput);
+        setTimeline((current) => removeOptimisticUserMessage(current, optimisticClientRequestId!));
+        clearPendingAttachments();
+        setIsComposerSubmitting(false);
+        return;
+      }
       onThreadMaterialized(threadId);
       updateOptimisticMessage(optimisticClientRequestId, { confirmationState: "sent", error: undefined });
       clearPendingAttachments();

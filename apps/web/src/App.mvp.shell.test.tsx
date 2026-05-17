@@ -79,7 +79,7 @@ describe("MVP shell flows", () => {
             { ...thread, id: "thread-2", name: "New thread", preview: "Implement the next milestone for the web client" },
             [],
           ),
-          "POST /v1/threads/thread-2/turns": { payload: {} },
+          "POST /v1/threads/thread-2/input": { payload: {} },
         }),
       );
 
@@ -143,7 +143,7 @@ describe("MVP shell flows", () => {
         expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
       });
       await waitFor(() => {
-        expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(1);
+        expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(1);
       });
       const optimisticThread = await screen.findByRole("button", {
         name: /implement the next milestone for the web client/i,
@@ -406,7 +406,7 @@ describe("MVP shell flows", () => {
         "GET /v1/chats/threads": { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         "POST /v1/chats/threads": { thread: chatThread, rawPayload: {} },
         "GET /v1/threads/chat-thread-1/queued-inputs": { queuedInputs: [] },
-        "POST /v1/threads/chat-thread-1/turns": { payload: {} },
+        "POST /v1/threads/chat-thread-1/input": { payload: {} },
         "GET /v1/threads/chat-thread-1": threadDetail(
           { ...chatThread, preview: "Plan the chat sidebar implementation" },
           [],
@@ -431,7 +431,7 @@ describe("MVP shell flows", () => {
       firstMessageText: "Plan the chat sidebar implementation",
     });
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/chat-thread-1/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/chat-thread-1/input")).toHaveLength(1);
     });
     expect(
       await screen.findByRole("button", { name: /plan the chat sidebar implementation/i }),
@@ -466,7 +466,7 @@ describe("MVP shell flows", () => {
         "GET /v1/chats/threads": () => initialChatThreads.promise,
         "POST /v1/chats/threads": { thread: chatThread, rawPayload: {} },
         "GET /v1/threads/chat-thread-1/queued-inputs": { queuedInputs: [] },
-        "POST /v1/threads/chat-thread-1/turns": { payload: {} },
+        "POST /v1/threads/chat-thread-1/input": { payload: {} },
         "GET /v1/threads/chat-thread-1": threadDetail(
           { ...chatThread, preview: "Keep local chat" },
           [],
@@ -500,7 +500,7 @@ describe("MVP shell flows", () => {
         "GET /v1/threads": () => initialProjectThreads.promise,
         "POST /v1/threads": { thread: projectThread, rawPayload: {} },
         "GET /v1/threads/project-thread-2/queued-inputs": { queuedInputs: [] },
-        "POST /v1/threads/project-thread-2/turns": { payload: {} },
+        "POST /v1/threads/project-thread-2/input": { payload: {} },
         "GET /v1/threads/project-thread-2": threadDetail(
           { ...projectThread, preview: "Keep local project thread" },
           [],
@@ -1443,7 +1443,7 @@ describe("MVP shell flows", () => {
           { ...chatThread, preview: "Start from mobile chats" },
           [],
         ),
-        "POST /v1/threads/chat-thread-1/turns": { payload: {} },
+        "POST /v1/threads/chat-thread-1/input": { payload: {} },
       }),
     );
 
@@ -1472,7 +1472,7 @@ describe("MVP shell flows", () => {
         "POST /v1/threads": { thread: { ...thread, id: "thread-2", name: "New thread", preview: "" }, rawPayload: {} },
         "GET /v1/threads/thread-2/queued-inputs": { queuedInputs: [] },
         "GET /v1/threads/thread-2": threadDetail({ ...thread, id: "thread-2", preview: "Start in project" }, []),
-        "POST /v1/threads/thread-2/turns": { payload: {} },
+        "POST /v1/threads/thread-2/input": { payload: {} },
       }),
     );
 
@@ -1660,7 +1660,7 @@ describe("MVP shell flows", () => {
             ],
           };
         },
-        "POST /v1/threads/thread-1/turns": { payload: {} },
+        "POST /v1/threads/thread-1/input": { payload: {} },
       }),
     );
 
@@ -1680,13 +1680,13 @@ describe("MVP shell flows", () => {
     expect(screen.getByText("Upload unavailable")).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("Inspect this");
     expect(within(timelineElement(container)).queryByText("Inspect this")).not.toBeInTheDocument();
-    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(0);
 
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(2);
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
     expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
     expect(within(timelineElement(container)).getAllByText("Inspect this")).toHaveLength(1);

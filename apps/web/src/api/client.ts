@@ -50,9 +50,11 @@ export type RenameThreadRequest = components["schemas"]["RenameThreadRequest"];
 export type ThreadSubagentListResponse = components["schemas"]["ThreadSubagentListResponse"];
 export type ThreadSubagentSummary = components["schemas"]["ThreadSubagentSummary"];
 export type TextElement = components["schemas"]["TextElement"];
+export type ThreadCommandResponse = components["schemas"]["ThreadCommandResponse"];
 export type ThreadSummary = components["schemas"]["ThreadSummary"];
 export type ThreadTimelineSnapshot = components["schemas"]["ThreadTimelineSnapshot"];
 export type ThreadTimelineSnapshotItem = components["schemas"]["ThreadTimelineSnapshotItem"];
+export type ThreadInputResponse = components["schemas"]["ThreadInputResponse"];
 export type TimelineSkillMention = components["schemas"]["TimelineSkillMention"];
 export type TimelineItemDeltaPayload = components["schemas"]["TimelineItemDeltaPayload"];
 export type TimelineItemUpsertPayload = components["schemas"]["TimelineItemUpsertPayload"];
@@ -271,11 +273,10 @@ export async function createChatThread(
   return response.thread;
 }
 
-export async function resumeThread(threadId: string): Promise<ThreadSummary> {
-  const response = await unwrap(
+export async function resumeThread(threadId: string): Promise<ThreadCommandResponse> {
+  return unwrap(
     api.POST("/v1/threads/{threadId}/resume", { params: { path: { threadId } }, body: {} }),
   );
-  return response.thread;
 }
 
 export async function forkThread(threadId: string): Promise<ThreadSummary> {
@@ -367,6 +368,19 @@ export async function deletePushSubscription(subscriptionId: string): Promise<Pu
 export async function startTurn(threadId: string, input: UserInput[], options: TurnStartOptions = {}): Promise<void> {
   await unwrap(
     api.POST("/v1/threads/{threadId}/turns", {
+      params: { path: { threadId } },
+      body: { input, ...options },
+    }),
+  );
+}
+
+export async function submitThreadInput(
+  threadId: string,
+  input: UserInput[],
+  options: TurnStartOptions = {},
+): Promise<ThreadInputResponse> {
+  return unwrap(
+    api.POST("/v1/threads/{threadId}/input", {
       params: { path: { threadId } },
       body: { input, ...options },
     }),

@@ -82,7 +82,7 @@ use crate::{
             RenameThreadRequest, RenameThreadResponse, ThreadListQuery, ThreadPinResponse,
             ThreadSubagentListResponse, ThreadSubagentSummary,
         },
-        turns::{TurnStartRequest, TurnSteerRequest},
+        turns::{ThreadInputDisposition, ThreadInputResponse, TurnStartRequest, TurnSteerRequest},
         uploads::{ImageUpload, ImageUploadRequest, ImageUploadResponse},
     },
     static_assets,
@@ -91,7 +91,7 @@ use crate::{
         ProjectPreviewService, QueuedInput, QueuedInputPriority, QueuedInputStatus, Store,
         ThreadRead,
     },
-    timeline_projection::TimelineProjectionPatch,
+    timeline_projection::{ThreadSessionStore, TimelineProjectionPatch},
 };
 
 #[derive(Clone)]
@@ -103,6 +103,7 @@ pub struct AppState {
     pub skills: crate::skills::SkillCatalogCache,
     pub previews: crate::previews::PreviewManager,
     pub notifications: crate::notifications::NotificationService,
+    pub thread_sessions: ThreadSessionStore,
 }
 
 impl AppState {
@@ -119,6 +120,7 @@ impl AppState {
             events,
             skills: crate::skills::SkillCatalogCache::default(),
             notifications,
+            thread_sessions: ThreadSessionStore::default(),
         }
     }
 
@@ -170,6 +172,7 @@ impl AppState {
         crate::routes::threads::unpin_thread,
         crate::routes::threads::mark_thread_seen,
         crate::routes::turns::start_turn,
+        crate::routes::turns::submit_thread_input,
         crate::routes::turns::steer_turn,
         crate::routes::turns::interrupt_turn,
         crate::queue::list_queued_inputs,
@@ -288,6 +291,8 @@ impl AppState {
         UserInput,
         TurnStartRequest,
         TurnSteerRequest,
+        ThreadInputResponse,
+        ThreadInputDisposition,
         QueuedInput,
         QueuedInputStatus,
         QueuedInputPriority,

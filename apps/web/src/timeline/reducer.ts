@@ -57,12 +57,6 @@ export type {
   WebSearchAction,
 } from "./state";
 
-const LIVE_TIMELINE_EVENT_KINDS = new Set([
-  "timeline.projection_patch",
-  "timeline.turn_upsert",
-  "timeline.thread_status",
-]);
-
 type TimelineEventApplyOptions = {
   disableEquivalentCompletedItemMatch?: boolean;
   skipOptimisticUserMessageMatch?: boolean;
@@ -79,10 +73,10 @@ export function applyLiveTimelineUpdate(state: TimelineState, event: EventEnvelo
   if (event.kind === "timeline.projection_patch") {
     return applyTimelineProjectionPatch(state, event);
   }
-  if (!LIVE_TIMELINE_EVENT_KINDS.has(event.kind)) {
+  if (isWarningEvent(event) || isErrorEvent(event)) {
     return applyDebugEvent(state, event);
   }
-  return applyTimelineEventInternal(state, event);
+  return withTimelineLastSeq(state, Math.max(state.lastSeq, event.seq));
 }
 
 export function applyDebugEvent(state: TimelineState, event: EventEnvelope): TimelineState {

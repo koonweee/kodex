@@ -19,7 +19,8 @@ use utoipa::ToSchema;
 use crate::{
     api::AppState,
     app_server_api::{
-        self, RawAppServerResponse, ThreadCommandResponse, TurnStartOptions, UserInput,
+        self, RawAppServerResponse, ThreadCommandResponse, ThreadLiveState, TurnStartOptions,
+        UserInput,
     },
     automations::broadcast_automation_upsert,
     error::{ApiError, ApiResult},
@@ -1226,14 +1227,20 @@ fn retired_service_name(name: &str, service_id: &str) -> String {
 }
 
 async fn should_queue_self_control_input(state: &AppState, thread_id: &str) -> ApiResult<bool> {
-    let runtime = match state.store.get_thread_runtime_state(thread_id).await? {
-        Some(runtime) if runtime.status == "active" && runtime.active_turn_id.is_none() => {
-            queue::reconcile_thread_runtime_from_app_server(state, thread_id).await?
-        }
-        Some(runtime) if runtime.status != "unknown" => Some(runtime),
-        _ => queue::reconcile_thread_runtime_from_app_server(state, thread_id).await?,
-    };
-    Ok(runtime.is_some_and(|runtime| runtime.status != "idle"))
+    match state.thread_sessions.live_state(thread_id).await {
+        Some(ThreadLiveState::Streaming | ThreadLiveState::Syncing) => return Ok(true),
+        Some(ThreadLiveState::Idle) => return Ok(false),
+        Some(ThreadLiveState::NotLoaded) | None => {}
+    }
+    let snapshot = app_server_api::client(&state.app_server)
+        .thread_read(thread_id.to_string())
+        .await?;
+    let revision = state.store.latest_event_seq().await?;
+    let timeline = state
+        .thread_sessions
+        .refresh_from_turns(thread_id, &snapshot.turns, revision)
+        .await;
+    Ok(timeline.active_turn_id.is_some() || timeline.live_state != ThreadLiveState::Idle)
 }
 
 #[derive(Default)]

@@ -1,8 +1,12 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tokio::sync::RwLock;
 use utoipa::ToSchema;
 
 use crate::{
@@ -12,7 +16,6 @@ use crate::{
         TimelineItemUpsertPayload, TimelineUpdateSource, UserInput,
     },
     error::ApiResult,
-    store::{NewTimelineProjectionItemRecord, Store, TimelineProjectionItemRecord},
 };
 
 pub const TIMELINE_PROJECTION_PATCH_KIND: &str = "timeline.projection_patch";
@@ -27,109 +30,290 @@ pub struct TimelineProjectionPatch {
     pub items: Vec<ThreadTimelineSnapshotItem>,
 }
 
-pub async fn build_thread_timeline(
-    store: &Store,
-    thread_id: &str,
-    turns: &[ThreadTurnSnapshot],
+#[derive(Debug, Clone, Default)]
+pub struct ThreadSessionStore {
+    sessions: Arc<RwLock<HashMap<String, ThreadSessionView>>>,
+}
+
+impl ThreadSessionStore {
+    pub async fn refresh_from_turns(
+        &self,
+        thread_id: &str,
+        turns: &[ThreadTurnSnapshot],
+        revision: i64,
+    ) -> ThreadTimelineSnapshot {
+        let base = ThreadTimelineSnapshot::from_turns(thread_id, turns);
+        let mut sessions = self.sessions.write().await;
+        let view = sessions.entry(thread_id.to_string()).or_default();
+        view.refresh_from_base(thread_id, base, revision)
+    }
+
+    pub async fn patch_for_thread(&self, thread_id: &str) -> TimelineProjectionPatch {
+        let sessions = self.sessions.read().await;
+        sessions
+            .get(thread_id)
+            .map(ThreadSessionView::to_patch)
+            .unwrap_or_else(|| TimelineProjectionPatch {
+                revision: 0,
+                thread_id: thread_id.to_string(),
+                active_turn_id: None,
+                live_state: ThreadLiveState::Idle,
+                items: Vec::new(),
+            })
+    }
+
+    pub async fn active_turn_id(&self, thread_id: &str) -> Option<String> {
+        self.sessions
+            .read()
+            .await
+            .get(thread_id)
+            .and_then(|view| view.active_turn_id.clone())
+    }
+
+    pub async fn live_state(&self, thread_id: &str) -> Option<ThreadLiveState> {
+        self.sessions
+            .read()
+            .await
+            .get(thread_id)
+            .map(|view| view.live_state)
+    }
+
+    async fn with_thread_view<F, R>(&self, thread_id: &str, revision: i64, update: F) -> R
+    where
+        F: FnOnce(&mut ThreadSessionView) -> R,
+    {
+        let mut sessions = self.sessions.write().await;
+        let view = sessions.entry(thread_id.to_string()).or_default();
+        view.thread_id = thread_id.to_string();
+        view.revision = view.revision.max(revision);
+        update(view)
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct ThreadSessionView {
+    thread_id: String,
     revision: i64,
-) -> ApiResult<ThreadTimelineSnapshot> {
-    let mut snapshot = ThreadTimelineSnapshot::from_turns(thread_id, turns);
-    let base_item_ids = snapshot
-        .items
-        .iter()
-        .map(|item| scoped_item_key(&item.turn_id, &item.item_id))
-        .collect::<HashSet<_>>();
-    let mut base_text_counts =
-        snapshot
+    active_turn_id: Option<String>,
+    live_state: ThreadLiveState,
+    items: Vec<ThreadTimelineSnapshotItem>,
+}
+
+impl ThreadSessionView {
+    fn refresh_from_base(
+        &mut self,
+        thread_id: &str,
+        mut base: ThreadTimelineSnapshot,
+        revision: i64,
+    ) -> ThreadTimelineSnapshot {
+        let existing_items = std::mem::take(&mut self.items);
+        let mut base_keys = base
             .items
             .iter()
-            .filter_map(base_text_key)
+            .map(|item| scoped_item_key(&item.turn_id, &item.item_id))
+            .collect::<HashSet<_>>();
+        let mut base_text_counts = base
+            .items
+            .iter()
+            .filter_map(text_key_for_snapshot_item)
             .fold(HashMap::new(), |mut counts, key| {
                 *counts.entry(key).or_insert(0) += 1;
                 counts
             });
-    let overlays = store
-        .timeline_projection_items_through_seq(thread_id, Some(revision))
-        .await?;
-    let mut display_order = snapshot
-        .items
-        .iter()
-        .map(|item| item.display_order)
-        .max()
-        .unwrap_or(0);
-    let mut reconciled_items = Vec::new();
-    for overlay in overlays {
-        if base_item_ids.contains(&scoped_item_key(&overlay.turn_id, &overlay.item_id)) {
-            consume_base_text_match(&overlay, &mut base_text_counts);
-            reconciled_items.push((overlay.turn_id, overlay.item_id));
-            continue;
-        }
-        if consume_matching_materialized_overlay(&overlay, &mut base_text_counts) {
-            reconciled_items.push((overlay.turn_id, overlay.item_id));
-            continue;
-        }
-        if projection_item_is_prunable_empty_reasoning(&overlay) {
-            reconciled_items.push((overlay.turn_id, overlay.item_id));
-            continue;
-        }
-        display_order += 1;
-        if projection_item_is_live(&overlay.status) && snapshot.active_turn_id.is_none() {
-            snapshot.active_turn_id = Some(overlay.turn_id.clone());
-        }
-        if projection_item_is_live(&overlay.status) {
-            snapshot.live_state = ThreadLiveState::Streaming;
-        }
-        snapshot
+
+        let mut display_order = base
             .items
-            .push(projection_record_to_snapshot_item(overlay, display_order));
+            .iter()
+            .map(|item| item.display_order)
+            .max()
+            .unwrap_or(0);
+        for item in existing_items {
+            if base_keys.contains(&scoped_item_key(&item.turn_id, &item.item_id)) {
+                consume_text_match(&item, &mut base_text_counts);
+                continue;
+            }
+            if consume_text_match(&item, &mut base_text_counts) {
+                continue;
+            }
+            if is_prunable_empty_reasoning(&item) {
+                continue;
+            }
+            if is_live_status(&item.status) && base.active_turn_id.is_none() {
+                base.active_turn_id = Some(item.turn_id.clone());
+                base.live_state = ThreadLiveState::Streaming;
+            }
+            display_order += 1;
+            let mut item = item;
+            item.display_order = display_order;
+            base_keys.insert(scoped_item_key(&item.turn_id, &item.item_id));
+            base.items.push(item);
+        }
+
+        base.revision = self.revision.max(revision);
+        self.thread_id = thread_id.to_string();
+        self.revision = base.revision;
+        self.active_turn_id = base.active_turn_id.clone();
+        self.live_state = base.live_state;
+        self.items = base.items.clone();
+        base
     }
-    if !reconciled_items.is_empty() {
-        store
-            .delete_timeline_projection_items(thread_id, &reconciled_items, revision)
-            .await?;
+
+    fn upsert_item(
+        &mut self,
+        thread_id: &str,
+        turn_id: &str,
+        item: Value,
+        item_snapshot: ThreadItemSnapshot,
+        turn_status: Option<&str>,
+        timestamp_ms: Option<i64>,
+    ) {
+        self.thread_id = thread_id.to_string();
+        let status = turn_status
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "running".to_string());
+        let key = scoped_item_key(turn_id, &item_snapshot.id);
+        remove_materialized_pending_match(&mut self.items, turn_id, &item_snapshot, &item);
+        let display_order = self
+            .items
+            .iter()
+            .find(|existing| scoped_item_key(&existing.turn_id, &existing.item_id) == key)
+            .map(|existing| existing.display_order)
+            .unwrap_or_else(|| next_display_order(&self.items));
+        let next_item = ThreadTimelineSnapshotItem {
+            id: format!("projection-{turn_id}-{}", item_snapshot.id),
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item_id: item_snapshot.id.clone(),
+            item_type: item_snapshot.item_type.clone(),
+            status: status.clone(),
+            display_order,
+            codex_method: "item/upsert".to_string(),
+            timestamp_ms,
+            payload: TimelineItemUpsertPayload {
+                source: TimelineUpdateSource::GatewayStream,
+                turn_id: turn_id.to_string(),
+                item_id: item_snapshot.id.clone(),
+                item,
+                item_snapshot,
+            },
+        };
+        replace_or_push(&mut self.items, key, next_item);
+        if is_live_status(&status) {
+            self.active_turn_id = Some(turn_id.to_string());
+            self.live_state = ThreadLiveState::Streaming;
+        }
     }
-    snapshot.revision = revision;
-    Ok(snapshot)
+
+    fn append_delta(&mut self, thread_id: &str, turn_id: &str, item_id: &str, delta: &str) {
+        self.thread_id = thread_id.to_string();
+        let key = scoped_item_key(turn_id, item_id);
+        let existing = self
+            .items
+            .iter()
+            .find(|item| scoped_item_key(&item.turn_id, &item.item_id) == key);
+        let mut item = existing
+            .map(|item| item.payload.item.clone())
+            .unwrap_or_else(|| json!({"id": item_id, "type": "agentMessage", "text": ""}));
+        let current = item
+            .get("text")
+            .and_then(Value::as_str)
+            .or_else(|| item.get("delta").and_then(Value::as_str))
+            .unwrap_or_default()
+            .to_string();
+        if let Some(object) = item.as_object_mut() {
+            object.insert("id".to_string(), Value::String(item_id.to_string()));
+            object.insert(
+                "type".to_string(),
+                Value::String("agentMessage".to_string()),
+            );
+            object.insert(
+                "text".to_string(),
+                Value::String(format!("{current}{delta}")),
+            );
+        }
+        if let Ok(item_snapshot) = ThreadItemSnapshot::from_payload(&item) {
+            self.upsert_item(
+                thread_id,
+                turn_id,
+                item,
+                item_snapshot,
+                Some("running"),
+                Some(Utc::now().timestamp_millis()),
+            );
+        }
+    }
+
+    fn update_turn_status(&mut self, turn: &ThreadTurnSnapshot) {
+        let terminal = is_terminal_turn_status(&turn.status);
+        for item in &mut self.items {
+            if item.turn_id == turn.id {
+                item.status = if terminal {
+                    "completed".to_string()
+                } else {
+                    turn.status.clone()
+                };
+            }
+        }
+        if terminal && self.active_turn_id.as_deref() == Some(&turn.id) {
+            self.active_turn_id = None;
+            self.live_state = ThreadLiveState::Idle;
+        } else if !terminal {
+            self.active_turn_id = Some(turn.id.clone());
+            self.live_state = ThreadLiveState::Streaming;
+        }
+    }
+
+    fn set_live_state(
+        &mut self,
+        live_state: ThreadLiveState,
+        updated_active_turn_id: Option<String>,
+    ) {
+        self.live_state = live_state;
+        match live_state {
+            ThreadLiveState::Idle | ThreadLiveState::NotLoaded => {
+                self.active_turn_id = None;
+            }
+            ThreadLiveState::Streaming | ThreadLiveState::Syncing => {
+                if updated_active_turn_id.is_some() || self.active_turn_id.is_none() {
+                    self.active_turn_id = updated_active_turn_id;
+                }
+            }
+        }
+    }
+
+    fn to_patch(&self) -> TimelineProjectionPatch {
+        let mut items = self.items.clone();
+        items.sort_by_key(|item| item.display_order);
+        TimelineProjectionPatch {
+            revision: self.revision,
+            thread_id: self.thread_id.clone(),
+            active_turn_id: self.active_turn_id.clone(),
+            live_state: self.live_state,
+            items,
+        }
+    }
+}
+
+pub async fn build_thread_timeline(
+    sessions: &ThreadSessionStore,
+    thread_id: &str,
+    turns: &[ThreadTurnSnapshot],
+    revision: i64,
+) -> ApiResult<ThreadTimelineSnapshot> {
+    Ok(sessions
+        .refresh_from_turns(thread_id, turns, revision)
+        .await)
 }
 
 pub async fn projection_patch_for_thread(
-    store: &Store,
+    sessions: &ThreadSessionStore,
     thread_id: &str,
 ) -> ApiResult<TimelineProjectionPatch> {
-    let overlays = store.timeline_projection_items(thread_id).await?;
-    let revision = overlays
-        .iter()
-        .map(|item| item.updated_seq)
-        .max()
-        .unwrap_or_else(|| 0);
-    let active_turn_id = overlays
-        .iter()
-        .rev()
-        .find(|item| projection_item_is_live(&item.status))
-        .map(|item| item.turn_id.clone());
-    let items = overlays
-        .into_iter()
-        .map(|item| {
-            let display_order = item.updated_seq;
-            projection_record_to_snapshot_item(item, display_order)
-        })
-        .collect::<Vec<_>>();
-    let live_state = if active_turn_id.is_some() {
-        ThreadLiveState::Streaming
-    } else {
-        ThreadLiveState::Idle
-    };
-    Ok(TimelineProjectionPatch {
-        revision,
-        thread_id: thread_id.to_string(),
-        active_turn_id,
-        live_state,
-        items,
-    })
+    Ok(sessions.patch_for_thread(thread_id).await)
 }
 
 pub async fn record_item_upsert(
-    store: &Store,
+    sessions: &ThreadSessionStore,
     thread_id: &str,
     turn_id: &str,
     item: Value,
@@ -138,50 +322,67 @@ pub async fn record_item_upsert(
     updated_seq: i64,
 ) -> ApiResult<()> {
     item_snapshot.raw_payload = item.clone();
-    let status = turn_status
-        .map(ToString::to_string)
-        .unwrap_or_else(|| "running".to_string());
-    store
-        .upsert_timeline_projection_item(NewTimelineProjectionItemRecord {
-            thread_id: thread_id.to_string(),
-            turn_id: turn_id.to_string(),
-            item_id: item_snapshot.id.clone(),
-            item_type: item_snapshot.item_type.clone(),
-            status,
-            item,
-            item_snapshot,
-            timestamp_ms: Some(Utc::now().timestamp_millis()),
-            updated_seq,
+    sessions
+        .with_thread_view(thread_id, updated_seq, |view| {
+            view.upsert_item(
+                thread_id,
+                turn_id,
+                item,
+                item_snapshot,
+                turn_status,
+                Some(Utc::now().timestamp_millis()),
+            );
         })
-        .await
+        .await;
+    Ok(())
 }
 
 pub async fn record_item_delta(
-    store: &Store,
+    sessions: &ThreadSessionStore,
     thread_id: &str,
     turn_id: &str,
     item_id: &str,
     delta: &str,
     updated_seq: i64,
 ) -> ApiResult<()> {
-    store
-        .append_timeline_projection_item_delta(thread_id, turn_id, item_id, delta, updated_seq)
-        .await
+    sessions
+        .with_thread_view(thread_id, updated_seq, |view| {
+            view.append_delta(thread_id, turn_id, item_id, delta);
+        })
+        .await;
+    Ok(())
 }
 
 pub async fn record_turn_status(
-    store: &Store,
+    sessions: &ThreadSessionStore,
     thread_id: &str,
     turn: &ThreadTurnSnapshot,
     updated_seq: i64,
 ) -> ApiResult<()> {
-    store
-        .update_timeline_projection_turn_status(thread_id, &turn.id, &turn.status, updated_seq)
-        .await
+    sessions
+        .with_thread_view(thread_id, updated_seq, |view| {
+            view.update_turn_status(turn);
+        })
+        .await;
+    Ok(())
+}
+
+pub async fn record_thread_live_state(
+    sessions: &ThreadSessionStore,
+    thread_id: &str,
+    live_state: ThreadLiveState,
+    updated_seq: i64,
+) -> ApiResult<()> {
+    sessions
+        .with_thread_view(thread_id, updated_seq, |view| {
+            view.set_live_state(live_state, None);
+        })
+        .await;
+    Ok(())
 }
 
 pub async fn record_pending_user_input(
-    store: &Store,
+    sessions: &ThreadSessionStore,
     thread_id: &str,
     turn_id: &str,
     input: &[UserInput],
@@ -201,74 +402,64 @@ pub async fn record_pending_user_input(
     });
     let mut item_snapshot = ThreadItemSnapshot::from_payload(&item)?;
     item_snapshot.raw_payload = item.clone();
-    store
-        .upsert_timeline_projection_item(NewTimelineProjectionItemRecord {
-            thread_id: thread_id.to_string(),
-            turn_id: turn_id.to_string(),
-            item_id: item_id.clone(),
-            item_type: item_snapshot.item_type.clone(),
-            status: "running".to_string(),
-            item,
-            item_snapshot,
-            timestamp_ms: Some(Utc::now().timestamp_millis()),
-            updated_seq,
+    sessions
+        .with_thread_view(thread_id, updated_seq, |view| {
+            view.upsert_item(
+                thread_id,
+                turn_id,
+                item,
+                item_snapshot,
+                Some("running"),
+                Some(Utc::now().timestamp_millis()),
+            );
         })
-        .await?;
+        .await;
     Ok(Some(text))
 }
 
-fn projection_record_to_snapshot_item(
-    item: TimelineProjectionItemRecord,
-    display_order: i64,
-) -> ThreadTimelineSnapshotItem {
-    ThreadTimelineSnapshotItem {
-        id: format!("projection-{}-{}", item.turn_id, item.item_id),
-        thread_id: item.thread_id.clone(),
-        turn_id: item.turn_id.clone(),
-        item_id: item.item_id.clone(),
-        item_type: item.item_type.clone(),
-        status: item.status.clone(),
-        display_order,
-        codex_method: "item/upsert".to_string(),
-        timestamp_ms: item.timestamp_ms,
-        payload: TimelineItemUpsertPayload {
-            source: TimelineUpdateSource::GatewayStream,
-            turn_id: item.turn_id,
-            item_id: item.item_id,
-            item: item.item,
-            item_snapshot: item.item_snapshot,
-        },
+fn replace_or_push(
+    items: &mut Vec<ThreadTimelineSnapshotItem>,
+    key: String,
+    item: ThreadTimelineSnapshotItem,
+) {
+    if let Some(existing) = items
+        .iter_mut()
+        .find(|existing| scoped_item_key(&existing.turn_id, &existing.item_id) == key)
+    {
+        *existing = item;
+    } else {
+        items.push(item);
     }
 }
 
-fn scoped_item_key(turn_id: &str, item_id: &str) -> String {
-    format!("{turn_id}\0{item_id}")
-}
-
-fn base_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
-    let text = materialized_item_text(&item.payload.item)?;
-    Some(scoped_text_key(&item.turn_id, &item.item_type, &text))
-}
-
-fn consume_matching_materialized_overlay(
-    item: &TimelineProjectionItemRecord,
-    base_text_counts: &mut HashMap<String, usize>,
-) -> bool {
-    let item_type = item.item_type.to_ascii_lowercase();
-    if !item_type.contains("user") && projection_item_is_live(&item.status) {
-        return false;
+fn remove_materialized_pending_match(
+    items: &mut Vec<ThreadTimelineSnapshotItem>,
+    turn_id: &str,
+    item_snapshot: &ThreadItemSnapshot,
+    raw_item: &Value,
+) {
+    if !item_snapshot.item_type.eq_ignore_ascii_case("userMessage") {
+        return;
     }
-    consume_base_text_match(item, base_text_counts)
+    let Some(text) = visible_text_from_thread_item(raw_item) else {
+        return;
+    };
+    let key = scoped_text_key(turn_id, &item_snapshot.item_type, &text);
+    items.retain(|item| {
+        if !item.item_id.starts_with("pending-user-") {
+            return true;
+        }
+        text_key_for_snapshot_item(item).is_none_or(|pending_key| pending_key != key)
+    });
 }
 
-fn consume_base_text_match(
-    item: &TimelineProjectionItemRecord,
+fn consume_text_match(
+    item: &ThreadTimelineSnapshotItem,
     base_text_counts: &mut HashMap<String, usize>,
 ) -> bool {
-    let Some(text) = materialized_item_text(&item.item) else {
+    let Some(key) = text_key_for_snapshot_item(item) else {
         return false;
     };
-    let key = scoped_text_key(&item.turn_id, &item.item_type, &text);
     let Some(count) = base_text_counts.get_mut(&key) else {
         return false;
     };
@@ -279,334 +470,93 @@ fn consume_base_text_match(
     true
 }
 
+fn text_key_for_snapshot_item(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+    let text = visible_text_from_thread_item(&item.payload.item)?;
+    Some(scoped_text_key(&item.turn_id, &item.item_type, &text))
+}
+
+fn scoped_item_key(turn_id: &str, item_id: &str) -> String {
+    format!("{turn_id}\0{item_id}")
+}
+
 fn scoped_text_key(turn_id: &str, item_type: &str, text: &str) -> String {
-    format!("{}\0{}\0{}", turn_id, item_type.to_ascii_lowercase(), text)
+    format!(
+        "{turn_id}\0{}\0{}",
+        item_type.to_ascii_lowercase(),
+        text.trim()
+    )
 }
 
-fn materialized_item_text(item: &Value) -> Option<String> {
-    if let Some(text) = visible_text_from_thread_item(item) {
-        return Some(text);
-    }
-    for key in ["text", "message", "content", "summary"] {
-        if let Some(text) = non_empty_string(item.get(key)) {
-            return Some(text.to_string());
-        }
-    }
-    if let Some(text) = item
-        .get("summary")
-        .and_then(Value::as_array)
-        .and_then(|summary| content_array_text(summary))
-    {
-        return Some(text);
-    }
-    item.get("content")
-        .and_then(Value::as_array)
-        .and_then(|content| content_array_text(content))
-}
-
-fn content_array_text(content: &[Value]) -> Option<String> {
-    let text = content
+fn next_display_order(items: &[ThreadTimelineSnapshotItem]) -> i64 {
+    items
         .iter()
-        .filter_map(|entry| {
-            if let Some(text) = entry.as_str() {
-                return Some(text.to_string());
-            }
-            let entry_type = entry
-                .get("type")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_ascii_lowercase();
-            if matches!(
-                entry_type.as_str(),
-                "image"
-                    | "input_image"
-                    | "inputimage"
-                    | "local_image"
-                    | "localimage"
-                    | "mention"
-                    | "skill"
-            ) {
-                return None;
-            }
-            non_empty_string(entry.get("text"))
-                .or_else(|| non_empty_string(entry.get("content")))
-                .map(str::to_string)
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    if text.is_empty() {
-        None
-    } else {
-        Some(text)
-    }
+        .map(|item| item.display_order)
+        .max()
+        .unwrap_or(0)
+        + 1
 }
 
-fn non_empty_string(value: Option<&Value>) -> Option<&str> {
-    value
-        .and_then(Value::as_str)
-        .filter(|text| !text.is_empty())
+fn is_live_status(status: &str) -> bool {
+    !is_terminal_turn_status(status)
 }
 
-fn projection_item_is_live(status: &str) -> bool {
-    !matches!(
+fn is_terminal_turn_status(status: &str) -> bool {
+    matches!(
         status.to_ascii_lowercase().as_str(),
         "completed" | "failed" | "cancelled" | "canceled" | "interrupted"
     )
 }
 
-fn projection_item_is_prunable_empty_reasoning(item: &TimelineProjectionItemRecord) -> bool {
-    !projection_item_is_live(&item.status)
-        && item.item_type.eq_ignore_ascii_case("reasoning")
-        && materialized_item_text(&item.item).is_none()
+fn is_prunable_empty_reasoning(item: &ThreadTimelineSnapshotItem) -> bool {
+    let item_type = item.item_type.to_ascii_lowercase();
+    if item_type != "reasoning" || is_live_status(&item.status) {
+        return false;
+    }
+    let content_empty = item
+        .payload
+        .item
+        .get("content")
+        .and_then(Value::as_array)
+        .is_none_or(Vec::is_empty);
+    let summary_empty = item
+        .payload
+        .item
+        .get("summary")
+        .and_then(Value::as_array)
+        .is_none_or(Vec::is_empty);
+    content_empty && summary_empty
 }
 
-pub fn agent_message_item(item_id: &str, text: &str) -> Value {
-    json!({
-        "id": item_id,
-        "type": "agentMessage",
-        "text": text,
-    })
+impl Default for ThreadLiveState {
+    fn default() -> Self {
+        Self::Idle
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
-
     use super::*;
-    use crate::store::Store;
 
-    #[tokio::test]
-    async fn projection_overlays_live_rows_without_replacing_completed_history() {
-        let store = Store::in_memory().await.unwrap();
-        let thread_id = "thread-1";
-        let live_event = store
-            .append_event(crate::store::NewEvent {
-                project_id: None,
-                thread_id: Some(thread_id.to_string()),
-                turn_id: Some("turn-2".to_string()),
-                item_id: Some("agent-live".to_string()),
-                kind: "timeline.item_upsert".to_string(),
-                codex_method: Some("item/upsert".to_string()),
-                payload: json!({}),
-            })
-            .await
-            .unwrap();
-        let completed_turn = ThreadTurnSnapshot {
-            id: "turn-1".to_string(),
-            status: "completed".to_string(),
-            started_at: Some(1),
-            completed_at: Some(2),
-            raw_payload: json!({}),
-            items: vec![ThreadItemSnapshot::from_payload(&json!({
-                "id": "agent-1",
-                "type": "agentMessage",
-                "text": "Done"
-            }))
-            .unwrap()],
-        };
-        let live_item = agent_message_item("agent-live", "Still working");
-        let live_snapshot = ThreadItemSnapshot::from_payload(&live_item).unwrap();
-        record_item_upsert(
-            &store,
-            thread_id,
-            "turn-2",
-            live_item,
-            live_snapshot,
-            Some("running"),
-            live_event.seq,
-        )
-        .await
-        .unwrap();
-
-        let timeline = build_thread_timeline(&store, thread_id, &[completed_turn], 1)
-            .await
-            .unwrap();
-
-        assert_eq!(timeline.revision, 1);
-        assert_eq!(timeline.live_state, ThreadLiveState::Streaming);
-        assert_eq!(timeline.active_turn_id.as_deref(), Some("turn-2"));
-        assert_eq!(timeline.items.len(), 2);
-        assert_eq!(timeline.items[0].item_id, "agent-1");
-        assert_eq!(timeline.items[1].item_id, "agent-live");
-        assert_eq!(
-            timeline.items[1].payload.source,
-            TimelineUpdateSource::GatewayStream
-        );
+    fn agent_message_item(id: &str, text: &str) -> Value {
+        json!({
+            "id": id,
+            "type": "agentMessage",
+            "text": text,
+        })
     }
 
     #[tokio::test]
-    async fn projection_revision_excludes_overlay_rows_newer_than_snapshot_high_water() {
-        let store = Store::in_memory().await.unwrap();
-        let thread_id = "thread-1";
-        let included = store
-            .append_event(crate::store::NewEvent {
-                project_id: None,
-                thread_id: Some(thread_id.to_string()),
-                turn_id: Some("turn-1".to_string()),
-                item_id: Some("agent-included".to_string()),
-                kind: "timeline.item_upsert".to_string(),
-                codex_method: Some("item/upsert".to_string()),
-                payload: json!({}),
-            })
-            .await
-            .unwrap();
-        record_item_delta(
-            &store,
-            thread_id,
-            "turn-1",
-            "agent-included",
-            "Included",
-            included.seq,
-        )
-        .await
-        .unwrap();
-        let high_water = store.latest_event_seq().await.unwrap();
-        let newer = store
-            .append_event(crate::store::NewEvent {
-                project_id: None,
-                thread_id: Some(thread_id.to_string()),
-                turn_id: Some("turn-1".to_string()),
-                item_id: Some("agent-newer".to_string()),
-                kind: "timeline.item_upsert".to_string(),
-                codex_method: Some("item/upsert".to_string()),
-                payload: json!({}),
-            })
-            .await
-            .unwrap();
-        record_item_delta(
-            &store,
-            thread_id,
-            "turn-1",
-            "agent-newer",
-            "Newer",
-            newer.seq,
-        )
-        .await
-        .unwrap();
-
-        let overlays = store
-            .timeline_projection_items_through_seq(thread_id, Some(high_water))
-            .await
-            .unwrap();
-
-        assert_eq!(overlays.len(), 1);
-        assert_eq!(overlays[0].item_id, "agent-included");
-    }
-
-    #[tokio::test]
-    async fn terminal_overlays_remain_until_app_server_history_contains_matching_items() {
-        let store = Store::in_memory().await.unwrap();
-        let thread_id = "thread-1";
-        let live_event = store
-            .append_event(crate::store::NewEvent {
-                project_id: None,
-                thread_id: Some(thread_id.to_string()),
-                turn_id: Some("turn-1".to_string()),
-                item_id: Some("agent-1".to_string()),
-                kind: "timeline.item_upsert".to_string(),
-                codex_method: Some("item/upsert".to_string()),
-                payload: json!({}),
-            })
-            .await
-            .unwrap();
-        let live_item = agent_message_item("agent-1", "Hello from the live stream");
-        let live_snapshot = ThreadItemSnapshot::from_payload(&live_item).unwrap();
-        record_item_upsert(
-            &store,
-            thread_id,
-            "turn-1",
-            live_item,
-            live_snapshot,
-            Some("running"),
-            live_event.seq,
-        )
-        .await
-        .unwrap();
-        let terminal = store
-            .append_event(crate::store::NewEvent {
-                project_id: None,
-                thread_id: Some(thread_id.to_string()),
-                turn_id: Some("turn-1".to_string()),
-                item_id: None,
-                kind: "timeline.turn_upsert".to_string(),
-                codex_method: Some("turn/upsert".to_string()),
-                payload: json!({}),
-            })
-            .await
-            .unwrap();
-        let terminal_turn = ThreadTurnSnapshot {
-            id: "turn-1".to_string(),
-            status: "completed".to_string(),
-            started_at: Some(1),
-            completed_at: Some(2),
-            raw_payload: json!({}),
-            items: Vec::new(),
-        };
-        record_turn_status(&store, thread_id, &terminal_turn, terminal.seq)
-            .await
-            .unwrap();
-
-        let stale_timeline = build_thread_timeline(&store, thread_id, &[], terminal.seq)
-            .await
-            .unwrap();
-
-        assert_eq!(stale_timeline.revision, terminal.seq);
-        assert_eq!(stale_timeline.live_state, ThreadLiveState::Idle);
-        assert_eq!(stale_timeline.active_turn_id, None);
-        assert_eq!(stale_timeline.items.len(), 1);
-        assert_eq!(stale_timeline.items[0].item_id, "agent-1");
-        assert_eq!(stale_timeline.items[0].status, "completed");
-
-        let completed_turn = ThreadTurnSnapshot {
-            id: "turn-1".to_string(),
-            status: "completed".to_string(),
-            started_at: Some(1),
-            completed_at: Some(2),
-            raw_payload: json!({}),
-            items: vec![ThreadItemSnapshot::from_payload(&json!({
-                "id": "agent-1",
-                "type": "agentMessage",
-                "text": "Hello from app-server history"
-            }))
-            .unwrap()],
-        };
-
-        let reconciled_timeline =
-            build_thread_timeline(&store, thread_id, &[completed_turn], terminal.seq)
-                .await
-                .unwrap();
-        let remaining_overlays = store.timeline_projection_items(thread_id).await.unwrap();
-
-        assert_eq!(reconciled_timeline.items.len(), 1);
-        assert_eq!(reconciled_timeline.items[0].item_id, "agent-1");
-        assert!(remaining_overlays.is_empty());
-    }
-
-    #[tokio::test]
-    async fn pending_user_overlay_reconciles_when_matching_user_item_materializes() {
-        let store = Store::in_memory().await.unwrap();
-        let thread_id = "thread-1";
-        let pending = store
-            .append_event(crate::store::NewEvent {
-                project_id: None,
-                thread_id: Some(thread_id.to_string()),
-                turn_id: Some("turn-1".to_string()),
-                item_id: None,
-                kind: "timeline.pending_user_input".to_string(),
-                codex_method: Some("turn/input".to_string()),
-                payload: json!({}),
-            })
-            .await
-            .unwrap();
+    async fn session_reconciles_pending_user_input_when_snapshot_materializes_item() {
+        let sessions = ThreadSessionStore::default();
         record_pending_user_input(
-            &store,
-            thread_id,
+            &sessions,
+            "thread-1",
             "turn-1",
             &[UserInput::Text {
                 text: "Hello".to_string(),
                 text_elements: Vec::new(),
             }],
-            pending.seq,
+            1,
         )
         .await
         .unwrap();
@@ -624,358 +574,50 @@ mod tests {
             .unwrap()],
         };
 
-        let timeline = build_thread_timeline(&store, thread_id, &[completed_turn], pending.seq)
+        let timeline = build_thread_timeline(&sessions, "thread-1", &[completed_turn], 2)
             .await
             .unwrap();
-        let remaining_overlays = store.timeline_projection_items(thread_id).await.unwrap();
 
         assert_eq!(timeline.items.len(), 1);
         assert_eq!(timeline.items[0].item_id, "user-1");
-        assert!(remaining_overlays.is_empty());
+        assert_eq!(timeline.live_state, ThreadLiveState::Idle);
     }
 
     #[tokio::test]
-    async fn completed_stream_overlays_reconcile_when_app_server_uses_different_item_ids() {
-        let store = Store::in_memory().await.unwrap();
-        let thread_id = "thread-1";
-        let user_event = store
-            .append_event(crate::store::NewEvent {
-                project_id: None,
-                thread_id: Some(thread_id.to_string()),
-                turn_id: Some("turn-1".to_string()),
-                item_id: Some("live-user-1".to_string()),
-                kind: "timeline.item_upsert".to_string(),
-                codex_method: Some("item/upsert".to_string()),
-                payload: json!({}),
-            })
+    async fn session_applies_live_delta_then_snapshot_without_duplicate() {
+        let sessions = ThreadSessionStore::default();
+        record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", "Hello", 1)
             .await
             .unwrap();
-        let live_user = json!({
-            "id": "live-user-1",
-            "type": "userMessage",
-            "content": [{"type": "text", "text": "Search Google for OpenAI news"}]
-        });
-        record_item_upsert(
-            &store,
-            thread_id,
-            "turn-1",
-            live_user.clone(),
-            ThreadItemSnapshot::from_payload(&live_user).unwrap(),
-            Some("completed"),
-            user_event.seq,
-        )
-        .await
-        .unwrap();
-        let agent_event = store
-            .append_event(crate::store::NewEvent {
-                project_id: None,
-                thread_id: Some(thread_id.to_string()),
-                turn_id: Some("turn-1".to_string()),
-                item_id: Some("live-agent-1".to_string()),
-                kind: "timeline.item_upsert".to_string(),
-                codex_method: Some("item/upsert".to_string()),
-                payload: json!({}),
-            })
+        record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", " world", 2)
             .await
             .unwrap();
-        let live_agent = agent_message_item("live-agent-1", "Here are two OpenAI news items.");
-        record_item_upsert(
-            &store,
-            thread_id,
-            "turn-1",
-            live_agent.clone(),
-            ThreadItemSnapshot::from_payload(&live_agent).unwrap(),
-            Some("completed"),
-            agent_event.seq,
-        )
-        .await
-        .unwrap();
+
+        let patch = projection_patch_for_thread(&sessions, "thread-1")
+            .await
+            .unwrap();
+        assert_eq!(patch.items.len(), 1);
+        assert_eq!(patch.items[0].payload.item["text"], "Hello world");
+        assert_eq!(patch.active_turn_id.as_deref(), Some("turn-1"));
+
         let completed_turn = ThreadTurnSnapshot {
             id: "turn-1".to_string(),
             status: "completed".to_string(),
             started_at: Some(1),
             completed_at: Some(2),
             raw_payload: json!({}),
-            items: vec![
-                ThreadItemSnapshot::from_payload(&json!({
-                    "id": "item-1",
-                    "type": "userMessage",
-                    "content": [{"type": "text", "text": "Search Google for OpenAI news"}]
-                }))
-                .unwrap(),
-                ThreadItemSnapshot::from_payload(&json!({
-                    "id": "item-2",
-                    "type": "agentMessage",
-                    "text": "Here are two OpenAI news items."
-                }))
-                .unwrap(),
-            ],
-        };
-
-        let timeline = build_thread_timeline(&store, thread_id, &[completed_turn], agent_event.seq)
-            .await
-            .unwrap();
-        let remaining_overlays = store.timeline_projection_items(thread_id).await.unwrap();
-
-        assert_eq!(timeline.items.len(), 2);
-        assert_eq!(timeline.items[0].item_id, "item-1");
-        assert_eq!(timeline.items[1].item_id, "item-2");
-        assert!(remaining_overlays.is_empty());
-    }
-
-    #[tokio::test]
-    async fn exact_id_reconciliation_consumes_text_match_one_for_one() {
-        let store = Store::in_memory().await.unwrap();
-        let thread_id = "thread-1";
-        let exact_event = store
-            .append_event(crate::store::NewEvent {
-                project_id: None,
-                thread_id: Some(thread_id.to_string()),
-                turn_id: Some("turn-1".to_string()),
-                item_id: Some("agent-1".to_string()),
-                kind: "timeline.item_upsert".to_string(),
-                codex_method: Some("item/upsert".to_string()),
-                payload: json!({}),
-            })
-            .await
-            .unwrap();
-        let exact_agent = agent_message_item("agent-1", "Repeated");
-        record_item_upsert(
-            &store,
-            thread_id,
-            "turn-1",
-            exact_agent.clone(),
-            ThreadItemSnapshot::from_payload(&exact_agent).unwrap(),
-            Some("completed"),
-            exact_event.seq,
-        )
-        .await
-        .unwrap();
-        let duplicate_event = store
-            .append_event(crate::store::NewEvent {
-                project_id: None,
-                thread_id: Some(thread_id.to_string()),
-                turn_id: Some("turn-1".to_string()),
-                item_id: Some("agent-2".to_string()),
-                kind: "timeline.item_upsert".to_string(),
-                codex_method: Some("item/upsert".to_string()),
-                payload: json!({}),
-            })
-            .await
-            .unwrap();
-        let duplicate_agent = agent_message_item("agent-2", "Repeated");
-        record_item_upsert(
-            &store,
-            thread_id,
-            "turn-1",
-            duplicate_agent.clone(),
-            ThreadItemSnapshot::from_payload(&duplicate_agent).unwrap(),
-            Some("completed"),
-            duplicate_event.seq,
-        )
-        .await
-        .unwrap();
-        let completed_turn = ThreadTurnSnapshot {
-            id: "turn-1".to_string(),
-            status: "completed".to_string(),
-            started_at: Some(1),
-            completed_at: Some(2),
-            raw_payload: json!({}),
-            items: vec![ThreadItemSnapshot::from_payload(&json!({
-                "id": "agent-1",
-                "type": "agentMessage",
-                "text": "Repeated"
-            }))
+            items: vec![ThreadItemSnapshot::from_payload(&agent_message_item(
+                "agent-1",
+                "Hello world",
+            ))
             .unwrap()],
         };
+        let timeline = build_thread_timeline(&sessions, "thread-1", &[completed_turn], 3)
+            .await
+            .unwrap();
 
-        let timeline =
-            build_thread_timeline(&store, thread_id, &[completed_turn], duplicate_event.seq)
-                .await
-                .unwrap();
-        let remaining_overlays = store.timeline_projection_items(thread_id).await.unwrap();
-
-        assert_eq!(timeline.items.len(), 2);
+        assert_eq!(timeline.items.len(), 1);
         assert_eq!(timeline.items[0].item_id, "agent-1");
-        assert_eq!(timeline.items[1].item_id, "agent-2");
-        assert_eq!(remaining_overlays.len(), 1);
-        assert_eq!(remaining_overlays[0].item_id, "agent-2");
-    }
-
-    #[tokio::test]
-    async fn terminal_empty_reasoning_overlays_are_pruned_but_summaries_remain() {
-        let store = Store::in_memory().await.unwrap();
-        let thread_id = "thread-1";
-        let empty_event = store
-            .append_event(crate::store::NewEvent {
-                project_id: None,
-                thread_id: Some(thread_id.to_string()),
-                turn_id: Some("turn-1".to_string()),
-                item_id: Some("reasoning-empty".to_string()),
-                kind: "timeline.item_upsert".to_string(),
-                codex_method: Some("item/upsert".to_string()),
-                payload: json!({}),
-            })
-            .await
-            .unwrap();
-        let empty_reasoning = json!({
-            "id": "reasoning-empty",
-            "type": "reasoning",
-            "content": [],
-            "summary": []
-        });
-        record_item_upsert(
-            &store,
-            thread_id,
-            "turn-1",
-            empty_reasoning.clone(),
-            ThreadItemSnapshot::from_payload(&empty_reasoning).unwrap(),
-            Some("completed"),
-            empty_event.seq,
-        )
-        .await
-        .unwrap();
-        let summary_event = store
-            .append_event(crate::store::NewEvent {
-                project_id: None,
-                thread_id: Some(thread_id.to_string()),
-                turn_id: Some("turn-1".to_string()),
-                item_id: Some("reasoning-summary".to_string()),
-                kind: "timeline.item_upsert".to_string(),
-                codex_method: Some("item/upsert".to_string()),
-                payload: json!({}),
-            })
-            .await
-            .unwrap();
-        let summary_reasoning = json!({
-            "id": "reasoning-summary",
-            "type": "reasoning",
-            "content": [],
-            "summary": [{"type": "summary_text", "text": "Need current sources."}]
-        });
-        record_item_upsert(
-            &store,
-            thread_id,
-            "turn-1",
-            summary_reasoning.clone(),
-            ThreadItemSnapshot::from_payload(&summary_reasoning).unwrap(),
-            Some("completed"),
-            summary_event.seq,
-        )
-        .await
-        .unwrap();
-
-        let timeline = build_thread_timeline(&store, thread_id, &[], summary_event.seq)
-            .await
-            .unwrap();
-        let remaining_overlays = store.timeline_projection_items(thread_id).await.unwrap();
-
-        assert_eq!(timeline.items.len(), 1);
-        assert_eq!(timeline.items[0].item_id, "reasoning-summary");
-        assert_eq!(remaining_overlays.len(), 1);
-        assert_eq!(remaining_overlays[0].item_id, "reasoning-summary");
-    }
-
-    #[tokio::test]
-    async fn pending_user_overlay_keeps_accepted_turn_active_until_materialized() {
-        let store = Store::in_memory().await.unwrap();
-        let thread_id = "thread-1";
-        let pending = store
-            .append_event(crate::store::NewEvent {
-                project_id: None,
-                thread_id: Some(thread_id.to_string()),
-                turn_id: Some("turn-1".to_string()),
-                item_id: None,
-                kind: "timeline.pending_user_input".to_string(),
-                codex_method: Some("turn/input".to_string()),
-                payload: json!({}),
-            })
-            .await
-            .unwrap();
-        record_pending_user_input(
-            &store,
-            thread_id,
-            "turn-1",
-            &[UserInput::Text {
-                text: "Hello".to_string(),
-                text_elements: Vec::new(),
-            }],
-            pending.seq,
-        )
-        .await
-        .unwrap();
-
-        let timeline = build_thread_timeline(&store, thread_id, &[], pending.seq)
-            .await
-            .unwrap();
-
-        assert_eq!(timeline.active_turn_id.as_deref(), Some("turn-1"));
-        assert_eq!(timeline.live_state, ThreadLiveState::Streaming);
-        assert_eq!(timeline.items.len(), 1);
-        assert_eq!(
-            timeline.items[0].item_id,
-            format!("pending-user-{}", pending.seq)
-        );
-        assert_eq!(timeline.items[0].status, "running");
-    }
-
-    #[tokio::test]
-    async fn duplicate_pending_user_overlays_reconcile_one_for_one() {
-        let store = Store::in_memory().await.unwrap();
-        let thread_id = "thread-1";
-        for seq in 1..=2 {
-            let pending = store
-                .append_event(crate::store::NewEvent {
-                    project_id: None,
-                    thread_id: Some(thread_id.to_string()),
-                    turn_id: Some("turn-1".to_string()),
-                    item_id: None,
-                    kind: "timeline.pending_user_input".to_string(),
-                    codex_method: Some("turn/input".to_string()),
-                    payload: json!({}),
-                })
-                .await
-                .unwrap();
-            assert_eq!(pending.seq, seq);
-            record_pending_user_input(
-                &store,
-                thread_id,
-                "turn-1",
-                &[UserInput::Text {
-                    text: "Repeat".to_string(),
-                    text_elements: Vec::new(),
-                }],
-                pending.seq,
-            )
-            .await
-            .unwrap();
-        }
-        let partially_materialized_turn = ThreadTurnSnapshot {
-            id: "turn-1".to_string(),
-            status: "running".to_string(),
-            started_at: Some(1),
-            completed_at: None,
-            raw_payload: json!({}),
-            items: vec![ThreadItemSnapshot::from_payload(&json!({
-                "id": "user-1",
-                "type": "userMessage",
-                "content": [{"type": "text", "text": "Repeat"}]
-            }))
-            .unwrap()],
-        };
-
-        let timeline = build_thread_timeline(&store, thread_id, &[partially_materialized_turn], 2)
-            .await
-            .unwrap();
-        let remaining_overlays = store.timeline_projection_items(thread_id).await.unwrap();
-
-        assert_eq!(timeline.items.len(), 2);
-        assert_eq!(timeline.items[0].item_id, "user-1");
-        assert_eq!(
-            timeline.items[1].payload.item["content"][0]["text"],
-            "Repeat"
-        );
-        assert_eq!(remaining_overlays.len(), 1);
-        assert!(remaining_overlays[0].item_id.starts_with("pending-user-"));
+        assert_eq!(timeline.active_turn_id, None);
     }
 }

@@ -109,7 +109,7 @@ mod tests {
     async fn kodex_control_plugin_reports_unavailable_app_server() {
         let (state, app_server) = test_state().await;
         app_server.ready.store(false, Ordering::SeqCst);
-        let app = build_router(state);
+        let app = build_router(state.clone());
 
         let response = app
             .oneshot(
@@ -137,7 +137,7 @@ mod tests {
             .vapid_private_key = Some("private-key".to_string());
         Arc::make_mut(&mut state.config).notifications.vapid_subject =
             Some("mailto:admin@example.test".to_string());
-        let app = build_router(state);
+        let app = build_router(state.clone());
 
         let response = app
             .oneshot(
@@ -1904,6 +1904,7 @@ mod tests {
             })
             .await
             .unwrap();
+        mark_thread_session_active(&state, "thread-1", "turn-active").await;
         let queued = app
             .oneshot(
                 Request::post("/v1/self-control/threads/thread-1/input")
@@ -3003,11 +3004,17 @@ mod tests {
         assert_eq!(requests[2].0, "thread/resume");
         assert_eq!(requests[2].1["threadId"], "thread-1");
         assert_eq!(requests[2].1["persistExtendedHistory"], true);
-        assert_eq!(requests[3].0, "thread/fork");
+        assert_eq!(requests[3].0, "thread/read");
         assert_eq!(requests[3].1["threadId"], "thread-1");
-        assert_eq!(requests[3].1["persistExtendedHistory"], true);
-        assert_eq!(requests[4].0, "thread/archive");
+        assert_eq!(requests[3].1["includeTurns"], false);
+        assert_eq!(requests[4].0, "thread/turns/list");
         assert_eq!(requests[4].1["threadId"], "thread-1");
+        assert_eq!(requests[4].1["itemsView"], "full");
+        assert_eq!(requests[5].0, "thread/fork");
+        assert_eq!(requests[5].1["threadId"], "thread-1");
+        assert_eq!(requests[5].1["persistExtendedHistory"], true);
+        assert_eq!(requests[6].0, "thread/archive");
+        assert_eq!(requests[6].1["threadId"], "thread-1");
     }
 
     #[tokio::test]
@@ -3607,8 +3614,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thread_detail_returns_projection_when_turn_history_is_not_materialized() {
+    async fn thread_detail_returns_in_memory_session_when_turn_history_is_not_materialized() {
         let store = Store::in_memory().await.unwrap();
+        let app_server = Arc::new(NotMaterializedThreadHistoryAppServer::default());
+        let state = AppState::new(Config::default(), store.clone(), app_server.clone());
         let pending = store
             .append_event(NewEvent {
                 project_id: None,
@@ -3622,7 +3631,7 @@ mod tests {
             .await
             .unwrap();
         timeline_projection::record_pending_user_input(
-            &store,
+            &state.thread_sessions,
             "thread-1",
             "turn-1",
             &[UserInput::Text {
@@ -3633,8 +3642,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let app_server = Arc::new(NotMaterializedThreadHistoryAppServer::default());
-        let app = build_router(AppState::new(Config::default(), store, app_server.clone()));
+        let app = build_router(state);
 
         let response = app
             .oneshot(
@@ -4912,17 +4920,13 @@ mod tests {
         assert_eq!(mentions[0].display_name.as_deref(), Some("Review Fix"));
         assert_eq!(mentions[0].brand_color.as_deref(), Some("#23a55a"));
 
-        let projection_items = state
-            .store
-            .timeline_projection_items("thread-1")
-            .await
-            .unwrap();
-        assert_eq!(projection_items.len(), 1);
-        assert_eq!(projection_items[0].turn_id, "turn-1");
-        assert!(projection_items[0].item_id.starts_with("pending-user-"));
-        assert_eq!(projection_items[0].item_type, "userMessage");
+        let projection = state.thread_sessions.patch_for_thread("thread-1").await;
+        assert_eq!(projection.items.len(), 1);
+        assert_eq!(projection.items[0].turn_id, "turn-1");
+        assert!(projection.items[0].item_id.starts_with("pending-user-"));
+        assert_eq!(projection.items[0].item_type, "userMessage");
         assert_eq!(
-            projection_items[0].item["content"][0]["text"],
+            projection.items[0].payload.item["content"][0]["text"],
             "Use $agent-browser"
         );
 
@@ -5280,6 +5284,147 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn thread_input_starts_when_gateway_session_is_idle() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"thread": thread_summary("thread-1")}),
+            json!({"turnId": "turn-started"}),
+        ]);
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":[{"type":"text","text":"hello"}]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "started");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[1].0, "turn/start");
+    }
+
+    #[tokio::test]
+    async fn thread_input_steers_when_app_server_has_active_turn() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            active_thread_read_response("thread-1", "turn-active"),
+            json!({"accepted": true}),
+        ]);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":[{"type":"text","text":"steer"}]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "steered");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[1].0, "turn/steer");
+        assert_eq!(requests[1].1["expectedTurnId"], "turn-active");
+    }
+
+    #[tokio::test]
+    async fn thread_input_steers_when_gateway_session_has_active_turn() {
+        let (state, app_server) = test_state().await;
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"accepted": true}));
+        timeline_projection::record_item_delta(
+            &state.thread_sessions,
+            "thread-1",
+            "turn-active",
+            "agent-1",
+            "working",
+            1,
+        )
+        .await
+        .unwrap();
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":[{"type":"text","text":"steer"}]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "steered");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "turn/steer");
+        assert_eq!(requests[0].1["expectedTurnId"], "turn-active");
+        assert!(requests.iter().all(|(method, _)| method != "turn/start"));
+    }
+
+    #[tokio::test]
+    async fn thread_input_clears_stale_active_turn_and_starts() {
+        let (state, app_server) = test_state().await;
+        app_server
+            .queued_errors
+            .lock()
+            .unwrap()
+            .push(ApiError::BadGateway(
+                "app-server error -32600: no active turn for thread".to_string(),
+            ));
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"turnId": "turn-started"}));
+        timeline_projection::record_item_delta(
+            &state.thread_sessions,
+            "thread-1",
+            "turn-stale",
+            "agent-1",
+            "working",
+            1,
+        )
+        .await
+        .unwrap();
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"new turn"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "started");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "turn/steer");
+        assert_eq!(requests[1].0, "turn/start");
+    }
+
+    #[tokio::test]
     async fn queued_input_routes_persist_broadcast_and_replay_operational_events() {
         let (state, _app_server) = test_state().await;
         state
@@ -5422,10 +5567,10 @@ mod tests {
         timeout(Duration::from_secs(2), async {
             loop {
                 if state
-                    .store
-                    .timeline_projection_items("thread-1")
+                    .thread_sessions
+                    .patch_for_thread("thread-1")
                     .await
-                    .unwrap()
+                    .items
                     .len()
                     == 1
                 {
@@ -5436,17 +5581,16 @@ mod tests {
         })
         .await
         .unwrap();
-        let projection_items = state
-            .store
-            .timeline_projection_items("thread-1")
-            .await
-            .unwrap();
-        assert_eq!(projection_items.len(), 1);
-        assert_eq!(projection_items[0].turn_id, "turn-drain-1");
-        assert!(projection_items[0].item_id.starts_with("pending-user-"));
-        assert_eq!(projection_items[0].item_type, "userMessage");
-        assert_eq!(projection_items[0].status, "running");
-        assert_eq!(projection_items[0].item["content"][0]["text"], "drain me");
+        let projection = state.thread_sessions.patch_for_thread("thread-1").await;
+        assert_eq!(projection.items.len(), 1);
+        assert_eq!(projection.items[0].turn_id, "turn-drain-1");
+        assert!(projection.items[0].item_id.starts_with("pending-user-"));
+        assert_eq!(projection.items[0].item_type, "userMessage");
+        assert_eq!(projection.items[0].status, "running");
+        assert_eq!(
+            projection.items[0].payload.item["content"][0]["text"],
+            "drain me"
+        );
     }
 
     #[tokio::test]
@@ -5639,6 +5783,59 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(runtime.status, "active");
+    }
+
+    #[tokio::test]
+    async fn app_server_active_thread_blocks_stale_idle_queue_drain() {
+        let (state, app_server) = test_state().await;
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(active_thread_read_response("thread-1", "turn-active"));
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "idle".to_string(),
+                active_turn_id: None,
+                updated_at: chrono::Utc::now(),
+                last_event_seq: None,
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+
+        assert_ok(
+            app.oneshot(
+                Request::post("/v1/threads/thread-1/queued-inputs")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":[{"type":"text","text":"hold"}]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+        );
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if state
+                    .thread_sessions
+                    .active_turn_id("thread-1")
+                    .await
+                    .as_deref()
+                    == Some("turn-active")
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let requests = app_server.requests.lock().unwrap();
+        assert!(requests.iter().any(|(method, _)| method == "thread/read"));
+        assert!(requests.iter().all(|(method, _)| method != "turn/start"));
     }
 
     #[tokio::test]
@@ -6242,6 +6439,22 @@ mod tests {
         assert_eq!(created.status(), StatusCode::OK);
         let created = response_json(created).await;
         let queue_id = created["queuedInput"]["id"].as_str().unwrap();
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if state
+                    .thread_sessions
+                    .active_turn_id("thread-1")
+                    .await
+                    .as_deref()
+                    == Some("turn-active")
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
         let mut receiver = state.events.subscribe();
         let steered = app
             .clone()
@@ -6306,6 +6519,7 @@ mod tests {
             })
             .await
             .unwrap();
+        mark_thread_session_active(&state, "thread-1", "turn-1").await;
         let app = build_router(state.clone());
         let created = app
             .clone()
@@ -6396,6 +6610,7 @@ mod tests {
             })
             .await
             .unwrap();
+        mark_thread_session_active(&state, "thread-1", "turn-1").await;
         let app = build_router(state.clone());
         let created = app
             .clone()
@@ -6511,6 +6726,7 @@ mod tests {
             })
             .await
             .unwrap();
+        mark_thread_session_active(&state, "thread-1", "turn-1").await;
         let app = build_router(state.clone());
         let created = app
             .clone()
@@ -6604,6 +6820,7 @@ mod tests {
             })
             .await
             .unwrap();
+        mark_thread_session_active(&state, "thread-1", "turn-1").await;
         let app = build_router(state.clone());
         let created = app
             .clone()
@@ -6694,6 +6911,7 @@ mod tests {
             })
             .await
             .unwrap();
+        mark_thread_session_active(&state, "thread-1", "turn-1").await;
         let app = build_router(state.clone());
         let created = app
             .clone()
@@ -8232,6 +8450,40 @@ mod tests {
                 "updatedAt": 1_767_225_600_i64
             }
         })
+    }
+
+    fn active_thread_read_response(thread_id: &str, turn_id: &str) -> Value {
+        json!({
+            "thread": {
+                "id": thread_id,
+                "cliVersion": "0.130.0",
+                "cwd": "/workspace",
+                "ephemeral": false,
+                "modelProvider": "openai",
+                "source": "cli",
+                "status": {"type": "active", "activeFlags": []},
+                "turns": [{
+                    "id": turn_id,
+                    "status": {"type": "running"},
+                    "items": []
+                }],
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_600_i64
+            }
+        })
+    }
+
+    async fn mark_thread_session_active(state: &AppState, thread_id: &str, turn_id: &str) {
+        timeline_projection::record_item_delta(
+            &state.thread_sessions,
+            thread_id,
+            turn_id,
+            "agent-active",
+            "working",
+            1,
+        )
+        .await
+        .unwrap();
     }
 
     fn thread_read_response_with_agent_message(

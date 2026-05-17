@@ -740,9 +740,10 @@ pub async fn resume_thread(
     Json(payload): Json<Value>,
 ) -> ApiResult<Json<ThreadCommandResponse>> {
     let mut response = app_server_api::client(&state.app_server)
-        .thread_resume(thread_id, payload)
+        .thread_resume(thread_id.clone(), payload)
         .await?;
     apply_thread_command_response_state(&state, &mut response).await?;
+    attach_thread_detail_to_command_response(&state, &thread_id, &mut response).await?;
     Ok(Json(response))
 }
 
@@ -907,6 +908,23 @@ pub(crate) async fn apply_thread_command_response_state(
     Ok(())
 }
 
+async fn attach_thread_detail_to_command_response(
+    state: &AppState,
+    thread_id: &str,
+    response: &mut ThreadCommandResponse,
+) -> ApiResult<()> {
+    let timeline_revision = state.store.latest_event_seq().await?;
+    let mut detail = app_server_api::client(&state.app_server)
+        .thread_read_full_history(thread_id.to_string())
+        .await?;
+    apply_thread_detail_response_state(state, &mut detail, timeline_revision).await?;
+    response.thread = detail.thread;
+    response.live_state = Some(detail.live_state);
+    response.turns = Some(detail.turns);
+    response.timeline = Some(detail.timeline);
+    Ok(())
+}
+
 async fn apply_thread_detail_response_state(
     state: &AppState,
     response: &mut ThreadDetailResponse,
@@ -915,7 +933,7 @@ async fn apply_thread_detail_response_state(
     apply_thread_summary_state(state, std::slice::from_mut(&mut response.thread)).await?;
     apply_thread_detail_skill_mentions(state, response).await?;
     response.timeline = timeline_projection::build_thread_timeline(
-        &state.store,
+        &state.thread_sessions,
         &response.thread.id,
         &response.turns,
         timeline_revision,

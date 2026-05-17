@@ -11,7 +11,8 @@ use utoipa::ToSchema;
 use crate::{
     api::AppState,
     app_server_api::{
-        self, timeline_skill_mentions_from_user_input, SkillMetadata, TurnStartOptions, UserInput,
+        self, timeline_skill_mentions_from_user_input, SkillMetadata, ThreadLiveState,
+        TurnStartOptions, UserInput,
     },
     error::{ApiError, ApiResult},
     events, skills,
@@ -120,15 +121,7 @@ pub async fn steer_queued_input(
     State(state): State<AppState>,
     Path((thread_id, queue_id)): Path<(String, String)>,
 ) -> ApiResult<Json<QueuedInputResponse>> {
-    let runtime = state.store.get_thread_runtime_state(&thread_id).await?;
-    let runtime = match runtime {
-        Some(runtime) if runtime.status == "active" && runtime.active_turn_id.is_none() => {
-            reconcile_thread_runtime_from_app_server(&state, &thread_id).await?
-        }
-        Some(runtime) if runtime.status != "unknown" => Some(runtime),
-        _ => reconcile_thread_runtime_from_app_server(&state, &thread_id).await?,
-    };
-    let Some(active_turn_id) = runtime.and_then(|runtime| runtime.active_turn_id) else {
+    let Some(active_turn_id) = current_active_turn_id(&state, &thread_id).await? else {
         return Err(ApiError::BadRequest(format!(
             "thread {thread_id} has no active turn to steer"
         )));
@@ -336,16 +329,19 @@ pub async fn requeue_unmatched_pending_commit_input_events_for_thread(
 }
 
 async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<()> {
-    let runtime = match state.store.get_thread_runtime_state(thread_id).await? {
-        Some(runtime) if runtime.status == "idle" || runtime.status == "unknown" => {
-            reconcile_thread_runtime_from_app_server(state, thread_id).await?
-        }
-        Some(runtime) => Some(runtime),
-        _ => reconcile_thread_runtime_from_app_server(state, thread_id).await?,
-    };
-    if runtime.is_none_or(|runtime| runtime.status != "idle") {
+    if !thread_is_idle_for_queue(state, thread_id).await? {
         return Ok(());
     }
+    state
+        .store
+        .upsert_thread_runtime_state(ThreadRuntimeState {
+            thread_id: thread_id.to_string(),
+            status: "idle".to_string(),
+            active_turn_id: None,
+            updated_at: Utc::now(),
+            last_event_seq: None,
+        })
+        .await?;
     if !state
         .store
         .claim_idle_thread_runtime_for_queue_drain(thread_id)
@@ -463,6 +459,7 @@ async fn delete_pending_skill_mentions(
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) async fn reconcile_thread_runtime_from_app_server(
     state: &AppState,
     thread_id: &str,
@@ -493,6 +490,44 @@ pub(crate) async fn reconcile_thread_runtime_from_app_server(
     Ok(Some(runtime))
 }
 
+async fn current_active_turn_id(state: &AppState, thread_id: &str) -> ApiResult<Option<String>> {
+    if let Some(active_turn_id) = state.thread_sessions.active_turn_id(thread_id).await {
+        return Ok(Some(active_turn_id));
+    }
+    let snapshot = app_server_api::client(&state.app_server)
+        .thread_read(thread_id.to_string())
+        .await?;
+    let revision = state.store.latest_event_seq().await?;
+    let timeline = state
+        .thread_sessions
+        .refresh_from_turns(thread_id, &snapshot.turns, revision)
+        .await;
+    Ok(timeline.active_turn_id)
+}
+
+async fn thread_is_idle_for_queue(state: &AppState, thread_id: &str) -> ApiResult<bool> {
+    match state.thread_sessions.live_state(thread_id).await {
+        Some(ThreadLiveState::Streaming | ThreadLiveState::Syncing) => return Ok(false),
+        Some(ThreadLiveState::Idle | ThreadLiveState::NotLoaded) => {}
+        None => {}
+    }
+    if let Some(runtime) = state.store.get_thread_runtime_state(thread_id).await? {
+        if runtime.status == "draining" {
+            return Ok(false);
+        }
+    }
+    let snapshot = app_server_api::client(&state.app_server)
+        .thread_read(thread_id.to_string())
+        .await?;
+    let revision = state.store.latest_event_seq().await?;
+    let timeline = state
+        .thread_sessions
+        .refresh_from_turns(thread_id, &snapshot.turns, revision)
+        .await;
+    Ok(timeline.active_turn_id.is_none() && timeline.live_state == ThreadLiveState::Idle)
+}
+
+#[cfg(test)]
 fn is_terminal_turn_status(status: &str) -> bool {
     matches!(
         status.to_ascii_lowercase().as_str(),
@@ -543,7 +578,7 @@ async fn record_pending_user_projection(
         })
         .await?;
     if timeline_projection::record_pending_user_input(
-        &state.store,
+        &state.thread_sessions,
         thread_id,
         turn_id,
         input,

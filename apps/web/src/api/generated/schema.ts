@@ -972,6 +972,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads/{threadId}/input": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["submit_thread_input"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/threads/{threadId}/name": {
         parameters: {
             query?: never;
@@ -2129,6 +2145,7 @@ export interface components {
             approvalPolicy?: string | null;
             approvalsReviewer?: string | null;
             cwd?: string | null;
+            liveState?: null | components["schemas"]["ThreadLiveState"];
             model?: string | null;
             modelProvider?: string | null;
             rawPayload: unknown;
@@ -2136,6 +2153,8 @@ export interface components {
             sandbox?: unknown;
             serviceTier?: string | null;
             thread: components["schemas"]["ThreadSummary"];
+            timeline?: null | components["schemas"]["ThreadTimelineSnapshot"];
+            turns?: components["schemas"]["ThreadTurnSnapshot"][] | null;
         };
         ThreadDetailResponse: {
             liveState: components["schemas"]["ThreadLiveState"];
@@ -2143,6 +2162,13 @@ export interface components {
             thread: components["schemas"]["ThreadSummary"];
             timeline: components["schemas"]["ThreadTimelineSnapshot"];
             turns: components["schemas"]["ThreadTurnSnapshot"][];
+        };
+        /** @enum {string} */
+        ThreadInputDisposition: "started" | "steered" | "queued";
+        ThreadInputResponse: {
+            disposition: components["schemas"]["ThreadInputDisposition"];
+            queuedInput?: null | components["schemas"]["QueuedInput"];
+            rawPayload?: unknown;
         };
         ThreadItemSnapshot: {
             id: string;
@@ -3912,6 +3938,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadCommandResponse"];
+                };
+            };
+        };
+    };
+    submit_thread_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TurnStartRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadInputResponse"];
                 };
             };
         };

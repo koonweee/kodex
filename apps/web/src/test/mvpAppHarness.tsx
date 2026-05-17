@@ -140,6 +140,15 @@ function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
     nextQueueIndex += 1;
     return queuedInputFromRequest(request, "thread-1", `queue-${nextQueueIndex}`);
   };
+  routes["POST /v1/threads/thread-1/input"] ??= async (request: Request) => {
+    nextQueueIndex += 1;
+    const response = await queuedInputFromRequest(request, "thread-1", `queue-${nextQueueIndex}`);
+    return {
+      disposition: "queued",
+      queuedInput: response.queuedInput,
+      rawPayload: null,
+    };
+  };
   routes["POST /v1/threads/thread-1/queued-inputs/queue-1/retry"] ??= {
     queuedInput: queuedInput("queue-1", "thread-1", "Retry later", "queued"),
   };

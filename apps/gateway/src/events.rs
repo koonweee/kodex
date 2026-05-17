@@ -610,7 +610,7 @@ async fn timeline_item_delta_event(
     )
     .await?;
     timeline_projection::record_item_delta(
-        &state.store,
+        &state.thread_sessions,
         &thread_id,
         &turn_id,
         event.item_id.as_deref().unwrap_or_default(),
@@ -663,7 +663,7 @@ async fn timeline_item_upsert_event(
     )
     .await?;
     timeline_projection::record_item_upsert(
-        &state.store,
+        &state.thread_sessions,
         &thread_id,
         &turn_id,
         item.clone(),
@@ -778,9 +778,10 @@ async fn timeline_turn_upsert_event(
     .await?;
     let mut events = vec![event.clone()];
     let terminal = is_terminal_turn_status(&turn.status);
+    timeline_projection::record_turn_status(&state.thread_sessions, &thread_id, &turn, event.seq)
+        .await?;
+    events.push(timeline_projection_patch_event(state, &thread_id).await?);
     if terminal {
-        timeline_projection::record_turn_status(&state.store, &thread_id, &turn, event.seq).await?;
-        events.push(timeline_projection_patch_event(state, &thread_id).await?);
         events.extend(
             queue::requeue_unmatched_pending_commit_input_events_for_turn(
                 state, &thread_id, &turn.id,
@@ -839,7 +840,8 @@ pub(crate) async fn timeline_projection_patch_event(
     state: &AppState,
     thread_id: &str,
 ) -> ApiResult<EventEnvelope> {
-    let patch = timeline_projection::projection_patch_for_thread(&state.store, thread_id).await?;
+    let patch =
+        timeline_projection::projection_patch_for_thread(&state.thread_sessions, thread_id).await?;
     append_timeline_event(
         state,
         NewEvent {
@@ -940,6 +942,14 @@ async fn timeline_thread_status_event(
     )
     .await?;
     let mut events = vec![event.clone()];
+    timeline_projection::record_thread_live_state(
+        &state.thread_sessions,
+        &thread_id,
+        live_state_from_thread_status(status),
+        event.seq,
+    )
+    .await?;
+    events.push(timeline_projection_patch_event(state, &thread_id).await?);
     match status {
         ThreadStatus::Idle | ThreadStatus::SystemError => {
             state

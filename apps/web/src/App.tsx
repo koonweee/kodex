@@ -46,6 +46,8 @@ import {
   type EventEnvelope,
   type Project,
   type QueuedInput,
+  type ThreadCommandResponse,
+  type ThreadDetailResponse,
   type ThreadSummary,
   type ThreadSubagentSummary,
 } from "./api/client";
@@ -80,6 +82,7 @@ import {
 import { ThemeWorkbench } from "./theme/ThemeWorkbench";
 import { idleTimelineEntry, type TimelineEntry } from "./timeline/entry";
 import { useSelectedThreadTimeline } from "./timeline/useSelectedThreadTimeline";
+import { applyTimelineSnapshot } from "./timeline/reducer";
 import {
   clearAvailableThreadTitles,
   markThreadTitlePending,
@@ -729,11 +732,12 @@ function KodexShell({
     let cancelled = false;
     attachingThreadIdsRef.current.add(selectedThread.id);
     resumeThread(selectedThread.id)
-      .then((thread) => {
+      .then((response) => {
         attachingThreadIdsRef.current.delete(selectedThread.id);
-        attachedThreadIdsRef.current.add(thread.id);
+        attachedThreadIdsRef.current.add(response.thread.id);
         if (!cancelled) {
-          replaceThread(thread);
+          replaceThread(response.thread);
+          applyResumeTimelineSnapshot(response);
         }
       })
       .catch((error) => {
@@ -1184,6 +1188,21 @@ function KodexShell({
     }
     replaceThread(thread);
     markCompletedAgentTurnSeen(thread.id, thread.lastCompletedAgentTurnSeq);
+  }
+
+  function applyResumeTimelineSnapshot(response: ThreadCommandResponse) {
+    if (!response.timeline || !response.turns || !response.liveState) {
+      return;
+    }
+    const snapshot: ThreadDetailResponse = {
+      thread: response.thread,
+      turns: response.turns,
+      liveState: response.liveState,
+      timeline: response.timeline,
+      rawPayload: response.rawPayload,
+    };
+    setTimeline((current) => applyTimelineSnapshot(current, snapshot));
+    setTimelineEntry({ phase: "streamingLive", threadId: response.thread.id });
   }
 
   function handleSelectedThreadLoadFailed(threadId: string) {

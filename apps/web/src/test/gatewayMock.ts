@@ -23,6 +23,10 @@ export function mockGateway(routes: GatewayRouteMap) {
       if (queuedInput) {
         return jsonResponse(queuedInput, 200);
       }
+      const threadInput = await fallbackThreadInput(request);
+      if (threadInput) {
+        return jsonResponse(threadInput, 200);
+      }
       const subagents = fallbackThreadSubagents(request);
       if (subagents) {
         return jsonResponse(subagents, 200);
@@ -49,6 +53,19 @@ export function mockGateway(routes: GatewayRouteMap) {
         return request.method === method && url.pathname === pathname;
       });
     },
+  };
+}
+
+async function fallbackThreadInput(request: Request) {
+  const url = new URL(request.url);
+  const inputMatch = url.pathname.match(/^\/v1\/threads\/([^/]+)\/input$/);
+  if (request.method !== "POST" || !inputMatch) {
+    return null;
+  }
+  return {
+    disposition: "started",
+    queuedInput: null,
+    rawPayload: {},
   };
 }
 

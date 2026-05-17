@@ -59,7 +59,7 @@ describe("MVP composer settings flows", () => {
       baseRoutes({
         "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
         "GET /v1/events": { events: [] },
-        "POST /v1/threads/thread-1/turns": { payload: {} },
+        "POST /v1/threads/thread-1/input": { payload: {} },
       }),
     );
 
@@ -108,10 +108,10 @@ describe("MVP composer settings flows", () => {
     });
     await userEvent.click(sendButton);
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
 
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/turns")[0])).resolves.toMatchObject({
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toMatchObject({
       model: "gpt-5.4",
       effort: "high",
       serviceTier: "fast",
@@ -396,7 +396,7 @@ describe("MVP composer settings flows", () => {
       baseRoutes({
         "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
         "POST /v1/threads": { thread: { ...thread, id: "thread-2", name: "New thread", preview: null }, rawPayload: {} },
-        "POST /v1/threads/thread-2/turns": { payload: {} },
+        "POST /v1/threads/thread-2/input": { payload: {} },
       }),
     );
 
@@ -420,7 +420,7 @@ describe("MVP composer settings flows", () => {
     await userEvent.click(sendButton);
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
-      expect(gateway.callsFor("POST", "/v1/threads/thread-2/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(1);
     });
 
     await expect(requestJson(gateway.callsFor("POST", "/v1/threads")[0])).resolves.toMatchObject({
@@ -431,7 +431,7 @@ describe("MVP composer settings flows", () => {
       approvalsReviewer: "auto_review",
       sandbox: "workspace-write",
     });
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-2/turns")[0])).resolves.toMatchObject({
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-2/input")[0])).resolves.toMatchObject({
       effort: "high",
       serviceTier: "fast",
       approvalPolicy: "on-request",
@@ -460,7 +460,7 @@ describe("MVP composer settings flows", () => {
         },
         "POST /v1/chats/threads": { thread: chatThread, rawPayload: {} },
         "GET /v1/threads/chat-thread-1": threadDetail(chatThread),
-        "POST /v1/threads/chat-thread-1/turns": { payload: {} },
+        "POST /v1/threads/chat-thread-1/input": { payload: {} },
       }),
     );
 
@@ -483,9 +483,9 @@ describe("MVP composer settings flows", () => {
     expect(body).not.toHaveProperty("sandbox");
 
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/chat-thread-1/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/chat-thread-1/input")).toHaveLength(1);
     });
-    const turnBody = await requestJson(gateway.callsFor("POST", "/v1/threads/chat-thread-1/turns")[0]);
+    const turnBody = await requestJson(gateway.callsFor("POST", "/v1/threads/chat-thread-1/input")[0]);
     expect(turnBody).not.toHaveProperty("model");
     expect(turnBody).not.toHaveProperty("effort");
     expect(turnBody).not.toHaveProperty("serviceTier");
@@ -553,7 +553,7 @@ describe("MVP composer settings flows", () => {
         },
         "GET /v1/chats/threads": { threads: [chatThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         "GET /v1/threads/chat-thread-1": threadDetail(chatThread),
-        "POST /v1/threads/chat-thread-1/turns": { payload: {} },
+        "POST /v1/threads/chat-thread-1/input": { payload: {} },
       }),
     );
 
@@ -566,9 +566,9 @@ describe("MVP composer settings flows", () => {
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/chat-thread-1/turns")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/chat-thread-1/input")).toHaveLength(1);
     });
-    const turnBody = await requestJson(gateway.callsFor("POST", "/v1/threads/chat-thread-1/turns")[0]);
+    const turnBody = await requestJson(gateway.callsFor("POST", "/v1/threads/chat-thread-1/input")[0]);
     expect(turnBody).not.toHaveProperty("model");
     expect(turnBody).not.toHaveProperty("effort");
     expect(turnBody).not.toHaveProperty("serviceTier");
@@ -818,8 +818,8 @@ describe("MVP composer settings flows", () => {
           serverThreads.unshift(createdThread);
           return { thread: createdThread, rawPayload: {} };
         },
-        "POST /v1/threads/thread-mini/turns": { payload: {} },
-        "POST /v1/threads/thread-spark/turns": { payload: {} },
+        "POST /v1/threads/thread-mini/input": { payload: {} },
+        "POST /v1/threads/thread-spark/input": { payload: {} },
       }),
     );
 

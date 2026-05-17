@@ -2345,6 +2345,12 @@ pub enum ThreadLiveState {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadCommandResponse {
     pub thread: ThreadSummary,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub live_state: Option<ThreadLiveState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turns: Option<Vec<ThreadTurnSnapshot>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeline: Option<ThreadTimelineSnapshot>,
     pub cwd: Option<String>,
     pub model: Option<String>,
     pub model_provider: Option<String>,
@@ -2365,6 +2371,9 @@ impl ThreadCommandResponse {
         overlay_thread_composer_state(&mut thread, &payload);
         Ok(Self {
             thread,
+            live_state: None,
+            turns: None,
+            timeline: None,
             cwd: optional_string(&payload, "cwd"),
             model: optional_string(&payload, "model"),
             model_provider: optional_string(&payload, "modelProvider"),
