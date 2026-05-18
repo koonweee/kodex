@@ -32,6 +32,32 @@ pub async fn current_active_turn_id(
     Ok(timeline.active_turn_id)
 }
 
+pub async fn refreshed_active_turn_id(
+    state: &AppState,
+    thread_id: &str,
+) -> ApiResult<Option<String>> {
+    let snapshot = match app_server_api::client(&state.app_server)
+        .thread_read(thread_id.to_string())
+        .await
+    {
+        Ok(snapshot) => snapshot,
+        Err(error) if is_thread_not_materialized_before_first_user_message(&error) => {
+            return Ok(None);
+        }
+        Err(error) => return Err(error),
+    };
+    let active_turn_id = snapshot.timeline.active_turn_id.clone();
+    let revision = state.store.latest_event_seq().await?;
+    let timeline = state
+        .thread_views
+        .refresh_from_turns(thread_id, &snapshot.turns, revision)
+        .await;
+    if active_turn_id.is_none() && timeline.active_turn_id.is_some() {
+        record_idle_after_missing_active_turn(state, thread_id).await?;
+    }
+    Ok(active_turn_id)
+}
+
 pub async fn record_idle_after_missing_active_turn(
     state: &AppState,
     thread_id: &str,

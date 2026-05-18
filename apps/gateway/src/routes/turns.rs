@@ -74,75 +74,24 @@ pub async fn submit_thread_input(
         .save_thread_turn_options(&thread_id, &options)
         .await?;
 
-    if let Some(active_turn_id) = turn_lifecycle::current_active_turn_id(&state, &thread_id).await?
+    if turn_lifecycle::refreshed_active_turn_id(&state, &thread_id)
+        .await?
+        .is_some()
     {
-        let pending_skill_mentions_id = turn_lifecycle::insert_pending_skill_mentions(
+        let queued_input = queue::create_queued_input_with_source(
             &state,
             &thread_id,
-            &resolved.input,
-            &resolved.skills,
+            resolved.input,
+            options,
+            None,
+            None,
         )
         .await?;
-        match app_server_api::client(&state.app_server)
-            .turn_steer(
-                thread_id.clone(),
-                active_turn_id.clone(),
-                resolved.input.clone(),
-            )
-            .await
-        {
-            Ok(response) => {
-                turn_lifecycle::record_pending_user_projection(
-                    &state,
-                    &thread_id,
-                    &active_turn_id,
-                    &resolved.input,
-                )
-                .await?;
-                return Ok(Json(ThreadInputResponse {
-                    disposition: ThreadInputDisposition::Steered,
-                    queued_input: None,
-                    raw_payload: Some(response.payload),
-                }));
-            }
-            Err(error) if turn_lifecycle::is_no_active_turn_error(&error) => {
-                turn_lifecycle::delete_pending_skill_mentions(
-                    &state,
-                    pending_skill_mentions_id.as_deref(),
-                )
-                .await?;
-                turn_lifecycle::record_idle_after_missing_active_turn(&state, &thread_id).await?;
-            }
-            Err(error) if turn_lifecycle::is_non_steerable_error(&error) => {
-                turn_lifecycle::delete_pending_skill_mentions(
-                    &state,
-                    pending_skill_mentions_id.as_deref(),
-                )
-                .await?;
-                let queued_input = queue::create_queued_input_with_source(
-                    &state,
-                    &thread_id,
-                    resolved.input,
-                    options,
-                    None,
-                    None,
-                )
-                .await?;
-                return Ok(Json(ThreadInputResponse {
-                    disposition: ThreadInputDisposition::Queued,
-                    queued_input: Some(queued_input),
-                    raw_payload: None,
-                }));
-            }
-            Err(error) => {
-                turn_lifecycle::delete_pending_skill_mentions(
-                    &state,
-                    pending_skill_mentions_id.as_deref(),
-                )
-                .await?;
-                return Err(error);
-            }
-        }
+        return Ok(Json(ThreadInputResponse {
+            disposition: ThreadInputDisposition::Queued,
+            queued_input: Some(queued_input),
+            raw_payload: None,
+        }));
     }
 
     let pending_skill_mentions_id = turn_lifecycle::insert_pending_skill_mentions(
