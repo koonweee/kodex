@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { EventEnvelope } from "./api/client";
 import {
   App,
   FakeEventSource,
@@ -498,6 +499,51 @@ describe("MVP timeline flows", () => {
     expect(await screen.findByText(/low seq live event/i)).toBeInTheDocument();
   });
 
+  it("clears the selected stop state from the global terminal projection patch", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [activeThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "GET /v1/threads/thread-1": threadDetail(activeThread, [
+          snapshotTurn("turn-1", [
+            snapshotItem("agent-1", "agentMessage", {
+              text: "Working answer",
+            }),
+          ], "running"),
+        ]),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/working answer/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /stop turn/i })).toBeInTheDocument();
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
+    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    expect(globalStream).toBeDefined();
+
+    act(() => {
+      globalStream?.emit(terminalProjectionEvent({
+        seq: 5,
+        text: "Final answer from global stream",
+        threadId: "thread-1",
+        turnId: "turn-1",
+        itemId: "agent-1",
+      }));
+    });
+
+    expect(await screen.findByText(/final answer from global stream/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: /stop turn/i })).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: /send message/i })).toBeInTheDocument();
+  });
+
   it("keeps a resumed idle external thread in send state after selected snapshot recovery", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     let detailCall = 0;
@@ -746,3 +792,64 @@ describe("MVP timeline flows", () => {
   });
 
 });
+
+function terminalProjectionEvent({
+  itemId,
+  seq,
+  text,
+  threadId,
+  turnId,
+}: {
+  itemId: string;
+  seq: number;
+  text: string;
+  threadId: string;
+  turnId: string;
+}): EventEnvelope {
+  return {
+    id: `terminal-projection-${seq}`,
+    seq,
+    kind: "timeline.projection_patch",
+    codexMethod: "timeline/projection_patch",
+    projectId: project.id,
+    threadId,
+    turnId: null,
+    itemId: null,
+    payload: {
+      revision: seq,
+      threadId,
+      activeTurnId: null,
+      liveState: "idle",
+      turns: [{ id: turnId, status: "completed" }],
+      pendingApprovalRequests: [],
+      pendingUserInputRequests: [],
+      items: [
+        {
+          id: `projection-${turnId}-${itemId}`,
+          threadId,
+          turnId,
+          itemId,
+          itemType: "agentMessage",
+          status: "completed",
+          displayOrder: seq,
+          codexMethod: "item/completed",
+          timestampMs: seq,
+          payload: {
+            source: "gatewayStream",
+            turnId,
+            itemId,
+            item: { id: itemId, type: "agentMessage", phase: "final_answer", text },
+            itemSnapshot: {
+              id: itemId,
+              itemType: "agentMessage",
+              text,
+              rawPayload: { id: itemId, type: "agentMessage", phase: "final_answer", text },
+              skillMentions: [],
+            },
+          },
+        },
+      ],
+    },
+    receivedAt: "2026-04-30T00:00:03Z",
+  };
+}

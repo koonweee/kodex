@@ -76,6 +76,72 @@ describe("timeline reducer lifecycle", () => {
     expect(state.viewRevision).toBe(8);
   });
 
+  it("clears an active turn from a duplicate terminal projection patch", () => {
+    let state = applyLiveTimelineUpdate(createTimelineState(), event({
+      seq: 10,
+      kind: "timeline.projection_patch",
+      codexMethod: "timeline/projection_patch",
+      payload: projectionPatchWithLiveState({
+        revision: 10,
+        activeTurnId: "turn-1",
+        liveState: "streaming",
+        status: "running",
+        text: "Still working",
+      }),
+    }));
+
+    state = applyLiveTimelineUpdate(state, event({
+      seq: 11,
+      kind: "timeline.projection_patch",
+      codexMethod: "timeline/projection_patch",
+      payload: projectionPatchWithLiveState({
+        revision: 10,
+        activeTurnId: null,
+        liveState: "idle",
+        status: "completed",
+        text: "Done",
+      }),
+    }));
+
+    expect(state.activeTurnId).toBeNull();
+    expect(state.lastSeq).toBe(11);
+    expect(state.viewRevision).toBe(11);
+  });
+
+  it("does not let an older terminal patch clear a newer active turn", () => {
+    let state = applyLiveTimelineUpdate(createTimelineState(), event({
+      seq: 10,
+      kind: "timeline.projection_patch",
+      codexMethod: "timeline/projection_patch",
+      payload: projectionPatchWithLiveState({
+        revision: 10,
+        activeTurnId: "turn-2",
+        liveState: "streaming",
+        status: "running",
+        text: "Newer work",
+      }),
+    }));
+
+    state = applyLiveTimelineUpdate(state, event({
+      seq: 9,
+      kind: "timeline.projection_patch",
+      codexMethod: "timeline/projection_patch",
+      turnId: "turn-1",
+      payload: projectionPatchWithLiveState({
+        revision: 9,
+        activeTurnId: null,
+        liveState: "idle",
+        status: "completed",
+        text: "Older done",
+        turnId: "turn-1",
+      }),
+    }));
+
+    expect(state.activeTurnId).toBe("turn-2");
+    expect(state.lastSeq).toBe(10);
+    expect(state.viewRevision).toBe(10);
+  });
+
   it("keeps snapshot-required as a cursor-only render event", () => {
     const state = applyLiveTimelineUpdate(createTimelineState(), event({
       seq: 7,
@@ -179,5 +245,49 @@ function projectionPatch(text: string) {
         },
       },
     ],
+  };
+}
+
+function projectionPatchWithLiveState({
+  activeTurnId,
+  liveState,
+  revision,
+  status,
+  text,
+  turnId = "turn-1",
+}: {
+  activeTurnId: string | null;
+  liveState: "streaming" | "idle";
+  revision: number;
+  status: string;
+  text: string;
+  turnId?: string;
+}) {
+  const patch = projectionPatch(text);
+  return {
+    ...patch,
+    activeTurnId,
+    liveState,
+    revision,
+    items: patch.items.map((item) => ({
+      ...item,
+      id: `projection-${turnId}-item-1`,
+      turnId,
+      status,
+      codexMethod: status === "completed" ? "item/completed" : "item/upsert",
+      payload: {
+        ...item.payload,
+        turnId,
+        item: { id: "item-1", type: "agentMessage", text },
+        itemSnapshot: {
+          id: "item-1",
+          itemType: "agentMessage",
+          text,
+          rawPayload: { id: "item-1", type: "agentMessage", phase: "final_answer", text },
+          skillMentions: [],
+        },
+      },
+    })),
+    turns: [{ id: turnId, status }],
   };
 }

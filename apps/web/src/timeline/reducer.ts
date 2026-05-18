@@ -333,7 +333,7 @@ function withIgnoredProjectionPatchCursor(
   eventSeq: number,
 ): TimelineState {
   return createTimelineStateFromDraft({
-    activeTurnId: state.activeTurnId,
+    activeTurnId: patch.liveState === "idle" && eventSeq >= state.lastSeq ? null : state.activeTurnId,
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
     pendingApprovalRequests: state.pendingApprovalRequests,
     pendingUserInputRequests: state.pendingUserInputRequests,

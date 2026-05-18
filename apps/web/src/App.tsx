@@ -78,6 +78,7 @@ import {
   type KodexColorSchemeId,
 } from "./theme";
 import { ThemeWorkbench } from "./theme/ThemeWorkbench";
+import { applyTimelineEventBatch } from "./timeline/batch";
 import { idleTimelineEntry, type TimelineEntry } from "./timeline/entry";
 import { useSelectedThreadTimeline } from "./timeline/useSelectedThreadTimeline";
 import { applyTimelineSnapshot } from "./timeline/reducer";
@@ -678,6 +679,7 @@ function KodexShell({
         applyThreadPinEvent(event);
         applyThreadUpsertEvent(event);
         applyThreadMetadataEvent(event);
+        applySelectedThreadProjectionEvent(event);
         applyCompletedAgentTurnEvent(event);
         applyNotificationEvent(event);
         refreshSidebarThreadsForLiveEvent(event);
@@ -1297,6 +1299,14 @@ function KodexShell({
         return next;
       });
     }
+  }
+
+  function applySelectedThreadProjectionEvent(event: EventEnvelope) {
+    const selectedThreadId = selectedThreadIdRef.current;
+    if (!selectedThreadId || event.threadId !== selectedThreadId || event.kind !== "timeline.projection_patch") {
+      return;
+    }
+    setTimeline((current) => applyTimelineEventBatch(current, [event]));
   }
 
   function refreshSidebarThreadsForLiveEvent(event: EventEnvelope) {
