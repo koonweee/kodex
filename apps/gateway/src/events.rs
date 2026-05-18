@@ -1,4 +1,4 @@
-use std::convert::Infallible;
+use std::{collections::HashMap, convert::Infallible, sync::Arc};
 
 use async_stream::stream;
 use axum::{
@@ -14,7 +14,7 @@ use chrono::Utc;
 use futures_core::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio::time::{sleep, timeout, Duration, Instant};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -44,6 +44,7 @@ const SSE_REPLAY_PAGE_SIZE: i64 = 500;
 const SELECTED_THREAD_POLL_LIMIT: u32 = 25;
 const SELECTED_THREAD_ACTIVE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const SELECTED_THREAD_DELTA_COALESCE_WINDOW: Duration = Duration::from_millis(16);
+const THREAD_VIEW_DELTA_FLUSH_INTERVAL: Duration = Duration::from_millis(250);
 const THREAD_VIEW_CURSOR_KIND: &str = "thread_view.cursor";
 pub const MCP_CONFIG_CHANGED_EVENT: &str = "mcp.config_changed";
 pub const MCP_SERVER_STATUS_UPDATED_EVENT: &str = "mcp.server_status_updated";
@@ -126,7 +127,7 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             )
             .await?;
             for normalized in normalized.events {
-                let _ = state.events.send(normalized);
+                send_normalized_live_event(state, normalized).await;
             }
             for thread_id in normalized.drain_thread_ids {
                 queue::trigger_queue_drain(state.clone(), thread_id);
@@ -208,6 +209,88 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
         }
     }
     Ok(())
+}
+
+async fn send_normalized_live_event(state: &AppState, event: EventEnvelope) {
+    if event.kind == THREAD_VIEW_ITEM_DELTA_EVENT_KIND {
+        state
+            .thread_view_deltas
+            .push(event, state.events.clone())
+            .await;
+        return;
+    }
+    if event.kind == THREAD_VIEW_PATCH_EVENT_KIND {
+        state
+            .thread_view_deltas
+            .clear_thread(event.thread_id.as_deref())
+            .await;
+    }
+    let _ = state.events.send(event);
+}
+
+#[derive(Clone, Default)]
+pub struct ThreadViewDeltaBuffer {
+    inner: Arc<Mutex<HashMap<ThreadViewDeltaKey, EventEnvelope>>>,
+}
+
+impl ThreadViewDeltaBuffer {
+    async fn push(&self, event: EventEnvelope, sender: broadcast::Sender<EventEnvelope>) {
+        let Some(key) = ThreadViewDeltaKey::from_event(&event) else {
+            let _ = sender.send(event);
+            return;
+        };
+        let should_schedule = {
+            let mut pending = self.inner.lock().await;
+            if let Some(existing) = pending.get_mut(&key) {
+                *existing = merge_thread_view_item_delta(existing.clone(), event);
+                false
+            } else {
+                pending.insert(key.clone(), event);
+                true
+            }
+        };
+        if !should_schedule {
+            return;
+        }
+        let buffer = self.clone();
+        tokio::spawn(async move {
+            sleep(THREAD_VIEW_DELTA_FLUSH_INTERVAL).await;
+            if let Some(event) = buffer.take(&key).await {
+                let _ = sender.send(event);
+            }
+        });
+    }
+
+    async fn clear_thread(&self, thread_id: Option<&str>) {
+        let Some(thread_id) = thread_id else {
+            return;
+        };
+        self.inner
+            .lock()
+            .await
+            .retain(|key, _| key.thread_id != thread_id);
+    }
+
+    async fn take(&self, key: &ThreadViewDeltaKey) -> Option<EventEnvelope> {
+        self.inner.lock().await.remove(key)
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct ThreadViewDeltaKey {
+    thread_id: String,
+    turn_id: String,
+    item_id: String,
+}
+
+impl ThreadViewDeltaKey {
+    fn from_event(event: &EventEnvelope) -> Option<Self> {
+        Some(Self {
+            thread_id: event.thread_id.clone()?,
+            turn_id: event.turn_id.clone()?,
+            item_id: event.item_id.clone()?,
+        })
+    }
 }
 
 async fn persist_notification_cursor(
@@ -1545,6 +1628,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn thread_view_delta_buffer_coalesces_before_broadcast_and_patch_clears_pending() {
+        let buffer = ThreadViewDeltaBuffer::default();
+        let (sender, mut receiver) = broadcast::channel(16);
+
+        buffer
+            .push(
+                test_event(
+                    1,
+                    THREAD_VIEW_ITEM_DELTA_EVENT_KIND,
+                    Some("thread_view/item_delta"),
+                    Some("item-1"),
+                    json!({"threadId": "thread-1", "turnId": "turn-1", "itemId": "item-1", "delta": "Hel"}),
+                ),
+                sender.clone(),
+            )
+            .await;
+        buffer
+            .push(
+                test_event(
+                    2,
+                    THREAD_VIEW_ITEM_DELTA_EVENT_KIND,
+                    Some("thread_view/item_delta"),
+                    Some("item-1"),
+                    json!({"threadId": "thread-1", "turnId": "turn-1", "itemId": "item-1", "delta": "lo"}),
+                ),
+                sender.clone(),
+            )
+            .await;
+
+        let event = timeout(Duration::from_secs(1), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(event.seq, 2);
+        assert_eq!(event.payload["delta"], "Hello");
+
+        buffer
+            .push(
+                test_event(
+                    3,
+                    THREAD_VIEW_ITEM_DELTA_EVENT_KIND,
+                    Some("thread_view/item_delta"),
+                    Some("item-1"),
+                    json!({"threadId": "thread-1", "turnId": "turn-1", "itemId": "item-1", "delta": "dropped"}),
+                ),
+                sender,
+            )
+            .await;
+        buffer.clear_thread(Some("thread-1")).await;
+
+        assert!(!matches!(
+            timeout(THREAD_VIEW_DELTA_FLUSH_INTERVAL * 2, receiver.recv()).await,
+            Ok(Ok(_))
+        ));
+    }
+
+    #[tokio::test]
     async fn notification_ingest_emits_thread_view_item_delta_for_timeline_delta() {
         let state = test_state().await;
         let mut receiver = state.events.subscribe();
@@ -1565,7 +1705,10 @@ mod tests {
         .unwrap();
 
         let raw = receiver.recv().await.unwrap();
-        let delta = receiver.recv().await.unwrap();
+        let delta = timeout(Duration::from_secs(1), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(raw.kind, "codex.notification");
         assert_eq!(raw.payload["sourceMethod"], "item/agentMessage/delta");
         assert!(raw.payload.get("delta").is_none());

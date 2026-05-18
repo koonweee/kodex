@@ -105,6 +105,7 @@ pub struct AppState {
     pub previews: crate::previews::PreviewManager,
     pub notifications: crate::notifications::NotificationService,
     pub thread_views: ThreadViewStore,
+    pub thread_view_deltas: crate::events::ThreadViewDeltaBuffer,
 }
 
 impl AppState {
@@ -122,6 +123,7 @@ impl AppState {
             skills: crate::skills::SkillCatalogCache::default(),
             notifications,
             thread_views: ThreadViewStore::default(),
+            thread_view_deltas: crate::events::ThreadViewDeltaBuffer::default(),
         }
     }
 
