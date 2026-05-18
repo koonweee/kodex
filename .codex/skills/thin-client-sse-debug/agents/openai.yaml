@@ -1,0 +1,4 @@
+interface:
+  display_name: "Thin SSE Debug"
+  short_description: "Trace Kodex gateway SSE behavior"
+  default_prompt: "Use $thin-client-sse-debug to trace gateway SSE events for this Kodex thread."
