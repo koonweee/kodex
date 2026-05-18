@@ -191,6 +191,27 @@ describe("timeline derivation", () => {
     });
   });
 
+  it("renders an active turn work row without elapsed time when the turn has no canonical start", () => {
+    const rows = deriveTimelineRows(
+      timelineState({
+        activeTurnId: "turn-1",
+        turns: [{ turnId: "turn-1", itemIds: ["user-1", "reasoning-1"], status: "running" }],
+        items: [
+          timelineItem({ id: "user-1", kind: "user_message", displayOrder: 1, text: "Inspect this." }),
+          timelineItem({ id: "reasoning-1", kind: "reasoning_summary", displayOrder: 2, summary: "Need context." }),
+        ],
+      }),
+    );
+
+    expect(rows.map((row) => row.key)).toEqual(["item-user-1", "work-turn-1", "item-reasoning-1"]);
+    expect(rows[1]).toMatchObject({
+      type: "work",
+      state: "running",
+      turnId: "turn-1",
+    });
+    expect(rows[1]).toHaveProperty("startedAtMs", undefined);
+  });
+
   it("keeps the active turn work row running when a snapshot still marks the turn terminal", () => {
     const rows = deriveTimelineRows(
       timelineState({

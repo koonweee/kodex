@@ -34,7 +34,7 @@ export type TimelineWorkRow = {
   turnKey: string;
   turnId: string;
   state: "running" | "completed";
-  startedAtMs: number;
+  startedAtMs?: number;
   completedAtMs?: number;
   collapsedRows: Array<TimelineItemRow | TimelineActivityRow | TimelineFileChangesRow>;
   displayOrder: number;
@@ -248,11 +248,11 @@ function isFinalResponse(item: TimelineItem): boolean {
 function insertWorkRows(rows: TimelineRow[], timeline: TimelineState): TimelineRow[] {
   const workRows = new Map<string, TimelineWorkRow>();
   for (const turn of timeline.turns) {
-    if (turn.startedAtMs === undefined) {
-      continue;
-    }
     const isActiveTurn = turn.turnId === timeline.activeTurnId;
     const isTerminalTurn = isTerminalTurnStatus(turn.status);
+    if (turn.startedAtMs === undefined && !isActiveTurn) {
+      continue;
+    }
     if (!isActiveTurn && !isTerminalTurn) {
       continue;
     }

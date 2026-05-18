@@ -1448,6 +1448,28 @@ describe("timeline renderer registry", () => {
     expect(container.querySelector(".kodex-work-header-divider")).toBeInTheDocument();
   });
 
+  it("renders running work rows without elapsed time when no canonical start exists", () => {
+    render(
+      <MantineProvider>
+        <TimelineWorkRowRenderer
+          imagePreviewUrlsByPath={{}}
+          row={{
+            type: "work",
+            key: "work-turn-1",
+            turnKey: "turn-turn-1",
+            turnId: "turn-1",
+            state: "running",
+            displayOrder: 1.1,
+            collapsedRows: [],
+          }}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("Working")).toBeInTheDocument();
+    expect(screen.queryByText(/Working for/)).not.toBeInTheDocument();
+  });
+
   it("renders plan, review mode, and context compaction timeline markers", () => {
     render(
       <MantineProvider>

@@ -259,7 +259,7 @@ impl ThreadView {
         } else {
             status.as_str()
         };
-        self.upsert_turn_from_item(turn_id, turn_status, timestamp_ms);
+        self.upsert_turn_from_item(turn_id, turn_status);
         if is_live_status(turn_status) {
             self.active_turn_id = Some(turn_id.to_string());
             self.live_state = ThreadLiveState::Streaming;
@@ -441,14 +441,12 @@ impl ThreadView {
         ordered_turns_for_items(&turns, items)
     }
 
-    fn upsert_turn_from_item(&mut self, turn_id: &str, status: &str, timestamp_ms: Option<i64>) {
-        let timestamp = timestamp_ms.map(unix_ms_to_seconds);
+    fn upsert_turn_from_item(&mut self, turn_id: &str, status: &str) {
         let existing = self.turns.iter_mut().find(|turn| turn.id == turn_id);
         if let Some(existing) = existing {
             existing.status = status.to_string();
-            existing.started_at = earliest_timestamp(existing.started_at, timestamp);
             existing.completed_at = if is_terminal_turn_status(status) {
-                normalize_completed_at(existing.started_at, timestamp.or(existing.completed_at))
+                existing.completed_at
             } else {
                 None
             };
@@ -457,30 +455,21 @@ impl ThreadView {
         self.turns.push(ThreadTimelineSnapshotTurn {
             id: turn_id.to_string(),
             status: status.to_string(),
-            started_at: timestamp,
-            completed_at: if is_terminal_turn_status(status) {
-                normalize_completed_at(timestamp, timestamp)
-            } else {
-                None
-            },
+            started_at: None,
+            completed_at: None,
         });
     }
 
     fn upsert_turn_from_snapshot(&mut self, turn: &ThreadTurnSnapshot) {
-        let now = Utc::now().timestamp();
         let terminal = is_terminal_turn_status(&turn.status);
         let existing_started_at = self
             .turns
             .iter()
             .find(|existing| existing.id == turn.id)
             .and_then(|existing| existing.started_at);
-        let started_at = turn
-            .started_at
-            .or(existing_started_at)
-            .or(turn.completed_at)
-            .or(Some(now));
+        let started_at = turn.started_at.or(existing_started_at);
         let completed_at = if terminal {
-            normalize_completed_at(started_at, turn.completed_at.or(Some(now)))
+            normalize_completed_at(started_at, turn.completed_at)
         } else {
             None
         };
@@ -553,15 +542,8 @@ fn timeline_turns_from_items(
         turns.push(ThreadTimelineSnapshotTurn {
             id: item.turn_id.clone(),
             status: item.status.clone(),
-            started_at: item.timestamp_ms.map(unix_ms_to_seconds),
-            completed_at: if is_terminal_turn_status(&item.status) {
-                normalize_completed_at(
-                    item.timestamp_ms.map(unix_ms_to_seconds),
-                    item.timestamp_ms.map(unix_ms_to_seconds),
-                )
-            } else {
-                None
-            },
+            started_at: None,
+            completed_at: None,
         });
     }
     turns
@@ -575,19 +557,6 @@ fn replace_or_push_turn(
         *existing = turn;
     } else {
         turns.push(turn);
-    }
-}
-
-fn unix_ms_to_seconds(timestamp_ms: i64) -> i64 {
-    timestamp_ms / 1_000
-}
-
-fn earliest_timestamp(left: Option<i64>, right: Option<i64>) -> Option<i64> {
-    match (left, right) {
-        (Some(left), Some(right)) => Some(left.min(right)),
-        (Some(left), None) => Some(left),
-        (None, Some(right)) => Some(right),
-        (None, None) => None,
     }
 }
 
@@ -1086,6 +1055,24 @@ mod tests {
         assert_eq!(timeline.turns[0].started_at, Some(1));
         assert_eq!(timeline.turns[0].completed_at, Some(2));
         assert_eq!(timeline.active_turn_id, None);
+    }
+
+    #[tokio::test]
+    async fn live_item_activity_does_not_invent_turn_timestamps() {
+        let sessions = ThreadViewStore::default();
+        record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", "Working", 1)
+            .await
+            .unwrap();
+
+        let patch = patch_for_thread(&sessions, "thread-1").await.unwrap();
+
+        assert_eq!(patch.live_state, ThreadLiveState::Streaming);
+        assert_eq!(patch.active_turn_id.as_deref(), Some("turn-1"));
+        assert_eq!(patch.turns.len(), 1);
+        assert_eq!(patch.turns[0].id, "turn-1");
+        assert_eq!(patch.turns[0].status, "running");
+        assert_eq!(patch.turns[0].started_at, None);
+        assert_eq!(patch.turns[0].completed_at, None);
     }
 
     #[tokio::test]

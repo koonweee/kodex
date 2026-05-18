@@ -277,7 +277,8 @@ function TimelineWorkRowRendererImpl({
   threadId,
 }: TimelineWorkRowRendererProps) {
   const elapsedMs = useWorkElapsedMs(row);
-  const label = `${row.state === "running" ? "Working" : "Worked"} for ${fmtElapsedCompact(Math.floor(elapsedMs / 1_000))}`;
+  const verb = row.state === "running" ? "Working" : "Worked";
+  const label = elapsedMs === null ? verb : `${verb} for ${fmtElapsedCompact(Math.floor(elapsedMs / 1_000))}`;
 
   if (row.state === "running") {
     return (
@@ -382,15 +383,18 @@ function unknownRenderer(item: TimelineItem) {
   return <Text size="sm">{item.text || item.kind || "Unsupported item"}</Text>;
 }
 
-function useWorkElapsedMs(row: TimelineWorkRow): number {
+function useWorkElapsedMs(row: TimelineWorkRow): number | null {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (row.state !== "running") {
+    if (row.state !== "running" || row.startedAtMs === undefined) {
       return;
     }
     const interval = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(interval);
   }, [row.state, row.startedAtMs]);
+  if (row.startedAtMs === undefined) {
+    return null;
+  }
   if (row.state === "completed") {
     return Math.max(0, (row.completedAtMs ?? row.startedAtMs) - row.startedAtMs);
   }
