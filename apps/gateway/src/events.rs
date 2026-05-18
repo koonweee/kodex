@@ -15,7 +15,7 @@ use futures_core::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::{broadcast, mpsc};
-use tokio::time::{timeout, Duration, Instant};
+use tokio::time::{sleep, timeout, Duration, Instant};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -43,6 +43,7 @@ use crate::{
 const SSE_REPLAY_PAGE_SIZE: i64 = 500;
 const SELECTED_THREAD_POLL_LIMIT: u32 = 25;
 const SELECTED_THREAD_ACTIVE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+const SELECTED_THREAD_DELTA_COALESCE_WINDOW: Duration = Duration::from_millis(16);
 const THREAD_VIEW_CURSOR_KIND: &str = "thread_view.cursor";
 pub const MCP_CONFIG_CHANGED_EVENT: &str = "mcp.config_changed";
 pub const MCP_SERVER_STATUS_UPDATED_EVENT: &str = "mcp.server_status_updated";
@@ -341,9 +342,12 @@ async fn event_stream(
                         && event_matches(&event, &query)
                         && is_normal_live_event(&event) =>
                 {
-                    high_water = event.seq;
-                    if let Ok(sse_event) = event_to_sse(event) {
-                        yield Ok(sse_event);
+                    let events = collect_selected_live_events(event, &query, &mut receiver).await;
+                    for event in coalesce_selected_live_events(events) {
+                        high_water = high_water.max(event.seq);
+                        if let Ok(sse_event) = event_to_sse(event) {
+                            yield Ok(sse_event);
+                        }
                     }
                 }
                 Ok(Ok(_)) => {}
@@ -543,6 +547,109 @@ fn is_normal_live_event(event: &EventEnvelope) -> bool {
                 | queue::QUEUE_UPSERT_EVENT
                 | queue::QUEUE_DELETE_EVENT
         )
+}
+
+async fn collect_selected_live_events(
+    first: EventEnvelope,
+    query: &EventsQuery,
+    receiver: &mut broadcast::Receiver<EventEnvelope>,
+) -> Vec<EventEnvelope> {
+    if query.thread_id.is_none() || !is_thread_view_item_delta_event(&first) {
+        return vec![first];
+    }
+
+    sleep(SELECTED_THREAD_DELTA_COALESCE_WINDOW).await;
+    let mut events = vec![first];
+    loop {
+        match receiver.try_recv() {
+            Ok(event) if event_matches(&event, query) && is_normal_live_event(&event) => {
+                events.push(event);
+            }
+            Ok(_) => {}
+            Err(broadcast::error::TryRecvError::Empty) => break,
+            Err(broadcast::error::TryRecvError::Lagged(_)) => break,
+            Err(broadcast::error::TryRecvError::Closed) => break,
+        }
+    }
+    events
+}
+
+fn coalesce_selected_live_events(events: Vec<EventEnvelope>) -> Vec<EventEnvelope> {
+    let mut coalesced = Vec::new();
+    let mut pending_delta: Option<EventEnvelope> = None;
+
+    for event in events {
+        if is_thread_view_item_delta_event(&event) {
+            pending_delta = match pending_delta.take() {
+                Some(previous) if same_thread_view_item_delta_target(&previous, &event) => {
+                    Some(merge_thread_view_item_delta(previous, event))
+                }
+                Some(previous) => {
+                    coalesced.push(previous);
+                    Some(event)
+                }
+                None => Some(event),
+            };
+            continue;
+        }
+
+        if is_thread_view_patch_event(&event) {
+            if pending_delta
+                .as_ref()
+                .is_some_and(|delta| delta.thread_id == event.thread_id)
+            {
+                pending_delta = None;
+            }
+            coalesced.push(event);
+            continue;
+        }
+
+        if let Some(delta) = pending_delta.take() {
+            coalesced.push(delta);
+        }
+        coalesced.push(event);
+    }
+
+    if let Some(delta) = pending_delta {
+        coalesced.push(delta);
+    }
+    coalesced
+}
+
+fn is_thread_view_item_delta_event(event: &EventEnvelope) -> bool {
+    event.kind == THREAD_VIEW_ITEM_DELTA_EVENT_KIND
+}
+
+fn is_thread_view_patch_event(event: &EventEnvelope) -> bool {
+    event.kind == THREAD_VIEW_PATCH_EVENT_KIND
+}
+
+fn same_thread_view_item_delta_target(left: &EventEnvelope, right: &EventEnvelope) -> bool {
+    left.thread_id == right.thread_id
+        && left.turn_id == right.turn_id
+        && left.item_id == right.item_id
+}
+
+fn merge_thread_view_item_delta(previous: EventEnvelope, next: EventEnvelope) -> EventEnvelope {
+    let previous_delta = thread_view_item_delta_text(&previous);
+    let next_delta = thread_view_item_delta_text(&next);
+    let mut payload = next.payload.clone();
+    if let Some(object) = payload.as_object_mut() {
+        object.insert(
+            "delta".to_string(),
+            Value::String(format!("{previous_delta}{next_delta}")),
+        );
+    }
+    EventEnvelope { payload, ..next }
+}
+
+fn thread_view_item_delta_text(event: &EventEnvelope) -> String {
+    event
+        .payload
+        .get("delta")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string()
 }
 
 fn thread_view_refresh_required_event(
@@ -1345,6 +1452,27 @@ mod tests {
         AppState::new(Config::default(), store, app_server)
     }
 
+    fn test_event(
+        seq: i64,
+        kind: &str,
+        codex_method: Option<&str>,
+        item_id: Option<&str>,
+        payload: Value,
+    ) -> EventEnvelope {
+        EventEnvelope {
+            id: format!("event-{seq}"),
+            seq,
+            project_id: None,
+            thread_id: Some("thread-1".to_string()),
+            turn_id: Some("turn-1".to_string()),
+            item_id: item_id.map(str::to_string),
+            kind: kind.to_string(),
+            codex_method: codex_method.map(str::to_string),
+            payload,
+            received_at: Utc::now(),
+        }
+    }
+
     #[tokio::test]
     async fn notification_ingest_persists_before_broadcast() {
         let state = test_state().await;
@@ -1369,6 +1497,51 @@ mod tests {
         assert_eq!(replay[0].id, broadcast.id);
         assert_eq!(replay[0].thread_id.as_deref(), Some("thread-1"));
         assert_eq!(replay[0].turn_id.as_deref(), Some("turn-1"));
+    }
+
+    #[test]
+    fn selected_live_event_coalescing_merges_deltas_and_lets_patch_win() {
+        let events = coalesce_selected_live_events(vec![
+            test_event(
+                1,
+                THREAD_VIEW_ITEM_DELTA_EVENT_KIND,
+                Some("thread_view/item_delta"),
+                Some("item-1"),
+                json!({"threadId": "thread-1", "turnId": "turn-1", "itemId": "item-1", "delta": "Hel"}),
+            ),
+            test_event(
+                2,
+                THREAD_VIEW_ITEM_DELTA_EVENT_KIND,
+                Some("thread_view/item_delta"),
+                Some("item-1"),
+                json!({"threadId": "thread-1", "turnId": "turn-1", "itemId": "item-1", "delta": "lo"}),
+            ),
+        ]);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].seq, 2);
+        assert_eq!(events[0].payload["delta"], "Hello");
+
+        let events = coalesce_selected_live_events(vec![
+            test_event(
+                3,
+                THREAD_VIEW_ITEM_DELTA_EVENT_KIND,
+                Some("thread_view/item_delta"),
+                Some("item-1"),
+                json!({"threadId": "thread-1", "turnId": "turn-1", "itemId": "item-1", "delta": "stale"}),
+            ),
+            test_event(
+                4,
+                THREAD_VIEW_PATCH_EVENT_KIND,
+                Some("thread_view/patch"),
+                None,
+                json!({"threadId": "thread-1", "activeTurnId": null, "liveState": "idle", "items": []}),
+            ),
+        ]);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, THREAD_VIEW_PATCH_EVENT_KIND);
+        assert_eq!(events[0].seq, 4);
     }
 
     #[tokio::test]

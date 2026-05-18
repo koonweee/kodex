@@ -13,7 +13,7 @@ export function applyTimelineEventBatch(state: TimelineState, events: EventEnvel
 }
 
 function coalesceTimelineEvents(events: EventEnvelope[], viewRevision: number): EventEnvelope[] {
-  return coalesceThreadViewItemDeltas(coalesceThreadViewPatches(events, viewRevision));
+  return dropThreadViewItemDeltasSupersededByPatches(coalesceThreadViewItemDeltas(coalesceThreadViewPatches(events, viewRevision)));
 }
 
 function coalesceThreadViewPatches(events: EventEnvelope[], viewRevision: number): EventEnvelope[] {
@@ -90,4 +90,30 @@ function sameDeltaTarget(
     (left.turnId ?? leftPayload.turnId) === (right.turnId ?? rightPayload.turnId) &&
     (left.itemId ?? leftPayload.itemId) === (right.itemId ?? rightPayload.itemId)
   );
+}
+
+function dropThreadViewItemDeltasSupersededByPatches(events: EventEnvelope[]): EventEnvelope[] {
+  const latestPatchSeqByThread = new Map<string, number>();
+  for (const event of events) {
+    if (event.kind !== "thread_view.patch") {
+      continue;
+    }
+    const threadKey = event.threadId ?? "__unknown_thread__";
+    latestPatchSeqByThread.set(
+      threadKey,
+      Math.max(latestPatchSeqByThread.get(threadKey) ?? Number.NEGATIVE_INFINITY, event.seq),
+    );
+  }
+  if (latestPatchSeqByThread.size === 0) {
+    return events;
+  }
+  return events.filter((event) => {
+    if (event.kind !== "thread_view.item_delta") {
+      return true;
+    }
+    const payload = itemDeltaPayload(event.payload);
+    const threadKey = event.threadId ?? payload.threadId ?? "__unknown_thread__";
+    const latestPatchSeq = latestPatchSeqByThread.get(threadKey);
+    return latestPatchSeq === undefined || event.seq > latestPatchSeq;
+  });
 }

@@ -116,6 +116,21 @@ describe("timeline event batching", () => {
     expect(state.lastSeq).toBe(3);
   });
 
+  it("lets a same-frame canonical patch supersede queued item deltas", () => {
+    const state = applyTimelineEventBatch(createTimelineState(), [
+      deltaEvent({ id: "delta-1", seq: 1, delta: "Partial" }),
+      event({ id: "event-2", seq: 2, text: "Canonical final" }),
+    ]);
+
+    expect(state.items).toHaveLength(1);
+    expect(state.items[0]).toMatchObject({
+      text: "Canonical final",
+      status: "running",
+    });
+    expect(state.items[0].debugEvents).toHaveLength(1);
+    expect(state.items[0].debugEvents[0].kind).toBe("timeline.canonical_item");
+  });
+
   it("drops stale patches when batching after a newer canonical view", () => {
     const canonical = applyLiveTimelineUpdate(createTimelineState(), event({ id: "event-10", seq: 10, text: "Canonical" }));
 
