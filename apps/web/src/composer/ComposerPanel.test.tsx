@@ -509,6 +509,19 @@ describe("ComposerPanel", () => {
     expect(composer).toHaveValue("");
   });
 
+  it("shows a sending state on the composer action while submit is awaiting ack", () => {
+    renderComposerPanel({
+      activeSelectedTurnId: "turn-1",
+      isComposerSubmitting: true,
+    });
+
+    const sendingButton = screen.getByRole("button", { name: /sending message/i });
+    expect(sendingButton).toBeDisabled();
+    expect(sendingButton).toHaveAttribute("data-action-state", "submitting");
+    expect(sendingButton.querySelector(".mantine-Loader-root")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /stop turn/i })).not.toBeInTheDocument();
+  });
+
   it("resets the local draft when the shell asks it to clear", async () => {
     const attachmentInputRef = { current: null } as RefObject<HTMLInputElement | null>;
     const { rerender } = renderWithQueryProvider(

@@ -349,6 +349,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn subagent_recheck_skips_unread_agent_message_delivery() {
+        for (source, thread_source) in [
+            (
+                json!({
+                    "subAgent": {
+                        "thread_spawn": {
+                            "parent_thread_id": "thread-parent",
+                            "depth": 1
+                        }
+                    }
+                }),
+                None,
+            ),
+            (json!("cli"), Some("subagent")),
+        ] {
+            let (mut state, app_server) = test_state().await;
+            Arc::make_mut(&mut state.config)
+                .notifications
+                .recheck_delay_ms = 0;
+            let sender = Arc::new(RecordingPushSender::new(PushDeliveryOutcome::Sent));
+            state = state.with_notification_sender(sender.clone());
+            state
+                .store
+                .upsert_push_subscription(NewPushSubscription {
+                    endpoint: "https://push.example/sub-1".to_string(),
+                    p256dh: "public".to_string(),
+                    auth: "auth".to_string(),
+                    user_agent: None,
+                })
+                .await
+                .unwrap();
+            app_server.queued_responses.lock().unwrap().extend([
+                thread_read_response_with_agent_message_source(
+                    "thread-subagent",
+                    "Subagent",
+                    "Tool output should stay hidden.",
+                    "Subagent final answer.",
+                    source,
+                    thread_source,
+                ),
+                json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
+            ]);
+
+            ingest_inbound(
+                InboundMessage::Notification {
+                    method: "turn/upsert".to_string(),
+                    params: json!({
+                        "threadId": "thread-subagent",
+                        "turn": {
+                            "id": "turn-1",
+                            "status": {"type": "completed"},
+                            "items": []
+                        }
+                    }),
+                },
+                &state,
+            )
+            .await
+            .unwrap();
+
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert!(sender.payloads.lock().unwrap().is_empty());
+        }
+    }
+
+    #[tokio::test]
     async fn permanent_push_failure_disables_stale_subscription() {
         let (state, _) = test_state().await;
         let sender = Arc::new(RecordingPushSender::new(
@@ -8619,7 +8685,25 @@ mod tests {
         tool_output: &str,
         agent_text: &str,
     ) -> Value {
-        json!({
+        thread_read_response_with_agent_message_source(
+            thread_id,
+            name,
+            tool_output,
+            agent_text,
+            json!("cli"),
+            None,
+        )
+    }
+
+    fn thread_read_response_with_agent_message_source(
+        thread_id: &str,
+        name: &str,
+        tool_output: &str,
+        agent_text: &str,
+        source: Value,
+        thread_source: Option<&str>,
+    ) -> Value {
+        let mut response = json!({
             "thread": {
                 "id": thread_id,
                 "name": name,
@@ -8627,7 +8711,7 @@ mod tests {
                 "cwd": "/workspace",
                 "ephemeral": false,
                 "modelProvider": "openai",
-                "source": "cli",
+                "source": source,
                 "status": {"type": "idle"},
                 "turns": [{
                     "id": "turn-0",
@@ -8641,7 +8725,11 @@ mod tests {
                 "createdAt": 1_767_225_600_i64,
                 "updatedAt": 1_767_225_600_i64
             }
-        })
+        });
+        if let Some(thread_source) = thread_source {
+            response["thread"]["threadSource"] = json!(thread_source);
+        }
+        response
     }
 
     async fn response_json(response: axum::response::Response) -> Value {

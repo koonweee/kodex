@@ -134,7 +134,7 @@ export function ComposerPanel({
   const isComposerControlsDisabled = isComposerDisabled || isEntryPending;
   const canSubmitComposer =
     !isComposerControlsDisabled && (Boolean(draftState.composerText.trim()) || pendingAttachments.length > 0);
-  const shouldShowStopAction = activeSelectedTurnId !== null && !canSubmitComposer;
+  const shouldShowStopAction = activeSelectedTurnId !== null && !canSubmitComposer && !isComposerSubmitting;
   const skillPopupOpen = !isComposerControlsDisabled && draftState.skillToken !== null;
   const skillCatalog = useSkillCatalog({
     cwd: composerCwd,

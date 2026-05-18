@@ -214,6 +214,9 @@ async fn deliver_unread_agent_message_if_still_unread(
     let mut snapshot = app_server_api::client(&state.app_server)
         .thread_read(thread_id.clone())
         .await?;
+    if suppress_unread_agent_message_notification(&snapshot.thread.raw_payload) {
+        return Ok(());
+    }
     let states = state
         .store
         .thread_read_states(std::slice::from_ref(&thread_id))
@@ -249,6 +252,17 @@ async fn deliver_unread_agent_message_if_still_unread(
         badge_count,
     };
     state.notifications.deliver_payload(&state, payload).await
+}
+
+fn suppress_unread_agent_message_notification(thread: &serde_json::Value) -> bool {
+    thread
+        .get("source")
+        .and_then(|source| source.get("subAgent"))
+        .is_some()
+        || thread
+            .get("threadSource")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|source| matches!(source, "subagent" | "memory_consolidation"))
 }
 
 fn unread_agent_message_body(snapshot: &app_server_api::ThreadDetailResponse) -> String {

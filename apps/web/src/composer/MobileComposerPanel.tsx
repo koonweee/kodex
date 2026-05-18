@@ -53,6 +53,7 @@ export function MobileComposerPanel({
   isComposerControlsDisabled,
   isComposerDisabled,
   isComposerDragActive,
+  isComposerSubmitting,
   models,
   onAttachmentInputChange,
   onComposerPaste,
@@ -236,6 +237,7 @@ export function MobileComposerPanel({
                 settings={composerSettings}
                 settingsError={composerSettingsError}
                 shouldShowStopAction={shouldShowStopAction}
+                isSubmitting={isComposerSubmitting}
               />
             </Box>
           )}
@@ -259,6 +261,7 @@ export function MobileComposerPanel({
       isComposerControlsDisabled={isComposerControlsDisabled}
       isComposerDisabled={isComposerDisabled}
       isComposerDragActive={isComposerDragActive}
+      isComposerSubmitting={isComposerSubmitting}
       models={models}
       onAttachmentInputChange={onAttachmentInputChange}
       onComposerPaste={onComposerPaste}

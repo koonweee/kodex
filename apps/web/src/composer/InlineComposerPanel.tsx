@@ -61,6 +61,7 @@ export function InlineComposerPanel({
   isComposerControlsDisabled,
   isComposerDisabled,
   isComposerDragActive,
+  isComposerSubmitting,
   isQueuedTurnStartPending,
   isEntryPending,
   models,
@@ -227,6 +228,7 @@ export function InlineComposerPanel({
           settings={composerSettings}
           settingsError={composerSettingsError}
           shouldShowStopAction={shouldShowStopAction}
+          isSubmitting={isComposerSubmitting}
           showContextUsage={!shouldShowDraftHero}
         />
       </Box>

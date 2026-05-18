@@ -1,4 +1,4 @@
-import { ActionIcon, Group, Menu, Tooltip } from "@mantine/core";
+import { ActionIcon, Group, Loader, Menu, Tooltip } from "@mantine/core";
 import { ArrowUp, Maximize2, Paperclip, Plus, Square } from "lucide-react";
 import type { RefObject } from "react";
 
@@ -12,6 +12,7 @@ const COMPOSER_TOOLBAR_TEXT = {
   expand: "Expand composer",
   openAttachments: "Open attachment menu",
   send: "Send message",
+  sending: "Sending message",
   stop: "Stop turn",
 };
 
@@ -28,6 +29,7 @@ type ComposerToolbarProps = {
   settings: ComposerSettings;
   settingsError?: string | null;
   shouldShowStopAction: boolean;
+  isSubmitting: boolean;
   showContextUsage?: boolean;
 };
 
@@ -44,8 +46,15 @@ export function ComposerToolbar({
   settings,
   settingsError,
   shouldShowStopAction,
+  isSubmitting,
   showContextUsage = true,
 }: ComposerToolbarProps) {
+  const actionLabel = isSubmitting
+    ? COMPOSER_TOOLBAR_TEXT.sending
+    : shouldShowStopAction
+      ? COMPOSER_TOOLBAR_TEXT.stop
+      : COMPOSER_TOOLBAR_TEXT.send;
+
   return (
     <Group className="kodex-composer-toolbar" justify="space-between" wrap="wrap">
       <Group className="kodex-composer-toolbar-left" gap={6} wrap="nowrap">
@@ -97,8 +106,19 @@ export function ComposerToolbar({
           </ActionIcon>
         </Tooltip>
       ) : null}
-      <Tooltip label={shouldShowStopAction ? COMPOSER_TOOLBAR_TEXT.stop : COMPOSER_TOOLBAR_TEXT.send}>
-        {shouldShowStopAction ? (
+      <Tooltip label={actionLabel}>
+        {isSubmitting ? (
+          <ActionIcon
+            className="kodex-composer-action"
+            data-action-state="submitting"
+            aria-label={COMPOSER_TOOLBAR_TEXT.sending}
+            size="md"
+            type="button"
+            disabled
+          >
+            <Loader aria-hidden="true" color="currentColor" size={16} />
+          </ActionIcon>
+        ) : shouldShowStopAction ? (
           <ActionIcon
             className="kodex-composer-action"
             data-action-state="active"

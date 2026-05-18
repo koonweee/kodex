@@ -70,10 +70,12 @@ describe("MVP composer input flows", () => {
   });
 
   it("starts idle turns with the main composer action", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const turnStart = deferred<unknown>();
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/events": { events: [] },
-        "POST /v1/threads/thread-1/input": { payload: {} },
+        "POST /v1/threads/thread-1/input": () => turnStart.promise,
       }),
     );
 
@@ -98,6 +100,34 @@ describe("MVP composer input flows", () => {
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
+    });
+    const sendingButton = screen.getByRole("button", { name: /sending message/i });
+    expect(sendingButton).toBeDisabled();
+    expect(sendingButton).toHaveAttribute("data-action-state", "submitting");
+
+    await act(async () => {
+      turnStart.resolve({ disposition: "started", rawPayload: { turnId: "turn-2" } });
+      await turnStart.promise;
+    });
+    expect(screen.getByRole("button", { name: /sending message/i })).toBeDisabled();
+
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    act(() => {
+      selectedThreadStream?.emit(projectionPatchEvent({
+        id: "projection-sent-user",
+        seq: 3,
+        threadId: thread.id,
+        turnId: "turn-2",
+        itemId: "sent-user-2",
+        itemType: "userMessage",
+        text: "Ship it",
+        displayOrder: 3,
+        status: "running",
+      }));
+    });
+    expect(await screen.findByText("Ship it")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: /sending message/i })).not.toBeInTheDocument();
     });
   });
 
