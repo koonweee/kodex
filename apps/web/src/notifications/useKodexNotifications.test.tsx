@@ -41,14 +41,14 @@ function completedTurnEvent(threadId: string): EventEnvelope {
   return {
     id: `event-${threadId}`,
     seq: 2,
-    kind: "timeline.projection_patch",
-    codexMethod: "timeline/projection_patch",
+    kind: "thread_view.patch",
+    codexMethod: "thread_view/patch",
     projectId: null,
     threadId,
     turnId: null,
     itemId: null,
     receivedAt: "2026-05-15T00:00:00Z",
-    payload: { revision: 2, threadId, activeTurnId: null, liveState: "idle", items: [] },
+    payload: { viewRevision: 2, threadId, activeTurnId: null, liveState: "idle", items: [] },
   };
 }
 

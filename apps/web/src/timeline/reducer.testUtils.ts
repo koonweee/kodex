@@ -24,10 +24,10 @@ function event(overrides: Partial<TimelineEventEnvelope>): TimelineEventEnvelope
   const status = fixtureStatus(base);
   return {
     ...base,
-    kind: "timeline.projection_patch",
+    kind: "thread_view.patch",
     payload: {
       threadId: base.threadId ?? "thread-1",
-      revision: base.seq,
+      viewRevision: base.seq,
       liveState: "running",
       pendingApprovalRequests: [],
       pendingUserInputRequests: [],

@@ -6,7 +6,7 @@ import { applyLiveTimelineUpdate, applyTimelineSnapshot, createTimelineState } f
 describe("timeline canonical snapshots and patches", () => {
   it("renders canonical snapshot items in gateway display order", () => {
     const state = applyTimelineSnapshot(createTimelineState(), snapshot({
-      revision: 4,
+      viewRevision: 4,
       items: [
         timelineItem({ id: "projection-turn-1-agent-1", itemId: "agent-1", text: "Answer", displayOrder: 2 }),
         timelineItem({
@@ -26,14 +26,14 @@ describe("timeline canonical snapshots and patches", () => {
 
   it("applies canonical patches by revision and row id", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot({
-      revision: 1,
+      viewRevision: 1,
       activeTurnId: "turn-1",
       liveState: "streaming",
       items: [timelineItem({ text: "Part" })],
     }));
 
     state = applyLiveTimelineUpdate(state, projectionPatchEvent({
-      revision: 2,
+      viewRevision: 2,
       activeTurnId: "turn-1",
       liveState: "streaming",
       items: [timelineItem({ text: "Partial answer", status: "running" })],
@@ -51,12 +51,12 @@ describe("timeline canonical snapshots and patches", () => {
 
   it("ignores stale canonical patches", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot({
-      revision: 10,
+      viewRevision: 10,
       items: [timelineItem({ text: "Fresh" })],
     }));
 
     state = applyLiveTimelineUpdate(state, projectionPatchEvent({
-      revision: 9,
+      viewRevision: 9,
       items: [timelineItem({ text: "Stale" })],
     }));
 
@@ -66,12 +66,12 @@ describe("timeline canonical snapshots and patches", () => {
 
   it("replaces legacy row ids that point at the same app-server item id", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot({
-      revision: 1,
+      viewRevision: 1,
       items: [timelineItem({ id: "agent-1", itemId: "agent-1", text: "Initial" })],
     }));
 
     state = applyLiveTimelineUpdate(state, projectionPatchEvent({
-      revision: 2,
+      viewRevision: 2,
       items: [timelineItem({ id: "projection-turn-1-agent-1", itemId: "agent-1", text: "Canonical" })],
     }));
 
@@ -81,12 +81,12 @@ describe("timeline canonical snapshots and patches", () => {
 
   it("does not replace a different turn row that reuses the same app-server item id", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot({
-      revision: 1,
+      viewRevision: 1,
       items: [timelineItem({ id: "projection-turn-1-agent-1", turnId: "turn-1", itemId: "agent-1", text: "First" })],
     }));
 
     state = applyLiveTimelineUpdate(state, projectionPatchEvent({
-      revision: 2,
+      viewRevision: 2,
       activeTurnId: "turn-2",
       liveState: "streaming",
       items: [
@@ -100,7 +100,7 @@ describe("timeline canonical snapshots and patches", () => {
 
   it("projects turn metadata from the canonical timeline contract", () => {
     const state = applyTimelineSnapshot(createTimelineState(), snapshot({
-      revision: 4,
+      viewRevision: 4,
       turns: [{ id: "turn-1", status: "completed", startedAt: 1, completedAt: 5 }],
       items: [timelineItem({ turnId: "turn-1", text: "Answer" })],
     }));
@@ -112,7 +112,7 @@ describe("timeline canonical snapshots and patches", () => {
 
   it("removes active-turn rows omitted from the canonical patch", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot({
-      revision: 1,
+      viewRevision: 1,
       activeTurnId: "turn-1",
       liveState: "streaming",
       items: [
@@ -122,7 +122,7 @@ describe("timeline canonical snapshots and patches", () => {
     }));
 
     state = applyLiveTimelineUpdate(state, projectionPatchEvent({
-      revision: 2,
+      viewRevision: 2,
       activeTurnId: "turn-1",
       liveState: "streaming",
       items: [timelineItem({ id: "projection-turn-1-user-1", itemId: "user-1", itemType: "userMessage", text: "Question", displayOrder: 1 })],
@@ -133,7 +133,7 @@ describe("timeline canonical snapshots and patches", () => {
 
   it("projects pending request summaries from snapshots and patches", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot({
-      revision: 1,
+      viewRevision: 1,
       items: [],
       pendingApprovalRequests: [pendingRequest("approval-1", "execCommandApproval")],
       pendingUserInputRequests: [],
@@ -142,7 +142,7 @@ describe("timeline canonical snapshots and patches", () => {
     expect(state.pendingApprovalRequests.map((request) => request.id)).toEqual(["approval-1"]);
 
     state = applyLiveTimelineUpdate(state, projectionPatchEvent({
-      revision: 2,
+      viewRevision: 2,
       pendingApprovalRequests: [],
       pendingUserInputRequests: [pendingRequest("input-1", "toolRequestUserInput")],
     }));
@@ -153,7 +153,7 @@ describe("timeline canonical snapshots and patches", () => {
 });
 
 function snapshot({
-  revision,
+  viewRevision,
   activeTurnId = null,
   liveState = "idle",
   items,
@@ -161,7 +161,7 @@ function snapshot({
   pendingUserInputRequests = [],
   turns = [],
 }: {
-  revision: number;
+  viewRevision: number;
   activeTurnId?: string | null;
   liveState?: string;
   items: ReturnType<typeof timelineItem>[];
@@ -194,7 +194,7 @@ function snapshot({
     },
     liveState,
     timeline: {
-      revision,
+      viewRevision,
       activeTurnId,
       liveState,
       pendingApprovalRequests,
@@ -206,7 +206,7 @@ function snapshot({
 }
 
 function projectionPatchEvent(payload: {
-  revision: number;
+  viewRevision: number;
   activeTurnId?: string | null;
   liveState?: string;
   items?: ReturnType<typeof timelineItem>[];
@@ -214,10 +214,10 @@ function projectionPatchEvent(payload: {
   pendingUserInputRequests?: ReturnType<typeof pendingRequest>[];
 }): EventEnvelope {
   return {
-    id: `patch-${payload.revision}`,
-    seq: payload.revision,
-    kind: "timeline.projection_patch",
-    codexMethod: "timeline/projection_patch",
+    id: `patch-${payload.viewRevision}`,
+    seq: payload.viewRevision,
+    kind: "thread_view.patch",
+    codexMethod: "thread_view/patch",
     threadId: "thread-1",
     turnId: payload.activeTurnId ?? null,
     itemId: null,
@@ -226,7 +226,7 @@ function projectionPatchEvent(payload: {
       threadId: "thread-1",
       activeTurnId: payload.activeTurnId ?? null,
       liveState: payload.liveState ?? "idle",
-      revision: payload.revision,
+      viewRevision: payload.viewRevision,
       pendingApprovalRequests: payload.pendingApprovalRequests ?? [],
       pendingUserInputRequests: payload.pendingUserInputRequests ?? [],
       turns: [],

@@ -129,24 +129,24 @@ describe("event stream client", () => {
     });
 
     client.connect();
-    FakeEventSource.instances[0].emitNamed("timeline.projection_patch", {
+    FakeEventSource.instances[0].emitNamed("thread_view.patch", {
       id: "event-8",
       seq: 8,
-      kind: "timeline.projection_patch",
-      codexMethod: "timeline/projection_patch",
+      kind: "thread_view.patch",
+      codexMethod: "thread_view/patch",
       itemId: null,
       threadId: "thread-1",
       turnId: "turn-1",
       projectId: null,
-      payload: { revision: 8, threadId: "thread-1", activeTurnId: "turn-1", liveState: "streaming", items: [] },
+      payload: { viewRevision: 8, threadId: "thread-1", activeTurnId: "turn-1", liveState: "streaming", items: [] },
       receivedAt: "2026-04-30T00:00:00Z",
     });
 
-    expect(received).toEqual(["timeline.projection_patch"]);
+    expect(received).toEqual(["thread_view.patch"]);
     client.close();
   });
 
-  it("receives compact live timeline delta SSE events emitted by the gateway", () => {
+  it("does not subscribe to raw compact live timeline delta events", () => {
     const received: string[] = [];
     const client = createEventStreamClient({
       EventSourceCtor: FakeEventSource,
@@ -168,7 +168,7 @@ describe("event stream client", () => {
       receivedAt: "2026-04-30T00:00:00Z",
     });
 
-    expect(received).toEqual(["timeline.item_delta:Hello"]);
+    expect(received).toEqual([]);
     client.close();
   });
 

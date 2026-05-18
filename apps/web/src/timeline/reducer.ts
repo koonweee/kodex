@@ -3,7 +3,7 @@ import type {
   ThreadTimelineSnapshot,
   ThreadTimelineSnapshotItem,
   ThreadViewResponse,
-  ThreadSessionViewPatch,
+  ThreadViewPatch,
 } from "../api/client";
 import {
   createDiagnosticItem,
@@ -48,17 +48,13 @@ export type {
 } from "./state";
 
 export function applyLiveTimelineUpdate(state: TimelineState, event: EventEnvelope): TimelineState {
-  if (event.kind === "timeline.snapshot_required") {
+  // Visible lifecycle state is gateway-owned. The reducer only applies canonical
+  // thread view patches; raw app-server item/turn events remain debug data.
+  if (event.kind === "thread_view.refresh_required") {
     return withTimelineLastSeq(state, Math.max(state.lastSeq, event.seq));
   }
-  if (event.kind === "timeline.item_delta") {
-    return applyTimelineItemDelta(state, event);
-  }
-  if (event.kind === "timeline.snapshot") {
-    return applyTimelineSnapshot(state, event.payload as ThreadViewResponse);
-  }
-  if (event.kind === "timeline.projection_patch") {
-    return applyThreadSessionViewPatch(state, event);
+  if (event.kind === "thread_view.patch") {
+    return applyThreadViewPatch(state, event);
   }
   if (isWarningEvent(event) || isErrorEvent(event)) {
     return applyDebugEvent(state, event);
@@ -76,56 +72,6 @@ export function applyDebugEvent(state: TimelineState, event: EventEnvelope): Tim
   return createTimelineStateFromDraft(next);
 }
 
-function applyTimelineItemDelta(state: TimelineState, event: EventEnvelope): TimelineState {
-  if (event.seq <= state.viewRevision) {
-    return withTimelineLastSeq(state, Math.max(state.lastSeq, event.seq));
-  }
-  const payload = recordValue(event.payload);
-  const delta = stringPayloadValue(payload.delta);
-  const turnId = event.turnId ?? stringPayloadValue(payload.turnId) ?? stringPayloadValue(payload.turn_id);
-  const itemId = event.itemId ?? stringPayloadValue(payload.itemId) ?? stringPayloadValue(payload.item_id);
-  if (!delta || !turnId || !itemId) {
-    return withTimelineLastSeq(state, Math.max(state.lastSeq, event.seq));
-  }
-
-  const itemKey = canonicalProjectionItemId(turnId, itemId);
-  const existing = liveDeltaTargetItem(state, itemKey, turnId, itemId);
-  if (existing && existing.status !== "running" && existing.status !== "waiting") {
-    return withTimelineLastSeq(state, Math.max(state.lastSeq, event.seq));
-  }
-
-  const next = timelineDraftFromState(state, {
-    activeTurnId: turnId,
-    lastSeq: Math.max(state.lastSeq, event.seq),
-  });
-  const messagePhase = stringPayloadValue(payload.phase) ?? stringPayloadValue(payload.messagePhase);
-  const timestampMs = Date.parse(event.receivedAt);
-  const item: TimelineItem = {
-    id: existing?.id ?? itemKey,
-    serverItemId: itemId,
-    kind: "assistant_message",
-    status: "running",
-    text: `${existing?.text ?? ""}${delta}`,
-    turnId,
-    displayOrder: existing?.displayOrder ?? nextDisplayOrder(next),
-    timestampMs: Number.isNaN(timestampMs) ? existing?.timestampMs : (existing?.timestampMs ?? timestampMs),
-    payload: event.payload,
-    debugEvents: [...(existing?.debugEvents ?? []), event],
-    messagePhase: messagePhase ?? existing?.messagePhase,
-    source: "app_server",
-  };
-
-  if (existing) {
-    next.indexes.itemUpdatesById.set(existing.id, item);
-  } else {
-    addItem(next, item);
-    addToTurn(next, item);
-  }
-  upsertTimelineTurnSnapshot(next, { turnId, status: "running" });
-  compactTimelineStores(next.indexes);
-  return createTimelineStateFromDraft(next);
-}
-
 export function replayTimeline(events: EventEnvelope[]): TimelineState {
   return events.reduce(applyLiveTimelineUpdate, createTimelineState());
 }
@@ -139,7 +85,7 @@ function applyCanonicalTimelineSnapshot(
   snapshot: ThreadViewResponse,
   canonicalTimeline: ThreadTimelineSnapshot,
 ): TimelineState {
-  const revision = canonicalTimeline.revision ?? 0;
+  const revision = canonicalTimeline.viewRevision ?? 0;
   if (revision < state.viewRevision) {
     return state;
   }
@@ -237,9 +183,9 @@ function canonicalSnapshotItemReceivedAt(item: ThreadTimelineSnapshotItem): stri
   return typeof item.timestampMs === "number" ? new Date(item.timestampMs).toISOString() : new Date(0).toISOString();
 }
 
-function applyThreadSessionViewPatch(state: TimelineState, event: EventEnvelope): TimelineState {
-  const patch = event.payload as ThreadSessionViewPatch;
-  const revision = patch.revision ?? 0;
+function applyThreadViewPatch(state: TimelineState, event: EventEnvelope): TimelineState {
+  const patch = event.payload as ThreadViewPatch;
+  const revision = patch.viewRevision ?? 0;
   if (event.seq < state.lastSeq) {
     return state;
   }
@@ -260,7 +206,7 @@ function applyThreadSessionViewPatch(state: TimelineState, event: EventEnvelope)
   return withTimelineLastSeq(next, Math.max(event.seq, revision));
 }
 
-function removeItemsMissingFromCanonicalPatch(state: TimelineState, patch: ThreadSessionViewPatch): TimelineState {
+function removeItemsMissingFromCanonicalPatch(state: TimelineState, patch: ThreadViewPatch): TimelineState {
   const patchItemIds = new Set((patch.items ?? []).map((item) => item.id));
   const patchServerItemIds = new Set((patch.items ?? []).map((item) => item.itemId));
   const activeTurnId = patch.activeTurnId ?? state.activeTurnId;
@@ -303,11 +249,11 @@ function withCanonicalSnapshotLiveState(
     pendingApprovalRequests: timeline.pendingApprovalRequests ?? [],
     pendingUserInputRequests: timeline.pendingUserInputRequests ?? [],
     lastSeq,
-    viewRevision: Math.max(state.viewRevision, timeline.revision ?? 0),
+    viewRevision: Math.max(state.viewRevision, timeline.viewRevision ?? 0),
   });
 }
 
-function withProjectionPatchLiveState(state: TimelineState, patch: ThreadSessionViewPatch, eventSeq: number): TimelineState {
+function withProjectionPatchLiveState(state: TimelineState, patch: ThreadViewPatch, eventSeq: number): TimelineState {
   const next = timelineDraftFromState(state);
   for (const turn of patch.turns ?? []) {
     upsertTimelineTurnSnapshot(next, {
@@ -326,13 +272,13 @@ function withProjectionPatchLiveState(state: TimelineState, patch: ThreadSession
     pendingApprovalRequests: patch.pendingApprovalRequests ?? state.pendingApprovalRequests,
     pendingUserInputRequests: patch.pendingUserInputRequests ?? state.pendingUserInputRequests,
     lastSeq: state.lastSeq,
-    viewRevision: Math.max(state.viewRevision, patch.revision ?? 0, eventSeq),
+    viewRevision: Math.max(state.viewRevision, patch.viewRevision ?? 0, eventSeq),
   });
 }
 
 function withIgnoredProjectionPatchCursor(
   state: TimelineState,
-  patch: ThreadSessionViewPatch,
+  patch: ThreadViewPatch,
   eventSeq: number,
 ): TimelineState {
   return createTimelineStateFromDraft({
@@ -341,7 +287,7 @@ function withIgnoredProjectionPatchCursor(
     pendingApprovalRequests: state.pendingApprovalRequests,
     pendingUserInputRequests: state.pendingUserInputRequests,
     lastSeq: Math.max(state.lastSeq, eventSeq),
-    viewRevision: Math.max(state.viewRevision, patch.revision ?? 0, eventSeq),
+    viewRevision: Math.max(state.viewRevision, patch.viewRevision ?? 0, eventSeq),
   });
 }
 
@@ -397,30 +343,6 @@ function matchingAppServerItemByServerId(state: TimelineDraft, incoming: Timelin
       item.turnId === incoming.turnId &&
       item.serverItemId === incoming.serverItemId,
   );
-}
-
-function liveDeltaTargetItem(state: TimelineState, itemKey: string, turnId: string, itemId: string): TimelineItem | undefined {
-  const indexes = indexesForState(state);
-  return (
-    timelineItemById(indexes, itemKey) ??
-    timelineItems(indexes).find((item) => item.turnId === turnId && item.serverItemId === itemId)
-  );
-}
-
-function canonicalProjectionItemId(turnId: string, itemId: string): string {
-  return `projection-${turnId}-${itemId}`;
-}
-
-function nextDisplayOrder(state: TimelineDraft): number {
-  return timelineItems(state.indexes).reduce((max, item) => Math.max(max, item.displayOrder), 0) + 1;
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-
-function stringPayloadValue(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
 }
 
 function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event: EventEnvelope): TimelineItem {

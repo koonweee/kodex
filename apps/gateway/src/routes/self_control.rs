@@ -1227,7 +1227,7 @@ fn retired_service_name(name: &str, service_id: &str) -> String {
 }
 
 async fn should_queue_self_control_input(state: &AppState, thread_id: &str) -> ApiResult<bool> {
-    match state.thread_sessions.live_state(thread_id).await {
+    match state.thread_views.live_state(thread_id).await {
         Some(ThreadLiveState::Streaming | ThreadLiveState::Syncing) => return Ok(true),
         Some(ThreadLiveState::Idle) => return Ok(false),
         Some(ThreadLiveState::NotLoaded) | None => {}
@@ -1237,7 +1237,7 @@ async fn should_queue_self_control_input(state: &AppState, thread_id: &str) -> A
         .await?;
     let revision = state.store.latest_event_seq().await?;
     let timeline = state
-        .thread_sessions
+        .thread_views
         .refresh_from_turns(thread_id, &snapshot.turns, revision)
         .await;
     Ok(timeline.active_turn_id.is_some() || timeline.live_state != ThreadLiveState::Idle)

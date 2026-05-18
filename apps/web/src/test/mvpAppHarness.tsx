@@ -235,7 +235,7 @@ function timelineFromTurns(sourceThread: TestThreadSummary, turns: TestSnapshotT
   let displayOrder = 0;
   const activeTurn = [...turns].reverse().find((turn) => !["completed", "failed", "cancelled"].includes(turn.status));
   return {
-    revision: 1,
+    viewRevision: 1,
     activeTurnId: activeTurn?.id ?? null,
     liveState: sourceThread.status === "active" ? "streaming" : "idle",
     items: turns.flatMap((turn) =>
@@ -299,14 +299,14 @@ function projectionPatchEvent({
   return {
     id,
     seq,
-    kind: "timeline.projection_patch",
-    codexMethod: "timeline/projection_patch",
+    kind: "thread_view.patch",
+    codexMethod: "thread_view/patch",
     projectId,
     threadId,
     turnId,
     itemId: null,
     payload: {
-      revision: seq,
+      viewRevision: seq,
       threadId,
       activeTurnId: turnId,
       liveState: "streaming",

@@ -34,14 +34,13 @@ use crate::{
     schema::is_supported_approval_method,
     skills,
     store::{EventEnvelope, NewApproval, NewEvent, ThreadRuntimeState},
-    thread_session_view::{self, THREAD_VIEW_PATCH_EVENT_KIND},
+    thread_view::{self, THREAD_VIEW_PATCH_EVENT_KIND, THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND},
 };
 
 const SSE_REPLAY_PAGE_SIZE: i64 = 500;
 const SELECTED_THREAD_POLL_LIMIT: u32 = 25;
 const SELECTED_THREAD_ACTIVE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
-const SNAPSHOT_REQUIRED_KIND: &str = "timeline.snapshot_required";
-const TIMELINE_ITEM_DELTA_KIND: &str = "timeline.item_delta";
+const THREAD_VIEW_CURSOR_KIND: &str = "thread_view.cursor";
 pub const MCP_CONFIG_CHANGED_EVENT: &str = "mcp.config_changed";
 pub const MCP_SERVER_STATUS_UPDATED_EVENT: &str = "mcp.server_status_updated";
 pub const MCP_OAUTH_LOGIN_COMPLETED_EVENT: &str = "mcp.oauth_login_completed";
@@ -196,15 +195,10 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                     payload: serde_json::to_value(&approval)?,
                 })
                 .await?;
-            thread_session_view::record_approval_created(
-                &state.thread_sessions,
-                &approval,
-                event.seq,
-            )
-            .await?;
+            thread_view::record_approval_created(&state.thread_views, &approval, event.seq).await?;
             let _ = state.events.send(event);
             if let Some(thread_id) = approval.thread_id.as_deref() {
-                let patch = thread_session_view_patch_event(state, thread_id).await?;
+                let patch = thread_view_patch_event(state, thread_id).await?;
                 let _ = state.events.send(patch);
             }
         }
@@ -352,7 +346,7 @@ async fn event_stream(
                 Ok(Ok(_)) => {}
                 Ok(Err(broadcast::error::RecvError::Lagged(_))) => {
                     if let Some(thread_id) = query.thread_id.clone() {
-                        if let Ok(event) = snapshot_required_event(high_water, thread_id, "lagged") {
+                        if let Ok(event) = thread_view_refresh_required_event(high_water, thread_id, "lagged") {
                             if let Ok(sse_event) = event_to_sse(event) {
                                 yield Ok(sse_event);
                             }
@@ -421,7 +415,7 @@ async fn reconcile_selected_thread(
         sync.last_active_refresh_at = None;
     }
 
-    snapshot_required_event(seq, thread_id.to_string(), "thread_changed").map(Some)
+    thread_view_refresh_required_event(seq, thread_id.to_string(), "thread_changed").map(Some)
 }
 
 async fn find_recent_thread_summary(
@@ -496,7 +490,7 @@ fn is_selected_thread_sse_replay_event(event: &EventEnvelope, query: &EventsQuer
         || (query.thread_id.is_some()
             && matches!(
                 event.kind.as_str(),
-                THREAD_VIEW_PATCH_EVENT_KIND | SNAPSHOT_REQUIRED_KIND
+                THREAD_VIEW_PATCH_EVENT_KIND | THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND
             ))
 }
 
@@ -505,33 +499,32 @@ fn selected_thread_sse_replay_events(
     query: &EventsQuery,
 ) -> ApiResult<Vec<EventEnvelope>> {
     let mut events = Vec::new();
-    let mut emitted_delta_recovery = false;
+    let mut thread_view_refresh_seq = None;
     for event in page {
         if is_selected_thread_sse_replay_event(&event, query) {
             events.push(event);
-            continue;
+        } else if query.thread_id.is_some() && is_thread_view_replay_refresh_trigger(&event) {
+            thread_view_refresh_seq =
+                Some(thread_view_refresh_seq.unwrap_or(event.seq).max(event.seq));
         }
-        let Some(thread_id) = query.thread_id.as_ref() else {
-            continue;
-        };
-        if !emitted_delta_recovery && is_unreplayable_assistant_delta_cursor(&event) {
-            events.push(snapshot_required_event(
-                event.seq,
-                thread_id.clone(),
-                "missed_delta",
-            )?);
-            emitted_delta_recovery = true;
-        }
+    }
+    if let (Some(thread_id), Some(seq)) = (query.thread_id.as_ref(), thread_view_refresh_seq) {
+        events.push(thread_view_refresh_required_event(
+            seq,
+            thread_id.to_string(),
+            "missed_cursor",
+        )?);
     }
     Ok(events)
 }
 
-fn is_unreplayable_assistant_delta_cursor(event: &EventEnvelope) -> bool {
-    event.kind == "codex.notification"
-        && event
-            .codex_method
-            .as_deref()
-            .is_some_and(is_assistant_message_delta_method)
+fn is_thread_view_replay_refresh_trigger(event: &EventEnvelope) -> bool {
+    event.kind == THREAD_VIEW_CURSOR_KIND
+        || (event.kind == "codex.notification"
+            && event
+                .codex_method
+                .as_deref()
+                .is_some_and(is_transcript_notification_method))
 }
 
 fn is_normal_live_event(event: &EventEnvelope) -> bool {
@@ -539,9 +532,8 @@ fn is_normal_live_event(event: &EventEnvelope) -> bool {
         || matches!(
             event.kind.as_str(),
             THREAD_VIEW_PATCH_EVENT_KIND
-                | TIMELINE_ITEM_DELTA_KIND
                 | "timeline.thread_metadata"
-                | SNAPSHOT_REQUIRED_KIND
+                | THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND
                 | ACCOUNT_RATE_LIMITS_UPDATED_EVENT
                 | skills::SKILLS_CHANGED_EVENT
                 | queue::QUEUE_UPSERT_EVENT
@@ -549,14 +541,18 @@ fn is_normal_live_event(event: &EventEnvelope) -> bool {
         )
 }
 
-fn snapshot_required_event(seq: i64, thread_id: String, reason: &str) -> ApiResult<EventEnvelope> {
+fn thread_view_refresh_required_event(
+    seq: i64,
+    thread_id: String,
+    reason: &str,
+) -> ApiResult<EventEnvelope> {
     synthetic_event(
         seq,
         Some(thread_id.clone()),
         None,
         None,
-        SNAPSHOT_REQUIRED_KIND,
-        Some("thread/snapshot_required"),
+        THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND,
+        Some("thread_view/refresh_required"),
         json!({
             "threadId": thread_id,
             "reason": reason,
@@ -658,8 +654,8 @@ async fn timeline_item_delta_event(
         return Ok(Vec::new());
     };
     let delta = string_field(params, &["delta", "text", "content"]).unwrap_or_default();
-    thread_session_view::record_item_delta(
-        &state.thread_sessions,
+    thread_view::record_item_delta(
+        &state.thread_views,
         &thread_id,
         &turn_id,
         &item_id,
@@ -667,23 +663,7 @@ async fn timeline_item_delta_event(
         cursor_seq,
     )
     .await?;
-    let event = synthetic_event(
-        cursor_seq,
-        Some(thread_id.clone()),
-        Some(turn_id.clone()),
-        Some(item_id.clone()),
-        TIMELINE_ITEM_DELTA_KIND,
-        Some(method),
-        json!({
-            "threadId": thread_id,
-            "turnId": turn_id,
-            "itemId": item_id,
-            "itemType": "agentMessage",
-            "delta": delta,
-            "phase": string_field(params, &["phase", "messagePhase"]),
-        }),
-    )?;
-    Ok(vec![event])
+    Ok(vec![thread_view_patch_event(state, &thread_id).await?])
 }
 
 fn is_assistant_message_delta_method(method: &str) -> bool {
@@ -727,17 +707,17 @@ async fn timeline_item_upsert_event(
         Some("item/upsert"),
     )
     .await?;
-    thread_session_view::record_item_upsert(
-        &state.thread_sessions,
+    thread_view::record_item_upsert(
+        &state.thread_views,
         &thread_id,
         &turn_id,
         item.clone(),
         payload.item_snapshot.clone(),
-        item_upsert_turn_status(method),
+        item_upsert_item_status(method),
         cursor.seq,
     )
     .await?;
-    let mut events = vec![thread_session_view_patch_event(state, &thread_id).await?];
+    let mut events = vec![thread_view_patch_event(state, &thread_id).await?];
     if let Some(event) =
         queue::reconcile_pending_steer_commit_event(state, &thread_id, &turn_id, item).await?
     {
@@ -746,7 +726,7 @@ async fn timeline_item_upsert_event(
     Ok(events)
 }
 
-fn item_upsert_turn_status(method: &str) -> Option<&'static str> {
+fn item_upsert_item_status(method: &str) -> Option<&'static str> {
     if method.ends_with("/completed") {
         Some("completed")
     } else if method.ends_with("/started") {
@@ -829,9 +809,8 @@ async fn timeline_turn_upsert_event(
     .await?;
     let mut events = Vec::new();
     let terminal = is_terminal_turn_status(&turn.status);
-    thread_session_view::record_turn_status(&state.thread_sessions, &thread_id, &turn, cursor.seq)
-        .await?;
-    events.push(thread_session_view_patch_event(state, &thread_id).await?);
+    thread_view::record_turn_status(&state.thread_views, &thread_id, &turn, cursor.seq).await?;
+    events.push(thread_view_patch_event(state, &thread_id).await?);
     if terminal {
         events.extend(
             queue::requeue_unmatched_pending_commit_input_events_for_turn(
@@ -887,19 +866,18 @@ async fn timeline_turn_upsert_event(
     })
 }
 
-pub(crate) async fn thread_session_view_patch_event(
+pub(crate) async fn thread_view_patch_event(
     state: &AppState,
     thread_id: &str,
 ) -> ApiResult<EventEnvelope> {
-    let patch =
-        thread_session_view::patch_for_thread_view(&state.thread_sessions, thread_id).await?;
+    let patch = thread_view::patch_for_thread(&state.thread_views, thread_id).await?;
     synthetic_event(
         state.store.latest_event_seq().await?,
         Some(thread_id.to_string()),
         patch.active_turn_id.clone(),
         None,
         THREAD_VIEW_PATCH_EVENT_KIND,
-        Some("timeline/projection_patch"),
+        Some("thread_view/patch"),
         patch,
     )
 }
@@ -1030,14 +1008,14 @@ async fn timeline_thread_status_event(
     )
     .await?;
     let mut events = Vec::new();
-    thread_session_view::record_thread_live_state(
-        &state.thread_sessions,
+    thread_view::record_thread_live_state(
+        &state.thread_views,
         &thread_id,
         live_state_from_thread_status(status),
         cursor.seq,
     )
     .await?;
-    events.push(thread_session_view_patch_event(state, &thread_id).await?);
+    events.push(thread_view_patch_event(state, &thread_id).await?);
     match status {
         ThreadStatus::Idle | ThreadStatus::SystemError => {
             state
@@ -1088,8 +1066,8 @@ async fn append_timeline_event(state: &AppState, event: NewEvent) -> ApiResult<E
                 thread_id: event.thread_id.clone(),
                 turn_id: event.turn_id.clone(),
                 item_id: event.item_id.clone(),
-                kind: SNAPSHOT_REQUIRED_KIND.to_string(),
-                codex_method: Some("thread/snapshot_required".to_string()),
+                kind: THREAD_VIEW_CURSOR_KIND.to_string(),
+                codex_method: Some("thread_view/cursor".to_string()),
                 payload: json!({
                     "threadId": event.thread_id.clone(),
                     "reason": "timeline_changed",
@@ -1126,8 +1104,8 @@ async fn append_timeline_changed_cursor(
             thread_id: metadata.thread_id.clone(),
             turn_id: metadata.turn_id.clone(),
             item_id: metadata.item_id.clone(),
-            kind: SNAPSHOT_REQUIRED_KIND.to_string(),
-            codex_method: Some("thread/snapshot_required".to_string()),
+            kind: THREAD_VIEW_CURSOR_KIND.to_string(),
+            codex_method: Some("thread_view/cursor".to_string()),
             payload: json!({
                 "threadId": metadata.thread_id.clone(),
                 "reason": "timeline_changed",
@@ -1359,7 +1337,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn notification_ingest_emits_normalized_timeline_delta() {
+    async fn notification_ingest_emits_thread_view_patch_for_timeline_delta() {
         let state = test_state().await;
         let mut receiver = state.events.subscribe();
 
@@ -1379,19 +1357,20 @@ mod tests {
         .unwrap();
 
         let raw = receiver.recv().await.unwrap();
-        let delta = receiver.recv().await.unwrap();
+        let patch = receiver.recv().await.unwrap();
         assert_eq!(raw.kind, "codex.notification");
         assert_eq!(raw.payload["sourceMethod"], "item/agentMessage/delta");
         assert!(raw.payload.get("delta").is_none());
-        assert_eq!(delta.kind, "timeline.item_delta");
-        assert_eq!(delta.seq, raw.seq);
-        assert_eq!(delta.thread_id.as_deref(), Some("thread-1"));
-        assert_eq!(delta.turn_id.as_deref(), Some("turn-1"));
-        assert_eq!(delta.item_id.as_deref(), Some("item-1"));
-        assert_eq!(delta.payload["threadId"], "thread-1");
-        assert_eq!(delta.payload["turnId"], "turn-1");
-        assert_eq!(delta.payload["itemId"], "item-1");
-        assert_eq!(delta.payload["delta"], "hello");
+        assert_eq!(patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
+        assert_eq!(patch.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(patch.turn_id.as_deref(), Some("turn-1"));
+        assert_eq!(patch.payload["threadId"], "thread-1");
+        assert_eq!(patch.payload["activeTurnId"], "turn-1");
+        assert_eq!(patch.payload["liveState"], "streaming");
+        assert_eq!(
+            patch.payload["items"][0]["payload"]["item"]["text"],
+            "hello"
+        );
 
         let replay = state
             .store
@@ -1402,7 +1381,7 @@ mod tests {
         assert_eq!(replay[0].kind, "codex.notification");
         assert!(replay
             .iter()
-            .all(|event| event.kind != "timeline.snapshot_required"));
+            .all(|event| event.kind != "thread_view.refresh_required"));
     }
 
     #[tokio::test]
@@ -1587,11 +1566,12 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_required_uses_current_cursor_without_advancing_high_water() {
-        let event = snapshot_required_event(42, "thread-1".to_string(), "lagged").unwrap();
+    fn thread_view_refresh_required_uses_current_cursor_without_advancing_high_water() {
+        let event =
+            thread_view_refresh_required_event(42, "thread-1".to_string(), "lagged").unwrap();
 
         assert_eq!(event.seq, 42);
-        assert_eq!(event.kind, SNAPSHOT_REQUIRED_KIND);
+        assert_eq!(event.kind, THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND);
         assert_eq!(event.thread_id.as_deref(), Some("thread-1"));
         assert_eq!(event.payload["reason"], "lagged");
     }
@@ -1742,7 +1722,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(event.kind, SNAPSHOT_REQUIRED_KIND);
+        assert_eq!(event.kind, THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND);
         assert_eq!(event.seq, 10);
         assert_eq!(event.thread_id.as_deref(), Some("thread-1"));
         assert_eq!(event.payload["reason"], "thread_changed");

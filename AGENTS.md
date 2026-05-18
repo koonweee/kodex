@@ -72,6 +72,9 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - Optimistic UI is allowed only as a temporary projection of a gateway-owned pending record, or when incorrect cross-client visibility is harmless. If another tab should know about it, create a gateway row/event for it.
 - Do not derive durable counters, lifecycle status, or ordering from client-observed event order unless the gateway provides a monotonic sequence or watermark that makes the derivation safe.
 - Snapshot and SSE reconciliation must have a gateway-owned source of truth. Snapshots that can overwrite live state should carry a comparable sequence/runtime watermark, or the gateway should emit ordered canonical snapshot events.
+- Visible thread timeline rendering must consume gateway canonical thread view snapshots and `thread_view.patch` events only. Do not render app-server item/turn lifecycle directly from raw SSE events such as `timeline.item_delta`, and do not reintroduce persisted timeline replay as browser transcript history.
+- `thread_view.refresh_required` is a refetch signal, not a timeline row source. Browser reducers may advance cursors from it, but must converge by reading the gateway thread detail snapshot.
+- Keep guardrail tests updated when changing lifecycle event names. A behavior change that adds a new browser-visible lifecycle event should fail loudly unless the canonical source-of-truth contract is updated in code and docs.
 - Thread/session settings that affect future turns must be versioned or merged by the gateway. A stale tab must not be able to silently overwrite newer shared settings by submitting a full local options object.
 - Any behavior-changing feature that touches shared thread/project/session state should include a same-user, two-tab test shape: one client mutates or misses events, and the other must converge through gateway state/SSE without reload.
 

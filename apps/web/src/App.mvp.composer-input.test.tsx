@@ -607,13 +607,13 @@ describe("MVP composer input flows", () => {
       globalStream?.emit({
         id: "event-background-send-completed",
         seq: 3,
-        kind: "timeline.projection_patch",
-        codexMethod: "timeline/projection_patch",
+        kind: "thread_view.patch",
+        codexMethod: "thread_view/patch",
         projectId: project.id,
         threadId: thread.id,
         turnId: null,
         itemId: null,
-        payload: { revision: 3, threadId: thread.id, activeTurnId: null, liveState: "idle", items: [] },
+        payload: { viewRevision: 3, threadId: thread.id, activeTurnId: null, liveState: "idle", items: [] },
         receivedAt: "2026-05-02T00:00:02Z",
       });
     });

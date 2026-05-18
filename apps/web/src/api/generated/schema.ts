@@ -2206,17 +2206,6 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
-        ThreadSessionViewPatch: {
-            activeTurnId?: string | null;
-            items: components["schemas"]["ThreadTimelineSnapshotItem"][];
-            liveState: components["schemas"]["ThreadLiveState"];
-            pendingApprovalRequests: components["schemas"]["PendingTimelineRequestSummary"][];
-            pendingUserInputRequests: components["schemas"]["PendingTimelineRequestSummary"][];
-            /** Format: int64 */
-            revision: number;
-            threadId: string;
-            turns: components["schemas"]["ThreadTimelineSnapshotTurn"][];
-        };
         /** @enum {string} */
         ThreadStatus: "notLoaded" | "idle" | "systemError" | "active";
         ThreadSubagentListResponse: {
@@ -2267,9 +2256,9 @@ export interface components {
             liveState: components["schemas"]["ThreadLiveState"];
             pendingApprovalRequests: components["schemas"]["PendingTimelineRequestSummary"][];
             pendingUserInputRequests: components["schemas"]["PendingTimelineRequestSummary"][];
-            /** Format: int64 */
-            revision: number;
             turns: components["schemas"]["ThreadTimelineSnapshotTurn"][];
+            /** Format: int64 */
+            viewRevision: number;
         };
         ThreadTimelineSnapshotItem: {
             codexMethod: string;
@@ -2302,6 +2291,17 @@ export interface components {
             /** Format: int64 */
             startedAt?: number | null;
             status: string;
+        };
+        ThreadViewPatch: {
+            activeTurnId?: string | null;
+            items: components["schemas"]["ThreadTimelineSnapshotItem"][];
+            liveState: components["schemas"]["ThreadLiveState"];
+            pendingApprovalRequests: components["schemas"]["PendingTimelineRequestSummary"][];
+            pendingUserInputRequests: components["schemas"]["PendingTimelineRequestSummary"][];
+            threadId: string;
+            turns: components["schemas"]["ThreadTimelineSnapshotTurn"][];
+            /** Format: int64 */
+            viewRevision: number;
         };
         ThreadViewResponse: {
             liveState: components["schemas"]["ThreadLiveState"];

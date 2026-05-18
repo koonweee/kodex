@@ -4,7 +4,7 @@ import { applyLiveTimelineUpdate, createTimelineState, replayTimeline } from "./
 import type { EventEnvelope } from "../api/client";
 
 describe("timeline reducer lifecycle", () => {
-  it("appends compact live assistant deltas without a full projection patch", () => {
+  it("ignores raw compact live assistant deltas as render inputs", () => {
     let state = applyLiveTimelineUpdate(createTimelineState(), event({
       seq: 5,
       kind: "timeline.item_delta",
@@ -18,33 +18,18 @@ describe("timeline reducer lifecycle", () => {
       payload: { threadId: "thread-1", turnId: "turn-1", itemId: "item-1", delta: " world" },
     }));
 
-    expect(state.items).toHaveLength(1);
-    expect(state.items[0]).toMatchObject({
-      id: "projection-turn-1-item-1",
-      kind: "assistant_message",
-      status: "running",
-      text: "Hello world",
-      turnId: "turn-1",
-      serverItemId: "item-1",
-    });
-    expect(state.activeTurnId).toBe("turn-1");
+    expect(state.items).toEqual([]);
+    expect(state.activeTurnId).toBeNull();
     expect(state.lastSeq).toBe(6);
   });
 
-  it("ignores stale compact deltas after a newer canonical projection", () => {
+  it("applies the canonical thread view patch as the only live transcript source", () => {
     let state = applyLiveTimelineUpdate(createTimelineState(), event({
       seq: 10,
-      kind: "timeline.projection_patch",
-      codexMethod: "timeline/projection_patch",
+      kind: "thread_view.patch",
+      codexMethod: "thread_view/patch",
       payload: projectionPatch("Final"),
     }));
-    state = applyLiveTimelineUpdate(state, event({
-      seq: 5,
-      kind: "timeline.item_delta",
-      codexMethod: "item/agentMessage/delta",
-      payload: { threadId: "thread-1", turnId: "turn-1", itemId: "item-1", delta: " stale" },
-    }));
-
     expect(state.items).toHaveLength(1);
     expect(state.items[0]).toMatchObject({
       text: "Final",
@@ -53,18 +38,30 @@ describe("timeline reducer lifecycle", () => {
     expect(state.lastSeq).toBe(10);
   });
 
-  it("lets canonical projections reconcile temporary live delta text", () => {
+  it("lets canonical thread view patches replace older canonical text", () => {
     let state = applyLiveTimelineUpdate(createTimelineState(), event({
       seq: 3,
-      kind: "timeline.item_delta",
-      codexMethod: "item/agentMessage/delta",
-      payload: { threadId: "thread-1", turnId: "turn-1", itemId: "item-1", delta: "Live partial" },
+      kind: "thread_view.patch",
+      codexMethod: "thread_view/patch",
+      payload: projectionPatchWithLiveState({
+        viewRevision: 3,
+        activeTurnId: "turn-1",
+        liveState: "streaming",
+        status: "running",
+        text: "Live partial",
+      }),
     }));
     state = applyLiveTimelineUpdate(state, event({
       seq: 8,
-      kind: "timeline.projection_patch",
-      codexMethod: "timeline/projection_patch",
-      payload: projectionPatch("Canonical final"),
+      kind: "thread_view.patch",
+      codexMethod: "thread_view/patch",
+      payload: projectionPatchWithLiveState({
+        viewRevision: 8,
+        activeTurnId: null,
+        liveState: "idle",
+        status: "completed",
+        text: "Canonical final",
+      }),
     }));
 
     expect(state.items).toHaveLength(1);
@@ -79,10 +76,10 @@ describe("timeline reducer lifecycle", () => {
   it("clears an active turn from a duplicate terminal projection patch", () => {
     let state = applyLiveTimelineUpdate(createTimelineState(), event({
       seq: 10,
-      kind: "timeline.projection_patch",
-      codexMethod: "timeline/projection_patch",
+      kind: "thread_view.patch",
+      codexMethod: "thread_view/patch",
       payload: projectionPatchWithLiveState({
-        revision: 10,
+        viewRevision: 10,
         activeTurnId: "turn-1",
         liveState: "streaming",
         status: "running",
@@ -92,10 +89,10 @@ describe("timeline reducer lifecycle", () => {
 
     state = applyLiveTimelineUpdate(state, event({
       seq: 11,
-      kind: "timeline.projection_patch",
-      codexMethod: "timeline/projection_patch",
+      kind: "thread_view.patch",
+      codexMethod: "thread_view/patch",
       payload: projectionPatchWithLiveState({
-        revision: 10,
+        viewRevision: 10,
         activeTurnId: null,
         liveState: "idle",
         status: "completed",
@@ -111,10 +108,10 @@ describe("timeline reducer lifecycle", () => {
   it("does not let an older terminal patch clear a newer active turn", () => {
     let state = applyLiveTimelineUpdate(createTimelineState(), event({
       seq: 10,
-      kind: "timeline.projection_patch",
-      codexMethod: "timeline/projection_patch",
+      kind: "thread_view.patch",
+      codexMethod: "thread_view/patch",
       payload: projectionPatchWithLiveState({
-        revision: 10,
+        viewRevision: 10,
         activeTurnId: "turn-2",
         liveState: "streaming",
         status: "running",
@@ -124,11 +121,11 @@ describe("timeline reducer lifecycle", () => {
 
     state = applyLiveTimelineUpdate(state, event({
       seq: 9,
-      kind: "timeline.projection_patch",
-      codexMethod: "timeline/projection_patch",
+      kind: "thread_view.patch",
+      codexMethod: "thread_view/patch",
       turnId: "turn-1",
       payload: projectionPatchWithLiveState({
-        revision: 9,
+        viewRevision: 9,
         activeTurnId: null,
         liveState: "idle",
         status: "completed",
@@ -142,23 +139,30 @@ describe("timeline reducer lifecycle", () => {
     expect(state.viewRevision).toBe(10);
   });
 
-  it("ignores an older terminal projection after newer compact live deltas", () => {
+  it("ignores an older terminal patch after a newer active turn patch", () => {
     let state = applyLiveTimelineUpdate(createTimelineState(), event({
       seq: 12,
-      kind: "timeline.item_delta",
-      codexMethod: "item/agentMessage/delta",
+      kind: "thread_view.patch",
+      codexMethod: "thread_view/patch",
       turnId: "turn-2",
       itemId: "item-2",
-      payload: { threadId: "thread-1", turnId: "turn-2", itemId: "item-2", delta: "New turn work" },
+      payload: projectionPatchWithLiveState({
+        viewRevision: 12,
+        activeTurnId: "turn-2",
+        liveState: "streaming",
+        status: "running",
+        text: "New turn work",
+        turnId: "turn-2",
+      }),
     }));
 
     state = applyLiveTimelineUpdate(state, event({
       seq: 10,
-      kind: "timeline.projection_patch",
-      codexMethod: "timeline/projection_patch",
+      kind: "thread_view.patch",
+      codexMethod: "thread_view/patch",
       turnId: "turn-1",
       payload: projectionPatchWithLiveState({
-        revision: 10,
+        viewRevision: 10,
         activeTurnId: null,
         liveState: "idle",
         status: "completed",
@@ -175,14 +179,14 @@ describe("timeline reducer lifecycle", () => {
       turnId: "turn-2",
     });
     expect(state.lastSeq).toBe(12);
-    expect(state.viewRevision).toBe(0);
+    expect(state.viewRevision).toBe(12);
   });
 
-  it("keeps snapshot-required as a cursor-only render event", () => {
+  it("keeps thread view refresh-required as a cursor-only render event", () => {
     const state = applyLiveTimelineUpdate(createTimelineState(), event({
       seq: 7,
-      kind: "timeline.snapshot_required",
-      codexMethod: "thread/snapshot_required",
+      kind: "thread_view.refresh_required",
+      codexMethod: "thread_view/refresh_required",
       payload: { reason: "lagged" },
     }));
 
@@ -213,11 +217,11 @@ describe("timeline reducer lifecycle", () => {
 
   it("replays canonical and cursor-only events in sequence", () => {
     const state = replayTimeline([
-      event({ seq: 1, kind: "timeline.snapshot_required" }),
+      event({ seq: 1, kind: "thread_view.refresh_required" }),
       event({
         seq: 2,
-        kind: "timeline.projection_patch",
-        codexMethod: "timeline/projection_patch",
+        kind: "thread_view.patch",
+        codexMethod: "thread_view/patch",
         payload: projectionPatch("Hello"),
       }),
     ]);
@@ -250,7 +254,7 @@ function event(overrides: Partial<EventEnvelope>): EventEnvelope {
 function projectionPatch(text: string) {
   return {
     threadId: "thread-1",
-    revision: 2,
+    viewRevision: 2,
     activeTurnId: null,
     liveState: "idle",
     pendingApprovalRequests: [],
@@ -287,14 +291,14 @@ function projectionPatch(text: string) {
 function projectionPatchWithLiveState({
   activeTurnId,
   liveState,
-  revision,
+  viewRevision,
   status,
   text,
   turnId = "turn-1",
 }: {
   activeTurnId: string | null;
   liveState: "streaming" | "idle";
-  revision: number;
+  viewRevision: number;
   status: string;
   text: string;
   turnId?: string;
@@ -304,7 +308,7 @@ function projectionPatchWithLiveState({
     ...patch,
     activeTurnId,
     liveState,
-    revision,
+    viewRevision,
     items: patch.items.map((item) => ({
       ...item,
       id: `projection-${turnId}-item-1`,

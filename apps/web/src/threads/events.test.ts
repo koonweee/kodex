@@ -26,8 +26,8 @@ describe("thread events", () => {
     expect(
       completedAgentTurnEvent(
         event({
-          kind: "timeline.projection_patch",
-          codexMethod: "timeline/projection_patch",
+          kind: "thread_view.patch",
+          codexMethod: "thread_view/patch",
           threadId: "thread-1",
           payload: { threadId: "thread-1", liveState: "idle", activeTurnId: null, items: [] },
         }),
@@ -37,8 +37,8 @@ describe("thread events", () => {
     expect(
       completedAgentTurnEvent(
         event({
-          kind: "timeline.projection_patch",
-          codexMethod: "timeline/projection_patch",
+          kind: "thread_view.patch",
+          codexMethod: "thread_view/patch",
           threadId: "thread-1",
           payload: { threadId: "thread-1", liveState: "streaming", activeTurnId: "turn-1", items: [] },
         }),
@@ -50,7 +50,7 @@ describe("thread events", () => {
     expect(
       threadStatusUpdateFromEvent(
         event({
-          kind: "timeline.projection_patch",
+          kind: "thread_view.patch",
           threadId: "thread-1",
           payload: { liveState: "streaming" },
         }),
@@ -60,7 +60,7 @@ describe("thread events", () => {
     expect(
       threadStatusUpdateFromEvent(
         event({
-          kind: "timeline.projection_patch",
+          kind: "thread_view.patch",
           payload: { threadId: "thread-1", liveState: "idle", activeTurnId: null },
         }),
       ),

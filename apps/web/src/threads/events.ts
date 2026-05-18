@@ -44,7 +44,7 @@ export function threadUpsertFromEvent(event: EventEnvelope): ThreadUpsert | null
 }
 
 export function completedAgentTurnEvent(event: EventEnvelope): { threadId: string; seq: number } | null {
-  if (event.kind !== "timeline.projection_patch") {
+  if (event.kind !== "thread_view.patch") {
     return null;
   }
   const payload = asRecord(event.payload);
@@ -61,7 +61,7 @@ export function threadStatusUpdateFromEvent(event: EventEnvelope): { threadId: s
     return null;
   }
 
-  if (event.kind === "timeline.projection_patch") {
+  if (event.kind === "thread_view.patch") {
     const status = normalizeRuntimeStatus(stringValue(payload.liveState));
     return status ? { threadId, status } : null;
   }

@@ -157,7 +157,7 @@ export function useSelectedThreadTimeline({
       setTimeline((current) => applyTimelineSnapshot(current, snapshot));
       latestCallbacks.current.onSnapshotThread(snapshot.thread);
       markEntryStreaming(threadId);
-      return snapshot.timeline?.revision ?? 0;
+      return snapshot.timeline?.viewRevision ?? 0;
     }
 
     const refetchSnapshot = () => {
@@ -188,7 +188,9 @@ export function useSelectedThreadTimeline({
           if (event.threadId && event.threadId !== threadId) {
             return;
           }
-          if (event.kind === "timeline.snapshot_required") {
+          // Raw app-server lifecycle events are not render inputs here. The
+          // gateway thread view owns live transcript truth.
+          if (event.kind === "thread_view.refresh_required") {
             refetchSnapshot();
             return;
           }
@@ -255,7 +257,7 @@ function isQueueEvent(event: EventEnvelope): boolean {
 }
 
 function isCanonicalTimelineRenderEvent(event: EventEnvelope): boolean {
-  return event.kind === "timeline.snapshot" || event.kind === "timeline.projection_patch" || event.kind === "timeline.item_delta";
+  return event.kind === "thread_view.patch";
 }
 
 function isTransientThreadSnapshotLoadError(error: unknown): boolean {

@@ -6,7 +6,7 @@ use crate::{
     events,
     schema::validate_approval_response,
     store::{Approval, NewEvent},
-    thread_session_view,
+    thread_view,
 };
 
 pub async fn decide_approval(
@@ -48,11 +48,10 @@ pub async fn decide_approval(
             payload: serde_json::to_value(&resolved)?,
         })
         .await?;
-    thread_session_view::record_approval_resolved(&state.thread_sessions, &resolved, event.seq)
-        .await?;
+    thread_view::record_approval_resolved(&state.thread_views, &resolved, event.seq).await?;
     let _ = state.events.send(event);
     if let Some(thread_id) = resolved.thread_id.as_deref() {
-        let patch = events::thread_session_view_patch_event(state, thread_id).await?;
+        let patch = events::thread_view_patch_event(state, thread_id).await?;
         let _ = state.events.send(patch);
     }
     Ok(resolved)

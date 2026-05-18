@@ -480,7 +480,7 @@ pub(crate) async fn reconcile_thread_runtime_from_app_server(
 }
 
 async fn thread_is_idle_for_queue(state: &AppState, thread_id: &str) -> ApiResult<bool> {
-    match state.thread_sessions.live_state(thread_id).await {
+    match state.thread_views.live_state(thread_id).await {
         Some(ThreadLiveState::Streaming | ThreadLiveState::Syncing) => return Ok(false),
         Some(ThreadLiveState::Idle | ThreadLiveState::NotLoaded) => {}
         None => {}
@@ -495,7 +495,7 @@ async fn thread_is_idle_for_queue(state: &AppState, thread_id: &str) -> ApiResul
         .await?;
     let revision = state.store.latest_event_seq().await?;
     let timeline = state
-        .thread_sessions
+        .thread_views
         .refresh_from_turns(thread_id, &snapshot.turns, revision)
         .await;
     Ok(timeline.active_turn_id.is_none() && timeline.live_state == ThreadLiveState::Idle)

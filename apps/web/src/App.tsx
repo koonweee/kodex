@@ -78,7 +78,6 @@ import {
   type KodexColorSchemeId,
 } from "./theme";
 import { ThemeWorkbench } from "./theme/ThemeWorkbench";
-import { applyTimelineEventBatch } from "./timeline/batch";
 import { idleTimelineEntry, type TimelineEntry } from "./timeline/entry";
 import { useSelectedThreadTimeline } from "./timeline/useSelectedThreadTimeline";
 import { applyTimelineSnapshot } from "./timeline/reducer";
@@ -679,7 +678,6 @@ function KodexShell({
         applyThreadPinEvent(event);
         applyThreadUpsertEvent(event);
         applyThreadMetadataEvent(event);
-        applySelectedThreadProjectionEvent(event);
         applyCompletedAgentTurnEvent(event);
         applyNotificationEvent(event);
         refreshSidebarThreadsForLiveEvent(event);
@@ -1301,14 +1299,6 @@ function KodexShell({
     }
   }
 
-  function applySelectedThreadProjectionEvent(event: EventEnvelope) {
-    const selectedThreadId = selectedThreadIdRef.current;
-    if (!selectedThreadId || event.threadId !== selectedThreadId || event.kind !== "timeline.projection_patch") {
-      return;
-    }
-    setTimeline((current) => (event.seq < current.lastSeq ? current : applyTimelineEventBatch(current, [event])));
-  }
-
   function refreshSidebarThreadsForLiveEvent(event: EventEnvelope) {
     if (!event.threadId || !eventCanRefreshSidebarThread(event)) {
       return;
@@ -1335,7 +1325,7 @@ function KodexShell({
   function eventShouldRefreshKnownSidebarThread(event: EventEnvelope, thread: ThreadSummary) {
     return (
       !threadHasDisplayTitle(thread) ||
-      event.kind === "timeline.projection_patch"
+      event.kind === "thread_view.patch"
     );
   }
 
@@ -1354,7 +1344,7 @@ function KodexShell({
 
   function eventCanRefreshSidebarThread(event: EventEnvelope) {
     return (
-      event.kind === "timeline.projection_patch" ||
+      event.kind === "thread_view.patch" ||
       event.kind === "timeline.thread_metadata"
     );
   }
@@ -1692,9 +1682,9 @@ function defaultSubagent(subagents: ThreadSubagentSummary[]): ThreadSubagentSumm
 
 function eventCanAffectSubagentDiscovery(event: EventEnvelope): boolean {
   return (
-    event.kind === "timeline.projection_patch" ||
+    event.kind === "thread_view.patch" ||
     event.kind === "timeline.thread_metadata" ||
-    event.kind === "timeline.snapshot_required"
+    event.kind === "thread_view.refresh_required"
   );
 }
 

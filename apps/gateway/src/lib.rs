@@ -15,7 +15,7 @@ pub mod schema;
 pub mod skills;
 pub mod static_assets;
 pub mod store;
-pub mod thread_session_view;
+pub mod thread_view;
 pub mod turn_lifecycle;
 
 pub use api::{build_router, AppState};

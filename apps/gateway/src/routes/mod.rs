@@ -48,7 +48,7 @@ mod tests {
             NewApproval, NewEvent, NewPushSubscription, PushSubscription, Store,
             ThreadComposerSettings, ThreadRuntimeState,
         },
-        thread_session_view,
+        thread_view,
     };
 
     async fn test_state() -> (AppState, Arc<RecordingAppServer>) {
@@ -3630,8 +3630,8 @@ mod tests {
             })
             .await
             .unwrap();
-        thread_session_view::record_pending_user_input(
-            &state.thread_sessions,
+        thread_view::record_pending_user_input(
+            &state.thread_views,
             "thread-1",
             "turn-1",
             &[UserInput::Text {
@@ -3784,8 +3784,8 @@ mod tests {
                 thread_id: Some("thread-1".to_string()),
                 turn_id: Some("turn-newer".to_string()),
                 item_id: Some("item-newer".to_string()),
-                kind: "timeline.projection_patch".to_string(),
-                codex_method: Some("timeline/projection_patch".to_string()),
+                kind: "thread_view.patch".to_string(),
+                codex_method: Some("thread_view/patch".to_string()),
                 payload: json!({"phase": "after-read-started"}),
             })
             .await
@@ -3796,7 +3796,7 @@ mod tests {
         let response = response.await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["timeline"]["revision"], initial.seq);
+        assert_eq!(body["timeline"]["viewRevision"], initial.seq);
     }
 
     #[tokio::test]
@@ -4915,7 +4915,7 @@ mod tests {
         assert_eq!(mentions[0].display_name.as_deref(), Some("Review Fix"));
         assert_eq!(mentions[0].brand_color.as_deref(), Some("#23a55a"));
 
-        let projection = state.thread_sessions.patch_for_thread("thread-1").await;
+        let projection = state.thread_views.patch_for_thread("thread-1").await;
         assert_eq!(projection.items.len(), 1);
         assert_eq!(projection.items[0].turn_id, "turn-1");
         assert!(projection.items[0].item_id.starts_with("pending-user-"));
@@ -5376,8 +5376,8 @@ mod tests {
             .lock()
             .unwrap()
             .push(json!({"accepted": true}));
-        thread_session_view::record_item_delta(
-            &state.thread_sessions,
+        thread_view::record_item_delta(
+            &state.thread_views,
             "thread-1",
             "turn-active",
             "agent-1",
@@ -5422,8 +5422,8 @@ mod tests {
             .lock()
             .unwrap()
             .push(json!({"turnId": "turn-started"}));
-        thread_session_view::record_item_delta(
-            &state.thread_sessions,
+        thread_view::record_item_delta(
+            &state.thread_views,
             "thread-1",
             "turn-stale",
             "agent-1",
@@ -5597,7 +5597,7 @@ mod tests {
         timeout(Duration::from_secs(2), async {
             loop {
                 if state
-                    .thread_sessions
+                    .thread_views
                     .patch_for_thread("thread-1")
                     .await
                     .items
@@ -5611,7 +5611,7 @@ mod tests {
         })
         .await
         .unwrap();
-        let projection = state.thread_sessions.patch_for_thread("thread-1").await;
+        let projection = state.thread_views.patch_for_thread("thread-1").await;
         assert_eq!(projection.items.len(), 1);
         assert_eq!(projection.items[0].turn_id, "turn-drain-1");
         assert!(projection.items[0].item_id.starts_with("pending-user-"));
@@ -5849,7 +5849,7 @@ mod tests {
         timeout(Duration::from_secs(2), async {
             loop {
                 if state
-                    .thread_sessions
+                    .thread_views
                     .active_turn_id("thread-1")
                     .await
                     .as_deref()
@@ -6472,7 +6472,7 @@ mod tests {
         timeout(Duration::from_secs(2), async {
             loop {
                 if state
-                    .thread_sessions
+                    .thread_views
                     .active_turn_id("thread-1")
                     .await
                     .as_deref()
@@ -6810,7 +6810,7 @@ mod tests {
             let mut delete_event = None;
             loop {
                 let event = receiver.recv().await.unwrap();
-                if event.kind == thread_session_view::THREAD_VIEW_PATCH_EVENT_KIND
+                if event.kind == thread_view::THREAD_VIEW_PATCH_EVENT_KIND
                     && event.payload["items"].as_array().is_some_and(|items| {
                         items.iter().any(|item| item["itemId"] == "item-user-1")
                     })
@@ -6899,7 +6899,7 @@ mod tests {
             let mut saw_thread_status = false;
             loop {
                 let event = receiver.recv().await.unwrap();
-                if event.kind == thread_session_view::THREAD_VIEW_PATCH_EVENT_KIND
+                if event.kind == thread_view::THREAD_VIEW_PATCH_EVENT_KIND
                     && event.payload["liveState"] == "idle"
                 {
                     saw_thread_status = true;
@@ -6997,7 +6997,7 @@ mod tests {
             let mut saw_turn_upsert = false;
             loop {
                 let event = receiver.recv().await.unwrap();
-                if event.kind == thread_session_view::THREAD_VIEW_PATCH_EVENT_KIND
+                if event.kind == thread_view::THREAD_VIEW_PATCH_EVENT_KIND
                     && event.payload["liveState"] == "idle"
                 {
                     saw_turn_upsert = true;
@@ -8092,8 +8092,8 @@ mod tests {
                 thread_id: Some("t1".to_string()),
                 turn_id: None,
                 item_id: None,
-                kind: "timeline.projection_patch".to_string(),
-                codex_method: Some("timeline/projection_patch".to_string()),
+                kind: "thread_view.patch".to_string(),
+                codex_method: Some("thread_view/patch".to_string()),
                 payload: json!({"threadId": "t1", "phase": "live"}),
             })
             .await
@@ -8209,8 +8209,8 @@ mod tests {
                 thread_id: Some("t1".to_string()),
                 turn_id: None,
                 item_id: None,
-                kind: "timeline.projection_patch".to_string(),
-                codex_method: Some("timeline/projection_patch".to_string()),
+                kind: "thread_view.patch".to_string(),
+                codex_method: Some("thread_view/patch".to_string()),
                 payload: json!({"threadId": "t1", "phase": "live"}),
             })
             .await
@@ -8234,10 +8234,10 @@ mod tests {
                 thread_id: Some("t1".to_string()),
                 turn_id: Some("turn-1".to_string()),
                 item_id: Some("item-1".to_string()),
-                kind: "timeline.projection_patch".to_string(),
-                codex_method: Some("timeline/projection_patch".to_string()),
+                kind: "thread_view.patch".to_string(),
+                codex_method: Some("thread_view/patch".to_string()),
                 payload: json!({
-                    "revision": 1,
+                    "viewRevision": 1,
                     "threadId": "t1",
                     "activeTurnId": "turn-1",
                     "liveState": "running",
@@ -8293,13 +8293,13 @@ mod tests {
         let mut body = response.into_body();
         let first = next_sse_chunk(&mut body).await;
         assert!(first.contains(&format!("id: {}", projection.seq)));
-        assert!(first.contains("timeline.projection_patch"));
+        assert!(first.contains("thread_view.patch"));
         assert!(first.contains("\"hello\""));
         assert!(!first.contains("\"phase\":\"live\""));
     }
 
     #[tokio::test]
-    async fn sse_allows_live_selected_thread_item_deltas_without_replay() {
+    async fn sse_allows_live_selected_thread_view_patches_without_replay() {
         let (state, _) = test_state().await;
         let app = build_router(state.clone());
 
@@ -8331,9 +8331,8 @@ mod tests {
 
         let mut body = response.into_body();
         let first = next_sse_chunk(&mut body).await;
-        assert!(first.contains("timeline.item_delta"));
-        assert!(first.contains("\"delta\":\"hello\""));
-        assert!(!first.contains("timeline.projection_patch"));
+        assert!(first.contains("thread_view.patch"));
+        assert!(first.contains("\"text\":\"hello\""));
 
         let replayed = state
             .store
@@ -8345,11 +8344,11 @@ mod tests {
             .all(|event| event.kind != "timeline.item_delta"));
         assert!(replayed
             .iter()
-            .all(|event| event.kind != "timeline.snapshot_required"));
+            .all(|event| event.kind != "thread_view.refresh_required"));
     }
 
     #[tokio::test]
-    async fn sse_replay_recovers_skipped_selected_thread_item_deltas_with_snapshot_required() {
+    async fn sse_replay_recovers_skipped_selected_thread_cursor_events_with_refresh_required() {
         let (state, _) = test_state().await;
         ingest_inbound(
             InboundMessage::Notification {
@@ -8380,8 +8379,8 @@ mod tests {
 
         let mut body = response.into_body();
         let first = next_sse_chunk(&mut body).await;
-        assert!(first.contains("timeline.snapshot_required"));
-        assert!(first.contains("\"reason\":\"missed_delta\""));
+        assert!(first.contains("thread_view.refresh_required"));
+        assert!(first.contains("\"reason\":\"missed_cursor\""));
         assert!(!first.contains("timeline.item_delta"));
         assert!(!first.contains("missed prefix"));
     }
@@ -8599,8 +8598,8 @@ mod tests {
     }
 
     async fn mark_thread_session_active(state: &AppState, thread_id: &str, turn_id: &str) {
-        thread_session_view::record_item_delta(
-            &state.thread_sessions,
+        thread_view::record_item_delta(
+            &state.thread_views,
             thread_id,
             turn_id,
             "agent-active",

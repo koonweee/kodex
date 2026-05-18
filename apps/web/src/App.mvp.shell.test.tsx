@@ -857,7 +857,7 @@ describe("MVP shell flows", () => {
     await waitFor(() => expect(chatListCalls).toBeGreaterThanOrEqual(2));
 
     act(() => {
-      globalStream?.emitNamed("timeline.projection_patch", projectionPatchEvent({
+      globalStream?.emitNamed("thread_view.patch", projectionPatchEvent({
         id: "event-chat-first-item",
         seq: 3,
         projectId: null,
@@ -925,17 +925,17 @@ describe("MVP shell flows", () => {
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
     const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
     act(() => {
-      globalStream?.emitNamed("timeline.projection_patch", {
+      globalStream?.emitNamed("thread_view.patch", {
         id: "event-chat-active-completed",
         seq: 2,
-        kind: "timeline.projection_patch",
-        codexMethod: "timeline/projection_patch",
+        kind: "thread_view.patch",
+        codexMethod: "thread_view/patch",
         projectId: null,
         threadId: staleActiveChat.id,
         turnId: null,
         itemId: null,
         payload: {
-          revision: 2,
+          viewRevision: 2,
           threadId: staleActiveChat.id,
           activeTurnId: null,
           liveState: "idle",
@@ -1318,7 +1318,7 @@ describe("MVP shell flows", () => {
       expect(selectedStream).toBeDefined();
     });
     act(() => {
-      selectedStream?.emitNamed("timeline.projection_patch", projectionPatchEvent({
+      selectedStream?.emitNamed("thread_view.patch", projectionPatchEvent({
         id: "event-live-agent",
         seq: 10,
         threadId: "thread-2",

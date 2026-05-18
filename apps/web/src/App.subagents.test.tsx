@@ -114,7 +114,7 @@ describe("subagent thread viewer", () => {
     });
 
     act(() => {
-      subagentStream?.emitNamed("timeline.projection_patch", projectionPatchEvent({
+      subagentStream?.emitNamed("thread_view.patch", projectionPatchEvent({
         id: "subagent-live-event",
         seq: 9,
         projectId: project.id,
@@ -161,7 +161,7 @@ describe("subagent thread viewer", () => {
     subagents = [subagent, secondSubagent];
     const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
     act(() => {
-      globalStream?.emitNamed("timeline.projection_patch", projectionPatchEvent({
+      globalStream?.emitNamed("thread_view.patch", projectionPatchEvent({
         id: "main-collab-refresh",
         seq: 10,
         projectId: project.id,
@@ -207,7 +207,7 @@ describe("subagent thread viewer", () => {
     subagents = [secondSubagent];
     const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
     act(() => {
-      globalStream?.emitNamed("timeline.projection_patch", projectionPatchEvent({
+      globalStream?.emitNamed("thread_view.patch", projectionPatchEvent({
         id: "main-collab-change",
         seq: 10,
         projectId: project.id,

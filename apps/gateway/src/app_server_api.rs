@@ -1744,7 +1744,7 @@ impl ThreadDetailResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadTimelineSnapshot {
-    pub revision: i64,
+    pub view_revision: i64,
     pub active_turn_id: Option<String>,
     pub live_state: ThreadLiveState,
     pub pending_approval_requests: Vec<PendingTimelineRequestSummary>,
@@ -1779,7 +1779,7 @@ impl ThreadTimelineSnapshot {
         Self {
             // Adapter-only snapshots start at zero; routes replace this with the gateway
             // projection high-water once gateway overlays are applied.
-            revision: 0,
+            view_revision: 0,
             active_turn_id,
             live_state: live_state_from_turns(turns),
             pending_approval_requests: Vec::new(),
@@ -3747,7 +3747,7 @@ mod tests {
 
         let response = ThreadDetailResponse::from_payload(json!({ "thread": thread })).unwrap();
 
-        assert_eq!(response.timeline.revision, 0);
+        assert_eq!(response.timeline.view_revision, 0);
         assert_eq!(response.timeline.items.len(), 2);
         assert_eq!(response.timeline.items[0].id, "projection-turn-1-user-1");
         assert_eq!(response.timeline.items[0].display_order, 1);

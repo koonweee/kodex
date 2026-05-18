@@ -4,14 +4,14 @@ use crate::{
         self, timeline_skill_mentions_from_user_input, SkillMetadata, ThreadLiveState, UserInput,
     },
     error::{ApiError, ApiResult},
-    events, thread_session_view,
+    events, thread_view,
 };
 
 pub async fn current_active_turn_id(
     state: &AppState,
     thread_id: &str,
 ) -> ApiResult<Option<String>> {
-    if let Some(active_turn_id) = state.thread_sessions.active_turn_id(thread_id).await {
+    if let Some(active_turn_id) = state.thread_views.active_turn_id(thread_id).await {
         return Ok(Some(active_turn_id));
     }
     let snapshot = match app_server_api::client(&state.app_server)
@@ -26,7 +26,7 @@ pub async fn current_active_turn_id(
     };
     let revision = state.store.latest_event_seq().await?;
     let timeline = state
-        .thread_sessions
+        .thread_views
         .refresh_from_turns(thread_id, &snapshot.turns, revision)
         .await;
     Ok(timeline.active_turn_id)
@@ -36,8 +36,8 @@ pub async fn record_idle_after_missing_active_turn(
     state: &AppState,
     thread_id: &str,
 ) -> ApiResult<()> {
-    thread_session_view::record_thread_live_state(
-        &state.thread_sessions,
+    thread_view::record_thread_live_state(
+        &state.thread_views,
         thread_id,
         ThreadLiveState::Idle,
         state.store.latest_event_seq().await?,
@@ -63,8 +63,8 @@ pub async fn record_pending_user_projection(
             payload: serde_json::json!({ "threadId": thread_id, "turnId": turn_id }),
         })
         .await?;
-    if thread_session_view::record_pending_user_input(
-        &state.thread_sessions,
+    if thread_view::record_pending_user_input(
+        &state.thread_views,
         thread_id,
         turn_id,
         input,
@@ -73,7 +73,7 @@ pub async fn record_pending_user_projection(
     .await?
     .is_some()
     {
-        let patch = events::thread_session_view_patch_event(state, thread_id).await?;
+        let patch = events::thread_view_patch_event(state, thread_id).await?;
         let _ = state.events.send(patch);
     }
     Ok(())

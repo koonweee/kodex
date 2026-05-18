@@ -132,13 +132,13 @@ describe("MVP timeline flows", () => {
       globalStream?.emit({
         id: "event-other-thread-completed",
         seq: 3,
-        kind: "timeline.projection_patch",
-        codexMethod: "timeline/projection_patch",
+        kind: "thread_view.patch",
+        codexMethod: "thread_view/patch",
         projectId: project.id,
         threadId: "thread-2",
         turnId: null,
         itemId: null,
-        payload: { revision: 3, threadId: "thread-2", activeTurnId: null, liveState: "idle", items: [] },
+        payload: { viewRevision: 3, threadId: "thread-2", activeTurnId: null, liveState: "idle", items: [] },
         receivedAt: "2026-04-30T00:00:02Z",
       });
     });
@@ -183,13 +183,13 @@ describe("MVP timeline flows", () => {
       globalStream?.emit({
         id: "event-running-thread-completed",
         seq: 3,
-        kind: "timeline.projection_patch",
-        codexMethod: "timeline/projection_patch",
+        kind: "thread_view.patch",
+        codexMethod: "thread_view/patch",
         projectId: project.id,
         threadId: "thread-2",
         turnId: null,
         itemId: null,
-        payload: { revision: 3, threadId: "thread-2", activeTurnId: null, liveState: "idle", items: [] },
+        payload: { viewRevision: 3, threadId: "thread-2", activeTurnId: null, liveState: "idle", items: [] },
         receivedAt: "2026-04-30T00:00:02Z",
       });
     });
@@ -287,13 +287,13 @@ describe("MVP timeline flows", () => {
       globalStream?.emit({
         id: "event-background-completed-after-reload",
         seq: 4,
-        kind: "timeline.projection_patch",
-        codexMethod: "timeline/projection_patch",
+        kind: "thread_view.patch",
+        codexMethod: "thread_view/patch",
         projectId: project.id,
         threadId: "thread-2",
         turnId: null,
         itemId: null,
-        payload: { revision: 4, threadId: "thread-2", activeTurnId: null, liveState: "idle", items: [] },
+        payload: { viewRevision: 4, threadId: "thread-2", activeTurnId: null, liveState: "idle", items: [] },
         receivedAt: "2026-04-30T00:00:02Z",
       });
     });
@@ -388,8 +388,8 @@ describe("MVP timeline flows", () => {
       selectedThreadStream?.emit({
         id: "snapshot-required-1",
         seq: 1,
-        kind: "timeline.snapshot_required",
-        codexMethod: "thread/snapshot_required",
+        kind: "thread_view.refresh_required",
+        codexMethod: "thread_view/refresh_required",
         projectId: project.id,
         threadId: thread.id,
         turnId: null,
@@ -499,7 +499,7 @@ describe("MVP timeline flows", () => {
     expect(await screen.findByText(/low seq live event/i)).toBeInTheDocument();
   });
 
-  it("clears the selected stop state from the global terminal projection patch", async () => {
+  it("clears the selected stop state from the selected terminal thread view patch", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     mockGateway(
       baseRoutes({
@@ -524,20 +524,20 @@ describe("MVP timeline flows", () => {
     expect(await screen.findByText(/working answer/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /stop turn/i })).toBeInTheDocument();
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
-    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
-    expect(globalStream).toBeDefined();
+    const selectedStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    expect(selectedStream).toBeDefined();
 
     act(() => {
-      globalStream?.emit(terminalProjectionEvent({
+      selectedStream?.emitNamed("thread_view.patch", terminalProjectionEvent({
         seq: 5,
-        text: "Final answer from global stream",
+        text: "Final answer from selected stream",
         threadId: "thread-1",
         turnId: "turn-1",
         itemId: "agent-1",
       }));
     });
 
-    expect(await screen.findByText(/final answer from global stream/i)).toBeInTheDocument();
+    expect(await screen.findByText(/final answer from selected stream/i)).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: /stop turn/i })).not.toBeInTheDocument();
     });
@@ -600,8 +600,8 @@ describe("MVP timeline flows", () => {
       selectedThreadStream?.emit({
         id: "snapshot-required-external",
         seq: 1,
-        kind: "timeline.snapshot_required",
-        codexMethod: "thread/snapshot_required",
+        kind: "thread_view.refresh_required",
+        codexMethod: "thread_view/refresh_required",
         projectId: project.id,
         threadId: "thread-2",
         turnId: null,
@@ -617,14 +617,14 @@ describe("MVP timeline flows", () => {
       selectedThreadStream?.emit({
         id: "historical-projection-external",
         seq: 2,
-        kind: "timeline.projection_patch",
-        codexMethod: "timeline/projection_patch",
+        kind: "thread_view.patch",
+        codexMethod: "thread_view/patch",
         projectId: project.id,
         threadId: "thread-2",
         turnId: null,
         itemId: null,
         payload: {
-          revision: 2,
+          viewRevision: 2,
           threadId: "thread-2",
           activeTurnId: null,
           liveState: "idle",
@@ -809,14 +809,14 @@ function terminalProjectionEvent({
   return {
     id: `terminal-projection-${seq}`,
     seq,
-    kind: "timeline.projection_patch",
-    codexMethod: "timeline/projection_patch",
+    kind: "thread_view.patch",
+    codexMethod: "thread_view/patch",
     projectId: project.id,
     threadId,
     turnId: null,
     itemId: null,
     payload: {
-      revision: seq,
+      viewRevision: seq,
       threadId,
       activeTurnId: null,
       liveState: "idle",

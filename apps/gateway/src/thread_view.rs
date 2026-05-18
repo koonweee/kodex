@@ -21,12 +21,18 @@ use crate::{
     store::Approval,
 };
 
-pub const THREAD_VIEW_PATCH_EVENT_KIND: &str = "timeline.projection_patch";
+// ThreadView is the gateway-owned live projection of upstream app-server thread
+// state. The app-server remains the durable transcript owner; this reducer only
+// folds snapshots, live deltas, pending local input, and approvals into one
+// canonical view for the browser. Browser clients should render snapshots and
+// `thread_view.patch` events from this module, not raw app-server item events.
+pub const THREAD_VIEW_PATCH_EVENT_KIND: &str = "thread_view.patch";
+pub const THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND: &str = "thread_view.refresh_required";
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ThreadSessionViewPatch {
-    pub revision: i64,
+pub struct ThreadViewPatch {
+    pub view_revision: i64,
     pub thread_id: String,
     pub active_turn_id: Option<String>,
     pub live_state: ThreadLiveState,
@@ -37,11 +43,11 @@ pub struct ThreadSessionViewPatch {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct ThreadSessionStore {
-    sessions: Arc<RwLock<HashMap<String, ThreadSessionView>>>,
+pub struct ThreadViewStore {
+    sessions: Arc<RwLock<HashMap<String, ThreadView>>>,
 }
 
-impl ThreadSessionStore {
+impl ThreadViewStore {
     pub async fn refresh_from_turns(
         &self,
         thread_id: &str,
@@ -54,13 +60,13 @@ impl ThreadSessionStore {
         view.refresh_from_base(thread_id, base, revision)
     }
 
-    pub async fn patch_for_thread(&self, thread_id: &str) -> ThreadSessionViewPatch {
+    pub async fn patch_for_thread(&self, thread_id: &str) -> ThreadViewPatch {
         let sessions = self.sessions.read().await;
         sessions
             .get(thread_id)
-            .map(ThreadSessionView::to_patch)
-            .unwrap_or_else(|| ThreadSessionViewPatch {
-                revision: 0,
+            .map(ThreadView::to_patch)
+            .unwrap_or_else(|| ThreadViewPatch {
+                view_revision: 0,
                 thread_id: thread_id.to_string(),
                 active_turn_id: None,
                 live_state: ThreadLiveState::Idle,
@@ -89,7 +95,7 @@ impl ThreadSessionStore {
 
     async fn with_thread_view<F, R>(&self, thread_id: &str, revision: i64, update: F) -> R
     where
-        F: FnOnce(&mut ThreadSessionView) -> R,
+        F: FnOnce(&mut ThreadView) -> R,
     {
         let mut sessions = self.sessions.write().await;
         let view = sessions.entry(thread_id.to_string()).or_default();
@@ -100,7 +106,7 @@ impl ThreadSessionStore {
 }
 
 #[derive(Debug, Clone, Default)]
-struct ThreadSessionView {
+struct ThreadView {
     thread_id: String,
     revision: i64,
     active_turn_id: Option<String>,
@@ -112,7 +118,7 @@ struct ThreadSessionView {
     terminal_turn_ids: HashSet<String>,
 }
 
-impl ThreadSessionView {
+impl ThreadView {
     fn refresh_from_base(
         &mut self,
         thread_id: &str,
@@ -181,13 +187,13 @@ impl ThreadSessionView {
             base.items.push(item);
         }
 
-        base.revision = self.revision.max(revision);
+        base.view_revision = self.revision.max(revision);
         base.pending_approval_requests = self.pending_approval_requests.clone();
         base.pending_user_input_requests = self.pending_user_input_requests.clone();
         merge_missing_turns(&mut base.turns, &existing_turns, &base.items);
         base.turns = ordered_turns_for_items(&base.turns, &base.items);
         self.thread_id = thread_id.to_string();
-        self.revision = base.revision;
+        self.revision = base.view_revision;
         self.active_turn_id = base.active_turn_id.clone();
         self.live_state = base.live_state;
         self.turns = base.turns.clone();
@@ -207,11 +213,11 @@ impl ThreadSessionView {
         turn_id: &str,
         item: Value,
         item_snapshot: ThreadItemSnapshot,
-        turn_status: Option<&str>,
+        item_status: Option<&str>,
         timestamp_ms: Option<i64>,
     ) {
         self.thread_id = thread_id.to_string();
-        let status = turn_status
+        let status = item_status
             .map(ToString::to_string)
             .unwrap_or_else(|| "running".to_string());
         let key = scoped_item_key(turn_id, &item_snapshot.id);
@@ -241,8 +247,18 @@ impl ThreadSessionView {
             },
         };
         replace_or_push(&mut self.items, key, next_item);
-        self.upsert_turn_from_item(turn_id, &status, timestamp_ms);
-        if is_live_status(&status) {
+        if self.terminal_turn_ids.contains(turn_id) {
+            return;
+        }
+        // App-server item completion is not turn completion. A turn remains live
+        // until a turn snapshot or explicit runtime state marks it terminal.
+        let turn_status = if is_terminal_turn_status(&status) {
+            "running"
+        } else {
+            status.as_str()
+        };
+        self.upsert_turn_from_item(turn_id, turn_status, timestamp_ms);
+        if is_live_status(turn_status) {
             self.active_turn_id = Some(turn_id.to_string());
             self.live_state = ThreadLiveState::Streaming;
         }
@@ -388,7 +404,7 @@ impl ThreadSessionView {
         items.sort_by_key(|item| item.display_order);
         let turns = self.turns_for_items(&items);
         ThreadTimelineSnapshot {
-            revision: self.revision,
+            view_revision: self.revision,
             active_turn_id: self.active_turn_id.clone(),
             live_state: self.live_state,
             pending_approval_requests: self.pending_approval_requests.clone(),
@@ -398,12 +414,12 @@ impl ThreadSessionView {
         }
     }
 
-    fn to_patch(&self) -> ThreadSessionViewPatch {
+    fn to_patch(&self) -> ThreadViewPatch {
         let mut items = self.items.clone();
         items.sort_by_key(|item| item.display_order);
         let turns = self.turns_for_items(&items);
-        ThreadSessionViewPatch {
-            revision: self.revision,
+        ThreadViewPatch {
+            view_revision: self.revision,
             thread_id: self.thread_id.clone(),
             active_turn_id: self.active_turn_id.clone(),
             live_state: self.live_state,
@@ -581,7 +597,7 @@ fn normalize_completed_at(started_at: Option<i64>, completed_at: Option<i64>) ->
 }
 
 pub async fn build_thread_timeline(
-    sessions: &ThreadSessionStore,
+    sessions: &ThreadViewStore,
     thread_id: &str,
     turns: &[ThreadTurnSnapshot],
     revision: i64,
@@ -592,7 +608,7 @@ pub async fn build_thread_timeline(
 }
 
 pub async fn record_pending_requests(
-    sessions: &ThreadSessionStore,
+    sessions: &ThreadViewStore,
     thread_id: &str,
     approvals: &[Approval],
     revision: i64,
@@ -605,15 +621,15 @@ pub async fn record_pending_requests(
         .await)
 }
 
-pub async fn patch_for_thread_view(
-    sessions: &ThreadSessionStore,
+pub async fn patch_for_thread(
+    sessions: &ThreadViewStore,
     thread_id: &str,
-) -> ApiResult<ThreadSessionViewPatch> {
+) -> ApiResult<ThreadViewPatch> {
     Ok(sessions.patch_for_thread(thread_id).await)
 }
 
 pub async fn record_approval_created(
-    sessions: &ThreadSessionStore,
+    sessions: &ThreadViewStore,
     approval: &Approval,
     updated_seq: i64,
 ) -> ApiResult<()> {
@@ -629,7 +645,7 @@ pub async fn record_approval_created(
 }
 
 pub async fn record_approval_resolved(
-    sessions: &ThreadSessionStore,
+    sessions: &ThreadViewStore,
     approval: &Approval,
     updated_seq: i64,
 ) -> ApiResult<()> {
@@ -645,7 +661,7 @@ pub async fn record_approval_resolved(
 }
 
 pub async fn record_item_upsert(
-    sessions: &ThreadSessionStore,
+    sessions: &ThreadViewStore,
     thread_id: &str,
     turn_id: &str,
     item: Value,
@@ -752,7 +768,7 @@ fn string_payload_field(payload: &Value, fields: &[&str]) -> Option<String> {
 }
 
 pub async fn record_item_delta(
-    sessions: &ThreadSessionStore,
+    sessions: &ThreadViewStore,
     thread_id: &str,
     turn_id: &str,
     item_id: &str,
@@ -768,7 +784,7 @@ pub async fn record_item_delta(
 }
 
 pub async fn record_turn_status(
-    sessions: &ThreadSessionStore,
+    sessions: &ThreadViewStore,
     thread_id: &str,
     turn: &ThreadTurnSnapshot,
     updated_seq: i64,
@@ -782,7 +798,7 @@ pub async fn record_turn_status(
 }
 
 pub async fn record_thread_live_state(
-    sessions: &ThreadSessionStore,
+    sessions: &ThreadViewStore,
     thread_id: &str,
     live_state: ThreadLiveState,
     updated_seq: i64,
@@ -796,7 +812,7 @@ pub async fn record_thread_live_state(
 }
 
 pub async fn record_pending_user_input(
-    sessions: &ThreadSessionStore,
+    sessions: &ThreadViewStore,
     thread_id: &str,
     turn_id: &str,
     input: &[UserInput],
@@ -995,7 +1011,7 @@ mod tests {
 
     #[tokio::test]
     async fn session_reconciles_pending_user_input_when_snapshot_materializes_item() {
-        let sessions = ThreadSessionStore::default();
+        let sessions = ThreadViewStore::default();
         record_pending_user_input(
             &sessions,
             "thread-1",
@@ -1033,7 +1049,7 @@ mod tests {
 
     #[tokio::test]
     async fn session_applies_live_delta_then_snapshot_without_duplicate() {
-        let sessions = ThreadSessionStore::default();
+        let sessions = ThreadViewStore::default();
         record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", "Hello", 1)
             .await
             .unwrap();
@@ -1041,7 +1057,7 @@ mod tests {
             .await
             .unwrap();
 
-        let patch = patch_for_thread_view(&sessions, "thread-1").await.unwrap();
+        let patch = patch_for_thread(&sessions, "thread-1").await.unwrap();
         assert_eq!(patch.items.len(), 1);
         assert_eq!(patch.items[0].payload.item["text"], "Hello world");
         assert_eq!(patch.active_turn_id.as_deref(), Some("turn-1"));
@@ -1072,7 +1088,7 @@ mod tests {
 
     #[tokio::test]
     async fn terminal_turn_status_preserves_turn_duration_in_live_patch() {
-        let sessions = ThreadSessionStore::default();
+        let sessions = ThreadViewStore::default();
         record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", "Working", 1)
             .await
             .unwrap();
@@ -1089,7 +1105,7 @@ mod tests {
             .await
             .unwrap();
 
-        let patch = patch_for_thread_view(&sessions, "thread-1").await.unwrap();
+        let patch = patch_for_thread(&sessions, "thread-1").await.unwrap();
 
         assert_eq!(patch.live_state, ThreadLiveState::Idle);
         assert_eq!(patch.turns.len(), 1);
@@ -1100,8 +1116,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn item_completion_does_not_complete_active_turn() {
+        let sessions = ThreadViewStore::default();
+        let item = agent_message_item("agent-1", "partial");
+        let item_snapshot = ThreadItemSnapshot::from_payload(&item).unwrap();
+
+        record_item_upsert(
+            &sessions,
+            "thread-1",
+            "turn-1",
+            item,
+            item_snapshot,
+            Some("completed"),
+            1,
+        )
+        .await
+        .unwrap();
+
+        let patch = patch_for_thread(&sessions, "thread-1").await.unwrap();
+        assert_eq!(patch.active_turn_id.as_deref(), Some("turn-1"));
+        assert_eq!(patch.live_state, ThreadLiveState::Streaming);
+        assert_eq!(patch.items[0].status, "completed");
+        assert_eq!(patch.turns[0].status, "running");
+        assert_eq!(patch.turns[0].completed_at, None);
+    }
+
+    #[tokio::test]
     async fn session_ignores_late_delta_after_turn_completion() {
-        let sessions = ThreadSessionStore::default();
+        let sessions = ThreadViewStore::default();
         record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", "Done", 1)
             .await
             .unwrap();
@@ -1123,7 +1165,7 @@ mod tests {
             .await
             .unwrap();
 
-        let patch = patch_for_thread_view(&sessions, "thread-1").await.unwrap();
+        let patch = patch_for_thread(&sessions, "thread-1").await.unwrap();
         assert_eq!(patch.live_state, ThreadLiveState::Idle);
         assert_eq!(patch.active_turn_id, None);
         assert_eq!(patch.items[0].status, "completed");
@@ -1132,7 +1174,7 @@ mod tests {
 
     #[tokio::test]
     async fn active_snapshot_does_not_truncate_newer_live_text() {
-        let sessions = ThreadSessionStore::default();
+        let sessions = ThreadViewStore::default();
         record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", "Hello", 1)
             .await
             .unwrap();
@@ -1165,7 +1207,7 @@ mod tests {
 
     #[tokio::test]
     async fn completed_snapshot_collapses_live_duplicate_assistant_text() {
-        let sessions = ThreadSessionStore::default();
+        let sessions = ThreadViewStore::default();
         record_item_delta(&sessions, "thread-1", "turn-1", "item-2", "Done", 1)
             .await
             .unwrap();

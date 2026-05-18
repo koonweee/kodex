@@ -92,7 +92,7 @@ use crate::{
         ProjectPreviewService, QueuedInput, QueuedInputPriority, QueuedInputStatus, Store,
         ThreadRead,
     },
-    thread_session_view::{ThreadSessionStore, ThreadSessionViewPatch},
+    thread_view::{ThreadViewPatch, ThreadViewStore},
 };
 
 #[derive(Clone)]
@@ -104,7 +104,7 @@ pub struct AppState {
     pub skills: crate::skills::SkillCatalogCache,
     pub previews: crate::previews::PreviewManager,
     pub notifications: crate::notifications::NotificationService,
-    pub thread_sessions: ThreadSessionStore,
+    pub thread_views: ThreadViewStore,
 }
 
 impl AppState {
@@ -121,7 +121,7 @@ impl AppState {
             events,
             skills: crate::skills::SkillCatalogCache::default(),
             notifications,
-            thread_sessions: ThreadSessionStore::default(),
+            thread_views: ThreadViewStore::default(),
         }
     }
 
@@ -268,7 +268,7 @@ impl AppState {
         ThreadTimelineSnapshot,
         ThreadTimelineSnapshotItem,
         PendingTimelineRequestSummary,
-        ThreadSessionViewPatch,
+        ThreadViewPatch,
         ThreadTurnSnapshot,
         ThreadItemSnapshot,
         ThreadLiveState,
