@@ -60,7 +60,7 @@ export type TimelineSkillMention = components["schemas"]["TimelineSkillMention"]
 export type TimelineItemDeltaPayload = components["schemas"]["TimelineItemDeltaPayload"];
 export type TimelineItemUpsertPayload = components["schemas"]["TimelineItemUpsertPayload"];
 export type TimelineLiveState = components["schemas"]["ThreadLiveState"];
-export type TimelineProjectionPatch = components["schemas"]["TimelineProjectionPatch"];
+export type ThreadSessionViewPatch = components["schemas"]["ThreadSessionViewPatch"];
 export type TimelineThreadMetadataPayload = components["schemas"]["TimelineThreadMetadataPayload"];
 export type TimelineThreadStatusPayload = components["schemas"]["TimelineThreadStatusPayload"];
 export type TimelineTurnUpsertPayload = components["schemas"]["TimelineTurnUpsertPayload"];
@@ -366,15 +366,6 @@ export async function deletePushSubscription(subscriptionId: string): Promise<Pu
   );
 }
 
-export async function startTurn(threadId: string, input: UserInput[], options: TurnStartOptions = {}): Promise<void> {
-  await unwrap(
-    api.POST("/v1/threads/{threadId}/turns", {
-      params: { path: { threadId } },
-      body: { input, ...options },
-    }),
-  );
-}
-
 export async function submitThreadInput(
   threadId: string,
   input: UserInput[],
@@ -492,15 +483,6 @@ export async function interruptTurn(threadId: string, turnId: string): Promise<v
   await unwrap(
     api.POST("/v1/threads/{threadId}/turns/{turnId}/interrupt", {
       params: { path: { threadId, turnId } },
-    }),
-  );
-}
-
-export async function steerTurn(threadId: string, turnId: string, input: UserInput[]): Promise<void> {
-  await unwrap(
-    api.POST("/v1/threads/{threadId}/turns/{turnId}/steer", {
-      params: { path: { threadId, turnId } },
-      body: { input },
     }),
   );
 }

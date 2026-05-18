@@ -200,5 +200,5 @@ function isQueueEvent(event: EventEnvelope): boolean {
 }
 
 function isCanonicalTimelineRenderEvent(event: EventEnvelope): boolean {
-  return event.kind === "timeline.snapshot" || event.kind === "timeline.projection_patch";
+  return event.kind === "timeline.snapshot" || event.kind === "timeline.projection_patch" || event.kind === "timeline.item_delta";
 }

@@ -299,9 +299,10 @@ function rowsForTurnWithWorkRow(rows: TimelineContentRow[], workRow: TimelineWor
   const finalIndex = rows.findIndex((row, index) => index > firstWorkIndex && rowIsFinalResponse(row));
   if (workRow.state === "completed" && finalIndex !== -1) {
     const displayOrder = firstRowDisplayOrder(rows[firstWorkIndex]) + 0.1;
-    const intermediateRows = rows.slice(firstWorkIndex + 1, finalIndex);
-    const collapsedRows = intermediateRows.filter((row) => !rowIsProminentTurnResult(row));
-    const prominentRows = intermediateRows.filter(rowIsProminentTurnResult);
+    const rowsAfterUser = rows.slice(firstWorkIndex + 1);
+    const finalOffset = finalIndex - firstWorkIndex - 1;
+    const collapsedRows = rowsAfterUser.filter((row, index) => index !== finalOffset && !rowIsProminentTurnResult(row));
+    const prominentRows = rowsAfterUser.filter((row, index) => index !== finalOffset && rowIsProminentTurnResult(row));
     return [
       ...rows.slice(0, firstWorkIndex + 1),
       {
@@ -309,9 +310,8 @@ function rowsForTurnWithWorkRow(rows: TimelineContentRow[], workRow: TimelineWor
         collapsedRows,
         displayOrder,
       },
-      ...prominentRows,
       withoutFinalResponseDivider(rows[finalIndex]),
-      ...rows.slice(finalIndex + 1),
+      ...prominentRows,
     ];
   }
   return [

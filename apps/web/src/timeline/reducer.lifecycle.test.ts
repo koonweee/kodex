@@ -4,17 +4,76 @@ import { applyLiveTimelineUpdate, createTimelineState, replayTimeline } from "./
 import type { EventEnvelope } from "../api/client";
 
 describe("timeline reducer lifecycle", () => {
-  it("ignores non-canonical timeline events for visible rows while advancing the cursor", () => {
-    const state = applyLiveTimelineUpdate(createTimelineState(), event({
+  it("appends compact live assistant deltas without a full projection patch", () => {
+    let state = applyLiveTimelineUpdate(createTimelineState(), event({
       seq: 5,
-      kind: ["timeline", "item_delta"].join("."),
+      kind: "timeline.item_delta",
       codexMethod: "item/agentMessage/delta",
-      payload: { delta: "ignored" },
+      payload: { threadId: "thread-1", turnId: "turn-1", itemId: "item-1", delta: "Hello" },
+    }));
+    state = applyLiveTimelineUpdate(state, event({
+      seq: 6,
+      kind: "timeline.item_delta",
+      codexMethod: "item/agentMessage/delta",
+      payload: { threadId: "thread-1", turnId: "turn-1", itemId: "item-1", delta: " world" },
     }));
 
-    expect(state.items).toEqual([]);
-    expect(state.activeTurnId).toBeNull();
-    expect(state.lastSeq).toBe(5);
+    expect(state.items).toHaveLength(1);
+    expect(state.items[0]).toMatchObject({
+      id: "projection-turn-1-item-1",
+      kind: "assistant_message",
+      status: "running",
+      text: "Hello world",
+      turnId: "turn-1",
+      serverItemId: "item-1",
+    });
+    expect(state.activeTurnId).toBe("turn-1");
+    expect(state.lastSeq).toBe(6);
+  });
+
+  it("ignores stale compact deltas after a newer canonical projection", () => {
+    let state = applyLiveTimelineUpdate(createTimelineState(), event({
+      seq: 10,
+      kind: "timeline.projection_patch",
+      codexMethod: "timeline/projection_patch",
+      payload: projectionPatch("Final"),
+    }));
+    state = applyLiveTimelineUpdate(state, event({
+      seq: 5,
+      kind: "timeline.item_delta",
+      codexMethod: "item/agentMessage/delta",
+      payload: { threadId: "thread-1", turnId: "turn-1", itemId: "item-1", delta: " stale" },
+    }));
+
+    expect(state.items).toHaveLength(1);
+    expect(state.items[0]).toMatchObject({
+      text: "Final",
+      status: "completed",
+    });
+    expect(state.lastSeq).toBe(10);
+  });
+
+  it("lets canonical projections reconcile temporary live delta text", () => {
+    let state = applyLiveTimelineUpdate(createTimelineState(), event({
+      seq: 3,
+      kind: "timeline.item_delta",
+      codexMethod: "item/agentMessage/delta",
+      payload: { threadId: "thread-1", turnId: "turn-1", itemId: "item-1", delta: "Live partial" },
+    }));
+    state = applyLiveTimelineUpdate(state, event({
+      seq: 8,
+      kind: "timeline.projection_patch",
+      codexMethod: "timeline/projection_patch",
+      payload: projectionPatch("Canonical final"),
+    }));
+
+    expect(state.items).toHaveLength(1);
+    expect(state.items[0]).toMatchObject({
+      id: "projection-turn-1-item-1",
+      text: "Canonical final",
+      status: "completed",
+    });
+    expect(state.viewRevision).toBe(8);
   });
 
   it("keeps snapshot-required as a cursor-only render event", () => {

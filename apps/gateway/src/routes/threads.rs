@@ -24,7 +24,7 @@ use crate::{
     },
     error::{ApiError, ApiResult},
     store::{EventEnvelope, NewEvent, ThreadComposerSettings, ThreadRead},
-    timeline_projection,
+    thread_session_view,
 };
 
 pub const THREAD_PIN_UPDATED_EVENT: &str = "thread.pin_updated";
@@ -924,7 +924,7 @@ async fn apply_thread_detail_response_state(
 ) -> ApiResult<()> {
     apply_thread_summary_state(state, std::slice::from_mut(&mut response.thread)).await?;
     apply_thread_detail_skill_mentions(state, response).await?;
-    let timeline = timeline_projection::build_thread_timeline(
+    let timeline = thread_session_view::build_thread_timeline(
         &state.thread_sessions,
         &response.thread.id,
         &response.turns,
@@ -938,7 +938,7 @@ async fn apply_thread_detail_response_state(
             Some(response.thread.id.clone()),
         )
         .await?;
-    response.timeline = timeline_projection::record_pending_requests(
+    response.timeline = thread_session_view::record_pending_requests(
         &state.thread_sessions,
         &response.thread.id,
         &pending_approvals,

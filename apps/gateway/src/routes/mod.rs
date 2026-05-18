@@ -48,7 +48,7 @@ mod tests {
             NewApproval, NewEvent, NewPushSubscription, PushSubscription, Store,
             ThreadComposerSettings, ThreadRuntimeState,
         },
-        timeline_projection,
+        thread_session_view,
     };
 
     async fn test_state() -> (AppState, Arc<RecordingAppServer>) {
@@ -3630,7 +3630,7 @@ mod tests {
             })
             .await
             .unwrap();
-        timeline_projection::record_pending_user_input(
+        thread_session_view::record_pending_user_input(
             &state.thread_sessions,
             "thread-1",
             "turn-1",
@@ -5376,7 +5376,7 @@ mod tests {
             .lock()
             .unwrap()
             .push(json!({"accepted": true}));
-        timeline_projection::record_item_delta(
+        thread_session_view::record_item_delta(
             &state.thread_sessions,
             "thread-1",
             "turn-active",
@@ -5422,7 +5422,7 @@ mod tests {
             .lock()
             .unwrap()
             .push(json!({"turnId": "turn-started"}));
-        timeline_projection::record_item_delta(
+        thread_session_view::record_item_delta(
             &state.thread_sessions,
             "thread-1",
             "turn-stale",
@@ -6810,7 +6810,7 @@ mod tests {
             let mut delete_event = None;
             loop {
                 let event = receiver.recv().await.unwrap();
-                if event.kind == timeline_projection::TIMELINE_PROJECTION_PATCH_KIND
+                if event.kind == thread_session_view::THREAD_VIEW_PATCH_EVENT_KIND
                     && event.payload["items"].as_array().is_some_and(|items| {
                         items.iter().any(|item| item["itemId"] == "item-user-1")
                     })
@@ -6899,7 +6899,7 @@ mod tests {
             let mut saw_thread_status = false;
             loop {
                 let event = receiver.recv().await.unwrap();
-                if event.kind == timeline_projection::TIMELINE_PROJECTION_PATCH_KIND
+                if event.kind == thread_session_view::THREAD_VIEW_PATCH_EVENT_KIND
                     && event.payload["liveState"] == "idle"
                 {
                     saw_thread_status = true;
@@ -6997,7 +6997,7 @@ mod tests {
             let mut saw_turn_upsert = false;
             loop {
                 let event = receiver.recv().await.unwrap();
-                if event.kind == timeline_projection::TIMELINE_PROJECTION_PATCH_KIND
+                if event.kind == thread_session_view::THREAD_VIEW_PATCH_EVENT_KIND
                     && event.payload["liveState"] == "idle"
                 {
                     saw_turn_upsert = true;
@@ -8299,6 +8299,94 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sse_allows_live_selected_thread_item_deltas_without_replay() {
+        let (state, _) = test_state().await;
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?threadId=thread-1")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "item/agentMessage/delta".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "item-1",
+                    "delta": "hello"
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let mut body = response.into_body();
+        let first = next_sse_chunk(&mut body).await;
+        assert!(first.contains("timeline.item_delta"));
+        assert!(first.contains("\"delta\":\"hello\""));
+        assert!(!first.contains("timeline.projection_patch"));
+
+        let replayed = state
+            .store
+            .replay_events(None, None, Some("thread-1".to_string()))
+            .await
+            .unwrap();
+        assert!(replayed
+            .iter()
+            .all(|event| event.kind != "timeline.item_delta"));
+        assert!(replayed
+            .iter()
+            .all(|event| event.kind != "timeline.snapshot_required"));
+    }
+
+    #[tokio::test]
+    async fn sse_replay_recovers_skipped_selected_thread_item_deltas_with_snapshot_required() {
+        let (state, _) = test_state().await;
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "item/agentMessage/delta".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "item-1",
+                    "delta": "missed prefix"
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?cursor=0&threadId=thread-1")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let mut body = response.into_body();
+        let first = next_sse_chunk(&mut body).await;
+        assert!(first.contains("timeline.snapshot_required"));
+        assert!(first.contains("\"reason\":\"missed_delta\""));
+        assert!(!first.contains("timeline.item_delta"));
+        assert!(!first.contains("missed prefix"));
+    }
+
+    #[tokio::test]
     async fn sse_allows_live_thread_title_notifications() {
         let (state, _) = test_state().await;
         let app = build_router(state.clone());
@@ -8511,7 +8599,7 @@ mod tests {
     }
 
     async fn mark_thread_session_active(state: &AppState, thread_id: &str, turn_id: &str) {
-        timeline_projection::record_item_delta(
+        thread_session_view::record_item_delta(
             &state.thread_sessions,
             thread_id,
             turn_id,

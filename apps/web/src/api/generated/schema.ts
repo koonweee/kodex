@@ -2206,6 +2206,17 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        ThreadSessionViewPatch: {
+            activeTurnId?: string | null;
+            items: components["schemas"]["ThreadTimelineSnapshotItem"][];
+            liveState: components["schemas"]["ThreadLiveState"];
+            pendingApprovalRequests: components["schemas"]["PendingTimelineRequestSummary"][];
+            pendingUserInputRequests: components["schemas"]["PendingTimelineRequestSummary"][];
+            /** Format: int64 */
+            revision: number;
+            threadId: string;
+            turns: components["schemas"]["ThreadTimelineSnapshotTurn"][];
+        };
         /** @enum {string} */
         ThreadStatus: "notLoaded" | "idle" | "systemError" | "active";
         ThreadSubagentListResponse: {
@@ -2308,17 +2319,6 @@ export interface components {
             itemSnapshot: components["schemas"]["ThreadItemSnapshot"];
             source: components["schemas"]["TimelineUpdateSource"];
             turnId: string;
-        };
-        TimelineProjectionPatch: {
-            activeTurnId?: string | null;
-            items: components["schemas"]["ThreadTimelineSnapshotItem"][];
-            liveState: components["schemas"]["ThreadLiveState"];
-            pendingApprovalRequests: components["schemas"]["PendingTimelineRequestSummary"][];
-            pendingUserInputRequests: components["schemas"]["PendingTimelineRequestSummary"][];
-            /** Format: int64 */
-            revision: number;
-            threadId: string;
-            turns: components["schemas"]["ThreadTimelineSnapshotTurn"][];
         };
         TimelineSkillMention: {
             brandColor?: string | null;

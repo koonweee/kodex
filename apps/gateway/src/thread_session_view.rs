@@ -21,11 +21,11 @@ use crate::{
     store::Approval,
 };
 
-pub const TIMELINE_PROJECTION_PATCH_KIND: &str = "timeline.projection_patch";
+pub const THREAD_VIEW_PATCH_EVENT_KIND: &str = "timeline.projection_patch";
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct TimelineProjectionPatch {
+pub struct ThreadSessionViewPatch {
     pub revision: i64,
     pub thread_id: String,
     pub active_turn_id: Option<String>,
@@ -54,12 +54,12 @@ impl ThreadSessionStore {
         view.refresh_from_base(thread_id, base, revision)
     }
 
-    pub async fn patch_for_thread(&self, thread_id: &str) -> TimelineProjectionPatch {
+    pub async fn patch_for_thread(&self, thread_id: &str) -> ThreadSessionViewPatch {
         let sessions = self.sessions.read().await;
         sessions
             .get(thread_id)
             .map(ThreadSessionView::to_patch)
-            .unwrap_or_else(|| TimelineProjectionPatch {
+            .unwrap_or_else(|| ThreadSessionViewPatch {
                 revision: 0,
                 thread_id: thread_id.to_string(),
                 active_turn_id: None,
@@ -107,7 +107,9 @@ struct ThreadSessionView {
     live_state: ThreadLiveState,
     pending_approval_requests: Vec<PendingTimelineRequestSummary>,
     pending_user_input_requests: Vec<PendingTimelineRequestSummary>,
+    turns: Vec<ThreadTimelineSnapshotTurn>,
     items: Vec<ThreadTimelineSnapshotItem>,
+    terminal_turn_ids: HashSet<String>,
 }
 
 impl ThreadSessionView {
@@ -118,6 +120,7 @@ impl ThreadSessionView {
         revision: i64,
     ) -> ThreadTimelineSnapshot {
         let existing_items = std::mem::take(&mut self.items);
+        let existing_turns = std::mem::take(&mut self.turns);
         let mut base_item_indexes = base
             .items
             .iter()
@@ -181,12 +184,20 @@ impl ThreadSessionView {
         base.revision = self.revision.max(revision);
         base.pending_approval_requests = self.pending_approval_requests.clone();
         base.pending_user_input_requests = self.pending_user_input_requests.clone();
-        merge_missing_turns_from_items(&mut base.turns, &base.items);
+        merge_missing_turns(&mut base.turns, &existing_turns, &base.items);
+        base.turns = ordered_turns_for_items(&base.turns, &base.items);
         self.thread_id = thread_id.to_string();
         self.revision = base.revision;
         self.active_turn_id = base.active_turn_id.clone();
         self.live_state = base.live_state;
+        self.turns = base.turns.clone();
         self.items = base.items.clone();
+        self.terminal_turn_ids = base
+            .turns
+            .iter()
+            .filter(|turn| is_terminal_turn_status(&turn.status))
+            .map(|turn| turn.id.clone())
+            .collect();
         base
     }
 
@@ -230,6 +241,7 @@ impl ThreadSessionView {
             },
         };
         replace_or_push(&mut self.items, key, next_item);
+        self.upsert_turn_from_item(turn_id, &status, timestamp_ms);
         if is_live_status(&status) {
             self.active_turn_id = Some(turn_id.to_string());
             self.live_state = ThreadLiveState::Streaming;
@@ -237,12 +249,18 @@ impl ThreadSessionView {
     }
 
     fn append_delta(&mut self, thread_id: &str, turn_id: &str, item_id: &str, delta: &str) {
+        if self.terminal_turn_ids.contains(turn_id) {
+            return;
+        }
         self.thread_id = thread_id.to_string();
         let key = scoped_item_key(turn_id, item_id);
         let existing = self
             .items
             .iter()
             .find(|item| scoped_item_key(&item.turn_id, &item.item_id) == key);
+        if existing.is_some_and(|item| is_terminal_turn_status(&item.status)) {
+            return;
+        }
         let mut item = existing
             .map(|item| item.payload.item.clone())
             .unwrap_or_else(|| json!({"id": item_id, "type": "agentMessage", "text": ""}));
@@ -277,6 +295,7 @@ impl ThreadSessionView {
 
     fn update_turn_status(&mut self, turn: &ThreadTurnSnapshot) {
         let terminal = is_terminal_turn_status(&turn.status);
+        self.upsert_turn_from_snapshot(turn);
         for item in &mut self.items {
             if item.turn_id == turn.id {
                 item.status = if terminal {
@@ -292,6 +311,11 @@ impl ThreadSessionView {
         } else if !terminal {
             self.active_turn_id = Some(turn.id.clone());
             self.live_state = ThreadLiveState::Streaming;
+        }
+        if terminal {
+            self.terminal_turn_ids.insert(turn.id.clone());
+        } else {
+            self.terminal_turn_ids.remove(&turn.id);
         }
     }
 
@@ -362,46 +386,141 @@ impl ThreadSessionView {
     fn to_snapshot(&self) -> ThreadTimelineSnapshot {
         let mut items = self.items.clone();
         items.sort_by_key(|item| item.display_order);
+        let turns = self.turns_for_items(&items);
         ThreadTimelineSnapshot {
             revision: self.revision,
             active_turn_id: self.active_turn_id.clone(),
             live_state: self.live_state,
             pending_approval_requests: self.pending_approval_requests.clone(),
             pending_user_input_requests: self.pending_user_input_requests.clone(),
-            turns: timeline_turns_from_items(&items),
+            turns,
             items,
         }
     }
 
-    fn to_patch(&self) -> TimelineProjectionPatch {
+    fn to_patch(&self) -> ThreadSessionViewPatch {
         let mut items = self.items.clone();
         items.sort_by_key(|item| item.display_order);
-        TimelineProjectionPatch {
+        let turns = self.turns_for_items(&items);
+        ThreadSessionViewPatch {
             revision: self.revision,
             thread_id: self.thread_id.clone(),
             active_turn_id: self.active_turn_id.clone(),
             live_state: self.live_state,
             pending_approval_requests: self.pending_approval_requests.clone(),
             pending_user_input_requests: self.pending_user_input_requests.clone(),
-            turns: timeline_turns_from_items(&items),
+            turns,
             items,
         }
     }
+
+    fn turns_for_items(
+        &self,
+        items: &[ThreadTimelineSnapshotItem],
+    ) -> Vec<ThreadTimelineSnapshotTurn> {
+        let mut turns = self.turns.clone();
+        merge_missing_turns(&mut turns, &[], items);
+        ordered_turns_for_items(&turns, items)
+    }
+
+    fn upsert_turn_from_item(&mut self, turn_id: &str, status: &str, timestamp_ms: Option<i64>) {
+        let timestamp = timestamp_ms.map(unix_ms_to_seconds);
+        let existing = self.turns.iter_mut().find(|turn| turn.id == turn_id);
+        if let Some(existing) = existing {
+            existing.status = status.to_string();
+            existing.started_at = earliest_timestamp(existing.started_at, timestamp);
+            existing.completed_at = if is_terminal_turn_status(status) {
+                normalize_completed_at(existing.started_at, timestamp.or(existing.completed_at))
+            } else {
+                None
+            };
+            return;
+        }
+        self.turns.push(ThreadTimelineSnapshotTurn {
+            id: turn_id.to_string(),
+            status: status.to_string(),
+            started_at: timestamp,
+            completed_at: if is_terminal_turn_status(status) {
+                normalize_completed_at(timestamp, timestamp)
+            } else {
+                None
+            },
+        });
+    }
+
+    fn upsert_turn_from_snapshot(&mut self, turn: &ThreadTurnSnapshot) {
+        let now = Utc::now().timestamp();
+        let terminal = is_terminal_turn_status(&turn.status);
+        let existing_started_at = self
+            .turns
+            .iter()
+            .find(|existing| existing.id == turn.id)
+            .and_then(|existing| existing.started_at);
+        let started_at = turn
+            .started_at
+            .or(existing_started_at)
+            .or(turn.completed_at)
+            .or(Some(now));
+        let completed_at = if terminal {
+            normalize_completed_at(started_at, turn.completed_at.or(Some(now)))
+        } else {
+            None
+        };
+        let next_turn = ThreadTimelineSnapshotTurn {
+            id: turn.id.clone(),
+            status: turn.status.clone(),
+            started_at,
+            completed_at,
+        };
+        replace_or_push_turn(&mut self.turns, next_turn);
+    }
 }
 
-fn merge_missing_turns_from_items(
+fn merge_missing_turns(
     turns: &mut Vec<ThreadTimelineSnapshotTurn>,
+    existing_turns: &[ThreadTimelineSnapshotTurn],
     items: &[ThreadTimelineSnapshotItem],
 ) {
     let mut known = turns
         .iter()
         .map(|turn| turn.id.clone())
         .collect::<HashSet<_>>();
+    for turn in existing_turns {
+        if known.insert(turn.id.clone()) {
+            turns.push(turn.clone());
+        }
+    }
     for turn in timeline_turns_from_items(items) {
         if known.insert(turn.id.clone()) {
             turns.push(turn);
         }
     }
+}
+
+fn ordered_turns_for_items(
+    turns: &[ThreadTimelineSnapshotTurn],
+    items: &[ThreadTimelineSnapshotItem],
+) -> Vec<ThreadTimelineSnapshotTurn> {
+    let by_id = turns
+        .iter()
+        .map(|turn| (turn.id.as_str(), turn))
+        .collect::<HashMap<_, _>>();
+    let mut ordered = Vec::new();
+    let mut seen = HashSet::new();
+    for item in items {
+        if !seen.insert(item.turn_id.clone()) {
+            continue;
+        }
+        if let Some(turn) = by_id.get(item.turn_id.as_str()) {
+            ordered.push((*turn).clone());
+        }
+    }
+    for turn in turns {
+        if seen.insert(turn.id.clone()) {
+            ordered.push(turn.clone());
+        }
+    }
+    ordered
 }
 
 fn timeline_turns_from_items(
@@ -416,15 +535,49 @@ fn timeline_turns_from_items(
         turns.push(ThreadTimelineSnapshotTurn {
             id: item.turn_id.clone(),
             status: item.status.clone(),
-            started_at: item.timestamp_ms.map(|timestamp| timestamp / 1_000),
+            started_at: item.timestamp_ms.map(unix_ms_to_seconds),
             completed_at: if is_terminal_turn_status(&item.status) {
-                item.timestamp_ms.map(|timestamp| timestamp / 1_000)
+                normalize_completed_at(
+                    item.timestamp_ms.map(unix_ms_to_seconds),
+                    item.timestamp_ms.map(unix_ms_to_seconds),
+                )
             } else {
                 None
             },
         });
     }
     turns
+}
+
+fn replace_or_push_turn(
+    turns: &mut Vec<ThreadTimelineSnapshotTurn>,
+    turn: ThreadTimelineSnapshotTurn,
+) {
+    if let Some(existing) = turns.iter_mut().find(|existing| existing.id == turn.id) {
+        *existing = turn;
+    } else {
+        turns.push(turn);
+    }
+}
+
+fn unix_ms_to_seconds(timestamp_ms: i64) -> i64 {
+    timestamp_ms / 1_000
+}
+
+fn earliest_timestamp(left: Option<i64>, right: Option<i64>) -> Option<i64> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(left.min(right)),
+        (Some(left), None) => Some(left),
+        (None, Some(right)) => Some(right),
+        (None, None) => None,
+    }
+}
+
+fn normalize_completed_at(started_at: Option<i64>, completed_at: Option<i64>) -> Option<i64> {
+    match (started_at, completed_at) {
+        (Some(started_at), Some(completed_at)) => Some(completed_at.max(started_at)),
+        (_, completed_at) => completed_at,
+    }
 }
 
 pub async fn build_thread_timeline(
@@ -452,10 +605,10 @@ pub async fn record_pending_requests(
         .await)
 }
 
-pub async fn projection_patch_for_thread(
+pub async fn patch_for_thread_view(
     sessions: &ThreadSessionStore,
     thread_id: &str,
-) -> ApiResult<TimelineProjectionPatch> {
+) -> ApiResult<ThreadSessionViewPatch> {
     Ok(sessions.patch_for_thread(thread_id).await)
 }
 
@@ -888,9 +1041,7 @@ mod tests {
             .await
             .unwrap();
 
-        let patch = projection_patch_for_thread(&sessions, "thread-1")
-            .await
-            .unwrap();
+        let patch = patch_for_thread_view(&sessions, "thread-1").await.unwrap();
         assert_eq!(patch.items.len(), 1);
         assert_eq!(patch.items[0].payload.item["text"], "Hello world");
         assert_eq!(patch.active_turn_id.as_deref(), Some("turn-1"));
@@ -913,7 +1064,70 @@ mod tests {
 
         assert_eq!(timeline.items.len(), 1);
         assert_eq!(timeline.items[0].item_id, "agent-1");
+        assert_eq!(timeline.turns.len(), 1);
+        assert_eq!(timeline.turns[0].started_at, Some(1));
+        assert_eq!(timeline.turns[0].completed_at, Some(2));
         assert_eq!(timeline.active_turn_id, None);
+    }
+
+    #[tokio::test]
+    async fn terminal_turn_status_preserves_turn_duration_in_live_patch() {
+        let sessions = ThreadSessionStore::default();
+        record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", "Working", 1)
+            .await
+            .unwrap();
+
+        let completed_turn = ThreadTurnSnapshot {
+            id: "turn-1".to_string(),
+            status: "completed".to_string(),
+            started_at: Some(10),
+            completed_at: Some(15),
+            raw_payload: json!({}),
+            items: Vec::new(),
+        };
+        record_turn_status(&sessions, "thread-1", &completed_turn, 2)
+            .await
+            .unwrap();
+
+        let patch = patch_for_thread_view(&sessions, "thread-1").await.unwrap();
+
+        assert_eq!(patch.live_state, ThreadLiveState::Idle);
+        assert_eq!(patch.turns.len(), 1);
+        assert_eq!(patch.turns[0].id, "turn-1");
+        assert_eq!(patch.turns[0].status, "completed");
+        assert_eq!(patch.turns[0].started_at, Some(10));
+        assert_eq!(patch.turns[0].completed_at, Some(15));
+    }
+
+    #[tokio::test]
+    async fn session_ignores_late_delta_after_turn_completion() {
+        let sessions = ThreadSessionStore::default();
+        record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", "Done", 1)
+            .await
+            .unwrap();
+        let completed_turn = ThreadTurnSnapshot {
+            id: "turn-1".to_string(),
+            status: "completed".to_string(),
+            started_at: Some(1),
+            completed_at: Some(2),
+            raw_payload: json!({}),
+            items: vec![
+                ThreadItemSnapshot::from_payload(&agent_message_item("agent-1", "Done")).unwrap(),
+            ],
+        };
+        record_turn_status(&sessions, "thread-1", &completed_turn, 2)
+            .await
+            .unwrap();
+
+        record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", " stale", 3)
+            .await
+            .unwrap();
+
+        let patch = patch_for_thread_view(&sessions, "thread-1").await.unwrap();
+        assert_eq!(patch.live_state, ThreadLiveState::Idle);
+        assert_eq!(patch.active_turn_id, None);
+        assert_eq!(patch.items[0].status, "completed");
+        assert_eq!(patch.items[0].payload.item["text"], "Done");
     }
 
     #[tokio::test]
@@ -943,6 +1157,9 @@ mod tests {
         assert_eq!(timeline.items.len(), 1);
         assert_eq!(timeline.items[0].id, "projection-turn-1-agent-1");
         assert_eq!(timeline.items[0].payload.item["text"], "Hello world");
+        assert_eq!(timeline.turns.len(), 1);
+        assert_eq!(timeline.turns[0].started_at, Some(1));
+        assert_eq!(timeline.turns[0].completed_at, None);
         assert_eq!(timeline.active_turn_id.as_deref(), Some("turn-1"));
     }
 

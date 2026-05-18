@@ -4,7 +4,7 @@ use crate::{
         self, timeline_skill_mentions_from_user_input, SkillMetadata, ThreadLiveState, UserInput,
     },
     error::{ApiError, ApiResult},
-    events, timeline_projection,
+    events, thread_session_view,
 };
 
 pub async fn current_active_turn_id(
@@ -36,7 +36,7 @@ pub async fn record_idle_after_missing_active_turn(
     state: &AppState,
     thread_id: &str,
 ) -> ApiResult<()> {
-    timeline_projection::record_thread_live_state(
+    thread_session_view::record_thread_live_state(
         &state.thread_sessions,
         thread_id,
         ThreadLiveState::Idle,
@@ -63,7 +63,7 @@ pub async fn record_pending_user_projection(
             payload: serde_json::json!({ "threadId": thread_id, "turnId": turn_id }),
         })
         .await?;
-    if timeline_projection::record_pending_user_input(
+    if thread_session_view::record_pending_user_input(
         &state.thread_sessions,
         thread_id,
         turn_id,
@@ -73,7 +73,7 @@ pub async fn record_pending_user_projection(
     .await?
     .is_some()
     {
-        let patch = events::timeline_projection_patch_event(state, thread_id).await?;
+        let patch = events::thread_session_view_patch_event(state, thread_id).await?;
         let _ = state.events.send(patch);
     }
     Ok(())

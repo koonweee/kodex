@@ -29,6 +29,7 @@ const GATEWAY_SSE_EVENT_TYPES = [
   "mcp.oauth_login_completed",
   "mcp.server_status_updated",
   "skills.changed",
+  "timeline.item_delta",
   "timeline.projection_patch",
   "timeline.snapshot",
   "timeline.snapshot_required",

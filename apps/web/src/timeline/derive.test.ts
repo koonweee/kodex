@@ -234,6 +234,39 @@ describe("timeline derivation", () => {
     expect(rows[2]).not.toHaveProperty("dividerBefore");
   });
 
+  it("collapses command activity into completed work even when history orders it after the final answer", () => {
+    const rows = deriveTimelineRows(
+      timelineState({
+        turns: [
+          {
+            turnId: "turn-1",
+            itemIds: ["user-1", "answer-1", "cmd-1"],
+            status: "completed",
+            startedAtMs: 1_000,
+            completedAtMs: 6_000,
+          },
+        ],
+        items: [
+          timelineItem({ id: "user-1", kind: "user_message", displayOrder: 1, text: "List files." }),
+          timelineItem({
+            id: "answer-1",
+            kind: "assistant_message",
+            messagePhase: "final_answer",
+            displayOrder: 2,
+            text: "The directory contains several folders.",
+          }),
+          timelineItem({ id: "cmd-1", kind: "command_execution", displayOrder: 99, command: "ls .." }),
+        ],
+      }),
+    );
+
+    expect(rows.map((row) => row.key)).toEqual(["item-user-1", "work-turn-1", "item-answer-1"]);
+    expect(rows[1]).toMatchObject({
+      type: "work",
+      collapsedRows: [{ type: "activity", items: [{ id: "cmd-1" }] }],
+    });
+  });
+
   it("aggregates interleaved file changes into one row before the final answer", () => {
     const rows = deriveTimelineRows(
       timelineState({

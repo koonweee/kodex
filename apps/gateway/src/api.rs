@@ -92,7 +92,7 @@ use crate::{
         ProjectPreviewService, QueuedInput, QueuedInputPriority, QueuedInputStatus, Store,
         ThreadRead,
     },
-    timeline_projection::{ThreadSessionStore, TimelineProjectionPatch},
+    thread_session_view::{ThreadSessionStore, ThreadSessionViewPatch},
 };
 
 #[derive(Clone)]
@@ -268,7 +268,7 @@ impl AppState {
         ThreadTimelineSnapshot,
         ThreadTimelineSnapshotItem,
         PendingTimelineRequestSummary,
-        TimelineProjectionPatch,
+        ThreadSessionViewPatch,
         ThreadTurnSnapshot,
         ThreadItemSnapshot,
         ThreadLiveState,

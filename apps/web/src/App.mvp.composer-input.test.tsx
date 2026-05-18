@@ -48,7 +48,6 @@ describe("MVP composer input flows", () => {
       baseRoutes({
         "GET /v1/threads": { threads: [activeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         "POST /v1/threads/thread-1/input": { payload: {} },
-        "POST /v1/threads/thread-1/turns/turn-1/steer": { payload: {} },
         "POST /v1/threads/thread-1/turns/turn-1/interrupt": { payload: {} },
       }),
     );

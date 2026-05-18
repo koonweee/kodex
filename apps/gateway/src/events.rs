@@ -34,13 +34,14 @@ use crate::{
     schema::is_supported_approval_method,
     skills,
     store::{EventEnvelope, NewApproval, NewEvent, ThreadRuntimeState},
-    timeline_projection::{self, TIMELINE_PROJECTION_PATCH_KIND},
+    thread_session_view::{self, THREAD_VIEW_PATCH_EVENT_KIND},
 };
 
 const SSE_REPLAY_PAGE_SIZE: i64 = 500;
 const SELECTED_THREAD_POLL_LIMIT: u32 = 25;
 const SELECTED_THREAD_ACTIVE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const SNAPSHOT_REQUIRED_KIND: &str = "timeline.snapshot_required";
+const TIMELINE_ITEM_DELTA_KIND: &str = "timeline.item_delta";
 pub const MCP_CONFIG_CHANGED_EVENT: &str = "mcp.config_changed";
 pub const MCP_SERVER_STATUS_UPDATED_EVENT: &str = "mcp.server_status_updated";
 pub const MCP_OAUTH_LOGIN_COMPLETED_EVENT: &str = "mcp.oauth_login_completed";
@@ -102,6 +103,7 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
         InboundMessage::Notification { method, params } => {
             let metadata = EventMetadata::from_payload(&params);
             let event = persist_notification_cursor(state, &method, &params, &metadata).await?;
+            let cursor_seq = event.seq;
             let _ = state.events.send(event);
             if let Some(event) = normalized_mcp_event(state, &method, &params).await? {
                 let _ = state.events.send(event);
@@ -117,6 +119,7 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                 &params,
                 &metadata,
                 TimelineUpdateSource::GatewayStream,
+                cursor_seq,
             )
             .await?;
             for normalized in normalized.events {
@@ -193,7 +196,7 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                     payload: serde_json::to_value(&approval)?,
                 })
                 .await?;
-            timeline_projection::record_approval_created(
+            thread_session_view::record_approval_created(
                 &state.thread_sessions,
                 &approval,
                 event.seq,
@@ -201,7 +204,7 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             .await?;
             let _ = state.events.send(event);
             if let Some(thread_id) = approval.thread_id.as_deref() {
-                let patch = timeline_projection_patch_event(state, thread_id).await?;
+                let patch = thread_session_view_patch_event(state, thread_id).await?;
                 let _ = state.events.send(patch);
             }
         }
@@ -315,10 +318,7 @@ async fn event_stream(
                 break;
             };
             replay_high_water = last.seq;
-            replay.extend(
-                page.into_iter()
-                    .filter(|event| is_selected_thread_sse_replay_event(event, &query)),
-            );
+            replay.extend(selected_thread_sse_replay_events(page, &query)?);
             if page_len < SSE_REPLAY_PAGE_SIZE as usize {
                 break;
             }
@@ -496,15 +496,50 @@ fn is_selected_thread_sse_replay_event(event: &EventEnvelope, query: &EventsQuer
         || (query.thread_id.is_some()
             && matches!(
                 event.kind.as_str(),
-                TIMELINE_PROJECTION_PATCH_KIND | SNAPSHOT_REQUIRED_KIND
+                THREAD_VIEW_PATCH_EVENT_KIND | SNAPSHOT_REQUIRED_KIND
             ))
+}
+
+fn selected_thread_sse_replay_events(
+    page: Vec<EventEnvelope>,
+    query: &EventsQuery,
+) -> ApiResult<Vec<EventEnvelope>> {
+    let mut events = Vec::new();
+    let mut emitted_delta_recovery = false;
+    for event in page {
+        if is_selected_thread_sse_replay_event(&event, query) {
+            events.push(event);
+            continue;
+        }
+        let Some(thread_id) = query.thread_id.as_ref() else {
+            continue;
+        };
+        if !emitted_delta_recovery && is_unreplayable_assistant_delta_cursor(&event) {
+            events.push(snapshot_required_event(
+                event.seq,
+                thread_id.clone(),
+                "missed_delta",
+            )?);
+            emitted_delta_recovery = true;
+        }
+    }
+    Ok(events)
+}
+
+fn is_unreplayable_assistant_delta_cursor(event: &EventEnvelope) -> bool {
+    event.kind == "codex.notification"
+        && event
+            .codex_method
+            .as_deref()
+            .is_some_and(is_assistant_message_delta_method)
 }
 
 fn is_normal_live_event(event: &EventEnvelope) -> bool {
     is_operational_replay_event(event)
         || matches!(
             event.kind.as_str(),
-            TIMELINE_PROJECTION_PATCH_KIND
+            THREAD_VIEW_PATCH_EVENT_KIND
+                | TIMELINE_ITEM_DELTA_KIND
                 | "timeline.thread_metadata"
                 | SNAPSHOT_REQUIRED_KIND
                 | ACCOUNT_RATE_LIMITS_UPDATED_EVENT
@@ -558,6 +593,7 @@ async fn normalized_timeline_events(
     params: &Value,
     metadata: &EventMetadata,
     source: TimelineUpdateSource,
+    cursor_seq: i64,
 ) -> ApiResult<NormalizedTimelineEvents> {
     let mut events = Vec::new();
     let mut drain_thread_ids = Vec::new();
@@ -568,7 +604,7 @@ async fn normalized_timeline_events(
         });
     }
 
-    events.extend(timeline_item_delta_event(state, method, params, metadata, source).await?);
+    events.extend(timeline_item_delta_event(state, method, params, metadata, cursor_seq).await?);
     events.extend(timeline_item_upsert_event(state, method, params, metadata, source).await?);
     let turn_upsert = timeline_turn_upsert_event(state, params, metadata, source).await?;
     events.extend(turn_upsert.events);
@@ -607,9 +643,9 @@ async fn timeline_item_delta_event(
     method: &str,
     params: &Value,
     metadata: &EventMetadata,
-    _source: TimelineUpdateSource,
+    cursor_seq: i64,
 ) -> ApiResult<Vec<EventEnvelope>> {
-    if !method.ends_with("/delta") {
+    if !is_assistant_message_delta_method(method) {
         return Ok(Vec::new());
     }
     let Some(thread_id) = metadata.thread_id.clone() else {
@@ -622,20 +658,39 @@ async fn timeline_item_delta_event(
         return Ok(Vec::new());
     };
     let delta = string_field(params, &["delta", "text", "content"]).unwrap_or_default();
-    let cursor =
-        append_timeline_changed_cursor(state, metadata, "timeline.item_delta", Some(method))
-            .await?;
-    timeline_projection::record_item_delta(
+    thread_session_view::record_item_delta(
         &state.thread_sessions,
         &thread_id,
         &turn_id,
         &item_id,
         &delta,
-        cursor.seq,
+        cursor_seq,
     )
     .await?;
-    let patch = timeline_projection_patch_event(state, &thread_id).await?;
-    Ok(vec![patch])
+    let event = synthetic_event(
+        cursor_seq,
+        Some(thread_id.clone()),
+        Some(turn_id.clone()),
+        Some(item_id.clone()),
+        TIMELINE_ITEM_DELTA_KIND,
+        Some(method),
+        json!({
+            "threadId": thread_id,
+            "turnId": turn_id,
+            "itemId": item_id,
+            "itemType": "agentMessage",
+            "delta": delta,
+            "phase": string_field(params, &["phase", "messagePhase"]),
+        }),
+    )?;
+    Ok(vec![event])
+}
+
+fn is_assistant_message_delta_method(method: &str) -> bool {
+    matches!(
+        method.to_ascii_lowercase().as_str(),
+        "item/agentmessage/delta" | "item/assistantmessage/delta"
+    )
 }
 
 async fn timeline_item_upsert_event(
@@ -672,7 +727,7 @@ async fn timeline_item_upsert_event(
         Some("item/upsert"),
     )
     .await?;
-    timeline_projection::record_item_upsert(
+    thread_session_view::record_item_upsert(
         &state.thread_sessions,
         &thread_id,
         &turn_id,
@@ -682,7 +737,7 @@ async fn timeline_item_upsert_event(
         cursor.seq,
     )
     .await?;
-    let mut events = vec![timeline_projection_patch_event(state, &thread_id).await?];
+    let mut events = vec![thread_session_view_patch_event(state, &thread_id).await?];
     if let Some(event) =
         queue::reconcile_pending_steer_commit_event(state, &thread_id, &turn_id, item).await?
     {
@@ -774,9 +829,9 @@ async fn timeline_turn_upsert_event(
     .await?;
     let mut events = Vec::new();
     let terminal = is_terminal_turn_status(&turn.status);
-    timeline_projection::record_turn_status(&state.thread_sessions, &thread_id, &turn, cursor.seq)
+    thread_session_view::record_turn_status(&state.thread_sessions, &thread_id, &turn, cursor.seq)
         .await?;
-    events.push(timeline_projection_patch_event(state, &thread_id).await?);
+    events.push(thread_session_view_patch_event(state, &thread_id).await?);
     if terminal {
         events.extend(
             queue::requeue_unmatched_pending_commit_input_events_for_turn(
@@ -832,18 +887,18 @@ async fn timeline_turn_upsert_event(
     })
 }
 
-pub(crate) async fn timeline_projection_patch_event(
+pub(crate) async fn thread_session_view_patch_event(
     state: &AppState,
     thread_id: &str,
 ) -> ApiResult<EventEnvelope> {
     let patch =
-        timeline_projection::projection_patch_for_thread(&state.thread_sessions, thread_id).await?;
+        thread_session_view::patch_for_thread_view(&state.thread_sessions, thread_id).await?;
     synthetic_event(
         state.store.latest_event_seq().await?,
         Some(thread_id.to_string()),
         patch.active_turn_id.clone(),
         None,
-        TIMELINE_PROJECTION_PATCH_KIND,
+        THREAD_VIEW_PATCH_EVENT_KIND,
         Some("timeline/projection_patch"),
         patch,
     )
@@ -975,14 +1030,14 @@ async fn timeline_thread_status_event(
     )
     .await?;
     let mut events = Vec::new();
-    timeline_projection::record_thread_live_state(
+    thread_session_view::record_thread_live_state(
         &state.thread_sessions,
         &thread_id,
         live_state_from_thread_status(status),
         cursor.seq,
     )
     .await?;
-    events.push(timeline_projection_patch_event(state, &thread_id).await?);
+    events.push(thread_session_view_patch_event(state, &thread_id).await?);
     match status {
         ThreadStatus::Idle | ThreadStatus::SystemError => {
             state
@@ -1086,10 +1141,7 @@ async fn append_timeline_changed_cursor(
 fn is_transcript_timeline_event(kind: &str) -> bool {
     matches!(
         kind,
-        "timeline.item_delta"
-            | "timeline.item_upsert"
-            | "timeline.turn_upsert"
-            | "timeline.thread_status"
+        "timeline.item_upsert" | "timeline.turn_upsert" | "timeline.thread_status"
     )
 }
 
@@ -1327,17 +1379,30 @@ mod tests {
         .unwrap();
 
         let raw = receiver.recv().await.unwrap();
-        let patch = receiver.recv().await.unwrap();
+        let delta = receiver.recv().await.unwrap();
         assert_eq!(raw.kind, "codex.notification");
-        assert_eq!(patch.kind, TIMELINE_PROJECTION_PATCH_KIND);
-        assert_eq!(patch.thread_id.as_deref(), Some("thread-1"));
-        assert_eq!(patch.payload["threadId"], "thread-1");
-        assert_eq!(patch.payload["activeTurnId"], "turn-1");
-        assert_eq!(patch.payload["items"][0]["itemId"], "item-1");
-        assert_eq!(
-            patch.payload["items"][0]["payload"]["item"]["text"],
-            "hello"
-        );
+        assert_eq!(raw.payload["sourceMethod"], "item/agentMessage/delta");
+        assert!(raw.payload.get("delta").is_none());
+        assert_eq!(delta.kind, "timeline.item_delta");
+        assert_eq!(delta.seq, raw.seq);
+        assert_eq!(delta.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(delta.turn_id.as_deref(), Some("turn-1"));
+        assert_eq!(delta.item_id.as_deref(), Some("item-1"));
+        assert_eq!(delta.payload["threadId"], "thread-1");
+        assert_eq!(delta.payload["turnId"], "turn-1");
+        assert_eq!(delta.payload["itemId"], "item-1");
+        assert_eq!(delta.payload["delta"], "hello");
+
+        let replay = state
+            .store
+            .replay_events(None, None, Some("thread-1".to_string()))
+            .await
+            .unwrap();
+        assert_eq!(replay.len(), 1);
+        assert_eq!(replay[0].kind, "codex.notification");
+        assert!(replay
+            .iter()
+            .all(|event| event.kind != "timeline.snapshot_required"));
     }
 
     #[tokio::test]
@@ -1494,7 +1559,7 @@ mod tests {
 
         let _raw = receiver.recv().await.unwrap();
         let patch = receiver.recv().await.unwrap();
-        assert_eq!(patch.kind, TIMELINE_PROJECTION_PATCH_KIND);
+        assert_eq!(patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
         assert_eq!(
             patch.payload["items"][0]["payload"]["itemSnapshot"]["skillMentions"],
             json!([{

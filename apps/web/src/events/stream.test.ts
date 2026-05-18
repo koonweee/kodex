@@ -146,6 +146,32 @@ describe("event stream client", () => {
     client.close();
   });
 
+  it("receives compact live timeline delta SSE events emitted by the gateway", () => {
+    const received: string[] = [];
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      threadId: "thread-1",
+      onEvent: (event) => received.push(`${event.kind}:${event.payload && typeof event.payload === "object" && "delta" in event.payload ? event.payload.delta : ""}`),
+    });
+
+    client.connect();
+    FakeEventSource.instances[0].emitNamed("timeline.item_delta", {
+      id: "event-8",
+      seq: 8,
+      kind: "timeline.item_delta",
+      codexMethod: "item/agentMessage/delta",
+      itemId: "item-1",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      projectId: null,
+      payload: { threadId: "thread-1", turnId: "turn-1", itemId: "item-1", delta: "Hello" },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(received).toEqual(["timeline.item_delta:Hello"]);
+    client.close();
+  });
+
   it("receives gateway thread pin update events", () => {
     const received: string[] = [];
     const client = createEventStreamClient({
