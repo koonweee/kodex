@@ -8331,8 +8331,8 @@ mod tests {
 
         let mut body = response.into_body();
         let first = next_sse_chunk(&mut body).await;
-        assert!(first.contains("thread_view.patch"));
-        assert!(first.contains("\"text\":\"hello\""));
+        assert!(first.contains("thread_view.item_delta"));
+        assert!(first.contains("\"delta\":\"hello\""));
 
         let replayed = state
             .store
@@ -8342,6 +8342,9 @@ mod tests {
         assert!(replayed
             .iter()
             .all(|event| event.kind != "timeline.item_delta"));
+        assert!(replayed
+            .iter()
+            .all(|event| event.kind != thread_view::THREAD_VIEW_ITEM_DELTA_EVENT_KIND));
         assert!(replayed
             .iter()
             .all(|event| event.kind != "thread_view.refresh_required"));

@@ -99,6 +99,23 @@ describe("timeline event batching", () => {
     expect(state.items[0].debugEvents).toHaveLength(1);
   });
 
+  it("coalesces adjacent canonical item deltas for the same assistant row", () => {
+    const state = applyTimelineEventBatch(createTimelineState(), [
+      deltaEvent({ id: "delta-1", seq: 1, delta: "Hel" }),
+      deltaEvent({ id: "delta-2", seq: 2, delta: "lo" }),
+      deltaEvent({ id: "delta-3", seq: 3, delta: "!" }),
+    ]);
+
+    expect(state.items).toHaveLength(1);
+    expect(state.items[0]).toMatchObject({
+      id: "projection-turn-1-answer-1",
+      text: "Hello!",
+      status: "running",
+    });
+    expect(state.items[0].debugEvents).toHaveLength(1);
+    expect(state.lastSeq).toBe(3);
+  });
+
   it("drops stale patches when batching after a newer canonical view", () => {
     const canonical = applyLiveTimelineUpdate(createTimelineState(), event({ id: "event-10", seq: 10, text: "Canonical" }));
 
@@ -115,3 +132,27 @@ describe("timeline event batching", () => {
     expect(state.lastSeq).toBe(11);
   });
 });
+
+function deltaEvent(overrides: Partial<EventEnvelope> & { delta: string }): EventEnvelope {
+  return {
+    id: overrides.id ?? `delta-${overrides.seq ?? 1}`,
+    seq: overrides.seq ?? 1,
+    kind: "thread_view.item_delta",
+    codexMethod: "thread_view/item_delta",
+    threadId: "thread-1",
+    turnId: "turn-1",
+    itemId: "answer-1",
+    projectId: "project-1",
+    payload: {
+      viewRevision: overrides.seq ?? 1,
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "answer-1",
+      delta: overrides.delta,
+      itemType: "agentMessage",
+      liveState: "streaming",
+    },
+    receivedAt: "2026-04-30T00:00:00Z",
+    ...overrides,
+  };
+}

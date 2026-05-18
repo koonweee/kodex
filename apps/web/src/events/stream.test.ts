@@ -146,6 +146,32 @@ describe("event stream client", () => {
     client.close();
   });
 
+  it("receives canonical compact thread view item deltas emitted by the gateway", () => {
+    const received: string[] = [];
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      threadId: "thread-1",
+      onEvent: (event) => received.push(`${event.kind}:${event.payload && typeof event.payload === "object" && "delta" in event.payload ? event.payload.delta : ""}`),
+    });
+
+    client.connect();
+    FakeEventSource.instances[0].emitNamed("thread_view.item_delta", {
+      id: "event-9",
+      seq: 9,
+      kind: "thread_view.item_delta",
+      codexMethod: "thread_view/item_delta",
+      itemId: "item-1",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      projectId: null,
+      payload: { threadId: "thread-1", turnId: "turn-1", itemId: "item-1", delta: "Hello" },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(received).toEqual(["thread_view.item_delta:Hello"]);
+    client.close();
+  });
+
   it("does not subscribe to raw compact live timeline delta events", () => {
     const received: string[] = [];
     const client = createEventStreamClient({

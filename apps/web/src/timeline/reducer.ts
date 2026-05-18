@@ -56,6 +56,9 @@ export function applyLiveTimelineUpdate(state: TimelineState, event: EventEnvelo
   if (event.kind === "thread_view.patch") {
     return applyThreadViewPatch(state, event);
   }
+  if (event.kind === "thread_view.item_delta") {
+    return applyThreadViewItemDelta(state, event);
+  }
   if (isWarningEvent(event) || isErrorEvent(event)) {
     return applyDebugEvent(state, event);
   }
@@ -204,6 +207,130 @@ function applyThreadViewPatch(state: TimelineState, event: EventEnvelope): Timel
   next = removeItemsMissingFromCanonicalPatch(next, patch);
   next = withProjectionPatchLiveState(next, patch, event.seq);
   return withTimelineLastSeq(next, Math.max(event.seq, revision));
+}
+
+type ThreadViewItemDeltaPayload = {
+  viewRevision?: number;
+  threadId?: string;
+  turnId?: string;
+  itemId?: string;
+  delta?: string;
+  phase?: string | null;
+  liveState?: string;
+  activeTurnId?: string | null;
+};
+
+function applyThreadViewItemDelta(state: TimelineState, event: EventEnvelope): TimelineState {
+  if (event.seq < state.lastSeq) {
+    return state;
+  }
+  const payload = threadViewItemDeltaPayload(event.payload);
+  const threadId = event.threadId ?? payload.threadId;
+  const turnId = event.turnId ?? payload.turnId;
+  const itemId = event.itemId ?? payload.itemId;
+  if (!threadId || !turnId || !itemId) {
+    return applyDebugEvent(state, event);
+  }
+  const next = timelineDraftFromState(state, {
+    activeTurnId: payload.liveState === "idle" ? null : (payload.activeTurnId ?? turnId),
+  });
+  const item = applyAssistantDeltaItem(next, event, threadId, turnId, itemId, payload);
+  if (item) {
+    upsertTimelineTurnSnapshot(next, { turnId, status: "running" });
+  }
+  return createTimelineStateFromDraft({
+    ...next,
+    lastSeq: Math.max(state.lastSeq, event.seq),
+    viewRevision: Math.max(state.viewRevision, payload.viewRevision ?? 0, event.seq),
+  });
+}
+
+function applyAssistantDeltaItem(
+  state: TimelineDraft,
+  event: EventEnvelope,
+  threadId: string,
+  turnId: string,
+  itemId: string,
+  payload: ThreadViewItemDeltaPayload,
+): TimelineItem | null {
+  if (!payload.delta) {
+    return null;
+  }
+  const id = `projection-${turnId}-${itemId}`;
+  const existing = timelineItemById(state.indexes, id);
+  const text = `${existing?.text ?? ""}${payload.delta}`;
+  const presentationPayload = assistantDeltaPresentationPayload(turnId, itemId, text, payload.phase);
+  const deltaEvent: EventEnvelope = {
+    ...event,
+    threadId,
+    turnId,
+    itemId,
+    codexMethod: "thread_view/item_delta",
+    payload: presentationPayload,
+  };
+  const item: TimelineItem = {
+    ...(existing ?? {
+      id,
+      kind: "assistant_message",
+      turnId,
+      displayOrder: event.seq,
+      timestampMs: eventReceivedAtMs(event),
+      debugEvents: [],
+      payload: presentationPayload,
+      status: "running" as const,
+      text: "",
+    }),
+    id,
+    serverItemId: itemId,
+    source: "app_server",
+    kind: "assistant_message",
+    status: "running",
+    text,
+    turnId,
+    messagePhase: payload.phase ?? existing?.messagePhase,
+    payload: presentationPayload,
+    debugEvents: [...(existing?.debugEvents ?? []), deltaEvent],
+  };
+  if (existing) {
+    state.indexes.itemUpdatesById.set(id, item);
+  } else {
+    addItem(state, item);
+    addToTurn(state, item);
+  }
+  compactTimelineStores(state.indexes);
+  return item;
+}
+
+function assistantDeltaPresentationPayload(
+  turnId: string,
+  itemId: string,
+  text: string,
+  phase: string | null | undefined,
+) {
+  const item = { id: itemId, type: "agentMessage", text, phase };
+  return {
+    source: "gatewayStream",
+    turnId,
+    itemId,
+    item,
+    itemSnapshot: {
+      id: itemId,
+      itemType: "agentMessage",
+      rawPayload: item,
+    },
+  };
+}
+
+function threadViewItemDeltaPayload(payload: unknown): ThreadViewItemDeltaPayload {
+  if (!payload || typeof payload !== "object") {
+    return {};
+  }
+  return payload as ThreadViewItemDeltaPayload;
+}
+
+function eventReceivedAtMs(event: EventEnvelope): number | undefined {
+  const parsed = Date.parse(event.receivedAt);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function removeItemsMissingFromCanonicalPatch(state: TimelineState, patch: ThreadViewPatch): TimelineState {

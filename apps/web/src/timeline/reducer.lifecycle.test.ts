@@ -23,7 +23,34 @@ describe("timeline reducer lifecycle", () => {
     expect(state.lastSeq).toBe(6);
   });
 
-  it("applies the canonical thread view patch as the only live transcript source", () => {
+  it("applies canonical thread view item deltas as compact live transcript updates", () => {
+    let state = applyLiveTimelineUpdate(createTimelineState(), event({
+      seq: 10,
+      kind: "thread_view.item_delta",
+      codexMethod: "thread_view/item_delta",
+      payload: threadViewItemDelta("Hello"),
+    }));
+    state = applyLiveTimelineUpdate(state, event({
+      seq: 11,
+      kind: "thread_view.item_delta",
+      codexMethod: "thread_view/item_delta",
+      payload: threadViewItemDelta(" world"),
+    }));
+
+    expect(state.items).toHaveLength(1);
+    expect(state.items[0]).toMatchObject({
+      id: "projection-turn-1-item-1",
+      serverItemId: "item-1",
+      kind: "assistant_message",
+      text: "Hello world",
+      status: "running",
+    });
+    expect(state.activeTurnId).toBe("turn-1");
+    expect(state.lastSeq).toBe(11);
+    expect(state.viewRevision).toBe(11);
+  });
+
+  it("applies canonical thread view patches as structural transcript updates", () => {
     let state = applyLiveTimelineUpdate(createTimelineState(), event({
       seq: 10,
       kind: "thread_view.patch",
@@ -285,6 +312,19 @@ function projectionPatch(text: string) {
         },
       },
     ],
+  };
+}
+
+function threadViewItemDelta(delta: string) {
+  return {
+    viewRevision: 1,
+    threadId: "thread-1",
+    turnId: "turn-1",
+    itemId: "item-1",
+    delta,
+    phase: "final_answer",
+    itemType: "agentMessage",
+    liveState: "streaming",
   };
 }
 

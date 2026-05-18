@@ -24,8 +24,10 @@ use crate::{
 // ThreadView is the gateway-owned live projection of upstream app-server thread
 // state. The app-server remains the durable transcript owner; this reducer only
 // folds snapshots, live deltas, pending local input, and approvals into one
-// canonical view for the browser. Browser clients should render snapshots and
-// `thread_view.patch` events from this module, not raw app-server item events.
+// canonical view for the browser. Browser clients should render snapshots,
+// `thread_view.patch`, and canonical `thread_view.item_delta` events from this
+// module, not raw app-server item events.
+pub const THREAD_VIEW_ITEM_DELTA_EVENT_KIND: &str = "thread_view.item_delta";
 pub const THREAD_VIEW_PATCH_EVENT_KIND: &str = "thread_view.patch";
 pub const THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND: &str = "thread_view.refresh_required";
 

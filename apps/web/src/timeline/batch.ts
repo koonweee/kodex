@@ -13,7 +13,7 @@ export function applyTimelineEventBatch(state: TimelineState, events: EventEnvel
 }
 
 function coalesceTimelineEvents(events: EventEnvelope[], viewRevision: number): EventEnvelope[] {
-  return coalesceThreadViewPatches(events, viewRevision);
+  return coalesceThreadViewItemDeltas(coalesceThreadViewPatches(events, viewRevision));
 }
 
 function coalesceThreadViewPatches(events: EventEnvelope[], viewRevision: number): EventEnvelope[] {
@@ -38,4 +38,56 @@ function coalesceThreadViewPatches(events: EventEnvelope[], viewRevision: number
     const threadKey = event.threadId ?? "__unknown_thread__";
     return event.seq === latestProjectionPatchSeqByThread.get(threadKey);
   });
+}
+
+function coalesceThreadViewItemDeltas(events: EventEnvelope[]): EventEnvelope[] {
+  const coalesced: EventEnvelope[] = [];
+  for (const event of events) {
+    const previous = coalesced[coalesced.length - 1];
+    if (!previous || event.kind !== "thread_view.item_delta" || previous.kind !== "thread_view.item_delta") {
+      coalesced.push(event);
+      continue;
+    }
+    const previousPayload = itemDeltaPayload(previous.payload);
+    const payload = itemDeltaPayload(event.payload);
+    if (!sameDeltaTarget(previous, event, previousPayload, payload)) {
+      coalesced.push(event);
+      continue;
+    }
+    coalesced[coalesced.length - 1] = {
+      ...event,
+      payload: {
+        ...payload,
+        delta: `${previousPayload.delta ?? ""}${payload.delta ?? ""}`,
+      },
+    };
+  }
+  return coalesced;
+}
+
+type ItemDeltaPayload = {
+  threadId?: string;
+  turnId?: string;
+  itemId?: string;
+  delta?: string;
+};
+
+function itemDeltaPayload(payload: unknown): ItemDeltaPayload {
+  if (!payload || typeof payload !== "object") {
+    return {};
+  }
+  return payload as ItemDeltaPayload;
+}
+
+function sameDeltaTarget(
+  left: EventEnvelope,
+  right: EventEnvelope,
+  leftPayload: ItemDeltaPayload,
+  rightPayload: ItemDeltaPayload,
+): boolean {
+  return (
+    (left.threadId ?? leftPayload.threadId) === (right.threadId ?? rightPayload.threadId) &&
+    (left.turnId ?? leftPayload.turnId) === (right.turnId ?? rightPayload.turnId) &&
+    (left.itemId ?? leftPayload.itemId) === (right.itemId ?? rightPayload.itemId)
+  );
 }

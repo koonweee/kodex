@@ -257,7 +257,7 @@ function isQueueEvent(event: EventEnvelope): boolean {
 }
 
 function isCanonicalTimelineRenderEvent(event: EventEnvelope): boolean {
-  return event.kind === "thread_view.patch";
+  return event.kind === "thread_view.patch" || event.kind === "thread_view.item_delta";
 }
 
 function isTransientThreadSnapshotLoadError(error: unknown): boolean {

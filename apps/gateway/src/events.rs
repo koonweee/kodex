@@ -34,7 +34,10 @@ use crate::{
     schema::is_supported_approval_method,
     skills,
     store::{EventEnvelope, NewApproval, NewEvent, ThreadRuntimeState},
-    thread_view::{self, THREAD_VIEW_PATCH_EVENT_KIND, THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND},
+    thread_view::{
+        self, THREAD_VIEW_ITEM_DELTA_EVENT_KIND, THREAD_VIEW_PATCH_EVENT_KIND,
+        THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND,
+    },
 };
 
 const SSE_REPLAY_PAGE_SIZE: i64 = 500;
@@ -533,6 +536,7 @@ fn is_normal_live_event(event: &EventEnvelope) -> bool {
             event.kind.as_str(),
             THREAD_VIEW_PATCH_EVENT_KIND
                 | "timeline.thread_metadata"
+                | THREAD_VIEW_ITEM_DELTA_EVENT_KIND
                 | THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND
                 | ACCOUNT_RATE_LIMITS_UPDATED_EVENT
                 | skills::SKILLS_CHANGED_EVENT
@@ -556,6 +560,34 @@ fn thread_view_refresh_required_event(
         json!({
             "threadId": thread_id,
             "reason": reason,
+        }),
+    )
+}
+
+fn thread_view_item_delta_event(
+    seq: i64,
+    thread_id: String,
+    turn_id: String,
+    item_id: String,
+    delta: String,
+    phase: Option<String>,
+) -> ApiResult<EventEnvelope> {
+    synthetic_event(
+        seq,
+        Some(thread_id.clone()),
+        Some(turn_id.clone()),
+        Some(item_id.clone()),
+        THREAD_VIEW_ITEM_DELTA_EVENT_KIND,
+        Some("thread_view/item_delta"),
+        json!({
+            "viewRevision": seq,
+            "threadId": thread_id,
+            "turnId": turn_id,
+            "itemId": item_id,
+            "delta": delta,
+            "phase": phase,
+            "itemType": "agentMessage",
+            "liveState": "streaming",
         }),
     )
 }
@@ -654,6 +686,7 @@ async fn timeline_item_delta_event(
         return Ok(Vec::new());
     };
     let delta = string_field(params, &["delta", "text", "content"]).unwrap_or_default();
+    let phase = string_field(params, &["phase"]);
     thread_view::record_item_delta(
         &state.thread_views,
         &thread_id,
@@ -663,7 +696,9 @@ async fn timeline_item_delta_event(
         cursor_seq,
     )
     .await?;
-    Ok(vec![thread_view_patch_event(state, &thread_id).await?])
+    Ok(vec![thread_view_item_delta_event(
+        cursor_seq, thread_id, turn_id, item_id, delta, phase,
+    )?])
 }
 
 fn is_assistant_message_delta_method(method: &str) -> bool {
@@ -1337,7 +1372,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn notification_ingest_emits_thread_view_patch_for_timeline_delta() {
+    async fn notification_ingest_emits_thread_view_item_delta_for_timeline_delta() {
         let state = test_state().await;
         let mut receiver = state.events.subscribe();
 
@@ -1357,16 +1392,25 @@ mod tests {
         .unwrap();
 
         let raw = receiver.recv().await.unwrap();
-        let patch = receiver.recv().await.unwrap();
+        let delta = receiver.recv().await.unwrap();
         assert_eq!(raw.kind, "codex.notification");
         assert_eq!(raw.payload["sourceMethod"], "item/agentMessage/delta");
         assert!(raw.payload.get("delta").is_none());
-        assert_eq!(patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
-        assert_eq!(patch.thread_id.as_deref(), Some("thread-1"));
-        assert_eq!(patch.turn_id.as_deref(), Some("turn-1"));
-        assert_eq!(patch.payload["threadId"], "thread-1");
-        assert_eq!(patch.payload["activeTurnId"], "turn-1");
-        assert_eq!(patch.payload["liveState"], "streaming");
+        assert_eq!(delta.kind, THREAD_VIEW_ITEM_DELTA_EVENT_KIND);
+        assert_eq!(
+            delta.codex_method.as_deref(),
+            Some("thread_view/item_delta")
+        );
+        assert_eq!(delta.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(delta.turn_id.as_deref(), Some("turn-1"));
+        assert_eq!(delta.item_id.as_deref(), Some("item-1"));
+        assert_eq!(delta.payload["threadId"], "thread-1");
+        assert_eq!(delta.payload["turnId"], "turn-1");
+        assert_eq!(delta.payload["itemId"], "item-1");
+        assert_eq!(delta.payload["delta"], "hello");
+        assert_eq!(delta.payload["liveState"], "streaming");
+
+        let patch = thread_view_patch_event(&state, "thread-1").await.unwrap();
         assert_eq!(
             patch.payload["items"][0]["payload"]["item"]["text"],
             "hello"
