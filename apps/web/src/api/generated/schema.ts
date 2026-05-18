@@ -4189,7 +4189,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ThreadViewResponse"];
+                    "application/json": components["schemas"]["ThreadCommandResponse"];
                 };
             };
         };

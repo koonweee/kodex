@@ -35,6 +35,16 @@ const secondSubagent = {
   updatedAt: 1777501400,
 } as const;
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, reject, resolve };
+}
+
 const subagentThread = {
   ...thread,
   id: "subagent-1",
@@ -57,6 +67,39 @@ describe("subagent thread viewer", () => {
 
     expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /show subagents/i })).not.toBeInTheDocument();
+  });
+
+  it("waits for the selected thread snapshot before discovering subagents", async () => {
+    const detailDeferred = deferred<ReturnType<typeof threadDetail>>();
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads/thread-1": () => detailDeferred.promise,
+        "GET /v1/threads/thread-1/subagents": { subagents: [subagent] },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("status", { name: /loading thread timeline/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(gateway.callsFor("GET", "/v1/threads/thread-1/subagents")).toHaveLength(0);
+
+    await act(async () => {
+      detailDeferred.resolve(threadDetail(thread, [
+        snapshotTurn("turn-1", [
+          snapshotItem("answer-1", "agentMessage", { text: "Main thread snapshot" }),
+        ]),
+      ]));
+      await detailDeferred.promise;
+    });
+
+    expect(await screen.findByText(/main thread snapshot/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(gateway.callsFor("GET", "/v1/threads/thread-1/subagents")).toHaveLength(1);
+    });
   });
 
   it("opens a read-only subagent sidebar without resuming or switching the active thread", async () => {

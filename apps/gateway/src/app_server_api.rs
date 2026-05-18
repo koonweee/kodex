@@ -218,12 +218,10 @@ impl CodexClient {
         thread_id: String,
         payload: Value,
     ) -> ApiResult<ThreadCommandResponse> {
-        let payload = self
-            .request(
-                "thread/resume",
-                require_extended_history(merge_path_payload("threadId", thread_id, payload)),
-            )
-            .await?;
+        let payload = require_metadata_only_resume(require_extended_history(merge_path_payload(
+            "threadId", thread_id, payload,
+        )));
+        let payload = self.request("thread/resume", payload).await?;
         ThreadCommandResponse::from_payload(payload)
     }
 
@@ -2737,6 +2735,11 @@ fn require_extended_history(mut payload: Value) -> Value {
     payload
 }
 
+fn require_metadata_only_resume(mut payload: Value) -> Value {
+    payload["excludeTurns"] = Value::Bool(true);
+    payload
+}
+
 fn required_string(payload: &Value, field: &str) -> ApiResult<String> {
     payload
         .get(field)
@@ -3166,6 +3169,7 @@ mod tests {
         assert_eq!(requests[0].1["persistExtendedHistory"], true);
         assert_eq!(requests[1].0, "thread/resume");
         assert_eq!(requests[1].1["persistExtendedHistory"], true);
+        assert_eq!(requests[1].1["excludeTurns"], true);
         assert_eq!(requests[2].0, "thread/fork");
         assert_eq!(requests[2].1["persistExtendedHistory"], true);
         assert_eq!(requests[3].0, "turn/steer");

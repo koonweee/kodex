@@ -733,18 +733,17 @@ pub async fn list_subagents(
     }))
 }
 
-#[utoipa::path(post, path = "/v1/threads/{threadId}/resume", responses((status = 200, body = ThreadViewResponse)))]
+#[utoipa::path(post, path = "/v1/threads/{threadId}/resume", responses((status = 200, body = ThreadCommandResponse)))]
 pub async fn resume_thread(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
     Json(payload): Json<Value>,
-) -> ApiResult<Json<ThreadViewResponse>> {
+) -> ApiResult<Json<ThreadCommandResponse>> {
     let mut response = app_server_api::client(&state.app_server)
-        .thread_resume(thread_id.clone(), payload)
+        .thread_resume(thread_id, payload)
         .await?;
     apply_thread_command_response_state(&state, &mut response).await?;
-    let detail = thread_view_response(&state, &thread_id).await?;
-    Ok(Json(detail))
+    Ok(Json(response))
 }
 
 #[utoipa::path(post, path = "/v1/threads/{threadId}/fork", responses((status = 200, body = ThreadCommandResponse)))]
@@ -906,15 +905,6 @@ pub(crate) async fn apply_thread_command_response_state(
     apply_thread_summary_state(state, std::slice::from_mut(&mut response.thread)).await?;
     sync_thread_command_response(response);
     Ok(())
-}
-
-async fn thread_view_response(state: &AppState, thread_id: &str) -> ApiResult<ThreadViewResponse> {
-    let timeline_revision = state.store.latest_event_seq().await?;
-    let mut detail = app_server_api::client(&state.app_server)
-        .thread_read_full_history(thread_id.to_string())
-        .await?;
-    apply_thread_detail_response_state(state, &mut detail, timeline_revision).await?;
-    Ok(ThreadViewResponse::from_detail(detail))
 }
 
 async fn apply_thread_detail_response_state(

@@ -77,6 +77,7 @@ This file is the directory of record for Kodex plans. Keep the status column cur
 | [Thread lifecycle single source of truth plan](thread-lifecycle-single-source-of-truth.md) | Complete | Hard simplification of app-server/gateway/UI thread lifecycle ownership with code and AGENTS guardrails | Implemented canonical `ThreadView` snapshots/patches, frontend raw-event guardrails, missed-cursor recovery, and ownership docs. |
 | [PWA notifications plan](pwa-notifications.md) | Complete | Vite PWA shell, app badge, and minimal unread-agent-message notification support | Implemented with gateway-owned unread completed agent turn state, Web Push subscriptions, and no explicit iOS install UI in v1. |
 | [Streaming delta performance plan](streaming-delta-performance.md) | Complete | Lightweight ephemeral assistant text deltas over SSE with snapshot-backed replay/reconnect | Implemented live-only assistant deltas, snapshot recovery for missed deltas, frontend delta rendering/coalescing, focused tests, and review loop. |
+| [Thread load critical path plan](thread-load-critical-path.md) | Complete | Remove duplicate resume hydration and defer subagent discovery without adding persistence | Implemented metadata-only resume attach and deferred subagent discovery; scope intentionally excludes caches, persistence, and partial-history APIs. |
 | [Future extensions overview](future-extensions.md) | Proposed | Non-MVP feature map linked to app-server APIs | Overview only, not an implementation plan. |
 
 ## Maintenance Rules

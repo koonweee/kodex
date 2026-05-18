@@ -274,7 +274,7 @@ export async function createChatThread(
   return response.thread;
 }
 
-export async function resumeThread(threadId: string): Promise<ThreadViewResponse> {
+export async function resumeThread(threadId: string): Promise<ThreadCommandResponse> {
   return unwrap(
     api.POST("/v1/threads/{threadId}/resume", { params: { path: { threadId } }, body: {} }),
   );

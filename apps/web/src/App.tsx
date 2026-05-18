@@ -80,7 +80,6 @@ import {
 import { ThemeWorkbench } from "./theme/ThemeWorkbench";
 import { idleTimelineEntry, type TimelineEntry } from "./timeline/entry";
 import { useSelectedThreadTimeline } from "./timeline/useSelectedThreadTimeline";
-import { applyTimelineSnapshot } from "./timeline/reducer";
 import {
   clearAvailableThreadTitles,
   markThreadTitlePending,
@@ -373,8 +372,16 @@ function KodexShell({
     chatThreads.find((thread) => thread.id === selectedThreadId) ??
     pinnedThreads.find((thread) => thread.id === selectedThreadId) ??
     null;
+  const selectedTimelineEntry =
+    selectedThreadId !== null && timelineEntry.threadId === selectedThreadId ? timelineEntry : idleTimelineEntry;
+  const isSelectedThreadSnapshotDeferred =
+    selectedThreadId !== null && materializingThreadIds.has(selectedThreadId);
+  const isSelectedThreadNotLoaded = selectedThread?.status === "notLoaded";
+  const isSelectedTimelineLoading = selectedTimelineEntry.phase === "loadingSnapshot";
+  const isSelectedTimelineReady =
+    selectedTimelineEntry.phase === "streamingLive" || selectedTimelineEntry.phase === "refreshingSnapshot";
   const selectedThreadSubagentsQuery = useQuery({
-    enabled: selectedMainPane === "thread" && selectedThread !== null,
+    enabled: selectedMainPane === "thread" && selectedThread !== null && isSelectedTimelineReady,
     queryKey: selectedThread ? queryKeys.threadSubagents(selectedThread.id) : ["threads", "none", "subagents"],
     queryFn: async () => {
       const threadId = selectedThread?.id;
@@ -458,14 +465,6 @@ function KodexShell({
     isSidebarResizing,
     sidebarWidth,
   } = useSidebarResize();
-  const selectedTimelineEntry =
-    selectedThreadId !== null && timelineEntry.threadId === selectedThreadId ? timelineEntry : idleTimelineEntry;
-  const isSelectedThreadSnapshotDeferred =
-    selectedThreadId !== null && materializingThreadIds.has(selectedThreadId);
-  const isSelectedThreadNotLoaded = selectedThread?.status === "notLoaded";
-  const isSelectedTimelineLoading = selectedTimelineEntry.phase === "loadingSnapshot";
-  const isSelectedTimelineReady =
-    selectedTimelineEntry.phase === "streamingLive" || selectedTimelineEntry.phase === "refreshingSnapshot";
   const activeSelectedTurnId = selectedThread !== null ? timeline.activeTurnId : null;
   const isDraftThreadSelected =
     draftChatThreadSelected || (draftThreadProjectId !== null && draftThreadProjectId === selectedProjectId);
@@ -735,10 +734,6 @@ function KodexShell({
         attachedThreadIdsRef.current.add(response.thread.id);
         if (!cancelled) {
           replaceThread(response.thread);
-          if (response.timeline) {
-            setTimeline((current) => applyTimelineSnapshot(current, response));
-            setTimelineEntry({ phase: "streamingLive", threadId: response.thread.id });
-          }
         }
       })
       .catch((error) => {

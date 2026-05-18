@@ -3128,17 +3128,12 @@ mod tests {
         assert_eq!(requests[2].0, "thread/resume");
         assert_eq!(requests[2].1["threadId"], "thread-1");
         assert_eq!(requests[2].1["persistExtendedHistory"], true);
-        assert_eq!(requests[3].0, "thread/read");
+        assert_eq!(requests[2].1["excludeTurns"], true);
+        assert_eq!(requests[3].0, "thread/fork");
         assert_eq!(requests[3].1["threadId"], "thread-1");
-        assert_eq!(requests[3].1["includeTurns"], false);
-        assert_eq!(requests[4].0, "thread/turns/list");
+        assert_eq!(requests[3].1["persistExtendedHistory"], true);
+        assert_eq!(requests[4].0, "thread/archive");
         assert_eq!(requests[4].1["threadId"], "thread-1");
-        assert_eq!(requests[4].1["itemsView"], "full");
-        assert_eq!(requests[5].0, "thread/fork");
-        assert_eq!(requests[5].1["threadId"], "thread-1");
-        assert_eq!(requests[5].1["persistExtendedHistory"], true);
-        assert_eq!(requests[6].0, "thread/archive");
-        assert_eq!(requests[6].1["threadId"], "thread-1");
     }
 
     #[tokio::test]
