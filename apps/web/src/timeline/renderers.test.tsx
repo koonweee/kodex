@@ -1356,36 +1356,39 @@ describe("timeline renderer registry", () => {
     expect(container).not.toHaveTextContent("thread-mill");
   });
 
-  it("renders completed work rows collapsed with elapsed time", () => {
-    const { container } = render(
+  it("renders completed work rows as collapse controls without nesting detail rows", async () => {
+    const onExpandedChange = vi.fn();
+    const workRow = {
+      type: "work" as const,
+      key: "work-turn-1",
+      turnKey: "turn-turn-1",
+      turnId: "turn-1",
+      state: "completed" as const,
+      startedAtMs: 1_000,
+      completedAtMs: 65_000,
+      displayOrder: 1.1,
+      collapsedRows: [
+        {
+          type: "item" as const,
+          key: "item-reasoning-1",
+          turnKey: "turn-turn-1",
+          turnId: "turn-1",
+          item: item({
+            id: "reasoning-1",
+            kind: "reasoning_summary",
+            summary: "Need context.",
+            text: "Need context.",
+            displayOrder: 2,
+          }),
+        },
+      ],
+    };
+    const { container, rerender } = render(
       <MantineProvider>
         <TimelineWorkRowRenderer
-          imagePreviewUrlsByPath={{}}
-          row={{
-            type: "work",
-            key: "work-turn-1",
-            turnKey: "turn-turn-1",
-            turnId: "turn-1",
-            state: "completed",
-            startedAtMs: 1_000,
-            completedAtMs: 65_000,
-            displayOrder: 1.1,
-            collapsedRows: [
-              {
-                type: "item",
-                key: "item-reasoning-1",
-                turnKey: "turn-turn-1",
-                turnId: "turn-1",
-                item: item({
-                  id: "reasoning-1",
-                  kind: "reasoning_summary",
-                  summary: "Need context.",
-                  text: "Need context.",
-                  displayOrder: 2,
-                }),
-              },
-            ],
-          }}
+          expanded={false}
+          onExpandedChange={onExpandedChange}
+          row={workRow}
         />
       </MantineProvider>,
     );
@@ -1396,14 +1399,29 @@ describe("timeline renderer registry", () => {
     expect(details?.querySelector(".kodex-work-header-divider")).toBeInTheDocument();
     expect(details?.querySelector("summary > .kodex-work-header-divider")).toBeInTheDocument();
     expect(screen.getByText("Worked for 1m 04s")).toBeInTheDocument();
-    expect(screen.getByText("Need context.")).toBeInTheDocument();
+    expect(screen.queryByText("Need context.")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Worked for 1m 04s"));
+    await waitFor(() => expect(onExpandedChange).toHaveBeenCalledWith(true));
+
+    rerender(
+      <MantineProvider>
+        <TimelineWorkRowRenderer
+          expanded
+          onExpandedChange={onExpandedChange}
+          row={workRow}
+        />
+      </MantineProvider>,
+    );
+    expect(container.querySelector("details.kodex-work-row")).toHaveAttribute("open");
+    expect(screen.queryByText("Need context.")).not.toBeInTheDocument();
+    expect(container.querySelector(".kodex-work-collapsed-rows")).not.toBeInTheDocument();
   });
 
   it("renders completed work rows without a caret when there is nothing to expand", () => {
     const { container } = render(
       <MantineProvider>
         <TimelineWorkRowRenderer
-          imagePreviewUrlsByPath={{}}
           row={{
             type: "work",
             key: "work-turn-1",
@@ -1429,7 +1447,6 @@ describe("timeline renderer registry", () => {
     const { container } = render(
       <MantineProvider>
         <TimelineWorkRowRenderer
-          imagePreviewUrlsByPath={{}}
           row={{
             type: "work",
             key: "work-turn-1",
@@ -1452,7 +1469,6 @@ describe("timeline renderer registry", () => {
     render(
       <MantineProvider>
         <TimelineWorkRowRenderer
-          imagePreviewUrlsByPath={{}}
           row={{
             type: "work",
             key: "work-turn-1",

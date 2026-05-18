@@ -40,7 +40,7 @@ const approval = {
 type TestTurn = {
   id: string;
   status: string;
-  items: Array<{ id: string; itemType: string; rawPayload: unknown }>;
+  items: Array<{ id: string; itemType: string; rawPayload: unknown; skillMentions?: unknown[] }>;
   startedAt?: number;
   completedAt?: number;
   rawPayload?: unknown;
@@ -252,6 +252,201 @@ test("keeps long timeline content inside the thread viewer", async ({ page }) =>
   }));
   expect(outputMetrics.whiteSpace).toBe("pre");
   expect(outputMetrics.scrollWidth).toBeGreaterThan(outputMetrics.clientWidth);
+});
+
+test("keeps growing file changes and following skill messages from overlapping", async ({ page }) => {
+  const skillText = "$implement-review-loop continue after the files changed block";
+  const skillMention = {
+    start: 0,
+    end: "$implement-review-loop".length,
+    name: "implement-review-loop",
+    path: "/skills/implement-review-loop/SKILL.md",
+    displayName: "Implement Review Loop",
+    brandColor: "#7c3aed",
+  };
+  const fileChangeItem = (index: number) => ({
+    id: `file-${index}`,
+    itemType: "fileChange",
+    rawPayload: {
+      id: `file-${index}`,
+      type: "fileChange",
+      changes: [
+        {
+          kind: "update",
+          path: `src/generated-${index}.ts`,
+          diff: `@@ -1 +1 @@\n-old ${index}\n+new ${index}`,
+        },
+      ],
+    },
+  });
+  const timelineItems = (fileCount: number) => {
+    let displayOrder = 0;
+    const item = (
+      turnId: string,
+      source: { id: string; itemType: string; rawPayload: unknown; skillMentions?: unknown[] },
+    ) => {
+      displayOrder += 1;
+      return {
+        id: `snapshot-${turnId}-${source.id}`,
+        threadId: thread.id,
+        turnId,
+        itemId: source.id,
+        itemType: source.itemType,
+        status: "completed",
+        displayOrder,
+        codexMethod: "item/completed",
+        timestampMs: displayOrder,
+        payload: {
+          source: "appServerSnapshot",
+          turnId,
+          itemId: source.id,
+          item: source.rawPayload,
+          itemSnapshot: source,
+        },
+      };
+    };
+    return [
+      item("turn-1", {
+        id: "user-1",
+        itemType: "userMessage",
+        rawPayload: { id: "user-1", type: "userMessage", text: "Please inspect files." },
+      }),
+      ...Array.from({ length: fileCount }, (_, index) => item("turn-1", fileChangeItem(index))),
+      item("turn-1", {
+        id: "answer-1",
+        itemType: "agentMessage",
+        rawPayload: { id: "answer-1", type: "agentMessage", text: "Finished changing files.", phase: "final_answer" },
+      }),
+      item("turn-2", {
+        id: "user-2",
+        itemType: "userMessage",
+        rawPayload: { id: "user-2", type: "userMessage", text: skillText },
+        skillMentions: [skillMention],
+      }),
+    ];
+  };
+  const threadBody = (fileCount: number) => ({
+    ...threadDetailBody(
+      thread,
+      [
+        {
+          id: "turn-1",
+          status: "completed",
+          startedAt: 1777500001,
+          completedAt: 1777500002,
+          items: [
+            {
+              id: "user-1",
+              itemType: "userMessage",
+              rawPayload: { id: "user-1", type: "userMessage", text: "Please inspect files." },
+            },
+            ...Array.from({ length: fileCount }, (_, index) => fileChangeItem(index)),
+            {
+              id: "answer-1",
+              itemType: "agentMessage",
+              rawPayload: { id: "answer-1", type: "agentMessage", text: "Finished changing files.", phase: "final_answer" },
+            },
+          ],
+          rawPayload: {},
+        },
+        {
+          id: "turn-2",
+          status: "completed",
+          startedAt: 1777500003,
+          completedAt: 1777500004,
+          items: [
+            {
+              id: "user-2",
+              itemType: "userMessage",
+              rawPayload: { id: "user-2", type: "userMessage", text: skillText },
+              skillMentions: [skillMention],
+            },
+          ],
+          rawPayload: {},
+        },
+      ],
+      "idle",
+    ),
+    timeline: {
+      activeTurnId: null,
+      liveState: "idle",
+      items: timelineItems(fileCount),
+      pendingApprovalRequests: [],
+      pendingUserInputRequests: [],
+      turns: [
+        { id: "turn-1", status: "completed", startedAt: 1777500001, completedAt: 1777500002 },
+        { id: "turn-2", status: "completed", startedAt: 1777500003, completedAt: 1777500004 },
+      ],
+      viewRevision: 1,
+    },
+  });
+  await page.unroute("**/v1/**");
+  await page.route("**/v1/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const key = `${request.method()} ${url.pathname}`;
+
+    if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
+      const event = {
+        id: "event-file-growth",
+        seq: 2,
+        kind: "thread_view.patch",
+        codexMethod: "thread_view/patch",
+        itemId: null,
+        projectId: null,
+        threadId: thread.id,
+        turnId: null,
+        payload: {
+          activeTurnId: null,
+          items: timelineItems(23),
+          liveState: "idle",
+          pendingApprovalRequests: [],
+          pendingUserInputRequests: [],
+          threadId: thread.id,
+          turns: [
+            { id: "turn-1", status: "completed", startedAt: 1777500001, completedAt: 1777500002 },
+            { id: "turn-2", status: "completed", startedAt: 1777500003, completedAt: 1777500004 },
+          ],
+          viewRevision: 2,
+        },
+        receivedAt: "2026-04-30T00:00:03Z",
+      };
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+        body: `event: thread_view.patch\ndata: ${JSON.stringify(event)}\n\n`,
+      });
+      return;
+    }
+
+    const response =
+      key === "GET /v1/threads/thread-1"
+        ? { body: threadBody(2) }
+        : key === "GET /v1/approvals"
+          ? { body: { approvals: [] } }
+          : await responseFor(key, route);
+
+    await route.fulfill({
+      status: response.status ?? 200,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(response.body),
+    });
+  });
+
+  await page.setViewportSize({ width: 820, height: 760 });
+  await page.goto("/threads/thread-1");
+
+  await expect(page.getByLabel("Implement Review Loop skill")).toBeVisible();
+  await page.getByText(/Worked for/).first().click();
+  await expect(page.getByText("12 files changed")).toBeVisible();
+  await expect(page.getByText("11 files changed")).toBeVisible();
+  await expect(page.getByLabel("Implement Review Loop skill")).toBeVisible();
+  await expectNoRenderedTimelineOverlap(page);
+
+  await page.getByText("Modified").first().click();
+  await expect(page.getByLabel(/file diff for src\/generated-/i).first()).toBeVisible();
+  await expect(page.getByLabel("Implement Review Loop skill")).toBeVisible();
+  await expectNoRenderedTimelineOverlap(page);
 });
 
 test("lets thread titles use the expanded sidebar width before truncating", async ({ page }) => {
@@ -631,6 +826,32 @@ test("restores selected thread model settings when switching threads", async ({ 
   await expect(await page.getByRole("button", { name: /model: gpt-5\.4mini/i })).toBeVisible();
 });
 
+async function expectNoRenderedTimelineOverlap(page: Page) {
+  const boxes = await page.locator(".kodex-timeline-virtual-row").evaluateAll((nodes) =>
+    nodes
+      .map((node) => {
+        const rect = node.getBoundingClientRect();
+        return {
+          bottom: rect.bottom,
+          height: rect.height,
+          text: node.textContent ?? "",
+          top: rect.top,
+        };
+      })
+      .filter((box) => box.height > 0)
+      .sort((left, right) => left.top - right.top),
+  );
+  expect(boxes.length).toBeGreaterThan(0);
+  for (let index = 1; index < boxes.length; index += 1) {
+    expect
+      .soft(
+        boxes[index].top,
+        `timeline row overlapped previous row: ${boxes[index - 1].text.slice(0, 40)} -> ${boxes[index].text.slice(0, 40)}`,
+      )
+      .toBeGreaterThanOrEqual(boxes[index - 1].bottom - 1);
+  }
+}
+
 async function mockGateway(page: Page) {
   await page.route("**/v1/**", async (route) => {
     const request = route.request();
@@ -729,7 +950,12 @@ async function responseFor(key: string, route: Route): Promise<{ status?: number
   if (key === "POST /v1/approvals/approval-1/decision") {
     return { body: { ...approval, status: "resolved", response: { decision: "accept" } } };
   }
-  if (key === "POST /v1/threads/thread-2/turns" || key === "POST /v1/threads/thread-1/turns") {
+  if (
+    key === "POST /v1/threads/thread-2/input" ||
+    key === "POST /v1/threads/thread-2/turns" ||
+    key === "POST /v1/threads/thread-1/input" ||
+    key === "POST /v1/threads/thread-1/turns"
+  ) {
     return { body: { payload: {} } };
   }
   if (key === "POST /v1/threads/thread-1/seen") {

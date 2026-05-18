@@ -1034,9 +1034,10 @@ async fn timeline_turn_upsert_event(
     .await?;
     let mut events = Vec::new();
     let terminal = is_terminal_turn_status(&turn.status);
-    thread_view::record_turn_status(&state.thread_views, &thread_id, &turn, cursor.seq).await?;
+    let newly_terminal =
+        thread_view::record_turn_status(&state.thread_views, &thread_id, &turn, cursor.seq).await?;
     events.push(thread_view_patch_event(state, &thread_id).await?);
-    if terminal {
+    if newly_terminal {
         events.extend(
             queue::requeue_unmatched_pending_commit_input_events_for_turn(
                 state, &thread_id, &turn.id,

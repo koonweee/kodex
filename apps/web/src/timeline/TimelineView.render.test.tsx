@@ -1,9 +1,22 @@
 import { MantineProvider } from "@mantine/core";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { VirtuosoMockContext } from "react-virtuoso";
 
 import { TimelineView } from "./TimelineView";
 import { timelineItem, timelineState } from "./testBuilders";
+
+function renderWithTimelineProviders(ui: ReactElement) {
+  return render(
+    <MantineProvider>
+      <VirtuosoMockContext.Provider value={{ viewportHeight: 720, itemHeight: 96 }}>
+        {ui}
+      </VirtuosoMockContext.Provider>
+    </MantineProvider>,
+  );
+}
 
 describe("TimelineView debug rendering", () => {
   afterEach(() => {
@@ -56,21 +69,19 @@ describe("TimelineView debug rendering", () => {
       ],
     });
 
-    render(
-      <MantineProvider>
-        <TimelineView
-          approvals={[]}
-          imagePreviewUrlsByPath={{}}
-          onApprovalDecision={vi.fn()}
-          onImageOpen={vi.fn()}
-          onMarkdownOpen={vi.fn()}
-          onReady={vi.fn()}
-          scrollParentElement={null}
-          showDebug={false}
-          threadId="thread-1"
-          timeline={timeline}
-        />
-      </MantineProvider>,
+    renderWithTimelineProviders(
+      <TimelineView
+        approvals={[]}
+        imagePreviewUrlsByPath={{}}
+        onApprovalDecision={vi.fn()}
+        onImageOpen={vi.fn()}
+        onMarkdownOpen={vi.fn()}
+        onReady={vi.fn()}
+        scrollParentElement={null}
+        showDebug={false}
+        threadId="thread-1"
+        timeline={timeline}
+      />,
     );
 
     expect(screen.getByText("Latest question")).toBeInTheDocument();
@@ -105,10 +116,8 @@ describe("TimelineView debug rendering", () => {
       timeline,
     };
 
-    const { rerender } = render(
-      <MantineProvider>
-        <TimelineView {...props} showDebug={false} />
-      </MantineProvider>,
+    const { rerender } = renderWithTimelineProviders(
+      <TimelineView {...props} showDebug={false} />,
     );
 
     expect(screen.getByText("Visible question")).toBeInTheDocument();
@@ -118,7 +127,9 @@ describe("TimelineView debug rendering", () => {
 
     rerender(
       <MantineProvider>
-        <TimelineView {...props} showDebug />
+        <VirtuosoMockContext.Provider value={{ viewportHeight: 720, itemHeight: 96 }}>
+          <TimelineView {...props} showDebug />
+        </VirtuosoMockContext.Provider>
       </MantineProvider>,
     );
 
@@ -137,24 +148,165 @@ describe("TimelineView debug rendering", () => {
       ],
     });
 
-    render(
-      <MantineProvider>
-        <TimelineView
-          approvals={[]}
-          imagePreviewUrlsByPath={{}}
-          onApprovalDecision={vi.fn()}
-          onImageOpen={vi.fn()}
-          onMarkdownOpen={vi.fn()}
-          onReady={vi.fn()}
-          scrollParentElement={null}
-          showDebug
-          threadId="thread-1"
-          timeline={timeline}
-        />
-      </MantineProvider>,
+    renderWithTimelineProviders(
+      <TimelineView
+        approvals={[]}
+        imagePreviewUrlsByPath={{}}
+        onApprovalDecision={vi.fn()}
+        onImageOpen={vi.fn()}
+        onMarkdownOpen={vi.fn()}
+        onReady={vi.fn()}
+        scrollParentElement={null}
+        showDebug
+        threadId="thread-1"
+        timeline={timeline}
+      />,
     );
 
     expect(screen.getByText("Hidden debug events")).toBeInTheDocument();
     expect(screen.getByText("thread/status")).toBeInTheDocument();
+  });
+
+  it("keeps later user messages in flow when an expanded file changes row grows", async () => {
+    const user = userEvent.setup();
+    const props = {
+      approvals: [],
+      imagePreviewUrlsByPath: {},
+      onApprovalDecision: vi.fn(),
+      onImageOpen: vi.fn(),
+      onMarkdownOpen: vi.fn(),
+      onReady: vi.fn(),
+      scrollParentElement: null,
+      showDebug: false,
+      threadId: "thread-1",
+    };
+    const growingTimeline = (fileCount: number) =>
+      timelineState({
+        turns: [
+          {
+            completedAtMs: 6_000,
+            itemIds: ["user-1", "answer-1"],
+            startedAtMs: 1_000,
+            status: "completed",
+            turnId: "turn-1",
+          },
+        ],
+        items: [
+          timelineItem({ id: "user-1", kind: "user_message", displayOrder: 1, text: "Please inspect files." }),
+          ...Array.from({ length: fileCount }, (_, index) =>
+            timelineItem({
+              id: `file-${index}`,
+              kind: "file_change",
+              displayOrder: index + 2,
+              path: `src/file-${index}.ts`,
+              turnId: "turn-1",
+            }),
+          ),
+          timelineItem({
+            id: "answer-1",
+            kind: "assistant_message",
+            displayOrder: fileCount + 2,
+            messagePhase: "final_answer",
+            text: "Finished changing files.",
+            turnId: "turn-1",
+          }),
+          timelineItem({
+            id: "user-2",
+            kind: "user_message",
+            displayOrder: fileCount + 3,
+            text: "$implement-review-loop continue after the files changed block",
+            turnId: "turn-2",
+            skillMentions: [
+              {
+                end: "$implement-review-loop".length,
+                name: "implement-review-loop",
+                path: "/skills/implement-review-loop/SKILL.md",
+                start: 0,
+                displayName: "Implement Review Loop",
+                brandColor: "#7c3aed",
+              },
+            ],
+          }),
+        ],
+      });
+
+    const { container, rerender } = renderWithTimelineProviders(
+      <TimelineView {...props} timeline={growingTimeline(2)} />,
+    );
+
+    expect(screen.queryByText("2 files changed")).not.toBeInTheDocument();
+    expect(container.querySelector(".kodex-work-collapsed-rows")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Implement Review Loop skill")).toBeInTheDocument();
+
+    await user.click(screen.getByText(/Worked for/));
+    expect(screen.getByText("2 files changed")).toBeInTheDocument();
+
+    rerender(
+      <MantineProvider>
+        <VirtuosoMockContext.Provider value={{ viewportHeight: 720, itemHeight: 96 }}>
+          <TimelineView {...props} timeline={growingTimeline(23)} />
+        </VirtuosoMockContext.Provider>
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("12 files changed")).toBeInTheDocument();
+    expect(screen.getByText("11 files changed")).toBeInTheDocument();
+    expect(screen.getByLabelText("Implement Review Loop skill")).toBeInTheDocument();
+    expect(container.querySelector(".kodex-work-collapsed-rows")).not.toBeInTheDocument();
+    expect([...container.querySelectorAll<HTMLElement>(".kodex-timeline-virtual-row")].every((row) => !row.style.transform)).toBe(
+      true,
+    );
+  });
+
+  it("keeps a later user message rendered after expanding a file diff", async () => {
+    const user = userEvent.setup();
+    renderWithTimelineProviders(
+      <TimelineView
+        approvals={[]}
+        imagePreviewUrlsByPath={{}}
+        onApprovalDecision={vi.fn()}
+        onImageOpen={vi.fn()}
+        onMarkdownOpen={vi.fn()}
+        onReady={vi.fn()}
+        scrollParentElement={null}
+        showDebug={false}
+        threadId="thread-1"
+        timeline={timelineState({
+          items: [
+            timelineItem({ id: "user-1", kind: "user_message", displayOrder: 1, text: "Please inspect files." }),
+            timelineItem({
+              id: "file-1",
+              kind: "file_change",
+              action: "modified",
+              displayOrder: 2,
+              output: "@@ -1 +1 @@\n-old\n+new",
+              path: "src/file.ts",
+            }),
+            timelineItem({
+              id: "user-2",
+              kind: "user_message",
+              displayOrder: 3,
+              text: "$implement-review-loop continue after the files changed block",
+              turnId: "turn-2",
+              skillMentions: [
+                {
+                  end: "$implement-review-loop".length,
+                  name: "implement-review-loop",
+                  path: "/skills/implement-review-loop/SKILL.md",
+                  start: 0,
+                  displayName: "Implement Review Loop",
+                  brandColor: "#7c3aed",
+                },
+              ],
+            }),
+          ],
+        })}
+      />,
+    );
+
+    await user.click(screen.getByText("Modified"));
+
+    expect(screen.getByLabelText("File diff for src/file.ts")).toBeInTheDocument();
+    expect(screen.getByLabelText("Implement Review Loop skill")).toBeInTheDocument();
   });
 });

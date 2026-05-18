@@ -1,9 +1,27 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { VirtuosoMockContext } from "react-virtuoso";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 import { mockGateway } from "./test/gatewayMock";
+
+function renderApp() {
+  return render(
+    <VirtuosoMockContext.Provider value={{ viewportHeight: 720, itemHeight: 96 }}>
+      <App />
+    </VirtuosoMockContext.Provider>,
+  );
+}
+
+async function waitForTimelineReady() {
+  await waitFor(() => {
+    expect(document.querySelector(".kodex-timeline-virtual-root")).toHaveAttribute(
+      "data-initial-bottom-aligned",
+      "true",
+    );
+  });
+}
 
 function snapshotItem(id: string, itemType: string, payload: Record<string, unknown>) {
   return { id, itemType, rawPayload: { id, type: itemType, ...payload } };
@@ -155,7 +173,7 @@ describe("App shell", () => {
       "GET /v1/composer-settings": { model: null, effort: null, serviceTier: null, permissionsPreset: null },
     });
 
-    render(<App />);
+    renderApp();
 
     expect(screen.queryByRole("banner", { name: /kodex/i })).not.toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: /workspace/i })).toBeInTheDocument();
@@ -180,7 +198,7 @@ describe("App shell", () => {
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     });
 
-    render(<App />);
+    renderApp();
 
     await waitFor(() => {
       expect(document.documentElement).toHaveAttribute("data-kodex-color-scheme", "oled-black");
@@ -210,7 +228,7 @@ describe("App shell", () => {
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     });
 
-    render(<App />);
+    renderApp();
 
     await waitFor(() => {
       expect(document.documentElement).toHaveAttribute("data-kodex-color-scheme", "paper-light");
@@ -227,7 +245,7 @@ describe("App shell", () => {
   it("renders the theme workbench route without loading gateway state", async () => {
     window.history.replaceState(null, "", "/__theme");
 
-    render(<App />);
+    renderApp();
 
     expect(screen.getByRole("main", { name: /theme workbench/i })).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: /workspace/i })).not.toBeInTheDocument();
@@ -244,7 +262,7 @@ describe("App shell", () => {
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     });
 
-    render(<App />);
+    renderApp();
 
     fireEvent.click(screen.getByRole("button", { name: /account settings/i }));
     await userEvent.click(await screen.findByRole("menuitem", { name: /preferences/i }));
@@ -268,7 +286,7 @@ describe("App shell", () => {
       "GET /v1/projects": { projects: [] },
     });
 
-    render(<App />);
+    renderApp();
 
     expect(await screen.findByRole("navigation", { name: /workspace/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /account settings/i })).toBeInTheDocument();
@@ -281,7 +299,7 @@ describe("App shell", () => {
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     });
 
-    render(<App />);
+    renderApp();
 
     const resizeHandle = screen.getByRole("separator", { name: /resize workspace sidebar/i });
     expect(resizeHandle).toHaveAttribute("aria-valuenow", "292");
@@ -339,7 +357,7 @@ describe("App shell", () => {
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     });
 
-    render(<App />);
+    renderApp();
 
     const thread = await screen.findByRole("main", { name: /thread/i });
     expect(await within(thread).findByText(/visible answer/i)).toBeInTheDocument();
@@ -414,7 +432,7 @@ describe("App shell", () => {
         "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
       });
 
-      render(<App />);
+      renderApp();
 
       await userEvent.click(await screen.findByRole("link", { name: "feedback" }));
       const pane = await screen.findByRole("dialog", { name: /timeline-rendering-feedback\.md:2/i });
@@ -498,7 +516,7 @@ describe("App shell", () => {
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     });
 
-    render(<App />);
+    renderApp();
 
     await userEvent.click(await screen.findByRole("link", { name: "rendered" }));
     const pane = await screen.findByRole("dialog", { name: /rendered-preview\.md/i });
@@ -568,11 +586,11 @@ describe("App shell", () => {
         "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
       });
 
-      render(<App />);
+      renderApp();
 
-      expect(await screen.findByText("Large answer 29")).toBeInTheDocument();
-      expect(screen.queryByText("Large answer 1")).not.toBeInTheDocument();
-      expect(screen.getAllByText(/Large answer/)).toHaveLength(12);
+      expect(await screen.findByText("Large answer 0")).toBeInTheDocument();
+      expect(screen.queryByText("Large answer 29")).not.toBeInTheDocument();
+      expect(screen.getAllByText(/Large answer/).length).toBeLessThan(30);
       await waitFor(() => {
         const timelineScrollToCalls = scrollTo.mock.calls.filter((_, index) =>
           scrollTo.mock.contexts[index].classList.contains("kodex-timeline-scroll"),
@@ -643,9 +661,10 @@ describe("App shell", () => {
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     });
 
-    render(<App />);
+    renderApp();
 
-    expect(await screen.findByText("Large answer 29")).toBeInTheDocument();
+    expect(await screen.findByText("Large answer 0")).toBeInTheDocument();
+    await waitForTimelineReady();
     const scrollRegion = document.querySelector(".kodex-timeline-scroll") as HTMLElement;
     Object.defineProperties(scrollRegion, {
       clientHeight: { configurable: true, value: 400 },
@@ -716,9 +735,10 @@ describe("App shell", () => {
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     });
 
-    render(<App />);
+    renderApp();
 
-    expect(await screen.findByText("Large answer 29")).toBeInTheDocument();
+    expect(await screen.findByText("Large answer 0")).toBeInTheDocument();
+    await waitForTimelineReady();
     const scrollRegion = document.querySelector(".kodex-timeline-scroll") as HTMLElement;
     Object.defineProperties(scrollRegion, {
       clientHeight: { configurable: true, value: 400 },
@@ -787,9 +807,10 @@ describe("App shell", () => {
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     });
 
-    render(<App />);
+    renderApp();
 
-    expect(await screen.findByText("Large answer 29")).toBeInTheDocument();
+    expect(await screen.findByText("Large answer 0")).toBeInTheDocument();
+    await waitForTimelineReady();
     await waitFor(() => expect(FakeEventSource.instances.some((instance) => instance.url.includes("threadId=thread-1"))).toBe(true));
     const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
     const scrollRegion = document.querySelector(".kodex-timeline-scroll") as HTMLElement;
@@ -869,10 +890,10 @@ describe("App shell", () => {
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     });
 
-    render(<App />);
+    renderApp();
 
-    expect(await screen.findByText("Ran echo command-299")).toBeInTheDocument();
-    expect(screen.queryByText("Ran echo command-0")).not.toBeInTheDocument();
+    expect(await screen.findByText("Ran echo command-0")).toBeInTheDocument();
+    expect(screen.queryByText("Ran echo command-299")).not.toBeInTheDocument();
     expect(screen.queryAllByText("Shell")).toHaveLength(0);
   });
 });

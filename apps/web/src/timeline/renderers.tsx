@@ -10,7 +10,7 @@ import { ImageThumbnail } from "../images/ImageThumbnail";
 import type { ImageLightboxImage } from "../images/types";
 import { MarkdownContent } from "../markdown/MarkdownContent";
 import { copyTextToClipboard } from "../shared/clipboard";
-import type { TimelineActivityRow, TimelineFileChangesRow, TimelineItemRow, TimelineWorkRow } from "./derive";
+import type { TimelineWorkRow } from "./derive";
 import { FileDiffViewer } from "./FileDiffViewer";
 import { fileChangeActionIsModified, fileChangeActionLabel, fileChangeEntriesFromTimelineItem, type FileChangeEntry } from "./presentationFile";
 import type { TimelineImage, TimelineItem, WebSearchAction } from "./reducer";
@@ -260,21 +260,15 @@ export const TimelineFileChangesRenderer = memo(TimelineFileChangesRendererImpl)
 TimelineFileChangesRenderer.displayName = "TimelineFileChangesRenderer";
 
 type TimelineWorkRowRendererProps = {
-  imagePreviewUrlsByPath: Record<string, string>;
-  onImageOpen?: (image: ImageLightboxImage) => void;
-  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
   row: TimelineWorkRow;
-  showDebug?: boolean;
-  threadId?: string;
 };
 
 function TimelineWorkRowRendererImpl({
-  imagePreviewUrlsByPath,
-  onImageOpen,
-  onMarkdownOpen,
+  expanded = false,
+  onExpandedChange,
   row,
-  showDebug = false,
-  threadId,
 }: TimelineWorkRowRendererProps) {
   const elapsedMs = useWorkElapsedMs(row);
   const verb = row.state === "running" ? "Working" : "Worked";
@@ -303,7 +297,12 @@ function TimelineWorkRowRendererImpl({
   }
 
   return (
-    <details className="kodex-work-row" data-state="completed">
+    <details
+      className="kodex-work-row"
+      data-state="completed"
+      onToggle={(event) => onExpandedChange?.(event.currentTarget.open)}
+      open={expanded}
+    >
       <summary>
         <Box className="kodex-work-summary-content">
           <Text size="sm" c="dimmed">
@@ -313,19 +312,6 @@ function TimelineWorkRowRendererImpl({
         </Box>
         <WorkHeaderDivider />
       </summary>
-      <Stack gap={8} mt={8} className="kodex-work-collapsed-rows">
-        {row.collapsedRows.map((collapsedRow) => (
-          <CollapsedWorkRowRenderer
-            imagePreviewUrlsByPath={imagePreviewUrlsByPath}
-            key={collapsedRow.key}
-            onImageOpen={onImageOpen}
-            onMarkdownOpen={onMarkdownOpen}
-            row={collapsedRow}
-            showDebug={showDebug}
-            threadId={threadId}
-          />
-        ))}
-      </Stack>
     </details>
   );
 }
@@ -335,48 +321,6 @@ TimelineWorkRowRenderer.displayName = "TimelineWorkRowRenderer";
 
 function WorkHeaderDivider() {
   return <Box aria-hidden="true" className="kodex-timeline-final-response-divider kodex-work-header-divider" />;
-}
-
-function CollapsedWorkRowRenderer({
-  imagePreviewUrlsByPath,
-  onImageOpen,
-  onMarkdownOpen,
-  row,
-  showDebug,
-  threadId,
-}: {
-  imagePreviewUrlsByPath: Record<string, string>;
-  onImageOpen?: (image: ImageLightboxImage) => void;
-  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
-  row: TimelineItemRow | TimelineActivityRow | TimelineFileChangesRow;
-  showDebug: boolean;
-  threadId?: string;
-}) {
-  if (row.type === "activity") {
-    return (
-      <TimelineActivityGroupRenderer
-        imagePreviewUrlsByPath={imagePreviewUrlsByPath}
-        items={row.items}
-        onImageOpen={onImageOpen}
-        onMarkdownOpen={onMarkdownOpen}
-        showDebug={showDebug}
-        threadId={threadId}
-      />
-    );
-  }
-  if (row.type === "file_changes") {
-    return <TimelineFileChangesRenderer items={row.items} showDebug={showDebug} />;
-  }
-  return (
-    <TimelineItemRenderer
-      item={row.item}
-      imagePreviewUrlsByPath={imagePreviewUrlsByPath}
-      onImageOpen={onImageOpen}
-      onMarkdownOpen={onMarkdownOpen}
-      showDebug={showDebug}
-      threadId={threadId}
-    />
-  );
 }
 
 function unknownRenderer(item: TimelineItem) {

@@ -1,7 +1,7 @@
 import { ActionIcon, Box, Stack, Text, Tooltip } from "@mantine/core";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDownToLine } from "lucide-react";
-import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, useEffect } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Virtuoso, type FollowOutput, type VirtuosoHandle } from "react-virtuoso";
 
 import type { Approval, ApprovalResponse, PendingTimelineRequestSummary } from "../api/client";
 import type { MarkdownPreviewRequest } from "../files/types";
@@ -18,14 +18,19 @@ import { TimelineActivityGroupRenderer, TimelineFileChangesRenderer, TimelineIte
 import type { TimelineItem, TimelineState } from "./reducer";
 
 const EMPTY_APPROVALS: Approval[] = [];
-const INITIAL_BOTTOM_STABLE_FRAMES = 3;
-const INITIAL_BOTTOM_MAX_SETTLE_FRAMES = 90;
-const BOTTOM_DISTANCE_EPSILON = 2;
-const disableTimelineScrollAdjustment = () => false;
 
 const TIMELINE_TEXT = {
   scrollToBottom: "Scroll to bottom",
 };
+
+type TimelineRenderRow = {
+  key: string;
+  row: TimelineRow;
+};
+
+export function timelineFollowOutputBehavior(isNearBottom: boolean): ReturnType<Exclude<FollowOutput, boolean | string>> {
+  return isNearBottom ? "auto" : false;
+}
 
 export function TimelineView({
   approvals,
@@ -51,6 +56,43 @@ export function TimelineView({
   timeline: TimelineState;
 }) {
   const rows = useMemo(() => deriveTimelineRows(timeline, { showDebug }), [showDebug, timeline]);
+  const [expandedWorkRowKeys, setExpandedWorkRowKeys] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    setExpandedWorkRowKeys(new Set());
+  }, [threadId]);
+  useEffect(() => {
+    const expandableWorkRowKeys = new Set(
+      rows.filter((row) => row.type === "work" && row.collapsedRows.length > 0).map((row) => row.key),
+    );
+    setExpandedWorkRowKeys((current) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const key of current) {
+        if (expandableWorkRowKeys.has(key)) {
+          next.add(key);
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [rows]);
+  const handleWorkRowExpandedChange = useCallback((rowKey: string, expanded: boolean) => {
+    setExpandedWorkRowKeys((current) => {
+      const currentlyExpanded = current.has(rowKey);
+      if (currentlyExpanded === expanded) {
+        return current;
+      }
+      const next = new Set(current);
+      if (expanded) {
+        next.add(rowKey);
+      } else {
+        next.delete(rowKey);
+      }
+      return next;
+    });
+  }, []);
+  const visibleRows = useMemo(() => timelineRenderRows(rows, expandedWorkRowKeys), [expandedWorkRowKeys, rows]);
   const messageTimestamps = useMemo(() => visibleMessageTimestamps(rows), [rows]);
   const approvalIndex = useMemo(() => buildApprovalIndex(approvals), [approvals]);
   const pendingRequestSummaries = useMemo(
@@ -62,16 +104,18 @@ export function TimelineView({
     [approvalIndex, rows],
   );
   const approvalsByRowKey = useMemo(() => buildTimelineRowApprovalMap(rows, approvalIndex), [approvalIndex, rows]);
-  const rowCount = rows.length;
+  const rowCount = visibleRows.length;
+  const virtuosoScrollParent = scrollParentElement && scrollParentElement.clientHeight > 0 ? scrollParentElement : null;
   const {
+    followOutput,
+    handleAtBottomStateChange,
     initialBottomAligned,
-    isNearBottom,
-    rowVirtualizer,
     scrollToBottom,
     showScrollToBottom,
-  } = useBottomPinnedVirtualTimeline({
+    virtuosoRef,
+  } = useBottomPinnedVirtuosoTimeline({
     onReady,
-    rows,
+    rowCount,
     scrollParentElement,
     timelineLastSeq: timeline.lastSeq,
   });
@@ -92,47 +136,41 @@ export function TimelineView({
     );
   }
 
-  const virtualItems = rowVirtualizer.getVirtualItems();
-  const renderedVirtualItems =
-    virtualItems.length > 0 ? virtualItems : fallbackVirtualItems(rows, isNearBottom);
-
   return (
     <Box className="kodex-timeline-virtual-root" data-initial-bottom-aligned={initialBottomAligned ? "true" : "false"}>
       <PendingRequestSummaryStack requests={pendingRequestSummaries} />
-      <Box className="kodex-timeline-virtual-spacer" style={{ height: rowVirtualizer.getTotalSize() }}>
-        {renderedVirtualItems.map((virtualItem) => {
-          const row = rows[virtualItem.index];
-          if (!row) {
-            return null;
-          }
-          return (
-            <Box
-              className="kodex-timeline-virtual-row kodex-main-column"
-              data-index={virtualItem.index}
-              key={virtualItem.key}
-              ref={rowVirtualizer.measureElement}
-              style={{ transform: `translateY(${virtualItem.start}px)` }}
-              onToggle={(event) => {
-                if (event.target instanceof HTMLDetailsElement) {
-                  rowVirtualizer.measureElement(event.currentTarget);
-                }
-              }}
-            >
-              <TimelineRowView
-                approvals={approvalsByRowKey.get(row.key) ?? EMPTY_APPROVALS}
-                imagePreviewUrlsByPath={imagePreviewUrlsByPath}
-                onApprovalDecision={onApprovalDecision}
-                onImageOpen={onImageOpen}
-                onMarkdownOpen={onMarkdownOpen}
-                row={row}
-                showDebug={showDebug}
-                threadId={threadId}
-                toolbarTimestamps={messageTimestamps}
-              />
-            </Box>
-          );
-        })}
-      </Box>
+      <Virtuoso<TimelineRenderRow>
+        atBottomStateChange={handleAtBottomStateChange}
+        atBottomThreshold={60}
+        computeItemKey={(index, row) => row?.key ?? visibleRows[index]?.key ?? index}
+        customScrollParent={virtuosoScrollParent ?? undefined}
+        data={visibleRows}
+        defaultItemHeight={112}
+        followOutput={followOutput}
+        increaseViewportBy={{ top: 720, bottom: 720 }}
+        initialItemCount={virtuosoScrollParent ? undefined : rowCount}
+        itemContent={(index, renderRow = visibleRows[index]) => renderRow ? (
+          <Box className="kodex-timeline-virtual-row kodex-main-column" data-index={index}>
+            <TimelineRowView
+              approvals={approvalsByRowKey.get(renderRow.row.key) ?? EMPTY_APPROVALS}
+              imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+              isWorkExpanded={
+                renderRow.row.type === "work" ? expandedWorkRowKeys.has(renderRow.row.key) : false
+              }
+              onApprovalDecision={onApprovalDecision}
+              onWorkExpandedChange={handleWorkRowExpandedChange}
+              onImageOpen={onImageOpen}
+              onMarkdownOpen={onMarkdownOpen}
+              row={renderRow.row}
+              showDebug={showDebug}
+              threadId={threadId}
+              toolbarTimestamps={messageTimestamps}
+            />
+          </Box>
+        ) : null}
+        ref={virtuosoRef}
+        {...(virtuosoScrollParent ? { initialTopMostItemIndex: { index: rowCount - 1, align: "end" } as const } : {})}
+      />
       <HiddenDebugPanel
         hiddenItems={showDebug ? timeline.hiddenItems : []}
         imagePreviewUrlsByPath={imagePreviewUrlsByPath}
@@ -194,6 +232,22 @@ function PendingRequestSummaryStack({ requests }: { requests: PendingTimelineReq
   );
 }
 
+function timelineRenderRows(rows: TimelineRow[], expandedWorkRowKeys: ReadonlySet<string>): TimelineRenderRow[] {
+  return rows.flatMap((row) => {
+    const renderRow: TimelineRenderRow = { key: row.key, row };
+    if (row.type !== "work" || !expandedWorkRowKeys.has(row.key)) {
+      return [renderRow];
+    }
+    return [
+      renderRow,
+      ...row.collapsedRows.map((collapsedRow) => ({
+        key: `${row.key}/expanded/${collapsedRow.key}`,
+        row: collapsedRow,
+      })),
+    ];
+  });
+}
+
 function HiddenDebugPanel({
   hiddenItems,
   imagePreviewUrlsByPath,
@@ -232,31 +286,21 @@ function HiddenDebugPanel({
   );
 }
 
-function useBottomPinnedVirtualTimeline({
+function useBottomPinnedVirtuosoTimeline({
   onReady,
-  rows,
+  rowCount,
   scrollParentElement,
   timelineLastSeq,
 }: {
   onReady: () => void;
-  rows: TimelineRow[];
+  rowCount: number;
   scrollParentElement: HTMLDivElement | null;
   timelineLastSeq: number;
 }) {
-  const rowCount = rows.length;
-  const lastRowKey = rows[rowCount - 1]?.key ?? "";
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
   const nearBottomRef = useRef(true);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [initialBottomAligned, setInitialBottomAligned] = useState(false);
-  const rowVirtualizer = useVirtualizer({
-    count: rowCount,
-    estimateSize: () => 112,
-    getItemKey: (index) => rows[index]?.key ?? index,
-    getScrollElement: () => scrollParentElement,
-    initialRect: { width: 900, height: 720 },
-    overscan: 8,
-  });
-  rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = disableTimelineScrollAdjustment;
 
   const updateNearBottom = useCallback(() => {
     const scrollElement = scrollParentElement;
@@ -273,24 +317,26 @@ function useBottomPinnedVirtualTimeline({
   }, [rowCount, scrollParentElement]);
 
   const scrollToTimelineBottom = useCallback(() => {
-    const scrollElement = scrollParentElement;
-    if (!scrollElement) {
+    if (rowCount === 0) {
       return;
     }
-    rowVirtualizer.scrollToIndex(Math.max(0, rowCount - 1), { align: "end" });
-    scrollElement.scrollTop = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight);
-  }, [rowCount, rowVirtualizer, scrollParentElement]);
+    if (scrollParentElement) {
+      const top = scrollParentElement.scrollHeight - scrollParentElement.clientHeight;
+      if (top > 0) {
+        if (typeof scrollParentElement.scrollTo === "function") {
+          scrollParentElement.scrollTo({ top, behavior: "auto" });
+        } else {
+          scrollParentElement.scrollTop = top;
+        }
+      }
+    }
+    virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "auto" });
+  }, [rowCount, scrollParentElement]);
 
   const markTimelineReady = useCallback(() => {
     setInitialBottomAligned(true);
     onReady();
   }, [onReady]);
-
-  const finishInitialBottomReveal = useCallback(() => {
-    scrollToTimelineBottom();
-    updateNearBottom();
-    markTimelineReady();
-  }, [markTimelineReady, scrollToTimelineBottom, updateNearBottom]);
 
   const scrollToBottom = useCallback(() => {
     nearBottomRef.current = true;
@@ -305,6 +351,19 @@ function useBottomPinnedVirtualTimeline({
     });
   }, [scrollToTimelineBottom, updateNearBottom]);
 
+  const handleAtBottomStateChange = useCallback(
+    (atBottom: boolean) => {
+      nearBottomRef.current = atBottom;
+      setShowScrollToBottom(!atBottom && rowCount > 0);
+    },
+    [rowCount],
+  );
+
+  const followOutput = useCallback<Exclude<FollowOutput, boolean | string>>(
+    (isAtBottom) => timelineFollowOutputBehavior(isAtBottom || nearBottomRef.current),
+    [],
+  );
+
   useEffect(() => {
     const scrollElement = scrollParentElement;
     if (!scrollElement) {
@@ -316,7 +375,7 @@ function useBottomPinnedVirtualTimeline({
     return () => scrollElement.removeEventListener("scroll", updateNearBottom);
   }, [scrollParentElement, updateNearBottom]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (initialBottomAligned) {
       return;
     }
@@ -333,54 +392,21 @@ function useBottomPinnedVirtualTimeline({
       return;
     }
 
-    const frameIds: number[] = [];
-    const settleBottom = (
-      attempt: number,
-      stableFrames: number,
-      previousSnapshot: TimelineInitialBottomSettleSnapshot | null,
-    ) => {
-      if (!nearBottomRef.current) {
-        markTimelineReady();
-        return;
-      }
-
+    const frameId = requestAnimationFrame(() => {
       scrollToTimelineBottom();
-      const frameId = requestAnimationFrame(() => {
-        const scrollElement = scrollParentElement;
-        const snapshot = getTimelineInitialBottomSettleSnapshot(
-          scrollElement,
-          rowVirtualizer.getTotalSize(),
-          rowVirtualizer.getVirtualItems(),
-          rowCount,
-        );
-        const nextStableFrames = isTimelineInitialBottomSettled(snapshot, previousSnapshot) ? stableFrames + 1 : 0;
-
-        if (isTimelineInitialBottomRevealReady(nextStableFrames, attempt)) {
-          finishInitialBottomReveal();
-          return;
-        }
-
-        settleBottom(attempt + 1, nextStableFrames, snapshot);
-      });
-      frameIds.push(frameId);
-    };
-
-    settleBottom(0, 0, null);
-    return () => {
-      for (const frameId of frameIds) {
-        cancelAnimationFrame(frameId);
-      }
-    };
+      updateNearBottom();
+      markTimelineReady();
+    });
+    return () => cancelAnimationFrame(frameId);
   }, [
-    finishInitialBottomReveal,
     initialBottomAligned,
     markTimelineReady,
     rowCount,
-    scrollParentElement,
     scrollToTimelineBottom,
+    updateNearBottom,
   ]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!initialBottomAligned || rowCount === 0) {
       return;
     }
@@ -399,7 +425,6 @@ function useBottomPinnedVirtualTimeline({
     setShowScrollToBottom(true);
   }, [
     initialBottomAligned,
-    lastRowKey,
     rowCount,
     scrollToTimelineBottom,
     timelineLastSeq,
@@ -407,20 +432,23 @@ function useBottomPinnedVirtualTimeline({
   ]);
 
   return {
+    followOutput,
+    handleAtBottomStateChange,
     initialBottomAligned,
-    isNearBottom: nearBottomRef.current,
-    rowVirtualizer,
     scrollToBottom,
     showScrollToBottom,
+    virtuosoRef,
   };
 }
 
 const TimelineRowView = memo(function TimelineRowView({
   approvals,
   imagePreviewUrlsByPath,
+  isWorkExpanded,
   onApprovalDecision,
   onImageOpen,
   onMarkdownOpen,
+  onWorkExpandedChange,
   row,
   showDebug,
   threadId,
@@ -428,9 +456,11 @@ const TimelineRowView = memo(function TimelineRowView({
 }: {
   approvals: Approval[];
   imagePreviewUrlsByPath: Record<string, string>;
+  isWorkExpanded: boolean;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
   onImageOpen: (image: ImageLightboxImage) => void;
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
+  onWorkExpandedChange: (rowKey: string, expanded: boolean) => void;
   row: TimelineRow;
   showDebug: boolean;
   threadId?: string;
@@ -443,12 +473,9 @@ const TimelineRowView = memo(function TimelineRowView({
       ) : null}
       {row.type === "work" ? (
         <TimelineWorkRowRenderer
-          imagePreviewUrlsByPath={imagePreviewUrlsByPath}
-          onImageOpen={onImageOpen}
-          onMarkdownOpen={onMarkdownOpen}
+          expanded={isWorkExpanded}
+          onExpandedChange={(expanded) => onWorkExpandedChange(row.key, expanded)}
           row={row}
-          showDebug={showDebug}
-          threadId={threadId}
         />
       ) : row.type === "activity" ? (
         <TimelineActivityGroupRenderer
@@ -501,16 +528,6 @@ function isTimestampedMessage(item: TimelineItem): boolean {
   return item.kind === "user_message" || ((item.kind === "assistant_message" || item.kind === "agent_message") && item.messagePhase === "final_answer");
 }
 
-function fallbackVirtualItems(rows: TimelineRow[], preferBottom: boolean) {
-  const fallbackCount = Math.min(rows.length, 12);
-  const startIndex = preferBottom ? Math.max(0, rows.length - fallbackCount) : 0;
-  return rows.slice(startIndex, startIndex + fallbackCount).map((row, offset) => ({
-    index: startIndex + offset,
-    key: row.key,
-    start: (startIndex + offset) * 112,
-  }));
-}
-
 function buildTimelineRowApprovalMap(rows: TimelineRow[], approvalIndex: ReturnType<typeof buildApprovalIndex>) {
   const approvalsByRowKey = new Map<string, Approval[]>();
   for (const row of rows) {
@@ -524,71 +541,4 @@ function buildTimelineRowApprovalMap(rows: TimelineRow[], approvalIndex: ReturnT
 
 function getDistanceFromBottom(scrollElement: HTMLElement) {
   return scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight;
-}
-
-export type TimelineInitialBottomSettleSnapshot = {
-  distanceFromBottom: number;
-  hasRenderedDomBottom: boolean;
-  hasRenderedVirtualBottom: boolean;
-  scrollHeight: number;
-  totalSize: number;
-};
-
-function getTimelineInitialBottomSettleSnapshot(
-  scrollElement: HTMLElement | null,
-  totalSize: number,
-  virtualItems: Array<{ index: number }>,
-  rowCount: number,
-): TimelineInitialBottomSettleSnapshot {
-  if (!scrollElement) {
-    return {
-      distanceFromBottom: 0,
-      hasRenderedDomBottom: true,
-      hasRenderedVirtualBottom: true,
-      scrollHeight: 0,
-      totalSize,
-    };
-  }
-
-  return {
-    distanceFromBottom: getDistanceFromBottom(scrollElement),
-    hasRenderedDomBottom: hasRenderedTimelineBottom(scrollElement, rowCount),
-    hasRenderedVirtualBottom: hasRenderedVirtualTimelineBottom(virtualItems, rowCount),
-    scrollHeight: scrollElement.scrollHeight,
-    totalSize,
-  };
-}
-
-export function isTimelineInitialBottomSettled(
-  snapshot: TimelineInitialBottomSettleSnapshot,
-  previousSnapshot: TimelineInitialBottomSettleSnapshot | null,
-) {
-  if (!previousSnapshot) {
-    return false;
-  }
-  return (
-    snapshot.scrollHeight === previousSnapshot.scrollHeight &&
-    snapshot.totalSize === previousSnapshot.totalSize &&
-    snapshot.hasRenderedDomBottom &&
-    snapshot.hasRenderedVirtualBottom &&
-    Math.abs(snapshot.distanceFromBottom) < BOTTOM_DISTANCE_EPSILON
-  );
-}
-
-export function isTimelineInitialBottomRevealReady(stableFrames: number, attempt: number) {
-  return stableFrames >= INITIAL_BOTTOM_STABLE_FRAMES || attempt >= INITIAL_BOTTOM_MAX_SETTLE_FRAMES;
-}
-
-function hasRenderedTimelineBottom(scrollElement: HTMLElement, rowCount: number) {
-  if (rowCount === 0) {
-    return true;
-  }
-  return scrollElement.querySelector(`[data-index="${rowCount - 1}"]`) !== null;
-}
-
-function hasRenderedVirtualTimelineBottom(virtualItems: Array<{ index: number }>, rowCount: number) {
-  if (rowCount === 0) {
-    return true;
-  }
-  return virtualItems.some((virtualItem) => virtualItem.index === rowCount - 1);
 }

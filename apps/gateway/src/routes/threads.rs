@@ -793,15 +793,15 @@ pub async fn mark_thread_seen(
     request: Option<Json<MarkThreadSeenRequest>>,
 ) -> ApiResult<Json<MarkThreadSeenResponse>> {
     let request = request.map(|Json(request)| request).unwrap_or_default();
-    let snapshot = app_server_api::client(&state.app_server)
-        .thread_read(thread_id.clone())
-        .await?;
-    let last_completed_agent_turn_seq = snapshot.thread.last_completed_agent_turn_seq.unwrap_or(0);
-    let requested_seen_seq = request
-        .seen_completed_agent_turn_seq
-        .unwrap_or(last_completed_agent_turn_seq)
-        .max(0);
-    let seen_seq = requested_seen_seq.min(last_completed_agent_turn_seq);
+    let seen_seq = match request.seen_completed_agent_turn_seq {
+        Some(seq) => seq.max(0),
+        None => {
+            let snapshot = app_server_api::client(&state.app_server)
+                .thread_read(thread_id.clone())
+                .await?;
+            snapshot.thread.last_completed_agent_turn_seq.unwrap_or(0)
+        }
+    };
     Ok(Json(
         state
             .store

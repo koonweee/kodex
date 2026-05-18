@@ -11,6 +11,17 @@ export function browserPushNotificationsSupported(): boolean {
   );
 }
 
+export function browserPushNotificationsEnabled(): boolean {
+  if (typeof localStorage === "undefined") {
+    return false;
+  }
+  try {
+    return Boolean(localStorage.getItem(PUSH_SUBSCRIPTION_ID_KEY));
+  } catch {
+    return false;
+  }
+}
+
 export function applicationServerKeyBytes(key: string): ArrayBuffer {
   const normalized = key.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");

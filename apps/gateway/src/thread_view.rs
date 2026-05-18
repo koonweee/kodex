@@ -176,6 +176,9 @@ impl ThreadView {
             if is_prunable_empty_reasoning(&item) {
                 continue;
             }
+            if is_prunable_missing_context_compaction(&item, &base.turns) {
+                continue;
+            }
             if is_live_status(&item.status) && base.active_turn_id.is_none() {
                 base.active_turn_id = Some(item.turn_id.clone());
                 base.live_state = ThreadLiveState::Streaming;
@@ -311,8 +314,9 @@ impl ThreadView {
         }
     }
 
-    fn update_turn_status(&mut self, turn: &ThreadTurnSnapshot) {
+    fn update_turn_status(&mut self, turn: &ThreadTurnSnapshot) -> bool {
         let terminal = is_terminal_turn_status(&turn.status);
+        let newly_terminal = terminal && !self.terminal_turn_ids.contains(&turn.id);
         self.upsert_turn_from_snapshot(turn);
         for item in &mut self.items {
             if item.turn_id == turn.id {
@@ -335,6 +339,7 @@ impl ThreadView {
         } else {
             self.terminal_turn_ids.remove(&turn.id);
         }
+        newly_terminal
     }
 
     fn set_live_state(
@@ -759,13 +764,11 @@ pub async fn record_turn_status(
     thread_id: &str,
     turn: &ThreadTurnSnapshot,
     updated_seq: i64,
-) -> ApiResult<()> {
-    sessions
-        .with_thread_view(thread_id, updated_seq, |view| {
-            view.update_turn_status(turn);
-        })
+) -> ApiResult<bool> {
+    let newly_terminal = sessions
+        .with_thread_view(thread_id, updated_seq, |view| view.update_turn_status(turn))
         .await;
-    Ok(())
+    Ok(newly_terminal)
 }
 
 pub async fn record_thread_live_state(
@@ -962,6 +965,18 @@ fn is_prunable_empty_reasoning(item: &ThreadTimelineSnapshotItem) -> bool {
     content_empty && summary_empty
 }
 
+fn is_prunable_missing_context_compaction(
+    item: &ThreadTimelineSnapshotItem,
+    turns: &[ThreadTimelineSnapshotTurn],
+) -> bool {
+    let item_type = item.item_type.to_ascii_lowercase().replace('_', "");
+    item_type == "contextcompaction"
+        && turns
+            .iter()
+            .find(|turn| turn.id == item.turn_id)
+            .is_some_and(|turn| is_terminal_turn_status(&turn.status))
+}
+
 impl Default for ThreadLiveState {
     fn default() -> Self {
         Self::Idle
@@ -977,6 +992,13 @@ mod tests {
             "id": id,
             "type": "agentMessage",
             "text": text,
+        })
+    }
+
+    fn context_compaction_item(id: &str) -> Value {
+        json!({
+            "id": id,
+            "type": "contextCompaction",
         })
     }
 
@@ -1221,5 +1243,54 @@ mod tests {
         assert_eq!(timeline.items.len(), 1);
         assert_eq!(timeline.items[0].item_id, "item-2");
         assert_eq!(timeline.items[0].payload.item["text"], "Done");
+    }
+
+    #[tokio::test]
+    async fn completed_snapshot_prunes_missing_live_context_compaction_marker() {
+        let sessions = ThreadViewStore::default();
+        let compact_item = context_compaction_item("compact-1");
+        let compact_snapshot = ThreadItemSnapshot::from_payload(&compact_item).unwrap();
+        record_item_upsert(
+            &sessions,
+            "thread-1",
+            "turn-1",
+            compact_item,
+            compact_snapshot,
+            Some("running"),
+            1,
+        )
+        .await
+        .unwrap();
+
+        let completed_turn = ThreadTurnSnapshot {
+            id: "turn-1".to_string(),
+            status: "completed".to_string(),
+            started_at: Some(1),
+            completed_at: Some(2),
+            raw_payload: json!({}),
+            items: vec![
+                ThreadItemSnapshot::from_payload(&json!({
+                    "id": "user-1",
+                    "type": "userMessage",
+                    "content": [{"type": "text", "text": "Hello"}]
+                }))
+                .unwrap(),
+                ThreadItemSnapshot::from_payload(&agent_message_item("agent-1", "Done")).unwrap(),
+            ],
+        };
+        let timeline = build_thread_timeline(&sessions, "thread-1", &[completed_turn], 2)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            timeline
+                .items
+                .iter()
+                .map(|item| item.item_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["user-1", "agent-1"]
+        );
+        assert_eq!(timeline.live_state, ThreadLiveState::Idle);
+        assert_eq!(timeline.active_turn_id, None);
     }
 }

@@ -1,10 +1,19 @@
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { VirtuosoMockContext } from "react-virtuoso";
 import { expect, vi } from "vitest";
 
-import { App } from "../App";
+import { App as KodexApp } from "../App";
 import type { GatewayRouteMap } from "./gatewayMock";
 import { mockGateway, requestJson } from "./gatewayMock";
+
+function App() {
+  return (
+    <VirtuosoMockContext.Provider value={{ viewportHeight: 720, itemHeight: 96 }}>
+      <KodexApp />
+    </VirtuosoMockContext.Provider>
+  );
+}
 
 function readCssImportGraph(filePath: string, seen = new Set<string>()): string {
   const resolvedPath = resolve(filePath);

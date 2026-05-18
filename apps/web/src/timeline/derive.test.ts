@@ -5,6 +5,7 @@ import {
   deriveTimelineRows,
   getTimelineRowApprovals,
   getUnanchoredApprovals,
+  MAX_FILE_CHANGE_ITEMS_PER_ROW,
 } from "./derive";
 import { approval, timelineItem, timelineState } from "./testBuilders";
 
@@ -290,7 +291,7 @@ describe("timeline derivation", () => {
     });
   });
 
-  it("collapses completed turn work before the final answer divider", () => {
+  it("keeps completed turn work details collapsed under the work row", () => {
     const rows = deriveTimelineRows(
       timelineState({
         turns: [
@@ -333,7 +334,7 @@ describe("timeline derivation", () => {
     expect(rows[2]).not.toHaveProperty("dividerBefore");
   });
 
-  it("collapses command activity into completed work even when history orders it after the final answer", () => {
+  it("keeps command activity collapsed even when history orders it after the final answer", () => {
     const rows = deriveTimelineRows(
       timelineState({
         turns: [
@@ -366,7 +367,7 @@ describe("timeline derivation", () => {
     });
   });
 
-  it("aggregates interleaved file changes into one row before the final answer", () => {
+  it("aggregates interleaved file changes inside the completed work row", () => {
     const rows = deriveTimelineRows(
       timelineState({
         turns: [
@@ -399,11 +400,104 @@ describe("timeline derivation", () => {
     expect(rows[1]).toMatchObject({
       type: "work",
       collapsedRows: [
+        { type: "file_changes", items: [{ id: "file-1" }, { id: "file-2" }] },
         { type: "item", item: { id: "assistant-progress-1" } },
         { type: "item", item: { id: "assistant-progress-2" } },
-        { type: "file_changes", items: [{ id: "file-1" }, { id: "file-2" }] },
       ],
     });
+    expect(rows[2]).not.toHaveProperty("dividerBefore");
+  });
+
+  it("keeps file change row keys stable as groups grow and chunks large file change runs", () => {
+    const initialRows = deriveTimelineRows(
+      timelineState({
+        items: [timelineItem({ id: "file-1", kind: "file_change", displayOrder: 1, path: "src/file-1.ts" })],
+      }),
+    );
+    const grownRows = deriveTimelineRows(
+      timelineState({
+        items: [
+          timelineItem({ id: "file-1", kind: "file_change", displayOrder: 1, path: "src/file-1.ts" }),
+          timelineItem({ id: "file-2", kind: "file_change", displayOrder: 2, path: "src/file-2.ts" }),
+        ],
+      }),
+    );
+
+    expect(initialRows[0].key).toBe("file-changes-turn-turn-1");
+    expect(grownRows[0].key).toBe(initialRows[0].key);
+    expect(grownRows[0]).toMatchObject({
+      type: "file_changes",
+      items: [{ id: "file-1" }, { id: "file-2" }],
+    });
+
+    const chunkedRows = deriveTimelineRows(
+      timelineState({
+        items: Array.from({ length: 30 }, (_, index) =>
+          timelineItem({
+            id: `file-${index}`,
+            kind: "file_change",
+            displayOrder: index + 1,
+            path: `src/file-${index}.ts`,
+          }),
+        ),
+      }),
+    );
+
+    expect(chunkedRows).toHaveLength(3);
+    expect(chunkedRows.map((row) => row.key)).toEqual([
+      "file-changes-turn-turn-1",
+      "file-changes-file-12",
+      "file-changes-file-24",
+    ]);
+    expect(
+      chunkedRows.every(
+        (row) => row.type === "file_changes" && row.items.length <= MAX_FILE_CHANGE_ITEMS_PER_ROW,
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps completed work rows shallow when a completed turn has many file changes", () => {
+    const rows = deriveTimelineRows(
+      timelineState({
+        turns: [
+          {
+            turnId: "turn-1",
+            itemIds: ["user-1", "answer-1"],
+            status: "completed",
+            startedAtMs: 1_000,
+            completedAtMs: 6_000,
+          },
+        ],
+        items: [
+          timelineItem({ id: "user-1", kind: "user_message", displayOrder: 1, text: "Change many files." }),
+          ...Array.from({ length: 30 }, (_, index) =>
+            timelineItem({
+              id: `file-${index}`,
+              kind: "file_change",
+              displayOrder: index + 2,
+              path: `src/file-${index}.ts`,
+            }),
+          ),
+          timelineItem({
+            id: "answer-1",
+            kind: "assistant_message",
+            messagePhase: "final_answer",
+            displayOrder: 32,
+            text: "Done.",
+          }),
+        ],
+      }),
+    );
+
+    expect(rows.map((row) => row.key)).toEqual(["item-user-1", "work-turn-1", "item-answer-1"]);
+    expect(rows[1]).toMatchObject({ type: "work" });
+    expect(rows[1].type === "work" ? rows[1].collapsedRows.map((row) => row.key) : []).toEqual([
+      "file-changes-turn-turn-1",
+      "file-changes-file-12",
+      "file-changes-file-24",
+    ]);
+    expect(rows[1].type === "work" ? rows[1].collapsedRows.every((row) => row.type === "file_changes" && row.items.length <= MAX_FILE_CHANGE_ITEMS_PER_ROW) : false).toBe(true);
+    expect(rows[2]).not.toHaveProperty("dividerBefore");
   });
 
   it("keeps generated images visible outside completed turn work", () => {

@@ -5,6 +5,7 @@ import { completedAgentTurnEvent } from "../threads/events";
 import type { ThreadsByProjectId } from "../threads/helpers";
 import { showForegroundNotification } from "./browserNotifications";
 import { setKodexAppBadge } from "./browserBadge";
+import { browserPushNotificationsEnabled } from "./pushSubscriptions";
 import { unreadAgentMessageBadgeCount, unreadAgentMessageIntent } from "./unreadAgentMessages";
 
 type UseKodexNotificationsParams = {
@@ -43,6 +44,9 @@ export function useKodexNotifications({
     }
     const thread = threadGroupsRef.current.flat().find((candidate) => candidate.id === completedTurn.threadId);
     if (!thread) {
+      return;
+    }
+    if (browserPushNotificationsEnabled()) {
       return;
     }
     const nextBadgeCount = Math.max(1, unreadAgentMessageBadgeCount(threadGroupsRef.current));

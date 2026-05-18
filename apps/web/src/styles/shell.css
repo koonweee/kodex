@@ -310,20 +310,11 @@
   visibility: hidden;
 }
 
-.kodex-timeline-virtual-spacer {
-  position: relative;
+.kodex-timeline-virtual-row {
+  box-sizing: border-box;
   width: 100%;
   min-width: 0;
-}
-
-.kodex-timeline-virtual-row {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  box-sizing: border-box;
-  min-width: 0;
-  will-change: transform;
+  overflow-anchor: none;
 }
 
 .kodex-scroll-to-bottom {

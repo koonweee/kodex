@@ -299,6 +299,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn duplicate_terminal_turn_notifications_send_one_unread_agent_message_delivery() {
+        let (mut state, app_server) = test_state().await;
+        Arc::make_mut(&mut state.config)
+            .notifications
+            .recheck_delay_ms = 0;
+        let sender = Arc::new(RecordingPushSender::new(PushDeliveryOutcome::Sent));
+        state = state.with_notification_sender(sender.clone());
+        state
+            .store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/sub-1".to_string(),
+                p256dh: "public".to_string(),
+                auth: "auth".to_string(),
+                user_agent: None,
+            })
+            .await
+            .unwrap();
+        app_server.queued_responses.lock().unwrap().extend([
+            thread_read_response_with_agent_message(
+                "thread-1",
+                "Thread 1",
+                "Tool output should stay hidden.",
+                "Only notify once.",
+            ),
+            json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
+            thread_read_response_with_agent_message(
+                "thread-1",
+                "Thread 1",
+                "Tool output should stay hidden.",
+                "Only notify once.",
+            ),
+            json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
+        ]);
+
+        for method in ["turn/upsert", "turn/completed"] {
+            ingest_inbound(
+                InboundMessage::Notification {
+                    method: method.to_string(),
+                    params: json!({
+                        "threadId": "thread-1",
+                        "turn": {
+                            "id": "turn-1",
+                            "status": {"type": "completed"},
+                            "items": []
+                        }
+                    }),
+                },
+                &state,
+            )
+            .await
+            .unwrap();
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(sender.payloads.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
     async fn already_seen_recheck_skips_unread_agent_message_delivery() {
         let (mut state, app_server) = test_state().await;
         Arc::make_mut(&mut state.config)
@@ -4054,6 +4112,27 @@ mod tests {
         assert_eq!(body["threads"][0]["seenCompletedAgentTurnSeq"], json!(1));
         assert_eq!(body["threads"][0]["unreadCompletedAgentTurn"], json!(false));
         assert_eq!(body["threads"][0]["lastCompletedAgentTurnSeq"], Value::Null);
+    }
+
+    #[tokio::test]
+    async fn explicit_thread_seen_marker_does_not_wait_for_app_server_readback() {
+        let (state, app_server) = test_state().await;
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/seen")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"seenCompletedAgentTurnSeq":2}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["seenCompletedAgentTurnSeq"], json!(2));
+        assert!(app_server.requests.lock().unwrap().is_empty());
     }
 
     #[tokio::test]

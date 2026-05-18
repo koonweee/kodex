@@ -8,6 +8,7 @@ const OriginalNotification = globalThis.Notification;
 
 afterEach(() => {
   Object.defineProperty(globalThis, "Notification", { configurable: true, value: OriginalNotification });
+  localStorage.clear();
 });
 
 function thread(id: string, unreadCompletedAgentTurn = false): ThreadSummary {
@@ -122,5 +123,26 @@ describe("useKodexNotifications", () => {
         tag: "kodex-unread-agent-message:thread-2",
       }),
     );
+  });
+
+  it("suppresses foreground notifications when push delivery is enabled", () => {
+    const notificationCtor = vi.fn();
+    Object.defineProperty(notificationCtor, "permission", { configurable: true, value: "granted" });
+    Object.defineProperty(globalThis, "Notification", { configurable: true, value: notificationCtor });
+    localStorage.setItem("kodex.pushSubscriptionId", "subscription-1");
+
+    const { result } = renderHook(() =>
+      useKodexNotifications({
+        chatThreads: [thread("thread-2")],
+        pinnedThreads: [],
+        routeSelectedThread: null,
+        selectedThreadId: "thread-1",
+        threadsByProjectId: {},
+      }),
+    );
+
+    act(() => result.current.applyNotificationEvent(completedTurnEvent("thread-2")));
+
+    expect(notificationCtor).not.toHaveBeenCalled();
   });
 });

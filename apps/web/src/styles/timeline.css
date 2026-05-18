@@ -74,12 +74,6 @@
   transform: rotate(90deg);
 }
 
-.kodex-work-collapsed-rows {
-  min-width: 0;
-  padding-left: 14px;
-  border-left: 1px solid var(--kodex-divider-subtle);
-}
-
 .kodex-activity-group {
   box-sizing: border-box;
   display: grid;

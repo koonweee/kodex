@@ -3,6 +3,7 @@
 import { cleanupOutdatedCaches, precacheAndRoute } from "workbox-precaching";
 
 import type { KodexNotificationPayload } from "./notifications/notificationTypes";
+import { pushNotificationThreadVisible } from "./notifications/pushVisibility";
 
 declare let self: ServiceWorkerGlobalScope & { __WB_MANIFEST: Array<unknown> };
 
@@ -22,6 +23,11 @@ self.addEventListener("notificationclick", (event) => {
 async function showPushNotification(event: PushEvent) {
   const payload = parsePushPayload(event.data);
   if (!payload || payload.kind !== "unreadAgentMessage") {
+    return;
+  }
+
+  const windows = await self.clients.matchAll({ includeUncontrolled: true, type: "window" });
+  if (pushNotificationThreadVisible(payload, windows, self.location.origin)) {
     return;
   }
 

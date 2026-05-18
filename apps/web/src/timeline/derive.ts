@@ -64,6 +64,7 @@ const timelineActivityKinds = new Set([
 ]);
 
 const MAX_ACTIVITY_ITEMS_PER_ROW = 12;
+export const MAX_FILE_CHANGE_ITEMS_PER_ROW = 12;
 
 export function deriveTimelineRows(timeline: TimelineState, _options: TimelineDeriveOptions = {}): TimelineRow[] {
   const items = timelineItemsInDisplayOrder(timeline);
@@ -89,8 +90,11 @@ export function deriveTimelineRows(timeline: TimelineState, _options: TimelineDe
     if (fileChangeItems.length === 0) {
       return;
     }
-    rows.push(createFileChangesRow(fileChangeItems));
-    markFinalResponsePrecursor(fileChangeItems[0], turnHasFinalResponsePrecursor);
+    for (let index = 0; index < fileChangeItems.length; index += MAX_FILE_CHANGE_ITEMS_PER_ROW) {
+      const rowItems = fileChangeItems.slice(index, index + MAX_FILE_CHANGE_ITEMS_PER_ROW);
+      rows.push(createFileChangesRow(rowItems, index === 0));
+      markFinalResponsePrecursor(rowItems[0], turnHasFinalResponsePrecursor);
+    }
     fileChangeItems = [];
   }
 
@@ -215,12 +219,13 @@ function createActivityRow(items: TimelineItem[]): TimelineActivityRow {
   };
 }
 
-function createFileChangesRow(items: TimelineItem[]): TimelineFileChangesRow {
+function createFileChangesRow(items: TimelineItem[], useTurnKey: boolean): TimelineFileChangesRow {
   const first = items[0];
+  const turnKey = timelineTurnKey(first);
   return {
     type: "file_changes",
-    key: `file-changes-${timelineTurnKey(first)}`,
-    turnKey: timelineTurnKey(first),
+    key: useTurnKey ? `file-changes-${turnKey}` : `file-changes-${first.id}`,
+    turnKey,
     turnId: first.turnId,
     items: [...items],
   };
@@ -306,13 +311,15 @@ function rowsForTurnWithWorkRow(rows: TimelineContentRow[], workRow: TimelineWor
     const displayOrder = firstRowDisplayOrder(rows[firstWorkIndex]) + 0.1;
     const rowsAfterUser = rows.slice(firstWorkIndex + 1);
     const finalOffset = finalIndex - firstWorkIndex - 1;
-    const collapsedRows = rowsAfterUser.filter((row, index) => index !== finalOffset && !rowIsProminentTurnResult(row));
+    const workDetailRows = rowsAfterUser
+      .filter((row, index) => index !== finalOffset && !rowIsProminentTurnResult(row))
+      .sort((left, right) => firstRowDisplayOrder(left) - firstRowDisplayOrder(right));
     const prominentRows = rowsAfterUser.filter((row, index) => index !== finalOffset && rowIsProminentTurnResult(row));
     return [
       ...rows.slice(0, firstWorkIndex + 1),
       {
         ...workRow,
-        collapsedRows,
+        collapsedRows: workDetailRows,
         displayOrder,
       },
       withoutFinalResponseDivider(rows[finalIndex]),
@@ -341,13 +348,12 @@ function rowIsProminentTurnResult(row: TimelineContentRow): boolean {
   );
 }
 
-function withFinalResponseDivider(row: TimelineContentRow): TimelineContentRow {
-  return { ...row, dividerBefore: "final_response" };
-}
-
-function withoutFinalResponseDivider(row: TimelineContentRow): TimelineContentRow {
-  const { dividerBefore: _dividerBefore, ...rest } = row;
-  return rest;
+function withoutFinalResponseDivider<T extends TimelineContentRow>(row: T): T {
+  if (row.dividerBefore !== "final_response") {
+    return row;
+  }
+  const { dividerBefore: _dividerBefore, ...rowWithoutDivider } = row;
+  return rowWithoutDivider as T;
 }
 
 function firstRowDisplayOrder(row: TimelineRow): number {
