@@ -1306,7 +1306,7 @@ function KodexShell({
     if (!selectedThreadId || event.threadId !== selectedThreadId || event.kind !== "timeline.projection_patch") {
       return;
     }
-    setTimeline((current) => applyTimelineEventBatch(current, [event]));
+    setTimeline((current) => (event.seq < current.lastSeq ? current : applyTimelineEventBatch(current, [event])));
   }
 
   function refreshSidebarThreadsForLiveEvent(event: EventEnvelope) {

@@ -251,7 +251,12 @@ function insertWorkRows(rows: TimelineRow[], timeline: TimelineState): TimelineR
     if (turn.startedAtMs === undefined) {
       continue;
     }
-    const state = isTerminalTurnStatus(turn.status) ? "completed" : "running";
+    const isActiveTurn = turn.turnId === timeline.activeTurnId;
+    const isTerminalTurn = isTerminalTurnStatus(turn.status);
+    if (!isActiveTurn && !isTerminalTurn) {
+      continue;
+    }
+    const state = isActiveTurn ? "running" : "completed";
     workRows.set(turn.turnId, {
       type: "work",
       key: `work-${turn.turnId}`,
@@ -259,7 +264,7 @@ function insertWorkRows(rows: TimelineRow[], timeline: TimelineState): TimelineR
       turnId: turn.turnId,
       state,
       startedAtMs: turn.startedAtMs,
-      completedAtMs: turn.completedAtMs,
+      completedAtMs: isActiveTurn ? undefined : turn.completedAtMs,
       collapsedRows: [],
       displayOrder: Number.MAX_SAFE_INTEGER,
     });

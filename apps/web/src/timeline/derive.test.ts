@@ -191,6 +191,84 @@ describe("timeline derivation", () => {
     });
   });
 
+  it("keeps the active turn work row running when a snapshot still marks the turn terminal", () => {
+    const rows = deriveTimelineRows(
+      timelineState({
+        activeTurnId: "turn-1",
+        turns: [
+          {
+            turnId: "turn-1",
+            itemIds: ["user-1", "answer-1"],
+            status: "completed",
+            startedAtMs: 1_000,
+            completedAtMs: 6_000,
+          },
+        ],
+        items: [
+          timelineItem({ id: "user-1", kind: "user_message", displayOrder: 1, text: "Inspect this." }),
+          timelineItem({ id: "answer-1", kind: "assistant_message", displayOrder: 2, text: "Still streaming." }),
+        ],
+      }),
+    );
+
+    expect(rows.map((row) => row.key)).toEqual(["item-user-1", "work-turn-1", "item-answer-1"]);
+    expect(rows[1]).toMatchObject({
+      type: "work",
+      state: "running",
+      turnId: "turn-1",
+      startedAtMs: 1_000,
+    });
+    expect(rows[1]).toHaveProperty("completedAtMs", undefined);
+  });
+
+  it("skips stale non-terminal work rows when another turn is active", () => {
+    const rows = deriveTimelineRows(
+      timelineState({
+        activeTurnId: "turn-2",
+        turns: [
+          {
+            turnId: "turn-1",
+            itemIds: ["user-1", "reasoning-1"],
+            status: "inProgress",
+            startedAtMs: 1_000,
+          },
+          {
+            turnId: "turn-2",
+            itemIds: ["user-2", "reasoning-2"],
+            status: "inProgress",
+            startedAtMs: 10_000,
+          },
+        ],
+        items: [
+          timelineItem({ id: "user-1", kind: "user_message", displayOrder: 1, text: "Old turn." }),
+          timelineItem({ id: "reasoning-1", kind: "reasoning_summary", displayOrder: 2, summary: "Stale work." }),
+          timelineItem({ id: "user-2", kind: "user_message", turnId: "turn-2", displayOrder: 3, text: "Current turn." }),
+          timelineItem({
+            id: "reasoning-2",
+            kind: "reasoning_summary",
+            turnId: "turn-2",
+            displayOrder: 4,
+            summary: "Current work.",
+          }),
+        ],
+      }),
+    );
+
+    expect(rows.map((row) => row.key)).toEqual([
+      "item-user-1",
+      "item-reasoning-1",
+      "item-user-2",
+      "work-turn-2",
+      "item-reasoning-2",
+    ]);
+    expect(rows.find((row) => row.key === "work-turn-1")).toBeUndefined();
+    expect(rows.find((row) => row.key === "work-turn-2")).toMatchObject({
+      type: "work",
+      state: "running",
+      startedAtMs: 10_000,
+    });
+  });
+
   it("collapses completed turn work before the final answer divider", () => {
     const rows = deriveTimelineRows(
       timelineState({

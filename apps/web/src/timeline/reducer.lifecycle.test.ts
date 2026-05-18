@@ -142,6 +142,42 @@ describe("timeline reducer lifecycle", () => {
     expect(state.viewRevision).toBe(10);
   });
 
+  it("ignores an older terminal projection after newer compact live deltas", () => {
+    let state = applyLiveTimelineUpdate(createTimelineState(), event({
+      seq: 12,
+      kind: "timeline.item_delta",
+      codexMethod: "item/agentMessage/delta",
+      turnId: "turn-2",
+      itemId: "item-2",
+      payload: { threadId: "thread-1", turnId: "turn-2", itemId: "item-2", delta: "New turn work" },
+    }));
+
+    state = applyLiveTimelineUpdate(state, event({
+      seq: 10,
+      kind: "timeline.projection_patch",
+      codexMethod: "timeline/projection_patch",
+      turnId: "turn-1",
+      payload: projectionPatchWithLiveState({
+        revision: 10,
+        activeTurnId: null,
+        liveState: "idle",
+        status: "completed",
+        text: "Older turn done",
+        turnId: "turn-1",
+      }),
+    }));
+
+    expect(state.activeTurnId).toBe("turn-2");
+    expect(state.items).toHaveLength(1);
+    expect(state.items[0]).toMatchObject({
+      text: "New turn work",
+      status: "running",
+      turnId: "turn-2",
+    });
+    expect(state.lastSeq).toBe(12);
+    expect(state.viewRevision).toBe(0);
+  });
+
   it("keeps snapshot-required as a cursor-only render event", () => {
     const state = applyLiveTimelineUpdate(createTimelineState(), event({
       seq: 7,

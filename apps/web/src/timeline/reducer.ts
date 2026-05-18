@@ -240,6 +240,9 @@ function canonicalSnapshotItemReceivedAt(item: ThreadTimelineSnapshotItem): stri
 function applyThreadSessionViewPatch(state: TimelineState, event: EventEnvelope): TimelineState {
   const patch = event.payload as ThreadSessionViewPatch;
   const revision = patch.revision ?? 0;
+  if (event.seq < state.lastSeq) {
+    return state;
+  }
   if (revision <= state.viewRevision) {
     return withIgnoredProjectionPatchCursor(state, patch, event.seq);
   }
