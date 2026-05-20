@@ -29,6 +29,7 @@ function clickMenuItem(name: RegExp) {
 
 describe("MVP timeline flows", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     FakeEventSource.instances = [];
@@ -47,6 +48,72 @@ describe("MVP timeline flows", () => {
     const timeline = timelineElement(container);
     expect(within(timeline).queryByText("No events")).not.toBeInTheDocument();
     expect(within(timeline).queryByText("Thread activity will stream into this timeline.")).not.toBeInTheDocument();
+  });
+
+  it("reports selected thread stream disconnects as retrying and clears the notice after live recovery", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let detailReads = 0;
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads/thread-1": () => {
+          detailReads += 1;
+          if (detailReads === 2) {
+            throw new Error("Load failed");
+          }
+          return threadDetail(thread, [
+            snapshotTurn("turn-1", [
+              snapshotItem("answer-1", "agentMessage", { text: "Initial snapshot" }),
+            ]),
+          ]);
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/initial snapshot/i)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(FakeEventSource.instances.some((instance) => instance.url.includes("threadId=thread-1"))).toBe(true),
+    );
+    const selectedStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    expect(selectedStream).toBeDefined();
+
+    act(() => {
+      selectedStream?.onerror?.();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(
+      await screen.findByText(/selected thread stream disconnected\. reconnecting and retrying thread refresh: load failed/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("alert", { name: /load failed/i })).not.toBeInTheDocument();
+    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(2);
+
+    await waitFor(
+      () =>
+        expect(FakeEventSource.instances.filter((instance) => instance.url.includes("threadId=thread-1")).length).toBe(
+          2,
+        ),
+      { timeout: 1500 },
+    );
+    const reconnectedStream = FakeEventSource.instances
+      .filter((instance) => instance.url.includes("threadId=thread-1"))
+      .at(-1);
+    expect(reconnectedStream).toBeDefined();
+
+    act(() => {
+      reconnectedStream?.emitNamed(
+        "thread_view.patch",
+        projectionPatchEvent({ seq: 5, text: "Recovered live update" }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText(/selected thread stream disconnected/i)).not.toBeInTheDocument();
+    });
+    expect(await screen.findByText(/recovered live update/i)).toBeInTheDocument();
   });
 
   it("groups command and search activity into nested timeline collapsibles", async () => {
@@ -568,7 +635,7 @@ describe("MVP timeline flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "POST /v1/threads/thread-2/resume": { thread: resumedThread, rawPayload: {} },
+        "POST /v1/threads/thread-2/attach": { disposition: "resumed", thread: resumedThread, rawPayload: {} },
         "GET /v1/threads/thread-2": () => {
           detailCall += 1;
           return threadDetail(resumedThread, [

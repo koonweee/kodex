@@ -46,7 +46,12 @@ export type RateLimitsResponse = components["schemas"]["RateLimitsResponse"];
 export type SkillMetadata = components["schemas"]["SkillMetadata"];
 export type SkillsCatalogResponse = components["schemas"]["SkillsCatalogResponse"];
 export type ThreadRead = components["schemas"]["ThreadRead"];
+export type ThreadAttachResponse = components["schemas"]["ThreadAttachResponse"];
+export type ThreadListResponse = components["schemas"]["ThreadListResponse"];
+export type SidebarThreadSummary = components["schemas"]["SidebarThreadSummary"];
+export type SidebarThreadsResponse = components["schemas"]["SidebarThreadsResponse"];
 export type ThreadViewResponse = components["schemas"]["ThreadViewResponse"];
+export type ThreadViewThreadSummary = components["schemas"]["ThreadViewThreadSummary"];
 export type RenameThreadRequest = components["schemas"]["RenameThreadRequest"];
 export type ThreadSubagentListResponse = components["schemas"]["ThreadSubagentListResponse"];
 export type ThreadSubagentSummary = components["schemas"]["ThreadSubagentSummary"];
@@ -244,15 +249,38 @@ export async function reloadProjectPreviews(): Promise<PreviewSubsystemStatus> {
   return unwrap(api.POST("/v1/project-previews/reload"));
 }
 
-export async function listThreads(projectId: string): Promise<ThreadSummary[]> {
-  const response = await unwrap(
-    api.GET("/v1/threads", { params: { query: { projectId, limit: 100 } } }),
+export async function listThreadsPage(
+  projectId: string,
+  options: { cursor?: string | null; limit?: number } = {},
+): Promise<ThreadListResponse> {
+  return unwrap(
+    api.GET("/v1/threads", {
+      params: { query: { projectId, cursor: options.cursor ?? undefined, limit: options.limit ?? 100 } },
+    }),
   );
+}
+
+export async function listThreads(projectId: string): Promise<ThreadSummary[]> {
+  const response = await listThreadsPage(projectId);
   return response.threads;
 }
 
+export async function getSidebarThreads(): Promise<SidebarThreadsResponse> {
+  return unwrap(api.GET("/v1/sidebar/threads"));
+}
+
+export async function listChatThreadsPage(
+  options: { cursor?: string | null; limit?: number } = {},
+): Promise<ThreadListResponse> {
+  return unwrap(
+    api.GET("/v1/chats/threads", {
+      params: { query: { cursor: options.cursor ?? undefined, limit: options.limit ?? undefined } },
+    }),
+  );
+}
+
 export async function listChatThreads(): Promise<ThreadSummary[]> {
-  const response = await unwrap(api.GET("/v1/chats/threads"));
+  const response = await listChatThreadsPage();
   return response.threads;
 }
 
@@ -278,6 +306,10 @@ export async function resumeThread(threadId: string): Promise<ThreadCommandRespo
   return unwrap(
     api.POST("/v1/threads/{threadId}/resume", { params: { path: { threadId } }, body: {} }),
   );
+}
+
+export async function attachThread(threadId: string): Promise<ThreadAttachResponse> {
+  return unwrap(api.POST("/v1/threads/{threadId}/attach", { params: { path: { threadId } } }));
 }
 
 export async function forkThread(threadId: string): Promise<ThreadSummary> {

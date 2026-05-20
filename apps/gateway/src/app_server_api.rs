@@ -121,6 +121,19 @@ impl CodexClient {
         ThreadDetailResponse::from_payload(payload)
     }
 
+    pub async fn thread_read_summary(&self, thread_id: String) -> ApiResult<ThreadSummary> {
+        let payload = self
+            .request_retrying_rollout_load(
+                "thread/read",
+                json!({ "threadId": thread_id, "includeTurns": false }),
+            )
+            .await?;
+        let thread = payload
+            .get("thread")
+            .ok_or_else(|| bad_gateway("thread/read response missing thread"))?;
+        ThreadSummary::from_payload(thread)
+    }
+
     pub async fn thread_read_full_history(
         &self,
         thread_id: String,
@@ -185,19 +198,6 @@ impl CodexClient {
             cursor = Some(next_cursor);
         }
         Ok(turns)
-    }
-
-    pub async fn thread_read_summary(&self, thread_id: String) -> ApiResult<ThreadSummary> {
-        let payload = self
-            .request_retrying_rollout_load(
-                "thread/read",
-                json!({ "threadId": thread_id, "includeTurns": false }),
-            )
-            .await?;
-        let thread = payload
-            .get("thread")
-            .ok_or_else(|| bad_gateway("thread/read response missing thread"))?;
-        ThreadSummary::from_payload(thread)
     }
 
     pub async fn thread_loaded_list(&self) -> ApiResult<ThreadLoadedListResponse> {
@@ -1558,7 +1558,7 @@ pub struct GitInfoPatch {
 }
 
 impl ThreadSummary {
-    fn from_payload(payload: &Value) -> ApiResult<Self> {
+    pub(crate) fn from_payload(payload: &Value) -> ApiResult<Self> {
         Ok(Self {
             id: required_string(payload, "id")?,
             name: optional_string(payload, "name"),
@@ -1678,7 +1678,7 @@ pub struct ThreadDetailResponse {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadViewResponse {
-    pub thread: ThreadSummary,
+    pub thread: ThreadViewThreadSummary,
     pub live_state: ThreadLiveState,
     pub timeline: ThreadTimelineSnapshot,
 }
@@ -1686,9 +1686,63 @@ pub struct ThreadViewResponse {
 impl ThreadViewResponse {
     pub(crate) fn from_detail(detail: ThreadDetailResponse) -> Self {
         Self {
-            thread: detail.thread,
+            thread: ThreadViewThreadSummary::from(detail.thread),
             live_state: detail.live_state,
             timeline: detail.timeline,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadViewThreadSummary {
+    pub id: String,
+    pub name: Option<String>,
+    pub cwd: String,
+    pub status: ThreadStatus,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub source: Option<String>,
+    pub model: Option<String>,
+    pub reasoning_effort: Option<String>,
+    pub service_tier: Option<String>,
+    pub approval_policy: Option<String>,
+    pub approvals_reviewer: Option<String>,
+    pub agent_nickname: Option<String>,
+    pub agent_role: Option<String>,
+    pub sandbox: Option<Value>,
+    pub git_info: Option<GitInfo>,
+    pub pinned_at: Option<DateTime<Utc>>,
+    pub preview: Option<Value>,
+    pub last_completed_agent_turn_seq: Option<i64>,
+    pub seen_completed_agent_turn_seq: i64,
+    pub unread_completed_agent_turn: bool,
+}
+
+impl From<ThreadSummary> for ThreadViewThreadSummary {
+    fn from(thread: ThreadSummary) -> Self {
+        Self {
+            id: thread.id,
+            name: thread.name,
+            cwd: thread.cwd,
+            status: thread.status,
+            created_at: thread.created_at,
+            updated_at: thread.updated_at,
+            source: thread.source,
+            model: thread.model,
+            reasoning_effort: thread.reasoning_effort,
+            service_tier: thread.service_tier,
+            approval_policy: thread.approval_policy,
+            approvals_reviewer: thread.approvals_reviewer,
+            agent_nickname: thread.agent_nickname,
+            agent_role: thread.agent_role,
+            sandbox: thread.sandbox,
+            git_info: thread.git_info,
+            pinned_at: thread.pinned_at,
+            preview: thread.preview,
+            last_completed_agent_turn_seq: thread.last_completed_agent_turn_seq,
+            seen_completed_agent_turn_seq: thread.seen_completed_agent_turn_seq,
+            unread_completed_agent_turn: thread.unread_completed_agent_turn,
         }
     }
 }
@@ -2022,6 +2076,8 @@ pub struct ThreadItemSnapshot {
     pub item_type: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skill_mentions: Vec<TimelineSkillMention>,
+    #[schema(ignore)]
+    #[serde(default, skip_serializing)]
     pub raw_payload: Value,
 }
 
@@ -3204,6 +3260,11 @@ mod tests {
             .unwrap();
         *server.response.lock().unwrap() = json!({"thread": thread_summary_payload("thread-1")});
         client.thread_read("thread-1".to_string()).await.unwrap();
+        *server.response.lock().unwrap() = json!({"thread": thread_summary_payload("thread-1")});
+        client
+            .thread_read_summary("thread-1".to_string())
+            .await
+            .unwrap();
         *server.response.lock().unwrap() = json!({"archived": true});
         client.thread_archive("thread-1".to_string()).await.unwrap();
         client
@@ -3272,19 +3333,26 @@ mod tests {
         assert_eq!(
             requests[4],
             (
+                "thread/read".to_string(),
+                json!({"threadId": "thread-1", "includeTurns": false})
+            )
+        );
+        assert_eq!(
+            requests[5],
+            (
                 "thread/archive".to_string(),
                 json!({"threadId": "thread-1"})
             )
         );
         assert_eq!(
-            requests[5],
+            requests[6],
             (
                 "turn/start".to_string(),
                 json!({"threadId": "thread-1", "input": [{"type": "text", "text": "hi"}]})
             )
         );
         assert_eq!(
-            requests[6],
+            requests[7],
             (
                 "turn/interrupt".to_string(),
                 json!({"threadId": "thread-1", "turnId": "turn-1"})

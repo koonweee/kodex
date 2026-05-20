@@ -836,6 +836,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/sidebar/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_sidebar_threads"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/skills": {
         parameters: {
             query?: never;
@@ -930,6 +946,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["archive_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/threads/{threadId}/attach": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["attach_thread"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1346,6 +1378,11 @@ export interface components {
         CapabilitiesResponse: {
             appServer: components["schemas"]["AppServerCapabilities"];
             gateway: components["schemas"]["GatewayCapabilities"];
+        };
+        ChatThreadListQuery: {
+            cursor?: string | null;
+            /** Format: int32 */
+            limit?: number | null;
         };
         /** @enum {string} */
         ComposerPermissionsPreset: "default" | "autoReview" | "fullAccess";
@@ -2116,6 +2153,47 @@ export interface components {
             queuedInput?: null | components["schemas"]["QueuedInput"];
             turn?: null | components["schemas"]["RawAppServerResponse"];
         };
+        SidebarThreadListResponse: {
+            backwardsCursor?: string | null;
+            nextCursor?: string | null;
+            threads: components["schemas"]["SidebarThreadSummary"][];
+        };
+        SidebarThreadSummary: {
+            agentNickname?: string | null;
+            agentRole?: string | null;
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            /** Format: int64 */
+            createdAt: number;
+            cwd: string;
+            gitInfo?: null | components["schemas"]["GitInfo"];
+            id: string;
+            /** Format: int64 */
+            lastCompletedAgentTurnSeq?: number | null;
+            model?: string | null;
+            name?: string | null;
+            /** Format: date-time */
+            pinnedAt?: string | null;
+            preview?: unknown;
+            reasoningEffort?: string | null;
+            sandbox?: unknown;
+            /** Format: int64 */
+            seenCompletedAgentTurnSeq: number;
+            serviceTier?: string | null;
+            source?: string | null;
+            status: components["schemas"]["ThreadStatus"];
+            unreadCompletedAgentTurn: boolean;
+            /** Format: int64 */
+            updatedAt: number;
+        };
+        SidebarThreadsResponse: {
+            chatThreads: components["schemas"]["SidebarThreadListResponse"];
+            pinnedThreads: components["schemas"]["SidebarThreadListResponse"];
+            projectThreads: {
+                [key: string]: components["schemas"]["SidebarThreadListResponse"];
+            };
+            projects: components["schemas"]["Project"][];
+        };
         SkillErrorInfo: {
             message: string;
             path: string;
@@ -2155,6 +2233,12 @@ export interface components {
             byteRange: components["schemas"]["ByteRange"];
             placeholder?: string | null;
         };
+        /** @enum {string} */
+        ThreadAttachDisposition: "alreadyAttached" | "alreadyLoaded" | "notNeeded" | "resumed";
+        ThreadAttachResponse: {
+            disposition: components["schemas"]["ThreadAttachDisposition"];
+            thread?: null | components["schemas"]["ThreadSummary"];
+        };
         ThreadCommandResponse: {
             approvalPolicy?: string | null;
             approvalsReviewer?: string | null;
@@ -2177,7 +2261,6 @@ export interface components {
         ThreadItemSnapshot: {
             id: string;
             itemType: string;
-            rawPayload: unknown;
             skillMentions?: components["schemas"]["TimelineSkillMention"][];
         };
         ThreadListQuery: {
@@ -2305,8 +2388,36 @@ export interface components {
         };
         ThreadViewResponse: {
             liveState: components["schemas"]["ThreadLiveState"];
-            thread: components["schemas"]["ThreadSummary"];
+            thread: components["schemas"]["ThreadViewThreadSummary"];
             timeline: components["schemas"]["ThreadTimelineSnapshot"];
+        };
+        ThreadViewThreadSummary: {
+            agentNickname?: string | null;
+            agentRole?: string | null;
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            /** Format: int64 */
+            createdAt: number;
+            cwd: string;
+            gitInfo?: null | components["schemas"]["GitInfo"];
+            id: string;
+            /** Format: int64 */
+            lastCompletedAgentTurnSeq?: number | null;
+            model?: string | null;
+            name?: string | null;
+            /** Format: date-time */
+            pinnedAt?: string | null;
+            preview?: unknown;
+            reasoningEffort?: string | null;
+            sandbox?: unknown;
+            /** Format: int64 */
+            seenCompletedAgentTurnSeq: number;
+            serviceTier?: string | null;
+            source?: string | null;
+            status: components["schemas"]["ThreadStatus"];
+            unreadCompletedAgentTurn: boolean;
+            /** Format: int64 */
+            updatedAt: number;
         };
         TimelineItemDeltaPayload: {
             delta: string;
@@ -2782,7 +2893,10 @@ export interface operations {
     };
     list_chat_threads: {
         parameters: {
-            query?: never;
+            query?: {
+                cursor?: string | null;
+                limit?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3740,6 +3854,25 @@ export interface operations {
             };
         };
     };
+    get_sidebar_threads: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SidebarThreadsResponse"];
+                };
+            };
+        };
+    };
     list_skills: {
         parameters: {
             query?: {
@@ -3899,6 +4032,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RawAppServerResponse"];
+                };
+            };
+        };
+    };
+    attach_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadAttachResponse"];
                 };
             };
         };

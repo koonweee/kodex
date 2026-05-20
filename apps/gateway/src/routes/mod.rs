@@ -37,7 +37,7 @@ mod tests {
     use crate::{
         api::{build_router, AppState},
         app_server::{tests::RecordingAppServer, AppServer, InboundMessage},
-        app_server_api::{TimelineSkillMention, UserInput},
+        app_server_api::{ThreadLiveState, TimelineSkillMention, UserInput},
         automations,
         config::Config,
         error::{ApiError, ApiResult},
@@ -737,10 +737,12 @@ mod tests {
             "/v1/projects/{projectId}/previews/{previewId}/routes/{routeId}",
             "/v1/project-previews/reload",
             "/v1/threads",
+            "/v1/sidebar/threads",
             "/v1/chats/threads",
             "/v1/threads/pinned",
             "/v1/threads/{threadId}",
             "/v1/threads/{threadId}/subagents",
+            "/v1/threads/{threadId}/attach",
             "/v1/threads/{threadId}/resume",
             "/v1/threads/{threadId}/fork",
             "/v1/threads/{threadId}/archive",
@@ -2390,7 +2392,51 @@ mod tests {
             .as_array()
             .unwrap()
             .contains(&Value::String(chat_cwd.to_string_lossy().to_string())));
+        assert_eq!(requests[0].1["cursor"], Value::Null);
+        assert_eq!(requests[0].1["limit"], 100);
         assert_eq!(requests[0].1["sortKey"], "updated_at");
+    }
+
+    #[tokio::test]
+    async fn chat_thread_list_preserves_cursor_and_uses_requested_limit() {
+        let (mut state, app_server) = test_state().await;
+        let home = tempdir().unwrap();
+        Arc::make_mut(&mut state.config).projects.home_dir = home.path().to_path_buf();
+        let chat_cwd = home
+            .path()
+            .join("Documents")
+            .join("Codex")
+            .join("2026-05-06")
+            .join("chat-thread");
+        std::fs::create_dir_all(&chat_cwd).unwrap();
+        let chat_cwd = std::fs::canonicalize(chat_cwd).unwrap();
+        let mut thread = thread_summary("chat-thread");
+        thread["cwd"] = json!(chat_cwd.to_string_lossy().to_string());
+        *app_server.next_response.lock().unwrap() = Some(json!({
+            "data": [thread],
+            "nextCursor": "next-page",
+            "backwardsCursor": null
+        }));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/chats/threads?cursor=cursor-1&limit=25")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["threads"].as_array().unwrap().len(), 1);
+        assert_eq!(body["nextCursor"], "next-page");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0, "thread/list");
+        assert_eq!(requests[0].1["cursor"], "cursor-1");
+        assert_eq!(requests[0].1["limit"], 25);
     }
 
     #[tokio::test]
@@ -2459,6 +2505,222 @@ mod tests {
         assert_eq!(requests[0].1["cwd"], cwd);
         assert_eq!(requests[0].1["sortKey"], "updated_at");
         assert_eq!(requests[0].1["sortDirection"], "desc");
+    }
+
+    #[tokio::test]
+    async fn sidebar_threads_snapshot_groups_project_chat_and_pinned_threads() {
+        let (mut state, app_server) = test_state().await;
+        let home = tempdir().unwrap();
+        Arc::make_mut(&mut state.config).projects.home_dir = home.path().to_path_buf();
+        let project_one_cwd = home.path().join("project-one");
+        let project_two_cwd = home.path().join("project-two");
+        std::fs::create_dir_all(&project_one_cwd).unwrap();
+        std::fs::create_dir_all(&project_two_cwd).unwrap();
+        let project_one_cwd = std::fs::canonicalize(project_one_cwd).unwrap();
+        let project_two_cwd = std::fs::canonicalize(project_two_cwd).unwrap();
+        let project_one = state
+            .store
+            .create_project(
+                "One".to_string(),
+                project_one_cwd.to_string_lossy().to_string(),
+            )
+            .await
+            .unwrap();
+        let project_two = state
+            .store
+            .create_project(
+                "Two".to_string(),
+                project_two_cwd.to_string_lossy().to_string(),
+            )
+            .await
+            .unwrap();
+        let pinned_thread = state.store.pin_thread("pinned-thread").await.unwrap();
+        state
+            .store
+            .save_thread_composer_settings(
+                "project-one-thread",
+                &ThreadComposerSettings {
+                    model: Some("gpt-5.4-mini".to_string()),
+                    reasoning_effort: Some("high".to_string()),
+                    service_tier: Some("fast".to_string()),
+                    approval_policy: Some("on-request".to_string()),
+                    approvals_reviewer: Some("auto_review".to_string()),
+                    sandbox: Some(json!({
+                        "type": "workspaceWrite",
+                        "networkAccess": false,
+                        "writableRoots": ["/workspace"]
+                    })),
+                },
+            )
+            .await
+            .unwrap();
+        state
+            .store
+            .mark_thread_seen_completed_agent_turns("project-one-thread", 3)
+            .await
+            .unwrap();
+        let chat_cwd = home
+            .path()
+            .join("Documents")
+            .join("Codex")
+            .join("2026-05-07")
+            .join("chat-thread");
+        std::fs::create_dir_all(&chat_cwd).unwrap();
+        let chat_cwd = std::fs::canonicalize(chat_cwd).unwrap();
+        let mut project_one_thread = thread_summary("project-one-thread");
+        project_one_thread["cwd"] = json!(project_one_cwd.to_string_lossy().to_string());
+        project_one_thread["preview"] = json!({"text": "Project one preview"});
+        project_one_thread["status"] = json!({"type": "active"});
+        project_one_thread["gitInfo"] = json!({
+            "branch": "feature/sidebar-trim",
+            "originUrl": "https://example.test/kodex.git",
+            "sha": "abc123",
+        });
+        let mut project_two_thread = thread_summary("project-two-thread");
+        project_two_thread["cwd"] = json!(project_two_cwd.to_string_lossy().to_string());
+        let mut chat_thread = thread_summary("chat-thread");
+        chat_thread["cwd"] = json!(chat_cwd.to_string_lossy().to_string());
+        let listed_projects = state.store.list_projects().await.unwrap();
+        let mut queued = Vec::new();
+        for project in &listed_projects {
+            if project.id == project_one.id {
+                queued.push(
+                    json!({"data": [project_one_thread.clone()], "nextCursor": null, "backwardsCursor": null}),
+                );
+            } else {
+                queued.push(
+                    json!({"data": [project_two_thread.clone()], "nextCursor": "project-two-next", "backwardsCursor": null}),
+                );
+            }
+        }
+        queued.push(
+            json!({"data": [chat_thread], "nextCursor": "chat-next", "backwardsCursor": null}),
+        );
+        queued.push(json!({"thread": thread_summary("pinned-thread")}));
+        app_server.queued_responses.lock().unwrap().extend(queued);
+        let app = build_router(state);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/sidebar/threads")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["projects"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            body["projectThreads"][project_one.id.as_str()]["threads"][0]["id"],
+            "project-one-thread"
+        );
+        assert_eq!(
+            body["projectThreads"][project_two.id.as_str()]["threads"][0]["id"],
+            "project-two-thread"
+        );
+        assert_eq!(
+            body["projectThreads"][project_two.id.as_str()]["nextCursor"],
+            "project-two-next"
+        );
+        assert!(body["projectThreads"][project_one.id.as_str()]["rawPayload"].is_null());
+        assert!(
+            body["projectThreads"][project_one.id.as_str()]["threads"][0]["rawPayload"].is_null()
+        );
+        let project_one_compact = &body["projectThreads"][project_one.id.as_str()]["threads"][0];
+        assert_eq!(project_one_compact["status"], "active");
+        assert_eq!(
+            project_one_compact["preview"],
+            json!({"text": "Project one preview"})
+        );
+        assert_eq!(
+            project_one_compact["gitInfo"]["branch"],
+            "feature/sidebar-trim"
+        );
+        assert_eq!(
+            project_one_compact["gitInfo"]["originUrl"],
+            "https://example.test/kodex.git"
+        );
+        assert_eq!(project_one_compact["gitInfo"]["sha"], "abc123");
+        assert_eq!(project_one_compact["model"], "gpt-5.4-mini");
+        assert_eq!(project_one_compact["reasoningEffort"], "high");
+        assert_eq!(project_one_compact["serviceTier"], "fast");
+        assert_eq!(project_one_compact["approvalPolicy"], "on-request");
+        assert_eq!(project_one_compact["approvalsReviewer"], "auto_review");
+        assert_eq!(
+            project_one_compact["sandbox"],
+            json!({
+                "type": "workspaceWrite",
+                "networkAccess": false,
+                "writableRoots": ["/workspace"]
+            })
+        );
+        assert_eq!(project_one_compact["seenCompletedAgentTurnSeq"], 3);
+        assert_eq!(project_one_compact["unreadCompletedAgentTurn"], false);
+        assert_eq!(body["chatThreads"]["threads"][0]["id"], "chat-thread");
+        assert_eq!(body["chatThreads"]["nextCursor"], "chat-next");
+        assert!(body["chatThreads"]["rawPayload"].is_null());
+        assert!(body["chatThreads"]["threads"][0]["rawPayload"].is_null());
+        assert_eq!(body["pinnedThreads"]["threads"][0]["id"], "pinned-thread");
+        assert_eq!(
+            body["pinnedThreads"]["threads"][0]["pinnedAt"],
+            json!(pinned_thread.pinned_at)
+        );
+        assert!(body["pinnedThreads"]["rawPayload"].is_null());
+        assert!(body["pinnedThreads"]["threads"][0]["rawPayload"].is_null());
+
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"data": [project_two_thread], "nextCursor": "project-two-next", "backwardsCursor": null}));
+        let scoped_response = app
+            .clone()
+            .oneshot(
+                Request::get(format!(
+                    "/v1/threads?projectId={}&limit=100",
+                    project_two.id
+                ))
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(scoped_response.status(), StatusCode::OK);
+        let scoped_body = response_json(scoped_response).await;
+        assert_eq!(
+            body["projectThreads"][project_two.id.as_str()]["threads"][0]["id"],
+            scoped_body["threads"][0]["id"]
+        );
+        assert_eq!(
+            body["projectThreads"][project_two.id.as_str()]["nextCursor"],
+            scoped_body["nextCursor"]
+        );
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 5);
+        assert_eq!(requests[0].0, "thread/list");
+        assert_eq!(requests[0].1["cwd"], listed_projects[0].cwd);
+        assert_eq!(requests[0].1["limit"], 10);
+        assert_eq!(requests[1].0, "thread/list");
+        assert_eq!(requests[1].1["cwd"], listed_projects[1].cwd);
+        assert_eq!(requests[1].1["limit"], 10);
+        assert_eq!(requests[2].0, "thread/list");
+        assert_eq!(requests[2].1["limit"], 10);
+        assert!(requests[2].1["cwd"]
+            .as_array()
+            .unwrap()
+            .contains(&Value::String(chat_cwd.to_string_lossy().to_string())));
+        assert_eq!(requests[3].0, "thread/read");
+        assert_eq!(
+            requests[3].1,
+            json!({"threadId": "pinned-thread", "includeTurns": false})
+        );
+        assert_eq!(requests[4].0, "thread/list");
+        assert_eq!(requests[4].1["cwd"], project_two.cwd);
+        assert_eq!(requests[4].1["limit"], 100);
     }
 
     #[tokio::test]
@@ -3137,6 +3399,119 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn thread_attach_noops_when_gateway_thread_view_is_live() {
+        let (state, app_server) = test_state().await;
+        thread_view::record_thread_live_state(
+            &state.thread_views,
+            "thread-1",
+            ThreadLiveState::Streaming,
+            1,
+        )
+        .await
+        .unwrap();
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/attach")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "alreadyAttached");
+        assert!(body["thread"].is_null());
+        assert!(app_server.requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn thread_attach_noops_for_known_idle_runtime() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "idle".to_string(),
+                active_turn_id: None,
+                updated_at: chrono::Utc::now(),
+                last_event_seq: None,
+            })
+            .await
+            .unwrap();
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/attach")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "notNeeded");
+        assert!(body["thread"].is_null());
+        assert!(app_server.requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn thread_attach_noops_when_app_server_session_is_loaded() {
+        let (state, app_server) = test_state().await;
+        *app_server.next_response.lock().unwrap() =
+            Some(json!({"data": ["thread-1"], "nextCursor": null}));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/attach")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "alreadyLoaded");
+        assert!(body["thread"].is_null());
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0, "thread/loaded/list");
+    }
+
+    #[tokio::test]
+    async fn thread_attach_resumes_unknown_thread() {
+        let (state, app_server) = test_state().await;
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/attach")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "resumed");
+        assert_eq!(body["thread"]["id"], "thread-1");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].0, "thread/loaded/list");
+        assert_eq!(requests[1].0, "thread/resume");
+        assert_eq!(requests[1].1["threadId"], "thread-1");
+        assert_eq!(requests[1].1["persistExtendedHistory"], true);
+        assert_eq!(requests[1].1["excludeTurns"], true);
+    }
+
+    #[tokio::test]
     async fn thread_subagents_returns_loaded_descendants_in_created_order() {
         let (state, app_server) = test_state().await;
         *app_server.queued_responses.lock().unwrap() = vec![
@@ -3536,6 +3911,10 @@ mod tests {
         assert_eq!(body["thread"]["lastCompletedAgentTurnSeq"], 1);
         assert_eq!(body["thread"]["unreadCompletedAgentTurn"], true);
         assert_eq!(body["liveState"], "idle");
+        assert!(
+            !body.to_string().contains("rawPayload"),
+            "selected thread snapshots should not serialize raw app-server payloads"
+        );
 
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(
@@ -4215,6 +4594,14 @@ mod tests {
         assert_eq!(body["threads"].as_array().unwrap().len(), 1);
         assert_eq!(body["threads"][0]["id"], "thread-1");
         assert_eq!(body["threads"][0]["pinnedAt"], pinned_at);
+        {
+            let requests = app_server.requests.lock().unwrap();
+            assert_eq!(requests.last().unwrap().0, "thread/read");
+            assert_eq!(
+                requests.last().unwrap().1,
+                json!({"threadId": "thread-1", "includeTurns": false})
+            );
+        }
 
         let mut archived_thread = thread_summary("thread-1");
         archived_thread["archived"] = json!(true);

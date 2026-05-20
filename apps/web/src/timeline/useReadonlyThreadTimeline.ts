@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { EventEnvelope, ThreadSummary } from "../api/client";
+import type { EventEnvelope, ThreadSummary, ThreadViewThreadSummary } from "../api/client";
 import { getThreadDetail } from "../api/client";
 import { isApprovalEvent } from "../approvals/state";
 import { createEventStreamClient } from "../events/stream";
@@ -117,7 +117,7 @@ export function useReadonlyThreadTimeline({
         return false;
       }
       setTimeline((current) => applyTimelineSnapshot(current, snapshot));
-      latestCallbacks.current.onSnapshotThread?.(snapshot.thread);
+      latestCallbacks.current.onSnapshotThread?.(threadViewSummaryToThreadSummary(snapshot.thread));
       markStreaming(currentThreadId);
       return snapshot.timeline?.viewRevision ?? 0;
     }
@@ -194,6 +194,13 @@ export function useReadonlyThreadTimeline({
     setScrollParentElement,
     timeline,
     timelineEntry,
+  };
+}
+
+function threadViewSummaryToThreadSummary(thread: ThreadViewThreadSummary): ThreadSummary {
+  return {
+    ...thread,
+    rawPayload: {},
   };
 }
 

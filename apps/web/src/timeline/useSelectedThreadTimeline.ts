@@ -1,22 +1,28 @@
 import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
 
-import type { Approval, EventEnvelope, ThreadSummary } from "../api/client";
+import type { Approval, EventEnvelope, ThreadSummary, ThreadViewThreadSummary } from "../api/client";
 import { getThreadDetail } from "../api/client";
 import { isApprovalEvent } from "../approvals/state";
 import { createEventStreamClient } from "../events/stream";
+import { errorMessageFrom } from "../shared/values";
 import { applyTimelineEventBatch } from "./batch";
 import { idleTimelineEntry, type TimelineEntry } from "./entry";
 import { applyTimelineSnapshot, createTimelineState, type TimelineState } from "./reducer";
 
 const MATERIALIZING_THREAD_SNAPSHOT_RETRY_MS = 250;
 
+export type ThreadSyncNotice = {
+  message: string;
+  tone: "info" | "warning";
+};
+
 export function useSelectedThreadTimeline({
-  isSelectedThreadNotLoaded,
   isSelectedThreadSnapshotDeferred,
   onApprovalEvent,
   onError,
   onQueueEvent,
   onSnapshotThread,
+  onSyncNotice,
   onThreadLoadFailed,
   onThreadMetadataEvent,
   selectedThreadId,
@@ -24,12 +30,12 @@ export function useSelectedThreadTimeline({
   setTimeline,
   setTimelineEntry,
 }: {
-  isSelectedThreadNotLoaded: boolean;
   isSelectedThreadSnapshotDeferred: boolean;
   onApprovalEvent: (current: Approval[], event: EventEnvelope) => Approval[];
   onError: (error: unknown) => void;
   onQueueEvent: (event: EventEnvelope) => void;
   onSnapshotThread: (thread: ThreadSummary) => void;
+  onSyncNotice?: (notice: ThreadSyncNotice | null) => void;
   onThreadLoadFailed?: (threadId: string, error: unknown) => void;
   onThreadMetadataEvent: (event: EventEnvelope) => void;
   selectedThreadId: string | null;
@@ -46,6 +52,7 @@ export function useSelectedThreadTimeline({
     onError,
     onQueueEvent,
     onSnapshotThread,
+    onSyncNotice,
     onThreadLoadFailed,
     onThreadMetadataEvent,
   });
@@ -54,6 +61,7 @@ export function useSelectedThreadTimeline({
     onError,
     onQueueEvent,
     onSnapshotThread,
+    onSyncNotice,
     onThreadLoadFailed,
     onThreadMetadataEvent,
   };
@@ -124,18 +132,16 @@ export function useSelectedThreadTimeline({
     if (!selectedThreadId) {
       selectedThreadStreamToken.current += 1;
       cancelQueuedTimelineEvents();
+      latestCallbacks.current.onSyncNotice?.(null);
       clearEntry();
       return;
     }
 
     const threadId = selectedThreadId;
-    if (isSelectedThreadNotLoaded) {
-      beginEntry(threadId);
-      return;
-    }
     if (isSelectedThreadSnapshotDeferred) {
       selectedThreadStreamToken.current += 1;
       cancelQueuedTimelineEvents();
+      latestCallbacks.current.onSyncNotice?.(null);
       markEntryStreaming(threadId);
       return;
     }
@@ -146,6 +152,10 @@ export function useSelectedThreadTimeline({
     const streamToken = selectedThreadStreamToken.current + 1;
     selectedThreadStreamToken.current = streamToken;
 
+    function setSyncNotice(notice: ThreadSyncNotice | null) {
+      latestCallbacks.current.onSyncNotice?.(notice);
+    }
+
     async function refreshSnapshot(phase: "loadingSnapshot" | "refreshingSnapshot") {
       if (phase === "refreshingSnapshot") {
         markEntryRefreshing(threadId);
@@ -155,17 +165,35 @@ export function useSelectedThreadTimeline({
         return false;
       }
       setTimeline((current) => applyTimelineSnapshot(current, snapshot));
-      latestCallbacks.current.onSnapshotThread(snapshot.thread);
+      latestCallbacks.current.onSnapshotThread(threadViewSummaryToThreadSummary(snapshot.thread));
+      setSyncNotice(null);
       markEntryStreaming(threadId);
       return snapshot.timeline?.viewRevision ?? 0;
     }
 
-    const refetchSnapshot = () => {
+    const refetchSnapshot = (reason: "refreshRequired" | "streamReconnect") => {
+      setSyncNotice(
+        reason === "streamReconnect"
+          ? {
+              message: "Selected thread stream disconnected. Reconnecting and retrying thread refresh.",
+              tone: "warning",
+            }
+          : {
+              message: "Gateway requested a selected thread refresh. Reloading thread state.",
+              tone: "info",
+            },
+      );
       void refreshSnapshot("refreshingSnapshot").catch((error) => {
         if (cancelled) {
           return;
         }
-        latestCallbacks.current.onError(error);
+        setSyncNotice({
+          message:
+            reason === "streamReconnect"
+              ? `Selected thread stream disconnected. Reconnecting and retrying thread refresh: ${errorMessageFrom(error)}`
+              : `Selected thread refresh failed. Retrying on the next gateway update: ${errorMessageFrom(error)}`,
+          tone: "warning",
+        });
       });
     };
 
@@ -178,7 +206,7 @@ export function useSelectedThreadTimeline({
         threadId,
         onStatusChange: (status) => {
           if (status === "reconnecting" && selectedThreadStreamToken.current === streamToken) {
-            refetchSnapshot();
+            refetchSnapshot("streamReconnect");
           }
         },
         onEvent: (event) => {
@@ -191,7 +219,7 @@ export function useSelectedThreadTimeline({
           // Raw app-server lifecycle events are not render inputs here. The
           // gateway thread view owns live transcript truth.
           if (event.kind === "thread_view.refresh_required") {
-            refetchSnapshot();
+            refetchSnapshot("refreshRequired");
             return;
           }
           latestCallbacks.current.onThreadMetadataEvent(event);
@@ -206,6 +234,7 @@ export function useSelectedThreadTimeline({
           if (!isCanonicalTimelineRenderEvent(event)) {
             return;
           }
+          setSyncNotice(null);
           queuedTimelineEvents.current.push(event);
           scheduleQueuedTimelineFlush();
         },
@@ -226,9 +255,14 @@ export function useSelectedThreadTimeline({
             return;
           }
           if (isTransientThreadSnapshotLoadError(error)) {
+            setSyncNotice({
+              message: `Selected thread history is still materializing. Retrying snapshot load: ${errorMessageFrom(error)}`,
+              tone: "info",
+            });
             materializingThreadRetry = setTimeout(loadInitialSnapshot, MATERIALIZING_THREAD_SNAPSHOT_RETRY_MS);
             return;
           }
+          setSyncNotice(null);
           closeStream?.();
           closeStream = null;
           cancelQueuedTimelineEvents();
@@ -249,7 +283,14 @@ export function useSelectedThreadTimeline({
       closeStream?.();
       cancelQueuedTimelineEvents();
     };
-  }, [isSelectedThreadNotLoaded, isSelectedThreadSnapshotDeferred, selectedThreadId, setApprovals, setTimeline, setTimelineEntry]);
+  }, [isSelectedThreadSnapshotDeferred, selectedThreadId, setApprovals, setTimeline, setTimelineEntry]);
+}
+
+function threadViewSummaryToThreadSummary(thread: ThreadViewThreadSummary): ThreadSummary {
+  return {
+    ...thread,
+    rawPayload: {},
+  };
 }
 
 function isQueueEvent(event: EventEnvelope): boolean {

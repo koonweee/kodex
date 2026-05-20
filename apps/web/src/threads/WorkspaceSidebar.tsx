@@ -77,6 +77,8 @@ const SIDEBAR_TEXT = {
   startNewChatMobile: "Start new chat from mobile header",
   showThread: "Show thread",
   showLessThreads: "Show less",
+  showMoreError: "Could not load more threads",
+  showMoreLoading: "Loading more",
   showMoreThreads: "Show more",
   threadInProgress: "Thread in progress",
   unreadAgentTurn: "Unread completed agent turn",
@@ -87,6 +89,7 @@ const SIDEBAR_TEXT = {
 const VISIBLE_THREAD_LIMIT = 5;
 type SidebarScope = "projects" | "chats";
 type SidebarDataLoadState = "error" | "loaded" | "loading" | "refetching";
+type SidebarPaginationState = "idle" | "loading" | "error";
 
 export type WorkspaceSidebarDataState = {
   chatThreads: SidebarDataLoadState;
@@ -106,6 +109,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   account,
   approvals,
   chatThreads,
+  chatThreadsHasMore = false,
+  chatThreadsPaginationState = "idle",
   dataState = DEFAULT_DATA_STATE,
   hoveredThreadActionId,
   isSidebarResizing,
@@ -117,6 +122,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onCreateThread,
   onLogin,
   onLogout,
+  onLoadMoreChatThreads,
+  onLoadMoreProjectThreads,
   onOpenPreferences,
   onPinThread,
   onProjectCwdChange,
@@ -139,6 +146,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   projectCwd,
   projectDirectoryCreatePending,
   projectFormOpen,
+  projectThreadHasMoreById = {},
+  projectThreadPaginationStateById = {},
   projects,
   selectedProjectId,
   selectedMainPane,
@@ -151,6 +160,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   account: AccountResponse | null;
   approvals: Approval[];
   chatThreads: ThreadSummary[];
+  chatThreadsHasMore?: boolean;
+  chatThreadsPaginationState?: SidebarPaginationState;
   dataState?: WorkspaceSidebarDataState;
   hoveredThreadActionId: string | null;
   isSidebarResizing: boolean;
@@ -162,6 +173,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onCreateThread: (projectId: string) => void;
   onLogin: () => void;
   onLogout: () => void;
+  onLoadMoreChatThreads?: () => void;
+  onLoadMoreProjectThreads?: (projectId: string) => void;
   onOpenPreferences: () => void;
   onPinThread: (threadId: string) => void;
   onProjectCwdChange: (value: string) => void;
@@ -184,6 +197,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   projectCwd: string;
   projectDirectoryCreatePending: boolean;
   projectFormOpen: boolean;
+  projectThreadHasMoreById?: Record<string, boolean>;
+  projectThreadPaginationStateById?: Record<string, SidebarPaginationState>;
   projects: Project[];
   selectedProjectId: string | null;
   selectedMainPane: "thread" | "automations" | "project";
@@ -554,6 +569,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                       }
                       const projectCollapsed = collapsedProjectIds.has(project.id);
                       const showAllProjectThreads = expandedThreadProjectIds.has(project.id);
+                      const projectThreadsHaveMore = projectThreadHasMoreById[project.id] === true;
+                      const projectThreadPaginationState = projectThreadPaginationStateById[project.id] ?? "idle";
                       const displayedProjectThreads = projectMatchesSearch ? projectThreads : visibleProjectThreads;
                       const collapsedProjectThreads = displayedProjectThreads.filter((thread) =>
                         threadSurfacesWhenProjectCollapsed(thread, selectedThreadId),
@@ -616,14 +633,18 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                               className="kodex-project-thread-list"
                               expanded={projectCollapsed || showAllProjectThreads}
                               hoveredThreadActionId={hoveredThreadActionId}
+                              hasMore={projectThreadsHaveMore}
                               onArchiveThread={onArchiveThread}
                               onPinThread={onPinThread}
                               onSelectThread={(threadId) => onSelectThread(project.id, threadId)}
                               onThreadActionHoverChange={onThreadActionHoverChange}
                               onToggleExpanded={() => {
+                                if ((projectThreadsHaveMore && showAllProjectThreads) || (!showAllProjectThreads && projectThreadsHaveMore)) {
+                                  onLoadMoreProjectThreads?.(project.id);
+                                }
                                 setExpandedThreadProjectIds((current) => {
                                   const next = new Set(current);
-                                  if (next.has(project.id)) {
+                                  if (next.has(project.id) && !projectThreadsHaveMore) {
                                     next.delete(project.id);
                                   } else {
                                     next.add(project.id);
@@ -633,6 +654,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                               }}
                               onUnpinThread={onUnpinThread}
                               pendingTitleThreadIds={pendingTitleThreadIds}
+                              paginationState={projectThreadPaginationState}
                               selectedThreadId={selectedThreadId}
                               threads={renderedProjectThreads}
                             />
@@ -659,14 +681,21 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                   approvals={approvals}
                   className="kodex-chat-thread-list"
                   expanded={chatThreadsExpanded}
+                  hasMore={chatThreadsHasMore}
                   hoveredThreadActionId={hoveredThreadActionId}
                   onArchiveThread={onArchiveThread}
                   onPinThread={onPinThread}
                   onSelectThread={onSelectChatThread}
                   onThreadActionHoverChange={onThreadActionHoverChange}
-                  onToggleExpanded={() => setChatThreadsExpanded((expanded) => !expanded)}
+                  onToggleExpanded={() => {
+                    if (chatThreadsHasMore) {
+                      onLoadMoreChatThreads?.();
+                    }
+                    setChatThreadsExpanded((expanded) => (expanded && !chatThreadsHasMore ? false : true));
+                  }}
                   onUnpinThread={onUnpinThread}
                   pendingTitleThreadIds={pendingTitleThreadIds}
+                  paginationState={chatThreadsPaginationState}
                   selectedThreadId={selectedThreadId}
                   threads={visibleChatThreads}
                 />
@@ -960,6 +989,7 @@ function ThreadList({
   approvals,
   className,
   expanded,
+  hasMore = false,
   hoveredThreadActionId,
   onArchiveThread,
   onPinThread,
@@ -968,12 +998,14 @@ function ThreadList({
   onToggleExpanded,
   onUnpinThread,
   pendingTitleThreadIds,
+  paginationState = "idle",
   selectedThreadId,
   threads,
 }: {
   approvals: Approval[];
   className: string;
   expanded: boolean;
+  hasMore?: boolean;
   hoveredThreadActionId: string | null;
   onArchiveThread: (threadId: string) => void;
   onPinThread: (threadId: string) => void;
@@ -982,11 +1014,18 @@ function ThreadList({
   onToggleExpanded: () => void;
   onUnpinThread: (threadId: string) => void;
   pendingTitleThreadIds: Set<string>;
+  paginationState?: SidebarPaginationState;
   selectedThreadId: string | null;
   threads: ThreadSummary[];
 }) {
   const visibleThreads = expanded ? threads : threads.slice(0, VISIBLE_THREAD_LIMIT);
-  const hasHiddenThreads = threads.length > VISIBLE_THREAD_LIMIT;
+  const hasHiddenThreads = threads.length > VISIBLE_THREAD_LIMIT || hasMore;
+  const toggleLabel =
+    paginationState === "loading"
+      ? SIDEBAR_TEXT.showMoreLoading
+      : expanded && !hasMore
+        ? SIDEBAR_TEXT.showLessThreads
+        : SIDEBAR_TEXT.showMoreThreads;
 
   return (
     <Stack className={className} gap={6}>
@@ -1006,9 +1045,19 @@ function ThreadList({
         />
       ))}
       {hasHiddenThreads ? (
-        <button className="kodex-ui-button kodex-thread-list-more-button" onClick={onToggleExpanded} type="button">
-          {expanded ? SIDEBAR_TEXT.showLessThreads : SIDEBAR_TEXT.showMoreThreads}
+        <button
+          className="kodex-ui-button kodex-thread-list-more-button"
+          disabled={paginationState === "loading"}
+          onClick={onToggleExpanded}
+          type="button"
+        >
+          {toggleLabel}
         </button>
+      ) : null}
+      {paginationState === "error" ? (
+        <Text c="red" role="alert" size="xs">
+          {SIDEBAR_TEXT.showMoreError}
+        </Text>
       ) : null}
     </Stack>
   );

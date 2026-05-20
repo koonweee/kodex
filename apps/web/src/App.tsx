@@ -19,6 +19,7 @@ import {
 import { useAccountSession } from "./account/useAccountSession";
 import {
   archiveThread,
+  attachThread,
   createAutomation,
   createChatThread,
   createProject,
@@ -26,16 +27,15 @@ import {
   deleteAutomation,
   getRateLimits,
   listAutomations,
-  listChatThreads,
+  listChatThreadsPage,
   listQueuedInputs,
   listPinnedThreads,
   listProjects,
   listThreadSubagents,
-  listThreads,
+  listThreadsPage,
   pauseAutomation,
   pinThread,
   renameThread,
-  resumeThread,
   resumeAutomation,
   unpinThread,
   updateAutomation,
@@ -79,7 +79,7 @@ import {
 } from "./theme";
 import { ThemeWorkbench } from "./theme/ThemeWorkbench";
 import { idleTimelineEntry, type TimelineEntry } from "./timeline/entry";
-import { useSelectedThreadTimeline } from "./timeline/useSelectedThreadTimeline";
+import { useSelectedThreadTimeline, type ThreadSyncNotice } from "./timeline/useSelectedThreadTimeline";
 import {
   clearAvailableThreadTitles,
   markThreadTitlePending,
@@ -97,6 +97,7 @@ import {
   mergeSelectedThreadDetailIntoSidebarSummary,
   mergePinnedThreadData,
   mergeProjectThreadData,
+  mergeProjectThreadSnapshot,
   pinnedTombstonesAddedDuringSnapshot,
   removeThreadEverywhere,
   replaceThreadEverywhere,
@@ -117,6 +118,7 @@ import {
   loadSidebarProjectOrder,
   saveSidebarProjectOrder,
 } from "./threads/projectOrder";
+import { useSidebarThreadsSnapshot } from "./threads/useSidebarThreadsSnapshot";
 import { useThreadMetadata } from "./threads/useThreadMetadata";
 import { useThreadReadState } from "./threads/useThreadReadState";
 import {
@@ -132,6 +134,7 @@ import "./App.css";
 
 const NEW_THREAD_TITLE = "New thread";
 const DRAFT_COMPOSER_TRANSITION_MS = 280;
+type SidebarPaginationState = "idle" | "loading" | "error";
 
 function useEventCallback<TArgs extends unknown[], TResult>(
   callback: (...args: TArgs) => TResult,
@@ -199,6 +202,7 @@ function KodexShell({
   const [projectDirectoryCreateCwd, setProjectDirectoryCreateCwd] = useState<string | null>(null);
   const [showDebugEvents, setShowDebugEvents] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [threadSyncNotice, setThreadSyncNotice] = useState<ThreadSyncNotice | null>(null);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(initialRoute.panel ?? "chat");
   const [lightboxImage, setLightboxImage] = useState<ImageLightboxImage | null>(null);
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownPreviewRequest | null>(null);
@@ -220,6 +224,8 @@ function KodexShell({
   const routeSelectedThreadRef = useRef<ThreadSummary | null>(null);
   const pendingTitleThreadIdsRef = useRef<Set<string>>(new Set());
   const threadsByProjectIdRef = useRef<ThreadsByProjectId>({});
+  const chatThreadsLoadingCursorRef = useRef<string | null>(null);
+  const projectThreadLoadingCursorsRef = useRef<Record<string, string>>({});
   const composerShellRef = useRef<HTMLDivElement | null>(null);
   const directMobileDeepLinkSeededRef = useRef(false);
   const draftComposerTransitionOriginRef = useRef<DOMRect | null>(null);
@@ -227,23 +233,60 @@ function KodexShell({
   const [draftComposerTransitionToken, setDraftComposerTransitionToken] = useState(0);
   const [isDraftComposerTransitioning, setIsDraftComposerTransitioning] = useState(false);
   const [pinnedStateTrusted, setPinnedStateTrusted] = useState(false);
+  const [chatThreadsNextCursor, setChatThreadsNextCursor] = useState<string | null>(null);
+  const [projectThreadNextCursors, setProjectThreadNextCursors] = useState<Record<string, string | null>>({});
+  const [chatThreadsPaginationState, setChatThreadsPaginationState] = useState<SidebarPaginationState>("idle");
+  const [projectThreadPaginationStateById, setProjectThreadPaginationStateById] = useState<Record<string, SidebarPaginationState>>({});
 
+  const {
+    cachedSidebarSnapshotData,
+    scopedSidebarQueriesEnabled,
+    scopedSidebarSnapshotStaleTime,
+    sidebarSnapshotReady,
+    sidebarThreadsQuery,
+  } = useSidebarThreadsSnapshot({
+    queryClient: queryClientForShell,
+    routeSelectedThreadRef,
+    selectedThreadIdRef,
+    onChatThreadsCursorChange: setChatThreadsNextCursor,
+    onPinnedStateTrusted: () => setPinnedStateTrusted(true),
+    onProjectThreadCursorsChange: setProjectThreadNextCursors,
+  });
   const projectsQuery = useQuery({
+    enabled: scopedSidebarQueriesEnabled,
     queryKey: queryKeys.projects,
-    queryFn: listProjects,
+    refetchOnMount: false,
+    staleTime: scopedSidebarSnapshotStaleTime,
+    queryFn: async () => {
+      const seededProjects = cachedSidebarSnapshotData<Project[]>(queryKeys.projects);
+      if (seededProjects) {
+        return seededProjects;
+      }
+      return listProjects();
+    },
   });
   const projects = projectsQuery.data ?? [];
   const orderedProjects = useMemo(() => applySidebarProjectOrder(projects, projectOrderIds), [projectOrderIds, projects]);
   const projectThreadQueries = useQueries({
     queries: orderedProjects.map((project) => ({
+      enabled: scopedSidebarQueriesEnabled,
       queryKey: queryKeys.projectThreads(project.id),
-      queryFn: async () =>
-        mergeProjectThreadData(
+      refetchOnMount: false,
+      staleTime: scopedSidebarSnapshotStaleTime,
+      queryFn: async () => {
+        const seededThreads = cachedSidebarSnapshotData<ThreadSummary[]>(queryKeys.projectThreads(project.id));
+        if (seededThreads) {
+          return seededThreads;
+        }
+        const response = await listThreadsPage(project.id);
+        setProjectThreadNextCursors((current) => ({ ...current, [project.id]: response.nextCursor ?? null }));
+        return mergeProjectThreadData(
           queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.projectThreads(project.id)),
-          await listThreads(project.id),
+          response.threads,
           routeSelectedThreadRef.current,
           selectedThreadIdRef.current,
-        ),
+        );
+      },
     })),
   });
   const threadsByProjectId = useMemo(() => {
@@ -254,16 +297,33 @@ function KodexShell({
     return next;
   }, [orderedProjects, projectThreadQueries]);
   const chatThreadsQuery = useQuery({
+    enabled: scopedSidebarQueriesEnabled,
     queryKey: queryKeys.chatThreads,
-    queryFn: async () =>
-      mergeChatThreadData(
+    refetchOnMount: false,
+    staleTime: scopedSidebarSnapshotStaleTime,
+    queryFn: async () => {
+      const seededThreads = cachedSidebarSnapshotData<ThreadSummary[]>(queryKeys.chatThreads);
+      if (seededThreads) {
+        return seededThreads;
+      }
+      const response = await listChatThreadsPage();
+      setChatThreadsNextCursor(response.nextCursor ?? null);
+      return mergeChatThreadData(
         queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.chatThreads),
-        await listChatThreads(),
-      ),
+        response.threads,
+      );
+    },
   });
   const pinnedThreadsQuery = useQuery({
+    enabled: scopedSidebarQueriesEnabled,
     queryKey: queryKeys.pinnedThreads,
+    refetchOnMount: false,
+    staleTime: sidebarSnapshotReady || pinnedStateTrusted ? Infinity : 0,
     queryFn: async () => {
+      const seededThreads = cachedSidebarSnapshotData<ThreadSummary[]>(queryKeys.pinnedThreads);
+      if (seededThreads) {
+        return seededThreads;
+      }
       const beforeSnapshot = queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads);
       const tombstonesBeforeSnapshot = queryClientForShell.getQueryData<string[]>(queryKeys.pinnedThreadTombstones);
       const threads = await listPinnedThreads();
@@ -376,7 +436,6 @@ function KodexShell({
     selectedThreadId !== null && timelineEntry.threadId === selectedThreadId ? timelineEntry : idleTimelineEntry;
   const isSelectedThreadSnapshotDeferred =
     selectedThreadId !== null && materializingThreadIds.has(selectedThreadId);
-  const isSelectedThreadNotLoaded = selectedThread?.status === "notLoaded";
   const isSelectedTimelineLoading = selectedTimelineEntry.phase === "loadingSnapshot";
   const isSelectedTimelineReady =
     selectedTimelineEntry.phase === "streamingLive" || selectedTimelineEntry.phase === "refreshingSnapshot";
@@ -700,21 +759,6 @@ function KodexShell({
     return client.close;
   }, []);
 
-  useSelectedThreadTimeline({
-    isSelectedThreadNotLoaded,
-    isSelectedThreadSnapshotDeferred,
-    onApprovalEvent: applyApprovalEventWithTombstone,
-    onError: reportError,
-    onSnapshotThread: handleSelectedThreadSnapshot,
-    onThreadMetadataEvent: applyThreadMetadataEvent,
-    onQueueEvent: applyQueueEvent,
-    selectedThreadId,
-    setApprovals,
-    setTimeline,
-    setTimelineEntry,
-    onThreadLoadFailed: handleSelectedThreadLoadFailed,
-  });
-
   useEffect(() => {
     if (isSelectedThreadSnapshotDeferred) {
       return;
@@ -728,16 +772,17 @@ function KodexShell({
 
     let cancelled = false;
     attachingThreadIdsRef.current.add(selectedThread.id);
-    resumeThread(selectedThread.id)
+    const attachingThreadId = selectedThread.id;
+    attachThread(attachingThreadId)
       .then((response) => {
-        attachingThreadIdsRef.current.delete(selectedThread.id);
-        attachedThreadIdsRef.current.add(response.thread.id);
-        if (!cancelled) {
+        attachingThreadIdsRef.current.delete(attachingThreadId);
+        attachedThreadIdsRef.current.add(attachingThreadId);
+        if (!cancelled && response.thread) {
           replaceThread(response.thread);
         }
       })
       .catch((error) => {
-        attachingThreadIdsRef.current.delete(selectedThread.id);
+        attachingThreadIdsRef.current.delete(attachingThreadId);
         if (!cancelled) {
           reportError(error);
         }
@@ -747,6 +792,21 @@ function KodexShell({
       cancelled = true;
     };
   }, [isSelectedThreadSnapshotDeferred, selectedThread?.id, selectedThread?.status]);
+
+  useSelectedThreadTimeline({
+    isSelectedThreadSnapshotDeferred,
+    onApprovalEvent: applyApprovalEventWithTombstone,
+    onError: reportError,
+    onSnapshotThread: handleSelectedThreadSnapshot,
+    onSyncNotice: setThreadSyncNotice,
+    onThreadMetadataEvent: applyThreadMetadataEvent,
+    onQueueEvent: applyQueueEvent,
+    selectedThreadId,
+    setApprovals,
+    setTimeline,
+    setTimelineEntry,
+    onThreadLoadFailed: handleSelectedThreadLoadFailed,
+  });
 
   function clearTimelineEntry() {
     setTimelineEntry(idleTimelineEntry);
@@ -1538,6 +1598,57 @@ function KodexShell({
     });
     setMobilePanel("chat");
   });
+  const handleLoadMoreChatThreads = useEventCallback(async () => {
+    const cursor = chatThreadsNextCursor;
+    if (!cursor || chatThreadsLoadingCursorRef.current === cursor) {
+      return;
+    }
+    chatThreadsLoadingCursorRef.current = cursor;
+    setChatThreadsPaginationState("loading");
+    try {
+      const response = await listChatThreadsPage({ cursor });
+      queryClientForShell.setQueryData<ThreadSummary[]>(queryKeys.chatThreads, (current) =>
+        mergeChatThreadData(current, response.threads),
+      );
+      setChatThreadsNextCursor(response.nextCursor ?? null);
+      setChatThreadsPaginationState("idle");
+    } catch (error) {
+      setChatThreadsPaginationState("error");
+      reportError(error);
+    } finally {
+      if (chatThreadsLoadingCursorRef.current === cursor) {
+        chatThreadsLoadingCursorRef.current = null;
+      }
+    }
+  });
+  const handleLoadMoreProjectThreads = useEventCallback(async (projectId: string) => {
+    const cursor = projectThreadNextCursors[projectId];
+    if (!cursor || projectThreadLoadingCursorsRef.current[projectId] === cursor) {
+      return;
+    }
+    projectThreadLoadingCursorsRef.current = { ...projectThreadLoadingCursorsRef.current, [projectId]: cursor };
+    setProjectThreadPaginationStateById((current) => ({ ...current, [projectId]: "loading" }));
+    try {
+      const response = await listThreadsPage(projectId, { cursor });
+      mergeProjectThreadSnapshot(
+        queryClientForShell,
+        projectId,
+        response.threads,
+        routeSelectedThreadRef.current,
+        selectedThreadIdRef.current,
+      );
+      setProjectThreadNextCursors((current) => ({ ...current, [projectId]: response.nextCursor ?? null }));
+      setProjectThreadPaginationStateById((current) => ({ ...current, [projectId]: "idle" }));
+    } catch (error) {
+      setProjectThreadPaginationStateById((current) => ({ ...current, [projectId]: "error" }));
+      reportError(error);
+    } finally {
+      if (projectThreadLoadingCursorsRef.current[projectId] === cursor) {
+        const { [projectId]: _finishedCursor, ...remaining } = projectThreadLoadingCursorsRef.current;
+        projectThreadLoadingCursorsRef.current = remaining;
+      }
+    }
+  });
   const pinnedStateIsTrusted = pinnedStateTrusted;
   const sidebarPinnedThreads = pinnedStateIsTrusted ? pinnedThreads : [];
   const sidebarChatThreads = useMemo(
@@ -1550,17 +1661,26 @@ function KodexShell({
   );
   const sidebarDataState = useMemo(
     () => ({
-      chatThreads: queryResultLoadState(chatThreadsQuery),
-      pinnedThreads: pinnedStateIsTrusted ? queryResultLoadState(pinnedThreadsQuery) : "loading",
-      projects: queryResultLoadState(projectsQuery),
+      chatThreads: scopedSidebarQueriesEnabled ? queryResultLoadState(chatThreadsQuery) : queryResultLoadState(sidebarThreadsQuery),
+      pinnedThreads: pinnedStateIsTrusted && scopedSidebarQueriesEnabled ? queryResultLoadState(pinnedThreadsQuery) : "loading",
+      projects: scopedSidebarQueriesEnabled ? queryResultLoadState(projectsQuery) : queryResultLoadState(sidebarThreadsQuery),
       projectThreadsById: Object.fromEntries(
         orderedProjects.map((project, index) => [
           project.id,
-          queryResultLoadState(projectThreadQueries[index]),
+          scopedSidebarQueriesEnabled ? queryResultLoadState(projectThreadQueries[index]) : queryResultLoadState(sidebarThreadsQuery),
         ]),
       ),
     }),
-    [chatThreadsQuery, orderedProjects, pinnedStateIsTrusted, pinnedThreadsQuery, projectThreadQueries, projectsQuery],
+    [
+      chatThreadsQuery,
+      orderedProjects,
+      pinnedStateIsTrusted,
+      pinnedThreadsQuery,
+      projectThreadQueries,
+      projectsQuery,
+      scopedSidebarQueriesEnabled,
+      sidebarThreadsQuery,
+    ],
   );
   const selectedSubagentStillAvailable =
     selectedSubagentThreadId !== null &&
@@ -1640,12 +1760,16 @@ function KodexShell({
           subagentSidebarOpen,
           subagentToggleVisible: selectedThreadSubagents.length > 0,
           subagentViewer,
+          threadSyncNotice,
           timeline,
         }}
         workspaceSidebarProps={{
           account, approvals, chatThreads: sidebarChatThreads, dataState: sidebarDataState, hoveredThreadActionId, isSidebarResizing, loginState,
+          chatThreadsHasMore: chatThreadsNextCursor !== null,
+          chatThreadsPaginationState,
           onArchiveThread: handleArchiveThreadById, onCancelLogin: handleCancelLogin,
           onCreateChat: stableHandleCreateChat, onCreateProject: stableHandleCreateProject, onCreateThread: stableHandleCreateThread, onLogin: handleLogin, onLogout: handleLogout,
+          onLoadMoreChatThreads: handleLoadMoreChatThreads, onLoadMoreProjectThreads: handleLoadMoreProjectThreads,
           onPinThread: stableHandlePinThread,
           onOpenPreferences: handleOpenPreferences, onProjectCwdChange: handleProjectCwdChange, onProjectDirectoryCreateCancel: () => setProjectDirectoryCreateCwd(null),
           onProjectFormOpenChange: setProjectFormOpen, onReorderProjects: handleReorderProjects, onSelectChatThread: stableHandleSelectChatThread,
@@ -1654,6 +1778,8 @@ function KodexShell({
           onSidebarResizePointerDown: handleSidebarResizePointerDown, onThreadActionHoverChange: setHoveredThreadActionId,
           pinnedThreads: sidebarPinnedThreads,
           pendingTitleThreadIds, projectCwd, projectDirectoryCreatePending: projectDirectoryCreateCwd === projectCwd.trim() && projectCwd.trim().length > 0,
+          projectThreadHasMoreById: Object.fromEntries(Object.entries(projectThreadNextCursors).map(([projectId, cursor]) => [projectId, cursor !== null])),
+          projectThreadPaginationStateById,
           projectFormOpen, projects: orderedProjects, selectedMainPane, selectedProjectId, selectedThreadId: selectedMainPane === "thread" ? selectedThreadId : null,
           showDebugEvents, sidebarWidth, threadsByProjectId: sidebarThreadsByProjectId, usageLimitLines,
         }}

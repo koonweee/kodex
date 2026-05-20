@@ -41,6 +41,13 @@ function deferred<T>() {
   return { promise, reject, resolve };
 }
 
+function missingSidebarThreadsRoute() {
+  return new Response(JSON.stringify({ code: "not_found", message: "Unhandled route", retryable: false }), {
+    status: 404,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 describe("MVP shell flows", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -195,7 +202,8 @@ describe("MVP shell flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "POST /v1/threads/thread-1/resume": {
+        "POST /v1/threads/thread-1/attach": {
+          disposition: "resumed",
           thread: {
             ...thread,
             model: "gpt-5.4",
@@ -641,8 +649,9 @@ describe("MVP shell flows", () => {
 
   it("loads pinned threads from the gateway and filters them out of normal project lists", async () => {
     const pinnedThread = { ...thread, pinnedAt: "2026-05-06T12:00:00Z" };
-    mockGateway(
+    const gateway = mockGateway(
       baseRoutes({
+        "GET /v1/sidebar/threads": missingSidebarThreadsRoute,
         "GET /v1/threads": { threads: [pinnedThread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         "GET /v1/threads/pinned": { threads: [pinnedThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
       }),
@@ -650,6 +659,8 @@ describe("MVP shell flows", () => {
 
     render(<App />);
 
+    await waitFor(() => expect(gateway.callsFor("GET", "/v1/sidebar/threads")).toHaveLength(1));
+    await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/pinned")).toHaveLength(1));
     expect(await screen.findByText("Pinned")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
@@ -660,8 +671,9 @@ describe("MVP shell flows", () => {
   it("keeps pinned project rows visible while the pinned snapshot is pending", async () => {
     const pinnedThreads = deferred<unknown>();
     const pinnedThread = { ...thread, pinnedAt: "2026-05-06T12:00:00Z" };
-    mockGateway(
+    const gateway = mockGateway(
       baseRoutes({
+        "GET /v1/sidebar/threads": missingSidebarThreadsRoute,
         "GET /v1/threads": { threads: [pinnedThread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         "GET /v1/threads/pinned": () => pinnedThreads.promise,
       }),
@@ -671,12 +683,236 @@ describe("MVP shell flows", () => {
 
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
     expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+    await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/pinned")).toHaveLength(1));
 
     pinnedThreads.resolve({ threads: [pinnedThread], nextCursor: null, backwardsCursor: null, rawPayload: {} });
 
     expect(await screen.findByText("Pinned")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
     expect(within(kodexGroup).queryByRole("button", { name: /implement frontend/i })).not.toBeInTheDocument();
+  });
+
+  it("seeds the sidebar from the gateway snapshot endpoint", async () => {
+    const pinnedThread = { ...thread, pinnedAt: "2026-05-06T12:00:00Z" };
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": { threads: [pinnedThread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/sidebar/threads": {
+          projects: [project],
+          projectThreads: {
+            [project.id]: {
+              threads: [pinnedThread, secondThread],
+              nextCursor: "project-next",
+              backwardsCursor: null,
+              rawPayload: {},
+            },
+          },
+          chatThreads: { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+          pinnedThreads: { threads: [pinnedThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        },
+      }),
+    );
+
+    render(<App />);
+
+    await waitFor(() => expect(gateway.callsFor("GET", "/v1/sidebar/threads")).toHaveLength(1));
+    expect(await screen.findByText("Pinned")).toBeInTheDocument();
+    const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
+    expect(within(kodexGroup).queryByRole("button", { name: /implement frontend/i })).not.toBeInTheDocument();
+    expect(within(kodexGroup).getByRole("button", { name: /second thread/i })).toBeInTheDocument();
+    expect(gateway.callsFor("GET", "/v1/sidebar/threads")).toHaveLength(1);
+    expect(gateway.callsFor("GET", "/v1/threads")).toHaveLength(0);
+    expect(gateway.callsFor("GET", "/v1/chats/threads")).toHaveLength(0);
+    expect(gateway.callsFor("GET", "/v1/threads/pinned")).toHaveLength(0);
+  });
+
+  it("uses scoped endpoints for invalidated sidebar sections after a startup snapshot", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const chatThread = {
+      ...thread,
+      id: "chat-thread-1",
+      name: "Chat starter",
+      cwd: "/home/example/Documents/Codex/2026-05-09/chat-starter",
+      preview: "Chat starter",
+    };
+    const hydratedProjectThread = { ...thread, preview: "Updated project preview", updatedAt: thread.updatedAt + 1 };
+    const hydratedChatThread = { ...chatThread, preview: "Updated chat preview", updatedAt: chatThread.updatedAt + 1 };
+    const pinnedThread = {
+      ...thread,
+      id: "unknown-pinned-thread",
+      name: "Pinned elsewhere",
+      pinnedAt: "2026-05-09T12:00:00Z",
+      updatedAt: thread.updatedAt + 2,
+    };
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": () => ({
+          threads: [hydratedProjectThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        }),
+        "GET /v1/chats/threads": () => ({
+          threads: [hydratedChatThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        }),
+        "GET /v1/threads/pinned": () => ({
+          threads: [pinnedThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        }),
+        "GET /v1/sidebar/threads": {
+          projects: [project],
+          projectThreads: {
+            [project.id]: {
+              threads: [thread],
+              nextCursor: null,
+              backwardsCursor: null,
+              rawPayload: {},
+            },
+          },
+          chatThreads: { threads: [chatThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+          pinnedThreads: { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        },
+      }),
+    );
+
+    render(<App />);
+
+    await waitFor(() => expect(gateway.callsFor("GET", "/v1/sidebar/threads")).toHaveLength(1));
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
+    expect(gateway.callsFor("GET", "/v1/threads")).toHaveLength(0);
+    expect(gateway.callsFor("GET", "/v1/chats/threads")).toHaveLength(0);
+    expect(gateway.callsFor("GET", "/v1/threads/pinned")).toHaveLength(0);
+    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    expect(globalStream).toBeDefined();
+
+    act(() => {
+      globalStream?.emitNamed("thread_view.patch", projectionPatchEvent({
+        id: "event-project-refresh",
+        seq: 2,
+        projectId: project.id,
+        threadId: thread.id,
+        turnId: "turn-1",
+        itemId: "item-1",
+        itemType: "userMessage",
+        text: "Updated project preview",
+      }));
+      globalStream?.emitNamed("thread_view.patch", projectionPatchEvent({
+        id: "event-chat-refresh",
+        seq: 3,
+        projectId: null,
+        threadId: chatThread.id,
+        turnId: "turn-2",
+        itemId: "item-2",
+        itemType: "userMessage",
+        text: "Updated chat preview",
+      }));
+      globalStream?.emitNamed("thread.pin_updated", {
+        id: "event-unknown-pin",
+        seq: 4,
+        kind: "thread.pin_updated",
+        codexMethod: "thread/pin_updated",
+        projectId: null,
+        threadId: pinnedThread.id,
+        payload: { threadId: pinnedThread.id, pinnedAt: pinnedThread.pinnedAt },
+        receivedAt: "2026-05-09T12:00:00Z",
+      });
+    });
+
+    await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads")).toHaveLength(1));
+    await waitFor(() => expect(gateway.callsFor("GET", "/v1/chats/threads")).toHaveLength(1));
+    await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/pinned")).toHaveLength(1));
+  });
+
+  it("appends cursor-backed sidebar pages and ignores duplicate load-more clicks", async () => {
+    const projectThreads = Array.from({ length: 5 }, (_value, index) => ({
+      ...thread,
+      id: `project-thread-${index + 1}`,
+      name: `Project thread ${index + 1}`,
+      updatedAt: thread.updatedAt + index,
+    }));
+    const nextProjectThread = {
+      ...thread,
+      id: "project-thread-next",
+      name: "Project thread next",
+      updatedAt: thread.updatedAt + 10,
+    };
+    const chatThreads = Array.from({ length: 5 }, (_value, index) => ({
+      ...thread,
+      cwd: `/home/example/Documents/Codex/2026-05-09/chat-${index + 1}`,
+      id: `chat-thread-${index + 1}`,
+      name: `Chat thread ${index + 1}`,
+      updatedAt: thread.updatedAt + index,
+    }));
+    const nextChatThread = {
+      ...thread,
+      cwd: "/home/example/Documents/Codex/2026-05-09/chat-next",
+      id: "chat-thread-next",
+      name: "Chat thread next",
+      updatedAt: thread.updatedAt + 10,
+    };
+    const projectPage = deferred<unknown>();
+    const chatPage = deferred<unknown>();
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": (request: Request) => {
+          const url = new URL(request.url);
+          if (url.searchParams.get("cursor") === "project-next") {
+            return projectPage.promise;
+          }
+          return { threads: projectThreads, nextCursor: null, backwardsCursor: null, rawPayload: {} };
+        },
+        "GET /v1/chats/threads": (request: Request) => {
+          const url = new URL(request.url);
+          if (url.searchParams.get("cursor") === "chat-next") {
+            return chatPage.promise;
+          }
+          return { threads: chatThreads, nextCursor: null, backwardsCursor: null, rawPayload: {} };
+        },
+        "GET /v1/sidebar/threads": {
+          projects: [project],
+          projectThreads: {
+            [project.id]: {
+              threads: projectThreads,
+              nextCursor: "project-next",
+              backwardsCursor: null,
+              rawPayload: {},
+            },
+          },
+          chatThreads: { threads: chatThreads, nextCursor: "chat-next", backwardsCursor: null, rawPayload: {} },
+          pinnedThreads: { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        },
+      }),
+    );
+
+    render(<App />);
+
+    const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
+    await waitFor(() => expect(gateway.callsFor("GET", "/v1/sidebar/threads")).toHaveLength(1));
+    expect(gateway.callsFor("GET", "/v1/threads")).toHaveLength(0);
+    fireEvent.click(within(kodexGroup).getByRole("button", { name: "Show more" }));
+    fireEvent.click(within(kodexGroup).getByRole("button", { name: "Loading more" }));
+    expect(gateway.callsFor("GET", "/v1/threads")).toHaveLength(1);
+
+    act(() => {
+      projectPage.resolve({ threads: [nextProjectThread], nextCursor: null, backwardsCursor: null, rawPayload: {} });
+    });
+    expect(await within(kodexGroup).findByRole("button", { name: /project thread next/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /^chats$/i }));
+    expect(gateway.callsFor("GET", "/v1/chats/threads")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Show more" }));
+    fireEvent.click(screen.getByRole("button", { name: "Loading more" }));
+    expect(gateway.callsFor("GET", "/v1/chats/threads")).toHaveLength(1);
+
+    act(() => {
+      chatPage.resolve({ threads: [nextChatThread], nextCursor: null, backwardsCursor: null, rawPayload: {} });
+    });
+    expect(await screen.findByRole("button", { name: /chat thread next/i })).toBeInTheDocument();
   });
 
   it("moves pinned rows from live pin events while the pinned snapshot is pending", async () => {
@@ -1243,7 +1479,7 @@ describe("MVP shell flows", () => {
     expect(within(runningThreadRow as HTMLElement).queryByLabelText(/thread in progress/i)).not.toBeInTheDocument();
   });
 
-  it("hides thread loading state and resumes not-loaded threads on selection", async () => {
+  it("hides thread loading state and attaches not-loaded threads on selection", async () => {
     const notLoadedThread = {
       ...secondThread,
       status: "notLoaded",
@@ -1256,12 +1492,13 @@ describe("MVP shell flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "POST /v1/threads/thread-2/resume": {
+        "POST /v1/threads/thread-2/attach": {
+          disposition: "resumed",
           thread: { ...notLoadedThread, status: "idle" },
           rawPayload: {},
         },
         "GET /v1/threads/thread-2": threadDetail({ ...notLoadedThread, status: "idle" }, [
-          snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Snapshot after resume" })]),
+          snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Snapshot after attach" })]),
         ]),
       }),
     );
@@ -1271,14 +1508,14 @@ describe("MVP shell flows", () => {
     expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /resume thread/i })).not.toBeInTheDocument();
     expect(container.querySelector(".kodex-thread-status")).not.toBeInTheDocument();
-    expect(gateway.callsFor("POST", "/v1/threads/thread-1/resume")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach")).toHaveLength(0);
 
     await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
 
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-2/resume")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
     });
-    expect(await screen.findByText(/snapshot after resume/i)).toBeInTheDocument();
+    expect(await screen.findByText(/snapshot after attach/i)).toBeInTheDocument();
   });
 
   it("attaches active selected threads once while keeping live updates on the selected stream", async () => {
@@ -1293,7 +1530,8 @@ describe("MVP shell flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "POST /v1/threads/thread-2/resume": {
+        "POST /v1/threads/thread-2/attach": {
+          disposition: "resumed",
           thread: runningThread,
           rawPayload: {},
         },
@@ -1307,7 +1545,7 @@ describe("MVP shell flows", () => {
 
     expect(await screen.findByText(/running snapshot/i)).toBeInTheDocument();
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-2/resume")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
     });
 
     let selectedStream: FakeEventSource | undefined;
@@ -1336,13 +1574,12 @@ describe("MVP shell flows", () => {
     await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
     await screen.findByText(/running snapshot/i);
 
-    expect(gateway.callsFor("POST", "/v1/threads/thread-2/resume")).toHaveLength(1);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
   });
 
-  it("remembers active thread attach success when selection changes before resume resolves", async () => {
+  it("remembers active thread attach no-op dispositions without resuming", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const runningThread = { ...secondThread, status: "active" };
-    const resumeDeferred = deferred<{ thread: typeof runningThread; rawPayload: Record<string, never> }>();
     window.history.replaceState(null, "", "/threads/thread-2");
     const gateway = mockGateway(
       baseRoutes({
@@ -1352,7 +1589,47 @@ describe("MVP shell flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "POST /v1/threads/thread-2/resume": () => resumeDeferred.promise,
+        "POST /v1/threads/thread-2/attach": {
+          disposition: "alreadyLoaded",
+          thread: null,
+        },
+        "GET /v1/threads/thread-2": threadDetail(runningThread, [
+          snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Loaded snapshot" })]),
+        ]),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/loaded snapshot/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
+    });
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/resume")).toHaveLength(0);
+
+    await userEvent.click(screen.getByRole("button", { name: /implement frontend/i }));
+    await screen.findByText(/hello from codex/i);
+    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    await screen.findByText(/loaded snapshot/i);
+
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/resume")).toHaveLength(0);
+  });
+
+  it("remembers active thread attach success when selection changes before attach resolves", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const runningThread = { ...secondThread, status: "active" };
+    const attachDeferred = deferred<{ disposition: "resumed"; thread: typeof runningThread; rawPayload: Record<string, never> }>();
+    window.history.replaceState(null, "", "/threads/thread-2");
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, runningThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "POST /v1/threads/thread-2/attach": () => attachDeferred.promise,
         "GET /v1/threads/thread-2": threadDetail(runningThread, [
           snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Running snapshot" })]),
         ]),
@@ -1363,22 +1640,22 @@ describe("MVP shell flows", () => {
 
     expect(await screen.findByText(/running snapshot/i)).toBeInTheDocument();
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-2/resume")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
     });
 
     await userEvent.click(screen.getByRole("button", { name: /implement frontend/i }));
     await screen.findByText(/hello from codex/i);
 
     await act(async () => {
-      resumeDeferred.resolve({ thread: runningThread, rawPayload: {} });
-      await resumeDeferred.promise;
+      attachDeferred.resolve({ disposition: "resumed", thread: runningThread, rawPayload: {} });
+      await attachDeferred.promise;
     });
 
     await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
     await screen.findByText(/running snapshot/i);
 
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-2/resume")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
     });
   });
 

@@ -10,6 +10,7 @@ import { EmptyPanel } from "../ui/EmptyPanel";
 import { TimelineView } from "../timeline/TimelineView";
 import type { TimelineEntry } from "../timeline/entry";
 import type { TimelineState } from "../timeline/reducer";
+import type { ThreadSyncNotice } from "../timeline/useSelectedThreadTimeline";
 
 const THREAD_PANEL_TEXT = {
   actions: "Thread actions",
@@ -57,6 +58,7 @@ export function ThreadPanel({
   subagentSidebarOpen,
   subagentToggleVisible,
   subagentViewer,
+  threadSyncNotice,
   timeline,
 }: {
   errorMessage: string | null;
@@ -85,6 +87,7 @@ export function ThreadPanel({
   subagentSidebarOpen?: boolean;
   subagentToggleVisible?: boolean;
   subagentViewer?: ReactNode;
+  threadSyncNotice: ThreadSyncNotice | null;
   timeline: TimelineState;
 }) {
   const selectedThreadTitleIsPending = selectedThread ? pendingTitleThreadIds.has(selectedThread.id) : false;
@@ -172,10 +175,23 @@ export function ThreadPanel({
         <Badge
           className="kodex-main-column"
           data-tone="danger"
+          role="alert"
           variant="light"
           leftSection={<AlertCircle size={12} />}
         >
           {errorMessage}
+        </Badge>
+      ) : null}
+      {threadSyncNotice ? (
+        <Badge
+          aria-live="polite"
+          className="kodex-main-column"
+          data-tone={threadSyncNotice.tone}
+          role="status"
+          variant="light"
+          leftSection={<AlertCircle size={12} />}
+        >
+          {threadSyncNotice.message}
         </Badge>
       ) : null}
       {selectedThreadUnavailableId && !selectedThread ? (

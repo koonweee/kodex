@@ -109,6 +109,96 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(screen.queryByRole("button", { name: "Thread 2" })).not.toBeInTheDocument();
   });
 
+  it("shows local loading and error states for cursor-backed project pagination", () => {
+    const onLoadMoreProjectThreads = vi.fn();
+    const { rerender } = renderSidebar({
+      onLoadMoreProjectThreads,
+      projectThreadHasMoreById: { "project-1": true },
+      projectThreadPaginationStateById: { "project-1": "loading" },
+      projects: [projectSummary("project-1", "Project")],
+      threadsByProjectId: {
+        "project-1": Array.from({ length: 5 }, (_value, index) => threadSummary(index + 1)),
+      },
+    });
+
+    expect(screen.getByRole("button", { name: "Loading more" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Loading more" }));
+    expect(onLoadMoreProjectThreads).not.toHaveBeenCalled();
+
+    rerender(
+      <MantineProvider>
+        <AppShell>
+          <WorkspaceSidebar
+            account={null}
+            approvals={[]}
+            chatThreads={[]}
+            hoveredThreadActionId={null}
+            isSidebarResizing={false}
+            loginState={{}}
+            onArchiveThread={vi.fn()}
+            onCancelLogin={vi.fn()}
+            onCreateChat={vi.fn()}
+            onCreateProject={vi.fn()}
+            onCreateThread={vi.fn()}
+            onLogin={vi.fn()}
+            onLogout={vi.fn()}
+            onLoadMoreProjectThreads={onLoadMoreProjectThreads}
+            onOpenPreferences={vi.fn()}
+            onPinThread={vi.fn()}
+            onProjectCwdChange={vi.fn()}
+            onProjectDirectoryCreateCancel={vi.fn()}
+            onProjectFormOpenChange={vi.fn()}
+            onReorderProjects={vi.fn()}
+            onSelectAutomations={vi.fn()}
+            onSelectChatThread={vi.fn()}
+            onSelectPinnedThread={vi.fn()}
+            onSelectProjectSettings={vi.fn()}
+            onSelectThread={vi.fn()}
+            onShowDebugEventsChange={vi.fn()}
+            onSidebarResizeKeyDown={vi.fn()}
+            onSidebarResizePointerDown={vi.fn()}
+            onThreadActionHoverChange={vi.fn()}
+            onUnpinThread={vi.fn()}
+            pendingTitleThreadIds={new Set()}
+            pinnedThreads={[]}
+            projectCwd=""
+            projectDirectoryCreatePending={false}
+            projectFormOpen={false}
+            projectThreadHasMoreById={{ "project-1": true }}
+            projectThreadPaginationStateById={{ "project-1": "error" }}
+            projects={[projectSummary("project-1", "Project")]}
+            selectedMainPane="thread"
+            selectedProjectId={null}
+            selectedThreadId={null}
+            showDebugEvents={false}
+            sidebarWidth={320}
+            threadsByProjectId={{ "project-1": Array.from({ length: 5 }, (_value, index) => threadSummary(index + 1)) }}
+          />
+        </AppShell>
+      </MantineProvider>,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not load more threads");
+    fireEvent.click(screen.getByRole("button", { name: "Show more" }));
+    expect(onLoadMoreProjectThreads).toHaveBeenCalledWith("project-1");
+  });
+
+  it("shows local loading state for cursor-backed chat pagination", () => {
+    const onLoadMoreChatThreads = vi.fn();
+    renderSidebar({
+      chatThreads: Array.from({ length: 5 }, (_value, index) => threadSummary(index + 1)),
+      chatThreadsHasMore: true,
+      chatThreadsPaginationState: "loading",
+      onLoadMoreChatThreads,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Chats" }));
+
+    expect(screen.getByRole("button", { name: "Loading more" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Loading more" }));
+    expect(onLoadMoreChatThreads).not.toHaveBeenCalled();
+  });
+
   it("renders pinned threads above projects with pin controls", () => {
     const onSelectPinnedThread = vi.fn();
     const onUnpinThread = vi.fn();

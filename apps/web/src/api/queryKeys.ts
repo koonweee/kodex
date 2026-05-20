@@ -21,6 +21,7 @@ export const queryKeys = {
   queuedInputs: (threadId: string) => ["queued-inputs", threadId] as const,
   queuedInputTombstones: (threadId: string) => ["queued-inputs", threadId, "tombstones"] as const,
   rateLimits: ["account", "rate-limits"] as const,
+  sidebarThreads: ["threads", "sidebar"] as const,
   skills: (cwd: string | null) => ["skills", cwd ?? "global"] as const,
   threadSubagents: (threadId: string) => ["threads", threadId, "subagents"] as const,
 };

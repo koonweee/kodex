@@ -51,7 +51,14 @@ export function mergeDurableComposerSettings(
   };
 }
 
-export function composerSettingsFromThread(thread: ThreadSummary): ComposerSettings | null {
+type ThreadComposerSettingsSource = Pick<
+  ThreadSummary,
+  "approvalPolicy" | "approvalsReviewer" | "model" | "reasoningEffort" | "sandbox" | "serviceTier"
+> & {
+  rawPayload?: unknown;
+};
+
+export function composerSettingsFromThread(thread: ThreadComposerSettingsSource): ComposerSettings | null {
   const rawPayload = asRecord(thread.rawPayload);
   const model = stringValue(thread.model) ?? stringValue(rawPayload.model);
   const effort = stringValue(thread.reasoningEffort) ?? stringValue(rawPayload.reasoningEffort);

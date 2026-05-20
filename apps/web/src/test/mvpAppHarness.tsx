@@ -141,6 +141,11 @@ function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
     "GET /v1/composer-settings": { model: null, effort: null, serviceTier: null, permissionsPreset: null },
     ...overrides,
   };
+  routes["GET /v1/sidebar/threads"] ??= canBuildStaticSidebarThreadsSnapshot(routes)
+    ? () => sidebarThreadsFromRoutes(routes)
+    : missingSidebarThreadsRoute;
+  routes["POST /v1/threads/thread-1/attach"] ??= () => ({ disposition: "resumed", ...threadCommandFromList(routes, thread) });
+  routes["POST /v1/threads/thread-2/attach"] ??= () => ({ disposition: "resumed", ...threadCommandFromList(routes, secondThread) });
   routes["POST /v1/threads/thread-1/resume"] ??= () => threadCommandFromList(routes, thread);
   routes["POST /v1/threads/thread-2/resume"] ??= () => threadCommandFromList(routes, secondThread);
   routes["GET /v1/threads/thread-1/queued-inputs"] ??= { queuedInputs: [] };
@@ -172,6 +177,47 @@ function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
   routes["GET /v1/threads/thread-2"] ??= (request: Request) =>
     threadDetailFromSnapshot(routes, request, secondThread);
   return routes;
+}
+
+function canBuildStaticSidebarThreadsSnapshot(routes: GatewayRouteMap): boolean {
+  return [
+    routes["GET /v1/projects"],
+    routes["GET /v1/threads"],
+    routes["GET /v1/chats/threads"],
+    routes["GET /v1/threads/pinned"],
+  ].every((route) => route !== undefined && typeof route !== "function");
+}
+
+function missingSidebarThreadsRoute() {
+  return new Response(JSON.stringify({ code: "not_found", message: "Unhandled route", retryable: false }), {
+    status: 404,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function sidebarThreadsFromRoutes(routes: GatewayRouteMap) {
+  const projectsResponse = staticRouteValue<{ projects: typeof project[] }>(routes["GET /v1/projects"]) ?? { projects: [project] };
+  const projectThreads = Object.fromEntries(
+    projectsResponse.projects.map((item) => {
+      const projectThreadsResponse =
+        staticRouteValue<{ threads: typeof thread[]; nextCursor: string | null; backwardsCursor: string | null; rawPayload: unknown }>(
+          routes["GET /v1/threads"],
+        ) ?? { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} };
+      return [item.id, projectThreadsResponse];
+    }),
+  );
+  return {
+    projects: projectsResponse.projects,
+    projectThreads,
+    chatThreads:
+      staticRouteValue(routes["GET /v1/chats/threads"]) ?? { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+    pinnedThreads:
+      staticRouteValue(routes["GET /v1/threads/pinned"]) ?? { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+  };
+}
+
+function staticRouteValue<T>(route: GatewayRouteMap[string] | undefined): T | null {
+  return typeof route === "function" || route === undefined ? null : (route as T);
 }
 
 type TestThreadSummary = Omit<typeof thread, "name"> & { name: string | null } & Record<string, unknown>;

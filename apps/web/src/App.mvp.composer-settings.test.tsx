@@ -595,7 +595,8 @@ describe("MVP composer settings flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "POST /v1/threads/thread-1/resume": {
+        "POST /v1/threads/thread-1/attach": {
+          disposition: "resumed",
           thread: {
             ...thread,
             reasoningEffort: "high",
@@ -826,7 +827,7 @@ describe("MVP composer settings flows", () => {
     const { unmount } = render(<App />);
 
     await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
-    await userEvent.click(screen.getByRole("button", { name: /create thread in kodex/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /create thread in kodex/i }));
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
     await clickMenuItem(/^gpt-5\.4-mini$/i);
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4-mini, medium/i })).toBeInTheDocument();
