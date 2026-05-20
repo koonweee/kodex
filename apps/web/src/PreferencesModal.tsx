@@ -12,6 +12,7 @@ import {
 } from "./notifications/browserNotifications";
 import type { BrowserNotificationPermission } from "./notifications/notificationTypes";
 import {
+  browserPushNotificationsEnabled,
   browserPushNotificationsSupported,
   disableBrowserPushNotifications,
   enableBrowserPushNotifications,
@@ -170,6 +171,7 @@ export function PreferencesModal({
           />
         ) : activeSection === "notifications" ? (
           <NotificationsPreferencesPanel
+            disableError={disableNotificationsMutation.error}
             disabling={disableNotificationsMutation.isPending}
             enableError={enableNotificationsMutation.error}
             enabling={enableNotificationsMutation.isPending}
@@ -199,6 +201,7 @@ export function PreferencesModal({
 }
 
 function NotificationsPreferencesPanel({
+  disableError,
   disabling,
   enableError,
   enabling,
@@ -209,6 +212,7 @@ function NotificationsPreferencesPanel({
   statusError,
   statusLoading,
 }: {
+  disableError: Error | null;
   disabling: boolean;
   enableError: Error | null;
   enabling: boolean;
@@ -220,6 +224,7 @@ function NotificationsPreferencesPanel({
   statusLoading: boolean;
 }) {
   const pushSupported = browserPushNotificationsSupported();
+  const pushEnabled = browserPushNotificationsEnabled();
   const unavailable =
     !pushSupported ||
     permission === "unsupported" ||
@@ -229,7 +234,7 @@ function NotificationsPreferencesPanel({
     ? "Checking"
     : statusError
       ? "Unavailable"
-      : permission === "granted"
+      : pushEnabled
         ? "Enabled"
         : unavailable
           ? "Unavailable"
@@ -241,7 +246,7 @@ function NotificationsPreferencesPanel({
         <Text className="kodex-preferences-panel-title" fw={650}>
           Notifications
         </Text>
-        <Badge data-tone={permission === "granted" ? "success" : unavailable ? "neutral" : "info"}>{statusText}</Badge>
+        <Badge data-tone={pushEnabled ? "success" : unavailable ? "neutral" : "info"}>{statusText}</Badge>
       </Group>
 
       <Stack className="kodex-preferences-setting" gap={10}>
@@ -263,9 +268,14 @@ function NotificationsPreferencesPanel({
             {enableError.message}
           </Alert>
         ) : null}
+        {disableError ? (
+          <Alert color="red" variant="light">
+            {disableError.message}
+          </Alert>
+        ) : null}
         <Group gap="xs">
           <Button
-            disabled={unavailable || enabling || permission === "granted"}
+            disabled={unavailable || enabling || pushEnabled}
             leftSection={<Bell size={15} />}
             loading={enabling}
             onClick={onEnable}
@@ -275,7 +285,7 @@ function NotificationsPreferencesPanel({
             Enable
           </Button>
           <Button
-            disabled={disabling || permission !== "granted"}
+            disabled={disabling || !pushEnabled}
             leftSection={<BellOff size={15} />}
             loading={disabling}
             onClick={onDisable}

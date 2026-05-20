@@ -172,17 +172,12 @@ export function useSelectedThreadTimeline({
     }
 
     const refetchSnapshot = (reason: "refreshRequired" | "streamReconnect") => {
-      setSyncNotice(
-        reason === "streamReconnect"
-          ? {
-              message: "Selected thread stream disconnected. Reconnecting and retrying thread refresh.",
-              tone: "warning",
-            }
-          : {
-              message: "Gateway requested a selected thread refresh. Reloading thread state.",
-              tone: "info",
-            },
-      );
+      if (reason === "streamReconnect") {
+        setSyncNotice({
+          message: "Selected thread stream disconnected. Reconnecting and retrying thread refresh.",
+          tone: "warning",
+        });
+      }
       void refreshSnapshot("refreshingSnapshot").catch((error) => {
         if (cancelled) {
           return;

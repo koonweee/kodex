@@ -784,7 +784,7 @@ function KodexShell({
       .catch((error) => {
         attachingThreadIdsRef.current.delete(attachingThreadId);
         if (!cancelled) {
-          reportError(error);
+          reportError(error, `Selected thread attach failed (${attachingThreadId})`);
         }
       });
 
@@ -796,7 +796,10 @@ function KodexShell({
   useSelectedThreadTimeline({
     isSelectedThreadSnapshotDeferred,
     onApprovalEvent: applyApprovalEventWithTombstone,
-    onError: reportError,
+    onError: (error) => {
+      const threadId = selectedThreadIdRef.current;
+      reportError(error, threadId ? `Selected thread load failed (${threadId})` : "Selected thread load failed");
+    },
     onSnapshotThread: handleSelectedThreadSnapshot,
     onSyncNotice: setThreadSyncNotice,
     onThreadMetadataEvent: applyThreadMetadataEvent,
@@ -1442,8 +1445,9 @@ function KodexShell({
     );
   }
 
-  function reportError(error: unknown) {
-    setErrorMessage(errorMessageFrom(error));
+  function reportError(error: unknown, context?: string) {
+    const message = errorMessageFrom(error);
+    setErrorMessage(context ? `${context}: ${message}` : message);
   }
 
   function applyQueueEvent(event: EventEnvelope) {

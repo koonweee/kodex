@@ -158,4 +158,24 @@ describe("disableBrowserPushNotifications", () => {
     expect(unsubscribe).toHaveBeenCalled();
     expect(mockedDeletePushSubscription).not.toHaveBeenCalled();
   });
+
+  it("deletes the gateway subscription when a local id exists even without a ready service worker", async () => {
+    localStorage.setItem("kodex.pushSubscriptionId", "subscription-1");
+    installPushGlobals({});
+    mockedDeletePushSubscription.mockResolvedValue({
+      subscription: {
+        createdAt: "2026-05-15T00:00:00Z",
+        enabled: false,
+        endpoint: "https://push.example/sub",
+        id: "subscription-1",
+        updatedAt: "2026-05-15T00:00:00Z",
+        userAgent: null,
+      },
+    });
+
+    await disableBrowserPushNotifications();
+
+    expect(mockedDeletePushSubscription).toHaveBeenCalledWith("subscription-1");
+    expect(localStorage.getItem("kodex.pushSubscriptionId")).toBeNull();
+  });
 });

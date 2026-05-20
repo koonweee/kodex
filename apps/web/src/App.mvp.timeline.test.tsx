@@ -116,6 +116,22 @@ describe("MVP timeline flows", () => {
     expect(await screen.findByText(/recovered live update/i)).toBeInTheDocument();
   });
 
+  it("adds operation context to selected thread load failures", async () => {
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads/thread-1": () => {
+          throw new Error("Load failed");
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(
+      await screen.findByText("Selected thread load failed (thread-1): Load failed"),
+    ).toBeInTheDocument();
+  });
+
   it("groups command and search activity into nested timeline collapsibles", async () => {
     mockGateway(
       baseRoutes({
@@ -430,14 +446,21 @@ describe("MVP timeline flows", () => {
   it("refetches the selected snapshot when the stream requires snapshot recovery", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     let detailCall = 0;
+    let resolveRecovery: (value: unknown) => void = () => undefined;
+    const recoveryDetail = new Promise((resolve) => {
+      resolveRecovery = resolve;
+    });
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads/thread-1": () => {
           detailCall += 1;
+          if (detailCall > 1) {
+            return recoveryDetail;
+          }
           return threadDetail(thread, [
             snapshotTurn("turn-1", [
               snapshotItem("item-1", "agentMessage", {
-                text: detailCall === 1 ? "Initial snapshot" : "Recovered snapshot",
+                text: "Initial snapshot",
               }),
             ]),
           ]);
@@ -466,6 +489,16 @@ describe("MVP timeline flows", () => {
       });
     });
 
+    expect(screen.queryByText(/gateway requested a selected thread refresh/i)).not.toBeInTheDocument();
+    resolveRecovery(
+      threadDetail(thread, [
+        snapshotTurn("turn-1", [
+          snapshotItem("item-1", "agentMessage", {
+            text: "Recovered snapshot",
+          }),
+        ]),
+      ]),
+    );
     expect(await screen.findByText(/recovered snapshot/i)).toBeInTheDocument();
     expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(2);
     expect(gateway.callsFor("GET", "/v1/events")).toHaveLength(0);

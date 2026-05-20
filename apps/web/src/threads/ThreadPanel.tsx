@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Box, Button, Group, Menu, Modal, Skeleton, TextInput, Title, Tooltip } from "@mantine/core";
+import { ActionIcon, Badge, Box, Button, Group, Menu, Modal, Skeleton, Text, TextInput, Title, Tooltip } from "@mantine/core";
 import { AlertCircle, Archive, Bot, MoreHorizontal, PanelLeftOpen, PanelRightOpen, Pencil, Pin, PinOff } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
@@ -30,6 +30,7 @@ const THREAD_PANEL_TEXT = {
   threadTimelineTitle: "Thread timeline",
   unpin: "Unpin thread",
 };
+const THREAD_SYNC_TOAST_VISIBLE_MS = 4500;
 
 export function ThreadPanel({
   errorMessage,
@@ -97,6 +98,7 @@ export function ThreadPanel({
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renamePending, setRenamePending] = useState(false);
+  const [visibleThreadSyncNotice, setVisibleThreadSyncNotice] = useState<ThreadSyncNotice | null>(null);
 
   useEffect(() => {
     if (!renameModalOpen || !selectedThread) {
@@ -105,6 +107,19 @@ export function ThreadPanel({
     setRenameValue(selectedThread.name ?? "");
     setRenameError(null);
   }, [renameModalOpen, selectedThread?.id]);
+
+  useEffect(() => {
+    if (!threadSyncNotice) {
+      setVisibleThreadSyncNotice(null);
+      return;
+    }
+
+    setVisibleThreadSyncNotice(threadSyncNotice);
+    const timeout = window.setTimeout(() => {
+      setVisibleThreadSyncNotice(null);
+    }, THREAD_SYNC_TOAST_VISIBLE_MS);
+    return () => window.clearTimeout(timeout);
+  }, [threadSyncNotice?.message, threadSyncNotice?.tone]);
 
   function closeRenameModal() {
     if (renamePending) {
@@ -182,17 +197,18 @@ export function ThreadPanel({
           {errorMessage}
         </Badge>
       ) : null}
-      {threadSyncNotice ? (
-        <Badge
+      {visibleThreadSyncNotice ? (
+        <Box
           aria-live="polite"
-          className="kodex-main-column"
-          data-tone={threadSyncNotice.tone}
+          className="kodex-thread-sync-toast"
+          data-tone={visibleThreadSyncNotice.tone}
           role="status"
-          variant="light"
-          leftSection={<AlertCircle size={12} />}
         >
-          {threadSyncNotice.message}
-        </Badge>
+          <AlertCircle aria-hidden="true" size={14} />
+          <Text component="span" size="xs">
+            {visibleThreadSyncNotice.message}
+          </Text>
+        </Box>
       ) : null}
       {selectedThreadUnavailableId && !selectedThread ? (
         <>

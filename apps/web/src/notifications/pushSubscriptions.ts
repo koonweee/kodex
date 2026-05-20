@@ -12,13 +12,17 @@ export function browserPushNotificationsSupported(): boolean {
 }
 
 export function browserPushNotificationsEnabled(): boolean {
+  return Boolean(storedPushSubscriptionId());
+}
+
+function storedPushSubscriptionId(): string | null {
   if (typeof localStorage === "undefined") {
-    return false;
+    return null;
   }
   try {
-    return Boolean(localStorage.getItem(PUSH_SUBSCRIPTION_ID_KEY));
+    return localStorage.getItem(PUSH_SUBSCRIPTION_ID_KEY);
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -60,10 +64,19 @@ export async function enableBrowserPushNotifications(vapidPublicKey: string): Pr
 }
 
 export async function disableBrowserPushNotifications(): Promise<void> {
-  const registration = await navigator.serviceWorker?.ready;
-  const subscription = await registration?.pushManager?.getSubscription();
-  await subscription?.unsubscribe();
-  const subscriptionId = localStorage.getItem(PUSH_SUBSCRIPTION_ID_KEY);
+  const subscriptionId = storedPushSubscriptionId();
+  try {
+    const serviceWorker = navigator.serviceWorker;
+    const registration =
+      typeof serviceWorker?.getRegistration === "function"
+        ? await serviceWorker.getRegistration()
+        : await serviceWorker?.ready;
+    const subscription = await registration?.pushManager?.getSubscription();
+    await subscription?.unsubscribe();
+  } catch {
+    // Server-side disable is the important shared state; keep going even if the
+    // local browser subscription is already gone or service worker state is stale.
+  }
   if (subscriptionId) {
     await deletePushSubscription(subscriptionId);
     localStorage.removeItem(PUSH_SUBSCRIPTION_ID_KEY);

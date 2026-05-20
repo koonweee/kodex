@@ -54,6 +54,7 @@
 }
 
 .kodex-main-stack {
+  position: relative;
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
@@ -71,6 +72,44 @@
   width: 100%;
   min-width: 0;
   margin-top: 0;
+}
+
+.kodex-thread-sync-toast {
+  position: absolute;
+  z-index: 5;
+  top: 18px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: min(520px, calc(100% - 32px));
+  min-height: 34px;
+  border: 1px solid var(--kodex-tone-border, var(--kodex-border-subtle));
+  border-radius: var(--kodex-radius-md);
+  padding: 7px 10px;
+  background: var(--kodex-tone-bg, var(--kodex-bg-raised));
+  color: var(--kodex-tone-text, var(--kodex-text-secondary));
+  box-shadow: var(--kodex-shadow-floating);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.kodex-thread-sync-toast[data-tone="info"] {
+  --kodex-tone-bg: var(--kodex-bg-info);
+  --kodex-tone-border: var(--kodex-border-info);
+  --kodex-tone-text: var(--kodex-text-info);
+}
+
+.kodex-thread-sync-toast[data-tone="warning"] {
+  --kodex-tone-bg: var(--kodex-bg-warning);
+  --kodex-tone-border: var(--kodex-border-warning);
+  --kodex-tone-text: var(--kodex-text-warning);
+}
+
+.kodex-thread-sync-toast span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .kodex-thread-heading {
