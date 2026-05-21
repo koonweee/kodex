@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { EventEnvelope, ThreadViewResponse } from "../api/client";
-import { applyLiveTimelineUpdate, applyTimelineSnapshot, createTimelineState } from "./reducer";
+import { applyLiveTimelineUpdate, applyTimelineHistoryWindow, applyTimelineSnapshot, createTimelineState } from "./reducer";
 
 describe("timeline canonical snapshots and patches", () => {
   it("renders canonical snapshot items in gateway display order", () => {
@@ -62,6 +62,60 @@ describe("timeline canonical snapshots and patches", () => {
 
     expect(state.items[0].text).toBe("Fresh");
     expect(state.viewRevision).toBe(10);
+  });
+
+  it("merges stale history windows without overwriting newer live rows", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot({
+      viewRevision: 10,
+      activeTurnId: "turn-2",
+      liveState: "streaming",
+      items: [timelineItem({ id: "projection-turn-2-agent-1", turnId: "turn-2", text: "Fresh live", displayOrder: 2 })],
+    }));
+
+    state = applyTimelineHistoryWindow(state, snapshot({
+      viewRevision: 9,
+      activeTurnId: null,
+      liveState: "idle",
+      historyPage: { olderCursor: "older-2", newerCursor: null, hasOlder: true, limit: 50, loadedTurnCount: 2 },
+      items: [
+        timelineItem({ id: "projection-turn-1-agent-1", turnId: "turn-1", itemId: "agent-1", text: "Older", displayOrder: 1 }),
+        timelineItem({ id: "projection-turn-2-agent-1", turnId: "turn-2", text: "Stale live", displayOrder: 2 }),
+      ],
+    }));
+
+    expect(state.items.map((item) => item.text)).toEqual(["Older", "Fresh live"]);
+    expect(state.olderCursor).toBe("older-2");
+    expect(state.hasOlderHistory).toBe(true);
+    expect(state.viewRevision).toBe(10);
+  });
+
+  it("replaces the loaded window when the gateway marks a stale cursor reset", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot({
+      viewRevision: 10,
+      items: [
+        timelineItem({ id: "projection-turn-1-agent-1", turnId: "turn-1", text: "Loaded older", displayOrder: 1 }),
+        timelineItem({ id: "projection-turn-2-agent-1", turnId: "turn-2", text: "Recent", displayOrder: 2 }),
+      ],
+    }));
+
+    state = applyTimelineHistoryWindow(state, snapshot({
+      viewRevision: 11,
+      historyPage: {
+        olderCursor: "older-fresh",
+        newerCursor: null,
+        hasOlder: true,
+        limit: 50,
+        loadedTurnCount: 1,
+        resetWindow: true,
+      },
+      items: [
+        timelineItem({ id: "projection-turn-3-agent-1", turnId: "turn-3", text: "Fresh recent", displayOrder: 1 }),
+      ],
+    }));
+
+    expect(state.items.map((item) => item.text)).toEqual(["Fresh recent"]);
+    expect(state.olderCursor).toBe("older-fresh");
+    expect(state.hasOlderHistory).toBe(true);
   });
 
   it("replaces legacy row ids that point at the same app-server item id", () => {
@@ -159,6 +213,7 @@ function snapshot({
   items,
   pendingApprovalRequests = [],
   pendingUserInputRequests = [],
+  historyPage,
   turns = [],
 }: {
   viewRevision: number;
@@ -167,6 +222,7 @@ function snapshot({
   items: ReturnType<typeof timelineItem>[];
   pendingApprovalRequests?: ReturnType<typeof pendingRequest>[];
   pendingUserInputRequests?: ReturnType<typeof pendingRequest>[];
+  historyPage?: ThreadViewResponse["historyPage"];
   turns?: Array<{ id: string; status: string; startedAt?: number | null; completedAt?: number | null }>;
 }): ThreadViewResponse {
   return {
@@ -193,6 +249,7 @@ function snapshot({
       rawPayload: {},
     },
     liveState,
+    historyPage,
     timeline: {
       viewRevision,
       activeTurnId,

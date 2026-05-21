@@ -14,8 +14,8 @@ use crate::{
         canonical_timeline_item_id, timeline_skill_mentions_from_user_input,
         visible_text_from_thread_item, PendingTimelineRequestSummary, ThreadItemSnapshot,
         ThreadLiveState, ThreadTimelineSnapshot, ThreadTimelineSnapshotItem,
-        ThreadTimelineSnapshotTurn, ThreadTurnSnapshot, TimelineItemUpsertPayload,
-        TimelineUpdateSource, UserInput,
+        ThreadTimelineSnapshotTurn, ThreadTimelineWindowPage, ThreadTurnSnapshot,
+        TimelineItemUpsertPayload, TimelineUpdateSource, UserInput,
     },
     error::ApiResult,
     store::Approval,
@@ -56,10 +56,118 @@ impl ThreadViewStore {
         turns: &[ThreadTurnSnapshot],
         revision: i64,
     ) -> ThreadTimelineSnapshot {
-        let base = ThreadTimelineSnapshot::from_turns(thread_id, turns);
         let mut sessions = self.sessions.write().await;
         let view = sessions.entry(thread_id.to_string()).or_default();
+        let incoming_ids = turns
+            .iter()
+            .map(|turn| turn.id.clone())
+            .collect::<HashSet<_>>();
+        let mut next_turns = view
+            .history_turns
+            .iter()
+            .filter(|turn| !incoming_ids.contains(&turn.id))
+            .cloned()
+            .collect::<Vec<_>>();
+        next_turns.extend(turns.iter().cloned());
+        view.history_turns = next_turns;
+        if let Some(history_page) = &mut view.history_page {
+            history_page.loaded_turn_count = view.history_turns.len() as u32;
+        }
+        let base = ThreadTimelineSnapshot::from_turns(thread_id, &view.history_turns);
         view.refresh_from_base(thread_id, base, revision)
+    }
+
+    pub async fn refresh_from_history_window(
+        &self,
+        thread_id: &str,
+        turns: &[ThreadTurnSnapshot],
+        mut history_page: Option<ThreadTimelineWindowPage>,
+        revision: i64,
+    ) -> ThreadTimelineSnapshot {
+        let mut sessions = self.sessions.write().await;
+        let view = sessions.entry(thread_id.to_string()).or_default();
+        let reset_window = history_page
+            .as_ref()
+            .is_some_and(|history_page| history_page.reset_window);
+        if reset_window {
+            view.items.retain(|item| is_live_status(&item.status));
+            let live_turn_ids = view
+                .items
+                .iter()
+                .map(|item| item.turn_id.clone())
+                .collect::<HashSet<_>>();
+            view.turns.retain(|turn| live_turn_ids.contains(&turn.id));
+        }
+        let mut next_turns = Vec::new();
+        if !reset_window {
+            let incoming_ids = turns
+                .iter()
+                .map(|turn| turn.id.clone())
+                .collect::<HashSet<_>>();
+            next_turns = view
+                .history_turns
+                .iter()
+                .filter(|turn| !incoming_ids.contains(&turn.id))
+                .cloned()
+                .collect::<Vec<_>>();
+        }
+        next_turns.extend(turns.iter().cloned());
+        let existing_history_page = view.history_page.clone();
+        if let Some(history_page) = &mut history_page {
+            history_page.loaded_turn_count = next_turns.len() as u32;
+            if let Some(existing) = existing_history_page.as_ref().filter(|_| !reset_window) {
+                history_page.older_cursor = existing.older_cursor.clone();
+                history_page.has_older = existing.has_older;
+            }
+            if existing_history_page
+                .as_ref()
+                .is_some_and(|existing| !existing.has_older && !reset_window)
+            {
+                history_page.older_cursor = None;
+                history_page.has_older = false;
+            }
+        }
+        view.history_turns = next_turns;
+        view.history_page = history_page;
+        let base = ThreadTimelineSnapshot::from_turns(thread_id, &view.history_turns);
+        view.refresh_from_base(thread_id, base, revision)
+    }
+
+    pub async fn prepend_history_page(
+        &self,
+        thread_id: &str,
+        turns: &[ThreadTurnSnapshot],
+        mut history_page: Option<ThreadTimelineWindowPage>,
+        revision: i64,
+    ) -> ThreadTimelineSnapshot {
+        let mut sessions = self.sessions.write().await;
+        let view = sessions.entry(thread_id.to_string()).or_default();
+        let mut next_turns = turns.to_vec();
+        let mut seen = next_turns
+            .iter()
+            .map(|turn| turn.id.clone())
+            .collect::<HashSet<_>>();
+        next_turns.extend(
+            view.history_turns
+                .iter()
+                .filter(|turn| seen.insert(turn.id.clone()))
+                .cloned(),
+        );
+        if let Some(history_page) = &mut history_page {
+            history_page.loaded_turn_count = next_turns.len() as u32;
+        }
+        view.history_turns = next_turns;
+        view.history_page = history_page;
+        let base = ThreadTimelineSnapshot::from_turns(thread_id, &view.history_turns);
+        view.refresh_from_base(thread_id, base, revision)
+    }
+
+    pub async fn history_page(&self, thread_id: &str) -> Option<ThreadTimelineWindowPage> {
+        self.sessions
+            .read()
+            .await
+            .get(thread_id)
+            .and_then(|view| view.history_page.clone())
     }
 
     pub async fn patch_for_thread(&self, thread_id: &str) -> ThreadViewPatch {
@@ -118,6 +226,8 @@ struct ThreadView {
     turns: Vec<ThreadTimelineSnapshotTurn>,
     items: Vec<ThreadTimelineSnapshotItem>,
     terminal_turn_ids: HashSet<String>,
+    history_turns: Vec<ThreadTurnSnapshot>,
+    history_page: Option<ThreadTimelineWindowPage>,
 }
 
 impl ThreadView {
@@ -580,6 +690,30 @@ pub async fn build_thread_timeline(
 ) -> ApiResult<ThreadTimelineSnapshot> {
     Ok(sessions
         .refresh_from_turns(thread_id, turns, revision)
+        .await)
+}
+
+pub async fn build_thread_timeline_window(
+    sessions: &ThreadViewStore,
+    thread_id: &str,
+    turns: &[ThreadTurnSnapshot],
+    history_page: Option<ThreadTimelineWindowPage>,
+    revision: i64,
+) -> ApiResult<ThreadTimelineSnapshot> {
+    Ok(sessions
+        .refresh_from_history_window(thread_id, turns, history_page, revision)
+        .await)
+}
+
+pub async fn prepend_thread_timeline_page(
+    sessions: &ThreadViewStore,
+    thread_id: &str,
+    turns: &[ThreadTurnSnapshot],
+    history_page: Option<ThreadTimelineWindowPage>,
+    revision: i64,
+) -> ApiResult<ThreadTimelineSnapshot> {
+    Ok(sessions
+        .prepend_history_page(thread_id, turns, history_page, revision)
         .await)
 }
 
@@ -1214,6 +1348,214 @@ mod tests {
         assert_eq!(timeline.turns[0].started_at, Some(1));
         assert_eq!(timeline.turns[0].completed_at, None);
         assert_eq!(timeline.active_turn_id.as_deref(), Some("turn-1"));
+    }
+
+    #[tokio::test]
+    async fn history_window_prepends_older_rows_without_deleting_live_tail() {
+        let sessions = ThreadViewStore::default();
+        let recent_turn = ThreadTurnSnapshot {
+            id: "turn-2".to_string(),
+            status: "completed".to_string(),
+            started_at: Some(20),
+            completed_at: Some(25),
+            raw_payload: json!({}),
+            items: vec![
+                ThreadItemSnapshot::from_payload(&agent_message_item("agent-2", "Recent")).unwrap(),
+            ],
+        };
+        build_thread_timeline_window(
+            &sessions,
+            "thread-1",
+            &[recent_turn.clone()],
+            Some(ThreadTimelineWindowPage {
+                older_cursor: Some("older-1".to_string()),
+                newer_cursor: None,
+                has_older: true,
+                limit: 50,
+                loaded_turn_count: 1,
+                reset_window: false,
+            }),
+            1,
+        )
+        .await
+        .unwrap();
+        record_item_delta(&sessions, "thread-1", "turn-3", "agent-3", "Live", 2)
+            .await
+            .unwrap();
+
+        let older_turn = ThreadTurnSnapshot {
+            id: "turn-1".to_string(),
+            status: "completed".to_string(),
+            started_at: Some(10),
+            completed_at: Some(15),
+            raw_payload: json!({}),
+            items: vec![
+                ThreadItemSnapshot::from_payload(&agent_message_item("agent-1", "Older")).unwrap(),
+            ],
+        };
+        let timeline = prepend_thread_timeline_page(
+            &sessions,
+            "thread-1",
+            &[older_turn],
+            Some(ThreadTimelineWindowPage {
+                older_cursor: None,
+                newer_cursor: Some("newer-1".to_string()),
+                has_older: false,
+                limit: 50,
+                loaded_turn_count: 1,
+                reset_window: false,
+            }),
+            3,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            timeline
+                .items
+                .iter()
+                .map(|item| item.payload.item["text"].as_str().unwrap_or(""))
+                .collect::<Vec<_>>(),
+            vec!["Older", "Recent", "Live"]
+        );
+        assert_eq!(timeline.active_turn_id.as_deref(), Some("turn-3"));
+        assert_eq!(timeline.live_state, ThreadLiveState::Streaming);
+
+        let refreshed = build_thread_timeline_window(
+            &sessions,
+            "thread-1",
+            &[recent_turn],
+            Some(ThreadTimelineWindowPage {
+                older_cursor: Some("older-ignored".to_string()),
+                newer_cursor: None,
+                has_older: true,
+                limit: 50,
+                loaded_turn_count: 1,
+                reset_window: false,
+            }),
+            4,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            refreshed
+                .items
+                .iter()
+                .map(|item| item.payload.item["text"].as_str().unwrap_or(""))
+                .collect::<Vec<_>>(),
+            vec!["Older", "Recent", "Live"]
+        );
+        assert_eq!(refreshed.active_turn_id.as_deref(), Some("turn-3"));
+    }
+
+    #[tokio::test]
+    async fn head_refresh_preserves_expanded_window_older_cursor() {
+        let sessions = ThreadViewStore::default();
+        let turn = |id: &str, text: &str| ThreadTurnSnapshot {
+            id: id.to_string(),
+            status: "completed".to_string(),
+            started_at: None,
+            completed_at: None,
+            raw_payload: json!({}),
+            items: vec![ThreadItemSnapshot::from_payload(&agent_message_item(
+                &format!("agent-{id}"),
+                text,
+            ))
+            .unwrap()],
+        };
+        let turn_4 = turn("turn-4", "Four");
+        let turn_3 = turn("turn-3", "Three");
+        let turn_2 = turn("turn-2", "Two");
+        let turn_1 = turn("turn-1", "One");
+
+        build_thread_timeline_window(
+            &sessions,
+            "thread-1",
+            &[turn_3.clone(), turn_4.clone()],
+            Some(ThreadTimelineWindowPage {
+                older_cursor: Some("cursor-before-turn-3".to_string()),
+                newer_cursor: None,
+                has_older: true,
+                limit: 2,
+                loaded_turn_count: 2,
+                reset_window: false,
+            }),
+            1,
+        )
+        .await
+        .unwrap();
+
+        prepend_thread_timeline_page(
+            &sessions,
+            "thread-1",
+            &[turn_1.clone(), turn_2.clone()],
+            Some(ThreadTimelineWindowPage {
+                older_cursor: Some("cursor-before-turn-1".to_string()),
+                newer_cursor: Some("cursor-before-turn-3".to_string()),
+                has_older: true,
+                limit: 2,
+                loaded_turn_count: 4,
+                reset_window: false,
+            }),
+            2,
+        )
+        .await
+        .unwrap();
+
+        build_thread_timeline_window(
+            &sessions,
+            "thread-1",
+            &[turn_4.clone()],
+            Some(ThreadTimelineWindowPage {
+                older_cursor: Some("overlapping-head-cursor".to_string()),
+                newer_cursor: None,
+                has_older: true,
+                limit: 1,
+                loaded_turn_count: 1,
+                reset_window: false,
+            }),
+            3,
+        )
+        .await
+        .unwrap();
+
+        let history_page = sessions.history_page("thread-1").await.unwrap();
+        assert_eq!(
+            history_page.older_cursor.as_deref(),
+            Some("cursor-before-turn-1")
+        );
+        assert!(history_page.has_older);
+
+        let refreshed = prepend_thread_timeline_page(
+            &sessions,
+            "thread-1",
+            &[turn("turn-0", "Zero")],
+            Some(ThreadTimelineWindowPage {
+                older_cursor: None,
+                newer_cursor: Some("cursor-before-turn-1".to_string()),
+                has_older: false,
+                limit: 1,
+                loaded_turn_count: 5,
+                reset_window: false,
+            }),
+            4,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            refreshed
+                .items
+                .iter()
+                .map(|item| item.payload.item["text"].as_str().unwrap_or(""))
+                .collect::<Vec<_>>(),
+            vec!["Zero", "One", "Two", "Three", "Four"]
+        );
+        let history_page = sessions.history_page("thread-1").await.unwrap();
+        assert_eq!(history_page.older_cursor, None);
+        assert!(!history_page.has_older);
+        assert_eq!(history_page.loaded_turn_count, 5);
     }
 
     #[tokio::test]

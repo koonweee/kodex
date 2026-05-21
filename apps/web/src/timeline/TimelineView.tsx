@@ -1,6 +1,6 @@
 import { ActionIcon, Box, Stack, Text, Tooltip } from "@mantine/core";
 import { ArrowDownToLine } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Virtuoso, type FollowOutput, type VirtuosoHandle } from "react-virtuoso";
 
 import type { Approval, ApprovalResponse, PendingTimelineRequestSummary } from "../api/client";
@@ -37,6 +37,7 @@ export function TimelineView({
   imagePreviewUrlsByPath,
   onApprovalDecision,
   onImageOpen,
+  onLoadOlderHistory,
   onMarkdownOpen,
   onReady,
   scrollParentElement,
@@ -48,6 +49,7 @@ export function TimelineView({
   imagePreviewUrlsByPath: Record<string, string>;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
   onImageOpen: (image: ImageLightboxImage) => void;
+  onLoadOlderHistory?: () => void;
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   onReady: () => void;
   scrollParentElement: HTMLDivElement | null;
@@ -106,6 +108,12 @@ export function TimelineView({
   const approvalsByRowKey = useMemo(() => buildTimelineRowApprovalMap(rows, approvalIndex), [approvalIndex, rows]);
   const rowCount = visibleRows.length;
   const virtuosoScrollParent = scrollParentElement && scrollParentElement.clientHeight > 0 ? scrollParentElement : null;
+  usePrependScrollRestoration({
+    isLoadingOlderHistory: timeline.isLoadingOlderHistory,
+    rowCount,
+    scrollParentElement,
+    threadId,
+  });
   const {
     followOutput,
     handleAtBottomStateChange,
@@ -169,6 +177,7 @@ export function TimelineView({
           </Box>
         ) : null}
         ref={virtuosoRef}
+        startReached={timeline.hasOlderHistory && !timeline.isLoadingOlderHistory ? onLoadOlderHistory : undefined}
         {...(virtuosoScrollParent ? { initialTopMostItemIndex: { index: rowCount - 1, align: "end" } as const } : {})}
       />
       <HiddenDebugPanel
@@ -198,6 +207,52 @@ export function TimelineView({
       ) : null}
     </Box>
   );
+}
+
+function usePrependScrollRestoration({
+  isLoadingOlderHistory,
+  rowCount,
+  scrollParentElement,
+  threadId,
+}: {
+  isLoadingOlderHistory: boolean;
+  rowCount: number;
+  scrollParentElement: HTMLDivElement | null;
+  threadId?: string;
+}) {
+  const pendingAnchor = useRef<{ rowCount: number; scrollHeight: number; scrollTop: number } | null>(null);
+  const lastThreadId = useRef(threadId);
+
+  useLayoutEffect(() => {
+    if (lastThreadId.current !== threadId) {
+      lastThreadId.current = threadId;
+      pendingAnchor.current = null;
+    }
+    const scrollElement = scrollParentElement;
+    if (!scrollElement || !isLoadingOlderHistory || pendingAnchor.current) {
+      return;
+    }
+    pendingAnchor.current = {
+      rowCount,
+      scrollHeight: scrollElement.scrollHeight,
+      scrollTop: scrollElement.scrollTop,
+    };
+  }, [isLoadingOlderHistory, rowCount, scrollParentElement, threadId]);
+
+  useLayoutEffect(() => {
+    const scrollElement = scrollParentElement;
+    const anchor = pendingAnchor.current;
+    if (!scrollElement || !anchor || isLoadingOlderHistory) {
+      return;
+    }
+    if (rowCount > anchor.rowCount) {
+      const heightDelta = scrollElement.scrollHeight - anchor.scrollHeight;
+      if (heightDelta > 0) {
+        scrollElement.scrollTop = anchor.scrollTop + heightDelta;
+      }
+    }
+    pendingAnchor.current = null;
+  }, [isLoadingOlderHistory, rowCount, scrollParentElement]);
 }
 
 function pendingTimelineRequestSummaries(

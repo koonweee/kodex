@@ -60,6 +60,7 @@ export type ThreadCommandResponse = components["schemas"]["ThreadCommandResponse
 export type ThreadSummary = components["schemas"]["ThreadSummary"];
 export type ThreadTimelineSnapshot = components["schemas"]["ThreadTimelineSnapshot"];
 export type ThreadTimelineSnapshotItem = components["schemas"]["ThreadTimelineSnapshotItem"];
+export type ThreadTimelineWindowPage = components["schemas"]["ThreadTimelineWindowPage"];
 export type ThreadInputResponse = components["schemas"]["ThreadInputResponse"];
 export type TimelineSkillMention = components["schemas"]["TimelineSkillMention"];
 export type TimelineItemDeltaPayload = components["schemas"]["TimelineItemDeltaPayload"];
@@ -321,6 +322,20 @@ export async function forkThread(threadId: string): Promise<ThreadSummary> {
 
 export async function getThreadDetail(threadId: string): Promise<ThreadViewResponse> {
   return unwrap(api.GET("/v1/threads/{threadId}", { params: { path: { threadId } } }));
+}
+
+export async function getThreadTimelinePage(
+  threadId: string,
+  options: { cursor?: string | null; limit?: number } = {},
+): Promise<ThreadViewResponse> {
+  return unwrap(
+    api.GET("/v1/threads/{threadId}/timeline/pages", {
+      params: {
+        path: { threadId },
+        query: { cursor: options.cursor ?? undefined, limit: options.limit ?? undefined },
+      },
+    }),
+  );
 }
 
 export async function listThreadSubagents(threadId: string): Promise<ThreadSubagentSummary[]> {

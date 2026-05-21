@@ -80,6 +80,9 @@ export type TimelineState = {
   turns: TimelineTurn[];
   pendingApprovalRequests: PendingTimelineRequestSummary[];
   pendingUserInputRequests: PendingTimelineRequestSummary[];
+  olderCursor: string | null;
+  hasOlderHistory: boolean;
+  isLoadingOlderHistory: boolean;
   lastSeq: number;
   viewRevision: number;
 };
@@ -100,6 +103,9 @@ export type TimelineDraft = {
   indexes: TimelineIndexes;
   pendingApprovalRequests?: PendingTimelineRequestSummary[];
   pendingUserInputRequests?: PendingTimelineRequestSummary[];
+  olderCursor?: string | null;
+  hasOlderHistory?: boolean;
+  isLoadingOlderHistory?: boolean;
   lastSeq: number;
   viewRevision: number;
 };
@@ -113,6 +119,9 @@ export function createTimelineState(): TimelineState {
     indexes: createEmptyTimelineIndexes(),
     pendingApprovalRequests: [],
     pendingUserInputRequests: [],
+    olderCursor: null,
+    hasOlderHistory: false,
+    isLoadingOlderHistory: false,
     lastSeq: 0,
     viewRevision: 0,
   });
@@ -123,6 +132,9 @@ export function createTimelineStateFromDraft(draft: TimelineDraft): TimelineStat
     activeTurnId: draft.activeTurnId,
     pendingApprovalRequests: draft.pendingApprovalRequests ?? [],
     pendingUserInputRequests: draft.pendingUserInputRequests ?? [],
+    olderCursor: draft.olderCursor ?? null,
+    hasOlderHistory: draft.hasOlderHistory ?? false,
+    isLoadingOlderHistory: draft.isLoadingOlderHistory ?? false,
     lastSeq: draft.lastSeq,
     viewRevision: draft.viewRevision,
   } as TimelineState;

@@ -741,6 +741,7 @@ mod tests {
             "/v1/chats/threads",
             "/v1/threads/pinned",
             "/v1/threads/{threadId}",
+            "/v1/threads/{threadId}/timeline/pages",
             "/v1/threads/{threadId}/subagents",
             "/v1/threads/{threadId}/attach",
             "/v1/threads/{threadId}/resume",
@@ -3387,15 +3388,18 @@ mod tests {
         assert_eq!(requests[1].0, "thread/turns/list");
         assert_eq!(requests[1].1["threadId"], "thread-1");
         assert_eq!(requests[1].1["itemsView"], "full");
-        assert_eq!(requests[2].0, "thread/resume");
+        assert_eq!(requests[2].0, "thread/turns/list");
         assert_eq!(requests[2].1["threadId"], "thread-1");
-        assert_eq!(requests[2].1["persistExtendedHistory"], true);
-        assert_eq!(requests[2].1["excludeTurns"], true);
-        assert_eq!(requests[3].0, "thread/fork");
+        assert_eq!(requests[2].1["itemsView"], "notLoaded");
+        assert_eq!(requests[3].0, "thread/resume");
         assert_eq!(requests[3].1["threadId"], "thread-1");
         assert_eq!(requests[3].1["persistExtendedHistory"], true);
-        assert_eq!(requests[4].0, "thread/archive");
+        assert_eq!(requests[3].1["excludeTurns"], true);
+        assert_eq!(requests[4].0, "thread/fork");
         assert_eq!(requests[4].1["threadId"], "thread-1");
+        assert_eq!(requests[4].1["persistExtendedHistory"], true);
+        assert_eq!(requests[5].0, "thread/archive");
+        assert_eq!(requests[5].1["threadId"], "thread-1");
     }
 
     #[tokio::test]
@@ -3859,20 +3863,20 @@ mod tests {
         let app = build_router(state);
         app_server.queued_responses.lock().unwrap().extend([
             json!({
-            "thread": {
-                "id": "thread-1",
-                "cliVersion": "0.130.0",
-                "cwd": "/workspace",
-                "ephemeral": false,
-                "modelProvider": "openai",
-                "preview": "hello",
-                "source": "cli",
-                "status": {"type": "idle"},
-                "turns": [],
-                "createdAt": 1_767_225_600_i64,
-                "updatedAt": 1_767_225_610_i64
-            }
-        }),
+                "thread": {
+                    "id": "thread-1",
+                    "cliVersion": "0.130.0",
+                    "cwd": "/workspace",
+                    "ephemeral": false,
+                    "modelProvider": "openai",
+                    "preview": "hello",
+                    "source": "cli",
+                    "status": {"type": "idle"},
+                    "turns": [],
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_610_i64
+                }
+            }),
             json!({
                 "data": [{
                     "id": "turn-1",
@@ -3888,6 +3892,15 @@ mod tests {
                 }],
                 "nextCursor": null,
                 "backwardsCursor": "cursor-prev"
+            }),
+            json!({
+                "data": [{
+                    "id": "turn-1",
+                    "status": {"type": "completed"},
+                    "items": []
+                }],
+                "nextCursor": null,
+                "backwardsCursor": null
             }),
         ]);
 
@@ -3910,6 +3923,8 @@ mod tests {
         assert!(!body.to_string().contains("item-stored-cmd"));
         assert_eq!(body["thread"]["lastCompletedAgentTurnSeq"], 1);
         assert_eq!(body["thread"]["unreadCompletedAgentTurn"], true);
+        assert_eq!(body["historyPage"]["loadedTurnCount"], 1);
+        assert_eq!(body["historyPage"]["hasOlder"], false);
         assert_eq!(body["liveState"], "idle");
         assert!(
             !body.to_string().contains("rawPayload"),
@@ -3931,19 +3946,125 @@ mod tests {
                 json!({
                     "threadId": "thread-1",
                     "cursor": null,
-                    "sortDirection": "asc",
+                    "sortDirection": "desc",
                     "itemsView": "full",
-                    "limit": null
+                    "limit": 50
                 })
             )
         );
+        assert_eq!(requests[2].1["itemsView"], "notLoaded");
     }
 
     #[tokio::test]
-    async fn thread_detail_paginates_full_app_server_turn_history() {
+    async fn thread_detail_returns_recent_history_window_without_draining_full_pages() {
         let (state, app_server) = test_state().await;
         let app = build_router(state);
         app_server.queued_responses.lock().unwrap().extend([
+            json!({
+                "thread": {
+                    "id": "thread-1",
+                    "cliVersion": "0.130.0",
+                    "cwd": "/workspace",
+                    "ephemeral": false,
+                    "modelProvider": "openai",
+                    "preview": "hello",
+                    "source": "cli",
+                    "status": {"type": "idle"},
+                    "turns": [],
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_610_i64
+                }
+            }),
+            json!({
+                "data": [{
+                    "id": "turn-2",
+                    "status": {"type": "completed"},
+                    "items": [{"id": "item-agent-2", "type": "agentMessage", "text": "second"}]
+                }],
+                "nextCursor": "older-cursor",
+                "backwardsCursor": "cursor-prev"
+            }),
+            json!({
+                "data": [{
+                    "id": "turn-2",
+                    "status": {"type": "completed"},
+                    "items": []
+                }, {
+                    "id": "turn-1",
+                    "status": {"type": "completed"},
+                    "items": []
+                }],
+                "nextCursor": null,
+                "backwardsCursor": null
+            }),
+        ]);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["timeline"]["items"][0]["turnId"], "turn-2");
+        assert_eq!(body["historyPage"]["olderCursor"], "older-cursor");
+        assert_eq!(body["historyPage"]["hasOlder"], true);
+        assert_eq!(body["thread"]["lastCompletedAgentTurnSeq"], 2);
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[1].0, "thread/turns/list");
+        assert_eq!(requests[1].1["cursor"], Value::Null);
+        assert_eq!(requests[1].1["sortDirection"], "desc");
+        assert_eq!(requests[1].1["limit"], 50);
+        assert_eq!(requests[2].1["itemsView"], "notLoaded");
+    }
+
+    #[tokio::test]
+    async fn thread_timeline_page_prepends_older_history_to_loaded_window() {
+        let (state, app_server) = test_state().await;
+        let app = build_router(state.clone());
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({
+                "thread": {
+                    "id": "thread-1",
+                    "cliVersion": "0.130.0",
+                    "cwd": "/workspace",
+                    "ephemeral": false,
+                    "modelProvider": "openai",
+                    "preview": "hello",
+                    "source": "cli",
+                    "status": {"type": "idle"},
+                    "turns": [],
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_610_i64
+                }
+            }),
+            json!({
+                "data": [{
+                    "id": "turn-2",
+                    "status": {"type": "completed"},
+                    "items": [{"id": "item-agent-2", "type": "agentMessage", "text": "second"}]
+                }],
+                "nextCursor": "older-cursor",
+                "backwardsCursor": "newer-cursor"
+            }),
+            json!({
+                "data": [{
+                    "id": "turn-2",
+                    "status": {"type": "completed"},
+                    "items": []
+                }, {
+                    "id": "turn-1",
+                    "status": {"type": "completed"},
+                    "items": []
+                }],
+                "nextCursor": null,
+                "backwardsCursor": null
+            }),
             json!({
                 "thread": {
                     "id": "thread-1",
@@ -3965,23 +4086,48 @@ mod tests {
                     "status": {"type": "completed"},
                     "items": [{"id": "item-agent-1", "type": "agentMessage", "text": "first"}]
                 }],
-                "nextCursor": "cursor-2",
-                "backwardsCursor": "cursor-prev"
+                "nextCursor": null,
+                "backwardsCursor": "newer-cursor-2"
             }),
             json!({
                 "data": [{
                     "id": "turn-2",
                     "status": {"type": "completed"},
-                    "items": [{"id": "item-agent-2", "type": "agentMessage", "text": "second"}]
+                    "items": []
+                }, {
+                    "id": "turn-1",
+                    "status": {"type": "completed"},
+                    "items": []
                 }],
                 "nextCursor": null,
-                "backwardsCursor": "cursor-prev-2"
+                "backwardsCursor": null
             }),
         ]);
 
-        let response = app
+        let initial = app
+            .clone()
             .oneshot(
                 Request::get("/v1/threads/thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(initial.status(), StatusCode::OK);
+        thread_view::record_item_delta(
+            &state.thread_views,
+            "thread-1",
+            "turn-3",
+            "item-agent-3",
+            "live tail",
+            100,
+        )
+        .await
+        .unwrap();
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1/timeline/pages?cursor=older-cursor&limit=25")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -3992,13 +4138,89 @@ mod tests {
         let body = response_json(response).await;
         assert_eq!(body["timeline"]["items"][0]["turnId"], "turn-1");
         assert_eq!(body["timeline"]["items"][1]["turnId"], "turn-2");
+        assert_eq!(body["timeline"]["items"][2]["turnId"], "turn-3");
+        assert_eq!(body["timeline"]["activeTurnId"], "turn-3");
+        assert_eq!(body["historyPage"]["loadedTurnCount"], 3);
+        assert_eq!(body["historyPage"]["hasOlder"], false);
 
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[1].0, "thread/turns/list");
-        assert_eq!(requests[1].1["cursor"], Value::Null);
-        assert_eq!(requests[2].0, "thread/turns/list");
-        assert_eq!(requests[2].1["cursor"], "cursor-2");
-        assert_eq!(requests[2].1["itemsView"], "full");
+        assert_eq!(requests[4].0, "thread/turns/list");
+        assert_eq!(requests[4].1["cursor"], "older-cursor");
+        assert_eq!(requests[4].1["sortDirection"], "desc");
+        assert_eq!(requests[4].1["itemsView"], "full");
+        assert_eq!(requests[4].1["limit"], 25);
+    }
+
+    #[tokio::test]
+    async fn thread_timeline_page_stale_cursor_resets_to_recent_window() {
+        let (state, app_server) = test_state().await;
+        let app = build_router(state);
+        app_server.queued_responses.lock().unwrap().extend([
+            thread_shell_response("thread-1"),
+            json!({
+                "data": [{
+                    "id": "turn-2",
+                    "status": {"type": "completed"},
+                    "items": [{"id": "item-agent-2", "type": "agentMessage", "text": "second"}]
+                }],
+                "nextCursor": "older-cursor",
+                "backwardsCursor": "newer-cursor"
+            }),
+            json!({
+                "data": [{"id": "turn-2", "status": {"type": "completed"}}],
+                "nextCursor": null,
+                "backwardsCursor": null
+            }),
+            thread_shell_response("thread-1"),
+            json!({
+                "data": [{
+                    "id": "turn-3",
+                    "status": {"type": "completed"},
+                    "items": [{"id": "item-agent-3", "type": "agentMessage", "text": "third"}]
+                }],
+                "nextCursor": "older-cursor-2",
+                "backwardsCursor": null
+            }),
+            json!({
+                "data": [{"id": "turn-3", "status": {"type": "completed"}}],
+                "nextCursor": null,
+                "backwardsCursor": null
+            }),
+        ]);
+
+        let initial = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/threads/thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(initial.status(), StatusCode::OK);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1/timeline/pages?cursor=stale-cursor&limit=25")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["timeline"]["items"].as_array().unwrap().len(), 1);
+        assert_eq!(body["timeline"]["items"][0]["turnId"], "turn-3");
+        assert_eq!(body["historyPage"]["olderCursor"], "older-cursor-2");
+        assert_eq!(body["historyPage"]["resetWindow"], true);
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[4].0, "thread/turns/list");
+        assert_eq!(requests[4].1["cursor"], Value::Null);
+        assert_ne!(requests[4].1["cursor"], "stale-cursor");
+        assert_eq!(requests[4].1["itemsView"], "full");
+        assert_eq!(requests[4].1["limit"], 25);
     }
 
     #[tokio::test]
@@ -4035,7 +4257,7 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 3);
+        assert_eq!(requests.len(), 4);
         assert_eq!(
             requests[0],
             (
@@ -4052,6 +4274,7 @@ mod tests {
         );
         assert_eq!(requests[2].0, "thread/turns/list");
         assert_eq!(requests[2].1["itemsView"], "full");
+        assert_eq!(requests[3].1["itemsView"], "notLoaded");
     }
 
     #[tokio::test]
@@ -4088,7 +4311,7 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 3);
+        assert_eq!(requests.len(), 4);
         assert_eq!(
             requests[0],
             (
@@ -4104,6 +4327,7 @@ mod tests {
             )
         );
         assert_eq!(requests[2].0, "thread/turns/list");
+        assert_eq!(requests[3].1["itemsView"], "notLoaded");
     }
 
     #[tokio::test]
@@ -4144,7 +4368,7 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 3);
+        assert_eq!(requests.len(), 4);
         assert_eq!(
             requests[0],
             (
@@ -4161,6 +4385,7 @@ mod tests {
         );
         assert_eq!(requests[2].0, "thread/turns/list");
         assert_eq!(requests[2].1["itemsView"], "full");
+        assert_eq!(requests[3].1["itemsView"], "notLoaded");
     }
 
     #[tokio::test]
@@ -4381,6 +4606,14 @@ mod tests {
                 "nextCursor": null,
                 "backwardsCursor": null
             }),
+            json!({
+                "data": [{
+                    "id": "turn-1",
+                    "status": {"type": "completed"}
+                }],
+                "nextCursor": null,
+                "backwardsCursor": null
+            }),
             skills_list_response_with_interface(
                 "/workspace",
                 "browser-use:browser",
@@ -4474,8 +4707,12 @@ mod tests {
         assert_eq!(body["threads"][0]["lastCompletedAgentTurnSeq"], Value::Null);
         assert_eq!(body["threads"][0]["unreadCompletedAgentTurn"], json!(false));
 
-        *app_server.next_response.lock().unwrap() = Some(json!({
-            "thread": thread_summary_with_completed_turns("thread-1", 1)
+        app_server.queued_responses.lock().unwrap().push(json!({
+            "data": [
+                {"id": "turn-1", "status": {"type": "completed"}}
+            ],
+            "nextCursor": null,
+            "backwardsCursor": null
         }));
         let response = app
             .clone()
@@ -4491,8 +4728,12 @@ mod tests {
         let body = response_json(response).await;
         assert_eq!(body["seenCompletedAgentTurnSeq"], json!(1));
 
-        *app_server.next_response.lock().unwrap() = Some(json!({
-            "thread": thread_summary_with_completed_turns("thread-1", 1)
+        app_server.queued_responses.lock().unwrap().push(json!({
+            "data": [
+                {"id": "turn-1", "status": {"type": "completed"}}
+            ],
+            "nextCursor": null,
+            "backwardsCursor": null
         }));
         let response = app
             .clone()
@@ -4506,10 +4747,16 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
         assert_eq!(body["seenCompletedAgentTurnSeq"], json!(1));
+        let requests = app_server.requests.lock().unwrap();
+        assert!(requests
+            .iter()
+            .any(|(method, params)| method == "thread/turns/list"
+                && params["itemsView"] == "notLoaded"));
+        assert!(requests
+            .iter()
+            .all(|(method, params)| method != "thread/read" || params["includeTurns"] == false));
+        drop(requests);
 
-        *app_server.next_response.lock().unwrap() = Some(json!({
-            "thread": thread_summary_with_completed_turns("thread-1", 1)
-        }));
         let response = app
             .clone()
             .oneshot(
@@ -9432,19 +9679,10 @@ mod tests {
         thread
     }
 
-    fn thread_summary_with_completed_turns(id: &str, completed_turns: usize) -> Value {
-        let turns = (0..completed_turns)
-            .map(|index| {
-                json!({
-                    "id": format!("turn-{index}"),
-                    "status": {"type": "completed"},
-                    "items": []
-                })
-            })
-            .collect::<Vec<_>>();
-        let mut thread = thread_summary(id);
-        thread["turns"] = Value::Array(turns);
-        thread
+    fn thread_shell_response(id: &str) -> Value {
+        json!({
+            "thread": thread_summary(id)
+        })
     }
 
     fn subagent_thread_summary(

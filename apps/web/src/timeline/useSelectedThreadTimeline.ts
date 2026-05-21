@@ -1,13 +1,19 @@
-import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef } from "react";
 
 import type { Approval, EventEnvelope, ThreadSummary, ThreadViewThreadSummary } from "../api/client";
-import { getThreadDetail } from "../api/client";
+import { getThreadDetail, getThreadTimelinePage } from "../api/client";
 import { isApprovalEvent } from "../approvals/state";
 import { createEventStreamClient } from "../events/stream";
 import { errorMessageFrom } from "../shared/values";
 import { applyTimelineEventBatch } from "./batch";
 import { idleTimelineEntry, type TimelineEntry } from "./entry";
-import { applyTimelineSnapshot, createTimelineState, type TimelineState } from "./reducer";
+import {
+  applyTimelineHistoryWindow,
+  applyTimelineSnapshot,
+  createTimelineState,
+  setTimelineOlderHistoryLoading,
+  type TimelineState,
+} from "./reducer";
 
 const MATERIALIZING_THREAD_SNAPSHOT_RETRY_MS = 250;
 
@@ -47,6 +53,7 @@ export function useSelectedThreadTimeline({
   const timelineFlushFrame = useRef<number | null>(null);
   const timelineFlushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedThreadStreamToken = useRef(0);
+  const olderHistoryRequest = useRef<{ threadId: string; cursor: string } | null>(null);
   const latestCallbacks = useRef({
     onApprovalEvent,
     onError,
@@ -128,9 +135,60 @@ export function useSelectedThreadTimeline({
     queuedTimelineEvents.current = [];
   }
 
+  const loadOlderHistory = useCallback(() => {
+    const threadId = selectedThreadId;
+    if (!threadId) {
+      return;
+    }
+    let cursor: string | null = null;
+    let shouldLoad = false;
+    setTimeline((current) => {
+      if (!current.hasOlderHistory || current.isLoadingOlderHistory || !current.olderCursor) {
+        return current;
+      }
+      if (
+        olderHistoryRequest.current?.threadId === threadId &&
+        olderHistoryRequest.current.cursor === current.olderCursor
+      ) {
+        return current;
+      }
+      cursor = current.olderCursor;
+      shouldLoad = true;
+      olderHistoryRequest.current = { threadId, cursor };
+      return setTimelineOlderHistoryLoading(current, true);
+    });
+    if (!shouldLoad || !cursor) {
+      return;
+    }
+
+    void getThreadTimelinePage(threadId, { cursor })
+      .then((snapshot) => {
+        if (
+          olderHistoryRequest.current?.threadId !== threadId ||
+          olderHistoryRequest.current.cursor !== cursor
+        ) {
+          return;
+        }
+        olderHistoryRequest.current = null;
+        setTimeline((current) => applyTimelineHistoryWindow(current, snapshot));
+        latestCallbacks.current.onSnapshotThread(threadViewSummaryToThreadSummary(snapshot.thread));
+      })
+      .catch((error) => {
+        if (
+          olderHistoryRequest.current?.threadId === threadId &&
+          olderHistoryRequest.current.cursor === cursor
+        ) {
+          olderHistoryRequest.current = null;
+        }
+        setTimeline((current) => setTimelineOlderHistoryLoading(current, false));
+        latestCallbacks.current.onError(error);
+      });
+  }, [selectedThreadId, setTimeline]);
+
   useEffect(() => {
     if (!selectedThreadId) {
       selectedThreadStreamToken.current += 1;
+      olderHistoryRequest.current = null;
       cancelQueuedTimelineEvents();
       latestCallbacks.current.onSyncNotice?.(null);
       clearEntry();
@@ -272,6 +330,7 @@ export function useSelectedThreadTimeline({
     return () => {
       cancelled = true;
       selectedThreadStreamToken.current += 1;
+      olderHistoryRequest.current = null;
       if (materializingThreadRetry !== null) {
         clearTimeout(materializingThreadRetry);
       }
@@ -279,6 +338,8 @@ export function useSelectedThreadTimeline({
       cancelQueuedTimelineEvents();
     };
   }, [isSelectedThreadSnapshotDeferred, selectedThreadId, setApprovals, setTimeline, setTimelineEntry]);
+
+  return { loadOlderHistory };
 }
 
 function threadViewSummaryToThreadSummary(thread: ThreadViewThreadSummary): ThreadSummary {

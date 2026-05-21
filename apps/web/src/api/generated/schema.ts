@@ -1164,6 +1164,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads/{threadId}/timeline/pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_thread_timeline_page"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/threads/{threadId}/turns": {
         parameters: {
             query?: never;
@@ -2333,6 +2349,11 @@ export interface components {
             /** Format: int64 */
             updatedAt: number;
         };
+        ThreadTimelinePageQuery: {
+            cursor?: string | null;
+            /** Format: int32 */
+            limit?: number | null;
+        };
         ThreadTimelineSnapshot: {
             activeTurnId?: string | null;
             items: components["schemas"]["ThreadTimelineSnapshotItem"][];
@@ -2365,6 +2386,16 @@ export interface components {
             startedAt?: number | null;
             status: string;
         };
+        ThreadTimelineWindowPage: {
+            hasOlder: boolean;
+            /** Format: int32 */
+            limit: number;
+            /** Format: int32 */
+            loadedTurnCount: number;
+            newerCursor?: string | null;
+            olderCursor?: string | null;
+            resetWindow?: boolean;
+        };
         ThreadTurnSnapshot: {
             /** Format: int64 */
             completedAt?: number | null;
@@ -2387,6 +2418,7 @@ export interface components {
             viewRevision: number;
         };
         ThreadViewResponse: {
+            historyPage?: null | components["schemas"]["ThreadTimelineWindowPage"];
             liveState: components["schemas"]["ThreadLiveState"];
             thread: components["schemas"]["ThreadViewThreadSummary"];
             timeline: components["schemas"]["ThreadTimelineSnapshot"];
@@ -4390,6 +4422,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadSubagentListResponse"];
+                };
+            };
+        };
+    };
+    get_thread_timeline_page: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number | null;
+            };
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadViewResponse"];
                 };
             };
         };

@@ -40,6 +40,7 @@ export function ThreadPanel({
   onArchiveThread,
   onApprovalDecision,
   onImageOpen,
+  onLoadOlderHistory,
   onMarkdownOpen,
   onPinThread,
   onRenameThread,
@@ -69,6 +70,7 @@ export function ThreadPanel({
   onArchiveThread: () => void;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
   onImageOpen: (image: ImageLightboxImage) => void;
+  onLoadOlderHistory?: () => void;
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   onPinThread: (threadId: string) => void;
   onRenameThread: (threadId: string, name: string) => Promise<void>;
@@ -301,6 +303,7 @@ export function ThreadPanel({
                     onReady={onTimelineReady}
                     onApprovalDecision={onApprovalDecision}
                     onImageOpen={onImageOpen}
+                    onLoadOlderHistory={onLoadOlderHistory}
                     onMarkdownOpen={onMarkdownOpen}
                     imagePreviewUrlsByPath={imagePreviewUrlsByPath}
                     scrollParentElement={scrollParentElement}

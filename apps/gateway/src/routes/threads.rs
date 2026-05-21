@@ -40,6 +40,10 @@ pub fn router() -> Router<AppState> {
         )
         .route("/v1/threads/pinned", get(list_pinned_threads))
         .route("/v1/threads/{thread_id}/subagents", get(list_subagents))
+        .route(
+            "/v1/threads/{thread_id}/timeline/pages",
+            get(get_thread_timeline_page),
+        )
         .route("/v1/threads/{thread_id}", get(get_thread))
         .route("/v1/threads/{thread_id}/name", patch(rename_thread))
         .route("/v1/threads/{thread_id}/attach", post(attach_thread))
@@ -70,6 +74,15 @@ pub struct ChatThreadListQuery {
 
 const DEFAULT_THREAD_LIST_LIMIT: u32 = 100;
 const SIDEBAR_INITIAL_THREAD_LIST_LIMIT: u32 = 10;
+const SELECTED_THREAD_HISTORY_PAGE_LIMIT: u32 = 50;
+const MAX_SELECTED_THREAD_HISTORY_PAGE_LIMIT: u32 = 200;
+
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadTimelinePageQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u32>,
+}
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -838,9 +851,63 @@ pub async fn get_thread(
 ) -> ApiResult<Json<ThreadViewResponse>> {
     let timeline_revision = state.store.latest_event_seq().await?;
     let mut response = app_server_api::client(&state.app_server)
-        .thread_read_full_history(thread_id)
+        .thread_read_history_window(thread_id, SELECTED_THREAD_HISTORY_PAGE_LIMIT)
         .await?;
-    apply_thread_detail_response_state(&state, &mut response, timeline_revision).await?;
+    apply_thread_detail_response_state_with_merge(
+        &state,
+        &mut response,
+        timeline_revision,
+        ThreadTimelineMergeMode::ReplaceWindow,
+    )
+    .await?;
+    Ok(Json(ThreadViewResponse::from_detail(response)))
+}
+
+#[utoipa::path(get, path = "/v1/threads/{threadId}/timeline/pages", params(ThreadTimelinePageQuery), responses((status = 200, body = ThreadViewResponse)))]
+pub async fn get_thread_timeline_page(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+    Query(query): Query<ThreadTimelinePageQuery>,
+) -> ApiResult<Json<ThreadViewResponse>> {
+    let timeline_revision = state.store.latest_event_seq().await?;
+    let Some(cursor) = query.cursor else {
+        return Err(ApiError::BadRequest(
+            "timeline page cursor is required".to_string(),
+        ));
+    };
+    let limit = query
+        .limit
+        .unwrap_or(SELECTED_THREAD_HISTORY_PAGE_LIMIT)
+        .clamp(1, MAX_SELECTED_THREAD_HISTORY_PAGE_LIMIT);
+    let existing_history_page = state.thread_views.history_page(&thread_id).await;
+    let cursor_matches_loaded_window = existing_history_page
+        .as_ref()
+        .and_then(|history_page| history_page.older_cursor.as_deref())
+        == Some(cursor.as_str());
+    let mut response = if cursor_matches_loaded_window {
+        app_server_api::client(&state.app_server)
+            .thread_read_history_page(thread_id, Some(cursor), limit)
+            .await?
+    } else {
+        let mut response = app_server_api::client(&state.app_server)
+            .thread_read_history_window(thread_id, limit)
+            .await?;
+        if let Some(history_page) = &mut response.history_page {
+            history_page.reset_window = true;
+        }
+        response
+    };
+    apply_thread_detail_response_state_with_merge(
+        &state,
+        &mut response,
+        timeline_revision,
+        if cursor_matches_loaded_window {
+            ThreadTimelineMergeMode::PrependPage
+        } else {
+            ThreadTimelineMergeMode::ReplaceWindow
+        },
+    )
+    .await?;
     Ok(Json(ThreadViewResponse::from_detail(response)))
 }
 
@@ -1016,12 +1083,10 @@ pub async fn mark_thread_seen(
     let request = request.map(|Json(request)| request).unwrap_or_default();
     let seen_seq = match request.seen_completed_agent_turn_seq {
         Some(seq) => seq.max(0),
-        None => {
-            let snapshot = app_server_api::client(&state.app_server)
-                .thread_read(thread_id.clone())
-                .await?;
-            snapshot.thread.last_completed_agent_turn_seq.unwrap_or(0)
-        }
+        None => app_server_api::client(&state.app_server)
+            .thread_completed_turn_count_light(thread_id.clone())
+            .await?
+            .unwrap_or(0),
     };
     Ok(Json(
         state
@@ -1129,20 +1194,42 @@ pub(crate) async fn apply_thread_command_response_state(
     Ok(())
 }
 
-async fn apply_thread_detail_response_state(
+#[derive(Debug, Clone, Copy)]
+enum ThreadTimelineMergeMode {
+    ReplaceWindow,
+    PrependPage,
+}
+
+async fn apply_thread_detail_response_state_with_merge(
     state: &AppState,
     response: &mut ThreadDetailResponse,
     timeline_revision: i64,
+    merge_mode: ThreadTimelineMergeMode,
 ) -> ApiResult<()> {
     apply_thread_summary_state(state, std::slice::from_mut(&mut response.thread)).await?;
     apply_thread_detail_skill_mentions(state, response).await?;
-    let timeline = thread_view::build_thread_timeline(
-        &state.thread_views,
-        &response.thread.id,
-        &response.turns,
-        timeline_revision,
-    )
-    .await?;
+    let timeline = match merge_mode {
+        ThreadTimelineMergeMode::ReplaceWindow => {
+            thread_view::build_thread_timeline_window(
+                &state.thread_views,
+                &response.thread.id,
+                &response.turns,
+                response.history_page.clone(),
+                timeline_revision,
+            )
+            .await?
+        }
+        ThreadTimelineMergeMode::PrependPage => {
+            thread_view::prepend_thread_timeline_page(
+                &state.thread_views,
+                &response.thread.id,
+                &response.turns,
+                response.history_page.clone(),
+                timeline_revision,
+            )
+            .await?
+        }
+    };
     let pending_approvals = state
         .store
         .list_approvals(
@@ -1157,6 +1244,9 @@ async fn apply_thread_detail_response_state(
         timeline.view_revision,
     )
     .await?;
+    if let Some(history_page) = &mut response.history_page {
+        history_page.loaded_turn_count = response.timeline.turns.len() as u32;
+    }
     response.live_state = response.timeline.live_state;
     sync_raw_response_thread(&mut response.raw_payload, &response.thread);
     Ok(())

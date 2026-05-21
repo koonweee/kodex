@@ -167,6 +167,58 @@ describe("TimelineView debug rendering", () => {
     expect(screen.getByText("thread/status")).toBeInTheDocument();
   });
 
+  it("preserves the visual scroll anchor when older history prepends rows", () => {
+    const scrollParentElement = document.createElement("div") as HTMLDivElement;
+    Object.defineProperty(scrollParentElement, "clientHeight", { configurable: true, value: 720 });
+    Object.defineProperty(scrollParentElement, "scrollHeight", { configurable: true, value: 1_000 });
+    scrollParentElement.scrollTop = 120;
+
+    const props = {
+      approvals: [],
+      imagePreviewUrlsByPath: {},
+      onApprovalDecision: vi.fn(),
+      onImageOpen: vi.fn(),
+      onMarkdownOpen: vi.fn(),
+      onReady: vi.fn(),
+      scrollParentElement,
+      showDebug: false,
+      threadId: "thread-1",
+    };
+    const loadingTimeline = timelineState({
+      hasOlderHistory: true,
+      isLoadingOlderHistory: true,
+      items: [
+        timelineItem({ id: "recent-1", kind: "user_message", turnId: "turn-3", displayOrder: 3, text: "Recent question" }),
+        timelineItem({ id: "recent-2", kind: "user_message", turnId: "turn-4", displayOrder: 4, text: "Recent answer" }),
+      ],
+    });
+    const { rerender } = renderWithTimelineProviders(
+      <TimelineView {...props} timeline={loadingTimeline} />,
+    );
+
+    Object.defineProperty(scrollParentElement, "scrollHeight", { configurable: true, value: 1_320 });
+    rerender(
+      <MantineProvider>
+        <VirtuosoMockContext.Provider value={{ viewportHeight: 720, itemHeight: 96 }}>
+          <TimelineView
+            {...props}
+            timeline={timelineState({
+              hasOlderHistory: true,
+              items: [
+                timelineItem({ id: "older-1", kind: "user_message", turnId: "turn-1", displayOrder: 1, text: "Older question" }),
+                timelineItem({ id: "older-2", kind: "user_message", turnId: "turn-2", displayOrder: 2, text: "Older answer" }),
+                timelineItem({ id: "recent-1", kind: "user_message", turnId: "turn-3", displayOrder: 3, text: "Recent question" }),
+                timelineItem({ id: "recent-2", kind: "user_message", turnId: "turn-4", displayOrder: 4, text: "Recent answer" }),
+              ],
+            })}
+          />
+        </VirtuosoMockContext.Provider>
+      </MantineProvider>,
+    );
+
+    expect(scrollParentElement.scrollTop).toBe(440);
+  });
+
   it("keeps later user messages in flow when an expanded file changes row grows", async () => {
     const user = userEvent.setup();
     const props = {

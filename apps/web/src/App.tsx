@@ -793,7 +793,7 @@ function KodexShell({
     };
   }, [isSelectedThreadSnapshotDeferred, selectedThread?.id, selectedThread?.status]);
 
-  useSelectedThreadTimeline({
+  const { loadOlderHistory } = useSelectedThreadTimeline({
     isSelectedThreadSnapshotDeferred,
     onApprovalEvent: applyApprovalEventWithTombstone,
     onError: (error) => {
@@ -1757,6 +1757,7 @@ function KodexShell({
           onRenameThread: stableHandleRenameThread,
           onShowMobileSidebar: handleShowMobileSidebar, onTimelineReady: handleTimelineReadyForSelectedThread,
           onSubagentSidebarToggle: () => setSubagentSidebarOpen((current) => !current),
+          onLoadOlderHistory: loadOlderHistory,
           onUnpinThread: stableHandleUnpinThread, pendingTitleThreadIds,
           scrollParentElement: timelineScrollElement, selectedThread, selectedThreadApprovals, selectedThreadTitle,
           selectedThreadUnavailableId: unavailableThreadId,

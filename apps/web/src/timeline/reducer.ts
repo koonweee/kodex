@@ -4,6 +4,7 @@ import type {
   ThreadTimelineSnapshotItem,
   ThreadViewResponse,
   ThreadViewPatch,
+  ThreadTimelineWindowPage,
 } from "../api/client";
 import {
   createDiagnosticItem,
@@ -80,7 +81,34 @@ export function replayTimeline(events: EventEnvelope[]): TimelineState {
 }
 
 export function applyTimelineSnapshot(state: TimelineState, snapshot: ThreadViewResponse): TimelineState {
-  return applyCanonicalTimelineSnapshot(state, snapshot, snapshot.timeline);
+  return withHistoryPageState(applyCanonicalTimelineSnapshot(state, snapshot, snapshot.timeline), snapshot.historyPage ?? null);
+}
+
+export function applyTimelineHistoryWindow(state: TimelineState, snapshot: ThreadViewResponse): TimelineState {
+  if (snapshot.historyPage?.resetWindow) {
+    return applyTimelineSnapshot(state, snapshot);
+  }
+  const revision = snapshot.timeline.viewRevision ?? 0;
+  const stale = revision < state.viewRevision;
+  let next = state;
+  for (const item of canonicalTimelineItemsInDisplayOrder(snapshot.timeline)) {
+    if (stale && timelineItemById(indexesForState(next), item.id)) {
+      continue;
+    }
+    next = applyCanonicalSnapshotItem(next, snapshot.thread.id, item);
+  }
+  next = withSnapshotTurnMetadata(next, snapshot);
+  return withHistoryPageState(next, snapshot.historyPage ?? null, {
+    lastSeq: Math.max(state.lastSeq, next.lastSeq),
+    viewRevision: Math.max(state.viewRevision, next.viewRevision),
+  });
+}
+
+export function setTimelineOlderHistoryLoading(state: TimelineState, isLoadingOlderHistory: boolean): TimelineState {
+  return createTimelineStateFromDraft({
+    ...timelineDraftFromState(state),
+    isLoadingOlderHistory,
+  });
 }
 
 function applyCanonicalTimelineSnapshot(
@@ -98,6 +126,24 @@ function applyCanonicalTimelineSnapshot(
   }
   next = withSnapshotTurnMetadata(next, snapshot);
   return withCanonicalSnapshotLiveState(next, canonicalTimeline, Math.max(state.lastSeq, revision));
+}
+
+function withHistoryPageState(
+  state: TimelineState,
+  historyPage: ThreadTimelineWindowPage | null,
+  overrides: { lastSeq?: number; viewRevision?: number } = {},
+): TimelineState {
+  if (!historyPage) {
+    return state;
+  }
+  return createTimelineStateFromDraft({
+    ...timelineDraftFromState(state),
+    olderCursor: historyPage.olderCursor ?? null,
+    hasOlderHistory: Boolean(historyPage.hasOlder),
+    isLoadingOlderHistory: false,
+    lastSeq: overrides.lastSeq ?? state.lastSeq,
+    viewRevision: overrides.viewRevision ?? state.viewRevision,
+  });
 }
 
 function canonicalTimelineItemsInDisplayOrder(timeline: ThreadTimelineSnapshot): ThreadTimelineSnapshotItem[] {
@@ -375,6 +421,9 @@ function withCanonicalSnapshotLiveState(
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
     pendingApprovalRequests: timeline.pendingApprovalRequests ?? [],
     pendingUserInputRequests: timeline.pendingUserInputRequests ?? [],
+    olderCursor: state.olderCursor,
+    hasOlderHistory: state.hasOlderHistory,
+    isLoadingOlderHistory: state.isLoadingOlderHistory,
     lastSeq,
     viewRevision: Math.max(state.viewRevision, timeline.viewRevision ?? 0),
   });
@@ -398,6 +447,9 @@ function withProjectionPatchLiveState(state: TimelineState, patch: ThreadViewPat
     indexes: next.indexes,
     pendingApprovalRequests: patch.pendingApprovalRequests ?? state.pendingApprovalRequests,
     pendingUserInputRequests: patch.pendingUserInputRequests ?? state.pendingUserInputRequests,
+    olderCursor: state.olderCursor,
+    hasOlderHistory: state.hasOlderHistory,
+    isLoadingOlderHistory: state.isLoadingOlderHistory,
     lastSeq: state.lastSeq,
     viewRevision: Math.max(state.viewRevision, patch.viewRevision ?? 0, eventSeq),
   });
@@ -413,6 +465,9 @@ function withIgnoredProjectionPatchCursor(
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
     pendingApprovalRequests: state.pendingApprovalRequests,
     pendingUserInputRequests: state.pendingUserInputRequests,
+    olderCursor: state.olderCursor,
+    hasOlderHistory: state.hasOlderHistory,
+    isLoadingOlderHistory: state.isLoadingOlderHistory,
     lastSeq: Math.max(state.lastSeq, eventSeq),
     viewRevision: Math.max(state.viewRevision, patch.viewRevision ?? 0, eventSeq),
   });
@@ -427,6 +482,9 @@ function withTimelineLastSeq(state: TimelineState, lastSeq: number): TimelineSta
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
     pendingApprovalRequests: state.pendingApprovalRequests,
     pendingUserInputRequests: state.pendingUserInputRequests,
+    olderCursor: state.olderCursor,
+    hasOlderHistory: state.hasOlderHistory,
+    isLoadingOlderHistory: state.isLoadingOlderHistory,
     lastSeq,
     viewRevision: state.viewRevision,
   });
@@ -579,6 +637,10 @@ function addOrReplaceItem(state: TimelineDraft, item: TimelineItem) {
 function addItem(state: TimelineDraft, item: TimelineItem) {
   state.indexes.itemIds = [...state.indexes.itemIds, item.id];
   state.indexes.itemUpdatesById.set(item.id, item);
+  state.indexes.itemIds = [...state.indexes.itemIds]
+    .map((itemId, index) => ({ itemId, index, item: timelineItemById(state.indexes, itemId) }))
+    .sort((left, right) => (left.item?.displayOrder ?? 0) - (right.item?.displayOrder ?? 0) || left.index - right.index)
+    .map(({ itemId }) => itemId);
 }
 
 function removeItem(state: TimelineDraft, itemId: string) {
@@ -671,6 +733,9 @@ function timelineDraftFromState(
     indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
     pendingApprovalRequests: state.pendingApprovalRequests,
     pendingUserInputRequests: state.pendingUserInputRequests,
+    olderCursor: state.olderCursor,
+    hasOlderHistory: state.hasOlderHistory,
+    isLoadingOlderHistory: state.isLoadingOlderHistory,
     lastSeq: state.lastSeq,
     viewRevision: state.viewRevision,
     ...overrides,

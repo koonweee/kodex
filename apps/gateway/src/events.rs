@@ -23,9 +23,10 @@ use crate::{
     api::AppState,
     app_server::InboundMessage,
     app_server_api::{
-        self, visible_text_from_thread_item, ThreadItemSnapshot, ThreadLiveState, ThreadStatus,
-        ThreadSummary, ThreadTurnSnapshot, TimelineItemUpsertPayload,
-        TimelineThreadMetadataPayload, TimelineUpdateSource,
+        self, visible_text_from_thread_item, SortDirection, ThreadItemSnapshot, ThreadLiveState,
+        ThreadStatus, ThreadSummary, ThreadTimelineWindowPage, ThreadTurnItemsView,
+        ThreadTurnSnapshot, TimelineItemUpsertPayload, TimelineThreadMetadataPayload,
+        TimelineUpdateSource,
     },
     automations,
     error::{ApiError, ApiResult},
@@ -42,6 +43,7 @@ use crate::{
 
 const SSE_REPLAY_PAGE_SIZE: i64 = 500;
 const SELECTED_THREAD_POLL_LIMIT: u32 = 25;
+const TURN_COMPLETION_HEAD_REFRESH_LIMIT: u32 = 50;
 const SELECTED_THREAD_ACTIVE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const SELECTED_THREAD_DELTA_COALESCE_WINDOW: Duration = Duration::from_millis(16);
 const THREAD_VIEW_DELTA_FLUSH_INTERVAL: Duration = Duration::from_millis(250);
@@ -827,6 +829,9 @@ async fn normalized_timeline_events(
     let turn_upsert = timeline_turn_upsert_event(state, params, metadata, source).await?;
     events.extend(turn_upsert.events);
     drain_thread_ids.extend(turn_upsert.drain_thread_ids);
+    events.extend(
+        timeline_turn_completion_reconciliation_events(state, method, metadata, cursor_seq).await?,
+    );
     if let Some(event) =
         timeline_thread_metadata_event(state, method, params, metadata, source).await?
     {
@@ -959,6 +964,81 @@ fn item_upsert_item_status(method: &str) -> Option<&'static str> {
     } else {
         None
     }
+}
+
+async fn timeline_turn_completion_reconciliation_events(
+    state: &AppState,
+    method: &str,
+    metadata: &EventMetadata,
+    cursor_seq: i64,
+) -> ApiResult<Vec<EventEnvelope>> {
+    if method != "turn/completed" {
+        return Ok(Vec::new());
+    }
+    let Some(thread_id) = metadata.thread_id.as_deref() else {
+        return Ok(Vec::new());
+    };
+    let revision = state.store.latest_event_seq().await?.max(cursor_seq);
+    let reconciliation =
+        refresh_completed_turn_head(state, thread_id, metadata.turn_id.as_deref(), revision).await;
+    match reconciliation {
+        Ok(()) => Ok(vec![thread_view_patch_event(state, thread_id).await?]),
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                thread_id,
+                "failed to reconcile completed turn head from app-server"
+            );
+            let seq = state.store.latest_event_seq().await?.max(cursor_seq);
+            Ok(vec![thread_view_refresh_required_event(
+                seq,
+                thread_id.to_string(),
+                "turn_completed_reconciliation_failed",
+            )?])
+        }
+    }
+}
+
+async fn refresh_completed_turn_head(
+    state: &AppState,
+    thread_id: &str,
+    completed_turn_id: Option<&str>,
+    revision: i64,
+) -> ApiResult<()> {
+    let mut page = app_server_api::client(&state.app_server)
+        .thread_turns_list_page(
+            thread_id.to_string(),
+            None,
+            SortDirection::Desc,
+            ThreadTurnItemsView::Full,
+            Some(TURN_COMPLETION_HEAD_REFRESH_LIMIT),
+        )
+        .await?;
+    if let Some(completed_turn_id) = completed_turn_id {
+        if !page.data.iter().any(|turn| turn.id == completed_turn_id) {
+            return Err(ApiError::BadGateway(format!(
+                "completed turn {completed_turn_id} missing from recent head reconciliation"
+            )));
+        }
+    }
+    page.data.reverse();
+    let history_page = ThreadTimelineWindowPage {
+        older_cursor: page.next_cursor.clone(),
+        newer_cursor: page.backwards_cursor.clone(),
+        has_older: page.next_cursor.is_some(),
+        limit: TURN_COMPLETION_HEAD_REFRESH_LIMIT,
+        loaded_turn_count: page.data.len() as u32,
+        reset_window: false,
+    };
+    thread_view::build_thread_timeline_window(
+        &state.thread_views,
+        thread_id,
+        &page.data,
+        Some(history_page),
+        revision,
+    )
+    .await?;
+    Ok(())
 }
 
 async fn apply_live_item_skill_mentions(
@@ -1529,11 +1609,18 @@ mod tests {
 
     use super::*;
 
-    async fn test_state() -> AppState {
+    async fn test_state_with_app_server() -> (AppState, Arc<RecordingAppServer>) {
         let store = Store::in_memory().await.unwrap();
         let app_server = Arc::new(RecordingAppServer::default());
         app_server.ready.store(true, Ordering::SeqCst);
-        AppState::new(Config::default(), store, app_server)
+        (
+            AppState::new(Config::default(), store, app_server.clone()),
+            app_server,
+        )
+    }
+
+    async fn test_state() -> AppState {
+        test_state_with_app_server().await.0
     }
 
     fn test_event(
@@ -1581,6 +1668,77 @@ mod tests {
         assert_eq!(replay[0].id, broadcast.id);
         assert_eq!(replay[0].thread_id.as_deref(), Some("thread-1"));
         assert_eq!(replay[0].turn_id.as_deref(), Some("turn-1"));
+    }
+
+    #[tokio::test]
+    async fn turn_completed_reconciles_bounded_full_recent_head_without_replaying_history() {
+        let (state, app_server) = test_state_with_app_server().await;
+        app_server.queued_responses.lock().unwrap().push(json!({
+            "data": [{
+                "id": "turn-2",
+                "status": {"type": "completed"},
+                "items": [{"id": "item-agent-2", "type": "agentMessage", "text": "durable second"}]
+            }, {
+                "id": "turn-1",
+                "status": {"type": "completed"},
+                "items": [{"id": "item-agent-1", "type": "agentMessage", "text": "durable first"}]
+            }],
+            "nextCursor": "older-cursor",
+            "backwardsCursor": null
+        }));
+        let mut receiver = state.events.subscribe();
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "turn/completed".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-2"
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let raw = receiver.recv().await.unwrap();
+        assert_eq!(raw.kind, "codex.notification");
+        let patch = receiver.recv().await.unwrap();
+        assert_eq!(patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
+        assert_eq!(patch.payload["liveState"], "idle");
+        assert_eq!(patch.payload["items"][0]["turnId"], "turn-1");
+        assert_eq!(
+            patch.payload["items"][0]["payload"]["item"]["text"],
+            "durable first"
+        );
+        assert_eq!(patch.payload["items"][1]["turnId"], "turn-2");
+        assert_eq!(
+            patch.payload["items"][1]["payload"]["item"]["text"],
+            "durable second"
+        );
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0, "thread/turns/list");
+        assert_eq!(
+            requests[0].1,
+            json!({
+                "threadId": "thread-1",
+                "cursor": null,
+                "sortDirection": "desc",
+                "itemsView": "full",
+                "limit": TURN_COMPLETION_HEAD_REFRESH_LIMIT
+            })
+        );
+        drop(requests);
+
+        let persisted = state.store.replay_events(None, None, None).await.unwrap();
+        assert!(persisted
+            .iter()
+            .all(|event| event.kind != "timeline.item_upsert"));
+        let persisted_json = serde_json::to_string(&persisted).unwrap();
+        assert!(!persisted_json.contains("item-agent-1"));
+        assert!(!persisted_json.contains("durable second"));
     }
 
     #[test]

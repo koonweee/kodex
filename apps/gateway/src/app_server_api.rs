@@ -152,6 +152,61 @@ impl CodexClient {
         ThreadDetailResponse::from_thread_payload_and_turns(payload, turns)
     }
 
+    pub async fn thread_read_history_window(
+        &self,
+        thread_id: String,
+        limit: u32,
+    ) -> ApiResult<ThreadDetailResponse> {
+        self.thread_read_history_page(thread_id, None, limit).await
+    }
+
+    pub async fn thread_read_history_page(
+        &self,
+        thread_id: String,
+        cursor: Option<String>,
+        limit: u32,
+    ) -> ApiResult<ThreadDetailResponse> {
+        let payload = self
+            .request_retrying_rollout_load(
+                "thread/read",
+                json!({ "threadId": thread_id, "includeTurns": false }),
+            )
+            .await?;
+        let mut page = match self
+            .thread_turns_list_page(
+                thread_id.clone(),
+                cursor,
+                SortDirection::Desc,
+                ThreadTurnItemsView::Full,
+                Some(limit),
+            )
+            .await
+        {
+            Ok(page) => page,
+            Err(error) if is_thread_history_not_materialized_error(&error) => {
+                ThreadTurnsListPage::empty()
+            }
+            Err(error) => return Err(error),
+        };
+        page.data.reverse();
+        let last_completed_agent_turn_seq =
+            self.thread_completed_turn_count_light(thread_id).await?;
+        let history_page = ThreadTimelineWindowPage {
+            older_cursor: page.next_cursor.clone(),
+            newer_cursor: page.backwards_cursor.clone(),
+            has_older: page.next_cursor.is_some(),
+            limit,
+            loaded_turn_count: page.data.len() as u32,
+            reset_window: false,
+        };
+        ThreadDetailResponse::from_thread_payload_turns_and_history(
+            payload,
+            page.data,
+            Some(history_page),
+            last_completed_agent_turn_seq,
+        )
+    }
+
     pub async fn thread_turns_list_page(
         &self,
         thread_id: String,
@@ -198,6 +253,54 @@ impl CodexClient {
             cursor = Some(next_cursor);
         }
         Ok(turns)
+    }
+
+    pub async fn thread_completed_turn_count_light(
+        &self,
+        thread_id: String,
+    ) -> ApiResult<Option<i64>> {
+        let mut cursor = None;
+        let mut completed = 0_i64;
+        let mut saw_turns = false;
+        loop {
+            let payload = match self
+                .request_retrying_rollout_load(
+                    "thread/turns/list",
+                    json!({
+                        "threadId": thread_id.clone(),
+                        "cursor": cursor,
+                        "sortDirection": SortDirection::Desc.as_str(),
+                        "itemsView": ThreadTurnItemsView::NotLoaded.as_str(),
+                        "limit": 200,
+                    }),
+                )
+                .await
+            {
+                Ok(payload) => payload,
+                Err(error) if is_thread_history_not_materialized_error(&error) => {
+                    return Ok(None);
+                }
+                Err(error) => return Err(error),
+            };
+            let data = payload
+                .get("data")
+                .and_then(Value::as_array)
+                .ok_or_else(|| bad_gateway("thread/turns/list response missing data array"))?;
+            saw_turns |= !data.is_empty();
+            completed += data
+                .iter()
+                .filter(|turn| {
+                    is_terminal_turn_status(
+                        &status_type(turn.get("status")).unwrap_or_else(|| "unknown".to_string()),
+                    )
+                })
+                .count() as i64;
+            let Some(next_cursor) = optional_string(&payload, "nextCursor") else {
+                break;
+            };
+            cursor = Some(next_cursor);
+        }
+        Ok(saw_turns.then_some(completed))
     }
 
     pub async fn thread_loaded_list(&self) -> ApiResult<ThreadLoadedListResponse> {
@@ -1673,6 +1776,7 @@ pub struct ThreadDetailResponse {
     pub turns: Vec<ThreadTurnSnapshot>,
     pub live_state: ThreadLiveState,
     pub timeline: ThreadTimelineSnapshot,
+    pub history_page: Option<ThreadTimelineWindowPage>,
     pub raw_payload: Value,
 }
 
@@ -1682,6 +1786,8 @@ pub struct ThreadViewResponse {
     pub thread: ThreadViewThreadSummary,
     pub live_state: ThreadLiveState,
     pub timeline: ThreadTimelineSnapshot,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub history_page: Option<ThreadTimelineWindowPage>,
 }
 
 impl ThreadViewResponse {
@@ -1690,6 +1796,7 @@ impl ThreadViewResponse {
             thread: ThreadViewThreadSummary::from(detail.thread),
             live_state: detail.live_state,
             timeline: detail.timeline,
+            history_page: detail.history_page,
         }
     }
 }
@@ -1770,13 +1877,23 @@ impl ThreadDetailResponse {
             turns,
             live_state,
             timeline,
+            history_page: None,
             raw_payload: payload,
         })
     }
 
     fn from_thread_payload_and_turns(
+        payload: Value,
+        turns: Vec<ThreadTurnSnapshot>,
+    ) -> ApiResult<Self> {
+        Self::from_thread_payload_turns_and_history(payload, turns, None, None)
+    }
+
+    fn from_thread_payload_turns_and_history(
         mut payload: Value,
         turns: Vec<ThreadTurnSnapshot>,
+        history_page: Option<ThreadTimelineWindowPage>,
+        last_completed_agent_turn_seq: Option<i64>,
     ) -> ApiResult<Self> {
         let thread = payload
             .get_mut("thread")
@@ -1790,8 +1907,31 @@ impl ThreadDetailResponse {
             return Err(bad_gateway("thread/read response thread is not an object"));
         }
 
-        Self::from_payload(payload)
+        let mut response = Self::from_payload(payload)?;
+        response.history_page = history_page;
+        if last_completed_agent_turn_seq.is_some() {
+            response
+                .thread
+                .apply_completed_agent_turn_read_state(last_completed_agent_turn_seq, 0);
+        }
+        Ok(response)
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadTimelineWindowPage {
+    pub older_cursor: Option<String>,
+    pub newer_cursor: Option<String>,
+    pub has_older: bool,
+    pub limit: u32,
+    pub loaded_turn_count: u32,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub reset_window: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -2014,6 +2154,15 @@ pub struct ThreadTurnsListPage {
 }
 
 impl ThreadTurnsListPage {
+    fn empty() -> Self {
+        Self {
+            data: Vec::new(),
+            next_cursor: None,
+            backwards_cursor: None,
+            raw_payload: json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
+        }
+    }
+
     fn from_payload(payload: Value) -> ApiResult<Self> {
         let data = payload
             .get("data")
@@ -3419,6 +3568,66 @@ mod tests {
         );
         assert_eq!(requests[1].1["itemsView"], "summary");
         assert_eq!(requests[2].1["itemsView"], "full");
+    }
+
+    #[tokio::test]
+    async fn adapter_reads_bounded_recent_history_window_and_counts_lightly() {
+        let server = Arc::new(RecordingServer {
+            ready: AtomicBool::new(true),
+            queued_responses: StdMutex::new(vec![
+                json!({
+                    "thread": {
+                        "id": "thread-1",
+                        "cliVersion": "0.130.0",
+                        "cwd": "/workspace",
+                        "status": {"type": "idle"},
+                        "source": "cli",
+                        "preview": "hi",
+                        "createdAt": 1_i64,
+                        "updatedAt": 2_i64
+                    }
+                }),
+                json!({
+                    "data": [{
+                        "id": "turn-2",
+                        "status": {"type": "completed"},
+                        "items": [{"id": "agent-2", "type": "agentMessage", "text": "new"}]
+                    }],
+                    "nextCursor": "older",
+                    "backwardsCursor": "newer"
+                }),
+                json!({
+                    "data": [
+                        {"id": "turn-2", "status": {"type": "completed"}},
+                        {"id": "turn-1", "status": {"type": "completed"}}
+                    ],
+                    "nextCursor": null,
+                    "backwardsCursor": null
+                }),
+            ]),
+            ..Default::default()
+        });
+        let client = CodexClient::new(server.clone());
+
+        let response = client
+            .thread_read_history_window("thread-1".to_string(), 50)
+            .await
+            .unwrap();
+
+        assert_eq!(response.turns[0].id, "turn-2");
+        assert_eq!(response.thread.last_completed_agent_turn_seq, Some(2));
+        let history_page = response.history_page.unwrap();
+        assert_eq!(history_page.older_cursor.as_deref(), Some("older"));
+        assert!(history_page.has_older);
+
+        let requests = server.requests.lock().unwrap();
+        assert_eq!(requests[1].0, "thread/turns/list");
+        assert_eq!(requests[1].1["sortDirection"], "desc");
+        assert_eq!(requests[1].1["itemsView"], "full");
+        assert_eq!(requests[1].1["limit"], 50);
+        assert_eq!(requests[2].0, "thread/turns/list");
+        assert_eq!(requests[2].1["itemsView"], "notLoaded");
+        assert_eq!(requests[2].1["limit"], 200);
     }
 
     #[tokio::test]
