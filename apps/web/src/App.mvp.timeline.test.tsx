@@ -132,6 +132,33 @@ describe("MVP timeline flows", () => {
     ).toBeInTheDocument();
   });
 
+  it("retries empty rollout selected thread snapshot reads without reporting a hard load failure", async () => {
+    let detailReads = 0;
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads/thread-1": () => {
+          detailReads += 1;
+          if (detailReads === 1) {
+            throw new Error(
+              "app-server error -32603: failed to read thread: thread-store internal error: failed to read thread /Users/example/.codex/sessions/2026/05/20/rollout-2026-05-20T22-32-32-thread-1.jsonl: rollout at /Users/example/.codex/sessions/2026/05/20/rollout-2026-05-20T22-32-32-thread-1.jsonl is empty",
+            );
+          }
+          return threadDetail(thread, [
+            snapshotTurn("turn-1", [
+              snapshotItem("answer-1", "agentMessage", { text: "Recovered from empty rollout" }),
+            ]),
+          ]);
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/recovered from empty rollout/i)).toBeInTheDocument();
+    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(2);
+    expect(screen.queryByText(/Selected thread load failed/i)).not.toBeInTheDocument();
+  });
+
   it("groups command and search activity into nested timeline collapsibles", async () => {
     mockGateway(
       baseRoutes({

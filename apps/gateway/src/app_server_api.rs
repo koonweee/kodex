@@ -631,6 +631,7 @@ fn is_rollout_load_error(error: &ApiError) -> bool {
     let normalized = message.to_ascii_lowercase();
     normalized.contains("failed to load rollout")
         || normalized.contains("failed to load thread history")
+        || (normalized.contains("rollout at") && normalized.contains(" is empty"))
 }
 
 fn is_thread_history_not_materialized_error(error: &ApiError) -> bool {

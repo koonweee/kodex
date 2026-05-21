@@ -21,7 +21,7 @@ use crate::{
     error::{ApiError, ApiResult},
 };
 
-const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
+const MAX_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_MARKDOWN_BYTES: u64 = 2 * 1024 * 1024;
 
 pub fn router() -> Router<AppState> {

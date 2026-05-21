@@ -4055,6 +4055,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn thread_detail_retries_empty_rollout_read_error() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_errors.lock().unwrap().push(ApiError::BadGateway(
+            "app-server error -32603: failed to read thread: thread-store internal error: failed to read thread /Users/example/.codex/sessions/2026/05/20/rollout-2026-05-20T22-32-32-019e4905-6c37-7662-987f-6032cc5f8793.jsonl: rollout at /Users/example/.codex/sessions/2026/05/20/rollout-2026-05-20T22-32-32-019e4905-6c37-7662-987f-6032cc5f8793.jsonl is empty".to_string(),
+        ));
+        app_server.queued_responses.lock().unwrap().push(json!({
+            "thread": {
+                "id": "thread-1",
+                "cliVersion": "0.130.0",
+                "cwd": "/workspace",
+                "ephemeral": false,
+                "modelProvider": "openai",
+                "preview": "hi",
+                "source": "cli",
+                "status": {"type": "idle"},
+                "turns": [],
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_610_i64
+            }
+        }));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 3);
+        assert_eq!(
+            requests[0],
+            (
+                "thread/read".to_string(),
+                json!({"threadId": "thread-1", "includeTurns": false})
+            )
+        );
+        assert_eq!(
+            requests[1],
+            (
+                "thread/read".to_string(),
+                json!({"threadId": "thread-1", "includeTurns": false})
+            )
+        );
+        assert_eq!(requests[2].0, "thread/turns/list");
+    }
+
+    #[tokio::test]
     async fn thread_detail_retries_transient_thread_history_load_error() {
         let (state, app_server) = test_state().await;
         app_server
@@ -7784,7 +7836,7 @@ mod tests {
         let dir = tempdir().unwrap();
         Arc::make_mut(&mut state.config).uploads.dir = dir.path().join("uploads");
         let app = build_router(state);
-        let oversized = vec![b'x'; 10 * 1024 * 1024 + 1];
+        let oversized = vec![b'x'; 25 * 1024 * 1024 + 1];
 
         let response = app
             .oneshot(

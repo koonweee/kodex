@@ -302,6 +302,7 @@ function isTransientThreadSnapshotLoadError(error: unknown): boolean {
   return (
     normalized.includes("not materialized yet") ||
     normalized.includes("failed to load rollout") ||
-    normalized.includes("failed to load thread history")
+    normalized.includes("failed to load thread history") ||
+    (normalized.includes("rollout at") && normalized.includes(" is empty"))
   );
 }
