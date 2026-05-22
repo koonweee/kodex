@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use axum::Router;
+use axum::{middleware, Router};
 use tokio::sync::broadcast;
-use tower_http::trace::TraceLayer;
+use tower_http::{compression::CompressionLayer, trace::TraceLayer};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -108,6 +108,8 @@ pub struct AppState {
     pub notifications: crate::notifications::NotificationService,
     pub thread_views: ThreadViewStore,
     pub thread_view_deltas: crate::events::ThreadViewDeltaBuffer,
+    pub chat_cwd_cache: crate::routes::threads::ChatCwdCache,
+    pub thread_input_locks: crate::turn_lifecycle::ThreadInputLocks,
 }
 
 impl AppState {
@@ -126,6 +128,8 @@ impl AppState {
             notifications,
             thread_views: ThreadViewStore::default(),
             thread_view_deltas: crate::events::ThreadViewDeltaBuffer::default(),
+            chat_cwd_cache: crate::routes::threads::ChatCwdCache::default(),
+            thread_input_locks: crate::turn_lifecycle::ThreadInputLocks::default(),
         }
     }
 
@@ -433,7 +437,6 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::mcp::router())
         .merge(routes::self_control::router())
         .merge(SwaggerUi::new("/docs").url("/openapi.json", ApiDoc::openapi()))
-        .layer(TraceLayer::new_for_http())
         .with_state(state.clone());
 
     if let Some(dist_dir) = state.config.frontend.dist_dir.clone() {
@@ -441,4 +444,9 @@ pub fn build_router(state: AppState) -> Router {
     }
 
     router
+        .layer(middleware::from_fn(
+            crate::performance::route_timing_middleware,
+        ))
+        .layer(CompressionLayer::new())
+        .layer(TraceLayer::new_for_http())
 }

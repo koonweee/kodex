@@ -74,7 +74,8 @@ pub async fn submit_thread_input(
         .save_thread_turn_options(&thread_id, &options)
         .await?;
 
-    if turn_lifecycle::refreshed_active_turn_id(&state, &thread_id)
+    let submit_guard = state.thread_input_locks.lock(&thread_id).await;
+    if turn_lifecycle::routed_active_turn_id(&state, &thread_id)
         .await?
         .is_some()
     {
@@ -101,12 +102,16 @@ pub async fn submit_thread_input(
         &resolved.skills,
     )
     .await?;
+    turn_lifecycle::record_turn_starting(&state, &thread_id).await?;
+    drop(submit_guard);
     let response = match app_server_api::client(&state.app_server)
         .turn_start(thread_id.clone(), resolved.input.clone(), options)
         .await
     {
         Ok(response) => response,
         Err(error) => {
+            turn_lifecycle::record_turn_start_failed(&state, &thread_id).await?;
+            queue::trigger_queue_drain(state.clone(), thread_id.clone());
             turn_lifecycle::delete_pending_skill_mentions(
                 &state,
                 pending_skill_mentions_id.as_deref(),
@@ -115,7 +120,9 @@ pub async fn submit_thread_input(
             return Err(error);
         }
     };
-    if let Some(turn_id) = turn_lifecycle::pending_projection_turn_id(&response.payload) {
+    let projection_turn_id = turn_lifecycle::pending_projection_turn_id(&response.payload);
+    turn_lifecycle::record_turn_started(&state, &thread_id, projection_turn_id.as_deref()).await?;
+    if let Some(turn_id) = projection_turn_id {
         turn_lifecycle::record_pending_user_projection(
             &state,
             &thread_id,

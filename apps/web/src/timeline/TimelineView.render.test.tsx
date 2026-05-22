@@ -23,6 +23,89 @@ describe("TimelineView debug rendering", () => {
     vi.useRealTimers();
   });
 
+  it("renders a top control for older history and loads it on demand", async () => {
+    const user = userEvent.setup();
+    const onLoadOlderHistory = vi.fn();
+
+    renderWithTimelineProviders(
+      <TimelineView
+        approvals={[]}
+        imagePreviewUrlsByPath={{}}
+        onApprovalDecision={vi.fn()}
+        onImageOpen={vi.fn()}
+        onLoadOlderHistory={onLoadOlderHistory}
+        onMarkdownOpen={vi.fn()}
+        onReady={vi.fn()}
+        scrollParentElement={null}
+        showDebug={false}
+        threadId="thread-1"
+        timeline={timelineState({
+          hasOlderHistory: true,
+          items: [
+            timelineItem({ id: "recent-1", kind: "user_message", displayOrder: 1, text: "Recent question" }),
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: "Older history boundary" })).toBeInTheDocument();
+
+    onLoadOlderHistory.mockClear();
+    await user.click(screen.getByRole("button", { name: "Load older history" }));
+
+    expect(onLoadOlderHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows older history loading state without allowing another manual load", () => {
+    const onLoadOlderHistory = vi.fn();
+
+    renderWithTimelineProviders(
+      <TimelineView
+        approvals={[]}
+        imagePreviewUrlsByPath={{}}
+        onApprovalDecision={vi.fn()}
+        onImageOpen={vi.fn()}
+        onLoadOlderHistory={onLoadOlderHistory}
+        onMarkdownOpen={vi.fn()}
+        onReady={vi.fn()}
+        scrollParentElement={null}
+        showDebug={false}
+        threadId="thread-1"
+        timeline={timelineState({
+          hasOlderHistory: true,
+          isLoadingOlderHistory: true,
+          items: [
+            timelineItem({ id: "recent-1", kind: "user_message", displayOrder: 1, text: "Recent question" }),
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: "Older history boundary" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("button", { name: "Loading older history" })).toBeDisabled();
+    expect(onLoadOlderHistory).not.toHaveBeenCalled();
+  });
+
+  it("shows the older history boundary even when no visible rows are loaded yet", () => {
+    renderWithTimelineProviders(
+      <TimelineView
+        approvals={[]}
+        imagePreviewUrlsByPath={{}}
+        onApprovalDecision={vi.fn()}
+        onImageOpen={vi.fn()}
+        onLoadOlderHistory={vi.fn()}
+        onMarkdownOpen={vi.fn()}
+        onReady={vi.fn()}
+        scrollParentElement={null}
+        showDebug={false}
+        threadId="thread-1"
+        timeline={timelineState({ hasOlderHistory: true })}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Load older history" })).toBeInTheDocument();
+  });
+
   it("renders 12-hour timestamps for visible user and final assistant messages", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 4, 13, 12, 0, 0));

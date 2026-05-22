@@ -19,13 +19,11 @@ import {
   uploadImages,
   type ImageUpload,
   type TextElement,
-  type ThreadInputResponse,
   type TimelineSkillMention,
   type UserInput,
 } from "../api/client";
 import type { ComposerSettings } from "../ComposerFooterControls";
 import { errorMessageFrom } from "../shared/values";
-import type { TimelineItem } from "../timeline/state";
 import { composerTurnOptions, sameComposerContext, type ComposerContext } from "./settings";
 import {
   createObjectUrl,
@@ -60,7 +58,6 @@ type UseComposerOrchestrationParams = {
   onThreadTurnStarted: (threadId: string) => void;
   queuedSteerRows: QueuedSteerRow[];
   selectedProjectId: string | null;
-  selectedTimelineItems: TimelineItem[];
   selectedThreadId: string | null;
 };
 
@@ -80,15 +77,10 @@ export function useComposerOrchestration({
   onThreadTurnStarted,
   queuedSteerRows,
   selectedProjectId,
-  selectedTimelineItems,
   selectedThreadId,
 }: UseComposerOrchestrationParams) {
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [isComposerSubmitting, setIsComposerSubmitting] = useState(false);
-  const [pendingCanonicalUserMessage, setPendingCanonicalUserMessage] = useState<{
-    threadId: string;
-    turnId: string;
-  } | null>(null);
   const [isQueuedTurnStartPending, setIsQueuedTurnStartPending] = useState(false);
   const [isComposerDragActive, setIsComposerDragActive] = useState(false);
   const [imagePreviewUrlsByPath, setImagePreviewUrlsByPath] = useState<Record<string, string>>({});
@@ -120,21 +112,6 @@ export function useComposerOrchestration({
     }
     previousActiveSelectedTurnIdRef.current = activeSelectedTurnId;
   }, [activeSelectedTurnId]);
-
-  useEffect(() => {
-    if (!pendingCanonicalUserMessage) {
-      return;
-    }
-    if (selectedThreadId !== pendingCanonicalUserMessage.threadId) {
-      setPendingCanonicalUserMessage(null);
-      setIsComposerSubmitting(false);
-      return;
-    }
-    if (hasCanonicalUserMessageForTurn(selectedTimelineItems, pendingCanonicalUserMessage.turnId)) {
-      setPendingCanonicalUserMessage(null);
-      setIsComposerSubmitting(false);
-    }
-  }, [pendingCanonicalUserMessage, selectedThreadId, selectedTimelineItems]);
 
   useEffect(() => {
     const nextContext = { activeSelectedTurnId, draftChatThreadSelected, draftThreadProjectId, selectedProjectId, selectedThreadId };
@@ -202,7 +179,7 @@ export function useComposerOrchestration({
         }
         onThreadMaterialized(selectedThreadId);
         clearPendingAttachments();
-        awaitCanonicalUserMessage(selectedThreadId, response, activeSelectedTurnId);
+        setIsComposerSubmitting(false);
         return;
       }
 
@@ -238,7 +215,7 @@ export function useComposerOrchestration({
       }
       onThreadMaterialized(threadId);
       clearPendingAttachments();
-      awaitCanonicalUserMessage(threadId, response, null);
+      setIsComposerSubmitting(false);
     } catch (error) {
       if (startedThreadId) {
         onThreadTurnStartFailed(startedThreadId);
@@ -251,20 +228,6 @@ export function useComposerOrchestration({
       setIsComposerSubmitting(false);
       onError(error);
     }
-  }
-
-  function awaitCanonicalUserMessage(
-    threadId: string,
-    response: ThreadInputResponse,
-    fallbackTurnId: string | null,
-  ) {
-    const turnId = threadInputResponseTurnId(response) ?? fallbackTurnId;
-    if (!turnId || hasCanonicalUserMessageForTurn(selectedTimelineItems, turnId)) {
-      setPendingCanonicalUserMessage(null);
-      setIsComposerSubmitting(false);
-      return;
-    }
-    setPendingCanonicalUserMessage({ threadId, turnId });
   }
 
   async function handleStopTurn() {
@@ -520,28 +483,4 @@ export function useComposerOrchestration({
 
 function usesMobileComposerInput(): boolean {
   return isTouchInputDevice();
-}
-
-function hasCanonicalUserMessageForTurn(items: TimelineItem[], turnId: string): boolean {
-  return items.some((item) => item.kind === "user_message" && item.turnId === turnId);
-}
-
-function threadInputResponseTurnId(response: ThreadInputResponse): string | null {
-  return stringField(response.rawPayload, "turnId") ?? stringField(objectField(response.rawPayload, "turn"), "id");
-}
-
-function objectField(value: unknown, field: string): Record<string, unknown> | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const next = (value as Record<string, unknown>)[field];
-  return next && typeof next === "object" ? next as Record<string, unknown> : null;
-}
-
-function stringField(value: unknown, field: string): string | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const next = (value as Record<string, unknown>)[field];
-  return typeof next === "string" && next.trim() ? next : null;
 }

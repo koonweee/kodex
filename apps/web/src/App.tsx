@@ -578,7 +578,6 @@ function KodexShell({
     onThreadTurnStarted: markThreadActive,
     queuedSteerRows: selectedQueuedInputs,
     selectedProjectId,
-    selectedTimelineItems: timeline.items,
     selectedThreadId,
   });
   const selectedThreadTitle = selectedThread

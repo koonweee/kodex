@@ -109,7 +109,11 @@ describe("MVP composer input flows", () => {
       turnStart.resolve({ disposition: "started", rawPayload: { turnId: "turn-2" } });
       await turnStart.promise;
     });
-    expect(screen.getByRole("button", { name: /sending message/i })).toBeDisabled();
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: /sending message/i })).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
+    expect(within(timelineElement(container)).queryByText("Ship it")).not.toBeInTheDocument();
 
     const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
     act(() => {

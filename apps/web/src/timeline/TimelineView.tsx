@@ -1,4 +1,4 @@
-import { ActionIcon, Box, Stack, Text, Tooltip } from "@mantine/core";
+import { ActionIcon, Box, Button, Stack, Text, Tooltip } from "@mantine/core";
 import { ArrowDownToLine } from "lucide-react";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Virtuoso, type FollowOutput, type VirtuosoHandle } from "react-virtuoso";
@@ -20,6 +20,8 @@ import type { TimelineItem, TimelineState } from "./reducer";
 const EMPTY_APPROVALS: Approval[] = [];
 
 const TIMELINE_TEXT = {
+  loadOlderHistory: "Load older history",
+  loadingOlderHistory: "Loading older history",
   scrollToBottom: "Scroll to bottom",
 };
 
@@ -108,6 +110,12 @@ export function TimelineView({
   const approvalsByRowKey = useMemo(() => buildTimelineRowApprovalMap(rows, approvalIndex), [approvalIndex, rows]);
   const rowCount = visibleRows.length;
   const virtuosoScrollParent = scrollParentElement && scrollParentElement.clientHeight > 0 ? scrollParentElement : null;
+  const olderHistoryBoundary = timeline.hasOlderHistory ? (
+    <OlderHistoryBoundary
+      isLoading={timeline.isLoadingOlderHistory}
+      onLoadOlderHistory={onLoadOlderHistory}
+    />
+  ) : null;
   usePrependScrollRestoration({
     isLoadingOlderHistory: timeline.isLoadingOlderHistory,
     rowCount,
@@ -131,6 +139,7 @@ export function TimelineView({
   if (rowCount === 0) {
     return (
       <>
+        {olderHistoryBoundary}
         <HiddenDebugPanel
           hiddenItems={showDebug ? timeline.hiddenItems : []}
           imagePreviewUrlsByPath={imagePreviewUrlsByPath}
@@ -146,6 +155,7 @@ export function TimelineView({
 
   return (
     <Box className="kodex-timeline-virtual-root" data-initial-bottom-aligned={initialBottomAligned ? "true" : "false"}>
+      {olderHistoryBoundary}
       <PendingRequestSummaryStack requests={pendingRequestSummaries} />
       <Virtuoso<TimelineRenderRow>
         atBottomStateChange={handleAtBottomStateChange}
@@ -177,7 +187,6 @@ export function TimelineView({
           </Box>
         ) : null}
         ref={virtuosoRef}
-        startReached={timeline.hasOlderHistory && !timeline.isLoadingOlderHistory ? onLoadOlderHistory : undefined}
         {...(virtuosoScrollParent ? { initialTopMostItemIndex: { index: rowCount - 1, align: "end" } as const } : {})}
       />
       <HiddenDebugPanel
@@ -205,6 +214,35 @@ export function TimelineView({
           </ActionIcon>
         </Tooltip>
       ) : null}
+    </Box>
+  );
+}
+
+function OlderHistoryBoundary({
+  isLoading,
+  onLoadOlderHistory,
+}: {
+  isLoading: boolean;
+  onLoadOlderHistory?: () => void;
+}) {
+  const label = isLoading ? TIMELINE_TEXT.loadingOlderHistory : TIMELINE_TEXT.loadOlderHistory;
+  return (
+    <Box
+      aria-busy={isLoading ? "true" : undefined}
+      aria-label="Older history boundary"
+      className="kodex-main-column"
+      component="section"
+    >
+      <Button
+        disabled={isLoading || !onLoadOlderHistory}
+        fullWidth
+        loading={isLoading}
+        onClick={isLoading ? undefined : onLoadOlderHistory}
+        size="xs"
+        variant="subtle"
+      >
+        {label}
+      </Button>
     </Box>
   );
 }

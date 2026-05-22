@@ -1,11 +1,40 @@
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex as StdMutex},
+};
+
+use tokio::sync::{Mutex, OwnedMutexGuard};
+
 use crate::{
     api::AppState,
     app_server_api::{
         self, timeline_skill_mentions_from_user_input, SkillMetadata, ThreadLiveState, UserInput,
     },
     error::{ApiError, ApiResult},
-    events, thread_view,
+    events,
+    store::ThreadRuntimeState,
+    thread_view,
 };
+
+const GATEWAY_PENDING_TURN_START_ID: &str = "__gateway_pending_turn_start__";
+
+#[derive(Clone, Default)]
+pub struct ThreadInputLocks {
+    inner: Arc<StdMutex<HashMap<String, Arc<Mutex<()>>>>>,
+}
+
+impl ThreadInputLocks {
+    pub async fn lock(&self, thread_id: &str) -> OwnedMutexGuard<()> {
+        let lock = self
+            .inner
+            .lock()
+            .unwrap()
+            .entry(thread_id.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone();
+        lock.lock_owned().await
+    }
+}
 
 pub async fn current_active_turn_id(
     state: &AppState,
@@ -56,6 +85,69 @@ pub async fn refreshed_active_turn_id(
         record_idle_after_missing_active_turn(state, thread_id).await?;
     }
     Ok(active_turn_id)
+}
+
+pub async fn routed_active_turn_id(state: &AppState, thread_id: &str) -> ApiResult<Option<String>> {
+    if let Some(runtime) = state.store.get_thread_runtime_state(thread_id).await? {
+        match runtime.status.as_str() {
+            "active" | "streaming" | "syncing" | "starting" | "draining" => {
+                return Ok(Some(
+                    runtime
+                        .active_turn_id
+                        .unwrap_or_else(|| GATEWAY_PENDING_TURN_START_ID.to_string()),
+                ));
+            }
+            "idle" => {
+                record_idle_after_missing_active_turn(state, thread_id).await?;
+                return Ok(None);
+            }
+            _ => {}
+        }
+    }
+    refreshed_active_turn_id(state, thread_id).await
+}
+
+pub async fn record_turn_starting(state: &AppState, thread_id: &str) -> ApiResult<()> {
+    state
+        .store
+        .upsert_thread_runtime_state(ThreadRuntimeState {
+            thread_id: thread_id.to_string(),
+            status: "starting".to_string(),
+            active_turn_id: None,
+            updated_at: chrono::Utc::now(),
+            last_event_seq: Some(state.store.latest_event_seq().await?),
+        })
+        .await
+}
+
+pub async fn record_turn_start_failed(state: &AppState, thread_id: &str) -> ApiResult<()> {
+    state
+        .store
+        .upsert_thread_runtime_state(ThreadRuntimeState {
+            thread_id: thread_id.to_string(),
+            status: "idle".to_string(),
+            active_turn_id: None,
+            updated_at: chrono::Utc::now(),
+            last_event_seq: Some(state.store.latest_event_seq().await?),
+        })
+        .await
+}
+
+pub async fn record_turn_started(
+    state: &AppState,
+    thread_id: &str,
+    turn_id: Option<&str>,
+) -> ApiResult<()> {
+    state
+        .store
+        .upsert_thread_runtime_state(ThreadRuntimeState {
+            thread_id: thread_id.to_string(),
+            status: "active".to_string(),
+            active_turn_id: turn_id.map(str::to_string),
+            updated_at: chrono::Utc::now(),
+            last_event_seq: Some(state.store.latest_event_seq().await?),
+        })
+        .await
 }
 
 pub async fn record_idle_after_missing_active_turn(

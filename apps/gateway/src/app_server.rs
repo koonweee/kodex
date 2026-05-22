@@ -5,6 +5,7 @@ use std::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex as StdMutex,
     },
+    time::Instant,
 };
 
 use async_trait::async_trait;
@@ -262,7 +263,9 @@ impl AppServer for JsonRpcAppServer {
     }
 
     async fn request(&self, method: &str, params: Value) -> ApiResult<Value> {
+        let started_at = Instant::now();
         if !self.is_ready() && method != "initialize" {
+            log_app_server_timing(method, started_at, None, "unavailable");
             return Err(ApiError::AppServerUnavailable);
         }
 
@@ -275,12 +278,19 @@ impl AppServer for JsonRpcAppServer {
 
         if let Err(error) = self.write_message(message).await {
             self.pending.lock().await.remove(&id);
+            log_app_server_timing(method, started_at, None, api_error_classification(&error));
             return Err(error);
         }
 
         match receiver.await {
-            Ok(Ok(value)) => Ok(value),
-            Ok(Err(error)) if error.code == -32001 => Err(ApiError::Retryable(error.message)),
+            Ok(Ok(value)) => {
+                log_app_server_timing(method, started_at, Some(serialized_json_len(&value)), "ok");
+                Ok(value)
+            }
+            Ok(Err(error)) if error.code == -32001 => {
+                log_app_server_timing(method, started_at, None, "retryable");
+                Err(ApiError::Retryable(error.message))
+            }
             Ok(Err(error)) => {
                 let message = if let Some(data) = error.data {
                     format!(
@@ -293,9 +303,13 @@ impl AppServer for JsonRpcAppServer {
                 if message.contains("persistExtendedHistory") {
                     self.mark_persist_extended_history_incompatible();
                 }
+                log_app_server_timing(method, started_at, None, "bad_gateway");
                 Err(ApiError::BadGateway(message))
             }
-            Err(_) => Err(ApiError::AppServerUnavailable),
+            Err(_) => {
+                log_app_server_timing(method, started_at, None, "unavailable");
+                Err(ApiError::AppServerUnavailable)
+            }
         }
     }
 
@@ -312,6 +326,40 @@ impl AppServer for JsonRpcAppServer {
             "result": result,
         }))
         .await
+    }
+}
+
+fn log_app_server_timing(
+    method: &str,
+    started_at: Instant,
+    response_bytes: Option<usize>,
+    outcome: &'static str,
+) {
+    tracing::info!(
+        target: "kodex.performance",
+        app_server_method = method,
+        duration_ms = started_at.elapsed().as_secs_f64() * 1000.0,
+        response_bytes,
+        outcome,
+        "app-server rpc completed"
+    );
+}
+
+fn serialized_json_len(value: &Value) -> usize {
+    serde_json::to_vec(value).map_or(0, |bytes| bytes.len())
+}
+
+fn api_error_classification(error: &ApiError) -> &'static str {
+    match error {
+        ApiError::NotFound(_) => "not_found",
+        ApiError::BadRequest(_) => "bad_request",
+        ApiError::UnsupportedMediaType(_) => "unsupported_media_type",
+        ApiError::AppServerUnavailable => "unavailable",
+        ApiError::Retryable(_) => "retryable",
+        ApiError::BadGateway(_) => "bad_gateway",
+        ApiError::Store(_) => "store_error",
+        ApiError::Io(_) => "io_error",
+        ApiError::Other(_) => "internal_error",
     }
 }
 
@@ -436,7 +484,7 @@ async fn watch_child(server: Arc<JsonRpcAppServer>) {
 
 #[cfg(test)]
 pub mod tests {
-    use std::{path::Path, sync::Mutex as StdMutex};
+    use std::{collections::HashMap, path::Path, sync::Mutex as StdMutex};
 
     use super::*;
     use tempfile::tempdir;
@@ -450,6 +498,7 @@ pub mod tests {
         pub responses: StdMutex<Vec<(String, Value)>>,
         pub queued_errors: StdMutex<Vec<ApiError>>,
         pub queued_responses: StdMutex<Vec<Value>>,
+        pub thread_list_responses_by_cwd: StdMutex<HashMap<String, Value>>,
         pub next_response: StdMutex<Option<Value>>,
     }
 
@@ -650,7 +699,20 @@ done
             self.requests
                 .lock()
                 .unwrap()
-                .push((method.to_string(), params));
+                .push((method.to_string(), params.clone()));
+            if method == "thread/list" {
+                if let Some(cwd) = params.get("cwd").and_then(Value::as_str) {
+                    if let Some(response) = self
+                        .thread_list_responses_by_cwd
+                        .lock()
+                        .unwrap()
+                        .get(cwd)
+                        .cloned()
+                    {
+                        return Ok(response);
+                    }
+                }
+            }
             let mut queued_errors = self.queued_errors.lock().unwrap();
             if !queued_errors.is_empty() {
                 return Err(queued_errors.remove(0));

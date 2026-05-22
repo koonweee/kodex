@@ -19,12 +19,18 @@ pub mod turns;
 pub mod uploads;
 #[cfg(test)]
 mod tests {
-    use std::sync::{atomic::Ordering, Arc, Mutex as StdMutex};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex as StdMutex,
+    };
 
     use async_trait::async_trait;
     use axum::{
         body::{to_bytes, Body},
-        http::{Request, StatusCode},
+        http::{
+            header::{ACCEPT_ENCODING, CACHE_CONTROL, CONTENT_ENCODING, CONTENT_TYPE},
+            Request, StatusCode,
+        },
     };
     use chrono::TimeZone;
     use http_body_util::BodyExt;
@@ -2582,18 +2588,26 @@ mod tests {
         let mut chat_thread = thread_summary("chat-thread");
         chat_thread["cwd"] = json!(chat_cwd.to_string_lossy().to_string());
         let listed_projects = state.store.list_projects().await.unwrap();
-        let mut queued = Vec::new();
+        let mut project_responses_by_cwd = std::collections::HashMap::new();
         for project in &listed_projects {
             if project.id == project_one.id {
-                queued.push(
+                project_responses_by_cwd.insert(
+                    project.cwd.clone(),
                     json!({"data": [project_one_thread.clone()], "nextCursor": null, "backwardsCursor": null}),
                 );
             } else {
-                queued.push(
+                project_responses_by_cwd.insert(
+                    project.cwd.clone(),
                     json!({"data": [project_two_thread.clone()], "nextCursor": "project-two-next", "backwardsCursor": null}),
                 );
             }
         }
+        app_server
+            .thread_list_responses_by_cwd
+            .lock()
+            .unwrap()
+            .extend(project_responses_by_cwd);
+        let mut queued = Vec::new();
         queued.push(
             json!({"data": [chat_thread], "nextCursor": "chat-next", "backwardsCursor": null}),
         );
@@ -2702,26 +2716,77 @@ mod tests {
 
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests.len(), 5);
-        assert_eq!(requests[0].0, "thread/list");
-        assert_eq!(requests[0].1["cwd"], listed_projects[0].cwd);
-        assert_eq!(requests[0].1["limit"], 10);
-        assert_eq!(requests[1].0, "thread/list");
-        assert_eq!(requests[1].1["cwd"], listed_projects[1].cwd);
-        assert_eq!(requests[1].1["limit"], 10);
-        assert_eq!(requests[2].0, "thread/list");
-        assert_eq!(requests[2].1["limit"], 10);
-        assert!(requests[2].1["cwd"]
-            .as_array()
-            .unwrap()
-            .contains(&Value::String(chat_cwd.to_string_lossy().to_string())));
-        assert_eq!(requests[3].0, "thread/read");
-        assert_eq!(
-            requests[3].1,
-            json!({"threadId": "pinned-thread", "includeTurns": false})
-        );
+        for project in &listed_projects {
+            let request = requests
+                .iter()
+                .find(|(method, params)| {
+                    method == "thread/list" && params["cwd"] == project.cwd && params["limit"] == 10
+                })
+                .unwrap();
+            assert_eq!(request.1["sortKey"], "updated_at");
+            assert_eq!(request.1["sortDirection"], "desc");
+        }
+        assert!(requests.iter().any(|(method, params)| {
+            method == "thread/list"
+                && params["limit"] == 10
+                && params["cwd"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&Value::String(chat_cwd.to_string_lossy().to_string()))
+        }));
+        assert!(requests.iter().any(|(method, params)| {
+            method == "thread/read"
+                && *params == json!({"threadId": "pinned-thread", "includeTurns": false})
+        }));
         assert_eq!(requests[4].0, "thread/list");
         assert_eq!(requests[4].1["cwd"], project_two.cwd);
         assert_eq!(requests[4].1["limit"], 100);
+    }
+
+    #[tokio::test]
+    async fn sidebar_threads_fetches_project_groups_concurrently() {
+        let store = Store::in_memory().await.unwrap();
+        let app_server = Arc::new(BlockingThreadListAppServer::default());
+        let state = AppState::new(Config::default(), store, app_server.clone());
+        state
+            .store
+            .create_project("One".to_string(), "/workspace/one".to_string())
+            .await
+            .unwrap();
+        state
+            .store
+            .create_project("Two".to_string(), "/workspace/two".to_string())
+            .await
+            .unwrap();
+        let app = build_router(state);
+        let release = app_server.release.clone();
+
+        let request = tokio::spawn(async move {
+            app.oneshot(
+                Request::get("/v1/sidebar/threads")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+        });
+
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if app_server.max_in_flight.load(Ordering::SeqCst) >= 2 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        release.notify_waiters();
+
+        let response = request.await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(app_server.total_requests.load(Ordering::SeqCst), 2);
+        assert_eq!(app_server.max_in_flight.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
@@ -6132,6 +6197,276 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn thread_input_trusts_idle_runtime_state_without_readback() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "idle".to_string(),
+                active_turn_id: None,
+                updated_at: chrono::Utc::now(),
+                last_event_seq: Some(10),
+            })
+            .await
+            .unwrap();
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"turnId": "turn-started"}));
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":[{"type":"text","text":"hello"}]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "started");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0, "turn/start");
+    }
+
+    #[tokio::test]
+    async fn thread_input_queues_after_runtime_starting_without_readback() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "idle".to_string(),
+                active_turn_id: None,
+                updated_at: chrono::Utc::now(),
+                last_event_seq: Some(10),
+            })
+            .await
+            .unwrap();
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"turnId": "turn-started"}));
+        let app = build_router(state.clone());
+
+        let first = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":[{"type":"text","text":"first"}]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+        assert_eq!(response_json(first).await["disposition"], "started");
+
+        let second = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":[{"type":"text","text":"second"}]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(second.status(), StatusCode::OK);
+        let second = response_json(second).await;
+        assert_eq!(second["disposition"], "queued");
+        assert_eq!(second["queuedInput"]["input"][0]["text"], "second");
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|(method, _)| method == "turn/start")
+                .count(),
+            1
+        );
+        assert!(requests.iter().all(|(method, _)| method != "thread/read"));
+    }
+
+    #[tokio::test]
+    async fn thread_input_queues_while_queue_drainer_has_claimed_runtime() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "draining".to_string(),
+                active_turn_id: None,
+                updated_at: chrono::Utc::now(),
+                last_event_seq: Some(10),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"wait behind drain"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "queued");
+        assert_eq!(body["queuedInput"]["input"][0]["text"], "wait behind drain");
+        let requests = app_server.requests.lock().unwrap();
+        assert!(requests.is_empty());
+    }
+
+    #[tokio::test]
+    async fn concurrent_thread_input_reserves_starting_before_turn_start() {
+        let store = Store::in_memory().await.unwrap();
+        let app_server = Arc::new(BlockingTurnStartAppServer::default());
+        let state = AppState::new(Config::default(), store, app_server.clone());
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "idle".to_string(),
+                active_turn_id: None,
+                updated_at: chrono::Utc::now(),
+                last_event_seq: Some(10),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state);
+
+        let first_app = app.clone();
+        let first = tokio::spawn(async move {
+            first_app
+                .oneshot(
+                    Request::post("/v1/threads/thread-1/input")
+                        .header("content-type", "application/json")
+                        .body(Body::from(r#"{"input":[{"type":"text","text":"first"}]}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+        });
+
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if app_server.turn_start_requests.load(Ordering::SeqCst) == 1 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let second = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":[{"type":"text","text":"second"}]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(second.status(), StatusCode::OK);
+        let second = response_json(second).await;
+        assert_eq!(second["disposition"], "queued");
+        assert_eq!(second["queuedInput"]["input"][0]["text"], "second");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(app_server.turn_start_requests.load(Ordering::SeqCst), 1);
+        assert_eq!(app_server.thread_read_requests.load(Ordering::SeqCst), 0);
+
+        app_server.release.notify_waiters();
+        let first = first.await.unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+        assert_eq!(response_json(first).await["disposition"], "started");
+    }
+
+    #[tokio::test]
+    async fn queued_input_drains_after_concurrent_turn_start_failure() {
+        let store = Store::in_memory().await.unwrap();
+        let app_server = Arc::new(FailingThenSucceedingTurnStartAppServer::default());
+        let state = AppState::new(Config::default(), store, app_server.clone());
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "idle".to_string(),
+                active_turn_id: None,
+                updated_at: chrono::Utc::now(),
+                last_event_seq: Some(10),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+
+        let first_app = app.clone();
+        let first = tokio::spawn(async move {
+            first_app
+                .oneshot(
+                    Request::post("/v1/threads/thread-1/input")
+                        .header("content-type", "application/json")
+                        .body(Body::from(r#"{"input":[{"type":"text","text":"first"}]}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+        });
+
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if app_server.turn_start_requests.load(Ordering::SeqCst) == 1 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let second = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":[{"type":"text","text":"second"}]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(second.status(), StatusCode::OK);
+        assert_eq!(response_json(second).await["disposition"], "queued");
+
+        app_server.release_first.notify_waiters();
+        let first = first.await.unwrap();
+        assert_eq!(first.status(), StatusCode::BAD_GATEWAY);
+
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if app_server.turn_start_requests.load(Ordering::SeqCst) == 2 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(app_server.thread_read_requests.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
     async fn thread_input_starts_when_thread_is_not_materialized_yet() {
         let (state, app_server) = test_state().await;
         app_server
@@ -6287,6 +6622,41 @@ mod tests {
             &queued[0].input[0],
             crate::app_server_api::UserInput::Text { text, .. } if text == "queue"
         ));
+    }
+
+    #[tokio::test]
+    async fn thread_input_trusts_active_runtime_state_without_readback() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "active".to_string(),
+                active_turn_id: Some("turn-active".to_string()),
+                updated_at: chrono::Utc::now(),
+                last_event_seq: Some(10),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":[{"type":"text","text":"queue"}]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "queued");
+        assert_eq!(body["queuedInput"]["input"][0]["text"], "queue");
+        let requests = app_server.requests.lock().unwrap();
+        assert!(requests.iter().all(|(method, _)| method != "thread/read"));
+        assert!(requests.iter().all(|(method, _)| method != "turn/start"));
     }
 
     #[tokio::test]
@@ -8710,6 +9080,12 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(root.status(), StatusCode::OK);
+        assert_eq!(
+            root.headers()
+                .get(CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok()),
+            Some("no-cache")
+        );
         assert!(response_text(root).await.contains("Kodex UI"));
 
         let fallback = app
@@ -8722,14 +9098,192 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(fallback.status(), StatusCode::OK);
+        assert_eq!(
+            fallback
+                .headers()
+                .get(CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok()),
+            Some("no-cache")
+        );
         assert!(response_text(fallback).await.contains("Kodex UI"));
 
         let health = app
+            .clone()
             .oneshot(Request::get("/healthz").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(health.status(), StatusCode::OK);
+        assert!(health.headers().get(CACHE_CONTROL).is_none());
         assert_eq!(response_json(health).await["status"], "ok");
+
+        let events = app
+            .oneshot(
+                Request::get("/v1/events")
+                    .header(ACCEPT_ENCODING, "gzip")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(events.status(), StatusCode::OK);
+        assert!(events.headers().get(CACHE_CONTROL).is_none());
+        assert_ne!(
+            events
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("text/html")
+        );
+        assert!(events.headers().get(CONTENT_ENCODING).is_none());
+    }
+
+    #[tokio::test]
+    async fn frontend_static_serving_uses_vite_asset_cache_headers() {
+        let (mut state, _) = test_state().await;
+        let dist = tempdir().unwrap();
+        let assets = dist.path().join("assets");
+        std::fs::create_dir(&assets).unwrap();
+        std::fs::write(
+            dist.path().join("index.html"),
+            "<!doctype html><title>Kodex UI</title>",
+        )
+        .unwrap();
+        std::fs::write(dist.path().join("manifest.webmanifest"), "{}").unwrap();
+        std::fs::write(dist.path().join("service-worker.js"), "self.skipWaiting();").unwrap();
+        std::fs::write(
+            assets.join("index-BG6bYKqW.js"),
+            "console.log('hashed static asset loaded for compression validation');",
+        )
+        .unwrap();
+        std::fs::write(
+            assets.join("index-DLWtEkjL.js"),
+            "console.log('all-letter hash');",
+        )
+        .unwrap();
+        std::fs::write(assets.join("component.css"), ".component {}").unwrap();
+        std::fs::write(assets.join("logo.svg"), "<svg></svg>").unwrap();
+        state.config = Arc::new(Config {
+            frontend: crate::config::FrontendConfig {
+                dist_dir: Some(dist.path().to_path_buf()),
+            },
+            ..Config::default()
+        });
+        let app = build_router(state);
+
+        let hashed_asset = app
+            .clone()
+            .oneshot(
+                Request::get("/assets/index-BG6bYKqW.js")
+                    .header(ACCEPT_ENCODING, "gzip")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(hashed_asset.status(), StatusCode::OK);
+        assert_eq!(
+            hashed_asset
+                .headers()
+                .get(CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok()),
+            Some("public, max-age=31536000, immutable")
+        );
+        assert_eq!(
+            hashed_asset
+                .headers()
+                .get(CONTENT_ENCODING)
+                .and_then(|value| value.to_str().ok()),
+            Some("gzip")
+        );
+
+        let all_letter_hash_asset = app
+            .clone()
+            .oneshot(
+                Request::get("/assets/index-DLWtEkjL.js")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(all_letter_hash_asset.status(), StatusCode::OK);
+        assert_eq!(
+            all_letter_hash_asset
+                .headers()
+                .get(CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok()),
+            Some("public, max-age=31536000, immutable")
+        );
+
+        let unhashed_asset = app
+            .clone()
+            .oneshot(
+                Request::get("/assets/logo.svg")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unhashed_asset.status(), StatusCode::OK);
+        assert_eq!(
+            unhashed_asset
+                .headers()
+                .get(CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok()),
+            Some("no-cache")
+        );
+
+        let long_unhashed_asset = app
+            .clone()
+            .oneshot(
+                Request::get("/assets/component.css")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(long_unhashed_asset.status(), StatusCode::OK);
+        assert_eq!(
+            long_unhashed_asset
+                .headers()
+                .get(CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok()),
+            Some("no-cache")
+        );
+
+        let manifest = app
+            .clone()
+            .oneshot(
+                Request::get("/manifest.webmanifest")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(manifest.status(), StatusCode::OK);
+        assert_eq!(
+            manifest
+                .headers()
+                .get(CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok()),
+            Some("no-cache")
+        );
+
+        let service_worker = app
+            .oneshot(
+                Request::get("/service-worker.js")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(service_worker.status(), StatusCode::OK);
+        assert_eq!(
+            service_worker
+                .headers()
+                .get(CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok()),
+            Some("no-cache")
+        );
     }
 
     #[tokio::test]
@@ -9518,6 +10072,132 @@ mod tests {
                 "updatedAt": 1_767_225_600_i64
             }
         })
+    }
+
+    #[derive(Default)]
+    struct BlockingThreadListAppServer {
+        in_flight: AtomicUsize,
+        max_in_flight: AtomicUsize,
+        total_requests: AtomicUsize,
+        release: Arc<Notify>,
+    }
+
+    #[async_trait]
+    impl AppServer for BlockingThreadListAppServer {
+        fn is_ready(&self) -> bool {
+            true
+        }
+
+        fn readiness_error(&self) -> Option<String> {
+            None
+        }
+
+        async fn request(&self, method: &str, params: Value) -> ApiResult<Value> {
+            if method != "thread/list" || !params["cwd"].is_string() {
+                return Ok(match method {
+                    "thread/read" => json!({"thread": thread_summary("thread-1")}),
+                    "thread/list" => {
+                        json!({"data": [], "nextCursor": null, "backwardsCursor": null})
+                    }
+                    _ => json!({}),
+                });
+            }
+
+            self.total_requests.fetch_add(1, Ordering::SeqCst);
+            let in_flight = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            self.max_in_flight.fetch_max(in_flight, Ordering::SeqCst);
+            self.release.notified().await;
+            self.in_flight.fetch_sub(1, Ordering::SeqCst);
+            Ok(json!({"data": [], "nextCursor": null, "backwardsCursor": null}))
+        }
+
+        async fn respond(&self, _request_id: &str, _result: Value) -> ApiResult<()> {
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct BlockingTurnStartAppServer {
+        turn_start_requests: AtomicUsize,
+        thread_read_requests: AtomicUsize,
+        release: Notify,
+    }
+
+    #[async_trait]
+    impl AppServer for BlockingTurnStartAppServer {
+        fn is_ready(&self) -> bool {
+            true
+        }
+
+        fn readiness_error(&self) -> Option<String> {
+            None
+        }
+
+        async fn request(&self, method: &str, _params: Value) -> ApiResult<Value> {
+            match method {
+                "turn/start" => {
+                    self.turn_start_requests.fetch_add(1, Ordering::SeqCst);
+                    self.release.notified().await;
+                    Ok(json!({"turnId": "turn-started"}))
+                }
+                "thread/read" => {
+                    self.thread_read_requests.fetch_add(1, Ordering::SeqCst);
+                    Ok(thread_read_response("thread-1", 0))
+                }
+                "thread/list" => {
+                    Ok(json!({"data": [], "nextCursor": null, "backwardsCursor": null}))
+                }
+                _ => Ok(json!({})),
+            }
+        }
+
+        async fn respond(&self, _request_id: &str, _result: Value) -> ApiResult<()> {
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct FailingThenSucceedingTurnStartAppServer {
+        turn_start_requests: AtomicUsize,
+        thread_read_requests: AtomicUsize,
+        release_first: Notify,
+    }
+
+    #[async_trait]
+    impl AppServer for FailingThenSucceedingTurnStartAppServer {
+        fn is_ready(&self) -> bool {
+            true
+        }
+
+        fn readiness_error(&self) -> Option<String> {
+            None
+        }
+
+        async fn request(&self, method: &str, _params: Value) -> ApiResult<Value> {
+            match method {
+                "turn/start" => {
+                    let request_index = self.turn_start_requests.fetch_add(1, Ordering::SeqCst);
+                    if request_index == 0 {
+                        self.release_first.notified().await;
+                        Err(ApiError::BadGateway("turn start failed".to_string()))
+                    } else {
+                        Ok(json!({"turnId": "turn-started-after-failure"}))
+                    }
+                }
+                "thread/read" => {
+                    self.thread_read_requests.fetch_add(1, Ordering::SeqCst);
+                    Ok(thread_read_response("thread-1", 0))
+                }
+                "thread/list" => {
+                    Ok(json!({"data": [], "nextCursor": null, "backwardsCursor": null}))
+                }
+                _ => Ok(json!({})),
+            }
+        }
+
+        async fn respond(&self, _request_id: &str, _result: Value) -> ApiResult<()> {
+            Ok(())
+        }
     }
 
     async fn mark_thread_session_active(state: &AppState, thread_id: &str, turn_id: &str) {

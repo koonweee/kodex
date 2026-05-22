@@ -1,6 +1,8 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     path::{Path as FsPath, PathBuf},
+    sync::{Arc, Mutex as StdMutex},
+    time::{Duration, Instant},
 };
 
 use axum::{
@@ -12,6 +14,7 @@ use chrono::{DateTime, Utc};
 use chrono::{Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tokio::task::JoinSet;
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{
@@ -76,6 +79,8 @@ const DEFAULT_THREAD_LIST_LIMIT: u32 = 100;
 const SIDEBAR_INITIAL_THREAD_LIST_LIMIT: u32 = 10;
 const SELECTED_THREAD_HISTORY_PAGE_LIMIT: u32 = 50;
 const MAX_SELECTED_THREAD_HISTORY_PAGE_LIMIT: u32 = 200;
+const CHAT_CWD_CACHE_TTL: Duration = Duration::from_secs(2);
+const SIDEBAR_PROJECT_FETCH_CONCURRENCY: usize = 8;
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -91,6 +96,42 @@ pub struct SidebarThreadsResponse {
     pub project_threads: BTreeMap<String, SidebarThreadListResponse>,
     pub chat_threads: SidebarThreadListResponse,
     pub pinned_threads: SidebarThreadListResponse,
+}
+
+#[derive(Clone, Default)]
+pub struct ChatCwdCache {
+    inner: Arc<StdMutex<HashMap<PathBuf, ChatCwdCacheEntry>>>,
+}
+
+#[derive(Clone)]
+struct ChatCwdCacheEntry {
+    checked_at: Instant,
+    candidates: Vec<String>,
+}
+
+impl ChatCwdCache {
+    fn get_or_scan(&self, chat_root: &FsPath) -> ApiResult<Vec<String>> {
+        let now = Instant::now();
+        if let Some(entry) = self.inner.lock().unwrap().get(chat_root).cloned() {
+            if now.duration_since(entry.checked_at) <= CHAT_CWD_CACHE_TTL {
+                return Ok(entry.candidates);
+            }
+        }
+
+        let candidates = chat_thread_cwd_candidates(chat_root)?;
+        self.inner.lock().unwrap().insert(
+            chat_root.to_path_buf(),
+            ChatCwdCacheEntry {
+                checked_at: now,
+                candidates: candidates.clone(),
+            },
+        );
+        Ok(candidates)
+    }
+
+    pub fn invalidate(&self, chat_root: &FsPath) {
+        self.inner.lock().unwrap().remove(chat_root);
+    }
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -290,23 +331,11 @@ pub async fn get_sidebar_threads(
     State(state): State<AppState>,
 ) -> ApiResult<Json<SidebarThreadsResponse>> {
     let projects = state.store.list_projects().await?;
-    let mut project_threads = BTreeMap::new();
-    for project in &projects {
-        let response = list_project_threads_for_cwd(
-            &state,
-            Some(project.cwd.clone()),
-            None,
-            Some(SIDEBAR_INITIAL_THREAD_LIST_LIMIT),
-        )
-        .await?;
-        project_threads.insert(
-            project.id.clone(),
-            SidebarThreadListResponse::from(response),
-        );
-    }
-    let chat_threads =
-        chat_thread_list_response(&state, None, Some(SIDEBAR_INITIAL_THREAD_LIST_LIMIT)).await?;
-    let pinned_threads = pinned_thread_list_response(&state).await?;
+    let (project_threads, chat_threads, pinned_threads) = tokio::try_join!(
+        sidebar_project_threads(&state, &projects),
+        chat_thread_list_response(&state, None, Some(SIDEBAR_INITIAL_THREAD_LIST_LIMIT)),
+        pinned_thread_list_response(&state),
+    )?;
 
     Ok(Json(SidebarThreadsResponse {
         projects,
@@ -314,6 +343,46 @@ pub async fn get_sidebar_threads(
         chat_threads: SidebarThreadListResponse::from(chat_threads),
         pinned_threads: SidebarThreadListResponse::from(pinned_threads),
     }))
+}
+
+async fn sidebar_project_threads(
+    state: &AppState,
+    projects: &[Project],
+) -> ApiResult<BTreeMap<String, SidebarThreadListResponse>> {
+    let mut project_threads = BTreeMap::new();
+    let mut pending = JoinSet::new();
+    let mut iter = projects.iter();
+
+    loop {
+        while pending.len() < SIDEBAR_PROJECT_FETCH_CONCURRENCY {
+            let Some(project) = iter.next() else {
+                break;
+            };
+            let state = state.clone();
+            let project_id = project.id.clone();
+            let cwd = project.cwd.clone();
+            pending.spawn(async move {
+                let response = list_project_threads_for_cwd(
+                    &state,
+                    Some(cwd),
+                    None,
+                    Some(SIDEBAR_INITIAL_THREAD_LIST_LIMIT),
+                )
+                .await?;
+                Ok::<_, ApiError>((project_id, SidebarThreadListResponse::from(response)))
+            });
+        }
+
+        let Some(result) = pending.join_next().await else {
+            break;
+        };
+        let (project_id, response) = result.map_err(|error| {
+            ApiError::Other(anyhow::anyhow!("sidebar project task failed: {error}"))
+        })??;
+        project_threads.insert(project_id, response);
+    }
+
+    Ok(project_threads)
 }
 
 async fn list_project_threads_for_cwd(
@@ -388,7 +457,7 @@ async fn chat_thread_list_response(
     let Some(chat_root) = canonical_chat_root(&state.config.projects.home_dir)? else {
         return Ok(empty_thread_list_response());
     };
-    let chat_cwds = chat_thread_cwd_candidates(&chat_root)?;
+    let chat_cwds = state.chat_cwd_cache.get_or_scan(&chat_root)?;
     if chat_cwds.is_empty() {
         return Ok(empty_thread_list_response());
     }
@@ -479,6 +548,9 @@ pub async fn create_chat_thread(
         &request.first_message_text,
         Local::now().date_naive(),
     )?;
+    if let Some(chat_root) = canonical_chat_root(&state.config.projects.home_dir)? {
+        state.chat_cwd_cache.invalidate(&chat_root);
+    }
     let options = ThreadCreationOptions {
         model: request.model,
         effort: request.effort,
@@ -841,6 +913,29 @@ mod tests {
             };
             assert!(names.contains(&format!("build-the-chat-sidebar{suffix}")));
         }
+    }
+
+    #[test]
+    fn chat_cwd_cache_reuses_candidates_until_invalidated() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let chat_root = temp_dir.path();
+        let first = chat_root.join("2026-05-01").join("first");
+        std::fs::create_dir_all(&first).unwrap();
+        let first = std::fs::canonicalize(first).unwrap();
+        let cache = ChatCwdCache::default();
+
+        let initial = cache.get_or_scan(chat_root).unwrap();
+        assert!(initial.contains(&first.to_string_lossy().to_string()));
+
+        let second = chat_root.join("2026-05-01").join("second");
+        std::fs::create_dir_all(&second).unwrap();
+        let second = std::fs::canonicalize(second).unwrap();
+        let cached = cache.get_or_scan(chat_root).unwrap();
+        assert!(!cached.contains(&second.to_string_lossy().to_string()));
+
+        cache.invalidate(chat_root);
+        let refreshed = cache.get_or_scan(chat_root).unwrap();
+        assert!(refreshed.contains(&second.to_string_lossy().to_string()));
     }
 }
 
