@@ -1018,13 +1018,6 @@ pub async fn attach_thread(
         }));
     }
 
-    if thread_runtime_state_is_idle(&state, &thread_id).await? {
-        return Ok(Json(ThreadAttachResponse {
-            disposition: ThreadAttachDisposition::NotNeeded,
-            thread: None,
-        }));
-    }
-
     let client = app_server_api::client(&state.app_server);
     let loaded = client.thread_loaded_list().await?;
     if loaded
@@ -1054,14 +1047,6 @@ async fn thread_is_already_attached(state: &AppState, thread_id: &str) -> bool {
         state.thread_views.live_state(thread_id).await,
         Some(ThreadLiveState::Streaming | ThreadLiveState::Syncing)
     )
-}
-
-async fn thread_runtime_state_is_idle(state: &AppState, thread_id: &str) -> ApiResult<bool> {
-    Ok(state
-        .store
-        .get_thread_runtime_state(thread_id)
-        .await?
-        .is_some_and(|runtime| matches!(runtime.status.as_str(), "idle" | "draining")))
 }
 
 #[utoipa::path(patch, path = "/v1/threads/{threadId}/name", request_body = RenameThreadRequest, responses((status = 200, body = RenameThreadResponse)))]

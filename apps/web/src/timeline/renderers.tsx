@@ -1,4 +1,4 @@
-import { Badge, Box, Code, Group, Stack, Text } from "@mantine/core";
+import { Badge, Box, Button, Code, Group, Stack, Text } from "@mantine/core";
 import { AlertTriangle, Bot, Check, ChevronRight, ClipboardList, Code2, Copy, FileDiff, Globe, ImageIcon, Info, Terminal, Wrench } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode, SyntheticEvent } from "react";
@@ -10,10 +10,9 @@ import { ImageThumbnail } from "../images/ImageThumbnail";
 import type { ImageLightboxImage } from "../images/types";
 import { MarkdownContent } from "../markdown/MarkdownContent";
 import { copyTextToClipboard } from "../shared/clipboard";
-import type { TimelineWorkRow } from "./derive";
 import { FileDiffViewer } from "./FileDiffViewer";
-import { fileChangeActionIsModified, fileChangeActionLabel, fileChangeEntriesFromTimelineItem, type FileChangeEntry } from "./presentationFile";
-import type { TimelineImage, TimelineItem, WebSearchAction } from "./reducer";
+import { fileChangeActionIsModified, type FileChangeEntry } from "./presentationFile";
+import type { TimelineFileChangeEntry, TimelineImage, TimelineItem, TimelineWorkRow, WebSearchAction } from "./reducer";
 
 type TimelineRendererOptions = {
   imagePreviewUrlsByPath: Record<string, string>;
@@ -171,6 +170,8 @@ type TimelineActivityGroupRendererProps = {
   threadId?: string;
 };
 
+const ACTIVITY_ITEM_RENDER_CHUNK = 80;
+
 function TimelineActivityGroupRendererImpl({
   imagePreviewUrlsByPath = {},
   items,
@@ -179,6 +180,14 @@ function TimelineActivityGroupRendererImpl({
   showDebug = false,
   threadId,
 }: TimelineActivityGroupRendererProps) {
+  const itemIdentity = useMemo(() => items.map((item) => item.id).join("\u0000"), [items]);
+  const [visibleItemCount, setVisibleItemCount] = useState(ACTIVITY_ITEM_RENDER_CHUNK);
+  useEffect(() => {
+    setVisibleItemCount(ACTIVITY_ITEM_RENDER_CHUNK);
+  }, [itemIdentity]);
+  const visibleItems = items.slice(0, visibleItemCount);
+  const remainingItemCount = Math.max(0, items.length - visibleItems.length);
+
   return (
     <details className="kodex-activity-group">
       <summary>
@@ -191,7 +200,7 @@ function TimelineActivityGroupRendererImpl({
         <ChevronRight size={16} className="kodex-activity-caret" aria-hidden="true" />
       </summary>
       <Stack gap={8} mt={8}>
-        {items.map((item) => (
+        {visibleItems.map((item) => (
           <ActivityItemRenderer
             imagePreviewUrlsByPath={imagePreviewUrlsByPath}
             item={item}
@@ -202,6 +211,15 @@ function TimelineActivityGroupRendererImpl({
             threadId={threadId}
           />
         ))}
+        {remainingItemCount > 0 ? (
+          <Button
+            size="xs"
+            variant="subtle"
+            onClick={() => setVisibleItemCount((count) => Math.min(items.length, count + ACTIVITY_ITEM_RENDER_CHUNK))}
+          >
+            Show {Math.min(ACTIVITY_ITEM_RENDER_CHUNK, remainingItemCount)} more
+          </Button>
+        ) : null}
       </Stack>
     </details>
   );
@@ -211,12 +229,11 @@ export const TimelineActivityGroupRenderer = memo(TimelineActivityGroupRendererI
 TimelineActivityGroupRenderer.displayName = "TimelineActivityGroupRenderer";
 
 type TimelineFileChangesRendererProps = {
-  items: TimelineItem[];
+  entries: TimelineFileChangeEntry[];
   showDebug?: boolean;
 };
 
-function TimelineFileChangesRendererImpl({ items, showDebug = false }: TimelineFileChangesRendererProps) {
-  const entries = fileChangeEntriesForItems(items);
+function TimelineFileChangesRendererImpl({ entries, showDebug = false }: TimelineFileChangesRendererProps) {
   if (entries.length === 0) {
     return null;
   }
@@ -242,16 +259,10 @@ function TimelineFileChangesRendererImpl({ items, showDebug = false }: TimelineF
       </Group>
       <Stack gap={0} className="kodex-file-change-table">
         {entries.map((entry) => (
-          <FileChangeEntryRow entry={entry} key={`${entry.itemId ?? "file"}-${entry.path}-${entry.action}`} />
+          <FileChangeEntryRow entry={entry} key={entry.id} />
         ))}
       </Stack>
-      {showDebug ? (
-        <Stack gap={6} mt={8}>
-          {items.map((item) => (
-            <DebugDisclosure item={item} key={item.id} />
-          ))}
-        </Stack>
-      ) : null}
+      {showDebug ? <Text size="xs" c="dimmed">{entries.length} canonical file change entries</Text> : null}
     </Box>
   );
 }
@@ -260,12 +271,14 @@ export const TimelineFileChangesRenderer = memo(TimelineFileChangesRendererImpl)
 TimelineFileChangesRenderer.displayName = "TimelineFileChangesRenderer";
 
 type TimelineWorkRowRendererProps = {
+  children?: ReactNode;
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
   row: TimelineWorkRow;
 };
 
 function TimelineWorkRowRendererImpl({
+  children,
   expanded = false,
   onExpandedChange,
   row,
@@ -312,6 +325,7 @@ function TimelineWorkRowRendererImpl({
         </Box>
         <WorkHeaderDivider />
       </summary>
+      {expanded ? children : null}
     </details>
   );
 }
@@ -794,32 +808,6 @@ function WebSearchBlock({ actions }: { actions: WebSearchAction[] }) {
       </Stack>
     </details>
   );
-}
-
-function fileChangeEntriesForItems(items: TimelineItem[]): FileChangeEntry[] {
-  const entriesByPath = new Map<string, FileChangeEntry>();
-  for (const entry of items.flatMap(fileChangeEntriesFromTimelineItem)) {
-    if (!entry.path) {
-      continue;
-    }
-    const existing = entriesByPath.get(entry.path);
-    if (!existing) {
-      entriesByPath.set(entry.path, entry);
-      continue;
-    }
-    entriesByPath.set(entry.path, {
-      ...existing,
-      action: fileChangeActionLabel(`${existing.action}, ${entry.action}`),
-      additions: existing.additions + entry.additions,
-      deletions: existing.deletions + entry.deletions,
-      diff: [fileChangeDisplayDiff(existing), fileChangeDisplayDiff(entry)].filter(Boolean).join("\n"),
-    });
-  }
-  return [...entriesByPath.values()];
-}
-
-function fileChangeDisplayDiff(entry: FileChangeEntry): string {
-  return fileChangeActionIsModified(entry.action) ? entry.diff : "";
 }
 
 function FileChangeEntryRow({ entry }: { entry: FileChangeEntry }) {

@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -43,6 +43,8 @@ impl CodexClient {
                     "cwd": cwd,
                     "sortKey": "updated_at",
                     "sortDirection": "desc",
+                    "archived": false,
+                    "useStateDbOnly": true,
                 }),
             )
             .await?;
@@ -59,6 +61,8 @@ impl CodexClient {
                     "cwd": null,
                     "sortKey": "updated_at",
                     "sortDirection": "desc",
+                    "archived": false,
+                    "useStateDbOnly": true,
                 }),
             )
             .await?;
@@ -80,6 +84,8 @@ impl CodexClient {
                     "cwd": cwds,
                     "sortKey": "updated_at",
                     "sortDirection": "desc",
+                    "archived": false,
+                    "useStateDbOnly": true,
                 }),
             )
             .await?;
@@ -1942,6 +1948,7 @@ pub struct ThreadTimelineSnapshot {
     pub live_state: ThreadLiveState,
     pub pending_approval_requests: Vec<PendingTimelineRequestSummary>,
     pub pending_user_input_requests: Vec<PendingTimelineRequestSummary>,
+    pub rows: Vec<ThreadTimelineRow>,
     pub turns: Vec<ThreadTimelineSnapshotTurn>,
     pub items: Vec<ThreadTimelineSnapshotItem>,
 }
@@ -1969,6 +1976,12 @@ impl ThreadTimelineSnapshot {
                 ));
             }
         }
+        let rows = thread_timeline_rows_from_items(
+            active_turn_id.as_deref(),
+            live_state_from_turns(turns),
+            &timeline_turns,
+            &items,
+        );
         Self {
             // Adapter-only snapshots start at zero; routes replace this with the gateway
             // projection high-water once gateway overlays are applied.
@@ -1977,10 +1990,63 @@ impl ThreadTimelineSnapshot {
             live_state: live_state_from_turns(turns),
             pending_approval_requests: Vec::new(),
             pending_user_input_requests: Vec::new(),
+            rows,
             turns: timeline_turns,
             items,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadTimelineRow {
+    pub id: String,
+    pub kind: String,
+    pub turn_id: Option<String>,
+    pub display_order: i64,
+    pub status: String,
+    pub timestamp_ms: Option<i64>,
+    pub item: Option<ThreadTimelineSnapshotItem>,
+    pub items: Vec<ThreadTimelineSnapshotItem>,
+    pub file_changes: Vec<ThreadTimelineFileChangeEntry>,
+    pub work: Option<ThreadTimelineWorkSummary>,
+    pub collapsed_rows: Vec<ThreadTimelineWorkDetailRow>,
+    pub divider_before: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadTimelineWorkDetailRow {
+    pub id: String,
+    pub kind: String,
+    pub turn_id: Option<String>,
+    pub display_order: i64,
+    pub status: String,
+    pub timestamp_ms: Option<i64>,
+    pub item: Option<ThreadTimelineSnapshotItem>,
+    pub items: Vec<ThreadTimelineSnapshotItem>,
+    pub file_changes: Vec<ThreadTimelineFileChangeEntry>,
+    pub divider_before: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadTimelineWorkSummary {
+    pub state: String,
+    pub started_at: Option<i64>,
+    pub completed_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadTimelineFileChangeEntry {
+    pub id: String,
+    pub path: String,
+    pub action: String,
+    pub additions: i64,
+    pub deletions: i64,
+    pub diff: String,
+    pub item_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -2076,6 +2142,561 @@ impl ThreadTimelineSnapshotItem {
 
 pub(crate) fn canonical_timeline_item_id(turn_id: &str, item_id: &str) -> String {
     format!("projection-{turn_id}-{item_id}")
+}
+
+pub(crate) fn thread_timeline_rows_from_items(
+    active_turn_id: Option<&str>,
+    live_state: ThreadLiveState,
+    turns: &[ThreadTimelineSnapshotTurn],
+    items: &[ThreadTimelineSnapshotItem],
+) -> Vec<ThreadTimelineRow> {
+    let mut ordered_items = items.to_vec();
+    ordered_items.sort_by_key(|item| item.display_order);
+
+    let mut rows = Vec::<ThreadTimelineWorkDetailRow>::new();
+    let mut current_turn_key: Option<String> = None;
+    let mut activity_items = Vec::<ThreadTimelineSnapshotItem>::new();
+    let mut file_change_items = Vec::<ThreadTimelineSnapshotItem>::new();
+    let mut turn_has_final_response_precursor = HashSet::<String>::new();
+
+    fn flush_activity_items(
+        rows: &mut Vec<ThreadTimelineWorkDetailRow>,
+        activity_items: &mut Vec<ThreadTimelineSnapshotItem>,
+        turn_has_final_response_precursor: &mut HashSet<String>,
+    ) {
+        if activity_items.is_empty() {
+            return;
+        }
+        let row = activity_row(activity_items);
+        turn_has_final_response_precursor.insert(row_turn_key_from_detail(&row));
+        rows.push(row);
+        activity_items.clear();
+    }
+
+    fn flush_file_change_items(
+        rows: &mut Vec<ThreadTimelineWorkDetailRow>,
+        file_change_items: &mut Vec<ThreadTimelineSnapshotItem>,
+        turn_has_final_response_precursor: &mut HashSet<String>,
+    ) {
+        if file_change_items.is_empty() {
+            return;
+        }
+        let row = file_changes_row(file_change_items);
+        turn_has_final_response_precursor.insert(row_turn_key_from_detail(&row));
+        rows.push(row);
+        file_change_items.clear();
+    }
+
+    for item in ordered_items {
+        let turn_key = timeline_item_turn_key(&item);
+        if current_turn_key
+            .as_ref()
+            .is_some_and(|current| current != &turn_key)
+        {
+            flush_activity_items(
+                &mut rows,
+                &mut activity_items,
+                &mut turn_has_final_response_precursor,
+            );
+            flush_file_change_items(
+                &mut rows,
+                &mut file_change_items,
+                &mut turn_has_final_response_precursor,
+            );
+        }
+        current_turn_key = Some(turn_key.clone());
+
+        if normalized_thread_item_kind(&item) == "file_change" {
+            file_change_items.push(item);
+            continue;
+        }
+
+        if is_timeline_activity_item(&item) {
+            activity_items.push(item);
+            continue;
+        }
+
+        flush_activity_items(
+            &mut rows,
+            &mut activity_items,
+            &mut turn_has_final_response_precursor,
+        );
+        if is_final_response_item(&item) {
+            flush_file_change_items(
+                &mut rows,
+                &mut file_change_items,
+                &mut turn_has_final_response_precursor,
+            );
+        }
+
+        let mut row = item_row(item.clone());
+        if is_final_response_item(&item) && turn_has_final_response_precursor.contains(&turn_key) {
+            row.divider_before = Some("final_response".to_string());
+        }
+        if normalized_thread_item_kind(&item) != "user_message" && !is_final_response_item(&item) {
+            turn_has_final_response_precursor.insert(turn_key);
+        }
+        rows.push(row);
+    }
+
+    flush_activity_items(
+        &mut rows,
+        &mut activity_items,
+        &mut turn_has_final_response_precursor,
+    );
+    flush_file_change_items(
+        &mut rows,
+        &mut file_change_items,
+        &mut turn_has_final_response_precursor,
+    );
+
+    insert_work_rows(rows, turns, active_turn_id, live_state)
+}
+
+fn insert_work_rows(
+    rows: Vec<ThreadTimelineWorkDetailRow>,
+    turns: &[ThreadTimelineSnapshotTurn],
+    active_turn_id: Option<&str>,
+    live_state: ThreadLiveState,
+) -> Vec<ThreadTimelineRow> {
+    let mut work_rows = turns
+        .iter()
+        .filter_map(|turn| {
+            let is_active_turn = active_turn_id == Some(turn.id.as_str())
+                && !matches!(
+                    live_state,
+                    ThreadLiveState::Idle | ThreadLiveState::NotLoaded
+                );
+            let is_terminal_turn = is_terminal_turn_status(&turn.status);
+            if turn.started_at.is_none() && !is_active_turn {
+                return None;
+            }
+            if !is_active_turn && !is_terminal_turn {
+                return None;
+            }
+            Some((
+                turn.id.clone(),
+                ThreadTimelineRow {
+                    id: format!("work-{}", turn.id),
+                    kind: "work".to_string(),
+                    turn_id: Some(turn.id.clone()),
+                    display_order: i64::MAX,
+                    status: if is_active_turn {
+                        "running".to_string()
+                    } else {
+                        "completed".to_string()
+                    },
+                    timestamp_ms: None,
+                    item: None,
+                    items: Vec::new(),
+                    file_changes: Vec::new(),
+                    work: Some(ThreadTimelineWorkSummary {
+                        state: if is_active_turn {
+                            "running".to_string()
+                        } else {
+                            "completed".to_string()
+                        },
+                        started_at: turn.started_at,
+                        completed_at: if is_active_turn {
+                            None
+                        } else {
+                            turn.completed_at
+                        },
+                    }),
+                    collapsed_rows: Vec::new(),
+                    divider_before: None,
+                },
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+
+    if work_rows.is_empty() {
+        return rows.into_iter().map(ThreadTimelineRow::from).collect();
+    }
+
+    let mut by_turn = HashMap::<String, Vec<ThreadTimelineWorkDetailRow>>::new();
+    let mut turn_order = Vec::<String>::new();
+    let mut ungrouped = Vec::<ThreadTimelineRow>::new();
+    for row in rows {
+        let Some(turn_id) = row.turn_id.clone() else {
+            ungrouped.push(row.into());
+            continue;
+        };
+        if !work_rows.contains_key(&turn_id) {
+            ungrouped.push(row.into());
+            continue;
+        }
+        if !by_turn.contains_key(&turn_id) {
+            by_turn.insert(turn_id.clone(), Vec::new());
+            turn_order.push(turn_id.clone());
+        }
+        by_turn
+            .get_mut(&turn_id)
+            .expect("turn bucket exists")
+            .push(row);
+    }
+
+    let mut result = ungrouped;
+    for turn_id in turn_order {
+        let turn_rows = by_turn.remove(&turn_id).unwrap_or_default();
+        let Some(work_row) = work_rows.remove(&turn_id) else {
+            result.extend(turn_rows.into_iter().map(ThreadTimelineRow::from));
+            continue;
+        };
+        result.extend(rows_for_turn_with_work_row(turn_rows, work_row));
+    }
+    result.sort_by_key(|row| row.display_order);
+    result
+}
+
+fn rows_for_turn_with_work_row(
+    rows: Vec<ThreadTimelineWorkDetailRow>,
+    mut work_row: ThreadTimelineRow,
+) -> Vec<ThreadTimelineRow> {
+    let Some(first_work_index) = rows.iter().position(row_contains_work_precursor) else {
+        return rows.into_iter().map(ThreadTimelineRow::from).collect();
+    };
+    let final_index = rows
+        .iter()
+        .enumerate()
+        .find(|(index, row)| *index > first_work_index && row_is_final_response(row))
+        .map(|(index, _)| index);
+    if work_row.status == "completed" {
+        if let Some(final_index) = final_index {
+            let display_order = rows[first_work_index].display_order.saturating_add(1);
+            let rows_after_user = rows[first_work_index + 1..].to_vec();
+            let final_offset = final_index - first_work_index - 1;
+            let mut work_detail_rows = rows_after_user
+                .iter()
+                .enumerate()
+                .filter(|(index, row)| *index != final_offset && !row_is_prominent_turn_result(row))
+                .map(|(_, row)| row.clone())
+                .collect::<Vec<_>>();
+            work_detail_rows.sort_by_key(|row| row.display_order);
+            let prominent_rows = rows_after_user
+                .iter()
+                .enumerate()
+                .filter(|(index, row)| *index != final_offset && row_is_prominent_turn_result(row))
+                .map(|(_, row)| row.clone())
+                .collect::<Vec<_>>();
+            work_row.collapsed_rows = work_detail_rows;
+            work_row.display_order = display_order;
+            let mut result = rows[..first_work_index + 1]
+                .iter()
+                .cloned()
+                .map(ThreadTimelineRow::from)
+                .collect::<Vec<_>>();
+            result.push(work_row);
+            let mut final_row = rows[final_index].clone();
+            final_row.divider_before = None;
+            result.push(final_row.into());
+            result.extend(prominent_rows.into_iter().map(ThreadTimelineRow::from));
+            return result;
+        }
+    }
+
+    work_row.display_order = rows[first_work_index].display_order.saturating_add(1);
+    let mut result = rows[..first_work_index + 1]
+        .iter()
+        .cloned()
+        .map(ThreadTimelineRow::from)
+        .collect::<Vec<_>>();
+    result.push(work_row);
+    result.extend(
+        rows[first_work_index + 1..]
+            .iter()
+            .cloned()
+            .map(ThreadTimelineRow::from),
+    );
+    result
+}
+
+impl From<ThreadTimelineWorkDetailRow> for ThreadTimelineRow {
+    fn from(row: ThreadTimelineWorkDetailRow) -> Self {
+        Self {
+            id: row.id,
+            kind: row.kind,
+            turn_id: row.turn_id,
+            display_order: row.display_order,
+            status: row.status,
+            timestamp_ms: row.timestamp_ms,
+            item: row.item,
+            items: row.items,
+            file_changes: row.file_changes,
+            work: None,
+            collapsed_rows: Vec::new(),
+            divider_before: row.divider_before,
+        }
+    }
+}
+
+fn item_row(item: ThreadTimelineSnapshotItem) -> ThreadTimelineWorkDetailRow {
+    let kind = normalized_thread_item_kind(&item);
+    ThreadTimelineWorkDetailRow {
+        id: format!("item-{}", item.id),
+        kind,
+        turn_id: Some(item.turn_id.clone()),
+        display_order: row_display_order(item.display_order),
+        status: item.status.clone(),
+        timestamp_ms: item.timestamp_ms,
+        item: Some(item),
+        items: Vec::new(),
+        file_changes: Vec::new(),
+        divider_before: None,
+    }
+}
+
+fn activity_row(items: &[ThreadTimelineSnapshotItem]) -> ThreadTimelineWorkDetailRow {
+    let first = items.first().expect("activity row has at least one item");
+    ThreadTimelineWorkDetailRow {
+        id: format!("activity-{}", first.id),
+        kind: "activity".to_string(),
+        turn_id: Some(first.turn_id.clone()),
+        display_order: row_display_order(first.display_order),
+        status: first.status.clone(),
+        timestamp_ms: first.timestamp_ms,
+        item: None,
+        items: items.to_vec(),
+        file_changes: Vec::new(),
+        divider_before: None,
+    }
+}
+
+fn file_changes_row(items: &[ThreadTimelineSnapshotItem]) -> ThreadTimelineWorkDetailRow {
+    let first = items
+        .first()
+        .expect("file changes row has at least one item");
+    let entries = file_change_entries_for_items(items);
+    ThreadTimelineWorkDetailRow {
+        id: format!("file-changes-turn-{}", first.turn_id),
+        kind: "file_changes".to_string(),
+        turn_id: Some(first.turn_id.clone()),
+        display_order: row_display_order(first.display_order),
+        status: first.status.clone(),
+        timestamp_ms: first.timestamp_ms,
+        item: None,
+        items: Vec::new(),
+        file_changes: entries,
+        divider_before: None,
+    }
+}
+
+fn row_display_order(item_display_order: i64) -> i64 {
+    item_display_order.saturating_mul(100)
+}
+
+fn row_turn_key_from_detail(row: &ThreadTimelineWorkDetailRow) -> String {
+    row.turn_id
+        .as_ref()
+        .map(|turn_id| format!("turn-{turn_id}"))
+        .unwrap_or_else(|| format!("row-{}", row.id))
+}
+
+fn timeline_item_turn_key(item: &ThreadTimelineSnapshotItem) -> String {
+    format!("turn-{}", item.turn_id)
+}
+
+fn row_contains_work_precursor(row: &ThreadTimelineWorkDetailRow) -> bool {
+    row.kind == "user_message"
+}
+
+fn row_is_final_response(row: &ThreadTimelineWorkDetailRow) -> bool {
+    row.item.as_ref().is_some_and(is_final_response_item)
+}
+
+fn row_is_prominent_turn_result(row: &ThreadTimelineWorkDetailRow) -> bool {
+    row.kind == "user_message" || row.kind == "image_generation" || row.kind == "context_compaction"
+}
+
+fn is_timeline_activity_item(item: &ThreadTimelineSnapshotItem) -> bool {
+    matches!(
+        normalized_thread_item_kind(item).as_str(),
+        "collab_agent_tool_call"
+            | "command_execution"
+            | "dynamic_tool_call"
+            | "image_view"
+            | "mcp_tool_call"
+            | "web_search_group"
+    )
+}
+
+fn is_final_response_item(item: &ThreadTimelineSnapshotItem) -> bool {
+    matches!(
+        normalized_thread_item_kind(item).as_str(),
+        "assistant_message" | "agent_message"
+    ) && item
+        .payload
+        .item
+        .get("phase")
+        .and_then(Value::as_str)
+        .is_some_and(|phase| phase == "final_answer")
+}
+
+fn normalized_thread_item_kind(item: &ThreadTimelineSnapshotItem) -> String {
+    let item_type = item.item_type.to_ascii_lowercase().replace(['_', '-'], "");
+    match item_type.as_str() {
+        "agentmessage" | "assistantmessage" => "assistant_message",
+        "collabagenttoolcall" => "collab_agent_tool_call",
+        "commandexecution" => "command_execution",
+        "contextcompaction" => "context_compaction",
+        "dynamictoolcall" => "dynamic_tool_call",
+        "enteredreviewmode" => "review_mode_started",
+        "exitedreviewmode" => "review_mode_finished",
+        "filechange" => "file_change",
+        "hookprompt" => "hook_prompt",
+        "imagegeneration" | "imagegenerationcall" => "image_generation",
+        "imageview" => "image_view",
+        "mcptoolcall" => "mcp_tool_call",
+        "plan" => "plan",
+        "reasoning" => "reasoning_summary",
+        "usermessage" => "user_message",
+        "websearch" => "web_search_group",
+        _ => item.item_type.as_str(),
+    }
+    .to_string()
+}
+
+fn file_change_entries_for_items(
+    items: &[ThreadTimelineSnapshotItem],
+) -> Vec<ThreadTimelineFileChangeEntry> {
+    let mut entries_by_key =
+        HashMap::<(String, String), (i64, ThreadTimelineFileChangeEntry)>::new();
+    for item in items {
+        for mut entry in file_change_entries_for_item(item) {
+            entry.path = normalize_file_change_path(&entry.path);
+            let key = (entry.path.clone(), entry.action.clone());
+            if let Some((first_order, existing)) = entries_by_key.get_mut(&key) {
+                *first_order = (*first_order).min(item.display_order);
+                existing.additions += entry.additions;
+                existing.deletions += entry.deletions;
+                append_unique_diff_chunk(&mut existing.diff, &entry.diff);
+                existing.item_ids.extend(entry.item_ids);
+            } else {
+                entries_by_key.insert(key, (item.display_order, entry));
+            }
+        }
+    }
+    let mut entries = entries_by_key
+        .into_iter()
+        .map(|((path, action), (display_order, entry))| (display_order, path, action, entry))
+        .collect::<Vec<_>>();
+    entries.sort_by(|left, right| {
+        left.0
+            .cmp(&right.0)
+            .then_with(|| left.1.cmp(&right.1))
+            .then_with(|| left.2.cmp(&right.2))
+    });
+    entries.into_iter().map(|(_, _, _, entry)| entry).collect()
+}
+
+fn normalize_file_change_path(path: &str) -> String {
+    let mut normalized = path.trim().replace('\\', "/");
+    while normalized.contains("//") {
+        normalized = normalized.replace("//", "/");
+    }
+    normalized.trim_start_matches("./").to_string()
+}
+
+fn append_unique_diff_chunk(existing: &mut String, incoming: &str) {
+    if incoming.is_empty() || existing.split("\n\n").any(|chunk| chunk == incoming) {
+        return;
+    }
+    if !existing.is_empty() {
+        existing.push_str("\n\n");
+    }
+    existing.push_str(incoming);
+}
+
+fn file_change_entries_for_item(
+    item: &ThreadTimelineSnapshotItem,
+) -> Vec<ThreadTimelineFileChangeEntry> {
+    let Some(changes) = item.payload.item.get("changes").and_then(Value::as_array) else {
+        let path = string_field(&item.payload.item, "path").unwrap_or_default();
+        let action = file_change_action_label(item.payload.item.get("action"));
+        if path.is_empty() && action.is_empty() {
+            return Vec::new();
+        }
+        let diff = string_field(&item.payload.item, "diff")
+            .or_else(|| string_field(&item.payload.item, "output"))
+            .unwrap_or_default();
+        let (additions, deletions) = diff_line_counts(&diff);
+        return vec![ThreadTimelineFileChangeEntry {
+            id: format!("file-change-{}-{path}-{action}", item.id),
+            path,
+            action,
+            additions,
+            deletions,
+            diff,
+            item_ids: vec![item.id.clone()],
+        }];
+    };
+
+    changes
+        .iter()
+        .filter_map(|change| {
+            let path = string_field(change, "path")?;
+            let action = file_change_action_label(change.get("kind"));
+            let diff = string_field(change, "diff").unwrap_or_default();
+            let (additions, deletions) = diff_line_counts(&diff);
+            Some(ThreadTimelineFileChangeEntry {
+                id: format!("file-change-{}-{path}-{action}", item.id),
+                path,
+                action,
+                additions,
+                deletions,
+                diff,
+                item_ids: vec![item.id.clone()],
+            })
+        })
+        .collect()
+}
+
+fn file_change_action_label(value: Option<&Value>) -> String {
+    let raw = match value {
+        Some(Value::Object(object)) => object
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        Some(Value::String(value)) => value.clone(),
+        _ => String::new(),
+    };
+    let normalized = raw.to_ascii_lowercase();
+    match normalized.as_str() {
+        "add" | "added" => "Added".to_string(),
+        "delete" | "deleted" | "remove" | "removed" => "Deleted".to_string(),
+        "update" | "modify" | "modified" => "Modified".to_string(),
+        _ if raw.is_empty() => String::new(),
+        _ => {
+            let mut chars = raw.chars();
+            match chars.next() {
+                Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
+                None => String::new(),
+            }
+        }
+    }
+}
+
+fn string_field(value: &Value, field: &str) -> Option<String> {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn diff_line_counts(diff: &str) -> (i64, i64) {
+    let mut additions = 0;
+    let mut deletions = 0;
+    for line in diff.lines() {
+        if line.starts_with('+') && !line.starts_with("+++") {
+            additions += 1;
+        } else if line.starts_with('-') && !line.starts_with("---") {
+            deletions += 1;
+        }
+    }
+    (additions, deletions)
 }
 
 fn live_state_from_turns(turns: &[ThreadTurnSnapshot]) -> ThreadLiveState {
@@ -3443,7 +4064,9 @@ mod tests {
                     "limit": 25,
                     "cwd": "/workspace",
                     "sortKey": "updated_at",
-                    "sortDirection": "desc"
+                    "sortDirection": "desc",
+                    "archived": false,
+                    "useStateDbOnly": true
                 })
             )
         );
@@ -3456,7 +4079,9 @@ mod tests {
                     "limit": 10,
                     "cwd": null,
                     "sortKey": "updated_at",
-                    "sortDirection": "desc"
+                    "sortDirection": "desc",
+                    "archived": false,
+                    "useStateDbOnly": true
                 })
             )
         );
@@ -3470,6 +4095,8 @@ mod tests {
                     "cwd": ["/chat/a", "/chat/b"],
                     "sortKey": "updated_at",
                     "sortDirection": "desc",
+                    "archived": false,
+                    "useStateDbOnly": true
                 })
             )
         );

@@ -23,33 +23,6 @@ describe("timeline reducer lifecycle", () => {
     expect(state.lastSeq).toBe(6);
   });
 
-  it("applies canonical thread view item deltas as compact live transcript updates", () => {
-    let state = applyLiveTimelineUpdate(createTimelineState(), event({
-      seq: 10,
-      kind: "thread_view.item_delta",
-      codexMethod: "thread_view/item_delta",
-      payload: threadViewItemDelta("Hello"),
-    }));
-    state = applyLiveTimelineUpdate(state, event({
-      seq: 11,
-      kind: "thread_view.item_delta",
-      codexMethod: "thread_view/item_delta",
-      payload: threadViewItemDelta(" world"),
-    }));
-
-    expect(state.items).toHaveLength(1);
-    expect(state.items[0]).toMatchObject({
-      id: "projection-turn-1-item-1",
-      serverItemId: "item-1",
-      kind: "assistant_message",
-      text: "Hello world",
-      status: "running",
-    });
-    expect(state.activeTurnId).toBe("turn-1");
-    expect(state.lastSeq).toBe(11);
-    expect(state.viewRevision).toBe(11);
-  });
-
   it("applies canonical thread view patches as structural transcript updates", () => {
     let state = applyLiveTimelineUpdate(createTimelineState(), event({
       seq: 10,
@@ -278,7 +251,31 @@ function event(overrides: Partial<EventEnvelope>): EventEnvelope {
   };
 }
 
-function projectionPatch(text: string) {
+function projectionPatch(text: string): Record<string, unknown> & { items: Array<Record<string, unknown> & { id: string; turnId: string; displayOrder: number; status: string; timestampMs: number; payload: Record<string, unknown> }> } {
+  const item = {
+    id: "projection-turn-1-item-1",
+    threadId: "thread-1",
+    turnId: "turn-1",
+    itemId: "item-1",
+    itemType: "agentMessage",
+    status: "completed",
+    displayOrder: 1,
+    codexMethod: "item/completed",
+    timestampMs: 1_779_000_000_000,
+    payload: {
+      source: "gatewayStream",
+      turnId: "turn-1",
+      itemId: "item-1",
+      item: { id: "item-1", type: "agentMessage", phase: "final_answer", text },
+      itemSnapshot: {
+        id: "item-1",
+        itemType: "agentMessage",
+        text,
+        rawPayload: { id: "item-1", type: "agentMessage", phase: "final_answer", text },
+        skillMentions: [],
+      },
+    },
+  };
   return {
     threadId: "thread-1",
     viewRevision: 2,
@@ -286,45 +283,9 @@ function projectionPatch(text: string) {
     liveState: "idle",
     pendingApprovalRequests: [],
     pendingUserInputRequests: [],
-    items: [
-      {
-        id: "projection-turn-1-item-1",
-        threadId: "thread-1",
-        turnId: "turn-1",
-        itemId: "item-1",
-        itemType: "agentMessage",
-        status: "completed",
-        displayOrder: 1,
-        codexMethod: "item/completed",
-        timestampMs: 1_779_000_000_000,
-        payload: {
-          source: "gatewayStream",
-          turnId: "turn-1",
-          itemId: "item-1",
-          item: { id: "item-1", type: "agentMessage", phase: "final_answer", text },
-          itemSnapshot: {
-            id: "item-1",
-            itemType: "agentMessage",
-            text,
-            rawPayload: { id: "item-1", type: "agentMessage", phase: "final_answer", text },
-            skillMentions: [],
-          },
-        },
-      },
-    ],
-  };
-}
-
-function threadViewItemDelta(delta: string) {
-  return {
-    viewRevision: 1,
-    threadId: "thread-1",
-    turnId: "turn-1",
-    itemId: "item-1",
-    delta,
-    phase: "final_answer",
-    itemType: "agentMessage",
-    liveState: "streaming",
+    rows: [canonicalRow(item)],
+    turns: [],
+    items: [item],
   };
 }
 
@@ -344,30 +305,49 @@ function projectionPatchWithLiveState({
   turnId?: string;
 }) {
   const patch = projectionPatch(text);
+  const items = patch.items.map((item: (typeof patch.items)[number]) => ({
+    ...item,
+    id: `projection-${turnId}-item-1`,
+    turnId,
+    status,
+    codexMethod: status === "completed" ? "item/completed" : "item/upsert",
+    payload: {
+      ...item.payload,
+      turnId,
+      item: { id: "item-1", type: "agentMessage", text },
+      itemSnapshot: {
+        id: "item-1",
+        itemType: "agentMessage",
+        text,
+        rawPayload: { id: "item-1", type: "agentMessage", phase: "final_answer", text },
+        skillMentions: [],
+      },
+    },
+  }));
   return {
     ...patch,
     activeTurnId,
     liveState,
     viewRevision,
-    items: patch.items.map((item) => ({
-      ...item,
-      id: `projection-${turnId}-item-1`,
-      turnId,
-      status,
-      codexMethod: status === "completed" ? "item/completed" : "item/upsert",
-      payload: {
-        ...item.payload,
-        turnId,
-        item: { id: "item-1", type: "agentMessage", text },
-        itemSnapshot: {
-          id: "item-1",
-          itemType: "agentMessage",
-          text,
-          rawPayload: { id: "item-1", type: "agentMessage", phase: "final_answer", text },
-          skillMentions: [],
-        },
-      },
-    })),
+    rows: items.map(canonicalRow),
+    items,
     turns: [{ id: turnId, status }],
+  };
+}
+
+function canonicalRow(item: Record<string, unknown> & { id: string; turnId: string; displayOrder: number; status: string; timestampMs: number }) {
+  return {
+    id: `item-${item.id}`,
+    kind: "assistant_message",
+    turnId: item.turnId,
+    displayOrder: item.displayOrder,
+    status: item.status,
+    timestampMs: item.timestampMs,
+    item,
+    items: [],
+    fileChanges: [],
+    work: null,
+    collapsedRows: [],
+    dividerBefore: null,
   };
 }

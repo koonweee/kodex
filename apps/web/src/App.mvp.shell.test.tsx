@@ -1518,7 +1518,7 @@ describe("MVP shell flows", () => {
     expect(await screen.findByText(/snapshot after attach/i)).toBeInTheDocument();
   });
 
-  it("attaches active selected threads once while keeping live updates on the selected stream", async () => {
+  it("reattaches active selected threads on re-selection while keeping live updates on the selected stream", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const runningThread = { ...secondThread, status: "active" };
     window.history.replaceState(null, "", "/threads/thread-2");
@@ -1574,10 +1574,12 @@ describe("MVP shell flows", () => {
     await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
     await screen.findByText(/running snapshot/i);
 
-    expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(2);
+    });
   });
 
-  it("remembers active thread attach no-op dispositions without resuming", async () => {
+  it("does not remember active thread attach no-op dispositions in the browser", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const runningThread = { ...secondThread, status: "active" };
     window.history.replaceState(null, "", "/threads/thread-2");
@@ -1612,11 +1614,13 @@ describe("MVP shell flows", () => {
     await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
     await screen.findByText(/loaded snapshot/i);
 
-    expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(2);
+    });
     expect(gateway.callsFor("POST", "/v1/threads/thread-2/resume")).toHaveLength(0);
   });
 
-  it("remembers active thread attach success when selection changes before attach resolves", async () => {
+  it("dedupes only in-flight active thread attach requests when selection changes before attach resolves", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const runningThread = { ...secondThread, status: "active" };
     const attachDeferred = deferred<{ disposition: "resumed"; thread: typeof runningThread; rawPayload: Record<string, never> }>();
@@ -1655,7 +1659,7 @@ describe("MVP shell flows", () => {
     await screen.findByText(/running snapshot/i);
 
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(2);
     });
   });
 

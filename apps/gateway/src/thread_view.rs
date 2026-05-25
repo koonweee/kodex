@@ -11,11 +11,12 @@ use utoipa::ToSchema;
 
 use crate::{
     app_server_api::{
-        canonical_timeline_item_id, timeline_skill_mentions_from_user_input,
-        visible_text_from_thread_item, PendingTimelineRequestSummary, ThreadItemSnapshot,
-        ThreadLiveState, ThreadTimelineSnapshot, ThreadTimelineSnapshotItem,
-        ThreadTimelineSnapshotTurn, ThreadTimelineWindowPage, ThreadTurnSnapshot,
-        TimelineItemUpsertPayload, TimelineUpdateSource, UserInput,
+        canonical_timeline_item_id, thread_timeline_rows_from_items,
+        timeline_skill_mentions_from_user_input, visible_text_from_thread_item,
+        PendingTimelineRequestSummary, ThreadItemSnapshot, ThreadLiveState, ThreadTimelineRow,
+        ThreadTimelineSnapshot, ThreadTimelineSnapshotItem, ThreadTimelineSnapshotTurn,
+        ThreadTimelineWindowPage, ThreadTurnSnapshot, TimelineItemUpsertPayload,
+        TimelineUpdateSource, UserInput,
     },
     error::ApiResult,
     store::Approval,
@@ -24,10 +25,8 @@ use crate::{
 // ThreadView is the gateway-owned live projection of upstream app-server thread
 // state. The app-server remains the durable transcript owner; this reducer only
 // folds snapshots, live deltas, pending local input, and approvals into one
-// canonical view for the browser. Browser clients should render snapshots,
-// `thread_view.patch`, and canonical `thread_view.item_delta` events from this
-// module, not raw app-server item events.
-pub const THREAD_VIEW_ITEM_DELTA_EVENT_KIND: &str = "thread_view.item_delta";
+// canonical view for the browser. Browser clients should render snapshots and
+// `thread_view.patch` rows from this module, not raw app-server item events.
 pub const THREAD_VIEW_PATCH_EVENT_KIND: &str = "thread_view.patch";
 pub const THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND: &str = "thread_view.refresh_required";
 
@@ -40,6 +39,12 @@ pub struct ThreadViewPatch {
     pub live_state: ThreadLiveState,
     pub pending_approval_requests: Vec<PendingTimelineRequestSummary>,
     pub pending_user_input_requests: Vec<PendingTimelineRequestSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rows: Option<Vec<ThreadTimelineRow>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub upsert_rows: Vec<ThreadTimelineRow>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub remove_row_ids: Vec<String>,
     pub turns: Vec<ThreadTimelineSnapshotTurn>,
     pub items: Vec<ThreadTimelineSnapshotItem>,
 }
@@ -182,6 +187,9 @@ impl ThreadViewStore {
                 live_state: ThreadLiveState::Idle,
                 pending_approval_requests: Vec::new(),
                 pending_user_input_requests: Vec::new(),
+                rows: Some(Vec::new()),
+                upsert_rows: Vec::new(),
+                remove_row_ids: Vec::new(),
                 turns: Vec::new(),
                 items: Vec::new(),
             })
@@ -307,6 +315,12 @@ impl ThreadView {
         base.pending_user_input_requests = self.pending_user_input_requests.clone();
         merge_missing_turns(&mut base.turns, &existing_turns, &base.items);
         base.turns = ordered_turns_for_items(&base.turns, &base.items);
+        base.rows = thread_timeline_rows_from_items(
+            base.active_turn_id.as_deref(),
+            base.live_state,
+            &base.turns,
+            &base.items,
+        );
         self.thread_id = thread_id.to_string();
         self.revision = base.view_revision;
         self.active_turn_id = base.active_turn_id.clone();
@@ -520,12 +534,56 @@ impl ThreadView {
         let mut items = self.items.clone();
         items.sort_by_key(|item| item.display_order);
         let turns = self.turns_for_items(&items);
+        let rows = thread_timeline_rows_from_items(
+            self.active_turn_id.as_deref(),
+            self.live_state,
+            &turns,
+            &items,
+        );
         ThreadTimelineSnapshot {
             view_revision: self.revision,
             active_turn_id: self.active_turn_id.clone(),
             live_state: self.live_state,
             pending_approval_requests: self.pending_approval_requests.clone(),
             pending_user_input_requests: self.pending_user_input_requests.clone(),
+            rows,
+            turns,
+            items,
+        }
+    }
+
+    fn turn_patch(&self, turn_id: &str) -> ThreadViewPatch {
+        let mut items = self
+            .items
+            .iter()
+            .filter(|item| item.turn_id == turn_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        items.sort_by_key(|item| item.display_order);
+        let mut turns = self
+            .turns
+            .iter()
+            .filter(|turn| turn.id == turn_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        merge_missing_turns(&mut turns, &[], &items);
+        let turns = ordered_turns_for_items(&turns, &items);
+        let rows = thread_timeline_rows_from_items(
+            self.active_turn_id.as_deref(),
+            self.live_state,
+            &turns,
+            &items,
+        );
+        ThreadViewPatch {
+            view_revision: self.revision,
+            thread_id: self.thread_id.clone(),
+            active_turn_id: self.active_turn_id.clone(),
+            live_state: self.live_state,
+            pending_approval_requests: self.pending_approval_requests.clone(),
+            pending_user_input_requests: self.pending_user_input_requests.clone(),
+            rows: None,
+            upsert_rows: rows,
+            remove_row_ids: Vec::new(),
             turns,
             items,
         }
@@ -535,6 +593,12 @@ impl ThreadView {
         let mut items = self.items.clone();
         items.sort_by_key(|item| item.display_order);
         let turns = self.turns_for_items(&items);
+        let rows = thread_timeline_rows_from_items(
+            self.active_turn_id.as_deref(),
+            self.live_state,
+            &turns,
+            &items,
+        );
         ThreadViewPatch {
             view_revision: self.revision,
             thread_id: self.thread_id.clone(),
@@ -542,6 +606,9 @@ impl ThreadView {
             live_state: self.live_state,
             pending_approval_requests: self.pending_approval_requests.clone(),
             pending_user_input_requests: self.pending_user_input_requests.clone(),
+            rows: Some(rows),
+            upsert_rows: Vec::new(),
+            remove_row_ids: Vec::new(),
             turns,
             items,
         }
@@ -893,6 +960,23 @@ pub async fn record_item_delta(
     Ok(())
 }
 
+pub async fn record_item_delta_patch(
+    sessions: &ThreadViewStore,
+    thread_id: &str,
+    turn_id: &str,
+    item_id: &str,
+    delta: &str,
+    updated_seq: i64,
+) -> ApiResult<ThreadViewPatch> {
+    let patch = sessions
+        .with_thread_view(thread_id, updated_seq, |view| {
+            view.append_delta(thread_id, turn_id, item_id, delta);
+            view.turn_patch(turn_id)
+        })
+        .await;
+    Ok(patch)
+}
+
 pub async fn record_turn_status(
     sessions: &ThreadViewStore,
     thread_id: &str,
@@ -1129,6 +1213,35 @@ mod tests {
         })
     }
 
+    fn final_agent_message_item(id: &str, text: &str) -> Value {
+        json!({
+            "id": id,
+            "type": "agentMessage",
+            "text": text,
+            "phase": "final_answer",
+        })
+    }
+
+    fn user_message_item(id: &str, text: &str) -> Value {
+        json!({
+            "id": id,
+            "type": "userMessage",
+            "content": [{"type": "text", "text": text}],
+        })
+    }
+
+    fn file_change_item(id: &str, path: &str, diff: &str) -> Value {
+        json!({
+            "id": id,
+            "type": "fileChange",
+            "changes": [{
+                "path": path,
+                "kind": "update",
+                "diff": diff,
+            }],
+        })
+    }
+
     fn context_compaction_item(id: &str) -> Value {
         json!({
             "id": id,
@@ -1186,6 +1299,9 @@ mod tests {
 
         let patch = patch_for_thread(&sessions, "thread-1").await.unwrap();
         assert_eq!(patch.items.len(), 1);
+        let rows = patch.rows.as_ref().expect("full patch rows");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].kind, "assistant_message");
         assert_eq!(patch.items[0].payload.item["text"], "Hello world");
         assert_eq!(patch.active_turn_id.as_deref(), Some("turn-1"));
 
@@ -1211,6 +1327,124 @@ mod tests {
         assert_eq!(timeline.turns[0].started_at, Some(1));
         assert_eq!(timeline.turns[0].completed_at, Some(2));
         assert_eq!(timeline.active_turn_id, None);
+    }
+
+    #[tokio::test]
+    async fn item_delta_patch_upserts_only_affected_turn_rows() {
+        let sessions = ThreadViewStore::default();
+        build_thread_timeline(
+            &sessions,
+            "thread-1",
+            &[ThreadTurnSnapshot {
+                id: "turn-0".to_string(),
+                status: "completed".to_string(),
+                started_at: Some(1),
+                completed_at: Some(2),
+                raw_payload: json!({}),
+                items: vec![ThreadItemSnapshot::from_payload(&user_message_item(
+                    "user-0", "Previous",
+                ))
+                .unwrap()],
+            }],
+            1,
+        )
+        .await
+        .unwrap();
+
+        let patch = record_item_delta_patch(&sessions, "thread-1", "turn-1", "agent-1", "Hello", 2)
+            .await
+            .unwrap();
+
+        assert!(patch.rows.is_none());
+        assert_eq!(patch.upsert_rows.len(), 1);
+        assert_eq!(patch.upsert_rows[0].kind, "assistant_message");
+        assert_eq!(patch.items.len(), 1);
+        assert_eq!(patch.items[0].payload.item["text"], "Hello");
+        assert_eq!(patch.turns.len(), 1);
+        assert_eq!(patch.turns[0].id, "turn-1");
+        assert_eq!(patch.active_turn_id.as_deref(), Some("turn-1"));
+
+        let full_patch = patch_for_thread(&sessions, "thread-1").await.unwrap();
+        assert!(full_patch
+            .rows
+            .as_ref()
+            .expect("full patch rows")
+            .iter()
+            .any(|row| row.id == patch.upsert_rows[0].id));
+    }
+
+    #[tokio::test]
+    async fn completed_turn_exposes_canonical_work_row_with_deduped_file_changes() {
+        let sessions = ThreadViewStore::default();
+        let completed_turn = ThreadTurnSnapshot {
+            id: "turn-1".to_string(),
+            status: "completed".to_string(),
+            started_at: Some(10),
+            completed_at: Some(20),
+            raw_payload: json!({}),
+            items: vec![
+                ThreadItemSnapshot::from_payload(&user_message_item("user-1", "Edit src/a.rs"))
+                    .unwrap(),
+                ThreadItemSnapshot::from_payload(&file_change_item(
+                    "file-1",
+                    "./src/a.rs",
+                    "--- a/src/a.rs\n+++ b/src/a.rs\n+one\n-two",
+                ))
+                .unwrap(),
+                ThreadItemSnapshot::from_payload(&file_change_item(
+                    "file-3",
+                    "src/b.rs",
+                    "--- a/src/b.rs\n+++ b/src/b.rs\n+side",
+                ))
+                .unwrap(),
+                ThreadItemSnapshot::from_payload(&file_change_item(
+                    "file-2",
+                    "src/a.rs",
+                    "--- a/src/a.rs\n+++ b/src/a.rs\n+three",
+                ))
+                .unwrap(),
+                ThreadItemSnapshot::from_payload(&final_agent_message_item("agent-1", "Done"))
+                    .unwrap(),
+            ],
+        };
+
+        let timeline = build_thread_timeline(&sessions, "thread-1", &[completed_turn], 1)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            timeline
+                .rows
+                .iter()
+                .map(|row| row.kind.as_str())
+                .collect::<Vec<_>>(),
+            vec!["user_message", "work", "assistant_message"]
+        );
+        let work = timeline
+            .rows
+            .iter()
+            .find(|row| row.kind == "work")
+            .expect("work row");
+        assert_eq!(work.work.as_ref().unwrap().state, "completed");
+        assert_eq!(
+            work.collapsed_rows
+                .iter()
+                .map(|row| row.kind.as_str())
+                .collect::<Vec<_>>(),
+            vec!["file_changes"]
+        );
+        let file_changes = &work.collapsed_rows[0].file_changes;
+        assert_eq!(file_changes.len(), 2);
+        assert_eq!(file_changes[0].path, "src/a.rs");
+        assert_eq!(file_changes[0].action, "Modified");
+        assert_eq!(
+            file_changes[0].item_ids,
+            vec!["projection-turn-1-file-1", "projection-turn-1-file-2"]
+        );
+        assert_eq!(file_changes[0].additions, 2);
+        assert_eq!(file_changes[0].deletions, 1);
+        assert_eq!(file_changes[1].path, "src/b.rs");
+        assert_eq!(file_changes[1].additions, 1);
     }
 
     #[tokio::test]

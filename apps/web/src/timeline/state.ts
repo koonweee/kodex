@@ -1,4 +1,4 @@
-import type { EventEnvelope, PendingTimelineRequestSummary, TimelineSkillMention } from "../api/client";
+import type { EventEnvelope, PendingTimelineRequestSummary, ThreadTimelineFileChangeEntry, TimelineSkillMention } from "../api/client";
 
 export type TimelineStatus = "running" | "completed" | "failed" | "waiting" | "cancelled" | "approval_required";
 export type TimelineItemSource = "app_server" | "optimistic";
@@ -73,8 +73,58 @@ export type TimelineTurn = {
   completedAtMs?: number;
 };
 
+export type TimelineRowDivider = "final_response";
+
+export type TimelineFileChangeEntry = ThreadTimelineFileChangeEntry;
+
+export type TimelineItemRow = {
+  type: "item";
+  key: string;
+  turnKey: string;
+  turnId: string | null;
+  displayOrder: number;
+  item: TimelineItem;
+  dividerBefore?: TimelineRowDivider;
+};
+
+export type TimelineActivityRow = {
+  type: "activity";
+  key: string;
+  turnKey: string;
+  turnId: string | null;
+  displayOrder: number;
+  items: TimelineItem[];
+  dividerBefore?: TimelineRowDivider;
+};
+
+export type TimelineFileChangesRow = {
+  type: "file_changes";
+  key: string;
+  turnKey: string;
+  turnId: string | null;
+  entries: TimelineFileChangeEntry[];
+  itemIds: string[];
+  displayOrder: number;
+  dividerBefore?: TimelineRowDivider;
+};
+
+export type TimelineWorkRow = {
+  type: "work";
+  key: string;
+  turnKey: string;
+  turnId: string;
+  state: "running" | "completed";
+  startedAtMs?: number;
+  completedAtMs?: number;
+  collapsedRows: Array<TimelineItemRow | TimelineActivityRow | TimelineFileChangesRow>;
+  displayOrder: number;
+};
+
+export type TimelineRow = TimelineItemRow | TimelineActivityRow | TimelineFileChangesRow | TimelineWorkRow;
+
 export type TimelineState = {
   activeTurnId: string | null;
+  rows: TimelineRow[];
   items: TimelineItem[];
   hiddenItems: TimelineItem[];
   turns: TimelineTurn[];
@@ -103,6 +153,7 @@ export type TimelineDraft = {
   indexes: TimelineIndexes;
   pendingApprovalRequests?: PendingTimelineRequestSummary[];
   pendingUserInputRequests?: PendingTimelineRequestSummary[];
+  rows?: TimelineRow[];
   olderCursor?: string | null;
   hasOlderHistory?: boolean;
   isLoadingOlderHistory?: boolean;
@@ -130,6 +181,7 @@ export function createTimelineState(): TimelineState {
 export function createTimelineStateFromDraft(draft: TimelineDraft): TimelineState {
   const state = {
     activeTurnId: draft.activeTurnId,
+    rows: draft.rows ?? [],
     pendingApprovalRequests: draft.pendingApprovalRequests ?? [],
     pendingUserInputRequests: draft.pendingUserInputRequests ?? [],
     olderCursor: draft.olderCursor ?? null,

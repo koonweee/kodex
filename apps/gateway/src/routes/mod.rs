@@ -2402,6 +2402,8 @@ mod tests {
         assert_eq!(requests[0].1["cursor"], Value::Null);
         assert_eq!(requests[0].1["limit"], 100);
         assert_eq!(requests[0].1["sortKey"], "updated_at");
+        assert_eq!(requests[0].1["archived"], false);
+        assert_eq!(requests[0].1["useStateDbOnly"], true);
     }
 
     #[tokio::test]
@@ -2444,6 +2446,8 @@ mod tests {
         assert_eq!(requests[0].0, "thread/list");
         assert_eq!(requests[0].1["cursor"], "cursor-1");
         assert_eq!(requests[0].1["limit"], 25);
+        assert_eq!(requests[0].1["archived"], false);
+        assert_eq!(requests[0].1["useStateDbOnly"], true);
     }
 
     #[tokio::test]
@@ -2512,6 +2516,8 @@ mod tests {
         assert_eq!(requests[0].1["cwd"], cwd);
         assert_eq!(requests[0].1["sortKey"], "updated_at");
         assert_eq!(requests[0].1["sortDirection"], "desc");
+        assert_eq!(requests[0].1["archived"], false);
+        assert_eq!(requests[0].1["useStateDbOnly"], true);
     }
 
     #[tokio::test]
@@ -2725,10 +2731,14 @@ mod tests {
                 .unwrap();
             assert_eq!(request.1["sortKey"], "updated_at");
             assert_eq!(request.1["sortDirection"], "desc");
+            assert_eq!(request.1["archived"], false);
+            assert_eq!(request.1["useStateDbOnly"], true);
         }
         assert!(requests.iter().any(|(method, params)| {
             method == "thread/list"
                 && params["limit"] == 10
+                && params["archived"] == false
+                && params["useStateDbOnly"] == true
                 && params["cwd"]
                     .as_array()
                     .unwrap()
@@ -3497,7 +3507,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thread_attach_noops_for_known_idle_runtime() {
+    async fn thread_attach_resumes_despite_stale_idle_runtime() {
         let (state, app_server) = test_state().await;
         state
             .store
@@ -3510,6 +3520,15 @@ mod tests {
             })
             .await
             .unwrap();
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"data": [], "nextCursor": null}),
+            json!({
+                "thread": thread_summary("thread-1"),
+                "cwd": "/workspace",
+                "model": "gpt-5.4",
+                "modelProvider": "openai"
+            }),
+        ]);
         let app = build_router(state);
 
         let response = app
@@ -3523,9 +3542,15 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["disposition"], "notNeeded");
-        assert!(body["thread"].is_null());
-        assert!(app_server.requests.lock().unwrap().is_empty());
+        assert_eq!(body["disposition"], "resumed");
+        assert_eq!(body["thread"]["id"], "thread-1");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].0, "thread/loaded/list");
+        assert_eq!(requests[1].0, "thread/resume");
+        assert_eq!(requests[1].1["threadId"], "thread-1");
+        assert_eq!(requests[1].1["persistExtendedHistory"], true);
+        assert_eq!(requests[1].1["excludeTurns"], true);
     }
 
     #[tokio::test]
@@ -6233,6 +6258,61 @@ mod tests {
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].0, "turn/start");
+    }
+
+    #[tokio::test]
+    async fn thread_input_resumes_and_retries_when_turn_start_reports_missing_thread() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "idle".to_string(),
+                active_turn_id: None,
+                updated_at: chrono::Utc::now(),
+                last_event_seq: Some(10),
+            })
+            .await
+            .unwrap();
+        app_server
+            .queued_errors
+            .lock()
+            .unwrap()
+            .push(ApiError::BadGateway(
+                "app-server error -32600: thread not found: thread-1".to_string(),
+            ));
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({
+                "thread": thread_summary("thread-1"),
+                "cwd": "/workspace",
+                "model": "gpt-5.4",
+                "modelProvider": "openai"
+            }),
+            json!({"turnId": "turn-started"}),
+        ]);
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"input":[{"type":"text","text":"hello"}]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "started");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 3);
+        assert_eq!(requests[0].0, "turn/start");
+        assert_eq!(requests[1].0, "thread/resume");
+        assert_eq!(requests[1].1["threadId"], "thread-1");
+        assert_eq!(requests[1].1["persistExtendedHistory"], true);
+        assert_eq!(requests[1].1["excludeTurns"], true);
+        assert_eq!(requests[2].0, "turn/start");
     }
 
     #[tokio::test]
@@ -9805,8 +9885,8 @@ mod tests {
 
         let mut body = response.into_body();
         let first = next_sse_chunk(&mut body).await;
-        assert!(first.contains("thread_view.item_delta"));
-        assert!(first.contains("\"delta\":\"hello\""));
+        assert!(first.contains("thread_view.patch"));
+        assert!(first.contains("\"text\":\"hello\""));
 
         let replayed = state
             .store
@@ -9816,9 +9896,6 @@ mod tests {
         assert!(replayed
             .iter()
             .all(|event| event.kind != "timeline.item_delta"));
-        assert!(replayed
-            .iter()
-            .all(|event| event.kind != thread_view::THREAD_VIEW_ITEM_DELTA_EVENT_KIND));
         assert!(replayed
             .iter()
             .all(|event| event.kind != "thread_view.refresh_required"));

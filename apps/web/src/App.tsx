@@ -217,7 +217,6 @@ function KodexShell({
   const selectedProjectIdRef = useRef<string | null>(null);
   const selectedThreadIdRef = useRef<string | null>(selectedThreadId);
   const approvalsRef = useRef<Approval[]>([]);
-  const attachedThreadIdsRef = useRef<Set<string>>(new Set());
   const attachingThreadIdsRef = useRef<Set<string>>(new Set());
   const chatThreadsRef = useRef<ThreadSummary[]>([]);
   const pinnedThreadsRef = useRef<ThreadSummary[]>([]);
@@ -765,7 +764,7 @@ function KodexShell({
     if (!selectedThread || !selectedThreadShouldAttachLive(selectedThread)) {
       return;
     }
-    if (attachedThreadIdsRef.current.has(selectedThread.id) || attachingThreadIdsRef.current.has(selectedThread.id)) {
+    if (attachingThreadIdsRef.current.has(selectedThread.id)) {
       return;
     }
 
@@ -775,7 +774,6 @@ function KodexShell({
     attachThread(attachingThreadId)
       .then((response) => {
         attachingThreadIdsRef.current.delete(attachingThreadId);
-        attachedThreadIdsRef.current.add(attachingThreadId);
         if (!cancelled && response.thread) {
           replaceThread(response.thread);
         }
@@ -970,7 +968,6 @@ function KodexShell({
         : await createChatThread(firstMessageText, createThreadOptions(threadSettings)),
       firstMessageText,
     );
-    attachedThreadIdsRef.current.add(thread.id);
     if (projectId) {
       upsertProjectThread(queryClientForShell, projectId, thread);
     } else {
@@ -1009,7 +1006,6 @@ function KodexShell({
   }
 
   function markThreadActive(threadId: string) {
-    attachedThreadIdsRef.current.add(threadId);
     patchThreadEverywhere(threadId, (thread) =>
       thread.status === "active" ? thread : { ...thread, status: "active" },
     );
@@ -1150,7 +1146,6 @@ function KodexShell({
     const shouldSelectDraftAfterArchive = threadId === archivedSelectedThreadId;
     const draftProjectId = selectedProjectIdRef.current;
     await archiveThreadMutation.mutateAsync(threadId);
-    attachedThreadIdsRef.current.delete(threadId);
     attachingThreadIdsRef.current.delete(threadId);
     removeThreadEverywhere(queryClientForShell, threadId);
     if (

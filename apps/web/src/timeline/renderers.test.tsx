@@ -174,51 +174,34 @@ describe("timeline renderer registry", () => {
     const { container } = render(
       <MantineProvider>
         <TimelineFileChangesRenderer
-          items={[
-            item({
+          entries={[
+            {
               id: "file-added",
               action: "Added",
-              kind: "file_change",
+              additions: 1,
+              deletions: 0,
+              diff: "+new file contents",
+              itemIds: ["file-added"],
               path: "src/new.ts",
-              payload: {
-                item: {
-                  changes: [{ path: "src/new.ts", kind: { type: "add" }, diff: "+new file contents" }],
-                },
-              },
-            }),
-            item({
+            },
+            {
               id: "file-deleted",
               action: "Deleted",
-              kind: "file_change",
+              additions: 0,
+              deletions: 1,
+              diff: "-old file contents",
+              itemIds: ["file-deleted"],
               path: "src/old.ts",
-              payload: {
-                item: {
-                  changes: [{ path: "src/old.ts", kind: { type: "delete" }, diff: "-old file contents" }],
-                },
-              },
-            }),
-            item({
+            },
+            {
               id: "file-modified",
               action: "Modified",
-              kind: "file_change",
+              additions: 2,
+              deletions: 2,
+              diff: "@@ -1 +1 @@\n-old\n+new\n@@ -4 +4 @@\n-before\n+after",
+              itemIds: ["file-modified", "file-modified-again"],
               path: "src/App.tsx",
-              payload: {
-                item: {
-                  changes: [{ path: "src/App.tsx", kind: { type: "update" }, diff: "@@ -1 +1 @@\n-old\n+new" }],
-                },
-              },
-            }),
-            item({
-              id: "file-modified-again",
-              action: "Modified",
-              kind: "file_change",
-              path: "src/App.tsx",
-              payload: {
-                item: {
-                  changes: [{ path: "src/App.tsx", kind: { type: "update" }, diff: "@@ -4 +4 @@\n-before\n+after" }],
-                },
-              },
-            }),
+            },
           ]}
         />
       </MantineProvider>,
@@ -1373,6 +1356,7 @@ describe("timeline renderer registry", () => {
           key: "item-reasoning-1",
           turnKey: "turn-turn-1",
           turnId: "turn-1",
+          displayOrder: 2,
           item: item({
             id: "reasoning-1",
             kind: "reasoning_summary",

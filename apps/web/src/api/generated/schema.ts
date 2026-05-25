@@ -2349,10 +2349,37 @@ export interface components {
             /** Format: int64 */
             updatedAt: number;
         };
+        ThreadTimelineFileChangeEntry: {
+            action: string;
+            /** Format: int64 */
+            additions: number;
+            /** Format: int64 */
+            deletions: number;
+            diff: string;
+            id: string;
+            itemIds: string[];
+            path: string;
+        };
         ThreadTimelinePageQuery: {
             cursor?: string | null;
             /** Format: int32 */
             limit?: number | null;
+        };
+        ThreadTimelineRow: {
+            collapsedRows: components["schemas"]["ThreadTimelineWorkDetailRow"][];
+            /** Format: int64 */
+            displayOrder: number;
+            dividerBefore?: string | null;
+            fileChanges: components["schemas"]["ThreadTimelineFileChangeEntry"][];
+            id: string;
+            item?: null | components["schemas"]["ThreadTimelineSnapshotItem"];
+            items: components["schemas"]["ThreadTimelineSnapshotItem"][];
+            kind: string;
+            status: string;
+            /** Format: int64 */
+            timestampMs?: number | null;
+            turnId?: string | null;
+            work?: null | components["schemas"]["ThreadTimelineWorkSummary"];
         };
         ThreadTimelineSnapshot: {
             activeTurnId?: string | null;
@@ -2360,6 +2387,7 @@ export interface components {
             liveState: components["schemas"]["ThreadLiveState"];
             pendingApprovalRequests: components["schemas"]["PendingTimelineRequestSummary"][];
             pendingUserInputRequests: components["schemas"]["PendingTimelineRequestSummary"][];
+            rows: components["schemas"]["ThreadTimelineRow"][];
             turns: components["schemas"]["ThreadTimelineSnapshotTurn"][];
             /** Format: int64 */
             viewRevision: number;
@@ -2396,6 +2424,27 @@ export interface components {
             olderCursor?: string | null;
             resetWindow?: boolean;
         };
+        ThreadTimelineWorkDetailRow: {
+            /** Format: int64 */
+            displayOrder: number;
+            dividerBefore?: string | null;
+            fileChanges: components["schemas"]["ThreadTimelineFileChangeEntry"][];
+            id: string;
+            item?: null | components["schemas"]["ThreadTimelineSnapshotItem"];
+            items: components["schemas"]["ThreadTimelineSnapshotItem"][];
+            kind: string;
+            status: string;
+            /** Format: int64 */
+            timestampMs?: number | null;
+            turnId?: string | null;
+        };
+        ThreadTimelineWorkSummary: {
+            /** Format: int64 */
+            completedAt?: number | null;
+            /** Format: int64 */
+            startedAt?: number | null;
+            state: string;
+        };
         ThreadTurnSnapshot: {
             /** Format: int64 */
             completedAt?: number | null;
@@ -2412,8 +2461,11 @@ export interface components {
             liveState: components["schemas"]["ThreadLiveState"];
             pendingApprovalRequests: components["schemas"]["PendingTimelineRequestSummary"][];
             pendingUserInputRequests: components["schemas"]["PendingTimelineRequestSummary"][];
+            removeRowIds?: string[];
+            rows?: components["schemas"]["ThreadTimelineRow"][] | null;
             threadId: string;
             turns: components["schemas"]["ThreadTimelineSnapshotTurn"][];
+            upsertRows?: components["schemas"]["ThreadTimelineRow"][];
             /** Format: int64 */
             viewRevision: number;
         };

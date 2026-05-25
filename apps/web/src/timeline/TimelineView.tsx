@@ -9,13 +9,11 @@ import { ApprovalCard, ThreadApprovalStack } from "../approvals/ApprovalCard";
 import type { ImageLightboxImage } from "../images/types";
 import {
   buildApprovalIndex,
-  deriveTimelineRows,
   getTimelineRowApprovals,
   getUnanchoredApprovals,
-  type TimelineRow,
 } from "./derive";
 import { TimelineActivityGroupRenderer, TimelineFileChangesRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
-import type { TimelineItem, TimelineState } from "./reducer";
+import type { TimelineItem, TimelineRow, TimelineState } from "./reducer";
 
 const EMPTY_APPROVALS: Approval[] = [];
 
@@ -59,7 +57,7 @@ export function TimelineView({
   threadId?: string;
   timeline: TimelineState;
 }) {
-  const rows = useMemo(() => deriveTimelineRows(timeline, { showDebug }), [showDebug, timeline]);
+  const rows = timeline.rows;
   const [expandedWorkRowKeys, setExpandedWorkRowKeys] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
     setExpandedWorkRowKeys(new Set());
@@ -96,7 +94,7 @@ export function TimelineView({
       return next;
     });
   }, []);
-  const visibleRows = useMemo(() => timelineRenderRows(rows, expandedWorkRowKeys), [expandedWorkRowKeys, rows]);
+  const visibleRows = useMemo(() => rows.map((row) => ({ key: row.key, row })), [rows]);
   const messageTimestamps = useMemo(() => visibleMessageTimestamps(rows), [rows]);
   const approvalIndex = useMemo(() => buildApprovalIndex(approvals), [approvals]);
   const pendingRequestSummaries = useMemo(
@@ -323,22 +321,6 @@ function PendingRequestSummaryStack({ requests }: { requests: PendingTimelineReq
       ))}
     </Stack>
   );
-}
-
-function timelineRenderRows(rows: TimelineRow[], expandedWorkRowKeys: ReadonlySet<string>): TimelineRenderRow[] {
-  return rows.flatMap((row) => {
-    const renderRow: TimelineRenderRow = { key: row.key, row };
-    if (row.type !== "work" || !expandedWorkRowKeys.has(row.key)) {
-      return [renderRow];
-    }
-    return [
-      renderRow,
-      ...row.collapsedRows.map((collapsedRow) => ({
-        key: `${row.key}/expanded/${collapsedRow.key}`,
-        row: collapsedRow,
-      })),
-    ];
-  });
 }
 
 function HiddenDebugPanel({
@@ -569,7 +551,26 @@ const TimelineRowView = memo(function TimelineRowView({
           expanded={isWorkExpanded}
           onExpandedChange={(expanded) => onWorkExpandedChange(row.key, expanded)}
           row={row}
-        />
+        >
+          <Stack gap={8} mt={8}>
+            {row.collapsedRows.map((collapsedRow) => (
+              <TimelineRowView
+                approvals={[]}
+                imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+                isWorkExpanded={false}
+                key={collapsedRow.key}
+                onApprovalDecision={onApprovalDecision}
+                onWorkExpandedChange={onWorkExpandedChange}
+                onImageOpen={onImageOpen}
+                onMarkdownOpen={onMarkdownOpen}
+                row={collapsedRow}
+                showDebug={showDebug}
+                threadId={threadId}
+                toolbarTimestamps={toolbarTimestamps}
+              />
+            ))}
+          </Stack>
+        </TimelineWorkRowRenderer>
       ) : row.type === "activity" ? (
         <TimelineActivityGroupRenderer
           imagePreviewUrlsByPath={imagePreviewUrlsByPath}
@@ -580,7 +581,7 @@ const TimelineRowView = memo(function TimelineRowView({
           threadId={threadId}
         />
       ) : row.type === "file_changes" ? (
-        <TimelineFileChangesRenderer items={row.items} showDebug={showDebug} />
+        <TimelineFileChangesRenderer entries={row.entries} showDebug={showDebug} />
       ) : (
         <TimelineItemRenderer
           item={row.item}

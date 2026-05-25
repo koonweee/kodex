@@ -9,6 +9,7 @@ import {
   activeThread,
   appCss,
   baseRoutes,
+  canonicalRowsFromSnapshotItems,
   clickMenuItem as clickMenuItemWithDeps,
   highReasoningModel,
   mockGateway,
@@ -755,6 +756,21 @@ describe("MVP timeline flows", () => {
           threadId: "thread-2",
           activeTurnId: null,
           liveState: "idle",
+          rows: canonicalRowsFromSnapshotItems([
+            {
+              id: "projection-turn-2-agent-2",
+              threadId: "thread-2",
+              turnId: "turn-2",
+              itemId: "agent-2",
+              itemType: "agentMessage",
+              displayOrder: 2,
+              status: "completed",
+              timestampMs: 2,
+              payload: {
+                item: { id: "agent-2", type: "agentMessage", text: "External recovered snapshot" },
+              },
+            },
+          ]),
           items: [
             {
               id: "projection-turn-2-agent-2",
@@ -950,6 +966,21 @@ function terminalProjectionEvent({
       turns: [{ id: turnId, status: "completed" }],
       pendingApprovalRequests: [],
       pendingUserInputRequests: [],
+      rows: canonicalRowsFromSnapshotItems([
+        {
+          id: `projection-${turnId}-${itemId}`,
+          threadId,
+          turnId,
+          itemId,
+          itemType: "agentMessage",
+          status: "completed",
+          displayOrder: seq,
+          timestampMs: seq,
+          payload: {
+            item: { id: itemId, type: "agentMessage", phase: "final_answer", text },
+          },
+        },
+      ]),
       items: [
         {
           id: `projection-${turnId}-${itemId}`,

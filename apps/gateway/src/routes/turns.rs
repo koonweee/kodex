@@ -8,8 +8,8 @@ use utoipa::ToSchema;
 
 use crate::{
     api::AppState,
-    app_server_api::{self, RawAppServerResponse, TurnStartOptions, UserInput},
-    error::ApiResult,
+    app_server_api::{self, CodexClient, RawAppServerResponse, TurnStartOptions, UserInput},
+    error::{ApiError, ApiResult},
     queue, skills, turn_lifecycle,
 };
 
@@ -104,9 +104,13 @@ pub async fn submit_thread_input(
     .await?;
     turn_lifecycle::record_turn_starting(&state, &thread_id).await?;
     drop(submit_guard);
-    let response = match app_server_api::client(&state.app_server)
-        .turn_start(thread_id.clone(), resolved.input.clone(), options)
-        .await
+    let response = match turn_start_resuming_missing_thread_once(
+        &state,
+        &thread_id,
+        resolved.input.clone(),
+        options,
+    )
+    .await
     {
         Ok(response) => response,
         Err(error) => {
@@ -138,6 +142,60 @@ pub async fn submit_thread_input(
     }))
 }
 
+async fn turn_start_resuming_missing_thread_once(
+    state: &AppState,
+    thread_id: &str,
+    input: Vec<UserInput>,
+    options: TurnStartOptions,
+) -> ApiResult<RawAppServerResponse> {
+    let client = app_server_api::client(&state.app_server);
+    match client
+        .turn_start(thread_id.to_string(), input.clone(), options.clone())
+        .await
+    {
+        Ok(response) => Ok(response),
+        Err(error) if app_server_error_mentions_missing_thread(&error) => {
+            resume_thread_for_turn_start(state, &client, thread_id).await?;
+            client
+                .turn_start(thread_id.to_string(), input, options)
+                .await
+        }
+        Err(error) => Err(error),
+    }
+}
+
+async fn resume_thread_for_turn_start(
+    state: &AppState,
+    client: &CodexClient,
+    thread_id: &str,
+) -> ApiResult<()> {
+    tracing::info!(
+        thread_id,
+        "turn/start reported missing thread; resuming thread before retry"
+    );
+    let mut response = client
+        .thread_resume(thread_id.to_string(), serde_json::json!({}))
+        .await?;
+    super::threads::apply_thread_command_response_state(state, &mut response).await
+}
+
+fn app_server_error_mentions_missing_thread(error: &ApiError) -> bool {
+    match error {
+        ApiError::BadGateway(message) => message_mentions_missing_thread(message),
+        _ => false,
+    }
+}
+
+fn message_mentions_missing_thread(message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    (message.contains("thread")
+        && (message.contains("not found")
+            || message.contains("no such")
+            || message.contains("does not exist")
+            || message.contains("unknown")))
+        || message.contains("no rollout found for thread id")
+}
+
 #[utoipa::path(post, path = "/v1/threads/{threadId}/turns", request_body = TurnStartRequest, responses((status = 200, body = RawAppServerResponse)))]
 pub async fn start_turn(
     State(state): State<AppState>,
@@ -154,13 +212,13 @@ pub async fn start_turn(
         &resolved.skills,
     )
     .await?;
-    let response = match app_server_api::client(&state.app_server)
-        .turn_start(
-            thread_id.clone(),
-            resolved.input.clone(),
-            request.options.clone(),
-        )
-        .await
+    let response = match turn_start_resuming_missing_thread_once(
+        &state,
+        &thread_id,
+        resolved.input.clone(),
+        request.options.clone(),
+    )
+    .await
     {
         Ok(response) => response,
         Err(error) => {

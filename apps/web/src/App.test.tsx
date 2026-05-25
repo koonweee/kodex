@@ -44,34 +44,36 @@ function threadDetail(thread: Record<string, unknown>, turns: ReturnType<typeof 
 function timelineFromTurns(thread: Record<string, unknown>, turns: ReturnType<typeof snapshotTurn>[]) {
   let displayOrder = 0;
   const activeTurn = [...turns].reverse().find((turn) => !["completed", "failed", "cancelled"].includes(turn.status));
+  const items = turns.flatMap((turn) =>
+    turn.items.map((item) => {
+      const snapshot = item as { id?: string; itemType?: string; rawPayload?: unknown };
+      displayOrder += 1;
+      return {
+        id: `projection-${turn.id}-${snapshot.id ?? displayOrder}`,
+        threadId: String(thread.id),
+        turnId: turn.id,
+        itemId: snapshot.id ?? `item-${displayOrder}`,
+        itemType: snapshot.itemType ?? "unknown",
+        status: turn.status === "completed" ? "completed" : turn.status,
+        displayOrder,
+        codexMethod: turn.status === "completed" ? "item/completed" : "item/upsert",
+        timestampMs: displayOrder,
+        payload: {
+          source: "appServerSnapshot",
+          turnId: turn.id,
+          itemId: snapshot.id ?? `item-${displayOrder}`,
+          item: snapshot.rawPayload ?? item,
+          itemSnapshot: item,
+        },
+      };
+    }),
+  );
   return {
     viewRevision: 1,
     activeTurnId: activeTurn?.id ?? null,
     liveState: thread.status === "active" ? "streaming" : "idle",
-    items: turns.flatMap((turn) =>
-      turn.items.map((item) => {
-        const snapshot = item as { id?: string; itemType?: string; rawPayload?: unknown };
-        displayOrder += 1;
-        return {
-          id: `projection-${turn.id}-${snapshot.id ?? displayOrder}`,
-          threadId: String(thread.id),
-          turnId: turn.id,
-          itemId: snapshot.id ?? `item-${displayOrder}`,
-          itemType: snapshot.itemType ?? "unknown",
-          status: turn.status === "completed" ? "completed" : turn.status,
-          displayOrder,
-          codexMethod: turn.status === "completed" ? "item/completed" : "item/upsert",
-          timestampMs: displayOrder,
-          payload: {
-            source: "appServerSnapshot",
-            turnId: turn.id,
-            itemId: snapshot.id ?? `item-${displayOrder}`,
-            item: snapshot.rawPayload ?? item,
-            itemSnapshot: item,
-          },
-        };
-      }),
-    ),
+    rows: canonicalRowsFromSnapshotItems(items),
+    items,
   };
 }
 
@@ -92,6 +94,28 @@ function projectionPatchEvent({
   text?: string;
   displayOrder?: number;
 }) {
+  const item = {
+    id: `projection-${turnId}-${itemId}`,
+    threadId,
+    turnId,
+    itemId,
+    itemType: "agentMessage",
+    displayOrder,
+    status: "running",
+    timestampMs: displayOrder,
+    codexMethod: "item/upsert",
+    payload: {
+      source: "gatewayStream",
+      turnId,
+      itemId,
+      item: { id: itemId, type: "agentMessage", text },
+      itemSnapshot: {
+        id: itemId,
+        itemType: "agentMessage",
+        rawPayload: { id: itemId, type: "agentMessage", text },
+      },
+    },
+  };
   return {
     id,
     seq,
@@ -106,31 +130,149 @@ function projectionPatchEvent({
       threadId,
       activeTurnId: turnId,
       liveState: "streaming",
-      items: [
-        {
-          id: `projection-${turnId}-${itemId}`,
-          threadId,
-          turnId,
-          itemId,
-          itemType: "agentMessage",
-          displayOrder,
-          status: "running",
-          timestampMs: displayOrder,
-          payload: {
-            source: "gatewayStream",
-            turnId,
-            itemId,
-            item: { id: itemId, type: "agentMessage", text },
-            itemSnapshot: {
-              id: itemId,
-              itemType: "agentMessage",
-              rawPayload: { id: itemId, type: "agentMessage", text },
-            },
-          },
-        },
-      ],
+      pendingApprovalRequests: [],
+      pendingUserInputRequests: [],
+      rows: canonicalRowsFromSnapshotItems([item]),
+      turns: [{ id: turnId, status: "running" }],
+      items: [item],
     },
     receivedAt: "2026-04-30T00:00:02Z",
+  };
+}
+
+type TestTimelineItem = {
+  id: string;
+  threadId: string;
+  turnId: string;
+  itemId: string;
+  itemType: string;
+  status: string;
+  displayOrder: number;
+  timestampMs?: number;
+  payload: { item?: unknown };
+};
+
+function canonicalRowsFromSnapshotItems(items: TestTimelineItem[]) {
+  const rows: unknown[] = [];
+  let activityItems: TestTimelineItem[] = [];
+  let fileItems: TestTimelineItem[] = [];
+
+  const flushActivity = () => {
+    if (activityItems.length === 0) {
+      return;
+    }
+    const first = activityItems[0];
+    rows.push({
+      id: `activity-${first.id}`,
+      kind: "activity",
+      turnId: first.turnId,
+      displayOrder: first.displayOrder,
+      status: first.status,
+      timestampMs: first.timestampMs,
+      item: null,
+      items: activityItems,
+      fileChanges: [],
+      work: null,
+      collapsedRows: [],
+      dividerBefore: null,
+    });
+    activityItems = [];
+  };
+  const flushFiles = () => {
+    if (fileItems.length === 0) {
+      return;
+    }
+    const first = fileItems[0];
+    rows.push({
+      id: `file-changes-turn-${first.turnId}`,
+      kind: "file_changes",
+      turnId: first.turnId,
+      displayOrder: first.displayOrder,
+      status: first.status,
+      timestampMs: first.timestampMs,
+      item: null,
+      items: [],
+      fileChanges: fileItems.map(fileChangeEntryFromItem),
+      work: null,
+      collapsedRows: [],
+      dividerBefore: null,
+    });
+    fileItems = [];
+  };
+
+  for (const item of [...items].sort((left, right) => left.displayOrder - right.displayOrder)) {
+    const kind = canonicalKind(item.itemType);
+    if (kind === "file_change") {
+      flushActivity();
+      fileItems.push(item);
+      continue;
+    }
+    if (isActivityKind(kind)) {
+      flushFiles();
+      activityItems.push(item);
+      continue;
+    }
+    flushActivity();
+    flushFiles();
+    rows.push(canonicalItemRow(item, kind));
+  }
+  flushActivity();
+  flushFiles();
+  return rows;
+}
+
+function canonicalItemRow(item: TestTimelineItem, kind = canonicalKind(item.itemType)) {
+  return {
+    id: `item-${item.id}`,
+    kind,
+    turnId: item.turnId,
+    displayOrder: item.displayOrder,
+    status: item.status,
+    timestampMs: item.timestampMs,
+    item,
+    items: [],
+    fileChanges: [],
+    work: null,
+    collapsedRows: [],
+    dividerBefore: null,
+  };
+}
+
+function canonicalKind(itemType: string) {
+  const normalized = itemType.toLowerCase().replace(/[_-]/g, "");
+  const kinds: Record<string, string> = {
+    agentmessage: "assistant_message",
+    assistantmessage: "assistant_message",
+    collabagenttoolcall: "collab_agent_tool_call",
+    commandexecution: "command_execution",
+    dynamictoolcall: "dynamic_tool_call",
+    filechange: "file_change",
+    imageview: "image_view",
+    mcptoolcall: "mcp_tool_call",
+    usermessage: "user_message",
+    websearch: "web_search_group",
+  };
+  return kinds[normalized] ?? itemType;
+}
+
+function isActivityKind(kind: string) {
+  return ["collab_agent_tool_call", "command_execution", "dynamic_tool_call", "image_view", "mcp_tool_call", "web_search_group"].includes(kind);
+}
+
+function fileChangeEntryFromItem(item: TestTimelineItem) {
+  const payload = item.payload.item && typeof item.payload.item === "object" ? item.payload.item as Record<string, unknown> : {};
+  const changes = Array.isArray(payload.changes) ? payload.changes : [];
+  const first = changes[0] && typeof changes[0] === "object" ? changes[0] as Record<string, unknown> : payload;
+  const path = typeof first.path === "string" ? first.path : "unknown";
+  const diff = typeof first.diff === "string" ? first.diff : "";
+  return {
+    id: `file-change-${item.id}`,
+    path,
+    action: "Modified",
+    additions: diff.split("\n").filter((line) => line.startsWith("+") && !line.startsWith("+++")).length,
+    deletions: diff.split("\n").filter((line) => line.startsWith("-") && !line.startsWith("---")).length,
+    diff,
+    itemIds: [item.id],
   };
 }
 

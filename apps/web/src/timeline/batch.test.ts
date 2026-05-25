@@ -22,29 +22,9 @@ function event(overrides: Partial<EventEnvelope> & { text?: string }): EventEnve
       threadId: "thread-1",
       activeTurnId: "turn-1",
       liveState: "streaming",
-      items: [
-        {
-          id: "projection-turn-1-answer-1",
-          threadId: "thread-1",
-          turnId: "turn-1",
-          itemId: "answer-1",
-          itemType: "agentMessage",
-          displayOrder: 1,
-          status: "running",
-          timestampMs: 1,
-          payload: {
-            source: "gatewayStream",
-            turnId: "turn-1",
-            itemId: "answer-1",
-            item: { id: "answer-1", type: "agentMessage", text },
-            itemSnapshot: {
-              id: "answer-1",
-              itemType: "agentMessage",
-              rawPayload: { id: "answer-1", type: "agentMessage", text },
-            },
-          },
-        },
-      ],
+      rows: [canonicalRow(text)],
+      turns: [],
+      items: [canonicalItem(text)],
     },
     receivedAt: "2026-04-30T00:00:00Z",
     ...eventOverrides,
@@ -83,7 +63,7 @@ describe("timeline event batching", () => {
     expect(events.map((queuedEvent) => queuedEvent.id)).toEqual(originalOrder);
   });
 
-  it("coalesces same-frame projection patch bursts to the latest patch", () => {
+  it("applies same-frame projection patch bursts in sequence", () => {
     const events = [
       event({ id: "event-1", seq: 1, text: "H" }),
       event({ id: "event-2", seq: 2, text: "He" }),
@@ -99,26 +79,9 @@ describe("timeline event batching", () => {
     expect(state.items[0].debugEvents).toHaveLength(1);
   });
 
-  it("coalesces adjacent canonical item deltas for the same assistant row", () => {
+  it("keeps the latest same-frame canonical row state after sequential patches", () => {
     const state = applyTimelineEventBatch(createTimelineState(), [
-      deltaEvent({ id: "delta-1", seq: 1, delta: "Hel" }),
-      deltaEvent({ id: "delta-2", seq: 2, delta: "lo" }),
-      deltaEvent({ id: "delta-3", seq: 3, delta: "!" }),
-    ]);
-
-    expect(state.items).toHaveLength(1);
-    expect(state.items[0]).toMatchObject({
-      id: "projection-turn-1-answer-1",
-      text: "Hello!",
-      status: "running",
-    });
-    expect(state.items[0].debugEvents).toHaveLength(1);
-    expect(state.lastSeq).toBe(3);
-  });
-
-  it("lets a same-frame canonical patch supersede queued item deltas", () => {
-    const state = applyTimelineEventBatch(createTimelineState(), [
-      deltaEvent({ id: "delta-1", seq: 1, delta: "Partial" }),
+      event({ id: "event-1", seq: 1, text: "Partial" }),
       event({ id: "event-2", seq: 2, text: "Canonical final" }),
     ]);
 
@@ -148,26 +111,45 @@ describe("timeline event batching", () => {
   });
 });
 
-function deltaEvent(overrides: Partial<EventEnvelope> & { delta: string }): EventEnvelope {
+function canonicalItem(text: string) {
   return {
-    id: overrides.id ?? `delta-${overrides.seq ?? 1}`,
-    seq: overrides.seq ?? 1,
-    kind: "thread_view.item_delta",
-    codexMethod: "thread_view/item_delta",
+    id: "projection-turn-1-answer-1",
     threadId: "thread-1",
     turnId: "turn-1",
     itemId: "answer-1",
-    projectId: "project-1",
+    itemType: "agentMessage",
+    displayOrder: 1,
+    status: "running",
+    timestampMs: 1,
+    codexMethod: "item/upsert",
     payload: {
-      viewRevision: overrides.seq ?? 1,
-      threadId: "thread-1",
+      source: "gatewayStream",
       turnId: "turn-1",
       itemId: "answer-1",
-      delta: overrides.delta,
-      itemType: "agentMessage",
-      liveState: "streaming",
+      item: { id: "answer-1", type: "agentMessage", text },
+      itemSnapshot: {
+        id: "answer-1",
+        itemType: "agentMessage",
+        rawPayload: { id: "answer-1", type: "agentMessage", text },
+      },
     },
-    receivedAt: "2026-04-30T00:00:00Z",
-    ...overrides,
+  };
+}
+
+function canonicalRow(text: string) {
+  const item = canonicalItem(text);
+  return {
+    id: `item-${item.id}`,
+    kind: "assistant_message",
+    turnId: item.turnId,
+    displayOrder: item.displayOrder,
+    status: item.status,
+    timestampMs: item.timestampMs,
+    item,
+    items: [],
+    fileChanges: [],
+    work: null,
+    collapsedRows: [],
+    dividerBefore: null,
   };
 }

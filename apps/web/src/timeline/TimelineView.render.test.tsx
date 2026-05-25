@@ -216,8 +216,8 @@ describe("TimelineView debug rendering", () => {
       </MantineProvider>,
     );
 
-    const question = screen.getByText("Visible question");
-    const answer = screen.getByText("Visible answer");
+    const question = screen.getByText("Visible question").closest(".kodex-timeline-virtual-row")!;
+    const answer = screen.getByText("Visible answer").closest(".kodex-timeline-virtual-row")!;
     const panel = screen.getByText("Hidden debug events");
     expect(question.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(answer.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -384,8 +384,7 @@ describe("TimelineView debug rendering", () => {
       </MantineProvider>,
     );
 
-    expect(screen.getByText("12 files changed")).toBeInTheDocument();
-    expect(screen.getByText("11 files changed")).toBeInTheDocument();
+    expect(screen.getByText("23 files changed")).toBeInTheDocument();
     expect(screen.getByLabelText("Implement Review Loop skill")).toBeInTheDocument();
     expect(container.querySelector(".kodex-work-collapsed-rows")).not.toBeInTheDocument();
     expect([...container.querySelectorAll<HTMLElement>(".kodex-timeline-virtual-row")].every((row) => !row.style.transform)).toBe(

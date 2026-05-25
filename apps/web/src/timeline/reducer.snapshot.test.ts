@@ -45,6 +45,8 @@ describe("timeline canonical snapshots and patches", () => {
       text: "Partial answer",
       status: "running",
     });
+    expect(state.rows).toHaveLength(1);
+    expect(state.rows[0]).toMatchObject({ type: "item" });
     expect(state.activeTurnId).toBe("turn-1");
     expect(state.viewRevision).toBe(2);
   });
@@ -70,20 +72,51 @@ describe("timeline canonical snapshots and patches", () => {
       activeTurnId: "turn-2",
       liveState: "streaming",
       items: [timelineItem({ id: "projection-turn-2-agent-1", turnId: "turn-2", text: "Fresh live", displayOrder: 2 })],
+      rows: [
+        canonicalRow(
+          timelineItem({ id: "projection-turn-2-agent-1", turnId: "turn-2", text: "Fresh live", displayOrder: 2 }),
+          { displayOrder: 300 },
+        ),
+      ],
     }));
 
+    const olderItem = timelineItem({
+      id: "projection-turn-1-agent-1",
+      turnId: "turn-1",
+      itemId: "agent-1",
+      text: "Older",
+      displayOrder: 1,
+    });
+    const staleLiveItem = timelineItem({
+      id: "projection-turn-2-agent-1",
+      turnId: "turn-2",
+      text: "Stale live",
+      displayOrder: 2,
+    });
+    const fileChangeItem = timelineItem({
+      id: "projection-turn-1-file-1",
+      turnId: "turn-1",
+      itemId: "file-1",
+      itemType: "fileChange",
+      text: "",
+      displayOrder: 2,
+    });
     state = applyTimelineHistoryWindow(state, snapshot({
       viewRevision: 9,
       activeTurnId: null,
       liveState: "idle",
       historyPage: { olderCursor: "older-2", newerCursor: null, hasOlder: true, limit: 50, loadedTurnCount: 2 },
-      items: [
-        timelineItem({ id: "projection-turn-1-agent-1", turnId: "turn-1", itemId: "agent-1", text: "Older", displayOrder: 1 }),
-        timelineItem({ id: "projection-turn-2-agent-1", turnId: "turn-2", text: "Stale live", displayOrder: 2 }),
+      items: [olderItem, fileChangeItem, staleLiveItem],
+      rows: [
+        canonicalRow(olderItem, { displayOrder: 100 }),
+        fileChangesRow(fileChangeItem, { displayOrder: 200 }),
+        canonicalRow(staleLiveItem, { displayOrder: 300, text: "Fresh live" }),
       ],
     }));
 
     expect(state.items.map((item) => item.text)).toEqual(["Older", "Fresh live"]);
+    expect(state.rows.map((row) => row.type)).toEqual(["item", "file_changes", "item"]);
+    expect(state.rows.map((row) => row.displayOrder)).toEqual([100, 200, 300]);
     expect(state.olderCursor).toBe("older-2");
     expect(state.hasOlderHistory).toBe(true);
     expect(state.viewRevision).toBe(10);
@@ -146,6 +179,10 @@ describe("timeline canonical snapshots and patches", () => {
       items: [
         timelineItem({ id: "projection-turn-2-agent-1", turnId: "turn-2", itemId: "agent-1", text: "Second" }),
       ],
+      rows: [
+        canonicalRow(timelineItem({ id: "projection-turn-1-agent-1", turnId: "turn-1", itemId: "agent-1", text: "First" })),
+        canonicalRow(timelineItem({ id: "projection-turn-2-agent-1", turnId: "turn-2", itemId: "agent-1", text: "Second" })),
+      ],
     }));
 
     expect(state.items.map((item) => item.id)).toEqual(["projection-turn-1-agent-1", "projection-turn-2-agent-1"]);
@@ -159,9 +196,61 @@ describe("timeline canonical snapshots and patches", () => {
       items: [timelineItem({ turnId: "turn-1", text: "Answer" })],
     }));
 
+    expect(state.rows).toHaveLength(1);
+    expect(state.rows[0]).toMatchObject({ type: "item" });
     expect(state.turns).toMatchObject([
       { turnId: "turn-1", status: "completed", startedAtMs: 1_000, completedAtMs: 5_000 },
     ]);
+  });
+
+  it("converts canonical work row timestamps from seconds to milliseconds", () => {
+    const state = applyTimelineSnapshot(createTimelineState(), snapshot({
+      viewRevision: 4,
+      turns: [{ id: "turn-1", status: "completed", startedAt: 10, completedAt: 20 }],
+      items: [],
+      rows: [workRow({ startedAt: 10, completedAt: 20 })],
+    }));
+
+    expect(state.rows).toHaveLength(1);
+    expect(state.rows[0]).toMatchObject({
+      type: "work",
+      startedAtMs: 10_000,
+      completedAtMs: 20_000,
+    });
+  });
+
+  it("applies partial row upserts without replacing the loaded timeline", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot({
+      viewRevision: 1,
+      items: [
+        timelineItem({ id: "projection-turn-1-agent-1", turnId: "turn-1", itemId: "agent-1", text: "First", displayOrder: 1 }),
+        timelineItem({ id: "projection-turn-2-agent-1", turnId: "turn-2", itemId: "agent-2", text: "Second", displayOrder: 2 }),
+      ],
+    }));
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
+      viewRevision: 2,
+      activeTurnId: "turn-2",
+      liveState: "streaming",
+      rows: undefined,
+      upsertRows: [
+        canonicalRow(timelineItem({
+          id: "projection-turn-2-agent-1",
+          turnId: "turn-2",
+          itemId: "agent-2",
+          text: "Second updated",
+          displayOrder: 2,
+          status: "running",
+        })),
+      ],
+    }));
+
+    expect(state.items.map((item) => item.text)).toEqual(["First", "Second updated"]);
+    expect(state.rows.map((row) => row.key)).toEqual([
+      "row-projection-turn-1-agent-1",
+      "row-projection-turn-2-agent-1",
+    ]);
+    expect(state.viewRevision).toBe(2);
   });
 
   it("removes active-turn rows omitted from the canonical patch", () => {
@@ -214,12 +303,14 @@ function snapshot({
   pendingApprovalRequests = [],
   pendingUserInputRequests = [],
   historyPage,
+  rows = items.map((item) => canonicalRow(item)),
   turns = [],
 }: {
   viewRevision: number;
   activeTurnId?: string | null;
   liveState?: string;
   items: ReturnType<typeof timelineItem>[];
+  rows?: CanonicalTestRow[];
   pendingApprovalRequests?: ReturnType<typeof pendingRequest>[];
   pendingUserInputRequests?: ReturnType<typeof pendingRequest>[];
   historyPage?: ThreadViewResponse["historyPage"];
@@ -256,6 +347,7 @@ function snapshot({
       liveState,
       pendingApprovalRequests,
       pendingUserInputRequests,
+      rows,
       turns,
       items,
     },
@@ -267,9 +359,31 @@ function projectionPatchEvent(payload: {
   activeTurnId?: string | null;
   liveState?: string;
   items?: ReturnType<typeof timelineItem>[];
+  rows?: CanonicalTestRow[] | undefined;
+  upsertRows?: CanonicalTestRow[];
+  removeRowIds?: string[];
   pendingApprovalRequests?: ReturnType<typeof pendingRequest>[];
   pendingUserInputRequests?: ReturnType<typeof pendingRequest>[];
 }): EventEnvelope {
+  const patchPayload: Record<string, unknown> = {
+    threadId: "thread-1",
+    activeTurnId: payload.activeTurnId ?? null,
+    liveState: payload.liveState ?? "idle",
+    viewRevision: payload.viewRevision,
+    pendingApprovalRequests: payload.pendingApprovalRequests ?? [],
+    pendingUserInputRequests: payload.pendingUserInputRequests ?? [],
+    turns: [],
+    items: payload.items ?? [],
+  };
+  if (payload.rows !== undefined || payload.upsertRows === undefined) {
+    patchPayload.rows = payload.rows ?? (payload.items ?? []).map((item) => canonicalRow(item));
+  }
+  if (payload.upsertRows !== undefined) {
+    patchPayload.upsertRows = payload.upsertRows;
+  }
+  if (payload.removeRowIds !== undefined) {
+    patchPayload.removeRowIds = payload.removeRowIds;
+  }
   return {
     id: `patch-${payload.viewRevision}`,
     seq: payload.viewRevision,
@@ -279,19 +393,97 @@ function projectionPatchEvent(payload: {
     turnId: payload.activeTurnId ?? null,
     itemId: null,
     projectId: null,
-    payload: {
-      threadId: "thread-1",
-      activeTurnId: payload.activeTurnId ?? null,
-      liveState: payload.liveState ?? "idle",
-      viewRevision: payload.viewRevision,
-      pendingApprovalRequests: payload.pendingApprovalRequests ?? [],
-      pendingUserInputRequests: payload.pendingUserInputRequests ?? [],
-      turns: [],
-      items: payload.items ?? [],
-    },
+    payload: patchPayload,
     receivedAt: "2026-05-17T00:00:00Z",
+  } as EventEnvelope;
+}
+
+function canonicalRow(
+  item: ReturnType<typeof timelineItem>,
+  overrides: { displayOrder?: number; text?: string } = {},
+) {
+  const canonicalItem = overrides.text
+    ? {
+        ...item,
+        payload: {
+          ...item.payload,
+          item: { id: item.itemId, type: item.itemType, phase: "final_answer", text: overrides.text },
+        },
+      }
+    : item;
+  return {
+    id: `row-${item.id}`,
+    kind: item.itemType === "userMessage" ? "user_message" : "assistant_message",
+    turnId: item.turnId,
+    displayOrder: overrides.displayOrder ?? item.displayOrder,
+    status: item.status,
+    timestampMs: item.timestampMs,
+    item: canonicalItem,
+    items: [],
+    fileChanges: [],
+    work: null,
+    collapsedRows: [],
+    dividerBefore: null,
   };
 }
+
+function fileChangesRow(item: ReturnType<typeof timelineItem>, overrides: { displayOrder?: number } = {}) {
+  return {
+    id: `file-changes-${item.turnId}`,
+    kind: "file_changes",
+    turnId: item.turnId,
+    displayOrder: overrides.displayOrder ?? item.displayOrder,
+    status: item.status,
+    timestampMs: item.timestampMs,
+    item: null,
+    items: [],
+    fileChanges: [
+      {
+        id: `file-change-${item.id}`,
+        path: "src/a.rs",
+        action: "Modified",
+        additions: 1,
+        deletions: 0,
+        diff: "+line",
+        itemIds: [item.id],
+      },
+    ],
+    work: null,
+    collapsedRows: [],
+    dividerBefore: null,
+  };
+}
+
+function workRow({
+  turnId = "turn-1",
+  startedAt,
+  completedAt,
+  displayOrder = 1,
+  state = "completed",
+}: {
+  turnId?: string;
+  startedAt?: number | null;
+  completedAt?: number | null;
+  displayOrder?: number;
+  state?: string;
+}) {
+  return {
+    id: `work-${turnId}`,
+    kind: "work",
+    turnId,
+    displayOrder,
+    status: state,
+    timestampMs: null,
+    item: null,
+    items: [],
+    fileChanges: [],
+    work: { state, startedAt, completedAt },
+    collapsedRows: [],
+    dividerBefore: null,
+  };
+}
+
+type CanonicalTestRow = ReturnType<typeof canonicalRow> | ReturnType<typeof fileChangesRow> | ReturnType<typeof workRow>;
 
 function timelineItem({
   id = "projection-turn-1-agent-1",

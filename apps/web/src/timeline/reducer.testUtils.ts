@@ -22,6 +22,28 @@ function event(overrides: Partial<TimelineEventEnvelope>): TimelineEventEnvelope
   const snapshotItemId = presentationFixtureItemId(base);
   const itemType = fixtureItemType(base.payload);
   const status = fixtureStatus(base);
+  const item = {
+    id: snapshotItemId,
+    threadId: base.threadId ?? "thread-1",
+    turnId: base.turnId ?? "turn-1",
+    itemId: base.itemId ?? base.id,
+    itemType,
+    status,
+    displayOrder: base.seq,
+    codexMethod: base.codexMethod ?? "item/upsert",
+    timestampMs: Date.parse(base.receivedAt),
+    payload: {
+      source: "gateway_stream",
+      turnId: base.turnId ?? "turn-1",
+      itemId: base.itemId ?? base.id,
+      item: payloadItem(base.payload),
+      itemSnapshot: {
+        id: base.itemId ?? base.id,
+        itemType,
+        rawPayload: payloadItem(base.payload),
+      },
+    },
+  };
   return {
     ...base,
     kind: "thread_view.patch",
@@ -32,32 +54,48 @@ function event(overrides: Partial<TimelineEventEnvelope>): TimelineEventEnvelope
       pendingApprovalRequests: [],
       pendingUserInputRequests: [],
       turns: [],
-      items: [
-        {
-          id: snapshotItemId,
-          threadId: base.threadId ?? "thread-1",
-          turnId: base.turnId ?? "turn-1",
-          itemId: base.itemId ?? base.id,
-          itemType,
-          status,
-          displayOrder: base.seq,
-          codexMethod: base.codexMethod ?? "item/upsert",
-          timestampMs: Date.parse(base.receivedAt),
-          payload: {
-            source: "gateway_stream",
-            turnId: base.turnId ?? "turn-1",
-            itemId: base.itemId ?? base.id,
-            item: payloadItem(base.payload),
-            itemSnapshot: {
-              id: base.itemId ?? base.id,
-              itemType,
-              rawPayload: payloadItem(base.payload),
-            },
-          },
-        },
-      ],
+      rows: [canonicalRow(item)],
+      items: [item],
     },
   };
+}
+
+function canonicalRow(item: {
+  id: string;
+  turnId: string;
+  itemType: string;
+  status: string;
+  displayOrder: number;
+  timestampMs: number;
+}) {
+  return {
+    id: `item-${item.id}`,
+    kind: canonicalKind(item.itemType),
+    turnId: item.turnId,
+    displayOrder: item.displayOrder,
+    status: item.status,
+    timestampMs: item.timestampMs,
+    item,
+    items: [],
+    fileChanges: [],
+    work: null,
+    collapsedRows: [],
+    dividerBefore: null,
+  };
+}
+
+function canonicalKind(itemType: string) {
+  const normalized = itemType.toLowerCase().replace(/[_-]/g, "");
+  const kinds: Record<string, string> = {
+    agentmessage: "assistant_message",
+    assistantmessage: "assistant_message",
+    commandexecution: "command_execution",
+    filechange: "file_change",
+    reasoning: "reasoning_summary",
+    usermessage: "user_message",
+    websearch: "web_search_group",
+  };
+  return kinds[normalized] ?? itemType;
 }
 
 function payloadHasItem(payload: unknown): boolean {
