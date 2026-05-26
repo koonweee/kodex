@@ -253,6 +253,71 @@ describe("timeline canonical snapshots and patches", () => {
     expect(state.viewRevision).toBe(2);
   });
 
+  it("drops stale rows from the same turn when a partial patch reshapes that turn", () => {
+    const user = timelineItem({
+      id: "projection-turn-1-user-1",
+      turnId: "turn-1",
+      itemId: "user-1",
+      itemType: "userMessage",
+      text: "Change files",
+      displayOrder: 1,
+    });
+    const file = timelineItem({
+      id: "projection-turn-1-file-1",
+      turnId: "turn-1",
+      itemId: "file-1",
+      itemType: "fileChange",
+      text: "",
+      displayOrder: 2,
+    });
+    const answer = timelineItem({
+      id: "projection-turn-1-agent-1",
+      turnId: "turn-1",
+      itemId: "agent-1",
+      text: "Done",
+      displayOrder: 3,
+    });
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot({
+      viewRevision: 1,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      items: [user, file],
+      rows: [
+        canonicalRow(user),
+        workRow({ turnId: "turn-1", displayOrder: 101, state: "running" }),
+        fileChangesRow(file, { displayOrder: 200 }),
+      ],
+    }));
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
+      viewRevision: 2,
+      activeTurnId: null,
+      liveState: "idle",
+      rows: undefined,
+      upsertRows: [
+        canonicalRow(user),
+        workRow({
+          turnId: "turn-1",
+          displayOrder: 101,
+          state: "completed",
+          collapsedRows: [fileChangesRow(file, { displayOrder: 200 })],
+        }),
+        canonicalRow(answer, { displayOrder: 300 }),
+      ],
+    }));
+
+    expect(state.rows.map((row) => row.key)).toEqual([
+      "row-projection-turn-1-user-1",
+      "work-turn-1",
+      "row-projection-turn-1-agent-1",
+    ]);
+    expect(state.rows.filter((row) => row.type === "file_changes")).toHaveLength(0);
+    expect(state.rows.find((row) => row.type === "work")).toMatchObject({
+      type: "work",
+      collapsedRows: [{ type: "file_changes" }],
+    });
+  });
+
   it("removes active-turn rows omitted from the canonical patch", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot({
       viewRevision: 1,
@@ -460,12 +525,14 @@ function workRow({
   completedAt,
   displayOrder = 1,
   state = "completed",
+  collapsedRows = [],
 }: {
   turnId?: string;
   startedAt?: number | null;
   completedAt?: number | null;
   displayOrder?: number;
   state?: string;
+  collapsedRows?: Array<ReturnType<typeof canonicalRow> | ReturnType<typeof fileChangesRow>>;
 }) {
   return {
     id: `work-${turnId}`,
@@ -478,7 +545,7 @@ function workRow({
     items: [],
     fileChanges: [],
     work: { state, startedAt, completedAt },
-    collapsedRows: [],
+    collapsedRows,
     dividerBefore: null,
   };
 }

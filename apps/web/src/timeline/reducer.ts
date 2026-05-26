@@ -424,8 +424,14 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
     prepareTimelineIndexesForUpdate(indexesForState(state)),
   );
   const upsertsByKey = new Map(mappedUpserts.rows.map((row) => [row.key, row]));
+  const replacedItemIds = new Set(mappedUpserts.rows.flatMap(timelineRowCanonicalItemIds));
   const rows = [
-    ...state.rows.filter((row) => !removedRowIds.has(row.key) && !upsertsByKey.has(row.key)),
+    ...state.rows.filter(
+      (row) =>
+        !removedRowIds.has(row.key) &&
+        !upsertsByKey.has(row.key) &&
+        !timelineRowCanonicalItemIds(row).some((itemId) => replacedItemIds.has(itemId)),
+    ),
     ...mappedUpserts.rows,
   ].sort((left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right));
   const currentIndexes = createEmptyTimelineIndexes();
@@ -438,6 +444,19 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
     indexes: currentIndexes,
     rows,
   });
+}
+
+function timelineRowCanonicalItemIds(row: TimelineRow): string[] {
+  if (row.type === "item") {
+    return [row.item.id];
+  }
+  if (row.type === "activity") {
+    return row.items.map((item) => item.id);
+  }
+  if (row.type === "file_changes") {
+    return row.itemIds;
+  }
+  return row.collapsedRows.flatMap(timelineRowCanonicalItemIds);
 }
 
 function withSnapshotTurnMetadata(state: TimelineState, snapshot: ThreadViewResponse): TimelineState {
