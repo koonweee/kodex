@@ -1020,6 +1020,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads/{threadId}/interrupt-current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["interrupt_current_turn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/threads/{threadId}/name": {
         parameters: {
             query?: never;
@@ -2274,6 +2290,13 @@ export interface components {
             queuedInput?: null | components["schemas"]["QueuedInput"];
             rawPayload?: unknown;
         };
+        /** @enum {string} */
+        ThreadInterruptCurrentDisposition: "interrupted" | "idle";
+        ThreadInterruptCurrentResponse: {
+            disposition: components["schemas"]["ThreadInterruptCurrentDisposition"];
+            interruptedTurnId?: string | null;
+            rawPayload?: unknown;
+        };
         ThreadItemSnapshot: {
             id: string;
             itemType: string;
@@ -2304,6 +2327,14 @@ export interface components {
             threadId: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        ThreadReadStateUpdate: {
+            /** Format: int64 */
+            lastCompletedAgentTurnSeq?: number | null;
+            /** Format: int64 */
+            seenCompletedAgentTurnSeq: number;
+            threadId: string;
+            unreadCompletedAgentTurn: boolean;
         };
         /** @enum {string} */
         ThreadStatus: "notLoaded" | "idle" | "systemError" | "active";
@@ -4224,6 +4255,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadInputResponse"];
+                };
+            };
+        };
+    };
+    interrupt_current_turn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadInterruptCurrentResponse"];
                 };
             };
         };

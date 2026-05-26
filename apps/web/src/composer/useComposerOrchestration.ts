@@ -12,7 +12,7 @@ import { useMutation } from "@tanstack/react-query";
 
 import {
   deleteQueuedInput,
-  interruptTurn,
+  interruptCurrentTurn,
   retryQueuedInput,
   steerQueuedInput,
   submitThreadInput,
@@ -46,6 +46,7 @@ type UseComposerOrchestrationParams = {
   activeSelectedTurnId: string | null;
   canCompose: boolean;
   composerSettings: ComposerSettings;
+  selectedThreadComposerOverride: ComposerSettings | null;
   draftChatThreadSelected: boolean;
   draftThreadProjectId: string | null;
   isDraftThreadSelected: boolean;
@@ -65,6 +66,7 @@ export function useComposerOrchestration({
   activeSelectedTurnId,
   canCompose,
   composerSettings,
+  selectedThreadComposerOverride,
   draftChatThreadSelected,
   draftThreadProjectId,
   isDraftThreadSelected,
@@ -170,7 +172,11 @@ export function useComposerOrchestration({
         onThreadTurnStarted(selectedThreadId);
         draftControls.clearText();
         const input = await buildTurnInput(text, attachments, skillInputs, skillTextElements);
-        const response = await submitThreadInput(selectedThreadId, input, composerTurnOptions(composerSettings));
+        const response = await submitThreadInput(
+          selectedThreadId,
+          input,
+          selectedThreadComposerOverride ? composerTurnOptions(selectedThreadComposerOverride) : {},
+        );
         if (response.queuedInput) {
           onQueuedInputUpsert(response.queuedInput);
           clearPendingAttachments();
@@ -235,7 +241,7 @@ export function useComposerOrchestration({
       return;
     }
 
-    await interruptTurn(selectedThreadId, activeSelectedTurnId);
+    await interruptCurrentTurn(selectedThreadId);
   }
 
   async function handleSubmitQueuedSteer(row: QueuedSteerRow) {

@@ -16,6 +16,10 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/v1/threads/{thread_id}/input", post(submit_thread_input))
+        .route(
+            "/v1/threads/{thread_id}/interrupt-current",
+            post(interrupt_current_turn),
+        )
         .route("/v1/threads/{thread_id}/turns", post(start_turn))
         .route(
             "/v1/threads/{thread_id}/turns/{turn_id}/steer",
@@ -59,6 +63,21 @@ pub enum ThreadInputDisposition {
     Queued,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadInterruptCurrentResponse {
+    pub disposition: ThreadInterruptCurrentDisposition,
+    pub interrupted_turn_id: Option<String>,
+    pub raw_payload: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum ThreadInterruptCurrentDisposition {
+    Interrupted,
+    Idle,
+}
+
 #[utoipa::path(post, path = "/v1/threads/{threadId}/input", request_body = TurnStartRequest, responses((status = 200, body = ThreadInputResponse)))]
 pub async fn submit_thread_input(
     State(state): State<AppState>,
@@ -69,10 +88,6 @@ pub async fn submit_thread_input(
         skills::resolve_turn_input_with_skills_for_thread(&state, &thread_id, request.input)
             .await?;
     let options = request.options;
-    state
-        .store
-        .save_thread_turn_options(&thread_id, &options)
-        .await?;
 
     let submit_guard = state.thread_input_locks.lock(&thread_id).await;
     if turn_lifecycle::routed_active_turn_id(&state, &thread_id)
@@ -230,10 +245,6 @@ pub async fn start_turn(
             return Err(error);
         }
     };
-    state
-        .store
-        .save_thread_turn_options(&thread_id, &request.options)
-        .await?;
     if let Some(turn_id) = turn_lifecycle::pending_projection_turn_id(&response.payload) {
         turn_lifecycle::record_pending_user_projection(
             &state,
@@ -291,4 +302,27 @@ pub async fn interrupt_turn(
             .turn_interrupt(thread_id, turn_id)
             .await?,
     ))
+}
+
+#[utoipa::path(post, path = "/v1/threads/{threadId}/interrupt-current", responses((status = 200, body = ThreadInterruptCurrentResponse)))]
+pub async fn interrupt_current_turn(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+) -> ApiResult<Json<ThreadInterruptCurrentResponse>> {
+    let Some(active_turn_id) = turn_lifecycle::refreshed_active_turn_id(&state, &thread_id).await?
+    else {
+        return Ok(Json(ThreadInterruptCurrentResponse {
+            disposition: ThreadInterruptCurrentDisposition::Idle,
+            interrupted_turn_id: None,
+            raw_payload: None,
+        }));
+    };
+    let response = app_server_api::client(&state.app_server)
+        .turn_interrupt(thread_id, active_turn_id.clone())
+        .await?;
+    Ok(Json(ThreadInterruptCurrentResponse {
+        disposition: ThreadInterruptCurrentDisposition::Interrupted,
+        interrupted_turn_id: Some(active_turn_id),
+        raw_payload: Some(response.payload),
+    }))
 }

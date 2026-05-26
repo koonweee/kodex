@@ -1,7 +1,11 @@
 import type { QueryClient } from "@tanstack/react-query";
 
-import type { ThreadRead, ThreadSummary } from "../api/client";
+import type { ThreadRead, ThreadReadStateUpdate, ThreadSummary } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
+
+type CachedThreadSummary = ThreadSummary & {
+  readProjectionEventSeq?: number;
+};
 
 export function upsertProjectThread(queryClient: QueryClient, projectId: string, thread: ThreadSummary) {
   queryClient.setQueryData<ThreadSummary[]>(queryKeys.projectThreads(projectId), (current) =>
@@ -72,12 +76,45 @@ export function applyThreadPinState(
   }
 }
 
-export function applyThreadReadState(queryClient: QueryClient, threadId: string, readState: ThreadRead) {
-  updateThreadEverywhere(queryClient, threadId, (thread) => ({
+export function applyThreadReadState(
+  queryClient: QueryClient,
+  threadId: string,
+  readState: ThreadRead | ThreadReadStateUpdate,
+  eventSeq?: number,
+) {
+  updateThreadEverywhere(queryClient, threadId, (thread) => mergeThreadReadState(thread, readState, eventSeq));
+}
+
+export function mergeThreadReadState(
+  thread: ThreadSummary,
+  readState: ThreadRead | ThreadReadStateUpdate,
+  eventSeq?: number,
+): ThreadSummary {
+  const cachedThread = thread as CachedThreadSummary;
+  if (eventSeq !== undefined && (cachedThread.readProjectionEventSeq ?? 0) > eventSeq) {
+    return thread;
+  }
+  const eventLastCompleted =
+    "lastCompletedAgentTurnSeq" in readState ? readState.lastCompletedAgentTurnSeq : undefined;
+  const lastCompletedAgentTurnSeq =
+    eventLastCompleted === null || eventLastCompleted === undefined
+      ? thread.lastCompletedAgentTurnSeq
+      : Math.max(thread.lastCompletedAgentTurnSeq ?? 0, eventLastCompleted);
+  const seenCompletedAgentTurnSeq = Math.max(
+    thread.seenCompletedAgentTurnSeq ?? 0,
+    readState.seenCompletedAgentTurnSeq,
+  );
+  const unreadCompletedAgentTurn =
+    "unreadCompletedAgentTurn" in readState
+      ? readState.unreadCompletedAgentTurn || (lastCompletedAgentTurnSeq ?? 0) > seenCompletedAgentTurnSeq
+      : (lastCompletedAgentTurnSeq ?? 0) > seenCompletedAgentTurnSeq;
+  return {
     ...thread,
-    seenCompletedAgentTurnSeq: readState.seenCompletedAgentTurnSeq,
-    unreadCompletedAgentTurn: false,
-  }));
+    ...(eventSeq !== undefined ? { readProjectionEventSeq: eventSeq } : {}),
+    lastCompletedAgentTurnSeq,
+    seenCompletedAgentTurnSeq,
+    unreadCompletedAgentTurn,
+  };
 }
 
 export function replaceThreadEverywhere(queryClient: QueryClient, thread: ThreadSummary) {
@@ -252,6 +289,23 @@ function mergeNewerReadProjection(loadedThread: ThreadSummary, currentThread: Th
   const currentLastCompleted = currentThread.lastCompletedAgentTurnSeq ?? 0;
   const loadedSeen = loadedThread.seenCompletedAgentTurnSeq ?? 0;
   const currentSeen = currentThread.seenCompletedAgentTurnSeq ?? 0;
+  const currentReadProjectionEventSeq = (currentThread as CachedThreadSummary).readProjectionEventSeq;
+  const currentUnread = currentThread.unreadCompletedAgentTurn || currentLastCompleted > currentSeen;
+  if (
+    currentUnread &&
+    currentLastCompleted === loadedLastCompleted &&
+    currentSeen === loadedSeen &&
+    !loadedThread.unreadCompletedAgentTurn
+  ) {
+    return {
+      ...loadedThread,
+      ...(currentReadProjectionEventSeq !== undefined
+        ? { readProjectionEventSeq: currentReadProjectionEventSeq }
+        : {}),
+      status: currentThread.status,
+      unreadCompletedAgentTurn: true,
+    };
+  }
   if (currentLastCompleted <= loadedLastCompleted && currentSeen <= loadedSeen) {
     return loadedThread;
   }
@@ -260,6 +314,7 @@ function mergeNewerReadProjection(loadedThread: ThreadSummary, currentThread: Th
   const seenCompletedAgentTurnSeq = Math.max(loadedSeen, currentSeen);
   return {
     ...loadedThread,
+    ...(currentReadProjectionEventSeq !== undefined ? { readProjectionEventSeq: currentReadProjectionEventSeq } : {}),
     lastCompletedAgentTurnSeq,
     seenCompletedAgentTurnSeq,
     status: currentThread.status,
@@ -307,7 +362,15 @@ function threadsById(threads: ThreadSummary[]): Map<string, ThreadSummary> {
 }
 
 function threadChangedDuringSnapshot(before: ThreadSummary | undefined, current: ThreadSummary): boolean {
-  return !before || before.pinnedAt !== current.pinnedAt || before.updatedAt !== current.updatedAt || before.name !== current.name;
+  return (
+    !before ||
+    before.pinnedAt !== current.pinnedAt ||
+    before.updatedAt !== current.updatedAt ||
+    before.name !== current.name ||
+    before.lastCompletedAgentTurnSeq !== current.lastCompletedAgentTurnSeq ||
+    before.seenCompletedAgentTurnSeq !== current.seenCompletedAgentTurnSeq ||
+    before.unreadCompletedAgentTurn !== current.unreadCompletedAgentTurn
+  );
 }
 
 function addPinnedThreadTombstone(queryClient: QueryClient, threadId: string) {

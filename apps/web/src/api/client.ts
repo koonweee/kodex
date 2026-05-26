@@ -46,6 +46,7 @@ export type RateLimitsResponse = components["schemas"]["RateLimitsResponse"];
 export type SkillMetadata = components["schemas"]["SkillMetadata"];
 export type SkillsCatalogResponse = components["schemas"]["SkillsCatalogResponse"];
 export type ThreadRead = components["schemas"]["ThreadRead"];
+export type ThreadReadStateUpdate = components["schemas"]["ThreadReadStateUpdate"];
 export type ThreadAttachResponse = components["schemas"]["ThreadAttachResponse"];
 export type ThreadListResponse = components["schemas"]["ThreadListResponse"];
 export type SidebarThreadSummary = components["schemas"]["SidebarThreadSummary"];
@@ -66,6 +67,7 @@ export type ThreadTimelineWorkDetailRow = components["schemas"]["ThreadTimelineW
 export type ThreadTimelineWorkSummary = components["schemas"]["ThreadTimelineWorkSummary"];
 export type ThreadTimelineWindowPage = components["schemas"]["ThreadTimelineWindowPage"];
 export type ThreadInputResponse = components["schemas"]["ThreadInputResponse"];
+export type ThreadInterruptCurrentResponse = components["schemas"]["ThreadInterruptCurrentResponse"];
 export type TimelineSkillMention = components["schemas"]["TimelineSkillMention"];
 export type TimelineItemDeltaPayload = components["schemas"]["TimelineItemDeltaPayload"];
 export type TimelineItemUpsertPayload = components["schemas"]["TimelineItemUpsertPayload"];
@@ -536,6 +538,10 @@ export async function interruptTurn(threadId: string, turnId: string): Promise<v
       params: { path: { threadId, turnId } },
     }),
   );
+}
+
+export async function interruptCurrentTurn(threadId: string): Promise<ThreadInterruptCurrentResponse> {
+  return unwrap(api.POST("/v1/threads/{threadId}/interrupt-current", { params: { path: { threadId } } }));
 }
 
 export async function uploadImages(files: File[]): Promise<ImageUpload[]> {

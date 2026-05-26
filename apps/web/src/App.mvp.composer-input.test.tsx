@@ -48,7 +48,11 @@ describe("MVP composer input flows", () => {
       baseRoutes({
         "GET /v1/threads": { threads: [activeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         "POST /v1/threads/thread-1/input": { payload: {} },
-        "POST /v1/threads/thread-1/turns/turn-1/interrupt": { payload: {} },
+        "POST /v1/threads/thread-1/interrupt-current": {
+          disposition: "interrupted",
+          interruptedTurnId: "fresh-turn",
+          rawPayload: {},
+        },
       }),
     );
 
@@ -65,8 +69,9 @@ describe("MVP composer input flows", () => {
 
     await userEvent.click(stopButtons[0]);
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/interrupt")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/interrupt-current")).toHaveLength(1);
     });
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/interrupt")).toHaveLength(0);
   });
 
   it("starts idle turns with the main composer action", async () => {
@@ -141,7 +146,11 @@ describe("MVP composer input flows", () => {
       baseRoutes({
         "GET /v1/events": { events: [] },
         "POST /v1/threads/thread-1/input": { payload: { turnId: "turn-1" } },
-        "POST /v1/threads/thread-1/turns/turn-1/interrupt": { payload: {} },
+        "POST /v1/threads/thread-1/interrupt-current": {
+          disposition: "interrupted",
+          interruptedTurnId: "turn-1",
+          rawPayload: {},
+        },
       }),
     );
 
@@ -174,8 +183,9 @@ describe("MVP composer input flows", () => {
     const stopButton = await screen.findByRole("button", { name: /stop turn/i });
     await userEvent.click(stopButton);
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/interrupt")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/interrupt-current")).toHaveLength(1);
     });
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/turns/turn-1/interrupt")).toHaveLength(0);
   });
 
   it("keeps unsent composer text scoped to the selected thread", async () => {
@@ -649,6 +659,23 @@ describe("MVP composer input flows", () => {
         itemId: null,
         payload: { viewRevision: 3, threadId: thread.id, activeTurnId: null, liveState: "idle", items: [] },
         receivedAt: "2026-05-02T00:00:02Z",
+      });
+      globalStream?.emit({
+        id: "event-background-send-read-state",
+        seq: 4,
+        kind: "thread.read_updated",
+        codexMethod: null,
+        projectId: project.id,
+        threadId: thread.id,
+        turnId: null,
+        itemId: null,
+        payload: {
+          threadId: thread.id,
+          seenCompletedAgentTurnSeq: 0,
+          lastCompletedAgentTurnSeq: null,
+          unreadCompletedAgentTurn: true,
+        },
+        receivedAt: "2026-05-02T00:00:03Z",
       });
     });
 

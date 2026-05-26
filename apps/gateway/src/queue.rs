@@ -3,7 +3,6 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use utoipa::ToSchema;
@@ -86,10 +85,6 @@ pub async fn create_queued_input(
     Json(request): Json<QueuedInputCreateRequest>,
 ) -> ApiResult<Json<QueuedInputResponse>> {
     let input = skills::resolve_turn_input_for_thread(&state, &thread_id, request.input).await?;
-    state
-        .store
-        .save_thread_turn_options(&thread_id, &request.options)
-        .await?;
     let queued_input = state
         .store
         .create_queued_input(&thread_id, input, request.options)
@@ -349,13 +344,7 @@ async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<
     }
     state
         .store
-        .upsert_thread_runtime_state(ThreadRuntimeState {
-            thread_id: thread_id.to_string(),
-            status: "idle".to_string(),
-            active_turn_id: None,
-            updated_at: Utc::now(),
-            last_event_seq: None,
-        })
+        .insert_idle_thread_runtime_if_absent(thread_id)
         .await?;
     if !state
         .store
@@ -469,7 +458,7 @@ pub(crate) async fn reconcile_thread_runtime_from_app_server(
             "idle".to_string()
         },
         active_turn_id,
-        updated_at: Utc::now(),
+        updated_at: chrono::Utc::now(),
         last_event_seq: None,
     };
     let runtime = state

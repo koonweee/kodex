@@ -31,6 +31,7 @@ use crate::{
 };
 
 pub const THREAD_PIN_UPDATED_EVENT: &str = "thread.pin_updated";
+pub const THREAD_READ_UPDATED_EVENT: &str = "thread.read_updated";
 pub const THREAD_UPSERTED_EVENT: &str = "thread.upserted";
 
 pub fn router() -> Router<AppState> {
@@ -274,6 +275,15 @@ pub struct MarkThreadSeenRequest {
 }
 
 pub type MarkThreadSeenResponse = ThreadRead;
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadReadStateUpdate {
+    pub thread_id: String,
+    pub seen_completed_agent_turn_seq: i64,
+    pub last_completed_agent_turn_seq: Option<i64>,
+    pub unread_completed_agent_turn: bool,
+}
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -1161,19 +1171,35 @@ pub async fn mark_thread_seen(
     request: Option<Json<MarkThreadSeenRequest>>,
 ) -> ApiResult<Json<MarkThreadSeenResponse>> {
     let request = request.map(|Json(request)| request).unwrap_or_default();
-    let seen_seq = match request.seen_completed_agent_turn_seq {
-        Some(seq) => seq.max(0),
-        None => app_server_api::client(&state.app_server)
-            .thread_completed_turn_count_light(thread_id.clone())
-            .await?
-            .unwrap_or(0),
+    let (seen_seq, last_completed_agent_turn_seq) = match request.seen_completed_agent_turn_seq {
+        Some(seq) => {
+            let seq = seq.max(0);
+            (seq, Some(seq))
+        }
+        None => {
+            let count = app_server_api::client(&state.app_server)
+                .thread_completed_turn_count_light(thread_id.clone())
+                .await?
+                .unwrap_or(0);
+            (count, Some(count))
+        }
     };
-    Ok(Json(
-        state
-            .store
-            .mark_thread_seen_completed_agent_turns(&thread_id, seen_seq)
-            .await?,
-    ))
+    let read = state
+        .store
+        .mark_thread_seen_completed_agent_turns(&thread_id, seen_seq)
+        .await?;
+    broadcast_thread_read_update(
+        &state,
+        ThreadReadStateUpdate {
+            thread_id,
+            seen_completed_agent_turn_seq: read.seen_completed_agent_turn_seq,
+            last_completed_agent_turn_seq,
+            unread_completed_agent_turn: last_completed_agent_turn_seq
+                .is_some_and(|last_completed| last_completed > read.seen_completed_agent_turn_seq),
+        },
+    )
+    .await?;
+    Ok(Json(read))
 }
 
 fn loaded_descendant_subagents(
@@ -1573,6 +1599,26 @@ async fn broadcast_thread_pin_update(
                 "threadId": thread_id,
                 "pinnedAt": pinned_at,
             }),
+        })
+        .await?;
+    let _ = state.events.send(event.clone());
+    Ok(event)
+}
+
+async fn broadcast_thread_read_update(
+    state: &AppState,
+    read_state: ThreadReadStateUpdate,
+) -> ApiResult<EventEnvelope> {
+    let event = state
+        .store
+        .append_event(NewEvent {
+            project_id: None,
+            thread_id: Some(read_state.thread_id.clone()),
+            turn_id: None,
+            item_id: None,
+            kind: THREAD_READ_UPDATED_EVENT.to_string(),
+            codex_method: None,
+            payload: serde_json::to_value(read_state)?,
         })
         .await?;
     let _ = state.events.send(event.clone());

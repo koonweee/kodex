@@ -1,4 +1,7 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -1015,6 +1018,50 @@ impl Store {
         rows.into_iter().map(row_to_event).collect()
     }
 
+    pub async fn completed_agent_turn_event_count(&self, thread_id: &str) -> ApiResult<i64> {
+        let rows = sqlx::query(
+            r#"
+            select turn_id, codex_method, payload_json
+            from events
+            where thread_id = ?
+              and codex_method in ('turn/completed', 'turn/upsert')
+            "#,
+        )
+        .bind(thread_id)
+        .fetch_all(&self.pool)
+        .await?;
+        let mut completed_turn_ids = HashSet::new();
+        for row in rows {
+            let payload_json: String = row.try_get("payload_json")?;
+            let payload = serde_json::from_str::<Value>(&payload_json)?;
+            let method: Option<String> = row.try_get("codex_method")?;
+            if method.as_deref() == Some("turn/upsert")
+                && !payload_has_terminal_turn_status(&payload)
+            {
+                continue;
+            }
+            let turn_id: Option<String> = row.try_get("turn_id")?;
+            let turn_id = turn_id
+                .or_else(|| {
+                    payload
+                        .get("turn")
+                        .and_then(|turn| turn.get("id"))
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
+                .or_else(|| {
+                    payload
+                        .get("turnId")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                });
+            if let Some(turn_id) = turn_id {
+                completed_turn_ids.insert(turn_id);
+            }
+        }
+        Ok(completed_turn_ids.len() as i64)
+    }
+
     pub async fn create_project(&self, name: String, cwd: String) -> ApiResult<Project> {
         let now = Utc::now();
         let project = Project {
@@ -1663,11 +1710,28 @@ impl Store {
         thread_id: &str,
         options: &TurnStartOptions,
     ) -> ApiResult<()> {
-        self.save_thread_composer_settings(
-            thread_id,
-            &ThreadComposerSettings::from_turn_options(options),
-        )
-        .await
+        let thread_ids = [thread_id.to_string()];
+        let existing = self.thread_composer_settings(&thread_ids).await?;
+        let mut settings = ThreadComposerSettings::from_turn_options(options);
+        if let Some(existing) = existing.get(thread_id) {
+            settings.model = existing.model.clone().or(settings.model);
+            settings.reasoning_effort = existing
+                .reasoning_effort
+                .clone()
+                .or(settings.reasoning_effort);
+            settings.service_tier = existing.service_tier.clone().or(settings.service_tier);
+            settings.approval_policy = existing
+                .approval_policy
+                .clone()
+                .or(settings.approval_policy);
+            settings.approvals_reviewer = existing
+                .approvals_reviewer
+                .clone()
+                .or(settings.approvals_reviewer);
+            settings.sandbox = existing.sandbox.clone().or(settings.sandbox);
+        }
+        self.save_thread_composer_settings(thread_id, &settings)
+            .await
     }
 
     pub async fn thread_composer_settings(
@@ -2537,6 +2601,24 @@ impl Store {
         .await
     }
 
+    pub async fn insert_idle_thread_runtime_if_absent(&self, thread_id: &str) -> ApiResult<()> {
+        let now = Utc::now();
+        sqlx::query(
+            r#"
+            insert into thread_runtime_state (
+                thread_id, status, active_turn_id, updated_at, last_event_seq
+            )
+            values (?, 'idle', null, ?, null)
+            on conflict(thread_id) do nothing
+            "#,
+        )
+        .bind(thread_id)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn claim_idle_thread_runtime_for_queue_drain(
         &self,
         thread_id: &str,
@@ -2548,7 +2630,12 @@ impl Store {
             set status = 'draining',
                 active_turn_id = null,
                 updated_at = ?
-            where thread_id = ? and status = 'idle'
+            where thread_id = ?
+              and status not in ('draining', 'starting')
+              and not (
+                status in ('active', 'streaming', 'syncing')
+                and active_turn_id is not null
+              )
             "#,
         )
         .bind(now)
@@ -3452,6 +3539,20 @@ fn row_to_approval(row: sqlx::sqlite::SqliteRow) -> ApiResult<Approval> {
     })
 }
 
+fn payload_has_terminal_turn_status(payload: &Value) -> bool {
+    payload
+        .get("turn")
+        .and_then(|turn| turn.get("status"))
+        .and_then(|status| status.get("type"))
+        .and_then(Value::as_str)
+        .is_some_and(|status| {
+            matches!(
+                status.to_ascii_lowercase().as_str(),
+                "completed" | "failed" | "cancelled" | "canceled" | "interrupted"
+            )
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::TimeZone;
@@ -3749,12 +3850,37 @@ mod tests {
         let settings = store.thread_composer_settings(&thread_ids).await.unwrap();
         let settings = settings.get("thread-1").unwrap();
 
-        assert!(settings.model.is_none());
-        assert!(settings.reasoning_effort.is_none());
-        assert!(settings.service_tier.is_none());
-        assert!(settings.approval_policy.is_none());
-        assert!(settings.approvals_reviewer.is_none());
-        assert!(settings.sandbox.is_none());
+        assert_eq!(settings.model.as_deref(), Some("gpt-5.4-mini"));
+        assert_eq!(settings.reasoning_effort.as_deref(), Some("high"));
+        assert_eq!(settings.service_tier.as_deref(), Some("fast"));
+        assert_eq!(settings.approval_policy.as_deref(), Some("on-request"));
+        assert_eq!(settings.approvals_reviewer.as_deref(), Some("auto_review"));
+        assert_eq!(settings.sandbox.as_ref(), Some(&json!("workspace-write")));
+
+        store
+            .save_thread_turn_options(
+                "thread-2",
+                &TurnStartOptions {
+                    model: Some("gpt-5.4".to_string()),
+                    effort: None,
+                    service_tier: None,
+                    approval_policy: None,
+                    approvals_reviewer: None,
+                    sandbox_policy: None,
+                },
+            )
+            .await
+            .unwrap();
+        let settings = store
+            .thread_composer_settings(&["thread-2".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(
+            settings
+                .get("thread-2")
+                .and_then(|settings| settings.model.as_deref()),
+            Some("gpt-5.4")
+        );
     }
 
     #[tokio::test]

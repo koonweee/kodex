@@ -145,5 +145,6 @@ export function useComposerSettingsState({
     handleComposerSettingsChange,
     hydrateComposerDefaults,
     models,
+    selectedThreadComposerOverride,
   };
 }

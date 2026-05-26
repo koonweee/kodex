@@ -262,6 +262,109 @@ describe("thread query cache helpers", () => {
     });
   });
 
+  it("keeps gateway unread events ahead of a stale sidebar snapshot without local turn counting", () => {
+    const queryClient = createKodexQueryClient();
+    upsertProjectThread(queryClient, "project-1", thread("thread-1"));
+
+    applyThreadReadState(queryClient, "thread-1", {
+      threadId: "thread-1",
+      seenCompletedAgentTurnSeq: 0,
+      lastCompletedAgentTurnSeq: null,
+      unreadCompletedAgentTurn: true,
+    });
+    mergeProjectThreadSnapshot(queryClient, "project-1", [thread("thread-1")], null, null);
+
+    expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-1"))?.[0]).toMatchObject({
+      seenCompletedAgentTurnSeq: 0,
+      unreadCompletedAgentTurn: true,
+    });
+  });
+
+  it("keeps gateway read events ahead of a stale unread sidebar snapshot", () => {
+    const queryClient = createKodexQueryClient();
+    upsertProjectThread(
+      queryClient,
+      "project-1",
+      thread("thread-1", {
+        lastCompletedAgentTurnSeq: 2,
+        seenCompletedAgentTurnSeq: 1,
+        unreadCompletedAgentTurn: true,
+      }),
+    );
+
+    applyThreadReadState(queryClient, "thread-1", {
+      threadId: "thread-1",
+      seenCompletedAgentTurnSeq: 2,
+      lastCompletedAgentTurnSeq: 2,
+      unreadCompletedAgentTurn: false,
+    });
+    mergeProjectThreadSnapshot(
+      queryClient,
+      "project-1",
+      [
+        thread("thread-1", {
+          lastCompletedAgentTurnSeq: 2,
+          seenCompletedAgentTurnSeq: 1,
+          unreadCompletedAgentTurn: true,
+        }),
+      ],
+      null,
+      null,
+    );
+
+    expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-1"))?.[0]).toMatchObject({
+      lastCompletedAgentTurnSeq: 2,
+      seenCompletedAgentTurnSeq: 2,
+      unreadCompletedAgentTurn: false,
+    });
+  });
+
+  it("does not let an older read-clear event erase a newer unread event", () => {
+    const queryClient = createKodexQueryClient();
+    upsertProjectThread(queryClient, "project-1", thread("thread-1"));
+    applyThreadReadState(queryClient, "thread-1", {
+      threadId: "thread-1",
+      seenCompletedAgentTurnSeq: 0,
+      lastCompletedAgentTurnSeq: null,
+      unreadCompletedAgentTurn: true,
+    }, 2);
+
+    applyThreadReadState(queryClient, "thread-1", {
+      threadId: "thread-1",
+      seenCompletedAgentTurnSeq: 0,
+      lastCompletedAgentTurnSeq: 0,
+      unreadCompletedAgentTurn: false,
+    }, 1);
+
+    expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-1"))?.[0]).toMatchObject({
+      seenCompletedAgentTurnSeq: 0,
+      unreadCompletedAgentTurn: true,
+    });
+  });
+
+  it("allows a newer read-clear event to clear the same read watermark", () => {
+    const queryClient = createKodexQueryClient();
+    upsertProjectThread(queryClient, "project-1", thread("thread-1"));
+    applyThreadReadState(queryClient, "thread-1", {
+      threadId: "thread-1",
+      seenCompletedAgentTurnSeq: 1,
+      lastCompletedAgentTurnSeq: 1,
+      unreadCompletedAgentTurn: true,
+    }, 2);
+
+    applyThreadReadState(queryClient, "thread-1", {
+      threadId: "thread-1",
+      seenCompletedAgentTurnSeq: 1,
+      lastCompletedAgentTurnSeq: 1,
+      unreadCompletedAgentTurn: false,
+    }, 3);
+
+    expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-1"))?.[0]).toMatchObject({
+      seenCompletedAgentTurnSeq: 1,
+      unreadCompletedAgentTurn: false,
+    });
+  });
+
   it("removes archived threads from every sidebar cache", () => {
     const queryClient = createKodexQueryClient();
     const cachedThread = thread("thread-1", { pinnedAt: "2026-05-06T12:00:00Z" });

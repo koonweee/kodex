@@ -3929,6 +3929,78 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn existing_thread_input_options_do_not_overwrite_gateway_fallback_settings() {
+        let (state, _) = test_state().await;
+        state
+            .store
+            .save_thread_composer_settings(
+                "thread-1",
+                &ThreadComposerSettings {
+                    model: Some("fresh-model".to_string()),
+                    reasoning_effort: Some("high".to_string()),
+                    service_tier: Some("fast".to_string()),
+                    approval_policy: Some("on-request".to_string()),
+                    approvals_reviewer: Some("auto_review".to_string()),
+                    sandbox: Some(json!({"type": "workspaceWrite", "networkAccess": false, "writableRoots": []})),
+                },
+            )
+            .await
+            .unwrap();
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "active".to_string(),
+                active_turn_id: Some("active-turn".to_string()),
+                updated_at: chrono::Utc::now(),
+                last_event_seq: Some(0),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{
+                            "input":[{"type":"text","text":"queued from stale tab"}],
+                            "model":"stale-model",
+                            "effort":"low",
+                            "serviceTier":null,
+                            "approvalPolicy":"never",
+                            "approvalsReviewer":"human",
+                            "sandboxPolicy":{"type":"readOnly"}
+                        }"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let settings = state
+            .store
+            .thread_composer_settings(&["thread-1".to_string()])
+            .await
+            .unwrap();
+        let settings = settings.get("thread-1").unwrap();
+        assert_eq!(settings.model.as_deref(), Some("fresh-model"));
+        assert_eq!(settings.reasoning_effort.as_deref(), Some("high"));
+        assert_eq!(settings.service_tier.as_deref(), Some("fast"));
+        assert_eq!(settings.approval_policy.as_deref(), Some("on-request"));
+        assert_eq!(settings.approvals_reviewer.as_deref(), Some("auto_review"));
+        assert_eq!(
+            settings.sandbox,
+            Some(json!({"type": "workspaceWrite", "networkAccess": false, "writableRoots": []}))
+        );
+        let queued = state.store.list_queued_inputs("thread-1").await.unwrap();
+        assert_eq!(queued.len(), 1);
+        assert_eq!(queued[0].options.model.as_deref(), Some("stale-model"));
+    }
+
+    #[tokio::test]
     async fn thread_detail_returns_app_server_snapshot_turns_without_gateway_events() {
         let (state, app_server) = test_state().await;
         state
@@ -4899,6 +4971,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn mark_thread_seen_broadcasts_and_replays_canonical_read_state() {
+        let (state, app_server) = test_state().await;
+        let mut receiver = state.events.subscribe();
+        let app = build_router(state.clone());
+
+        app_server.queued_responses.lock().unwrap().push(json!({
+            "data": [
+                {"id": "turn-1", "status": {"type": "completed"}},
+                {"id": "turn-2", "status": {"type": "completed"}}
+            ],
+            "nextCursor": null,
+            "backwardsCursor": null
+        }));
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/seen")
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let event = timeout(Duration::from_secs(1), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(event.kind, "thread.read_updated");
+        assert_eq!(event.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(event.payload["threadId"], "thread-1");
+        assert_eq!(event.payload["seenCompletedAgentTurnSeq"], json!(2));
+        assert_eq!(event.payload["lastCompletedAgentTurnSeq"], json!(2));
+        assert_eq!(event.payload["unreadCompletedAgentTurn"], json!(false));
+
+        let replayed = state
+            .store
+            .replay_events(Some(0), None, Some("thread-1".to_string()))
+            .await
+            .unwrap();
+        assert!(replayed.iter().any(|event| {
+            event.kind == "thread.read_updated"
+                && event.payload["seenCompletedAgentTurnSeq"] == json!(2)
+                && event.payload["unreadCompletedAgentTurn"] == json!(false)
+        }));
+    }
+
+    #[tokio::test]
     async fn thread_list_and_detail_overlay_gateway_owned_pin_state() {
         let (state, app_server) = test_state().await;
         let pin = state.store.pin_thread("thread-1").await.unwrap();
@@ -5358,6 +5478,71 @@ mod tests {
             requests[2].1,
             json!({"threadId": "thread-1", "turnId": "turn-1"})
         );
+    }
+
+    #[tokio::test]
+    async fn interrupt_current_turn_uses_refreshed_gateway_active_state() {
+        let (state, app_server) = test_state().await;
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(active_thread_read_response("thread-1", "fresh-turn"));
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"ok": true}));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/interrupt-current")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "interrupted");
+        assert_eq!(body["interruptedTurnId"], "fresh-turn");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[1].0, "turn/interrupt");
+        assert_eq!(
+            requests[1].1,
+            json!({"threadId": "thread-1", "turnId": "fresh-turn"})
+        );
+    }
+
+    #[tokio::test]
+    async fn interrupt_current_turn_returns_idle_without_interrupting_stale_local_turn() {
+        let (state, app_server) = test_state().await;
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(thread_read_response("thread-1", 0));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/interrupt-current")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "idle");
+        assert_eq!(body["interruptedTurnId"], Value::Null);
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].0, "thread/read");
     }
 
     #[tokio::test]
@@ -5953,45 +6138,21 @@ mod tests {
             .unwrap();
         assert_eq!(listed.status(), StatusCode::OK);
         let listed = response_json(listed).await;
-        assert_eq!(listed["threads"][0]["model"], "gpt-5.4-mini");
-        assert_eq!(listed["threads"][0]["reasoningEffort"], "medium");
+        assert!(listed["threads"][0]["model"].is_null());
+        assert!(listed["threads"][0]["reasoningEffort"].is_null());
         assert!(listed["threads"][0]["serviceTier"].is_null());
-        assert_eq!(listed["threads"][0]["approvalPolicy"], "on-request");
-        assert_eq!(listed["threads"][0]["approvalsReviewer"], "auto_review");
-        assert_eq!(
-            listed["threads"][0]["sandbox"],
-            json!({"type":"workspaceWrite","networkAccess":false,"writableRoots":[]})
-        );
-        assert_eq!(listed["threads"][0]["rawPayload"]["model"], "gpt-5.4-mini");
-        assert_eq!(
-            listed["threads"][0]["rawPayload"]["reasoningEffort"],
-            "medium"
-        );
+        assert!(listed["threads"][0]["approvalPolicy"].is_null());
+        assert!(listed["threads"][0]["approvalsReviewer"].is_null());
+        assert!(listed["threads"][0]["sandbox"].is_null());
+        assert!(listed["threads"][0]["rawPayload"]["model"].is_null());
+        assert!(listed["threads"][0]["rawPayload"]["reasoningEffort"].is_null());
         assert!(listed["threads"][0]["rawPayload"]["serviceTier"].is_null());
-        assert_eq!(
-            listed["threads"][0]["rawPayload"]["approvalPolicy"],
-            "on-request"
-        );
-        assert_eq!(
-            listed["threads"][0]["rawPayload"]["approvalsReviewer"],
-            "auto_review"
-        );
-        assert_eq!(
-            listed["threads"][0]["rawPayload"]["sandbox"],
-            json!({"type":"workspaceWrite","networkAccess":false,"writableRoots":[]})
-        );
-        assert_eq!(
-            listed["rawPayload"]["data"][0]["model"],
-            listed["threads"][0]["rawPayload"]["model"]
-        );
-        assert_eq!(
-            listed["rawPayload"]["data"][0]["reasoningEffort"],
-            listed["threads"][0]["rawPayload"]["reasoningEffort"]
-        );
-        assert_eq!(
-            listed["rawPayload"]["data"][0]["sandbox"],
-            listed["threads"][0]["rawPayload"]["sandbox"]
-        );
+        assert!(listed["threads"][0]["rawPayload"]["approvalPolicy"].is_null());
+        assert!(listed["threads"][0]["rawPayload"]["approvalsReviewer"].is_null());
+        assert!(listed["threads"][0]["rawPayload"]["sandbox"].is_null());
+        assert!(listed["rawPayload"]["data"][0]["model"].is_null());
+        assert!(listed["rawPayload"]["data"][0]["reasoningEffort"].is_null());
+        assert!(listed["rawPayload"]["data"][0]["sandbox"].is_null());
 
         assert_ok(
             app.clone()
@@ -9723,6 +9884,72 @@ mod tests {
         assert!(first.contains(&format!("id: {}", live.seq)));
         assert!(first.contains("\"phase\":\"live\""));
         assert!(!first.contains("\"phase\":\"replay\""));
+    }
+
+    #[tokio::test]
+    async fn sse_replays_and_streams_thread_read_updates() {
+        let (state, _) = test_state().await;
+        let replay = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("thread-1".to_string()),
+                turn_id: None,
+                item_id: None,
+                kind: "thread.read_updated".to_string(),
+                codex_method: None,
+                payload: json!({
+                    "threadId": "thread-1",
+                    "seenCompletedAgentTurnSeq": 1,
+                    "lastCompletedAgentTurnSeq": 1,
+                    "unreadCompletedAgentTurn": false
+                }),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?threadId=thread-1&cursor=0")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let live = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("thread-1".to_string()),
+                turn_id: None,
+                item_id: None,
+                kind: "thread.read_updated".to_string(),
+                codex_method: None,
+                payload: json!({
+                    "threadId": "thread-1",
+                    "seenCompletedAgentTurnSeq": 1,
+                    "lastCompletedAgentTurnSeq": 2,
+                    "unreadCompletedAgentTurn": true
+                }),
+            })
+            .await
+            .unwrap();
+        state.events.send(live.clone()).unwrap();
+
+        let mut body = response.into_body();
+        let replay_chunk = next_sse_chunk(&mut body).await;
+        assert!(replay_chunk.contains(&format!("id: {}", replay.seq)));
+        assert!(replay_chunk.contains("thread.read_updated"));
+        assert!(replay_chunk.contains("\"unreadCompletedAgentTurn\":false"));
+
+        let live_chunk = next_sse_chunk(&mut body).await;
+        assert!(live_chunk.contains(&format!("id: {}", live.seq)));
+        assert!(live_chunk.contains("thread.read_updated"));
+        assert!(live_chunk.contains("\"unreadCompletedAgentTurn\":true"));
     }
 
     #[tokio::test]

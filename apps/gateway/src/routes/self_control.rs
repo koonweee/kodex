@@ -764,10 +764,6 @@ pub async fn send_self_control_thread_input(
     if should_queue_self_control_input(&state, &thread_id).await? {
         let input =
             skills::resolve_turn_input_for_thread(&state, &thread_id, request.input).await?;
-        state
-            .store
-            .save_thread_turn_options(&thread_id, &request.options)
-            .await?;
         let source_id = request.source.source_id().map(str::to_string);
         let queued_input = queue::create_queued_input_with_source(
             &state,

@@ -487,13 +487,14 @@ function KodexShell({
     handleComposerSettingsChange,
     hydrateComposerDefaults,
     models,
+    selectedThreadComposerOverride,
   } = useComposerSettingsState({
     draftChatThreadSelected,
     onError: reportError,
     selectedProjectId,
     selectedThread,
   });
-  const { applyCompletedAgentTurnEvent, markCompletedAgentTurnSeen } = useThreadReadState({
+  const { applyCompletedAgentTurnEvent, applyThreadReadStateEvent, markCompletedAgentTurnSeen } = useThreadReadState({
     chatThreads,
     onError: reportError,
     selectedThreadIdRef,
@@ -565,6 +566,7 @@ function KodexShell({
     activeSelectedTurnId,
     canCompose,
     composerSettings,
+    selectedThreadComposerOverride,
     draftChatThreadSelected,
     draftThreadProjectId,
     isDraftThreadSelected,
@@ -736,6 +738,7 @@ function KodexShell({
         applyThreadUpsertEvent(event);
         applyThreadMetadataEvent(event);
         applyCompletedAgentTurnEvent(event);
+        applyThreadReadStateEvent(event);
         applyNotificationEvent(event);
         refreshSidebarThreadsForLiveEvent(event);
         invalidateSelectedSubagentsForEvent(event);

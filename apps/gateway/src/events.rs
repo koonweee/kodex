@@ -31,7 +31,10 @@ use crate::{
     automations,
     error::{ApiError, ApiResult},
     queue,
-    routes::threads::{THREAD_PIN_UPDATED_EVENT, THREAD_UPSERTED_EVENT},
+    routes::threads::{
+        ThreadReadStateUpdate, THREAD_PIN_UPDATED_EVENT, THREAD_READ_UPDATED_EVENT,
+        THREAD_UPSERTED_EVENT,
+    },
     schema::is_supported_approval_method,
     skills,
     store::{EventEnvelope, NewApproval, NewEvent, ThreadRuntimeState},
@@ -482,6 +485,7 @@ fn is_operational_replay_event(event: &EventEnvelope) -> bool {
             | MCP_SERVER_STATUS_UPDATED_EVENT
             | MCP_OAUTH_LOGIN_COMPLETED_EVENT
             | skills::SKILLS_CHANGED_EVENT
+            | THREAD_READ_UPDATED_EVENT
             | THREAD_PIN_UPDATED_EVENT
             | THREAD_UPSERTED_EVENT
             | automations::AUTOMATION_UPSERT_EVENT
@@ -898,6 +902,7 @@ async fn timeline_turn_upsert_event(
         thread_view::record_turn_status(&state.thread_views, &thread_id, &turn, cursor.seq).await?;
     events.push(thread_view_patch_event(state, &thread_id).await?);
     if newly_terminal {
+        events.push(append_thread_read_projection_event(state, &thread_id).await?);
         events.extend(
             queue::requeue_unmatched_pending_commit_input_events_for_turn(
                 state, &thread_id, &turn.id,
@@ -950,6 +955,46 @@ async fn timeline_turn_upsert_event(
             Vec::new()
         },
     })
+}
+
+async fn append_thread_read_projection_event(
+    state: &AppState,
+    thread_id: &str,
+) -> ApiResult<EventEnvelope> {
+    let last_completed_agent_turn_seq = Some(
+        state
+            .store
+            .completed_agent_turn_event_count(thread_id)
+            .await?,
+    )
+    .filter(|count| *count > 0);
+    let read_states = state
+        .store
+        .thread_read_states(&[thread_id.to_string()])
+        .await?;
+    let seen_completed_agent_turn_seq = read_states
+        .get(thread_id)
+        .map(|state| state.seen_completed_agent_turn_seq)
+        .unwrap_or_default();
+    state
+        .store
+        .append_event(NewEvent {
+            project_id: None,
+            thread_id: Some(thread_id.to_string()),
+            turn_id: None,
+            item_id: None,
+            kind: THREAD_READ_UPDATED_EVENT.to_string(),
+            codex_method: None,
+            payload: serde_json::to_value(ThreadReadStateUpdate {
+                thread_id: thread_id.to_string(),
+                seen_completed_agent_turn_seq,
+                last_completed_agent_turn_seq,
+                unread_completed_agent_turn: last_completed_agent_turn_seq
+                    .map(|last_completed| last_completed > seen_completed_agent_turn_seq)
+                    .unwrap_or(true),
+            })?,
+        })
+        .await
 }
 
 pub(crate) async fn thread_view_patch_event(
