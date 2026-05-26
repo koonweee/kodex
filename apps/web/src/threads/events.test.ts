@@ -9,14 +9,14 @@ import {
 } from "./events";
 
 describe("thread events", () => {
-  it("ignores legacy raw completion notifications", () => {
+  it("ignores non-canonical completion-shaped events", () => {
     expect(
       completedAgentTurnEvent(
         event({
-          kind: "codex.notification",
-          codexMethod: "turn/completed",
+          kind: "thread_view.cursor",
+          codexMethod: "thread_view/cursor",
           threadId: "thread-1",
-          payload: { threadId: "thread-1" },
+          payload: { threadId: "thread-1", sourceMethod: "turn/completed" },
         }),
       ),
     ).toBeNull();
@@ -150,7 +150,7 @@ function event(overrides: Partial<EventEnvelope>): EventEnvelope {
   return {
     id: "event-1",
     seq: 10,
-    kind: "codex.notification",
+    kind: "gateway.warning",
     codexMethod: null,
     projectId: null,
     threadId: null,

@@ -4821,9 +4821,15 @@ mod tests {
                 thread_id: Some("thread-1".to_string()),
                 turn_id: Some("legacy-turn".to_string()),
                 item_id: None,
-                kind: "codex.notification".to_string(),
-                codex_method: Some("turn/completed".to_string()),
-                payload: json!({"threadId": "thread-1"}),
+                kind: "thread_view.cursor".to_string(),
+                codex_method: Some("thread_view/cursor".to_string()),
+                payload: json!({
+                    "threadId": "thread-1",
+                    "turnId": "legacy-turn",
+                    "reason": "agent_turn_completed",
+                    "sourceKind": "timeline.turn_completed",
+                    "sourceMethod": "turn/completed"
+                }),
             })
             .await
             .unwrap();
@@ -8717,7 +8723,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn turn_and_item_notifications_extract_metadata_and_persist_before_broadcast() {
+    async fn turn_and_item_notifications_persist_cursor_metadata_without_raw_payloads() {
         let (state, _) = test_state().await;
         let mut receiver = state.events.subscribe();
 
@@ -8749,25 +8755,31 @@ mod tests {
         .unwrap();
 
         let first_broadcast = receiver.recv().await.unwrap();
-        let persisted = state
-            .store
-            .replay_events(Some(first_broadcast.seq - 1), None, None)
-            .await
-            .unwrap();
-        assert_eq!(persisted[0].id, first_broadcast.id);
-        assert_eq!(persisted[0].thread_id.as_deref(), Some("thread-1"));
-        assert_eq!(persisted[0].turn_id.as_deref(), Some("turn-1"));
-        assert_eq!(persisted[0].item_id.as_deref(), Some("item-1"));
-
-        let mut second_broadcast = receiver.recv().await.unwrap();
-        while second_broadcast.codex_method.as_deref() != Some("turn/completed") {
-            second_broadcast = receiver.recv().await.unwrap();
-        }
         assert_eq!(
-            second_broadcast.codex_method.as_deref(),
-            Some("turn/completed")
+            first_broadcast.kind,
+            thread_view::THREAD_VIEW_PATCH_EVENT_KIND
         );
-        assert_eq!(second_broadcast.turn_id.as_deref(), Some("turn-2"));
+        let persisted = state.store.replay_events(None, None, None).await.unwrap();
+        assert!(persisted
+            .iter()
+            .all(|event| event.kind != "codex.notification"));
+        let delta_cursor = persisted
+            .iter()
+            .find(|event| event.payload["sourceMethod"] == "item/agentMessage/delta")
+            .unwrap();
+        assert_eq!(delta_cursor.kind, "thread_view.cursor");
+        assert_eq!(delta_cursor.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(delta_cursor.turn_id.as_deref(), Some("turn-1"));
+        assert_eq!(delta_cursor.item_id.as_deref(), Some("item-1"));
+        assert!(delta_cursor.payload.get("delta").is_none());
+
+        let completed_cursor = persisted
+            .iter()
+            .find(|event| event.payload["sourceKind"] == "timeline.turn_completed")
+            .unwrap();
+        assert_eq!(completed_cursor.kind, "thread_view.cursor");
+        assert_eq!(completed_cursor.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(completed_cursor.turn_id.as_deref(), Some("turn-2"));
     }
 
     #[tokio::test]
@@ -9287,15 +9299,7 @@ mod tests {
             .into_iter()
             .map(|event| event.codex_method.unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(
-            methods,
-            vec![
-                "account/login/completed",
-                "account/updated",
-                "account/rateLimits/updated",
-                "account/rateLimits/updated"
-            ]
-        );
+        assert_eq!(methods, vec!["account/rateLimits/updated"]);
     }
 
     #[tokio::test]
@@ -9563,9 +9567,14 @@ mod tests {
                 thread_id: Some("t1".to_string()),
                 turn_id: None,
                 item_id: None,
-                kind: "codex.notification".to_string(),
-                codex_method: Some("turn/completed".to_string()),
-                payload: json!({"threadId": "t1"}),
+                kind: "thread_view.cursor".to_string(),
+                codex_method: Some("thread_view/cursor".to_string()),
+                payload: json!({
+                    "threadId": "t1",
+                    "reason": "timeline_changed",
+                    "sourceKind": "timeline.item_delta",
+                    "sourceMethod": "item/agentMessage/delta"
+                }),
             })
             .await
             .unwrap();
@@ -9726,9 +9735,14 @@ mod tests {
                 thread_id: Some("t1".to_string()),
                 turn_id: None,
                 item_id: None,
-                kind: "codex.notification".to_string(),
-                codex_method: Some("turn/completed".to_string()),
-                payload: json!({"threadId": "t1"}),
+                kind: "thread_view.cursor".to_string(),
+                codex_method: Some("thread_view/cursor".to_string()),
+                payload: json!({
+                    "threadId": "t1",
+                    "reason": "timeline_changed",
+                    "sourceKind": "timeline.item_delta",
+                    "sourceMethod": "item/agentMessage/delta"
+                }),
             })
             .await
             .unwrap();
@@ -9745,7 +9759,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
         assert_eq!(body["events"].as_array().unwrap().len(), 1);
-        assert_eq!(body["events"][0]["kind"], "codex.notification");
+        assert_eq!(body["events"][0]["kind"], "thread_view.cursor");
     }
 
     #[tokio::test]

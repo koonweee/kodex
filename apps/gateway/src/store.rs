@@ -1024,7 +1024,13 @@ impl Store {
             select turn_id, codex_method, payload_json
             from events
             where thread_id = ?
-              and codex_method in ('turn/completed', 'turn/upsert')
+              and (
+                codex_method in ('turn/completed', 'turn/upsert')
+                or (
+                  kind = 'thread_view.cursor'
+                  and json_extract(payload_json, '$.sourceKind') = 'timeline.turn_completed'
+                )
+              )
             "#,
         )
         .bind(thread_id)
@@ -1035,7 +1041,9 @@ impl Store {
             let payload_json: String = row.try_get("payload_json")?;
             let payload = serde_json::from_str::<Value>(&payload_json)?;
             let method: Option<String> = row.try_get("codex_method")?;
+            let source_kind = payload.get("sourceKind").and_then(Value::as_str);
             if method.as_deref() == Some("turn/upsert")
+                && source_kind != Some("timeline.turn_completed")
                 && !payload_has_terminal_turn_status(&payload)
             {
                 continue;
@@ -3701,8 +3709,8 @@ mod tests {
                 thread_id: Some("thread-1".to_string()),
                 turn_id: None,
                 item_id: None,
-                kind: "codex.notification".to_string(),
-                codex_method: Some("turn/completed".to_string()),
+                kind: "thread_view.cursor".to_string(),
+                codex_method: Some("thread_view/cursor".to_string()),
                 payload: json!({"ok": true}),
             })
             .await
@@ -3738,9 +3746,15 @@ mod tests {
                 thread_id: Some("thread-1".to_string()),
                 turn_id: Some("turn-1".to_string()),
                 item_id: None,
-                kind: "codex.notification".to_string(),
-                codex_method: Some("turn/completed".to_string()),
-                payload: json!({"threadId": "thread-1"}),
+                kind: "thread_view.cursor".to_string(),
+                codex_method: Some("thread_view/cursor".to_string()),
+                payload: json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "reason": "agent_turn_completed",
+                    "sourceKind": "timeline.turn_completed",
+                    "sourceMethod": "turn/completed"
+                }),
             })
             .await
             .unwrap();

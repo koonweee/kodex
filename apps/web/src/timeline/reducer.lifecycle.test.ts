@@ -240,7 +240,7 @@ function event(overrides: Partial<EventEnvelope>): EventEnvelope {
   return {
     id: `event-${overrides.seq ?? 1}`,
     seq: overrides.seq ?? 1,
-    kind: overrides.kind ?? "codex.notification",
+    kind: overrides.kind ?? "gateway.warning",
     codexMethod: overrides.codexMethod ?? null,
     threadId: overrides.threadId ?? "thread-1",
     turnId: overrides.turnId ?? "turn-1",

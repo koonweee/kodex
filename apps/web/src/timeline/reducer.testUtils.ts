@@ -6,8 +6,8 @@ function event(overrides: Partial<TimelineEventEnvelope>): TimelineEventEnvelope
   const base: TimelineEventEnvelope = {
     id: "event-1",
     seq: 1,
-    kind: "codex.notification",
-    codexMethod: "item/started",
+    kind: "gateway.warning",
+    codexMethod: null,
     threadId: "thread-1",
     turnId: "turn-1",
     itemId: "item-1",

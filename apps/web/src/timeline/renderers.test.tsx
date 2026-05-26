@@ -139,7 +139,7 @@ describe("timeline renderer registry", () => {
                 {
                   id: "event-1",
                   seq: 1,
-                  kind: "codex.notification",
+                  kind: "gateway.warning",
                   codexMethod: "item/completed",
                   threadId: "thread-1",
                   turnId: "turn-1",
@@ -236,7 +236,7 @@ describe("timeline renderer registry", () => {
               {
                 id: "event-1",
                 seq: 1,
-                kind: "codex.notification",
+                kind: "gateway.warning",
                 codexMethod: "item/completed",
                 threadId: "thread-1",
                 turnId: "turn-1",
@@ -1562,7 +1562,7 @@ describe("timeline renderer registry", () => {
         {
           id: "event-1",
           seq: 1,
-          kind: "codex.notification",
+          kind: "gateway.warning",
           codexMethod: "item/started",
           threadId: "thread-1",
           turnId: "turn-1",

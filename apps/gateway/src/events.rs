@@ -106,16 +106,16 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
     match message {
         InboundMessage::Notification { method, params } => {
             let metadata = EventMetadata::from_payload(&params);
-            let event = persist_notification_cursor(state, &method, &params, &metadata).await?;
-            let cursor_seq = event.seq;
-            let _ = state.events.send(event);
+            let mut emitted = false;
             if let Some(event) = normalized_mcp_event(state, &method, &params).await? {
                 let _ = state.events.send(event);
+                emitted = true;
             }
             if let Some(event) =
                 normalized_account_event(state, &method, &params, &metadata).await?
             {
                 let _ = state.events.send(event);
+                emitted = true;
             }
             let normalized = normalized_timeline_events(
                 state,
@@ -123,9 +123,9 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                 &params,
                 &metadata,
                 TimelineUpdateSource::GatewayStream,
-                cursor_seq,
             )
             .await?;
+            emitted |= !normalized.events.is_empty();
             for normalized in normalized.events {
                 send_normalized_live_event(state, normalized).await;
             }
@@ -134,6 +134,23 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             }
             if method == "skills/changed" {
                 skills::broadcast_skills_changed(state, "app-server").await?;
+                emitted = true;
+            }
+            if !emitted
+                && is_transcript_notification_method(&method)
+                && metadata.thread_id.is_some()
+            {
+                append_timeline_changed_cursor(
+                    state,
+                    &metadata,
+                    "app_server.notification",
+                    Some(&method),
+                )
+                .await?;
+                emitted = true;
+            }
+            if !emitted {
+                tracing::debug!(%method, "ignored unhandled app-server notification");
             }
         }
         InboundMessage::ServerRequest {
@@ -213,36 +230,6 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
 
 async fn send_normalized_live_event(state: &AppState, event: EventEnvelope) {
     let _ = state.events.send(event);
-}
-
-async fn persist_notification_cursor(
-    state: &AppState,
-    method: &str,
-    params: &Value,
-    metadata: &EventMetadata,
-) -> ApiResult<EventEnvelope> {
-    let payload = if is_transcript_notification_method(method) {
-        json!({
-            "threadId": metadata.thread_id,
-            "turnId": metadata.turn_id,
-            "itemId": metadata.item_id,
-            "sourceMethod": method,
-        })
-    } else {
-        params.clone()
-    };
-    state
-        .store
-        .append_event(NewEvent {
-            project_id: metadata.project_id.clone(),
-            thread_id: metadata.thread_id.clone(),
-            turn_id: metadata.turn_id.clone(),
-            item_id: metadata.item_id.clone(),
-            kind: "codex.notification".to_string(),
-            codex_method: Some(method.to_string()),
-            payload,
-        })
-        .await
 }
 
 fn is_transcript_notification_method(method: &str) -> bool {
@@ -530,11 +517,6 @@ fn selected_thread_sse_replay_events(
 
 fn is_thread_view_replay_refresh_trigger(event: &EventEnvelope) -> bool {
     event.kind == THREAD_VIEW_CURSOR_KIND
-        || (event.kind == "codex.notification"
-            && event
-                .codex_method
-                .as_deref()
-                .is_some_and(is_transcript_notification_method))
 }
 
 fn is_normal_live_event(event: &EventEnvelope) -> bool {
@@ -599,7 +581,6 @@ async fn normalized_timeline_events(
     params: &Value,
     metadata: &EventMetadata,
     source: TimelineUpdateSource,
-    cursor_seq: i64,
 ) -> ApiResult<NormalizedTimelineEvents> {
     let mut events = Vec::new();
     let mut drain_thread_ids = Vec::new();
@@ -610,14 +591,12 @@ async fn normalized_timeline_events(
         });
     }
 
-    events.extend(timeline_item_delta_event(state, method, params, metadata, cursor_seq).await?);
+    events.extend(timeline_item_delta_event(state, method, params, metadata).await?);
     events.extend(timeline_item_upsert_event(state, method, params, metadata, source).await?);
     let turn_upsert = timeline_turn_upsert_event(state, params, metadata, source).await?;
     events.extend(turn_upsert.events);
     drain_thread_ids.extend(turn_upsert.drain_thread_ids);
-    events.extend(
-        timeline_turn_completion_reconciliation_events(state, method, metadata, cursor_seq).await?,
-    );
+    events.extend(timeline_turn_completion_reconciliation_events(state, method, metadata).await?);
     if let Some(event) =
         timeline_thread_metadata_event(state, method, params, metadata, source).await?
     {
@@ -652,7 +631,6 @@ async fn timeline_item_delta_event(
     method: &str,
     params: &Value,
     metadata: &EventMetadata,
-    cursor_seq: i64,
 ) -> ApiResult<Vec<EventEnvelope>> {
     if !is_assistant_message_delta_method(method) {
         return Ok(Vec::new());
@@ -666,6 +644,9 @@ async fn timeline_item_delta_event(
     let Some(turn_id) = metadata.turn_id.clone() else {
         return Ok(Vec::new());
     };
+    let cursor =
+        append_timeline_changed_cursor(state, metadata, "timeline.item_delta", Some(method))
+            .await?;
     let delta = string_field(params, &["delta", "text", "content"]).unwrap_or_default();
     let _phase = string_field(params, &["phase"]);
     let patch = thread_view::record_item_delta_patch(
@@ -674,7 +655,7 @@ async fn timeline_item_delta_event(
         &turn_id,
         &item_id,
         &delta,
-        cursor_seq,
+        cursor.seq,
     )
     .await?;
     Ok(vec![thread_view_patch_payload_event(state, patch).await?])
@@ -754,7 +735,6 @@ async fn timeline_turn_completion_reconciliation_events(
     state: &AppState,
     method: &str,
     metadata: &EventMetadata,
-    cursor_seq: i64,
 ) -> ApiResult<Vec<EventEnvelope>> {
     if method != "turn/completed" {
         return Ok(Vec::new());
@@ -762,7 +742,8 @@ async fn timeline_turn_completion_reconciliation_events(
     let Some(thread_id) = metadata.thread_id.as_deref() else {
         return Ok(Vec::new());
     };
-    let revision = state.store.latest_event_seq().await?.max(cursor_seq);
+    let cursor = append_completed_turn_cursor(state, metadata, method).await?;
+    let revision = cursor.seq;
     let reconciliation =
         refresh_completed_turn_head(state, thread_id, metadata.turn_id.as_deref(), revision).await;
     match reconciliation {
@@ -773,9 +754,8 @@ async fn timeline_turn_completion_reconciliation_events(
                 thread_id,
                 "failed to reconcile completed turn head from app-server"
             );
-            let seq = state.store.latest_event_seq().await?.max(cursor_seq);
             Ok(vec![thread_view_refresh_required_event(
-                seq,
+                cursor.seq,
                 thread_id.to_string(),
                 "turn_completed_reconciliation_failed",
             )?])
@@ -902,6 +882,14 @@ async fn timeline_turn_upsert_event(
         thread_view::record_turn_status(&state.thread_views, &thread_id, &turn, cursor.seq).await?;
     events.push(thread_view_patch_event(state, &thread_id).await?);
     if newly_terminal {
+        let completed_cursor = append_completed_turn_cursor(state, metadata, "turn/upsert").await?;
+        thread_view::record_turn_status(
+            &state.thread_views,
+            &thread_id,
+            &turn,
+            completed_cursor.seq,
+        )
+        .await?;
         events.push(append_thread_read_projection_event(state, &thread_id).await?);
         events.extend(
             queue::requeue_unmatched_pending_commit_input_events_for_turn(
@@ -1254,6 +1242,31 @@ async fn append_timeline_changed_cursor(
         .await
 }
 
+async fn append_completed_turn_cursor(
+    state: &AppState,
+    metadata: &EventMetadata,
+    source_method: &str,
+) -> ApiResult<EventEnvelope> {
+    state
+        .store
+        .append_event(NewEvent {
+            project_id: metadata.project_id.clone(),
+            thread_id: metadata.thread_id.clone(),
+            turn_id: metadata.turn_id.clone(),
+            item_id: metadata.item_id.clone(),
+            kind: THREAD_VIEW_CURSOR_KIND.to_string(),
+            codex_method: Some("thread_view/cursor".to_string()),
+            payload: json!({
+                "threadId": metadata.thread_id.clone(),
+                "turnId": metadata.turn_id.clone(),
+                "reason": "agent_turn_completed",
+                "sourceKind": "timeline.turn_completed",
+                "sourceMethod": source_method,
+            }),
+        })
+        .await
+}
+
 fn is_transcript_timeline_event(kind: &str) -> bool {
     matches!(
         kind,
@@ -1456,7 +1469,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn notification_ingest_persists_before_broadcast() {
+    async fn notification_ingest_persists_thread_view_cursor_before_broadcast() {
         let state = test_state().await;
         let mut receiver = state.events.subscribe();
 
@@ -1471,14 +1484,20 @@ mod tests {
         .unwrap();
 
         let broadcast = receiver.recv().await.unwrap();
+        assert_eq!(broadcast.kind, THREAD_VIEW_PATCH_EVENT_KIND);
         let replay = state
             .store
-            .replay_events(Some(broadcast.seq - 1), None, None)
+            .replay_events(None, None, Some("thread-1".to_string()))
             .await
             .unwrap();
-        assert_eq!(replay[0].id, broadcast.id);
-        assert_eq!(replay[0].thread_id.as_deref(), Some("thread-1"));
-        assert_eq!(replay[0].turn_id.as_deref(), Some("turn-1"));
+        assert!(replay.iter().any(|event| {
+            event.kind == THREAD_VIEW_CURSOR_KIND
+                && event.thread_id.as_deref() == Some("thread-1")
+                && event.turn_id.as_deref() == Some("turn-1")
+        }));
+        assert!(replay
+            .iter()
+            .all(|event| event.kind != "codex.notification"));
     }
 
     #[tokio::test]
@@ -1512,8 +1531,6 @@ mod tests {
         .await
         .unwrap();
 
-        let raw = receiver.recv().await.unwrap();
-        assert_eq!(raw.kind, "codex.notification");
         let patch = receiver.recv().await.unwrap();
         assert_eq!(patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
         assert_eq!(patch.payload["liveState"], "idle");
@@ -1544,6 +1561,10 @@ mod tests {
         drop(requests);
 
         let persisted = state.store.replay_events(None, None, None).await.unwrap();
+        assert!(persisted.iter().any(|event| {
+            event.kind == THREAD_VIEW_CURSOR_KIND
+                && event.payload["sourceMethod"] == "turn/completed"
+        }));
         assert!(persisted
             .iter()
             .all(|event| event.kind != "timeline.item_upsert"));
@@ -1572,14 +1593,10 @@ mod tests {
         .await
         .unwrap();
 
-        let raw = receiver.recv().await.unwrap();
         let patch = timeout(Duration::from_secs(1), receiver.recv())
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(raw.kind, "codex.notification");
-        assert_eq!(raw.payload["sourceMethod"], "item/agentMessage/delta");
-        assert!(raw.payload.get("delta").is_none());
         assert_eq!(patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
         assert_eq!(patch.codex_method.as_deref(), Some("thread_view/patch"));
         assert_eq!(patch.thread_id.as_deref(), Some("thread-1"));
@@ -1602,7 +1619,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(replay.len(), 1);
-        assert_eq!(replay[0].kind, "codex.notification");
+        assert_eq!(replay[0].kind, THREAD_VIEW_CURSOR_KIND);
+        assert_eq!(replay[0].payload["sourceMethod"], "item/agentMessage/delta");
+        assert!(replay[0].payload.get("delta").is_none());
         assert!(replay
             .iter()
             .all(|event| event.kind != "thread_view.refresh_required"));
@@ -1629,9 +1648,9 @@ mod tests {
         let replay = state.store.replay_events(None, None, None).await.unwrap();
         let raw = replay
             .iter()
-            .find(|event| event.codex_method.as_deref() == Some("thread/realtime/transcript/delta"))
+            .find(|event| event.payload["sourceMethod"] == "thread/realtime/transcript/delta")
             .unwrap();
-        assert_eq!(raw.kind, "codex.notification");
+        assert_eq!(raw.kind, THREAD_VIEW_CURSOR_KIND);
         assert_eq!(raw.thread_id.as_deref(), Some("thread-1"));
         assert_eq!(raw.turn_id.as_deref(), Some("turn-1"));
         assert_eq!(
@@ -1661,9 +1680,7 @@ mod tests {
         .await
         .unwrap();
 
-        let raw = receiver.recv().await.unwrap();
         let normalized = receiver.recv().await.unwrap();
-        assert_eq!(raw.kind, "codex.notification");
         assert_eq!(normalized.kind, MCP_SERVER_STATUS_UPDATED_EVENT);
         assert_eq!(
             normalized.codex_method.as_deref(),
@@ -1686,9 +1703,7 @@ mod tests {
         .await
         .unwrap();
 
-        let raw = receiver.recv().await.unwrap();
         let normalized = receiver.recv().await.unwrap();
-        assert_eq!(raw.kind, "codex.notification");
         assert_eq!(normalized.kind, MCP_OAUTH_LOGIN_COMPLETED_EVENT);
         assert_eq!(
             normalized.codex_method.as_deref(),
@@ -1760,7 +1775,6 @@ mod tests {
         .await
         .unwrap();
 
-        let _raw = receiver.recv().await.unwrap();
         let patch = receiver.recv().await.unwrap();
         assert_eq!(patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
         assert_eq!(
@@ -1853,9 +1867,7 @@ mod tests {
         .await
         .unwrap();
 
-        let raw = receiver.recv().await.unwrap();
         let normalized = receiver.recv().await.unwrap();
-        assert_eq!(raw.kind, "codex.notification");
         assert_eq!(normalized.kind, "timeline.thread_metadata");
         assert_eq!(normalized.thread_id.as_deref(), Some("thread-1"));
         assert_eq!(normalized.payload["threadId"], "thread-1");
@@ -1886,7 +1898,6 @@ mod tests {
         .await
         .unwrap();
 
-        let _raw = receiver.recv().await.unwrap();
         let normalized = receiver.recv().await.unwrap();
         assert_eq!(normalized.kind, "timeline.thread_metadata");
         assert_eq!(normalized.payload["threadId"], "thread-1");

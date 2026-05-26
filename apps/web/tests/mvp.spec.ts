@@ -154,37 +154,6 @@ test("keeps long timeline content inside the thread viewer", async ({ page }) =>
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         events: [
-          {
-            id: "event-assistant-long",
-            seq: 1,
-            kind: "codex.notification",
-            codexMethod: "item/completed",
-            projectId: project.id,
-            threadId: thread.id,
-            turnId: "turn-1",
-            itemId: "assistant-long",
-            payload: { item: { id: "assistant-long", type: "agentMessage", text: longWord } },
-            receivedAt: "2026-04-30T00:00:00Z",
-          },
-          {
-            id: "event-command-long",
-            seq: 2,
-            kind: "codex.notification",
-            codexMethod: "item/completed",
-            projectId: project.id,
-            threadId: thread.id,
-            turnId: "turn-1",
-            itemId: "command-long",
-            payload: {
-              item: {
-                id: "command-long",
-                type: "commandExecution",
-                command: longCommand,
-                output: `${longOutput}\n`,
-              },
-            },
-            receivedAt: "2026-04-30T00:00:01Z",
-          },
         ],
       }),
     });
