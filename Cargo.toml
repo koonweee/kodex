@@ -6,3 +6,9 @@ resolver = "2"
 edition = "2021"
 license = "MIT"
 repository = "https://example.invalid/kodex"
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"
