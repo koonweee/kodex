@@ -318,6 +318,54 @@ describe("timeline canonical snapshots and patches", () => {
     });
   });
 
+  it("dedupes repeated file changes rows with identical visible entries from live patches", () => {
+    const file = timelineItem({
+      id: "projection-turn-1-file-1",
+      turnId: "turn-1",
+      itemId: "file-1",
+      itemType: "fileChange",
+      text: "",
+      displayOrder: 2,
+    });
+    const duplicateFileRow = (id: string, displayOrder: number) => ({
+      ...fileChangesRow(file, { displayOrder }),
+      id,
+      fileChanges: fileChangesRow(file, { displayOrder }).fileChanges.map((entry) => ({
+        ...entry,
+        id: `${id}-entry`,
+        itemIds: [],
+      })),
+    });
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot({
+      viewRevision: 1,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      items: [file],
+      rows: [duplicateFileRow("file-changes-turn-1-a", 200)],
+    }));
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
+      viewRevision: 2,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      rows: undefined,
+      upsertRows: [duplicateFileRow("file-changes-turn-1-b", 201)],
+    }));
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
+      viewRevision: 3,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      rows: undefined,
+      upsertRows: [duplicateFileRow("file-changes-turn-1-c", 202)],
+    }));
+
+    expect(state.rows.filter((row) => row.type === "file_changes")).toHaveLength(1);
+    expect(state.rows[0]).toMatchObject({
+      type: "file_changes",
+      entries: [{ path: "src/a.rs", action: "Modified", additions: 1, deletions: 0 }],
+    });
+  });
+
   it("removes active-turn rows omitted from the canonical patch", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot({
       viewRevision: 1,

@@ -29,6 +29,7 @@ import {
   timelineTurnById,
   type TimelineCollabAgent,
   type TimelineCollabAgentPresentation,
+  type TimelineFileChangesRow,
   type TimelineImage,
   type TimelineItem,
   type TimelineRow,
@@ -180,10 +181,10 @@ function canonicalTimelineRowsToViewRows(
   indexes = createEmptyTimelineIndexes(),
 ): { rows: TimelineRow[]; hiddenItems: TimelineItem[] } {
   const hiddenItems: TimelineItem[] = [];
-  const rows = [...canonicalRows]
+  const rows = normalizeTimelineRows([...canonicalRows]
     .sort((left, right) => left.displayOrder - right.displayOrder)
     .map((row) => canonicalTimelineRowToViewRow(threadId, row, indexes, hiddenItems))
-    .filter((row): row is TimelineRow => row !== null);
+    .filter((row): row is TimelineRow => row !== null));
   return { rows, hiddenItems };
 }
 
@@ -434,16 +435,73 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
     ),
     ...mappedUpserts.rows,
   ].sort((left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right));
+  const normalizedRows = normalizeTimelineRows(rows);
   const currentIndexes = createEmptyTimelineIndexes();
-  for (const row of rows) {
+  for (const row of normalizedRows) {
     addTimelineRowItemsToIndexes(row, currentIndexes);
   }
   currentIndexes.hiddenItems.push(...state.hiddenItems, ...mappedUpserts.hiddenItems);
   return createTimelineStateFromDraft({
     ...timelineDraftFromState(state),
     indexes: currentIndexes,
-    rows,
+    rows: normalizedRows,
   });
+}
+
+type TimelineCollapsedRow = Exclude<TimelineRow, { type: "work" }>;
+
+function normalizeTimelineRows(rows: TimelineRow[]): TimelineRow[] {
+  const seenFileChangeRows = new Set<string>();
+  const normalizedRows: TimelineRow[] = [];
+  for (const row of rows) {
+    const normalizedRow = row.type === "work" ? normalizeWorkRow(row) : row;
+    if (normalizedRow.type === "file_changes") {
+      const signature = fileChangesRowSignature(normalizedRow);
+      if (seenFileChangeRows.has(signature)) {
+        continue;
+      }
+      seenFileChangeRows.add(signature);
+    }
+    normalizedRows.push(normalizedRow);
+  }
+  return normalizedRows;
+}
+
+function normalizeWorkRow(row: Extract<TimelineRow, { type: "work" }>): Extract<TimelineRow, { type: "work" }> {
+  const collapsedRows = normalizeCollapsedTimelineRows(row.collapsedRows);
+  return collapsedRows === row.collapsedRows ? row : { ...row, collapsedRows };
+}
+
+function normalizeCollapsedTimelineRows(rows: TimelineCollapsedRow[]): TimelineCollapsedRow[] {
+  const seenFileChangeRows = new Set<string>();
+  let changed = false;
+  const normalizedRows: TimelineCollapsedRow[] = [];
+  for (const row of rows) {
+    if (row.type === "file_changes") {
+      const signature = fileChangesRowSignature(row);
+      if (seenFileChangeRows.has(signature)) {
+        changed = true;
+        continue;
+      }
+      seenFileChangeRows.add(signature);
+    }
+    normalizedRows.push(row);
+  }
+  return changed ? normalizedRows : rows;
+}
+
+function fileChangesRowSignature(row: TimelineFileChangesRow): string {
+  const entries = row.entries
+    .map((entry) => [
+      entry.path,
+      entry.action,
+      entry.additions,
+      entry.deletions,
+      entry.diff,
+    ].join("\u0001"))
+    .sort()
+    .join("\u0002");
+  return [row.turnId ?? "", entries].join("\u0003");
 }
 
 function timelineRowCanonicalItemIds(row: TimelineRow): string[] {
