@@ -54,6 +54,13 @@ type UseComposerOrchestrationParams = {
   onError: (error: unknown) => void;
   onQueuedInputDeleted: (threadId: string, queueId: string) => void;
   onQueuedInputUpsert: (row: QueuedSteerRow) => void;
+  onOptimisticUserMessageRemoved?: (clientRequestId: string) => void;
+  onOptimisticUserMessageSent?: (clientRequestId: string) => void;
+  onOptimisticUserMessageStarted?: (message: {
+    skillMentions: TimelineSkillMention[];
+    text: string;
+    threadId: string;
+  }) => string | null;
   onThreadMaterialized: (threadId: string) => void;
   onThreadTurnStartFailed: (threadId: string) => void;
   onThreadTurnStarted: (threadId: string) => void;
@@ -74,6 +81,9 @@ export function useComposerOrchestration({
   onError,
   onQueuedInputDeleted,
   onQueuedInputUpsert,
+  onOptimisticUserMessageRemoved,
+  onOptimisticUserMessageSent,
+  onOptimisticUserMessageStarted,
   onThreadMaterialized,
   onThreadTurnStartFailed,
   onThreadTurnStarted,
@@ -158,6 +168,7 @@ export function useComposerOrchestration({
     const text = composerText.trim();
     const attachments = pendingAttachments;
     let startedThreadId: string | null = null;
+    let optimisticClientRequestId: string | null = null;
     let retryRestoreContext: ComposerContext = {
       activeSelectedTurnId,
       draftChatThreadSelected,
@@ -171,6 +182,13 @@ export function useComposerOrchestration({
         startedThreadId = selectedThreadId;
         onThreadTurnStarted(selectedThreadId);
         draftControls.clearText();
+        if (text && attachments.length === 0) {
+          optimisticClientRequestId = onOptimisticUserMessageStarted?.({
+            skillMentions,
+            text,
+            threadId: selectedThreadId,
+          }) ?? null;
+        }
         const input = await buildTurnInput(text, attachments, skillInputs, skillTextElements);
         const response = await submitThreadInput(
           selectedThreadId,
@@ -178,10 +196,16 @@ export function useComposerOrchestration({
           selectedThreadComposerOverride ? composerTurnOptions(selectedThreadComposerOverride) : {},
         );
         if (response.queuedInput) {
+          if (optimisticClientRequestId) {
+            onOptimisticUserMessageRemoved?.(optimisticClientRequestId);
+          }
           onQueuedInputUpsert(response.queuedInput);
           clearPendingAttachments();
           setIsComposerSubmitting(false);
           return;
+        }
+        if (optimisticClientRequestId) {
+          onOptimisticUserMessageSent?.(optimisticClientRequestId);
         }
         onThreadMaterialized(selectedThreadId);
         clearPendingAttachments();
@@ -223,6 +247,9 @@ export function useComposerOrchestration({
       clearPendingAttachments();
       setIsComposerSubmitting(false);
     } catch (error) {
+      if (optimisticClientRequestId) {
+        onOptimisticUserMessageRemoved?.(optimisticClientRequestId);
+      }
       if (startedThreadId) {
         onThreadTurnStartFailed(startedThreadId);
       }

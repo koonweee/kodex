@@ -15,7 +15,7 @@ use futures_core::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::{broadcast, mpsc};
-use tokio::time::{timeout, Duration, Instant};
+use tokio::time::{timeout, Duration};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -32,8 +32,8 @@ use crate::{
     error::{ApiError, ApiResult},
     queue,
     routes::threads::{
-        ThreadReadStateUpdate, THREAD_PIN_UPDATED_EVENT, THREAD_READ_UPDATED_EVENT,
-        THREAD_UPSERTED_EVENT,
+        ThreadReadStateUpdate, THREAD_NOTIFICATIONS_UPDATED_EVENT, THREAD_PIN_UPDATED_EVENT,
+        THREAD_READ_UPDATED_EVENT, THREAD_UPSERTED_EVENT,
     },
     schema::is_supported_approval_method,
     skills,
@@ -44,7 +44,6 @@ use crate::{
 const SSE_REPLAY_PAGE_SIZE: i64 = 500;
 const SELECTED_THREAD_POLL_LIMIT: u32 = 25;
 const TURN_COMPLETION_HEAD_REFRESH_LIMIT: u32 = 50;
-const SELECTED_THREAD_ACTIVE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const THREAD_VIEW_CURSOR_KIND: &str = "thread_view.cursor";
 pub const MCP_CONFIG_CHANGED_EVENT: &str = "mcp.config_changed";
 pub const MCP_SERVER_STATUS_UPDATED_EVENT: &str = "mcp.server_status_updated";
@@ -63,6 +62,7 @@ pub struct EventsQuery {
     pub cursor: Option<i64>,
     pub project_id: Option<String>,
     pub thread_id: Option<String>,
+    pub exclude_thread_id: Option<String>,
 }
 
 #[utoipa::path(get, path = "/v1/events", params(EventsQuery), responses((status = 200, body = EventListResponse)))]
@@ -71,6 +71,7 @@ pub async fn events(
     State(state): State<AppState>,
     Query(query): Query<EventsQuery>,
 ) -> ApiResult<Response> {
+    validate_events_query(&query)?;
     if wants_sse(&headers) {
         let stream = event_stream(state, query).await?;
         Ok(Sse::new(stream)
@@ -87,11 +88,29 @@ pub async fn debug_events(
     State(state): State<AppState>,
     Query(query): Query<EventsQuery>,
 ) -> ApiResult<Json<EventListResponse>> {
+    validate_events_query(&query)?;
     let events = state
         .store
-        .replay_events(query.cursor, query.project_id, query.thread_id)
+        .replay_events(
+            query.cursor,
+            query.project_id.clone(),
+            query.thread_id.clone(),
+        )
         .await?;
+    let events = events
+        .into_iter()
+        .filter(|event| event_matches(event, &query))
+        .collect();
     Ok(Json(EventListResponse { events }))
+}
+
+fn validate_events_query(query: &EventsQuery) -> ApiResult<()> {
+    if query.thread_id.is_some() && query.exclude_thread_id.is_some() {
+        return Err(ApiError::BadRequest(
+            "threadId and excludeThreadId cannot be combined".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 pub async fn run_inbound_ingest(mut inbound: mpsc::Receiver<InboundMessage>, state: AppState) {
@@ -220,7 +239,9 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             thread_view::record_approval_created(&state.thread_views, &approval, event.seq).await?;
             let _ = state.events.send(event);
             if let Some(thread_id) = approval.thread_id.as_deref() {
-                let patch = thread_view_patch_event(state, thread_id).await?;
+                let patch =
+                    thread_view::lifecycle_patch_for_thread(&state.thread_views, thread_id).await?;
+                let patch = thread_view_patch_payload_event(state, patch).await?;
                 let _ = state.events.send(patch);
             }
         }
@@ -374,7 +395,6 @@ async fn event_stream(
 struct SelectedThreadSync {
     last_seen_updated_at: Option<i64>,
     last_snapshot_updated_at: Option<i64>,
-    last_active_refresh_at: Option<Instant>,
 }
 
 async fn reconcile_selected_thread(
@@ -392,25 +412,15 @@ async fn reconcile_selected_thread(
         .is_none_or(|updated_at| summary.updated_at > updated_at);
     sync.last_seen_updated_at = Some(summary.updated_at);
 
-    let active_refresh_due = summary.status == ThreadStatus::Active
-        && sync
-            .last_active_refresh_at
-            .is_none_or(|last| last.elapsed() >= SELECTED_THREAD_ACTIVE_REFRESH_INTERVAL);
     let snapshot_stale = sync
         .last_snapshot_updated_at
         .is_none_or(|updated_at| summary.updated_at > updated_at);
 
-    if !updated_at_changed && !active_refresh_due && !snapshot_stale {
+    if !updated_at_changed && !snapshot_stale {
         return Ok(None);
     }
 
     sync.last_snapshot_updated_at = Some(summary.updated_at);
-    if summary.status == ThreadStatus::Active {
-        sync.last_active_refresh_at = Some(Instant::now());
-    } else {
-        sync.last_active_refresh_at = None;
-    }
-
     thread_view_refresh_required_event(seq, thread_id.to_string(), "thread_changed").map(Some)
 }
 
@@ -449,7 +459,11 @@ async fn replay_operational_events(
             break;
         };
         high_water = last.seq;
-        events.extend(page.into_iter().filter(is_operational_replay_event));
+        events.extend(
+            page.into_iter()
+                .filter(|event| event_matches(event, query))
+                .filter(is_operational_replay_event),
+        );
         if page_len < SSE_REPLAY_PAGE_SIZE as usize || events.len() >= SSE_REPLAY_PAGE_SIZE as usize
         {
             events.truncate(SSE_REPLAY_PAGE_SIZE as usize);
@@ -465,6 +479,7 @@ fn is_operational_replay_event(event: &EventEnvelope) -> bool {
         event.kind.as_str(),
         "approval.created"
             | "approval.resolved"
+            | "gateway.error"
             | "gateway.warning"
             | "timeline.thread_metadata"
             | MCP_CONFIG_CHANGED_EVENT
@@ -472,6 +487,7 @@ fn is_operational_replay_event(event: &EventEnvelope) -> bool {
             | MCP_SERVER_STATUS_UPDATED_EVENT
             | MCP_OAUTH_LOGIN_COMPLETED_EVENT
             | skills::SKILLS_CHANGED_EVENT
+            | THREAD_NOTIFICATIONS_UPDATED_EVENT
             | THREAD_READ_UPDATED_EVENT
             | THREAD_PIN_UPDATED_EVENT
             | THREAD_UPSERTED_EVENT
@@ -485,10 +501,8 @@ fn is_operational_replay_event(event: &EventEnvelope) -> bool {
 fn is_selected_thread_sse_replay_event(event: &EventEnvelope, query: &EventsQuery) -> bool {
     is_operational_replay_event(event)
         || (query.thread_id.is_some()
-            && matches!(
-                event.kind.as_str(),
-                THREAD_VIEW_PATCH_EVENT_KIND | THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND
-            ))
+            && (event.kind == THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND
+                || is_valid_thread_view_patch_replay_event(event)))
 }
 
 fn selected_thread_sse_replay_events(
@@ -498,9 +512,13 @@ fn selected_thread_sse_replay_events(
     let mut events = Vec::new();
     let mut thread_view_refresh_seq = None;
     for event in page {
-        if is_selected_thread_sse_replay_event(&event, query) {
+        if event_matches(&event, query) && is_selected_thread_sse_replay_event(&event, query) {
             events.push(event);
-        } else if query.thread_id.is_some() && is_thread_view_replay_refresh_trigger(&event) {
+        } else if event_matches(&event, query)
+            && query.thread_id.is_some()
+            && (is_thread_view_replay_refresh_trigger(&event)
+                || is_invalid_thread_view_patch_replay_trigger(&event))
+        {
             thread_view_refresh_seq =
                 Some(thread_view_refresh_seq.unwrap_or(event.seq).max(event.seq));
         }
@@ -517,6 +535,19 @@ fn selected_thread_sse_replay_events(
 
 fn is_thread_view_replay_refresh_trigger(event: &EventEnvelope) -> bool {
     event.kind == THREAD_VIEW_CURSOR_KIND
+}
+
+fn is_valid_thread_view_patch_replay_event(event: &EventEnvelope) -> bool {
+    if event.kind != THREAD_VIEW_PATCH_EVENT_KIND {
+        return false;
+    }
+
+    serde_json::from_value::<thread_view::ThreadViewPatch>(event.payload.clone())
+        .is_ok_and(|patch| patch.validate_scope().is_ok())
+}
+
+fn is_invalid_thread_view_patch_replay_trigger(event: &EventEnvelope) -> bool {
+    event.kind == THREAD_VIEW_PATCH_EVENT_KIND && !is_valid_thread_view_patch_replay_event(event)
 }
 
 fn is_normal_live_event(event: &EventEnvelope) -> bool {
@@ -702,7 +733,7 @@ async fn timeline_item_upsert_event(
         Some("item/upsert"),
     )
     .await?;
-    thread_view::record_item_upsert(
+    let patch = thread_view::record_item_upsert(
         &state.thread_views,
         &thread_id,
         &turn_id,
@@ -712,7 +743,7 @@ async fn timeline_item_upsert_event(
         cursor.seq,
     )
     .await?;
-    let mut events = vec![thread_view_patch_event(state, &thread_id).await?];
+    let mut events = vec![thread_view_patch_payload_event(state, patch).await?];
     if let Some(event) =
         queue::reconcile_pending_steer_commit_event(state, &thread_id, &turn_id, item).await?
     {
@@ -747,7 +778,9 @@ async fn timeline_turn_completion_reconciliation_events(
     let reconciliation =
         refresh_completed_turn_head(state, thread_id, metadata.turn_id.as_deref(), revision).await;
     match reconciliation {
-        Ok(()) => Ok(vec![thread_view_patch_event(state, thread_id).await?]),
+        Ok(()) => Ok(vec![
+            thread_view_full_snapshot_patch_event(state, thread_id).await?,
+        ]),
         Err(error) => {
             tracing::warn!(
                 %error,
@@ -878,12 +911,12 @@ async fn timeline_turn_upsert_event(
     .await?;
     let mut events = Vec::new();
     let terminal = is_terminal_turn_status(&turn.status);
-    let newly_terminal =
+    let (newly_terminal, patch) =
         thread_view::record_turn_status(&state.thread_views, &thread_id, &turn, cursor.seq).await?;
-    events.push(thread_view_patch_event(state, &thread_id).await?);
+    events.push(thread_view_patch_payload_event(state, patch).await?);
     if newly_terminal {
         let completed_cursor = append_completed_turn_cursor(state, metadata, "turn/upsert").await?;
-        thread_view::record_turn_status(
+        let _ = thread_view::record_turn_status(
             &state.thread_views,
             &thread_id,
             &turn,
@@ -985,7 +1018,7 @@ async fn append_thread_read_projection_event(
         .await
 }
 
-pub(crate) async fn thread_view_patch_event(
+async fn thread_view_full_snapshot_patch_event(
     state: &AppState,
     thread_id: &str,
 ) -> ApiResult<EventEnvelope> {
@@ -993,10 +1026,13 @@ pub(crate) async fn thread_view_patch_event(
     thread_view_patch_payload_event(state, patch).await
 }
 
-async fn thread_view_patch_payload_event(
+pub(crate) async fn thread_view_patch_payload_event(
     state: &AppState,
     patch: thread_view::ThreadViewPatch,
 ) -> ApiResult<EventEnvelope> {
+    patch.validate_scope().map_err(|message| {
+        ApiError::BadGateway(format!("invalid thread_view.patch payload: {message}"))
+    })?;
     synthetic_event(
         state.store.latest_event_seq().await?,
         Some(patch.thread_id.clone()),
@@ -1134,14 +1170,14 @@ async fn timeline_thread_status_event(
     )
     .await?;
     let mut events = Vec::new();
-    thread_view::record_thread_live_state(
+    let patch = thread_view::record_thread_live_state(
         &state.thread_views,
         &thread_id,
         live_state_from_thread_status(status),
         cursor.seq,
     )
     .await?;
-    events.push(thread_view_patch_event(state, &thread_id).await?);
+    events.push(thread_view_patch_payload_event(state, patch).await?);
     match status {
         ThreadStatus::Idle | ThreadStatus::SystemError => {
             state
@@ -1330,6 +1366,7 @@ fn thread_summary_from_value(thread: &Value) -> ApiResult<ThreadSummary> {
         last_completed_agent_turn_seq: None,
         seen_completed_agent_turn_seq: 0,
         unread_completed_agent_turn: false,
+        notifications_enabled: true,
         raw_payload: thread.clone(),
     })
 }
@@ -1400,6 +1437,10 @@ fn event_matches(event: &EventEnvelope, query: &EventsQuery) -> bool {
             .thread_id
             .as_ref()
             .is_none_or(|thread_id| event.thread_id.as_ref() == Some(thread_id))
+        && query
+            .exclude_thread_id
+            .as_ref()
+            .is_none_or(|thread_id| event.thread_id.as_ref() != Some(thread_id))
 }
 
 fn event_to_sse(event: EventEnvelope) -> Result<Event, axum::Error> {
@@ -1533,6 +1574,7 @@ mod tests {
 
         let patch = receiver.recv().await.unwrap();
         assert_eq!(patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
+        assert_eq!(patch.payload["scope"], "full_snapshot");
         assert_eq!(patch.payload["liveState"], "idle");
         assert_eq!(patch.payload["items"][0]["turnId"], "turn-1");
         assert_eq!(
@@ -1601,6 +1643,7 @@ mod tests {
         assert_eq!(patch.codex_method.as_deref(), Some("thread_view/patch"));
         assert_eq!(patch.thread_id.as_deref(), Some("thread-1"));
         assert_eq!(patch.payload["threadId"], "thread-1");
+        assert_eq!(patch.payload["scope"], "turn");
         assert_eq!(patch.payload["activeTurnId"], "turn-1");
         assert_eq!(patch.payload["liveState"], "streaming");
         assert!(patch.payload.get("rows").is_none());
@@ -1935,7 +1978,6 @@ mod tests {
             .unwrap()
             .unwrap();
         sync.last_snapshot_updated_at = Some(2);
-        sync.last_active_refresh_at = Some(Instant::now());
         *app_server.next_response.lock().unwrap() = Some(json!({
             "data": [{
                 "id": "thread-1",

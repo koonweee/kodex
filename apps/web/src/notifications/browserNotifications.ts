@@ -1,4 +1,4 @@
-import type { BrowserNotificationPermission, NotificationIntent } from "./notificationTypes";
+import type { BrowserNotificationPermission } from "./notificationTypes";
 
 export function notificationPermission(): BrowserNotificationPermission {
   if (typeof Notification === "undefined") {
@@ -12,20 +12,4 @@ export async function requestKodexNotificationPermission(): Promise<BrowserNotif
     return "unsupported";
   }
   return Notification.requestPermission();
-}
-
-export function showForegroundNotification(intent: NotificationIntent): boolean {
-  if (typeof Notification === "undefined" || Notification.permission !== "granted") {
-    return false;
-  }
-  new Notification(intent.title, {
-    body: intent.body,
-    data: {
-      kind: intent.kind,
-      route: intent.route,
-      threadId: intent.threadId,
-    },
-    tag: intent.tag,
-  });
-  return true;
 }

@@ -7,6 +7,7 @@ import type {
   ThreadViewResponse,
   ThreadViewPatch,
   ThreadTimelineWindowPage,
+  TimelineSkillMention,
 } from "../api/client";
 import {
   createDiagnosticItem,
@@ -76,11 +77,18 @@ export function applyLiveTimelineUpdate(state: TimelineState, event: EventEnvelo
 export const applyTimelineEvent = applyLiveTimelineUpdate;
 
 export function applyDebugEvent(state: TimelineState, event: EventEnvelope): TimelineState {
-  const next = timelineDraftFromState(state, {
-    lastSeq: Math.max(state.lastSeq, event.seq),
-  });
-  addOrReplaceItem(next, createDiagnosticItem(event));
-  return createTimelineStateFromDraft(next);
+  const item = createDiagnosticItem(event);
+  const existingRows = state.rows.filter((row) => row.key !== `diagnostic-${item.id}`);
+  const diagnosticRow: TimelineRow = {
+    type: "item",
+    key: `diagnostic-${item.id}`,
+    turnKey: item.turnId ? `turn-${item.turnId}` : `diagnostic-${item.id}`,
+    turnId: item.turnId,
+    displayOrder: item.displayOrder,
+    item,
+  };
+  const next = rebuildTimelineRows(state, [...existingRows, diagnosticRow]);
+  return withTimelineLastSeq(next, Math.max(state.lastSeq, event.seq));
 }
 
 export function replayTimeline(events: EventEnvelope[]): TimelineState {
@@ -89,6 +97,74 @@ export function replayTimeline(events: EventEnvelope[]): TimelineState {
 
 export function applyTimelineSnapshot(state: TimelineState, snapshot: ThreadViewResponse): TimelineState {
   return withHistoryPageState(applyCanonicalTimelineSnapshot(state, snapshot, snapshot.timeline), snapshot.historyPage ?? null);
+}
+
+export function addOptimisticUserMessage(
+  state: TimelineState,
+  input: {
+    clientRequestId: string;
+    skillMentions?: TimelineSkillMention[];
+    text: string;
+    threadId: string;
+  },
+): TimelineState {
+  const id = optimisticUserMessageId(input.clientRequestId);
+  if (timelineItemById(indexesForState(state), id)) {
+    return state;
+  }
+  const displayOrder = optimisticDisplayOrder(state);
+  const item: TimelineItem = {
+    id,
+    clientRequestId: input.clientRequestId,
+    confirmationState: "sending",
+    debugEvents: [],
+    displayOrder,
+    kind: "user_message",
+    payload: {},
+    skillMentions: input.skillMentions,
+    source: "optimistic",
+    status: "running",
+    text: input.text,
+    timestampMs: Date.now(),
+    turnId: null,
+  };
+  return rebuildTimelineRows(state, [
+    ...state.rows,
+    {
+      displayOrder,
+      item,
+      key: id,
+      turnId: null,
+      turnKey: `optimistic-${input.threadId}`,
+      type: "item",
+    },
+  ]);
+}
+
+export function markOptimisticUserMessageSent(state: TimelineState, clientRequestId: string): TimelineState {
+  const id = optimisticUserMessageId(clientRequestId);
+  let changed = false;
+  const rows = state.rows.map((row) => {
+    if (row.type !== "item" || row.item.id !== id) {
+      return row;
+    }
+    changed = true;
+    return {
+      ...row,
+      item: {
+        ...row.item,
+        confirmationState: "sent" as const,
+        status: "completed" as const,
+      },
+    };
+  });
+  return changed ? rebuildTimelineRows(state, rows) : state;
+}
+
+export function removeOptimisticUserMessage(state: TimelineState, clientRequestId: string): TimelineState {
+  const id = optimisticUserMessageId(clientRequestId);
+  const rows = state.rows.filter((row) => row.type !== "item" || row.item.id !== id);
+  return rows.length === state.rows.length ? state : rebuildTimelineRows(state, rows);
 }
 
 export function applyTimelineHistoryWindow(state: TimelineState, snapshot: ThreadViewResponse): TimelineState {
@@ -341,10 +417,15 @@ function canonicalPresentationItem(
   presentation: TimelinePresentationItem,
   item: ThreadTimelineSnapshotItem,
 ): TimelinePresentationItem {
+  const compactItem = {
+    ...presentation.item,
+    debugEvents: presentation.item.debugEvents.map(compactStoredTimelineEvent),
+    payload: {},
+  };
   return {
     ...presentation,
     item: {
-      ...presentation.item,
+      ...compactItem,
       id: item.id,
       serverItemId: item.itemId,
       source: "app_server",
@@ -396,21 +477,40 @@ function applyThreadViewPatch(state: TimelineState, event: EventEnvelope): Timel
     return applyDebugEvent(state, event);
   }
 
-  let next = applyCanonicalRowsPatch(state, threadId, patch);
+  if (!isThreadViewPatchScope(patch.scope)) {
+    return withTimelineLastSeq(state, Math.max(event.seq, revision));
+  }
+
+  let next = patch.scope === "lifecycle" ? state : applyCanonicalRowsPatch(state, threadId, patch);
   next = withProjectionPatchLiveState(next, patch, event.seq);
   return withTimelineLastSeq(next, Math.max(event.seq, revision));
 }
 
+function isThreadViewPatchScope(scope: ThreadViewPatch["scope"] | undefined): scope is ThreadViewPatch["scope"] {
+  return scope === "full_snapshot" || scope === "turn" || scope === "lifecycle";
+}
+
 function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: ThreadViewPatch): TimelineState {
+  if (patch.scope === "full_snapshot" && !Array.isArray(patch.rows)) {
+    return state;
+  }
+  if (patch.scope === "turn" && Array.isArray(patch.rows)) {
+    return state;
+  }
   const fullRows = patch.rows;
   if (Array.isArray(fullRows)) {
     const currentIndexes = createEmptyTimelineIndexes();
     const mapped = canonicalTimelineRowsToViewRows(threadId, fullRows, currentIndexes);
-    currentIndexes.hiddenItems.push(...state.hiddenItems, ...mapped.hiddenItems);
+    const rows = preserveUnconfirmedOptimisticUserRows(state.rows, mapped.rows);
+    const indexes = createEmptyTimelineIndexes();
+    for (const row of rows) {
+      addTimelineRowItemsToIndexes(row, indexes);
+    }
+    indexes.hiddenItems.push(...state.hiddenItems, ...mapped.hiddenItems);
     return createTimelineStateFromDraft({
       ...timelineDraftFromState(state),
-      indexes: currentIndexes,
-      rows: mapped.rows,
+      indexes,
+      rows,
     });
   }
 
@@ -426,12 +526,14 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
   );
   const upsertsByKey = new Map(mappedUpserts.rows.map((row) => [row.key, row]));
   const replacedItemIds = new Set(mappedUpserts.rows.flatMap(timelineRowCanonicalItemIds));
+  const canonicalUserTexts = canonicalUserMessageTexts(mappedUpserts.rows);
   const rows = [
     ...state.rows.filter(
       (row) =>
         !removedRowIds.has(row.key) &&
         !upsertsByKey.has(row.key) &&
-        !timelineRowCanonicalItemIds(row).some((itemId) => replacedItemIds.has(itemId)),
+        !timelineRowCanonicalItemIds(row).some((itemId) => replacedItemIds.has(itemId)) &&
+        !optimisticUserRowMatches(row, canonicalUserTexts),
     ),
     ...mappedUpserts.rows,
   ].sort((left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right));
@@ -458,6 +560,7 @@ function normalizeTimelineRows(rows: TimelineRow[]): TimelineRow[] {
     if (normalizedRow.type === "file_changes") {
       const signature = fileChangesRowSignature(normalizedRow);
       if (seenFileChangeRows.has(signature)) {
+        replaceFileChangesRow(normalizedRows, signature, normalizedRow);
         continue;
       }
       seenFileChangeRows.add(signature);
@@ -480,6 +583,7 @@ function normalizeCollapsedTimelineRows(rows: TimelineCollapsedRow[]): TimelineC
     if (row.type === "file_changes") {
       const signature = fileChangesRowSignature(row);
       if (seenFileChangeRows.has(signature)) {
+        replaceFileChangesRow(normalizedRows, signature, row);
         changed = true;
         continue;
       }
@@ -490,14 +594,22 @@ function normalizeCollapsedTimelineRows(rows: TimelineCollapsedRow[]): TimelineC
   return changed ? normalizedRows : rows;
 }
 
+function replaceFileChangesRow<TRow extends TimelineCollapsedRow | TimelineRow>(
+  rows: TRow[],
+  signature: string,
+  replacement: Extract<TRow, { type: "file_changes" }>,
+) {
+  const index = rows.findIndex((row) => row.type === "file_changes" && fileChangesRowSignature(row) === signature);
+  if (index !== -1) {
+    rows[index] = replacement;
+  }
+}
+
 function fileChangesRowSignature(row: TimelineFileChangesRow): string {
   const entries = row.entries
     .map((entry) => [
       entry.path,
       entry.action,
-      entry.additions,
-      entry.deletions,
-      entry.diff,
     ].join("\u0001"))
     .sort()
     .join("\u0002");
@@ -613,6 +725,74 @@ function withTimelineLastSeq(state: TimelineState, lastSeq: number): TimelineSta
   });
 }
 
+function optimisticUserMessageId(clientRequestId: string): string {
+  return `optimistic-user-${clientRequestId}`;
+}
+
+function optimisticDisplayOrder(state: TimelineState): number {
+  const lastRowOrder = state.rows.at(-1)?.displayOrder ?? state.viewRevision ?? state.lastSeq;
+  return Math.max(lastRowOrder, state.viewRevision, state.lastSeq) + 0.001;
+}
+
+function rebuildTimelineRows(state: TimelineState, rows: TimelineRow[]): TimelineState {
+  const normalizedRows = normalizeTimelineRows([...rows].sort((left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right)));
+  const indexes = createEmptyTimelineIndexes();
+  for (const row of normalizedRows) {
+    addTimelineRowItemsToIndexes(row, indexes);
+  }
+  indexes.hiddenItems.push(...state.hiddenItems);
+  return createTimelineStateFromDraft({
+    ...timelineDraftFromState(state),
+    indexes,
+    rows: normalizedRows,
+  });
+}
+
+function preserveUnconfirmedOptimisticUserRows(currentRows: TimelineRow[], canonicalRows: TimelineRow[]): TimelineRow[] {
+  const canonicalTexts = canonicalUserMessageTexts(canonicalRows);
+  return [
+    ...canonicalRows,
+    ...currentRows.filter((row) => optimisticUserRowMatches(row, canonicalTexts, { includeSent: false })),
+  ];
+}
+
+function canonicalUserMessageTexts(rows: TimelineRow[]): Set<string> {
+  return new Set(
+    rows
+      .flatMap(timelineRowItems)
+      .filter((item) => item.kind === "user_message" && item.source !== "optimistic")
+      .map((item) => item.text)
+      .filter(Boolean),
+  );
+}
+
+function optimisticUserRowMatches(
+  row: TimelineRow,
+  canonicalUserTexts: Set<string>,
+  options: { includeSent?: boolean } = {},
+): boolean {
+  if (row.type !== "item" || row.item.source !== "optimistic" || row.item.kind !== "user_message") {
+    return false;
+  }
+  if (options.includeSent === false && row.item.confirmationState === "sent") {
+    return false;
+  }
+  return canonicalUserTexts.has(row.item.text);
+}
+
+function timelineRowItems(row: TimelineRow): TimelineItem[] {
+  if (row.type === "item") {
+    return [row.item];
+  }
+  if (row.type === "activity") {
+    return row.items;
+  }
+  if (row.type === "work") {
+    return row.collapsedRows.flatMap(timelineRowItems);
+  }
+  return [];
+}
+
 function applyPresentedCanonicalItem(
   next: TimelineDraft,
   event: EventEnvelope,
@@ -654,6 +834,7 @@ function matchingAppServerItemByServerId(state: TimelineDraft, incoming: Timelin
 }
 
 function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event: EventEnvelope): TimelineItem {
+  const compactEvent = compactStoredTimelineEvent(event);
   return {
     ...existing,
     ...incoming,
@@ -662,7 +843,7 @@ function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event
     collab: mergeCollabPresentation(existing.collab, incoming.collab),
     command: incoming.command || existing.command,
     cwd: incoming.cwd || existing.cwd,
-    debugEvents: [...existing.debugEvents, event],
+    debugEvents: [...existing.debugEvents, compactEvent],
     imageSrc: incoming.imageSrc || existing.imageSrc,
     kind: incoming.kind === "debug_event" && existing.kind !== "debug_event" ? existing.kind : incoming.kind,
     output: incoming.output || existing.output,
@@ -670,7 +851,7 @@ function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event
     messagePhase: incoming.messagePhase || existing.messagePhase,
     images: mergeImages(existing.images, incoming.images),
     skillMentions: incoming.skillMentions ?? existing.skillMentions,
-    payload: event.payload,
+    payload: compactStoredPayload(incoming),
     resultSummary: incoming.resultSummary || existing.resultSummary,
     displayOrder: incoming.displayOrder,
     timestampMs: incoming.timestampMs ?? existing.timestampMs,
@@ -755,6 +936,20 @@ function addOrReplaceItem(state: TimelineDraft, item: TimelineItem) {
     addToTurn(state, item);
   }
   compactTimelineStores(state.indexes);
+}
+
+function compactStoredPayload(item: TimelineItem): unknown {
+  if (item.source === "app_server") {
+    return {};
+  }
+  return item.payload;
+}
+
+function compactStoredTimelineEvent(event: EventEnvelope): EventEnvelope {
+  return {
+    ...event,
+    payload: {},
+  };
 }
 
 function addItem(state: TimelineDraft, item: TimelineItem) {

@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Box, Button, Group, Menu, Modal, Skeleton, Text, TextInput, Title, Tooltip } from "@mantine/core";
+import { ActionIcon, Badge, Box, Button, Group, Menu, Modal, Skeleton, Switch, Text, TextInput, Title, Tooltip } from "@mantine/core";
 import { AlertCircle, Archive, Bot, MoreHorizontal, PanelLeftOpen, PanelRightOpen, Pencil, Pin, PinOff } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
@@ -22,6 +22,7 @@ const THREAD_PANEL_TEXT = {
   renameHelp: "Type a name and press Enter.",
   renameInput: "Thread name",
   renameSubmit: "Rename",
+  notifications: "Notifications",
   pin: "Pin thread",
   showSidebar: "Show sidebar",
   threadUnavailableText: "This thread could not be loaded. It may have been archived, deleted, or unavailable from this gateway.",
@@ -44,6 +45,7 @@ export function ThreadPanel({
   onMarkdownOpen,
   onPinThread,
   onRenameThread,
+  onSetThreadNotificationsEnabled,
   onShowMobileSidebar,
   onSubagentSidebarToggle,
   onTimelineReady,
@@ -74,6 +76,7 @@ export function ThreadPanel({
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   onPinThread: (threadId: string) => void;
   onRenameThread: (threadId: string, name: string) => Promise<void>;
+  onSetThreadNotificationsEnabled: (threadId: string, enabled: boolean) => void;
   onShowMobileSidebar: () => void;
   onSubagentSidebarToggle?: () => void;
   onTimelineReady: () => void;
@@ -278,6 +281,26 @@ export function ThreadPanel({
                     </Menu.Item>
                     <Menu.Item leftSection={<Pencil size={14} />} onClick={() => setRenameModalOpen(true)}>
                       {THREAD_PANEL_TEXT.rename}
+                    </Menu.Item>
+                    <Menu.Item
+                      aria-checked={selectedThread.notificationsEnabled !== false}
+                      closeMenuOnClick={false}
+                      onClick={() =>
+                        onSetThreadNotificationsEnabled(selectedThread.id, selectedThread.notificationsEnabled === false)
+                      }
+                      rightSection={
+                        <Switch
+                          aria-hidden="true"
+                          checked={selectedThread.notificationsEnabled !== false}
+                          readOnly
+                          size="xs"
+                          style={{ pointerEvents: "none" }}
+                          tabIndex={-1}
+                        />
+                      }
+                      role="menuitemcheckbox"
+                    >
+                      {THREAD_PANEL_TEXT.notifications}
                     </Menu.Item>
                     <Menu.Item leftSection={<Archive size={14} />} onClick={onArchiveThread}>
                       {THREAD_PANEL_TEXT.archive}

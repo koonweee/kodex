@@ -27,10 +27,10 @@ export function useSelectedThreadTimeline({
   onApprovalEvent,
   onError,
   onQueueEvent,
+  onSelectedThreadEvent,
   onSnapshotThread,
   onSyncNotice,
   onThreadLoadFailed,
-  onThreadMetadataEvent,
   selectedThreadId,
   setApprovals,
   setTimeline,
@@ -40,10 +40,10 @@ export function useSelectedThreadTimeline({
   onApprovalEvent: (current: Approval[], event: EventEnvelope) => Approval[];
   onError: (error: unknown) => void;
   onQueueEvent: (event: EventEnvelope) => void;
+  onSelectedThreadEvent: (event: EventEnvelope) => void;
   onSnapshotThread: (thread: ThreadSummary) => void;
   onSyncNotice?: (notice: ThreadSyncNotice | null) => void;
   onThreadLoadFailed?: (threadId: string, error: unknown) => void;
-  onThreadMetadataEvent: (event: EventEnvelope) => void;
   selectedThreadId: string | null;
   setApprovals: Dispatch<SetStateAction<Approval[]>>;
   setTimeline: Dispatch<SetStateAction<TimelineState>>;
@@ -58,19 +58,19 @@ export function useSelectedThreadTimeline({
     onApprovalEvent,
     onError,
     onQueueEvent,
+    onSelectedThreadEvent,
     onSnapshotThread,
     onSyncNotice,
     onThreadLoadFailed,
-    onThreadMetadataEvent,
   });
   latestCallbacks.current = {
     onApprovalEvent,
     onError,
     onQueueEvent,
+    onSelectedThreadEvent,
     onSnapshotThread,
     onSyncNotice,
     onThreadLoadFailed,
-    onThreadMetadataEvent,
   };
 
   function clearEntry() {
@@ -269,13 +269,13 @@ export function useSelectedThreadTimeline({
           if (event.threadId && event.threadId !== threadId) {
             return;
           }
+          latestCallbacks.current.onSelectedThreadEvent(event);
           // Raw app-server lifecycle events are not render inputs here. The
           // gateway thread view owns live transcript truth.
           if (event.kind === "thread_view.refresh_required") {
             refetchSnapshot("refreshRequired");
             return;
           }
-          latestCallbacks.current.onThreadMetadataEvent(event);
           if (isApprovalEvent(event)) {
             setApprovals((current) => latestCallbacks.current.onApprovalEvent(current, event));
             return;
@@ -354,7 +354,7 @@ function isQueueEvent(event: EventEnvelope): boolean {
 }
 
 function isCanonicalTimelineRenderEvent(event: EventEnvelope): boolean {
-  return event.kind === "thread_view.patch";
+  return event.kind === "thread_view.patch" || event.kind === "gateway.warning" || event.kind === "gateway.error";
 }
 
 function isTransientThreadSnapshotLoadError(error: unknown): boolean {

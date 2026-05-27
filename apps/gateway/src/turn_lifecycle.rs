@@ -160,7 +160,8 @@ pub async fn record_idle_after_missing_active_turn(
         ThreadLiveState::Idle,
         state.store.latest_event_seq().await?,
     )
-    .await
+    .await?;
+    Ok(())
 }
 
 pub async fn record_pending_user_projection(
@@ -181,7 +182,7 @@ pub async fn record_pending_user_projection(
             payload: serde_json::json!({ "threadId": thread_id, "turnId": turn_id }),
         })
         .await?;
-    if thread_view::record_pending_user_input(
+    if let Some(patch) = thread_view::record_pending_user_input(
         &state.thread_views,
         thread_id,
         turn_id,
@@ -189,10 +190,9 @@ pub async fn record_pending_user_projection(
         event.seq,
     )
     .await?
-    .is_some()
     {
-        let patch = events::thread_view_patch_event(state, thread_id).await?;
-        let _ = state.events.send(patch);
+        let event = events::thread_view_patch_payload_event(state, patch).await?;
+        let _ = state.events.send(event);
     }
     Ok(())
 }

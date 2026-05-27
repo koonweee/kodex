@@ -57,6 +57,20 @@ describe("event stream client", () => {
     client.close();
   });
 
+  it("starts global streams with a selected-thread exclusion", () => {
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      excludeThreadId: "thread-1",
+      onEvent: () => {},
+    });
+
+    client.connect();
+
+    expect(FakeEventSource.instances[0].url).toContain("/v1/events?excludeThreadId=thread-1");
+    expect(FakeEventSource.instances[0].url).not.toContain("threadId=");
+    client.close();
+  });
+
   it("reconnects from the last seen sequence", () => {
     vi.useFakeTimers();
     const received: number[] = [];
@@ -92,6 +106,37 @@ describe("event stream client", () => {
 
     client.close();
     expect(FakeEventSource.instances[1].closed).toBe(true);
+  });
+
+  it("preserves selected-thread exclusion across reconnects", () => {
+    vi.useFakeTimers();
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      reconnectDelayMs: 250,
+      excludeThreadId: "thread-1",
+      cursor: 5,
+      onEvent: () => {},
+    });
+
+    client.connect();
+    FakeEventSource.instances[0].emit({
+      id: "event-6",
+      seq: 6,
+      kind: "thread.read_updated",
+      codexMethod: null,
+      itemId: null,
+      threadId: "thread-2",
+      turnId: null,
+      projectId: "project-1",
+      payload: { threadId: "thread-2" },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+    FakeEventSource.instances[0].fail();
+    vi.advanceTimersByTime(250);
+
+    expect(FakeEventSource.instances[1].url).toContain("cursor=6");
+    expect(FakeEventSource.instances[1].url).toContain("excludeThreadId=thread-1");
+    client.close();
   });
 
   it("receives live thread metadata notification events emitted by the gateway", () => {
@@ -138,7 +183,17 @@ describe("event stream client", () => {
       threadId: "thread-1",
       turnId: "turn-1",
       projectId: null,
-      payload: { viewRevision: 8, threadId: "thread-1", activeTurnId: "turn-1", liveState: "streaming", items: [] },
+      payload: {
+        scope: "lifecycle",
+        viewRevision: 8,
+        threadId: "thread-1",
+        activeTurnId: "turn-1",
+        liveState: "streaming",
+        pendingApprovalRequests: [],
+        pendingUserInputRequests: [],
+        items: [],
+        turns: [],
+      },
       receivedAt: "2026-04-30T00:00:00Z",
     });
 
@@ -195,6 +250,32 @@ describe("event stream client", () => {
     });
 
     expect(received).toEqual(["thread.pin_updated"]);
+    client.close();
+  });
+
+  it("receives gateway error diagnostic events", () => {
+    const received: string[] = [];
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      threadId: "thread-1",
+      onEvent: (event) => received.push(event.kind),
+    });
+
+    client.connect();
+    FakeEventSource.instances[0].emitNamed("gateway.error", {
+      id: "event-error",
+      seq: 9,
+      kind: "gateway.error",
+      codexMethod: null,
+      itemId: "error-1",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      projectId: null,
+      payload: { message: "Selected error routed" },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(received).toEqual(["gateway.error"]);
     client.close();
   });
 

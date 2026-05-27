@@ -30,9 +30,18 @@ use crate::{
 pub const THREAD_VIEW_PATCH_EVENT_KIND: &str = "thread_view.patch";
 pub const THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND: &str = "thread_view.refresh_required";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ThreadViewPatchScope {
+    FullSnapshot,
+    Turn,
+    Lifecycle,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadViewPatch {
+    pub scope: ThreadViewPatchScope,
     pub view_revision: i64,
     pub thread_id: String,
     pub active_turn_id: Option<String>,
@@ -47,6 +56,116 @@ pub struct ThreadViewPatch {
     pub remove_row_ids: Vec<String>,
     pub turns: Vec<ThreadTimelineSnapshotTurn>,
     pub items: Vec<ThreadTimelineSnapshotItem>,
+}
+
+impl ThreadViewPatch {
+    fn full_snapshot(
+        view_revision: i64,
+        thread_id: String,
+        active_turn_id: Option<String>,
+        live_state: ThreadLiveState,
+        pending_approval_requests: Vec<PendingTimelineRequestSummary>,
+        pending_user_input_requests: Vec<PendingTimelineRequestSummary>,
+        rows: Vec<ThreadTimelineRow>,
+        turns: Vec<ThreadTimelineSnapshotTurn>,
+        items: Vec<ThreadTimelineSnapshotItem>,
+    ) -> Self {
+        Self {
+            scope: ThreadViewPatchScope::FullSnapshot,
+            view_revision,
+            thread_id,
+            active_turn_id,
+            live_state,
+            pending_approval_requests,
+            pending_user_input_requests,
+            rows: Some(rows),
+            upsert_rows: Vec::new(),
+            remove_row_ids: Vec::new(),
+            turns,
+            items,
+        }
+    }
+
+    fn turn(
+        view_revision: i64,
+        thread_id: String,
+        active_turn_id: Option<String>,
+        live_state: ThreadLiveState,
+        pending_approval_requests: Vec<PendingTimelineRequestSummary>,
+        pending_user_input_requests: Vec<PendingTimelineRequestSummary>,
+        upsert_rows: Vec<ThreadTimelineRow>,
+        remove_row_ids: Vec<String>,
+        turns: Vec<ThreadTimelineSnapshotTurn>,
+        items: Vec<ThreadTimelineSnapshotItem>,
+    ) -> Self {
+        Self {
+            scope: ThreadViewPatchScope::Turn,
+            view_revision,
+            thread_id,
+            active_turn_id,
+            live_state,
+            pending_approval_requests,
+            pending_user_input_requests,
+            rows: None,
+            upsert_rows,
+            remove_row_ids,
+            turns,
+            items,
+        }
+    }
+
+    fn lifecycle(
+        view_revision: i64,
+        thread_id: String,
+        active_turn_id: Option<String>,
+        live_state: ThreadLiveState,
+        pending_approval_requests: Vec<PendingTimelineRequestSummary>,
+        pending_user_input_requests: Vec<PendingTimelineRequestSummary>,
+    ) -> Self {
+        Self {
+            scope: ThreadViewPatchScope::Lifecycle,
+            view_revision,
+            thread_id,
+            active_turn_id,
+            live_state,
+            pending_approval_requests,
+            pending_user_input_requests,
+            rows: None,
+            upsert_rows: Vec::new(),
+            remove_row_ids: Vec::new(),
+            turns: Vec::new(),
+            items: Vec::new(),
+        }
+    }
+
+    pub fn validate_scope(&self) -> Result<(), &'static str> {
+        match self.scope {
+            ThreadViewPatchScope::FullSnapshot => {
+                if self.rows.is_none()
+                    || !self.upsert_rows.is_empty()
+                    || !self.remove_row_ids.is_empty()
+                {
+                    return Err("full_snapshot patches must carry rows and no upsert/remove rows");
+                }
+            }
+            ThreadViewPatchScope::Turn => {
+                if self.rows.is_some() {
+                    return Err("turn patches must not carry full rows");
+                }
+            }
+            ThreadViewPatchScope::Lifecycle => {
+                if self.rows.is_some()
+                    || !self.upsert_rows.is_empty()
+                    || !self.remove_row_ids.is_empty()
+                    || !self.turns.is_empty()
+                    || !self.items.is_empty()
+                {
+                    return Err("lifecycle patches must not carry row, turn, or item payloads");
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -180,18 +299,18 @@ impl ThreadViewStore {
         sessions
             .get(thread_id)
             .map(ThreadView::to_patch)
-            .unwrap_or_else(|| ThreadViewPatch {
-                view_revision: 0,
-                thread_id: thread_id.to_string(),
-                active_turn_id: None,
-                live_state: ThreadLiveState::Idle,
-                pending_approval_requests: Vec::new(),
-                pending_user_input_requests: Vec::new(),
-                rows: Some(Vec::new()),
-                upsert_rows: Vec::new(),
-                remove_row_ids: Vec::new(),
-                turns: Vec::new(),
-                items: Vec::new(),
+            .unwrap_or_else(|| {
+                ThreadViewPatch::full_snapshot(
+                    0,
+                    thread_id.to_string(),
+                    None,
+                    ThreadLiveState::Idle,
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                )
             })
     }
 
@@ -574,19 +693,18 @@ impl ThreadView {
             &turns,
             &items,
         );
-        ThreadViewPatch {
-            view_revision: self.revision,
-            thread_id: self.thread_id.clone(),
-            active_turn_id: self.active_turn_id.clone(),
-            live_state: self.live_state,
-            pending_approval_requests: self.pending_approval_requests.clone(),
-            pending_user_input_requests: self.pending_user_input_requests.clone(),
-            rows: None,
-            upsert_rows: rows,
-            remove_row_ids: Vec::new(),
+        ThreadViewPatch::turn(
+            self.revision,
+            self.thread_id.clone(),
+            self.active_turn_id.clone(),
+            self.live_state,
+            self.pending_approval_requests.clone(),
+            self.pending_user_input_requests.clone(),
+            rows,
+            Vec::new(),
             turns,
             items,
-        }
+        )
     }
 
     fn to_patch(&self) -> ThreadViewPatch {
@@ -599,19 +717,28 @@ impl ThreadView {
             &turns,
             &items,
         );
-        ThreadViewPatch {
-            view_revision: self.revision,
-            thread_id: self.thread_id.clone(),
-            active_turn_id: self.active_turn_id.clone(),
-            live_state: self.live_state,
-            pending_approval_requests: self.pending_approval_requests.clone(),
-            pending_user_input_requests: self.pending_user_input_requests.clone(),
-            rows: Some(rows),
-            upsert_rows: Vec::new(),
-            remove_row_ids: Vec::new(),
+        ThreadViewPatch::full_snapshot(
+            self.revision,
+            self.thread_id.clone(),
+            self.active_turn_id.clone(),
+            self.live_state,
+            self.pending_approval_requests.clone(),
+            self.pending_user_input_requests.clone(),
+            rows,
             turns,
             items,
-        }
+        )
+    }
+
+    fn lifecycle_patch(&self) -> ThreadViewPatch {
+        ThreadViewPatch::lifecycle(
+            self.revision,
+            self.thread_id.clone(),
+            self.active_turn_id.clone(),
+            self.live_state,
+            self.pending_approval_requests.clone(),
+            self.pending_user_input_requests.clone(),
+        )
     }
 
     fn turns_for_items(
@@ -805,6 +932,15 @@ pub async fn patch_for_thread(
     Ok(sessions.patch_for_thread(thread_id).await)
 }
 
+pub async fn lifecycle_patch_for_thread(
+    sessions: &ThreadViewStore,
+    thread_id: &str,
+) -> ApiResult<ThreadViewPatch> {
+    Ok(sessions
+        .with_thread_view(thread_id, 0, |view| view.lifecycle_patch())
+        .await)
+}
+
 pub async fn record_approval_created(
     sessions: &ThreadViewStore,
     approval: &Approval,
@@ -845,9 +981,9 @@ pub async fn record_item_upsert(
     mut item_snapshot: ThreadItemSnapshot,
     turn_status: Option<&str>,
     updated_seq: i64,
-) -> ApiResult<()> {
+) -> ApiResult<ThreadViewPatch> {
     item_snapshot.raw_payload = item.clone();
-    sessions
+    let patch = sessions
         .with_thread_view(thread_id, updated_seq, |view| {
             view.upsert_item(
                 thread_id,
@@ -857,9 +993,10 @@ pub async fn record_item_upsert(
                 turn_status,
                 Some(Utc::now().timestamp_millis()),
             );
+            view.turn_patch(turn_id)
         })
         .await;
-    Ok(())
+    Ok(patch)
 }
 
 fn pending_request_summary(approval: &Approval) -> PendingTimelineRequestSummary {
@@ -982,11 +1119,14 @@ pub async fn record_turn_status(
     thread_id: &str,
     turn: &ThreadTurnSnapshot,
     updated_seq: i64,
-) -> ApiResult<bool> {
-    let newly_terminal = sessions
-        .with_thread_view(thread_id, updated_seq, |view| view.update_turn_status(turn))
+) -> ApiResult<(bool, ThreadViewPatch)> {
+    let (newly_terminal, patch) = sessions
+        .with_thread_view(thread_id, updated_seq, |view| {
+            let newly_terminal = view.update_turn_status(turn);
+            (newly_terminal, view.turn_patch(&turn.id))
+        })
         .await;
-    Ok(newly_terminal)
+    Ok((newly_terminal, patch))
 }
 
 pub async fn record_thread_live_state(
@@ -994,13 +1134,14 @@ pub async fn record_thread_live_state(
     thread_id: &str,
     live_state: ThreadLiveState,
     updated_seq: i64,
-) -> ApiResult<()> {
-    sessions
+) -> ApiResult<ThreadViewPatch> {
+    let patch = sessions
         .with_thread_view(thread_id, updated_seq, |view| {
             view.set_live_state(live_state, None);
+            view.lifecycle_patch()
         })
         .await;
-    Ok(())
+    Ok(patch)
 }
 
 pub async fn record_pending_user_input(
@@ -1009,7 +1150,7 @@ pub async fn record_pending_user_input(
     turn_id: &str,
     input: &[UserInput],
     updated_seq: i64,
-) -> ApiResult<Option<String>> {
+) -> ApiResult<Option<ThreadViewPatch>> {
     let Some((text, _mentions)) = timeline_skill_mentions_from_user_input(input, &[]) else {
         return Ok(None);
     };
@@ -1024,7 +1165,7 @@ pub async fn record_pending_user_input(
     });
     let mut item_snapshot = ThreadItemSnapshot::from_payload(&item)?;
     item_snapshot.raw_payload = item.clone();
-    sessions
+    let patch = sessions
         .with_thread_view(thread_id, updated_seq, |view| {
             view.upsert_item(
                 thread_id,
@@ -1034,9 +1175,11 @@ pub async fn record_pending_user_input(
                 Some("running"),
                 Some(Utc::now().timestamp_millis()),
             );
+            view.turn_patch(turn_id)
         })
         .await;
-    Ok(Some(text))
+    let _ = text;
+    Ok(Some(patch))
 }
 
 fn replace_or_push(
@@ -1288,6 +1431,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pending_user_input_returns_turn_scoped_patch() {
+        let sessions = ThreadViewStore::default();
+        let old_turn = ThreadTurnSnapshot {
+            id: "turn-old".to_string(),
+            status: "completed".to_string(),
+            started_at: Some(1),
+            completed_at: Some(2),
+            raw_payload: json!({}),
+            items: vec![ThreadItemSnapshot::from_payload(&agent_message_item(
+                "agent-old",
+                "Large old output",
+            ))
+            .unwrap()],
+        };
+        build_thread_timeline(&sessions, "thread-1", &[old_turn], 1)
+            .await
+            .unwrap();
+
+        let patch = record_pending_user_input(
+            &sessions,
+            "thread-1",
+            "turn-new",
+            &[UserInput::Text {
+                text: "New prompt".to_string(),
+                text_elements: Vec::new(),
+            }],
+            2,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(patch.scope, ThreadViewPatchScope::Turn);
+        assert!(patch.validate_scope().is_ok());
+        assert!(patch.rows.is_none());
+        assert!(!patch.upsert_rows.is_empty());
+        assert!(patch.upsert_rows.len() < 3);
+        assert_eq!(patch.turns.len(), 1);
+        assert_eq!(patch.turns[0].id, "turn-new");
+        assert_eq!(patch.items.len(), 1);
+        assert_eq!(patch.items[0].turn_id, "turn-new");
+        let serialized = serde_json::to_vec(&patch).unwrap();
+        assert!(
+            serialized.len() < 8_000,
+            "pending user input patch should stay bounded, got {} bytes",
+            serialized.len()
+        );
+    }
+
+    #[tokio::test]
     async fn session_applies_live_delta_then_snapshot_without_duplicate() {
         let sessions = ThreadViewStore::default();
         record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", "Hello", 1)
@@ -1355,6 +1548,8 @@ mod tests {
             .await
             .unwrap();
 
+        assert_eq!(patch.scope, ThreadViewPatchScope::Turn);
+        assert!(patch.validate_scope().is_ok());
         assert!(patch.rows.is_none());
         assert_eq!(patch.upsert_rows.len(), 1);
         assert_eq!(patch.upsert_rows[0].kind, "assistant_message");
@@ -1365,12 +1560,78 @@ mod tests {
         assert_eq!(patch.active_turn_id.as_deref(), Some("turn-1"));
 
         let full_patch = patch_for_thread(&sessions, "thread-1").await.unwrap();
+        assert_eq!(full_patch.scope, ThreadViewPatchScope::FullSnapshot);
+        assert!(full_patch.validate_scope().is_ok());
         assert!(full_patch
             .rows
             .as_ref()
             .expect("full patch rows")
             .iter()
             .any(|row| row.id == patch.upsert_rows[0].id));
+    }
+
+    #[tokio::test]
+    async fn lifecycle_patch_carries_no_timeline_payload() {
+        let sessions = ThreadViewStore::default();
+        record_item_delta_patch(&sessions, "thread-1", "turn-1", "agent-1", "Hello", 1)
+            .await
+            .unwrap();
+
+        let patch = record_thread_live_state(&sessions, "thread-1", ThreadLiveState::Idle, 2)
+            .await
+            .unwrap();
+
+        assert_eq!(patch.scope, ThreadViewPatchScope::Lifecycle);
+        assert!(patch.validate_scope().is_ok());
+        assert!(patch.rows.is_none());
+        assert!(patch.upsert_rows.is_empty());
+        assert!(patch.remove_row_ids.is_empty());
+        assert!(patch.turns.is_empty());
+        assert!(patch.items.is_empty());
+        let serialized = serde_json::to_vec(&patch).unwrap();
+        assert!(
+            serialized.len() < 2_000,
+            "lifecycle patch should stay tiny, got {} bytes",
+            serialized.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn item_upsert_and_turn_status_return_turn_scoped_patches() {
+        let sessions = ThreadViewStore::default();
+        let item = agent_message_item("agent-1", "Working");
+        let item_snapshot = ThreadItemSnapshot::from_payload(&item).unwrap();
+
+        let upsert_patch = record_item_upsert(
+            &sessions,
+            "thread-1",
+            "turn-1",
+            item,
+            item_snapshot,
+            Some("running"),
+            1,
+        )
+        .await
+        .unwrap();
+        assert_eq!(upsert_patch.scope, ThreadViewPatchScope::Turn);
+        assert!(upsert_patch.validate_scope().is_ok());
+        assert!(upsert_patch.rows.is_none());
+
+        let completed_turn = ThreadTurnSnapshot {
+            id: "turn-1".to_string(),
+            status: "completed".to_string(),
+            started_at: Some(1),
+            completed_at: Some(2),
+            raw_payload: json!({}),
+            items: Vec::new(),
+        };
+        let (_newly_terminal, status_patch) =
+            record_turn_status(&sessions, "thread-1", &completed_turn, 2)
+                .await
+                .unwrap();
+        assert_eq!(status_patch.scope, ThreadViewPatchScope::Turn);
+        assert!(status_patch.validate_scope().is_ok());
+        assert!(status_patch.rows.is_none());
     }
 
     #[tokio::test]

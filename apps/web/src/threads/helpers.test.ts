@@ -12,6 +12,7 @@ function threadSummary(
     cwd: "/tmp/kodex",
     id,
     name: id,
+    notificationsEnabled: true,
     rawPayload: {},
     seenCompletedAgentTurnSeq: 0,
     status: "idle",

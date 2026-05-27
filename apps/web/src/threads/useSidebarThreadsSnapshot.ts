@@ -31,6 +31,13 @@ export function useSidebarThreadsSnapshot({
     queryKey: queryKeys.sidebarThreads,
     retry: false,
     queryFn: async () => {
+      const beforeChatSnapshot = queryClient.getQueryData<ThreadSummary[]>(queryKeys.chatThreads);
+      const beforeProjectSnapshots = new Map(
+        queryClient
+          .getQueriesData<ThreadSummary[]>({ queryKey: queryKeys.projectThreadsRoot })
+          .map(([queryKey, data]) => [typeof queryKey[2] === "string" ? queryKey[2] : "", data] as const)
+          .filter(([projectId]) => projectId.length > 0),
+      );
       const beforePinnedSnapshot = queryClient.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads);
       const tombstonesBeforeSnapshot = queryClient.getQueryData<string[]>(queryKeys.pinnedThreadTombstones);
       const snapshot = await getSidebarThreads();
@@ -44,13 +51,14 @@ export function useSidebarThreadsSnapshot({
           response.threads.map(sidebarThreadToThreadSummary),
           routeSelectedThreadRef.current,
           selectedThreadIdRef.current,
+          beforeProjectSnapshots.get(projectId),
         );
         nextProjectCursors[projectId] = response.nextCursor ?? null;
       }
       onProjectThreadCursorsChange(nextProjectCursors);
 
       queryClient.setQueryData<ThreadSummary[]>(queryKeys.chatThreads, (current) =>
-        mergeChatThreadData(current, snapshot.chatThreads.threads.map(sidebarThreadToThreadSummary)),
+        mergeChatThreadData(current, snapshot.chatThreads.threads.map(sidebarThreadToThreadSummary), beforeChatSnapshot),
       );
       onChatThreadsCursorChange(snapshot.chatThreads.nextCursor ?? null);
 

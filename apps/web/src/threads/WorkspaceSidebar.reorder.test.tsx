@@ -609,6 +609,7 @@ function threadSummary(index: number, overrides: Partial<ThreadSummary> = {}): T
     cwd: "/workspace/project-1",
     id: `thread-${index}`,
     name: `Thread ${index}`,
+    notificationsEnabled: true,
     rawPayload: {},
     seenCompletedAgentTurnSeq: 0,
     status: "idle",

@@ -51,6 +51,47 @@ describe("timeline canonical snapshots and patches", () => {
     expect(state.viewRevision).toBe(2);
   });
 
+  it("ignores unscoped canonical patch rows instead of inferring full snapshots from rows", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot({
+      viewRevision: 1,
+      items: [timelineItem({ text: "Original" })],
+    }));
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
+      scope: null,
+      viewRevision: 2,
+      items: [timelineItem({ text: "Legacy unscoped replacement" })],
+    }));
+
+    expect(state.items.map((item) => item.text)).toEqual(["Original"]);
+    expect(state.rows).toHaveLength(1);
+    expect(state.viewRevision).toBe(1);
+    expect(state.lastSeq).toBe(2);
+  });
+
+  it("ignores turn-scoped patches that carry full rows", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot({
+      viewRevision: 1,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      items: [timelineItem({ text: "Original" })],
+    }));
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
+      scope: "turn",
+      viewRevision: 2,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      items: [timelineItem({ text: "Malformed row replacement" })],
+      rows: [canonicalRow(timelineItem({ text: "Malformed row replacement" }))],
+    }));
+
+    expect(state.items.map((item) => item.text)).toEqual(["Original"]);
+    expect(state.rows).toHaveLength(1);
+    expect(state.viewRevision).toBe(2);
+    expect(state.lastSeq).toBe(2);
+  });
+
   it("ignores stale canonical patches", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot({
       viewRevision: 10,
@@ -327,11 +368,13 @@ describe("timeline canonical snapshots and patches", () => {
       text: "",
       displayOrder: 2,
     });
-    const duplicateFileRow = (id: string, displayOrder: number) => ({
+    const duplicateFileRow = (id: string, displayOrder: number, additions = 1, diff = "+line") => ({
       ...fileChangesRow(file, { displayOrder }),
       id,
       fileChanges: fileChangesRow(file, { displayOrder }).fileChanges.map((entry) => ({
         ...entry,
+        additions,
+        diff,
         id: `${id}-entry`,
         itemIds: [],
       })),
@@ -356,13 +399,13 @@ describe("timeline canonical snapshots and patches", () => {
       activeTurnId: "turn-1",
       liveState: "streaming",
       rows: undefined,
-      upsertRows: [duplicateFileRow("file-changes-turn-1-c", 202)],
+      upsertRows: [duplicateFileRow("file-changes-turn-1-c", 202, 3, "+line\n+new\n+latest")],
     }));
 
     expect(state.rows.filter((row) => row.type === "file_changes")).toHaveLength(1);
     expect(state.rows[0]).toMatchObject({
       type: "file_changes",
-      entries: [{ path: "src/a.rs", action: "Modified", additions: 1, deletions: 0 }],
+      entries: [{ path: "src/a.rs", action: "Modified", additions: 3, deletions: 0 }],
     });
   });
 
@@ -445,6 +488,7 @@ function snapshot({
       approvalsReviewer: null,
       sandbox: null,
       gitInfo: null,
+      notificationsEnabled: true,
       pinnedAt: null,
       preview: null,
       lastCompletedAgentTurnSeq: null,
@@ -469,6 +513,7 @@ function snapshot({
 
 function projectionPatchEvent(payload: {
   viewRevision: number;
+  scope?: "full_snapshot" | "turn" | "lifecycle" | null;
   activeTurnId?: string | null;
   liveState?: string;
   items?: ReturnType<typeof timelineItem>[];
@@ -488,6 +533,9 @@ function projectionPatchEvent(payload: {
     turns: [],
     items: payload.items ?? [],
   };
+  if (payload.scope !== null) {
+    patchPayload.scope = payload.scope ?? (payload.upsertRows !== undefined ? "turn" : "full_snapshot");
+  }
   if (payload.rows !== undefined || payload.upsertRows === undefined) {
     patchPayload.rows = payload.rows ?? (payload.items ?? []).map((item) => canonicalRow(item));
   }

@@ -206,6 +206,14 @@ pub struct ThreadReadState {
     pub seen_completed_agent_turn_seq: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadNotificationSetting {
+    pub thread_id: String,
+    pub notifications_enabled: bool,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ThreadComposerSettings {
     pub model: Option<String>,
@@ -560,6 +568,17 @@ impl Store {
                 user_agent text,
                 enabled integer not null default 1,
                 created_at text not null,
+                updated_at text not null
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
+            create table if not exists thread_notification_settings (
+                thread_id text primary key,
+                notifications_enabled integer not null default 1,
                 updated_at text not null
             )
             "#,
@@ -1900,6 +1919,101 @@ impl Store {
         row.map(row_to_thread_read)
             .transpose()?
             .ok_or_else(|| ApiError::NotFound(format!("thread read state {thread_id}")))
+    }
+
+    pub async fn thread_notifications_enabled(&self, thread_id: &str) -> ApiResult<bool> {
+        let row = sqlx::query(
+            "select notifications_enabled from thread_notification_settings where thread_id = ?",
+        )
+        .bind(thread_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row
+            .map(|row| {
+                row.try_get::<i64, _>("notifications_enabled")
+                    .map(|value| value != 0)
+            })
+            .transpose()?
+            .unwrap_or(true))
+    }
+
+    pub async fn thread_notification_settings(
+        &self,
+        thread_ids: &[String],
+    ) -> ApiResult<HashMap<String, bool>> {
+        if thread_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut builder = QueryBuilder::new(
+            "select thread_id, notifications_enabled from thread_notification_settings where thread_id in (",
+        );
+        {
+            let mut separated = builder.separated(", ");
+            for thread_id in thread_ids {
+                separated.push_bind(thread_id);
+            }
+        }
+        builder.push(")");
+
+        let mut settings = thread_ids
+            .iter()
+            .map(|thread_id| (thread_id.clone(), true))
+            .collect::<HashMap<_, _>>();
+        for row in builder.build().fetch_all(&self.pool).await? {
+            let thread_id: String = row.try_get("thread_id")?;
+            let enabled: i64 = row.try_get("notifications_enabled")?;
+            settings.insert(thread_id, enabled != 0);
+        }
+
+        Ok(settings)
+    }
+
+    pub async fn set_thread_notifications_enabled(
+        &self,
+        thread_id: &str,
+        enabled: bool,
+    ) -> ApiResult<ThreadNotificationSetting> {
+        let updated_at = Utc::now();
+        sqlx::query(
+            r#"
+            insert into thread_notification_settings (
+                thread_id, notifications_enabled, updated_at
+            )
+            values (?, ?, ?)
+            on conflict(thread_id) do update set
+                notifications_enabled = excluded.notifications_enabled,
+                updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(thread_id)
+        .bind(bool_to_i64(enabled))
+        .bind(updated_at)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_thread_notification_setting(thread_id).await
+    }
+
+    pub async fn get_thread_notification_setting(
+        &self,
+        thread_id: &str,
+    ) -> ApiResult<ThreadNotificationSetting> {
+        let row = sqlx::query(
+            r#"
+            select thread_id, notifications_enabled, updated_at
+            from thread_notification_settings
+            where thread_id = ?
+            "#,
+        )
+        .bind(thread_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.map(row_to_thread_notification_setting)
+            .transpose()?
+            .ok_or_else(|| ApiError::NotFound(format!("thread notification setting {thread_id}")))
     }
 
     pub async fn upsert_push_subscription(
@@ -3506,6 +3620,16 @@ fn row_to_thread_read(row: sqlx::sqlite::SqliteRow) -> ApiResult<ThreadRead> {
     })
 }
 
+fn row_to_thread_notification_setting(
+    row: sqlx::sqlite::SqliteRow,
+) -> ApiResult<ThreadNotificationSetting> {
+    Ok(ThreadNotificationSetting {
+        thread_id: row.try_get("thread_id")?,
+        notifications_enabled: row.try_get::<i64, _>("notifications_enabled")? != 0,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
 fn row_to_thread_pin(row: sqlx::sqlite::SqliteRow) -> ApiResult<ThreadPin> {
     Ok(ThreadPin {
         thread_id: row.try_get("thread_id")?,
@@ -3577,7 +3701,7 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'project_preview_services', 'project_previews', 'project_preview_routes', 'approvals', 'thread_reads', 'push_subscriptions', 'thread_composer_settings', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'project_preview_services', 'project_previews', 'project_preview_routes', 'approvals', 'thread_reads', 'push_subscriptions', 'thread_notification_settings', 'thread_composer_settings', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
         )
         .fetch_all(store.pool())
         .await
@@ -3597,6 +3721,7 @@ mod tests {
                 "push_subscriptions",
                 "queued_turn_inputs",
                 "thread_composer_settings",
+                "thread_notification_settings",
                 "thread_pins",
                 "thread_reads",
                 "thread_runtime_state",
@@ -3768,6 +3893,62 @@ mod tests {
         let thread_ids = vec!["thread-1".to_string()];
         let states = store.thread_read_states(&thread_ids).await.unwrap();
         assert!(!states.contains_key("thread-1"));
+    }
+
+    #[tokio::test]
+    async fn thread_notification_settings_default_enabled_and_round_trip() {
+        let store = Store::in_memory().await.unwrap();
+        assert!(store
+            .thread_notifications_enabled("thread-1")
+            .await
+            .unwrap());
+
+        let disabled = store
+            .set_thread_notifications_enabled("thread-1", false)
+            .await
+            .unwrap();
+        assert_eq!(disabled.thread_id, "thread-1");
+        assert!(!disabled.notifications_enabled);
+        assert!(!store
+            .thread_notifications_enabled("thread-1")
+            .await
+            .unwrap());
+
+        let enabled = store
+            .set_thread_notifications_enabled("thread-1", true)
+            .await
+            .unwrap();
+        assert!(enabled.notifications_enabled);
+        assert!(store
+            .thread_notifications_enabled("thread-1")
+            .await
+            .unwrap());
+    }
+
+    #[tokio::test]
+    async fn thread_notification_settings_batch_defaults_missing_rows_enabled() {
+        let store = Store::in_memory().await.unwrap();
+        store
+            .set_thread_notifications_enabled("thread-1", false)
+            .await
+            .unwrap();
+        store
+            .set_thread_notifications_enabled("thread-2", true)
+            .await
+            .unwrap();
+
+        let settings = store
+            .thread_notification_settings(&[
+                "thread-1".to_string(),
+                "thread-2".to_string(),
+                "thread-3".to_string(),
+            ])
+            .await
+            .unwrap();
+
+        assert_eq!(settings.get("thread-1"), Some(&false));
+        assert_eq!(settings.get("thread-2"), Some(&true));
+        assert_eq!(settings.get("thread-3"), Some(&true));
     }
 
     #[tokio::test]

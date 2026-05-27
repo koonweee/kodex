@@ -18,11 +18,12 @@ function event(overrides: Partial<EventEnvelope> & { text?: string }): EventEnve
     itemId: null,
     projectId: "project-1",
     payload: {
+      scope: "turn",
       viewRevision: seq,
       threadId: "thread-1",
       activeTurnId: "turn-1",
       liveState: "streaming",
-      rows: [canonicalRow(text)],
+      upsertRows: [canonicalRow(text)],
       turns: [],
       items: [canonicalItem(text)],
     },

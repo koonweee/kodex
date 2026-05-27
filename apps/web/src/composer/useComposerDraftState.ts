@@ -54,6 +54,13 @@ export function useComposerDraftState(resetToken: number, draftKey = DEFAULT_COM
   function updateComposerText(nextText: string, cursor: number | null) {
     const nextBindings = validSkillMentionBindings(nextText, skillBindingsRef.current);
     const nextToken = cursor === null ? null : activeSkillMentionToken(nextText, cursor);
+    if (
+      composerTextRef.current === nextText &&
+      skillMentionBindingsEqual(skillBindingsRef.current, nextBindings) &&
+      skillMentionTokensEqual(skillTokenRef.current, nextToken)
+    ) {
+      return;
+    }
     composerTextRef.current = nextText;
     skillBindingsRef.current = nextBindings;
     skillTokenRef.current = nextToken;
@@ -193,3 +200,37 @@ export function useComposerDraftState(resetToken: number, draftKey = DEFAULT_COM
 }
 
 export type ComposerDraftState = ReturnType<typeof useComposerDraftState>;
+
+function skillMentionTokensEqual(left: SkillMentionToken | null, right: SkillMentionToken | null) {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+  return left.start === right.start && left.end === right.end && left.query === right.query;
+}
+
+function skillMentionBindingsEqual(left: SkillMentionBinding[], right: SkillMentionBinding[]) {
+  if (left === right) {
+    return true;
+  }
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((binding, index) => skillMentionBindingEqual(binding, right[index]));
+}
+
+function skillMentionBindingEqual(left: SkillMentionBinding, right: SkillMentionBinding) {
+  return (
+    left.start === right.start &&
+    left.end === right.end &&
+    left.name === right.name &&
+    left.path === right.path &&
+    left.displayName === right.displayName &&
+    left.scope === right.scope &&
+    left.shortDescription === right.shortDescription &&
+    left.brandColor === right.brandColor &&
+    left.iconSmallUrl === right.iconSmallUrl
+  );
+}

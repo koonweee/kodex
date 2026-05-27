@@ -12,6 +12,7 @@ type EventSourceCtor = new (url: string) => EventSourceLike;
 type EventStreamClientOptions = {
   EventSourceCtor?: EventSourceCtor;
   cursor?: number;
+  excludeThreadId?: string | null;
   reconnectDelayMs?: number;
   threadId?: string;
   onEvent: (event: EventEnvelope) => void;
@@ -24,16 +25,18 @@ const GATEWAY_SSE_EVENT_TYPES = [
   "account.rate_limits_updated",
   "automation.item_deleted",
   "automation.item_upsert",
+  "gateway.error",
   "gateway.warning",
   "mcp.config_changed",
   "mcp.oauth_login_completed",
   "mcp.server_status_updated",
   "skills.changed",
   "thread_view.patch",
-	  "thread_view.refresh_required",
-	  "thread.pin_updated",
-	  "thread.read_updated",
-	  "thread.upserted",
+  "thread_view.refresh_required",
+  "thread.notifications_updated",
+  "thread.pin_updated",
+  "thread.read_updated",
+  "thread.upserted",
   "timeline.thread_metadata",
   "turn_queue.item_deleted",
   "turn_queue.item_upsert",
@@ -42,6 +45,7 @@ const GATEWAY_SSE_EVENT_TYPES = [
 export function createEventStreamClient({
   EventSourceCtor = globalThis.EventSource as EventSourceCtor | undefined,
   cursor,
+  excludeThreadId,
   reconnectDelayMs = 1000,
   threadId,
   onEvent,
@@ -57,7 +61,7 @@ export function createEventStreamClient({
       return;
     }
 
-    eventSource = new EventSourceCtor(eventStreamUrl(lastSeq, threadId));
+    eventSource = new EventSourceCtor(eventStreamUrl(lastSeq, threadId, excludeThreadId));
     onStatusChange?.("connected");
 
     const handleMessage = (message: MessageEvent<string>) => {
@@ -93,7 +97,7 @@ export function createEventStreamClient({
   return { close, connect };
 }
 
-function eventStreamUrl(cursor?: number, threadId?: string): string {
+function eventStreamUrl(cursor?: number, threadId?: string, excludeThreadId?: string | null): string {
   const baseUrl =
     typeof window === "undefined" ? "http://127.0.0.1:8787" : window.location.origin;
   const url = new URL("/v1/events", baseUrl);
@@ -102,6 +106,9 @@ function eventStreamUrl(cursor?: number, threadId?: string): string {
   }
   if (threadId) {
     url.searchParams.set("threadId", threadId);
+  }
+  if (excludeThreadId) {
+    url.searchParams.set("excludeThreadId", excludeThreadId);
   }
   return `${url.pathname}${url.search}`;
 }

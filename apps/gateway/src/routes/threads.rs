@@ -26,12 +26,16 @@ use crate::{
         ThreadStatus, ThreadSummary, ThreadViewResponse, TimelineSkillMention,
     },
     error::{ApiError, ApiResult},
-    store::{EventEnvelope, NewEvent, Project, ThreadComposerSettings, ThreadRead},
+    store::{
+        EventEnvelope, NewEvent, Project, ThreadComposerSettings, ThreadNotificationSetting,
+        ThreadRead,
+    },
     thread_view,
 };
 
 pub const THREAD_PIN_UPDATED_EVENT: &str = "thread.pin_updated";
 pub const THREAD_READ_UPDATED_EVENT: &str = "thread.read_updated";
+pub const THREAD_NOTIFICATIONS_UPDATED_EVENT: &str = "thread.notifications_updated";
 pub const THREAD_UPSERTED_EVENT: &str = "thread.upserted";
 
 pub fn router() -> Router<AppState> {
@@ -50,6 +54,10 @@ pub fn router() -> Router<AppState> {
         )
         .route("/v1/threads/{thread_id}", get(get_thread))
         .route("/v1/threads/{thread_id}/name", patch(rename_thread))
+        .route(
+            "/v1/threads/{thread_id}/notifications",
+            patch(update_thread_notifications),
+        )
         .route("/v1/threads/{thread_id}/attach", post(attach_thread))
         .route("/v1/threads/{thread_id}/resume", post(resume_thread))
         .route("/v1/threads/{thread_id}/fork", post(fork_thread))
@@ -167,6 +175,7 @@ pub struct SidebarThreadSummary {
     pub last_completed_agent_turn_seq: Option<i64>,
     pub seen_completed_agent_turn_seq: i64,
     pub unread_completed_agent_turn: bool,
+    pub notifications_enabled: bool,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -209,6 +218,7 @@ impl From<ThreadSummary> for SidebarThreadSummary {
             last_completed_agent_turn_seq: thread.last_completed_agent_turn_seq,
             seen_completed_agent_turn_seq: thread.seen_completed_agent_turn_seq,
             unread_completed_agent_turn: thread.unread_completed_agent_turn,
+            notifications_enabled: thread.notifications_enabled,
         }
     }
 }
@@ -303,6 +313,32 @@ pub struct ThreadPinResponse {
     pub thread_id: String,
     pub pinned_at: Option<DateTime<Utc>>,
 }
+
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadNotificationSettingsUpdateRequest {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadNotificationSettingsResponse {
+    pub thread_id: String,
+    pub notifications_enabled: bool,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<ThreadNotificationSetting> for ThreadNotificationSettingsResponse {
+    fn from(setting: ThreadNotificationSetting) -> Self {
+        Self {
+            thread_id: setting.thread_id,
+            notifications_enabled: setting.notifications_enabled,
+            updated_at: setting.updated_at,
+        }
+    }
+}
+
+pub type ThreadNotificationSettingsUpdate = ThreadNotificationSettingsResponse;
 
 #[derive(Debug, Clone, Serialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -1074,6 +1110,21 @@ pub async fn rename_thread(
     Ok(Json(RenameThreadResponse { thread }))
 }
 
+#[utoipa::path(patch, path = "/v1/threads/{threadId}/notifications", request_body = ThreadNotificationSettingsUpdateRequest, responses((status = 200, body = ThreadNotificationSettingsResponse)))]
+pub async fn update_thread_notifications(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+    Json(request): Json<ThreadNotificationSettingsUpdateRequest>,
+) -> ApiResult<Json<ThreadNotificationSettingsResponse>> {
+    let setting = state
+        .store
+        .set_thread_notifications_enabled(&thread_id, request.enabled)
+        .await?;
+    let response = ThreadNotificationSettingsResponse::from(setting);
+    broadcast_thread_notifications_update(&state, response.clone()).await?;
+    Ok(Json(response))
+}
+
 #[utoipa::path(get, path = "/v1/threads/{threadId}/subagents", responses((status = 200, body = ThreadSubagentListResponse)))]
 pub async fn list_subagents(
     State(state): State<AppState>,
@@ -1465,6 +1516,7 @@ async fn apply_thread_summary_state(
 ) -> ApiResult<()> {
     apply_thread_pin_state(state, threads).await?;
     apply_thread_composer_settings(state, threads).await?;
+    apply_thread_notification_settings(state, threads).await?;
     apply_thread_read_state(state, threads).await
 }
 
@@ -1558,6 +1610,38 @@ fn sync_raw_thread_pin_state(raw_payload: &mut Value, pinned_at: Option<DateTime
     }
 }
 
+async fn apply_thread_notification_settings(
+    state: &AppState,
+    threads: &mut [ThreadSummary],
+) -> ApiResult<()> {
+    if threads.is_empty() {
+        return Ok(());
+    }
+
+    let thread_ids = threads
+        .iter()
+        .map(|thread| thread.id.clone())
+        .collect::<Vec<_>>();
+    let settings = state
+        .store
+        .thread_notification_settings(&thread_ids)
+        .await?;
+    for thread in threads {
+        let enabled = settings.get(&thread.id).copied().unwrap_or(true);
+        thread.notifications_enabled = enabled;
+        sync_raw_thread_notifications_enabled(&mut thread.raw_payload, enabled);
+    }
+
+    Ok(())
+}
+
+fn sync_raw_thread_notifications_enabled(raw_payload: &mut Value, enabled: bool) {
+    let Some(raw_payload) = raw_payload.as_object_mut() else {
+        return;
+    };
+    raw_payload.insert("notificationsEnabled".to_string(), json!(enabled));
+}
+
 async fn apply_thread_composer_settings(
     state: &AppState,
     threads: &mut [ThreadSummary],
@@ -1619,6 +1703,26 @@ async fn broadcast_thread_read_update(
             kind: THREAD_READ_UPDATED_EVENT.to_string(),
             codex_method: None,
             payload: serde_json::to_value(read_state)?,
+        })
+        .await?;
+    let _ = state.events.send(event.clone());
+    Ok(event)
+}
+
+async fn broadcast_thread_notifications_update(
+    state: &AppState,
+    update: ThreadNotificationSettingsUpdate,
+) -> ApiResult<EventEnvelope> {
+    let event = state
+        .store
+        .append_event(NewEvent {
+            project_id: None,
+            thread_id: Some(update.thread_id.clone()),
+            turn_id: None,
+            item_id: None,
+            kind: THREAD_NOTIFICATIONS_UPDATED_EVENT.to_string(),
+            codex_method: None,
+            payload: serde_json::to_value(update)?,
         })
         .await?;
     let _ = state.events.send(event.clone());

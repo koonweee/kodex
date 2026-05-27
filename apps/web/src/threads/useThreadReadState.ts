@@ -28,6 +28,8 @@ export function useThreadReadState({
   const threadsByProjectIdRef = useRef<ThreadsByProjectId>({});
   const chatThreadsRef = useRef<ThreadSummary[]>([]);
   const pinnedThreadsRef = useRef<ThreadSummary[]>([]);
+  const pendingSeenByThreadIdRef = useRef<Map<string, number>>(new Map());
+  const confirmedSeenByThreadIdRef = useRef<Map<string, number>>(new Map());
 
   threadsByProjectIdRef.current = threadsByProjectId;
   chatThreadsRef.current = chatThreads;
@@ -43,7 +45,18 @@ export function useThreadReadState({
       void persistCompletedAgentTurnSeen(completedTurn.threadId, undefined);
       return;
     }
-    updateThreadEverywhere(completedTurn.threadId, (thread) => ({ ...thread, status: "idle" }));
+    updateThreadEverywhere(completedTurn.threadId, (thread) => {
+      const lastCompletedAgentTurnSeq = Math.max(
+        thread.lastCompletedAgentTurnSeq ?? 0,
+        (thread.seenCompletedAgentTurnSeq ?? 0) + 1,
+      );
+      return {
+        ...thread,
+        lastCompletedAgentTurnSeq,
+        status: "idle",
+        unreadCompletedAgentTurn: lastCompletedAgentTurnSeq > (thread.seenCompletedAgentTurnSeq ?? 0),
+      };
+    });
   }
 
   function applyThreadReadStateEvent(event: EventEnvelope) {
@@ -61,15 +74,30 @@ export function useThreadReadState({
       pinnedThreadsRef.current.find((thread) => thread.id === threadId) ??
       null;
     const seenCompletedAgentTurnSeq = lastCompletedAgentTurnSeq ?? thread?.lastCompletedAgentTurnSeq ?? 0;
-    if (seenCompletedAgentTurnSeq <= (thread?.seenCompletedAgentTurnSeq ?? 0)) {
+    const knownSeenCompletedAgentTurnSeq = Math.max(
+      thread?.seenCompletedAgentTurnSeq ?? 0,
+      pendingSeenByThreadIdRef.current.get(threadId) ?? 0,
+      confirmedSeenByThreadIdRef.current.get(threadId) ?? 0,
+    );
+    if (seenCompletedAgentTurnSeq <= knownSeenCompletedAgentTurnSeq) {
       return;
     }
     void persistCompletedAgentTurnSeen(threadId, seenCompletedAgentTurnSeq);
   }
 
   async function persistCompletedAgentTurnSeen(threadId: string, seenCompletedAgentTurnSeq?: number) {
+    if (seenCompletedAgentTurnSeq !== undefined) {
+      pendingSeenByThreadIdRef.current.set(threadId, seenCompletedAgentTurnSeq);
+    }
     try {
       const read = await markThreadSeen(threadId, seenCompletedAgentTurnSeq);
+      confirmedSeenByThreadIdRef.current.set(
+        threadId,
+        Math.max(
+          confirmedSeenByThreadIdRef.current.get(threadId) ?? 0,
+          read.seenCompletedAgentTurnSeq,
+        ),
+      );
       updateThreadEverywhere(threadId, (thread) => {
         const nextSeenSeq = Math.max(thread.seenCompletedAgentTurnSeq ?? 0, read.seenCompletedAgentTurnSeq);
         return {
@@ -80,6 +108,13 @@ export function useThreadReadState({
       });
     } catch (error) {
       onError(error);
+    } finally {
+      if (
+        seenCompletedAgentTurnSeq !== undefined &&
+        pendingSeenByThreadIdRef.current.get(threadId) === seenCompletedAgentTurnSeq
+      ) {
+        pendingSeenByThreadIdRef.current.delete(threadId);
+      }
     }
   }
 

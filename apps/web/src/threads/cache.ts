@@ -76,6 +76,17 @@ export function applyThreadPinState(
   }
 }
 
+export function applyThreadNotificationsState(
+  queryClient: QueryClient,
+  threadId: string,
+  notificationsEnabled: boolean,
+) {
+  updateThreadEverywhere(queryClient, threadId, (thread) => ({
+    ...thread,
+    notificationsEnabled,
+  }));
+}
+
 export function applyThreadReadState(
   queryClient: QueryClient,
   threadId: string,
@@ -139,9 +150,10 @@ export function mergeProjectThreadSnapshot(
   loadedThreads: ThreadSummary[],
   routeSelectedThread: ThreadSummary | null,
   selectedThreadId: string | null,
+  beforeSnapshot?: ThreadSummary[],
 ) {
   queryClient.setQueryData<ThreadSummary[]>(queryKeys.projectThreads(projectId), (current) =>
-    mergeProjectThreads(current ?? [], loadedThreads, routeSelectedThread, selectedThreadId),
+    mergeProjectThreads(current ?? [], loadedThreads, routeSelectedThread, selectedThreadId, beforeSnapshot),
   );
 }
 
@@ -150,24 +162,31 @@ export function mergeProjectThreadData(
   loadedThreads: ThreadSummary[],
   routeSelectedThread: ThreadSummary | null,
   selectedThreadId: string | null,
+  beforeSnapshot?: ThreadSummary[],
 ): ThreadSummary[] {
-  return mergeProjectThreads(current ?? [], loadedThreads, routeSelectedThread, selectedThreadId);
+  return mergeProjectThreads(current ?? [], loadedThreads, routeSelectedThread, selectedThreadId, beforeSnapshot);
 }
 
-export function mergeChatThreadSnapshot(queryClient: QueryClient, loadedThreads: ThreadSummary[]) {
+export function mergeChatThreadSnapshot(
+  queryClient: QueryClient,
+  loadedThreads: ThreadSummary[],
+  beforeSnapshot?: ThreadSummary[],
+) {
   queryClient.setQueryData<ThreadSummary[]>(queryKeys.chatThreads, (current) =>
-    mergeChatThreadData(current, loadedThreads),
+    mergeChatThreadData(current, loadedThreads, beforeSnapshot),
   );
 }
 
 export function mergeChatThreadData(
   current: ThreadSummary[] | undefined,
   loadedThreads: ThreadSummary[],
+  beforeSnapshot?: ThreadSummary[],
 ): ThreadSummary[] {
   if (!current || current.length === 0) {
     return loadedThreads;
   }
   const currentById = threadsById(current);
+  const beforeById = threadsById(beforeSnapshot ?? []);
   const loadedIds = new Set(loadedThreads.map((thread) => thread.id));
   const mergedLoadedThreads = loadedThreads.map((loadedThread) => {
     const currentThread = currentById.get(loadedThread.id);
@@ -175,9 +194,9 @@ export function mergeChatThreadData(
       return loadedThread;
     }
     if (currentThread.updatedAt > loadedThread.updatedAt) {
-      return currentThread;
+      return mergeThreadNotifications(loadedThread, currentThread, beforeById.get(loadedThread.id), currentThread);
     }
-    return mergeNewerReadProjection(loadedThread, currentThread);
+    return mergeNewerReadProjection(loadedThread, currentThread, beforeById.get(loadedThread.id));
   });
   return [...current.filter((thread) => !loadedIds.has(thread.id)), ...mergedLoadedThreads];
 }
@@ -252,18 +271,25 @@ function mergeProjectThreads(
   loadedThreads: ThreadSummary[],
   routeSelectedThread: ThreadSummary | null,
   selectedThreadId: string | null,
+  beforeSnapshot?: ThreadSummary[],
 ): ThreadSummary[] {
   const hydratedThreads = mergeRouteSelectedThreadIntoList(loadedThreads, routeSelectedThread, selectedThreadId);
   const currentById = threadsById(current);
+  const beforeById = threadsById(beforeSnapshot ?? []);
   const mergedHydratedThreads = hydratedThreads.map((hydratedThread) => {
     const currentThread = currentById.get(hydratedThread.id);
     if (!currentThread) {
       return hydratedThread;
     }
     if (currentThread.updatedAt > hydratedThread.updatedAt) {
-      return currentThread;
+      return mergeThreadNotifications(
+        hydratedThread,
+        currentThread,
+        beforeById.get(hydratedThread.id),
+        currentThread,
+      );
     }
-    return mergeNewerReadProjection(hydratedThread, currentThread);
+    return mergeNewerReadProjection(hydratedThread, currentThread, beforeById.get(hydratedThread.id));
   });
   const hydratedIds = new Set(hydratedThreads.map((thread) => thread.id));
   return [...current.filter((thread) => !hydratedIds.has(thread.id)), ...mergedHydratedThreads];
@@ -284,12 +310,18 @@ function mergeRouteSelectedThreadIntoList(
   return threads.map((thread) => (thread.id === routeSelectedThread.id ? routeSelectedThread : thread));
 }
 
-function mergeNewerReadProjection(loadedThread: ThreadSummary, currentThread: ThreadSummary): ThreadSummary {
+function mergeNewerReadProjection(
+  loadedThread: ThreadSummary,
+  currentThread: ThreadSummary,
+  beforeThread?: ThreadSummary,
+): ThreadSummary {
   const loadedLastCompleted = loadedThread.lastCompletedAgentTurnSeq ?? 0;
   const currentLastCompleted = currentThread.lastCompletedAgentTurnSeq ?? 0;
   const loadedSeen = loadedThread.seenCompletedAgentTurnSeq ?? 0;
   const currentSeen = currentThread.seenCompletedAgentTurnSeq ?? 0;
-  const currentReadProjectionEventSeq = (currentThread as CachedThreadSummary).readProjectionEventSeq;
+  const currentCachedThread = currentThread as CachedThreadSummary;
+  const currentReadProjectionEventSeq = currentCachedThread.readProjectionEventSeq;
+  const mergedNotificationsEnabled = mergedThreadNotificationsEnabled(loadedThread, currentThread, beforeThread);
   const currentUnread = currentThread.unreadCompletedAgentTurn || currentLastCompleted > currentSeen;
   if (
     currentUnread &&
@@ -303,11 +335,15 @@ function mergeNewerReadProjection(loadedThread: ThreadSummary, currentThread: Th
         ? { readProjectionEventSeq: currentReadProjectionEventSeq }
         : {}),
       status: currentThread.status,
+      notificationsEnabled: mergedNotificationsEnabled,
       unreadCompletedAgentTurn: true,
     };
   }
   if (currentLastCompleted <= loadedLastCompleted && currentSeen <= loadedSeen) {
-    return loadedThread;
+    return {
+      ...loadedThread,
+      notificationsEnabled: mergedNotificationsEnabled,
+    };
   }
 
   const lastCompletedAgentTurnSeq = Math.max(loadedLastCompleted, currentLastCompleted);
@@ -316,10 +352,33 @@ function mergeNewerReadProjection(loadedThread: ThreadSummary, currentThread: Th
     ...loadedThread,
     ...(currentReadProjectionEventSeq !== undefined ? { readProjectionEventSeq: currentReadProjectionEventSeq } : {}),
     lastCompletedAgentTurnSeq,
+    notificationsEnabled: mergedNotificationsEnabled,
     seenCompletedAgentTurnSeq,
     status: currentThread.status,
     unreadCompletedAgentTurn: lastCompletedAgentTurnSeq > seenCompletedAgentTurnSeq,
   };
+}
+
+function mergeThreadNotifications(
+  loadedThread: ThreadSummary,
+  currentThread: ThreadSummary,
+  beforeThread: ThreadSummary | undefined,
+  baseThread: ThreadSummary,
+): ThreadSummary {
+  return {
+    ...baseThread,
+    notificationsEnabled: mergedThreadNotificationsEnabled(loadedThread, currentThread, beforeThread),
+  };
+}
+
+function mergedThreadNotificationsEnabled(
+  loadedThread: ThreadSummary,
+  currentThread: ThreadSummary,
+  beforeThread?: ThreadSummary,
+): boolean {
+  return beforeThread && beforeThread.notificationsEnabled !== currentThread.notificationsEnabled
+    ? currentThread.notificationsEnabled
+    : loadedThread.notificationsEnabled;
 }
 
 function upsertThreadInList(current: ThreadSummary[], thread: ThreadSummary): ThreadSummary[] {
@@ -343,8 +402,11 @@ function updateThreadList(
     if (thread.id !== threadId) {
       return thread;
     }
-    changed = true;
-    return patcher(thread);
+    const patched = patcher(thread);
+    if (patched !== thread) {
+      changed = true;
+    }
+    return patched;
   });
   return changed ? next : current;
 }
@@ -367,6 +429,7 @@ function threadChangedDuringSnapshot(before: ThreadSummary | undefined, current:
     before.pinnedAt !== current.pinnedAt ||
     before.updatedAt !== current.updatedAt ||
     before.name !== current.name ||
+    before.notificationsEnabled !== current.notificationsEnabled ||
     before.lastCompletedAgentTurnSeq !== current.lastCompletedAgentTurnSeq ||
     before.seenCompletedAgentTurnSeq !== current.seenCompletedAgentTurnSeq ||
     before.unreadCompletedAgentTurn !== current.unreadCompletedAgentTurn

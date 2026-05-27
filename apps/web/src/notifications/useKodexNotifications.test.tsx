@@ -1,7 +1,7 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { EventEnvelope, ThreadSummary } from "../api/client";
+import type { ThreadSummary } from "../api/client";
 import { useKodexNotifications } from "./useKodexNotifications";
 
 const OriginalNotification = globalThis.Notification;
@@ -29,27 +29,13 @@ function thread(id: string, unreadCompletedAgentTurn = false): ThreadSummary {
     agentRole: null,
     sandbox: null,
     gitInfo: null,
+    notificationsEnabled: true,
     pinnedAt: null,
     preview: null,
     lastCompletedAgentTurnSeq: unreadCompletedAgentTurn ? 1 : null,
     seenCompletedAgentTurnSeq: 0,
     unreadCompletedAgentTurn,
     rawPayload: {},
-  };
-}
-
-function completedTurnEvent(threadId: string): EventEnvelope {
-  return {
-    id: `event-${threadId}`,
-    seq: 2,
-    kind: "thread_view.patch",
-    codexMethod: "thread_view/patch",
-    projectId: null,
-    threadId,
-    turnId: null,
-    itemId: null,
-    receivedAt: "2026-05-15T00:00:00Z",
-    payload: { viewRevision: 2, threadId, activeTurnId: null, liveState: "idle", items: [] },
   };
 }
 
@@ -68,7 +54,6 @@ describe("useKodexNotifications", () => {
         chatThreads: [unread],
         pinnedThreads: [unread],
         routeSelectedThread: null,
-        selectedThreadId: null,
         threadsByProjectId: {},
       }),
     );
@@ -77,72 +62,5 @@ describe("useKodexNotifications", () => {
     expect(clearAppBadge).not.toHaveBeenCalled();
     Object.defineProperty(navigator, "setAppBadge", { configurable: true, value: originalSet });
     Object.defineProperty(navigator, "clearAppBadge", { configurable: true, value: originalClear });
-  });
-
-  it("suppresses foreground notifications for the selected thread", () => {
-    const notificationCtor = vi.fn();
-    Object.defineProperty(notificationCtor, "permission", { configurable: true, value: "granted" });
-    Object.defineProperty(globalThis, "Notification", { configurable: true, value: notificationCtor });
-
-    const { result } = renderHook(() =>
-      useKodexNotifications({
-        chatThreads: [thread("thread-1")],
-        pinnedThreads: [],
-        routeSelectedThread: null,
-        selectedThreadId: "thread-1",
-        threadsByProjectId: {},
-      }),
-    );
-
-    act(() => result.current.applyNotificationEvent(completedTurnEvent("thread-1")));
-
-    expect(notificationCtor).not.toHaveBeenCalled();
-  });
-
-  it("shows foreground notifications for background completed agent turns", () => {
-    const notificationCtor = vi.fn();
-    Object.defineProperty(notificationCtor, "permission", { configurable: true, value: "granted" });
-    Object.defineProperty(globalThis, "Notification", { configurable: true, value: notificationCtor });
-
-    const { result } = renderHook(() =>
-      useKodexNotifications({
-        chatThreads: [thread("thread-2")],
-        pinnedThreads: [],
-        routeSelectedThread: null,
-        selectedThreadId: "thread-1",
-        threadsByProjectId: {},
-      }),
-    );
-
-    act(() => result.current.applyNotificationEvent(completedTurnEvent("thread-2")));
-
-    expect(notificationCtor).toHaveBeenCalledWith(
-      "thread-2",
-      expect.objectContaining({
-        body: "Agent has a new message.",
-        tag: "kodex-unread-agent-message:thread-2",
-      }),
-    );
-  });
-
-  it("suppresses foreground notifications when push delivery is enabled", () => {
-    const notificationCtor = vi.fn();
-    Object.defineProperty(notificationCtor, "permission", { configurable: true, value: "granted" });
-    Object.defineProperty(globalThis, "Notification", { configurable: true, value: notificationCtor });
-    localStorage.setItem("kodex.pushSubscriptionId", "subscription-1");
-
-    const { result } = renderHook(() =>
-      useKodexNotifications({
-        chatThreads: [thread("thread-2")],
-        pinnedThreads: [],
-        routeSelectedThread: null,
-        selectedThreadId: "thread-1",
-        threadsByProjectId: {},
-      }),
-    );
-
-    act(() => result.current.applyNotificationEvent(completedTurnEvent("thread-2")));
-
-    expect(notificationCtor).not.toHaveBeenCalled();
   });
 });

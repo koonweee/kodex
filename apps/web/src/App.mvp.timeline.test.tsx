@@ -51,6 +51,100 @@ describe("MVP timeline flows", () => {
     expect(within(timeline).queryByText("Thread activity will stream into this timeline.")).not.toBeInTheDocument();
   });
 
+  it("excludes the selected thread from the global event stream and refreshes the exclusion on selection changes", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, secondThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "GET /v1/threads/thread-1": threadDetail(thread, [
+          snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "Initial snapshot" })]),
+        ]),
+        "GET /v1/threads/thread-2": threadDetail(secondThread, [
+          snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Second snapshot" })]),
+        ]),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/initial snapshot/i)).toBeInTheDocument();
+    await waitFor(() => {
+      const openGlobalStream = FakeEventSource.instances.find(
+        (instance) => !instance.closed && !instance.url.includes("threadId="),
+      );
+      expect(openGlobalStream?.url).toContain("excludeThreadId=thread-1");
+    });
+    const selectedThreadOneStream = FakeEventSource.instances.find(
+      (instance) => !instance.closed && instance.url.includes("threadId=thread-1"),
+    );
+    expect(selectedThreadOneStream).toBeDefined();
+    const globalThreadOneExcludedStream = FakeEventSource.instances.find(
+      (instance) => !instance.closed && !instance.url.includes("threadId="),
+    );
+    act(() => {
+      globalThreadOneExcludedStream?.emitNamed(
+        "thread_view.patch",
+        projectionPatchEvent({ seq: 2, threadId: thread.id, text: "Wrong global duplicate" }),
+      );
+    });
+    expect(screen.queryByText(/wrong global duplicate/i)).not.toBeInTheDocument();
+    act(() => {
+      selectedThreadOneStream?.emitNamed(
+        "thread_view.patch",
+        projectionPatchEvent({ seq: 3, threadId: thread.id, text: "Selected stream update" }),
+      );
+    });
+    expect(await screen.findByText(/selected stream update/i)).toBeInTheDocument();
+    act(() => {
+      selectedThreadOneStream?.emitNamed("gateway.warning", {
+        id: "selected-thread-warning",
+        seq: 4,
+        kind: "gateway.warning",
+        codexMethod: null,
+        projectId: project.id,
+        threadId: thread.id,
+        turnId: "turn-1",
+        itemId: "warning-1",
+        payload: { message: "Selected warning routed" },
+        receivedAt: "2026-05-27T00:00:00Z",
+      });
+    });
+    expect(await screen.findByText(/selected warning routed/i)).toBeInTheDocument();
+    act(() => {
+      selectedThreadOneStream?.emitNamed("gateway.error", {
+        id: "selected-thread-error",
+        seq: 5,
+        kind: "gateway.error",
+        codexMethod: null,
+        projectId: project.id,
+        threadId: thread.id,
+        turnId: "turn-1",
+        itemId: "error-1",
+        payload: { message: "Selected error routed" },
+        receivedAt: "2026-05-27T00:00:01Z",
+      });
+    });
+    expect(await screen.findByText(/selected error routed/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    expect(await screen.findByText(/second snapshot/i)).toBeInTheDocument();
+
+    await waitFor(() => {
+      const openGlobalStream = FakeEventSource.instances.find(
+        (instance) => !instance.closed && !instance.url.includes("threadId="),
+      );
+      expect(openGlobalStream?.url).toContain("excludeThreadId=thread-2");
+    });
+    expect(
+      FakeEventSource.instances.some((instance) => !instance.closed && instance.url.includes("threadId=thread-2")),
+    ).toBe(true);
+  });
+
   it("reports selected thread stream disconnects as retrying and clears the notice after live recovery", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     let detailReads = 0;
@@ -249,7 +343,7 @@ describe("MVP timeline flows", () => {
         threadId: "thread-2",
         turnId: null,
         itemId: null,
-        payload: { viewRevision: 3, threadId: "thread-2", activeTurnId: null, liveState: "idle", items: [] },
+        payload: { scope: "lifecycle", viewRevision: 3, threadId: "thread-2", activeTurnId: null, liveState: "idle", items: [] },
         receivedAt: "2026-04-30T00:00:02Z",
       });
     });
@@ -300,7 +394,7 @@ describe("MVP timeline flows", () => {
         threadId: "thread-2",
         turnId: null,
         itemId: null,
-        payload: { viewRevision: 3, threadId: "thread-2", activeTurnId: null, liveState: "idle", items: [] },
+        payload: { scope: "lifecycle", viewRevision: 3, threadId: "thread-2", activeTurnId: null, liveState: "idle", items: [] },
         receivedAt: "2026-04-30T00:00:02Z",
       });
     });
@@ -404,7 +498,7 @@ describe("MVP timeline flows", () => {
         threadId: "thread-2",
         turnId: null,
         itemId: null,
-        payload: { viewRevision: 4, threadId: "thread-2", activeTurnId: null, liveState: "idle", items: [] },
+        payload: { scope: "lifecycle", viewRevision: 4, threadId: "thread-2", activeTurnId: null, liveState: "idle", items: [] },
         receivedAt: "2026-04-30T00:00:02Z",
       });
     });
@@ -752,6 +846,7 @@ describe("MVP timeline flows", () => {
         turnId: null,
         itemId: null,
         payload: {
+          scope: "full_snapshot",
           viewRevision: 2,
           threadId: "thread-2",
           activeTurnId: null,
@@ -959,6 +1054,7 @@ function terminalProjectionEvent({
     turnId: null,
     itemId: null,
     payload: {
+      scope: "turn",
       viewRevision: seq,
       threadId,
       activeTurnId: null,
@@ -966,7 +1062,7 @@ function terminalProjectionEvent({
       turns: [{ id: turnId, status: "completed" }],
       pendingApprovalRequests: [],
       pendingUserInputRequests: [],
-      rows: canonicalRowsFromSnapshotItems([
+      upsertRows: canonicalRowsFromSnapshotItems([
         {
           id: `projection-${turnId}-${itemId}`,
           threadId,

@@ -1,8 +1,9 @@
-import type { EventEnvelope, ThreadReadStateUpdate } from "../api/client";
+import type { EventEnvelope, ThreadNotificationSettingsResponse, ThreadReadStateUpdate } from "../api/client";
 import type { ThreadSummary } from "../api/client";
 import { asRecord, numberValue, stringValue } from "../shared/values";
 
 type ThreadRuntimeStatus = "active" | "idle";
+type ThreadStatusUpdate = { threadId: string; status: ThreadRuntimeStatus; updatedAt: number | null };
 type ThreadUpsert =
   | { scope: "project"; projectId: string; thread: ThreadSummary }
   | { scope: "chat"; thread: ThreadSummary };
@@ -83,7 +84,30 @@ export function threadReadUpdateFromEvent(event: EventEnvelope): ThreadReadState
   };
 }
 
-export function threadStatusUpdateFromEvent(event: EventEnvelope): { threadId: string; status: ThreadRuntimeStatus } | null {
+export function threadNotificationsUpdateFromEvent(event: EventEnvelope): ThreadNotificationSettingsResponse | null {
+  if (event.kind !== "thread.notifications_updated") {
+    return null;
+  }
+  const payload = asRecord(event.payload);
+  const threadId = event.threadId ?? stringValue(payload.threadId) ?? stringValue(payload.thread_id);
+  const notificationsEnabled =
+    typeof payload.notificationsEnabled === "boolean"
+      ? payload.notificationsEnabled
+      : typeof payload.notifications_enabled === "boolean"
+        ? payload.notifications_enabled
+        : null;
+  const updatedAt = stringValue(payload.updatedAt) ?? stringValue(payload.updated_at);
+  if (!threadId || notificationsEnabled === null || !updatedAt) {
+    return null;
+  }
+  return {
+    threadId,
+    notificationsEnabled,
+    updatedAt,
+  };
+}
+
+export function threadStatusUpdateFromEvent(event: EventEnvelope): ThreadStatusUpdate | null {
   const payload = asRecord(event.payload);
   const threadId = event.threadId ?? stringValue(payload.threadId) ?? stringValue(payload.thread_id);
   if (!threadId) {
@@ -92,10 +116,21 @@ export function threadStatusUpdateFromEvent(event: EventEnvelope): { threadId: s
 
   if (event.kind === "thread_view.patch") {
     const status = normalizeRuntimeStatus(stringValue(payload.liveState));
-    return status ? { threadId, status } : null;
+    return status
+      ? {
+          threadId,
+          status,
+          updatedAt: status === "idle" ? eventReceivedAtSeconds(event.receivedAt) : null,
+        }
+      : null;
   }
 
   return null;
+}
+
+function eventReceivedAtSeconds(receivedAt: string): number | null {
+  const timestampMs = Date.parse(receivedAt);
+  return Number.isFinite(timestampMs) ? Math.floor(timestampMs / 1000) : null;
 }
 
 export function threadNameUpdateFromEvent(event: EventEnvelope): { threadId: string; name: string | null } | null {
@@ -140,6 +175,8 @@ function threadSummaryFromValue(value: unknown): ThreadSummary | null {
   const seenCompletedAgentTurnSeq = numberValue(thread.seenCompletedAgentTurnSeq);
   const unreadCompletedAgentTurn =
     typeof thread.unreadCompletedAgentTurn === "boolean" ? thread.unreadCompletedAgentTurn : null;
+  const notificationsEnabled =
+    typeof thread.notificationsEnabled === "boolean" ? thread.notificationsEnabled : true;
 
   if (
     !id ||
@@ -154,6 +191,7 @@ function threadSummaryFromValue(value: unknown): ThreadSummary | null {
     return null;
   }
 
+  thread.notificationsEnabled = notificationsEnabled;
   return thread as ThreadSummary;
 }
 

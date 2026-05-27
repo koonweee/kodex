@@ -106,6 +106,8 @@ describe("MVP composer input flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
+    expect(within(timelineElement(container)).getByText("Ship it")).toBeInTheDocument();
+    expect(within(timelineElement(container)).getByText("Sending")).toBeInTheDocument();
     const sendingButton = screen.getByRole("button", { name: /sending message/i });
     expect(sendingButton).toBeDisabled();
     expect(sendingButton).toHaveAttribute("data-action-state", "submitting");
@@ -118,7 +120,8 @@ describe("MVP composer input flows", () => {
       expect(screen.queryByRole("button", { name: /sending message/i })).not.toBeInTheDocument();
     });
     expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
-    expect(within(timelineElement(container)).queryByText("Ship it")).not.toBeInTheDocument();
+    expect(within(timelineElement(container)).getByText("Ship it")).toBeInTheDocument();
+    expect(within(timelineElement(container)).queryByText("Sending")).not.toBeInTheDocument();
 
     const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
     act(() => {
@@ -134,7 +137,7 @@ describe("MVP composer input flows", () => {
         status: "running",
       }));
     });
-    expect(await screen.findByText("Ship it")).toBeInTheDocument();
+    await waitFor(() => expect(within(timelineElement(container)).getAllByText("Ship it")).toHaveLength(1));
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: /sending message/i })).not.toBeInTheDocument();
     });
@@ -259,7 +262,7 @@ describe("MVP composer input flows", () => {
     await waitFor(() => {
       expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
     });
-    expect(container.querySelector(".kodex-inline-skill-badge")).not.toBeInTheDocument();
+    expect(container.querySelector(".kodex-inline-skill-badge")).toHaveTextContent("Documents");
     const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
     expect(selectedThreadStream).toBeDefined();
     act(() => {
@@ -556,7 +559,7 @@ describe("MVP composer input flows", () => {
     });
   });
 
-  it("waits for a gateway projection patch before rendering sent text", async () => {
+  it("renders sent text optimistically before the gateway projection patch", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     let resolveTurn: (value: unknown) => void = () => undefined;
     const gateway = mockGateway(
@@ -578,7 +581,7 @@ describe("MVP composer input flows", () => {
     await waitFor(() => {
       expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
     });
-    expect(within(timelineElement(document.body)).queryByText("Ship it")).not.toBeInTheDocument();
+    expect(within(timelineElement(document.body)).getByText("Ship it")).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
     expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
@@ -595,7 +598,7 @@ describe("MVP composer input flows", () => {
         status: "completed",
       }));
     });
-    expect(await screen.findByText("Ship it")).toBeInTheDocument();
+    await waitFor(() => expect(within(timelineElement(document.body)).getAllByText("Ship it")).toHaveLength(1));
 
     act(() => resolveTurn({ payload: {} }));
     await waitFor(() => expect(screen.getByLabelText(/message composer/i)).toBeEnabled());
@@ -657,7 +660,7 @@ describe("MVP composer input flows", () => {
         threadId: thread.id,
         turnId: null,
         itemId: null,
-        payload: { viewRevision: 3, threadId: thread.id, activeTurnId: null, liveState: "idle", items: [] },
+        payload: { scope: "lifecycle", viewRevision: 3, threadId: thread.id, activeTurnId: null, liveState: "idle", items: [] },
         receivedAt: "2026-05-02T00:00:02Z",
       });
       globalStream?.emit({
@@ -725,7 +728,7 @@ describe("MVP composer input flows", () => {
       expect(screen.queryByText("Sending")).not.toBeInTheDocument();
     });
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
-    expect(within(timelineElement(container)).queryByText("Retry text")).not.toBeInTheDocument();
+    expect(within(timelineElement(container)).getByText("Retry text")).toBeInTheDocument();
     expect(within(timelineElement(container)).queryByText("Failed")).not.toBeInTheDocument();
   });
 

@@ -4,6 +4,7 @@ import { createKodexQueryClient } from "../api/queryClient";
 import { queryKeys } from "../api/queryKeys";
 import type { ThreadRead, ThreadSummary } from "../api/client";
 import {
+  applyThreadNotificationsState,
   applyThreadPinState,
   applyThreadReadState,
   findCachedThread,
@@ -15,6 +16,7 @@ import {
   replaceThreadEverywhere,
   upsertChatThread,
   upsertProjectThread,
+  updateThreadEverywhere,
 } from "./cache";
 
 function thread(id: string, overrides: Partial<ThreadSummary> = {}): ThreadSummary {
@@ -23,6 +25,7 @@ function thread(id: string, overrides: Partial<ThreadSummary> = {}): ThreadSumma
     cwd: "/tmp/kodex",
     id,
     name: id,
+    notificationsEnabled: true,
     rawPayload: {},
     seenCompletedAgentTurnSeq: 0,
     status: "idle",
@@ -178,6 +181,86 @@ describe("thread query cache helpers", () => {
     expect(queryClient.getQueryData(queryKeys.pinnedThreads)).toEqual([
       { ...projectThread, pinnedAt: "2026-05-06T12:00:00Z" },
     ]);
+  });
+
+  it("updates notification settings in every cached copy", () => {
+    const queryClient = createKodexQueryClient();
+    const cachedThread = thread("thread-1", { pinnedAt: "2026-05-06T12:00:00Z", preview: "Keep me" });
+    upsertProjectThread(queryClient, "project-1", cachedThread);
+    upsertChatThread(queryClient, cachedThread);
+    applyThreadPinState(queryClient, "thread-1", cachedThread.pinnedAt ?? null, cachedThread);
+
+    applyThreadNotificationsState(queryClient, "thread-1", false);
+
+    expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-1"))?.[0]).toMatchObject({
+      notificationsEnabled: false,
+      preview: "Keep me",
+    });
+    expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.chatThreads)?.[0]).toMatchObject({
+      notificationsEnabled: false,
+      preview: "Keep me",
+    });
+    expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads)?.[0]).toMatchObject({
+      notificationsEnabled: false,
+      preview: "Keep me",
+    });
+  });
+
+  it("preserves cached list references when an everywhere update is a no-op", () => {
+    const queryClient = createKodexQueryClient();
+    const cachedThread = thread("thread-1", { pinnedAt: "2026-05-06T12:00:00Z" });
+    upsertProjectThread(queryClient, "project-1", cachedThread);
+    upsertChatThread(queryClient, cachedThread);
+    upsertProjectThread(queryClient, "project-2", thread("thread-2"));
+    applyThreadPinState(queryClient, "thread-1", cachedThread.pinnedAt ?? null, cachedThread);
+    const projectThreads = queryClient.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-1"));
+    const otherProjectThreads = queryClient.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-2"));
+    const chatThreads = queryClient.getQueryData<ThreadSummary[]>(queryKeys.chatThreads);
+    const pinnedThreads = queryClient.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads);
+
+    updateThreadEverywhere(queryClient, "thread-1", (current) => current);
+
+    expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-1"))).toBe(projectThreads);
+    expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-2"))).toBe(otherProjectThreads);
+    expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.chatThreads)).toBe(chatThreads);
+    expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads)).toBe(pinnedThreads);
+  });
+
+  it("keeps local notification settings ahead of stale sidebar snapshots", () => {
+    const queryClient = createKodexQueryClient();
+    upsertProjectThread(queryClient, "project-1", thread("thread-1", { notificationsEnabled: true }));
+    const beforeSnapshot = queryClient.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-1"));
+    applyThreadNotificationsState(queryClient, "thread-1", false);
+
+    mergeProjectThreadSnapshot(
+      queryClient,
+      "project-1",
+      [thread("thread-1", { notificationsEnabled: true })],
+      null,
+      null,
+      beforeSnapshot,
+    );
+
+    expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-1"))?.[0]).toMatchObject({
+      notificationsEnabled: false,
+    });
+  });
+
+  it("accepts authoritative notification settings from later sidebar snapshots", () => {
+    const queryClient = createKodexQueryClient();
+    upsertProjectThread(queryClient, "project-1", thread("thread-1", { notificationsEnabled: true }));
+
+    mergeProjectThreadSnapshot(
+      queryClient,
+      "project-1",
+      [thread("thread-1", { notificationsEnabled: false })],
+      null,
+      null,
+    );
+
+    expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-1"))?.[0]).toMatchObject({
+      notificationsEnabled: false,
+    });
   });
 
   it("preserves a live pin when a stale pinned snapshot resolves later", () => {

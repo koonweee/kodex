@@ -47,6 +47,7 @@ export type SkillMetadata = components["schemas"]["SkillMetadata"];
 export type SkillsCatalogResponse = components["schemas"]["SkillsCatalogResponse"];
 export type ThreadRead = components["schemas"]["ThreadRead"];
 export type ThreadReadStateUpdate = components["schemas"]["ThreadReadStateUpdate"];
+export type ThreadNotificationSettingsResponse = components["schemas"]["ThreadNotificationSettingsResponse"];
 export type ThreadAttachResponse = components["schemas"]["ThreadAttachResponse"];
 export type ThreadListResponse = components["schemas"]["ThreadListResponse"];
 export type SidebarThreadSummary = components["schemas"]["SidebarThreadSummary"];
@@ -360,6 +361,18 @@ export async function renameThread(threadId: string, name: string): Promise<Thre
     api.PATCH("/v1/threads/{threadId}/name", { params: { path: { threadId } }, body: { name } }),
   );
   return response.thread;
+}
+
+export async function setThreadNotificationsEnabled(
+  threadId: string,
+  enabled: boolean,
+): Promise<ThreadNotificationSettingsResponse> {
+  return unwrap(
+    api.PATCH("/v1/threads/{threadId}/notifications", {
+      params: { path: { threadId } },
+      body: { enabled },
+    }),
+  );
 }
 
 export async function pinThread(threadId: string): Promise<string | null> {

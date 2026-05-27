@@ -1645,6 +1645,7 @@ pub struct ThreadSummary {
     pub last_completed_agent_turn_seq: Option<i64>,
     pub seen_completed_agent_turn_seq: i64,
     pub unread_completed_agent_turn: bool,
+    pub notifications_enabled: bool,
     pub raw_payload: Value,
 }
 
@@ -1691,6 +1692,7 @@ impl ThreadSummary {
             last_completed_agent_turn_seq: None,
             seen_completed_agent_turn_seq: 0,
             unread_completed_agent_turn: false,
+            notifications_enabled: true,
             raw_payload: payload.clone(),
         })
     }
@@ -1831,6 +1833,7 @@ pub struct ThreadViewThreadSummary {
     pub last_completed_agent_turn_seq: Option<i64>,
     pub seen_completed_agent_turn_seq: i64,
     pub unread_completed_agent_turn: bool,
+    pub notifications_enabled: bool,
 }
 
 impl From<ThreadSummary> for ThreadViewThreadSummary {
@@ -1857,6 +1860,7 @@ impl From<ThreadSummary> for ThreadViewThreadSummary {
             last_completed_agent_turn_seq: thread.last_completed_agent_turn_seq,
             seen_completed_agent_turn_seq: thread.seen_completed_agent_turn_seq,
             unread_completed_agent_turn: thread.unread_completed_agent_turn,
+            notifications_enabled: thread.notifications_enabled,
         }
     }
 }

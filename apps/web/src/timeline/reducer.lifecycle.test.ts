@@ -277,6 +277,7 @@ function projectionPatch(text: string): Record<string, unknown> & { items: Array
     },
   };
   return {
+    scope: "full_snapshot",
     threadId: "thread-1",
     viewRevision: 2,
     activeTurnId: null,
@@ -326,10 +327,12 @@ function projectionPatchWithLiveState({
   }));
   return {
     ...patch,
+    scope: "turn",
     activeTurnId,
     liveState,
     viewRevision,
-    rows: items.map(canonicalRow),
+    rows: undefined,
+    upsertRows: items.map(canonicalRow),
     items,
     turns: [{ id: turnId, status }],
   };

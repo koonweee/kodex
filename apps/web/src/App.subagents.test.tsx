@@ -202,9 +202,9 @@ describe("subagent thread viewer", () => {
     expect(await screen.findByText(/builder snapshot/i)).toBeInTheDocument();
 
     subagents = [subagent, secondSubagent];
-    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
     act(() => {
-      globalStream?.emitNamed("thread_view.patch", projectionPatchEvent({
+      selectedThreadStream?.emitNamed("thread_view.patch", projectionPatchEvent({
         id: "main-collab-refresh",
         seq: 10,
         projectId: project.id,
@@ -219,6 +219,39 @@ describe("subagent thread viewer", () => {
 
     expect(screen.getByText(/builder snapshot/i)).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /builder/i })).toBeChecked();
+  });
+
+  it("does not refetch subagents for ordinary selected-thread streaming patches", async () => {
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads/thread-1/subagents": { subagents: [subagent] },
+        "GET /v1/threads/subagent-1": threadDetail(subagentThread, [
+          snapshotTurn("sub-turn-1", [
+            snapshotItem("sub-answer-1", "agentMessage", { text: "Subagent snapshot" }),
+          ]),
+        ]),
+      }),
+    );
+
+    render(<App />);
+
+    await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/thread-1/subagents")).toHaveLength(1));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    act(() => {
+      selectedThreadStream?.emitNamed("thread_view.patch", projectionPatchEvent({
+        id: "main-ordinary-streaming-patch",
+        seq: 10,
+        projectId: project.id,
+        threadId: "thread-1",
+        turnId: "turn-1",
+        itemId: "ordinary-agent-message",
+        itemType: "agentMessage",
+        text: "Ordinary streaming update",
+      }));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(gateway.callsFor("GET", "/v1/threads/thread-1/subagents")).toHaveLength(1);
   });
 
   it("falls back when the selected subagent disappears from the gateway list", async () => {
@@ -248,9 +281,9 @@ describe("subagent thread viewer", () => {
     expect(await screen.findByText(/scout snapshot/i)).toBeInTheDocument();
 
     subagents = [secondSubagent];
-    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
     act(() => {
-      globalStream?.emitNamed("thread_view.patch", projectionPatchEvent({
+      selectedThreadStream?.emitNamed("thread_view.patch", projectionPatchEvent({
         id: "main-collab-change",
         seq: 10,
         projectId: project.id,

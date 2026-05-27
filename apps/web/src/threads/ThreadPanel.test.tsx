@@ -1,7 +1,9 @@
 import { MantineProvider } from "@mantine/core";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { ThreadSummary } from "../api/client";
 import { idleTimelineEntry } from "../timeline/entry";
 import { createTimelineState } from "../timeline/reducer";
 import { ThreadPanel } from "./ThreadPanel";
@@ -25,6 +27,7 @@ describe("ThreadPanel", () => {
           onImageOpen={() => undefined}
           onPinThread={() => undefined}
           onRenameThread={async () => undefined}
+          onSetThreadNotificationsEnabled={() => undefined}
           onShowMobileSidebar={() => undefined}
           onTimelineReady={() => undefined}
           onUnpinThread={() => undefined}
@@ -56,4 +59,69 @@ describe("ThreadPanel", () => {
 
     expect(screen.queryByText(/selected thread stream disconnected/i)).not.toBeInTheDocument();
   });
+
+  it("renders the thread notification toggle as checked by default and reports changes", async () => {
+    const onSetThreadNotificationsEnabled = vi.fn();
+    render(
+      <MantineProvider>
+        <ThreadPanel
+          errorMessage={null}
+          imagePreviewUrlsByPath={{}}
+          isDraftThreadSelected={false}
+          isSelectedTimelineLoading={false}
+          onArchiveThread={() => undefined}
+          onApprovalDecision={() => undefined}
+          onImageOpen={() => undefined}
+          onPinThread={() => undefined}
+          onRenameThread={async () => undefined}
+          onSetThreadNotificationsEnabled={onSetThreadNotificationsEnabled}
+          onShowMobileSidebar={() => undefined}
+          onTimelineReady={() => undefined}
+          onUnpinThread={() => undefined}
+          pendingTitleThreadIds={new Set()}
+          scrollParentElement={null}
+          selectedThread={thread("thread-1")}
+          selectedThreadApprovals={[]}
+          selectedThreadTitle="Thread one"
+          selectedTimelineEntry={idleTimelineEntry}
+          setTimelineScrollElement={() => undefined}
+          showDebugEvents={false}
+          threadSyncNotice={null}
+          timeline={createTimelineState()}
+        />
+      </MantineProvider>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /thread actions/i }));
+    let toggle: HTMLElement | undefined;
+    await waitFor(() => {
+      toggle = screen.queryAllByRole("menuitem", { hidden: true }).find((element) =>
+        /notifications/i.test(element.textContent ?? ""),
+      );
+      expect(toggle).toBeInTheDocument();
+    });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    expect(toggle).not.toHaveAttribute("data-active", "true");
+
+    fireEvent.click(toggle!);
+
+    expect(onSetThreadNotificationsEnabled).toHaveBeenCalledWith("thread-1", false);
+    expect(screen.getByRole("button", { name: /thread actions/i })).toHaveAttribute("aria-expanded", "true");
+  });
 });
+
+function thread(id: string, overrides: Partial<ThreadSummary> = {}): ThreadSummary {
+  return {
+    createdAt: 1,
+    cwd: "/workspace",
+    id,
+    name: "Thread one",
+    notificationsEnabled: true,
+    rawPayload: {},
+    seenCompletedAgentTurnSeq: 0,
+    status: "idle",
+    unreadCompletedAgentTurn: false,
+    updatedAt: 2,
+    ...overrides,
+  };
+}

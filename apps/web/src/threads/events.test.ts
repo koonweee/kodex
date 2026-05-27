@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { EventEnvelope } from "../api/client";
 import {
   completedAgentTurnEvent,
+  threadNotificationsUpdateFromEvent,
   threadNameUpdateFromEvent,
   threadStatusUpdateFromEvent,
   threadUpsertFromEvent,
@@ -29,7 +30,7 @@ describe("thread events", () => {
           kind: "thread_view.patch",
           codexMethod: "thread_view/patch",
           threadId: "thread-1",
-          payload: { threadId: "thread-1", liveState: "idle", activeTurnId: null, items: [] },
+          payload: { scope: "lifecycle", threadId: "thread-1", liveState: "idle", activeTurnId: null, items: [] },
         }),
       ),
     ).toEqual({ threadId: "thread-1", seq: 10 });
@@ -40,7 +41,7 @@ describe("thread events", () => {
           kind: "thread_view.patch",
           codexMethod: "thread_view/patch",
           threadId: "thread-1",
-          payload: { threadId: "thread-1", liveState: "streaming", activeTurnId: "turn-1", items: [] },
+          payload: { scope: "lifecycle", threadId: "thread-1", liveState: "streaming", activeTurnId: "turn-1", items: [] },
         }),
       ),
     ).toBeNull();
@@ -52,19 +53,19 @@ describe("thread events", () => {
         event({
           kind: "thread_view.patch",
           threadId: "thread-1",
-          payload: { liveState: "streaming" },
+          payload: { scope: "lifecycle", liveState: "streaming" },
         }),
       ),
-    ).toEqual({ threadId: "thread-1", status: "active" });
+    ).toEqual({ threadId: "thread-1", status: "active", updatedAt: null });
 
     expect(
       threadStatusUpdateFromEvent(
         event({
           kind: "thread_view.patch",
-          payload: { threadId: "thread-1", liveState: "idle", activeTurnId: null },
+          payload: { scope: "lifecycle", threadId: "thread-1", liveState: "idle", activeTurnId: null },
         }),
       ),
-    ).toEqual({ threadId: "thread-1", status: "idle" });
+    ).toEqual({ threadId: "thread-1", status: "idle", updatedAt: 1_777_680_000 });
   });
 
   it("parses current and legacy thread name update notifications", () => {
@@ -125,6 +126,55 @@ describe("thread events", () => {
     ).toEqual({ scope: "chat", thread: summary });
   });
 
+  it("parses notification setting update events", () => {
+    expect(
+      threadNotificationsUpdateFromEvent(
+        event({
+          kind: "thread.notifications_updated",
+          threadId: "thread-1",
+          payload: {
+            threadId: "thread-1",
+            notificationsEnabled: false,
+            updatedAt: "2026-05-25T00:00:00Z",
+          },
+        }),
+      ),
+    ).toEqual({
+      threadId: "thread-1",
+      notificationsEnabled: false,
+      updatedAt: "2026-05-25T00:00:00Z",
+    });
+
+    expect(
+      threadNotificationsUpdateFromEvent(
+        event({
+          kind: "thread.notifications_updated",
+          payload: {
+            thread_id: "thread-2",
+            notifications_enabled: true,
+            updated_at: "2026-05-25T00:00:01Z",
+          },
+        }),
+      ),
+    ).toEqual({
+      threadId: "thread-2",
+      notificationsEnabled: true,
+      updatedAt: "2026-05-25T00:00:01Z",
+    });
+  });
+
+  it("rejects malformed notification setting update events", () => {
+    expect(threadNotificationsUpdateFromEvent(event({ kind: "thread.pin_updated" }))).toBeNull();
+    expect(
+      threadNotificationsUpdateFromEvent(
+        event({
+          kind: "thread.notifications_updated",
+          payload: { threadId: "thread-1", updatedAt: "2026-05-25T00:00:00Z" },
+        }),
+      ),
+    ).toBeNull();
+  });
+
   it("rejects malformed thread upsert events", () => {
     expect(threadUpsertFromEvent(event({ kind: "thread.pin_updated" }))).toBeNull();
     expect(
@@ -168,6 +218,7 @@ function threadSummary(id: string) {
     cwd: "/workspace",
     id,
     name: "Live thread",
+    notificationsEnabled: true,
     rawPayload: {},
     seenCompletedAgentTurnSeq: 0,
     status: "idle" as const,

@@ -26,6 +26,17 @@ function clickMenuItem(name: RegExp) {
   return clickMenuItemWithDeps(name, screen, waitFor, fireEvent);
 }
 
+async function notificationMenuItem(name: RegExp) {
+  let item: HTMLElement | undefined;
+  await waitFor(() => {
+    item = screen.queryAllByRole("menuitem", { hidden: true }).find((element) =>
+      name.test(element.textContent ?? ""),
+    );
+    expect(item).toBeInTheDocument();
+  });
+  return item!;
+}
+
 function addProjectSubmitButton() {
   const buttons = screen.getAllByRole("button", { name: /add project/i });
   return buttons[buttons.length - 1];
@@ -735,8 +746,18 @@ describe("MVP shell flows", () => {
       cwd: "/home/example/Documents/Codex/2026-05-09/chat-starter",
       preview: "Chat starter",
     };
-    const hydratedProjectThread = { ...thread, preview: "Updated project preview", updatedAt: thread.updatedAt + 1 };
-    const hydratedChatThread = { ...chatThread, preview: "Updated chat preview", updatedAt: chatThread.updatedAt + 1 };
+    const untitledProjectThread = { ...thread, id: "project-thread-missing-title", name: null, preview: "" };
+    const untitledChatThread = { ...chatThread, name: null, preview: "" };
+    const hydratedProjectThread = {
+      ...untitledProjectThread,
+      preview: "Updated project preview",
+      updatedAt: thread.updatedAt + 1,
+    };
+    const hydratedChatThread = {
+      ...untitledChatThread,
+      preview: "Updated chat preview",
+      updatedAt: chatThread.updatedAt + 1,
+    };
     const pinnedThread = {
       ...thread,
       id: "unknown-pinned-thread",
@@ -768,13 +789,13 @@ describe("MVP shell flows", () => {
           projects: [project],
           projectThreads: {
             [project.id]: {
-              threads: [thread],
+              threads: [untitledProjectThread],
               nextCursor: null,
               backwardsCursor: null,
               rawPayload: {},
             },
           },
-          chatThreads: { threads: [chatThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+          chatThreads: { threads: [untitledChatThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
           pinnedThreads: { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         },
       }),
@@ -795,7 +816,7 @@ describe("MVP shell flows", () => {
         id: "event-project-refresh",
         seq: 2,
         projectId: project.id,
-        threadId: thread.id,
+        threadId: untitledProjectThread.id,
         turnId: "turn-1",
         itemId: "item-1",
         itemType: "userMessage",
@@ -805,7 +826,7 @@ describe("MVP shell flows", () => {
         id: "event-chat-refresh",
         seq: 3,
         projectId: null,
-        threadId: chatThread.id,
+        threadId: untitledChatThread.id,
         turnId: "turn-2",
         itemId: "item-2",
         itemType: "userMessage",
@@ -1111,7 +1132,7 @@ describe("MVP shell flows", () => {
     expect(chatListCalls).toBeGreaterThanOrEqual(3);
   });
 
-  it("refreshes titled chat threads after live timeline events so updatedAt ordering converges", async () => {
+  it("updates titled chat ordering from live timeline completion without refetching the section", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const staleActiveChat = {
       ...thread,
@@ -1122,10 +1143,6 @@ describe("MVP shell flows", () => {
       seenCompletedAgentTurnSeq: 0,
       unreadCompletedAgentTurn: false,
       updatedAt: thread.updatedAt + 1,
-    };
-    const refreshedActiveChat = {
-      ...staleActiveChat,
-      updatedAt: thread.updatedAt + 3,
     };
     const recentChat = {
       ...thread,
@@ -1142,8 +1159,7 @@ describe("MVP shell flows", () => {
       baseRoutes({
         "GET /v1/chats/threads": () => {
           chatListCalls += 1;
-          const activeChat = chatListCalls === 1 ? staleActiveChat : refreshedActiveChat;
-          return { threads: [recentChat, activeChat], nextCursor: null, backwardsCursor: null, rawPayload: {} };
+          return { threads: [recentChat, staleActiveChat], nextCursor: null, backwardsCursor: null, rawPayload: {} };
         },
       }),
     );
@@ -1171,6 +1187,7 @@ describe("MVP shell flows", () => {
         turnId: null,
         itemId: null,
         payload: {
+          scope: "lifecycle",
           viewRevision: 2,
           threadId: staleActiveChat.id,
           activeTurnId: null,
@@ -1181,10 +1198,12 @@ describe("MVP shell flows", () => {
       });
     });
 
-    await waitFor(() => expect(chatListCalls).toBeGreaterThanOrEqual(2));
-    activeRow = screen.getByRole("button", { name: /active chat/i }).closest(".kodex-thread-list-button");
-    recentRow = screen.getByRole("button", { name: /recent chat/i }).closest(".kodex-thread-list-button");
-    expect(activeRow!.compareDocumentPosition(recentRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await waitFor(() => {
+      activeRow = screen.getByRole("button", { name: /active chat/i }).closest(".kodex-thread-list-button");
+      recentRow = screen.getByRole("button", { name: /recent chat/i }).closest(".kodex-thread-list-button");
+      expect(activeRow!.compareDocumentPosition(recentRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+    expect(chatListCalls).toBe(1);
   });
 
   it("shows compact thread actions without fork or path subtitle", async () => {
@@ -1242,6 +1261,89 @@ describe("MVP shell flows", () => {
     await waitFor(() => {
       expect(screen.queryByText("Pinned")).not.toBeInTheDocument();
     });
+  });
+
+  it("toggles selected thread notifications from the thread actions menu", async () => {
+    const gateway = mockGateway(
+      baseRoutes({
+        "PATCH /v1/threads/thread-1/notifications": async (request: Request) => {
+          const body = (await requestJson(request)) as { enabled: boolean };
+          return {
+            threadId: "thread-1",
+            notificationsEnabled: body.enabled,
+            updatedAt: "2026-05-25T12:00:00Z",
+          };
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /thread actions/i }));
+    const toggle = await notificationMenuItem(/notifications/i);
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/notifications")).toHaveLength(1);
+    });
+    await expect(requestJson(gateway.callsFor("PATCH", "/v1/threads/thread-1/notifications")[0])).resolves.toEqual({
+      enabled: false,
+    });
+    await waitFor(() => {
+      expect(
+        screen.queryAllByRole("menuitem", { hidden: true }).find((element) =>
+          /notifications/i.test(element.textContent ?? ""),
+        ),
+      ).toHaveAttribute("aria-checked", "false");
+    });
+    expect(screen.getByRole("button", { name: /thread actions/i })).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(await notificationMenuItem(/notifications/i));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/notifications")).toHaveLength(2);
+    });
+    await expect(requestJson(gateway.callsFor("PATCH", "/v1/threads/thread-1/notifications")[1])).resolves.toEqual({
+      enabled: true,
+    });
+  });
+
+  it("reflects notification setting updates from another client through SSE", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway(baseRoutes());
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
+    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    expect(globalStream).toBeDefined();
+
+    act(() => {
+      globalStream?.emit({
+        id: "event-thread-notifications",
+        seq: 10,
+        kind: "thread.notifications_updated",
+        codexMethod: null,
+        threadId: "thread-1",
+        turnId: null,
+        itemId: null,
+        projectId: project.id,
+        payload: {
+          threadId: "thread-1",
+          notificationsEnabled: false,
+          updatedAt: "2026-05-25T12:00:00Z",
+        },
+        receivedAt: "2026-05-25T12:00:00Z",
+      });
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /thread actions/i }));
+    expect(await notificationMenuItem(/notifications/i)).toHaveAttribute("aria-checked", "false");
   });
 
   it("renames the selected thread from the thread actions menu", async () => {

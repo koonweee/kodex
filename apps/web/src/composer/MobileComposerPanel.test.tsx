@@ -40,6 +40,7 @@ describe("Mobile composer panel", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("renders the shared inline composer with mobile density and the same underbar", () => {
@@ -65,7 +66,7 @@ describe("Mobile composer panel", () => {
     await userEvent.click(screen.getByLabelText(/message composer/i));
 
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
-    expect(screen.getByLabelText(/message composer/i)).toHaveFocus();
+    await waitFor(() => expect(screen.getByLabelText(/message composer/i)).toHaveFocus());
   });
 
   it("keeps the narrow non-touch composer inline when the textarea is focused", async () => {
@@ -164,7 +165,9 @@ describe("Mobile composer panel", () => {
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /collapse composer/i }));
 
-    expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile");
+    await waitFor(() =>
+      expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile"),
+    );
   });
 
   it("closes expanded composer after submit and preserves the shared submit controls", async () => {

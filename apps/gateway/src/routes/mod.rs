@@ -363,7 +363,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn already_seen_recheck_skips_unread_agent_message_delivery() {
+    async fn already_seen_recheck_still_sends_unread_agent_message_delivery() {
         let (mut state, app_server) = test_state().await;
         Arc::make_mut(&mut state.config)
             .notifications
@@ -383,6 +383,57 @@ mod tests {
         state
             .store
             .mark_thread_seen_completed_agent_turns("thread-1", 1)
+            .await
+            .unwrap();
+        app_server.queued_responses.lock().unwrap().extend([
+            thread_read_response("thread-1", 1),
+            json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
+        ]);
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "turn/upsert".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turn": {
+                        "id": "turn-1",
+                        "status": {"type": "completed"},
+                        "items": []
+                    }
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        timeout(Duration::from_secs(2), sender.notified.notified())
+            .await
+            .unwrap();
+        assert_eq!(sender.payloads.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn disabled_thread_notification_setting_skips_unread_agent_message_delivery() {
+        let (mut state, app_server) = test_state().await;
+        Arc::make_mut(&mut state.config)
+            .notifications
+            .recheck_delay_ms = 0;
+        let sender = Arc::new(RecordingPushSender::new(PushDeliveryOutcome::Sent));
+        state = state.with_notification_sender(sender.clone());
+        state
+            .store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/sub-1".to_string(),
+                p256dh: "public".to_string(),
+                auth: "auth".to_string(),
+                user_agent: None,
+            })
+            .await
+            .unwrap();
+        state
+            .store
+            .set_thread_notifications_enabled("thread-1", false)
             .await
             .unwrap();
         app_server
@@ -427,6 +478,7 @@ mod tests {
                 None,
             ),
             (json!("cli"), Some("subagent")),
+            (json!("cli"), Some("memory_consolidation")),
         ] {
             let (mut state, app_server) = test_state().await;
             Arc::make_mut(&mut state.config)
@@ -517,6 +569,45 @@ mod tests {
             .await
             .unwrap()
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn temporary_push_failure_keeps_subscription_enabled() {
+        let (state, _) = test_state().await;
+        let sender = Arc::new(RecordingPushSender::new(
+            PushDeliveryOutcome::TemporaryFailure,
+        ));
+        let state = state.with_notification_sender(sender);
+        state
+            .store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/temporary".to_string(),
+                p256dh: "public".to_string(),
+                auth: "auth".to_string(),
+                user_agent: None,
+            })
+            .await
+            .unwrap();
+
+        state
+            .notifications
+            .deliver_payload(
+                &state,
+                NotificationPayload {
+                    kind: NotificationKind::UnreadAgentMessage,
+                    thread_id: "thread-1".to_string(),
+                    title: "Thread".to_string(),
+                    body: Some("Thread\nAgent has a new message.".to_string()),
+                    route: "/threads/thread-1".to_string(),
+                    badge_count: 1,
+                },
+            )
+            .await
+            .unwrap();
+
+        let subscriptions = state.store.list_enabled_push_subscriptions().await.unwrap();
+        assert_eq!(subscriptions.len(), 1);
+        assert_eq!(subscriptions[0].endpoint, "https://push.example/temporary");
     }
 
     #[tokio::test]
@@ -749,6 +840,8 @@ mod tests {
             "/v1/threads/{threadId}",
             "/v1/threads/{threadId}/timeline/pages",
             "/v1/threads/{threadId}/subagents",
+            "/v1/threads/{threadId}/name",
+            "/v1/threads/{threadId}/notifications",
             "/v1/threads/{threadId}/attach",
             "/v1/threads/{threadId}/resume",
             "/v1/threads/{threadId}/fork",
@@ -5028,6 +5121,11 @@ mod tests {
     async fn thread_list_and_detail_overlay_gateway_owned_pin_state() {
         let (state, app_server) = test_state().await;
         let pin = state.store.pin_thread("thread-1").await.unwrap();
+        state
+            .store
+            .set_thread_notifications_enabled("thread-2", false)
+            .await
+            .unwrap();
         let app = build_router(state);
 
         *app_server.next_response.lock().unwrap() = Some(json!({
@@ -5044,9 +5142,15 @@ mod tests {
         let body = response_json(response).await;
         assert_eq!(body["threads"][0]["pinnedAt"], json!(pin.pinned_at));
         assert_eq!(body["threads"][1]["pinnedAt"], Value::Null);
+        assert_eq!(body["threads"][0]["notificationsEnabled"], json!(true));
+        assert_eq!(body["threads"][1]["notificationsEnabled"], json!(false));
         assert_eq!(
             body["rawPayload"]["data"][0]["pinnedAt"],
             json!(pin.pinned_at)
+        );
+        assert_eq!(
+            body["rawPayload"]["data"][1]["notificationsEnabled"],
+            json!(false)
         );
 
         *app_server.next_response.lock().unwrap() = Some(json!({
@@ -5063,6 +5167,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
         assert_eq!(body["thread"]["pinnedAt"], json!(pin.pinned_at));
+        assert_eq!(body["thread"]["notificationsEnabled"], json!(true));
     }
 
     #[tokio::test]
@@ -5152,6 +5257,58 @@ mod tests {
         let event = receiver.recv().await.unwrap();
         assert_eq!(event.kind, "thread.pin_updated");
         assert_eq!(event.payload["pinnedAt"], Value::Null);
+    }
+
+    #[tokio::test]
+    async fn thread_notification_settings_route_persists_and_broadcasts() {
+        let (state, _) = test_state().await;
+        let mut receiver = state.events.subscribe();
+        let app = build_router(state.clone());
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::patch("/v1/threads/thread-1/notifications")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"enabled":false}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["threadId"], "thread-1");
+        assert_eq!(body["notificationsEnabled"], json!(false));
+        assert!(body["updatedAt"].is_string());
+        assert!(!state
+            .store
+            .thread_notifications_enabled("thread-1")
+            .await
+            .unwrap());
+
+        let event = receiver.recv().await.unwrap();
+        assert_eq!(event.kind, "thread.notifications_updated");
+        assert_eq!(event.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(event.payload["threadId"], "thread-1");
+        assert_eq!(event.payload["notificationsEnabled"], json!(false));
+
+        let response = app
+            .oneshot(
+                Request::patch("/v1/threads/thread-1/notifications")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"enabled":true}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["notificationsEnabled"], json!(true));
+        assert!(state
+            .store
+            .thread_notifications_enabled("thread-1")
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
@@ -10032,27 +10189,23 @@ mod tests {
                 kind: "thread_view.patch".to_string(),
                 codex_method: Some("thread_view/patch".to_string()),
                 payload: json!({
+                    "scope": "turn",
                     "viewRevision": 1,
                     "threadId": "t1",
                     "activeTurnId": "turn-1",
-                    "liveState": "running",
-                    "items": [
+                    "liveState": "streaming",
+                    "pendingApprovalRequests": [],
+                    "pendingUserInputRequests": [],
+                    "turns": [
                         {
-                            "id": "turn-1:item-1",
-                            "threadId": "t1",
-                            "turnId": "turn-1",
-                            "itemId": "item-1",
-                            "itemType": "agent_message",
-                            "displayOrder": 1.0,
+                            "id": "turn-1",
                             "status": "running",
-                            "timestampMs": 1,
-                            "payload": {
-                                "kind": "agent_message",
-                                "text": "hello",
-                                "source": "gateway_projection"
-                            }
+                            "startedAt": 1,
+                            "completedAt": null
                         }
-                    ]
+                    ],
+                    "items": [],
+                    "debugText": "hello"
                 }),
             })
             .await
@@ -10127,6 +10280,7 @@ mod tests {
         let mut body = response.into_body();
         let first = next_sse_chunk(&mut body).await;
         assert!(first.contains("thread_view.patch"));
+        assert!(first.contains("\"scope\":\"turn\""));
         assert!(first.contains("\"text\":\"hello\""));
 
         let replayed = state
@@ -10140,6 +10294,156 @@ mod tests {
         assert!(replayed
             .iter()
             .all(|event| event.kind != "thread_view.refresh_required"));
+    }
+
+    #[tokio::test]
+    async fn sse_global_stream_excludes_selected_thread_when_requested() {
+        let (state, _) = test_state().await;
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?excludeThreadId=thread-1")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let excluded = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("thread-1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                item_id: None,
+                kind: "thread_view.patch".to_string(),
+                codex_method: Some("thread_view/patch".to_string()),
+                payload: json!({"threadId": "thread-1", "phase": "excluded"}),
+            })
+            .await
+            .unwrap();
+        let delivered = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("thread-2".to_string()),
+                turn_id: Some("turn-2".to_string()),
+                item_id: None,
+                kind: "thread_view.patch".to_string(),
+                codex_method: Some("thread_view/patch".to_string()),
+                payload: json!({"threadId": "thread-2", "phase": "delivered"}),
+            })
+            .await
+            .unwrap();
+        state.events.send(excluded).unwrap();
+        state.events.send(delivered.clone()).unwrap();
+
+        let mut body = response.into_body();
+        let first = next_sse_chunk(&mut body).await;
+        assert!(first.contains(&format!("id: {}", delivered.seq)));
+        assert!(first.contains("\"phase\":\"delivered\""));
+        assert!(!first.contains("\"phase\":\"excluded\""));
+    }
+
+    #[tokio::test]
+    async fn sse_delivers_selected_thread_notifications_updates() {
+        let (state, _) = test_state().await;
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?threadId=thread-1")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let event = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("thread-1".to_string()),
+                turn_id: None,
+                item_id: None,
+                kind: "thread.notifications_updated".to_string(),
+                codex_method: None,
+                payload: json!({
+                    "threadId": "thread-1",
+                    "notificationsEnabled": false,
+                    "updatedAt": "2026-05-27T00:00:00Z"
+                }),
+            })
+            .await
+            .unwrap();
+        state.events.send(event.clone()).unwrap();
+
+        let mut body = response.into_body();
+        let first = next_sse_chunk(&mut body).await;
+        assert!(first.contains(&format!("id: {}", event.seq)));
+        assert!(first.contains("thread.notifications_updated"));
+        assert!(first.contains("\"notificationsEnabled\":false"));
+    }
+
+    #[tokio::test]
+    async fn sse_delivers_selected_thread_gateway_errors() {
+        let (state, _) = test_state().await;
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?threadId=thread-1")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let event = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("thread-1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                item_id: Some("error-1".to_string()),
+                kind: "gateway.error".to_string(),
+                codex_method: None,
+                payload: json!({"message": "selected error routed"}),
+            })
+            .await
+            .unwrap();
+        state.events.send(event.clone()).unwrap();
+
+        let mut body = response.into_body();
+        let first = next_sse_chunk(&mut body).await;
+        assert!(first.contains(&format!("id: {}", event.seq)));
+        assert!(first.contains("gateway.error"));
+        assert!(first.contains("selected error routed"));
+    }
+
+    #[tokio::test]
+    async fn sse_rejects_thread_and_exclude_thread_together() {
+        let (state, _) = test_state().await;
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?threadId=thread-1&excludeThreadId=thread-1")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -10178,6 +10482,54 @@ mod tests {
         assert!(first.contains("\"reason\":\"missed_cursor\""));
         assert!(!first.contains("timeline.item_delta"));
         assert!(!first.contains("missed prefix"));
+    }
+
+    #[tokio::test]
+    async fn sse_replay_converts_legacy_unscoped_thread_view_patch_to_refresh_required() {
+        let (state, _) = test_state().await;
+        let legacy_projection = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("t1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                item_id: None,
+                kind: "thread_view.patch".to_string(),
+                codex_method: Some("thread_view/patch".to_string()),
+                payload: json!({
+                    "viewRevision": 1,
+                    "threadId": "t1",
+                    "activeTurnId": "turn-1",
+                    "liveState": "streaming",
+                    "pendingApprovalRequests": [],
+                    "pendingUserInputRequests": [],
+                    "turns": [],
+                    "items": [],
+                    "legacyText": "stale projection should not replay"
+                }),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?cursor=0&threadId=t1")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let mut body = response.into_body();
+        let first = next_sse_chunk(&mut body).await;
+        assert!(first.contains(&format!("id: {}", legacy_projection.seq)));
+        assert!(first.contains("thread_view.refresh_required"));
+        assert!(first.contains("\"reason\":\"missed_cursor\""));
+        assert!(!first.contains("thread_view.patch"));
+        assert!(!first.contains("stale projection should not replay"));
     }
 
     #[tokio::test]

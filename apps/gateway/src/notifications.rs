@@ -211,24 +211,24 @@ async fn deliver_unread_agent_message_if_still_unread(
     state: AppState,
     thread_id: String,
 ) -> ApiResult<()> {
-    let mut snapshot = app_server_api::client(&state.app_server)
+    if !state.store.thread_notifications_enabled(&thread_id).await? {
+        tracing::debug!(
+            thread_id,
+            reason = "disabled_by_thread_setting",
+            "skipped unread agent message push notification"
+        );
+        return Ok(());
+    }
+
+    let snapshot = app_server_api::client(&state.app_server)
         .thread_read(thread_id.clone())
         .await?;
     if suppress_unread_agent_message_notification(&snapshot.thread.raw_payload) {
-        return Ok(());
-    }
-    let states = state
-        .store
-        .thread_read_states(std::slice::from_ref(&thread_id))
-        .await?;
-    let seen = states
-        .get(&thread_id)
-        .map(|state| state.seen_completed_agent_turn_seq)
-        .unwrap_or_default();
-    snapshot
-        .thread
-        .apply_completed_agent_turn_read_state(snapshot.thread.last_completed_agent_turn_seq, seen);
-    if !snapshot.thread.unread_completed_agent_turn {
+        tracing::debug!(
+            thread_id,
+            reason = "suppressed_by_thread_source",
+            "skipped unread agent message push notification"
+        );
         return Ok(());
     }
 
@@ -251,7 +251,13 @@ async fn deliver_unread_agent_message_if_still_unread(
         route: format!("/threads/{thread_id}"),
         badge_count,
     };
-    state.notifications.deliver_payload(&state, payload).await
+    state.notifications.deliver_payload(&state, payload).await?;
+    tracing::debug!(
+        thread_id,
+        reason = "delivered",
+        "delivered unread agent message push notification"
+    );
+    Ok(())
 }
 
 fn suppress_unread_agent_message_notification(thread: &serde_json::Value) -> bool {

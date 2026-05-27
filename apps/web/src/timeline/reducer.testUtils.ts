@@ -48,6 +48,7 @@ function event(overrides: Partial<TimelineEventEnvelope>): TimelineEventEnvelope
     ...base,
     kind: "thread_view.patch",
     payload: {
+      scope: "full_snapshot",
       threadId: base.threadId ?? "thread-1",
       viewRevision: base.seq,
       liveState: "running",

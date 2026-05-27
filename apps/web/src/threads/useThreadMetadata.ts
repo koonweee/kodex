@@ -30,9 +30,13 @@ export function useThreadMetadata({
 
     const statusUpdate = threadStatusUpdateFromEvent(event);
     if (statusUpdate) {
-      updateThreadEverywhere(statusUpdate.threadId, (thread) =>
-        thread.status === statusUpdate.status ? thread : { ...thread, status: statusUpdate.status },
-      );
+      updateThreadEverywhere(statusUpdate.threadId, (thread) => {
+        const updatedAt = Math.max(thread.updatedAt, statusUpdate.updatedAt ?? thread.updatedAt);
+        if (thread.status === statusUpdate.status && thread.updatedAt === updatedAt) {
+          return thread;
+        }
+        return { ...thread, status: statusUpdate.status, updatedAt };
+      });
     }
 
     const metadataThread = threadMetadataFromEvent(event);

@@ -1052,6 +1052,22 @@ export interface paths {
         patch: operations["rename_thread"];
         trace?: never;
     };
+    "/v1/threads/{threadId}/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_thread_notifications"];
+        trace?: never;
+    };
     "/v1/threads/{threadId}/pin": {
         parameters: {
             query?: never;
@@ -2204,6 +2220,7 @@ export interface components {
             lastCompletedAgentTurnSeq?: number | null;
             model?: string | null;
             name?: string | null;
+            notificationsEnabled: boolean;
             /** Format: date-time */
             pinnedAt?: string | null;
             preview?: unknown;
@@ -2316,6 +2333,15 @@ export interface components {
         };
         /** @enum {string} */
         ThreadLiveState: "idle" | "streaming" | "syncing" | "notLoaded";
+        ThreadNotificationSettingsResponse: {
+            notificationsEnabled: boolean;
+            threadId: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ThreadNotificationSettingsUpdateRequest: {
+            enabled: boolean;
+        };
         ThreadPinResponse: {
             /** Format: date-time */
             pinnedAt?: string | null;
@@ -2365,6 +2391,7 @@ export interface components {
             lastCompletedAgentTurnSeq?: number | null;
             model?: string | null;
             name?: string | null;
+            notificationsEnabled: boolean;
             /** Format: date-time */
             pinnedAt?: string | null;
             preview?: unknown;
@@ -2494,12 +2521,15 @@ export interface components {
             pendingUserInputRequests: components["schemas"]["PendingTimelineRequestSummary"][];
             removeRowIds?: string[];
             rows?: components["schemas"]["ThreadTimelineRow"][] | null;
+            scope: components["schemas"]["ThreadViewPatchScope"];
             threadId: string;
             turns: components["schemas"]["ThreadTimelineSnapshotTurn"][];
             upsertRows?: components["schemas"]["ThreadTimelineRow"][];
             /** Format: int64 */
             viewRevision: number;
         };
+        /** @enum {string} */
+        ThreadViewPatchScope: "full_snapshot" | "turn" | "lifecycle";
         ThreadViewResponse: {
             historyPage?: null | components["schemas"]["ThreadTimelineWindowPage"];
             liveState: components["schemas"]["ThreadLiveState"];
@@ -2520,6 +2550,7 @@ export interface components {
             lastCompletedAgentTurnSeq?: number | null;
             model?: string | null;
             name?: string | null;
+            notificationsEnabled: boolean;
             /** Format: date-time */
             pinnedAt?: string | null;
             preview?: unknown;
@@ -3101,6 +3132,7 @@ export interface operations {
                 cursor?: number | null;
                 projectId?: string | null;
                 threadId?: string | null;
+                excludeThreadId?: string | null;
             };
             header?: never;
             path?: never;
@@ -3124,6 +3156,7 @@ export interface operations {
                 cursor?: number | null;
                 projectId?: string | null;
                 threadId?: string | null;
+                excludeThreadId?: string | null;
             };
             header?: never;
             path?: never;
@@ -4301,6 +4334,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RenameThreadResponse"];
+                };
+            };
+        };
+    };
+    update_thread_notifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadNotificationSettingsUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadNotificationSettingsResponse"];
                 };
             };
         };

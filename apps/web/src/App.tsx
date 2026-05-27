@@ -37,6 +37,7 @@ import {
   pinThread,
   renameThread,
   resumeAutomation,
+  setThreadNotificationsEnabled,
   unpinThread,
   updateAutomation,
   type Approval,
@@ -48,6 +49,7 @@ import {
   type QueuedInput,
   type ThreadSummary,
   type ThreadSubagentSummary,
+  type TimelineSkillMention,
 } from "./api/client";
 import { applyMcpLifecycleEvent } from "./api/mcpCache";
 import { queryClient } from "./api/queryClient";
@@ -92,6 +94,7 @@ import {
 } from "./threads/helpers";
 import {
   applyThreadPinState as applyThreadPinStateToCache,
+  applyThreadNotificationsState as applyThreadNotificationsStateToCache,
   findCachedThread,
   mergeChatThreadData,
   mergeSelectedThreadDetailIntoSidebarSummary,
@@ -111,7 +114,7 @@ import {
   mergeQueuedInputData,
   upsertCachedQueuedInput,
 } from "./queuedInputs/cache";
-import { threadPinUpdateFromEvent, threadUpsertFromEvent } from "./threads/events";
+import { threadNotificationsUpdateFromEvent, threadPinUpdateFromEvent, threadUpsertFromEvent } from "./threads/events";
 import { SubagentThreadViewer } from "./threads/SubagentThreadViewer";
 import {
   applySidebarProjectOrder,
@@ -122,7 +125,10 @@ import { useSidebarThreadsSnapshot } from "./threads/useSidebarThreadsSnapshot";
 import { useThreadMetadata } from "./threads/useThreadMetadata";
 import { useThreadReadState } from "./threads/useThreadReadState";
 import {
+  addOptimisticUserMessage,
   createTimelineState,
+  markOptimisticUserMessageSent,
+  removeOptimisticUserMessage,
   type TimelineState,
 } from "./timeline/reducer";
 import { errorMessageFrom } from "./shared/values";
@@ -216,6 +222,7 @@ function KodexShell({
   const [skillsInvalidationGeneration, setSkillsInvalidationGeneration] = useState(0);
   const selectedProjectIdRef = useRef<string | null>(null);
   const selectedThreadIdRef = useRef<string | null>(selectedThreadId);
+  const globalEventCursorRef = useRef<number | undefined>(undefined);
   const approvalsRef = useRef<Approval[]>([]);
   const attachingThreadIdsRef = useRef<Set<string>>(new Set());
   const chatThreadsRef = useRef<ThreadSummary[]>([]);
@@ -277,6 +284,7 @@ function KodexShell({
         if (seededThreads) {
           return seededThreads;
         }
+        const beforeSnapshot = queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.projectThreads(project.id));
         const response = await listThreadsPage(project.id);
         setProjectThreadNextCursors((current) => ({ ...current, [project.id]: response.nextCursor ?? null }));
         return mergeProjectThreadData(
@@ -284,6 +292,7 @@ function KodexShell({
           response.threads,
           routeSelectedThreadRef.current,
           selectedThreadIdRef.current,
+          beforeSnapshot,
         );
       },
     })),
@@ -305,11 +314,13 @@ function KodexShell({
       if (seededThreads) {
         return seededThreads;
       }
+      const beforeSnapshot = queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.chatThreads);
       const response = await listChatThreadsPage();
       setChatThreadsNextCursor(response.nextCursor ?? null);
       return mergeChatThreadData(
         queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.chatThreads),
         response.threads,
+        beforeSnapshot,
       );
     },
   });
@@ -417,6 +428,10 @@ function KodexShell({
   });
   const pinThreadMutation = useMutation({ mutationFn: pinThread });
   const unpinThreadMutation = useMutation({ mutationFn: unpinThread });
+  const threadNotificationsMutation = useMutation({
+    mutationFn: ({ threadId, enabled }: { threadId: string; enabled: boolean }) =>
+      setThreadNotificationsEnabled(threadId, enabled),
+  });
   const chatThreads = chatThreadsQuery.data ?? [];
   const pinnedThreads = pinnedThreadsQuery.data ?? [];
   const selectedProjectThreads = selectedProjectId ? threadsByProjectId[selectedProjectId] ?? [] : [];
@@ -445,7 +460,6 @@ function KodexShell({
       const threadId = selectedThread?.id;
       return threadId ? listThreadSubagents(threadId) : [];
     },
-    refetchInterval: selectedThread?.status === "active" ? 2000 : false,
   });
   const selectedThreadSubagents = selectedThreadSubagentsQuery.data ?? [];
   const selectedQueuedInputs = selectedThreadId ? selectedQueuedInputsQuery.data ?? [] : [];
@@ -502,11 +516,10 @@ function KodexShell({
     pinnedThreads,
     updateThreadEverywhere: patchThreadEverywhere,
   });
-  const { applyNotificationEvent } = useKodexNotifications({
+  useKodexNotifications({
     chatThreads,
     pinnedThreads,
     routeSelectedThread,
-    selectedThreadId,
     threadsByProjectId,
   });
   const {
@@ -572,6 +585,9 @@ function KodexShell({
     isDraftThreadSelected,
     onCreateDraftThread: createDraftThreadFromComposer,
     onError: reportError,
+    onOptimisticUserMessageRemoved: removeOptimisticTimelineUserMessage,
+    onOptimisticUserMessageSent: markOptimisticTimelineUserMessageSent,
+    onOptimisticUserMessageStarted: addOptimisticTimelineUserMessage,
     onQueuedInputDeleted: removeQueuedInput,
     onQueuedInputUpsert: upsertQueuedInput,
     onThreadMaterialized: markThreadMaterialized,
@@ -731,7 +747,13 @@ function KodexShell({
 
   useEffect(() => {
     const client = createEventStreamClient({
+      cursor: globalEventCursorRef.current,
+      excludeThreadId: selectedThreadId,
       onEvent: (event) => {
+        globalEventCursorRef.current = Math.max(globalEventCursorRef.current ?? 0, event.seq);
+        if (selectedThreadIdRef.current && event.threadId === selectedThreadIdRef.current) {
+          return;
+        }
         applyAutomationStreamEvent(event);
         applyQueueEvent(event);
         applyThreadPinEvent(event);
@@ -739,7 +761,7 @@ function KodexShell({
         applyThreadMetadataEvent(event);
         applyCompletedAgentTurnEvent(event);
         applyThreadReadStateEvent(event);
-        applyNotificationEvent(event);
+        applyThreadNotificationsEvent(event);
         refreshSidebarThreadsForLiveEvent(event);
         invalidateSelectedSubagentsForEvent(event);
         const nextUsageLimitSnapshot = usageLimitSnapshotFromEvent(event);
@@ -758,7 +780,7 @@ function KodexShell({
     });
     client.connect();
     return client.close;
-  }, []);
+  }, [selectedThreadId]);
 
   useEffect(() => {
     if (isSelectedThreadSnapshotDeferred) {
@@ -802,7 +824,7 @@ function KodexShell({
     },
     onSnapshotThread: handleSelectedThreadSnapshot,
     onSyncNotice: setThreadSyncNotice,
-    onThreadMetadataEvent: applyThreadMetadataEvent,
+    onSelectedThreadEvent: applySelectedThreadStreamEvent,
     onQueueEvent: applyQueueEvent,
     selectedThreadId,
     setApprovals,
@@ -818,6 +840,18 @@ function KodexShell({
 
   function clearTimelineEntryForThread(threadId: string) {
     setTimelineEntry((current) => (current.threadId === threadId ? idleTimelineEntry : current));
+  }
+
+  function applySelectedThreadStreamEvent(event: EventEnvelope) {
+    applyAutomationStreamEvent(event);
+    applyThreadPinEvent(event);
+    applyThreadUpsertEvent(event);
+    applyThreadMetadataEvent(event);
+    applyCompletedAgentTurnEvent(event);
+    applyThreadReadStateEvent(event);
+    applyThreadNotificationsEvent(event);
+    refreshSidebarThreadsForLiveEvent(event);
+    invalidateSelectedSubagentsForEvent(event);
   }
 
   function beginTimelineEntry(threadId: string) {
@@ -1018,6 +1052,36 @@ function KodexShell({
     patchThreadEverywhere(threadId, (thread) =>
       thread.status === "idle" ? thread : { ...thread, status: "idle" },
     );
+  }
+
+  function addOptimisticTimelineUserMessage({
+    skillMentions,
+    text,
+    threadId,
+  }: {
+    skillMentions: TimelineSkillMention[];
+    text: string;
+    threadId: string;
+  }): string | null {
+    if (selectedThreadIdRef.current !== threadId) {
+      return null;
+    }
+    const clientRequestId = createClientRequestId();
+    setTimeline((current) => addOptimisticUserMessage(current, {
+      clientRequestId,
+      skillMentions,
+      text,
+      threadId,
+    }));
+    return clientRequestId;
+  }
+
+  function markOptimisticTimelineUserMessageSent(clientRequestId: string) {
+    setTimeline((current) => markOptimisticUserMessageSent(current, clientRequestId));
+  }
+
+  function removeOptimisticTimelineUserMessage(clientRequestId: string) {
+    setTimeline((current) => removeOptimisticUserMessage(current, clientRequestId));
   }
 
   function handleSelectThread(projectId: string, threadId: string) {
@@ -1315,6 +1379,23 @@ function KodexShell({
     await renameThreadMutation.mutateAsync({ threadId, name });
   }
 
+  async function handleSetThreadNotificationsEnabled(threadId: string, enabled: boolean) {
+    try {
+      const update = await threadNotificationsMutation.mutateAsync({ threadId, enabled });
+      applyThreadNotificationsState(update.threadId, update.notificationsEnabled);
+    } catch (error) {
+      reportError(error);
+    }
+  }
+
+  function applyThreadNotificationsEvent(event: EventEnvelope) {
+    const update = threadNotificationsUpdateFromEvent(event);
+    if (!update) {
+      return;
+    }
+    applyThreadNotificationsState(update.threadId, update.notificationsEnabled);
+  }
+
   function applyThreadPinEvent(event: EventEnvelope) {
     const update = threadPinUpdateFromEvent(event);
     if (!update) {
@@ -1362,6 +1443,9 @@ function KodexShell({
 
     const location = findThreadSidebarLocation(event.threadId);
     if (!location) {
+      if (event.kind !== "thread_view.patch") {
+        return;
+      }
       void queryClientForShell.invalidateQueries({ queryKey: queryKeys.projectThreadsRoot });
       void queryClientForShell.invalidateQueries({ queryKey: queryKeys.chatThreads });
       return;
@@ -1379,10 +1463,7 @@ function KodexShell({
   }
 
   function eventShouldRefreshKnownSidebarThread(event: EventEnvelope, thread: ThreadSummary) {
-    return (
-      !threadHasDisplayTitle(thread) ||
-      event.kind === "thread_view.patch"
-    );
+    return event.kind === "thread_view.patch" && !threadHasDisplayTitle(thread);
   }
 
   function findThreadSidebarLocation(
@@ -1399,10 +1480,7 @@ function KodexShell({
   }
 
   function eventCanRefreshSidebarThread(event: EventEnvelope) {
-    return (
-      event.kind === "thread_view.patch" ||
-      event.kind === "timeline.thread_metadata"
-    );
+    return event.kind === "thread_view.patch" || event.kind === "timeline.thread_metadata";
   }
 
   function applyThreadPinState(threadId: string, pinnedAt: string | null) {
@@ -1418,6 +1496,15 @@ function KodexShell({
       void queryClientForShell.invalidateQueries({ queryKey: queryKeys.pinnedThreads });
       return;
     }
+  }
+
+  function applyThreadNotificationsState(threadId: string, notificationsEnabled: boolean) {
+    setRouteSelectedThreadState(
+      routeSelectedThreadRef.current?.id === threadId
+        ? withThreadNotificationsEnabled(routeSelectedThreadRef.current, notificationsEnabled)
+        : routeSelectedThreadRef.current,
+    );
+    applyThreadNotificationsStateToCache(queryClientForShell, threadId, notificationsEnabled);
   }
 
   function invalidateSelectedSubagentsForEvent(event: EventEnvelope) {
@@ -1575,6 +1662,9 @@ function KodexShell({
   const stableHandleRenameThread = useEventCallback((threadId: string, name: string) =>
     handleRenameThread(threadId, name),
   );
+  const stableHandleSetThreadNotificationsEnabled = useEventCallback((threadId: string, enabled: boolean) =>
+    void handleSetThreadNotificationsEnabled(threadId, enabled),
+  );
   const stableHandleSelectAutomations = useEventCallback(handleSelectAutomations);
   const stableHandleSelectProjectSettings = useEventCallback(handleSelectProjectSettings);
   const stableHandleSelectChatThread = useEventCallback(handleSelectChatThread);
@@ -1607,9 +1697,10 @@ function KodexShell({
     chatThreadsLoadingCursorRef.current = cursor;
     setChatThreadsPaginationState("loading");
     try {
+      const beforeSnapshot = queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.chatThreads);
       const response = await listChatThreadsPage({ cursor });
       queryClientForShell.setQueryData<ThreadSummary[]>(queryKeys.chatThreads, (current) =>
-        mergeChatThreadData(current, response.threads),
+        mergeChatThreadData(current, response.threads, beforeSnapshot),
       );
       setChatThreadsNextCursor(response.nextCursor ?? null);
       setChatThreadsPaginationState("idle");
@@ -1630,6 +1721,7 @@ function KodexShell({
     projectThreadLoadingCursorsRef.current = { ...projectThreadLoadingCursorsRef.current, [projectId]: cursor };
     setProjectThreadPaginationStateById((current) => ({ ...current, [projectId]: "loading" }));
     try {
+      const beforeSnapshot = queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.projectThreads(projectId));
       const response = await listThreadsPage(projectId, { cursor });
       mergeProjectThreadSnapshot(
         queryClientForShell,
@@ -1637,6 +1729,7 @@ function KodexShell({
         response.threads,
         routeSelectedThreadRef.current,
         selectedThreadIdRef.current,
+        beforeSnapshot,
       );
       setProjectThreadNextCursors((current) => ({ ...current, [projectId]: response.nextCursor ?? null }));
       setProjectThreadPaginationStateById((current) => ({ ...current, [projectId]: "idle" }));
@@ -1752,6 +1845,7 @@ function KodexShell({
           onMarkdownOpen: setMarkdownPreview,
           onPinThread: stableHandlePinThread,
           onRenameThread: stableHandleRenameThread,
+          onSetThreadNotificationsEnabled: stableHandleSetThreadNotificationsEnabled,
           onShowMobileSidebar: handleShowMobileSidebar, onTimelineReady: handleTimelineReadyForSelectedThread,
           onSubagentSidebarToggle: () => setSubagentSidebarOpen((current) => !current),
           onLoadOlderHistory: loadOlderHistory,
@@ -1805,11 +1899,60 @@ function defaultSubagent(subagents: ThreadSubagentSummary[]): ThreadSubagentSumm
 }
 
 function eventCanAffectSubagentDiscovery(event: EventEnvelope): boolean {
+  return event.kind === "thread_view.patch" && threadViewPatchContainsCollabAgent(event.payload);
+}
+
+function threadViewPatchContainsCollabAgent(payload: unknown): boolean {
+  const patch = recordValue(payload);
+  if (!patch) {
+    return false;
+  }
   return (
-    event.kind === "thread_view.patch" ||
-    event.kind === "timeline.thread_metadata" ||
-    event.kind === "thread_view.refresh_required"
+    arrayValue(patch.items).some(timelineItemLooksLikeCollabAgent) ||
+    arrayValue(patch.rows).some(timelineRowContainsCollabAgent) ||
+    arrayValue(patch.upsertRows).some(timelineRowContainsCollabAgent)
   );
+}
+
+function timelineRowContainsCollabAgent(value: unknown): boolean {
+  const row = recordValue(value);
+  if (!row) {
+    return false;
+  }
+  return (
+    collabAgentTypeValue(row.kind) ||
+    timelineItemLooksLikeCollabAgent(row.item) ||
+    arrayValue(row.items).some(timelineItemLooksLikeCollabAgent) ||
+    arrayValue(row.collapsedRows).some(timelineRowContainsCollabAgent)
+  );
+}
+
+function timelineItemLooksLikeCollabAgent(value: unknown): boolean {
+  const item = recordValue(value);
+  if (!item) {
+    return false;
+  }
+  const payload = recordValue(item.payload);
+  const rawItem = recordValue(payload?.item);
+  const itemSnapshot = recordValue(payload?.itemSnapshot);
+  return (
+    collabAgentTypeValue(item.itemType) ||
+    collabAgentTypeValue(item.kind) ||
+    collabAgentTypeValue(rawItem?.type) ||
+    collabAgentTypeValue(itemSnapshot?.itemType)
+  );
+}
+
+function collabAgentTypeValue(value: unknown): boolean {
+  return typeof value === "string" && value.toLowerCase().replace(/[_-]/g, "").includes("collabagent");
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function arrayValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
 }
 
 function queryResultLoadState(query: {
@@ -1849,4 +1992,15 @@ function isMobileViewport(): boolean {
 
 function withThreadPinnedAt(thread: ThreadSummary, pinnedAt: string | null): ThreadSummary {
   return { ...thread, pinnedAt };
+}
+
+function withThreadNotificationsEnabled(thread: ThreadSummary, notificationsEnabled: boolean): ThreadSummary {
+  return { ...thread, notificationsEnabled };
+}
+
+function createClientRequestId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }

@@ -120,7 +120,7 @@ describe("Automations frontend", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: "Automations" })).toBeInTheDocument();
-    const stream = FakeEventSource.instances.find((instance) => instance.url.includes("/v1/events"));
+    const stream = FakeEventSource.instances.find((instance) => instance.url.includes("/v1/events") && !instance.url.includes("threadId="));
     expect(stream).toBeDefined();
 
     act(() => {
@@ -176,7 +176,7 @@ describe("Automations frontend", () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: "Automations" })).toBeInTheDocument();
 
-    const stream = FakeEventSource.instances.find((instance) => instance.url.includes("/v1/events"));
+    const stream = FakeEventSource.instances.find((instance) => instance.url.includes("/v1/events") && !instance.url.includes("threadId="));
     expect(stream).toBeDefined();
     act(() => {
       stream?.emitNamed("automation.item_upsert", {
@@ -217,10 +217,12 @@ describe("Automations frontend", () => {
     render(<App />);
 
     const stream = await waitFor(() => {
-      const eventStream = FakeEventSource.instances.find((instance) => instance.url.includes("/v1/events"));
+      const eventStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
       expect(eventStream).toBeDefined();
       return eventStream;
     });
+    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    expect(globalStream?.url).toContain("excludeThreadId=thread-1");
     act(() => {
       stream!.emitNamed("automation.item_upsert", {
         id: "event-before-open",

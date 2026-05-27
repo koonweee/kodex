@@ -51,7 +51,8 @@ pub async fn decide_approval(
     thread_view::record_approval_resolved(&state.thread_views, &resolved, event.seq).await?;
     let _ = state.events.send(event);
     if let Some(thread_id) = resolved.thread_id.as_deref() {
-        let patch = events::thread_view_patch_event(state, thread_id).await?;
+        let patch = thread_view::lifecycle_patch_for_thread(&state.thread_views, thread_id).await?;
+        let patch = events::thread_view_patch_payload_event(state, patch).await?;
         let _ = state.events.send(patch);
     }
     Ok(resolved)
