@@ -4170,11 +4170,12 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
+        let items = serialized_timeline_items(&body["timeline"]);
         assert_eq!(body["thread"]["id"], "thread-1");
-        assert_eq!(body["timeline"]["items"][0]["turnId"], "turn-1");
-        assert_eq!(body["timeline"]["items"][0]["itemId"], "item-user-1");
-        assert_eq!(body["timeline"]["items"][1]["itemType"], "reasoning");
-        assert_eq!(body["timeline"]["items"][2]["itemType"], "commandExecution");
+        assert_eq!(items[0]["turnId"], "turn-1");
+        assert_eq!(items[0]["itemId"], "item-user-1");
+        assert_eq!(items[1]["itemType"], "reasoning");
+        assert_eq!(items[2]["itemType"], "commandExecution");
         assert!(!body.to_string().contains("item-stored-cmd"));
         assert_eq!(body["thread"]["lastCompletedAgentTurnSeq"], 1);
         assert_eq!(body["thread"]["unreadCompletedAgentTurn"], true);
@@ -4265,7 +4266,8 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["timeline"]["items"][0]["turnId"], "turn-2");
+        let items = serialized_timeline_items(&body["timeline"]);
+        assert_eq!(items[0]["turnId"], "turn-2");
         assert_eq!(body["historyPage"]["olderCursor"], "older-cursor");
         assert_eq!(body["historyPage"]["hasOlder"], true);
         assert_eq!(body["thread"]["lastCompletedAgentTurnSeq"], 2);
@@ -4391,9 +4393,10 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["timeline"]["items"][0]["turnId"], "turn-1");
-        assert_eq!(body["timeline"]["items"][1]["turnId"], "turn-2");
-        assert_eq!(body["timeline"]["items"][2]["turnId"], "turn-3");
+        let items = serialized_timeline_items(&body["timeline"]);
+        assert_eq!(items[0]["turnId"], "turn-1");
+        assert_eq!(items[1]["turnId"], "turn-2");
+        assert_eq!(items[2]["turnId"], "turn-3");
         assert_eq!(body["timeline"]["activeTurnId"], "turn-3");
         assert_eq!(body["historyPage"]["loadedTurnCount"], 3);
         assert_eq!(body["historyPage"]["hasOlder"], false);
@@ -4465,8 +4468,9 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["timeline"]["items"].as_array().unwrap().len(), 1);
-        assert_eq!(body["timeline"]["items"][0]["turnId"], "turn-3");
+        let items = serialized_timeline_items(&body["timeline"]);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["turnId"], "turn-3");
         assert_eq!(body["historyPage"]["olderCursor"], "older-cursor-2");
         assert_eq!(body["historyPage"]["resetWindow"], true);
 
@@ -4687,9 +4691,10 @@ mod tests {
         let body = response_json(response).await;
         assert_eq!(body["liveState"], "streaming");
         assert_eq!(body["timeline"]["liveState"], "streaming");
-        assert_eq!(body["timeline"]["items"][0]["itemId"], "pending-user-1");
+        let items = serialized_timeline_items(&body["timeline"]);
+        assert_eq!(items[0]["itemId"], "pending-user-1");
         assert_eq!(
-            body["timeline"]["items"][0]["payload"]["item"]["content"][0]["text"],
+            items[0]["payload"]["item"]["content"][0]["text"],
             "Search Google for OpenAI news"
         );
         let requests = app_server.requests.lock().unwrap();
@@ -4762,8 +4767,9 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
+        let items = serialized_timeline_items(&body["timeline"]);
         assert_eq!(
-            body["timeline"]["items"][0]["payload"]["itemSnapshot"]["skillMentions"],
+            items[0]["payload"]["itemSnapshot"]["skillMentions"],
             json!([{
                 "start": 4,
                 "end": 18,
@@ -4888,8 +4894,9 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
+        let items = serialized_timeline_items(&body["timeline"]);
         assert_eq!(
-            body["timeline"]["items"][0]["payload"]["itemSnapshot"]["skillMentions"],
+            items[0]["payload"]["itemSnapshot"]["skillMentions"],
             json!([{
                 "start": 4,
                 "end": 24,
@@ -6185,7 +6192,7 @@ mod tests {
         assert!(projection.items[0].item_id.starts_with("pending-user-"));
         assert_eq!(projection.items[0].item_type, "userMessage");
         assert_eq!(
-            projection.items[0].payload.item["content"][0]["text"],
+            projection.items[0].payload.item.content.as_ref().unwrap()[0]["text"],
             "Use $agent-browser"
         );
 
@@ -7312,7 +7319,7 @@ mod tests {
         assert_eq!(projection.items[0].item_type, "userMessage");
         assert_eq!(projection.items[0].status, "running");
         assert_eq!(
-            projection.items[0].payload.item["content"][0]["text"],
+            projection.items[0].payload.item.content.as_ref().unwrap()[0]["text"],
             "drain me"
         );
     }
@@ -8505,8 +8512,9 @@ mod tests {
             loop {
                 let event = receiver.recv().await.unwrap();
                 if event.kind == thread_view::THREAD_VIEW_PATCH_EVENT_KIND
-                    && event.payload["items"].as_array().is_some_and(|items| {
-                        items.iter().any(|item| item["itemId"] == "item-user-1")
+                    && event.payload["upsertRows"].as_array().is_some_and(|rows| {
+                        rows.iter()
+                            .any(|row| row["item"]["itemId"] == "item-user-1")
                     })
                 {
                     timeline_event = Some(event);
@@ -10939,6 +10947,28 @@ mod tests {
     async fn response_json(response: axum::response::Response) -> Value {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         serde_json::from_slice(&body).unwrap()
+    }
+
+    fn serialized_timeline_items(timeline: &Value) -> Vec<&Value> {
+        let mut items = Vec::new();
+        if let Some(rows) = timeline.get("rows").and_then(Value::as_array) {
+            collect_serialized_row_items(rows, &mut items);
+        }
+        items
+    }
+
+    fn collect_serialized_row_items<'a>(rows: &'a [Value], items: &mut Vec<&'a Value>) {
+        for row in rows {
+            if let Some(item) = row.get("item").filter(|item| !item.is_null()) {
+                items.push(item);
+            }
+            if let Some(row_items) = row.get("items").and_then(Value::as_array) {
+                items.extend(row_items);
+            }
+            if let Some(collapsed_rows) = row.get("collapsedRows").and_then(Value::as_array) {
+                collect_serialized_row_items(collapsed_rows, items);
+            }
+        }
     }
 
     fn plugin_read_response(

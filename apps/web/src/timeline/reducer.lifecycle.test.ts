@@ -251,7 +251,7 @@ function event(overrides: Partial<EventEnvelope>): EventEnvelope {
   };
 }
 
-function projectionPatch(text: string): Record<string, unknown> & { items: Array<Record<string, unknown> & { id: string; turnId: string; displayOrder: number; status: string; timestampMs: number; payload: Record<string, unknown> }> } {
+function projectionPatch(text: string): Record<string, unknown> & { testItem: Record<string, unknown> & { id: string; turnId: string; displayOrder: number; status: string; timestampMs: number; payload: Record<string, unknown> } } {
   const item = {
     id: "projection-turn-1-item-1",
     threadId: "thread-1",
@@ -286,7 +286,7 @@ function projectionPatch(text: string): Record<string, unknown> & { items: Array
     pendingUserInputRequests: [],
     rows: [canonicalRow(item)],
     turns: [],
-    items: [item],
+    testItem: item,
   };
 }
 
@@ -306,14 +306,15 @@ function projectionPatchWithLiveState({
   turnId?: string;
 }) {
   const patch = projectionPatch(text);
-  const items = patch.items.map((item: (typeof patch.items)[number]) => ({
-    ...item,
+  const baseItem = patch.testItem;
+  const item = {
+    ...baseItem,
     id: `projection-${turnId}-item-1`,
     turnId,
     status,
     codexMethod: status === "completed" ? "item/completed" : "item/upsert",
     payload: {
-      ...item.payload,
+      ...baseItem.payload,
       turnId,
       item: { id: "item-1", type: "agentMessage", text },
       itemSnapshot: {
@@ -324,16 +325,16 @@ function projectionPatchWithLiveState({
         skillMentions: [],
       },
     },
-  }));
+  };
   return {
     ...patch,
+    testItem: undefined,
     scope: "turn",
     activeTurnId,
     liveState,
     viewRevision,
     rows: undefined,
-    upsertRows: items.map(canonicalRow),
-    items,
+    upsertRows: [canonicalRow(item)],
     turns: [{ id: turnId, status }],
   };
 }

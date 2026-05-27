@@ -343,7 +343,7 @@ describe("MVP timeline flows", () => {
         threadId: "thread-2",
         turnId: null,
         itemId: null,
-        payload: { scope: "lifecycle", viewRevision: 3, threadId: "thread-2", activeTurnId: null, liveState: "idle", items: [] },
+        payload: { scope: "lifecycle", viewRevision: 3, threadId: "thread-2", activeTurnId: null, liveState: "idle" },
         receivedAt: "2026-04-30T00:00:02Z",
       });
     });
@@ -394,7 +394,7 @@ describe("MVP timeline flows", () => {
         threadId: "thread-2",
         turnId: null,
         itemId: null,
-        payload: { scope: "lifecycle", viewRevision: 3, threadId: "thread-2", activeTurnId: null, liveState: "idle", items: [] },
+        payload: { scope: "lifecycle", viewRevision: 3, threadId: "thread-2", activeTurnId: null, liveState: "idle" },
         receivedAt: "2026-04-30T00:00:02Z",
       });
     });
@@ -498,7 +498,7 @@ describe("MVP timeline flows", () => {
         threadId: "thread-2",
         turnId: null,
         itemId: null,
-        payload: { scope: "lifecycle", viewRevision: 4, threadId: "thread-2", activeTurnId: null, liveState: "idle", items: [] },
+        payload: { scope: "lifecycle", viewRevision: 4, threadId: "thread-2", activeTurnId: null, liveState: "idle" },
         receivedAt: "2026-04-30T00:00:02Z",
       });
     });

@@ -9,17 +9,14 @@ import {
   useState,
 } from "react";
 
-import { isApprovalEvent } from "./approvals/state";
 import { useApprovalsState } from "./approvals/useApprovalsState";
 import {
   formatUsageLimitLines,
-  usageLimitSnapshotFromEvent,
   usageLimitSnapshotFromResponse,
 } from "./account/rateLimits";
 import { useAccountSession } from "./account/useAccountSession";
 import {
   archiveThread,
-  attachThread,
   createAutomation,
   createChatThread,
   createProject,
@@ -47,8 +44,8 @@ import {
   type EventEnvelope,
   type Project,
   type QueuedInput,
+  type RateLimitSnapshot,
   type ThreadSummary,
-  type ThreadSubagentSummary,
   type TimelineSkillMention,
 } from "./api/client";
 import { applyMcpLifecycleEvent } from "./api/mcpCache";
@@ -64,7 +61,13 @@ import { automationThreadOptions } from "./automations/threadOptions";
 import { createThreadOptions } from "./composer/settings";
 import { useComposerSettingsState } from "./composer/useComposerSettingsState";
 import { useComposerOrchestration } from "./composer/useComposerOrchestration";
-import { createEventStreamClient } from "./events/stream";
+import {
+  installLiveLongTaskObserver,
+  recordCacheInvalidation,
+  recordLiveEvent,
+} from "./events/liveDiagnostics";
+import { routeSelectedThreadLiveEvent } from "./events/liveRouting";
+import { useGlobalLiveStream } from "./events/useGlobalLiveStream";
 import { MarkdownPreviewPane } from "./files/MarkdownPreviewPane";
 import type { MarkdownPreviewRequest } from "./files/types";
 import { ImageLightbox } from "./images/ImageLightbox";
@@ -93,6 +96,11 @@ import {
   type ThreadsByProjectId,
 } from "./threads/helpers";
 import {
+  eventCanAffectSubagentDiscovery,
+  sidebarLiveCacheRoute,
+  type SidebarThreadLocation,
+} from "./threads/liveCacheRouting";
+import {
   applyThreadPinState as applyThreadPinStateToCache,
   applyThreadNotificationsState as applyThreadNotificationsStateToCache,
   findCachedThread,
@@ -114,8 +122,16 @@ import {
   mergeQueuedInputData,
   upsertCachedQueuedInput,
 } from "./queuedInputs/cache";
-import { threadNotificationsUpdateFromEvent, threadPinUpdateFromEvent, threadUpsertFromEvent } from "./threads/events";
+import type { ThreadUpsert } from "./threads/events";
+import {
+  defaultSubagent,
+  findKnownThread as findKnownThreadInCaches,
+  findKnownThreadSelection as findKnownThreadSelectionInCaches,
+  withThreadNotificationsEnabled,
+  withThreadPinnedAt,
+} from "./threads/selection";
 import { SubagentThreadViewer } from "./threads/SubagentThreadViewer";
+import { useSelectedThreadAttach } from "./threads/useSelectedThreadAttach";
 import {
   applySidebarProjectOrder,
   loadSidebarProjectOrder,
@@ -132,9 +148,19 @@ import {
   type TimelineState,
 } from "./timeline/reducer";
 import { errorMessageFrom } from "./shared/values";
+import { createClientRequestId } from "./shared/id";
 import { KodexShellView } from "./shell/KodexShellView";
 import type { MobilePanel } from "./shell/KodexShellView";
-import { automationsPath, emptyPath, parseKodexLocation, projectPath, threadPath, type KodexRoute, type KodexMainPane } from "./shell/navigation";
+import {
+  currentKodexRoute,
+  historyState,
+  isMobileViewport,
+  pathForKodexRoute,
+  pushKodexRoute,
+  replaceKodexRoute,
+} from "./shell/browserRouting";
+import type { KodexRoute, KodexMainPane } from "./shell/navigation";
+import { queryResultLoadState } from "./shell/queryResultLoadState";
 import { useSidebarResize } from "./shell/useSidebarResize";
 import "./App.css";
 
@@ -163,6 +189,8 @@ export function App() {
     writeStoredKodexColorScheme(colorSchemeId);
     applyKodexColorScheme(document.documentElement, colorScheme);
   }, [colorScheme, colorSchemeId]);
+
+  useEffect(() => installLiveLongTaskObserver(), []);
 
   const isThemeWorkbench = typeof window !== "undefined" && window.location.pathname === "/__theme";
 
@@ -655,8 +683,8 @@ function KodexShell({
       return;
     }
     const nextState = { ...state, kodexDirectMobileDeepLinkSeeded: true };
-    window.history.replaceState(nextState, "", threadPath(route.threadId, { panel: "threads" }));
-    window.history.pushState(nextState, "", threadPath(route.threadId));
+    window.history.replaceState(nextState, "", pathForKodexRoute({ threadId: route.threadId, panel: "threads" }));
+    window.history.pushState(nextState, "", pathForKodexRoute({ threadId: route.threadId, panel: null }));
   }, []);
 
   useEffect(() => {
@@ -745,75 +773,38 @@ function KodexShell({
     };
   }, [draftComposerTransitionToken]);
 
-  useEffect(() => {
-    const client = createEventStreamClient({
-      cursor: globalEventCursorRef.current,
-      excludeThreadId: selectedThreadId,
-      onEvent: (event) => {
-        globalEventCursorRef.current = Math.max(globalEventCursorRef.current ?? 0, event.seq);
-        if (selectedThreadIdRef.current && event.threadId === selectedThreadIdRef.current) {
-          return;
-        }
-        applyAutomationStreamEvent(event);
-        applyQueueEvent(event);
-        applyThreadPinEvent(event);
-        applyThreadUpsertEvent(event);
-        applyThreadMetadataEvent(event);
-        applyCompletedAgentTurnEvent(event);
-        applyThreadReadStateEvent(event);
-        applyThreadNotificationsEvent(event);
-        refreshSidebarThreadsForLiveEvent(event);
-        invalidateSelectedSubagentsForEvent(event);
-        const nextUsageLimitSnapshot = usageLimitSnapshotFromEvent(event);
-        if (nextUsageLimitSnapshot) {
-          liveUsageLimitSnapshotReceivedRef.current = true;
-          queryClientForShell.setQueryData(queryKeys.rateLimits, nextUsageLimitSnapshot);
-        }
-        if (isApprovalEvent(event)) {
-          setApprovals((current) => applyApprovalEventWithTombstone(current, event));
-        }
-        if (event.kind === "skills.changed") {
-          setSkillsInvalidationGeneration((current) => current + 1);
-        }
-        applyMcpLifecycleEvent(queryClientForShell, event);
-      },
-    });
-    client.connect();
-    return client.close;
-  }, [selectedThreadId]);
+  const liveRouteHandlers = {
+    applyAutomationStreamEvent,
+    applyQueuedInputUpsert: upsertQueuedInput,
+    applyQueuedInputDeleted: removeQueuedInput,
+    applyThreadPinState,
+    applyThreadUpsert,
+    applyThreadMetadataEvent,
+    applyCompletedAgentTurnEvent,
+    applyThreadReadStateEvent,
+    applyThreadNotificationsState,
+    refreshSidebarThreadsForLiveEvent,
+    invalidateSelectedSubagentsForEvent,
+    applyUsageLimitSnapshot,
+    applyApprovalEvent,
+    applySkillsChangedEvent,
+    applyMcpLifecycleEvent: applyMcpLifecycleStreamEvent,
+  };
 
-  useEffect(() => {
-    if (isSelectedThreadSnapshotDeferred) {
-      return;
-    }
-    if (!selectedThread || !selectedThreadShouldAttachLive(selectedThread)) {
-      return;
-    }
-    if (attachingThreadIdsRef.current.has(selectedThread.id)) {
-      return;
-    }
+  useGlobalLiveStream({
+    cursorRef: globalEventCursorRef,
+    handlers: liveRouteHandlers,
+    selectedThreadId,
+    selectedThreadIdRef,
+  });
 
-    let cancelled = false;
-    attachingThreadIdsRef.current.add(selectedThread.id);
-    const attachingThreadId = selectedThread.id;
-    attachThread(attachingThreadId)
-      .then((response) => {
-        attachingThreadIdsRef.current.delete(attachingThreadId);
-        if (!cancelled && response.thread) {
-          replaceThread(response.thread);
-        }
-      })
-      .catch((error) => {
-        attachingThreadIdsRef.current.delete(attachingThreadId);
-        if (!cancelled) {
-          reportError(error, `Selected thread attach failed (${attachingThreadId})`);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isSelectedThreadSnapshotDeferred, selectedThread?.id, selectedThread?.status]);
+  useSelectedThreadAttach({
+    attachingThreadIdsRef,
+    isSelectedThreadSnapshotDeferred,
+    onAttachedThread: replaceThread,
+    onError: reportError,
+    selectedThread,
+  });
 
   const { loadOlderHistory } = useSelectedThreadTimeline({
     isSelectedThreadSnapshotDeferred,
@@ -825,7 +816,7 @@ function KodexShell({
     onSnapshotThread: handleSelectedThreadSnapshot,
     onSyncNotice: setThreadSyncNotice,
     onSelectedThreadEvent: applySelectedThreadStreamEvent,
-    onQueueEvent: applyQueueEvent,
+    onQueueEvent: () => {},
     selectedThreadId,
     setApprovals,
     setTimeline,
@@ -843,15 +834,24 @@ function KodexShell({
   }
 
   function applySelectedThreadStreamEvent(event: EventEnvelope) {
-    applyAutomationStreamEvent(event);
-    applyThreadPinEvent(event);
-    applyThreadUpsertEvent(event);
-    applyThreadMetadataEvent(event);
-    applyCompletedAgentTurnEvent(event);
-    applyThreadReadStateEvent(event);
-    applyThreadNotificationsEvent(event);
-    refreshSidebarThreadsForLiveEvent(event);
-    invalidateSelectedSubagentsForEvent(event);
+    routeSelectedThreadLiveEvent(event, liveRouteHandlers);
+  }
+
+  function applyUsageLimitSnapshot(nextUsageLimitSnapshot: RateLimitSnapshot) {
+    liveUsageLimitSnapshotReceivedRef.current = true;
+    queryClientForShell.setQueryData(queryKeys.rateLimits, nextUsageLimitSnapshot);
+  }
+
+  function applyApprovalEvent(event: EventEnvelope) {
+    setApprovals((current) => applyApprovalEventWithTombstone(current, event));
+  }
+
+  function applySkillsChangedEvent() {
+    setSkillsInvalidationGeneration((current) => current + 1);
+  }
+
+  function applyMcpLifecycleStreamEvent(event: EventEnvelope) {
+    applyMcpLifecycleEvent(queryClientForShell, event);
   }
 
   function beginTimelineEntry(threadId: string) {
@@ -1160,7 +1160,12 @@ function KodexShell({
   function selectRouteThread(threadId: string) {
     setSelectedMainPane("thread");
     setSelectedProjectPaneId(null);
-    const knownSelection = findKnownThreadSelection(threadId);
+    const knownSelection = findKnownThreadSelectionInCaches(
+      threadId,
+      threadsByProjectIdRef.current,
+      chatThreadsRef.current,
+      pinnedThreadsRef.current,
+    );
     if (knownSelection?.kind === "project") {
       selectKnownProjectThread(knownSelection.projectId, threadId);
       return;
@@ -1186,23 +1191,6 @@ function KodexShell({
     selectedThreadIdRef.current = threadId;
     beginTimelineEntry(threadId);
     setSelectedThreadId(threadId);
-  }
-
-  function findKnownThreadSelection(
-    threadId: string,
-  ): { kind: "chat" } | { kind: "pinned" } | { kind: "project"; projectId: string } | null {
-    for (const [projectId, threads] of Object.entries(threadsByProjectIdRef.current)) {
-      if (threads.some((thread) => thread.id === threadId)) {
-        return { kind: "project", projectId };
-      }
-    }
-    if (chatThreadsRef.current.some((thread) => thread.id === threadId)) {
-      return { kind: "chat" };
-    }
-    if (pinnedThreadsRef.current.some((thread) => thread.id === threadId)) {
-      return { kind: "pinned" };
-    }
-    return null;
   }
 
   async function handleArchiveThread(threadId = selectedThreadIdRef.current) {
@@ -1264,9 +1252,6 @@ function KodexShell({
   }
 
   function applyAutomationStreamEvent(event: EventEnvelope) {
-    if (event.kind !== "automation.item_upsert" && event.kind !== "automation.item_deleted") {
-      return;
-    }
     const automationQueryState = queryClientForShell.getQueryState(queryKeys.automations);
     if (automationQueryState?.data === undefined && automationQueryState?.fetchStatus !== "fetching") {
       return;
@@ -1337,7 +1322,13 @@ function KodexShell({
     if (thread.id === selectedThreadIdRef.current) {
       setRouteSelectedThreadState(thread);
     }
-    const cachedThread = findKnownThread(thread.id);
+    const cachedThread = findKnownThreadInCaches(
+      thread.id,
+      threadsByProjectIdRef.current,
+      chatThreadsRef.current,
+      pinnedThreadsRef.current,
+      routeSelectedThreadRef.current,
+    );
     const sidebarThread = cachedThread ? mergeSelectedThreadDetailIntoSidebarSummary(cachedThread, thread) : thread;
     replaceThreadEverywhere(queryClientForShell, thread);
     if (sidebarThread.pinnedAt) {
@@ -1388,28 +1379,7 @@ function KodexShell({
     }
   }
 
-  function applyThreadNotificationsEvent(event: EventEnvelope) {
-    const update = threadNotificationsUpdateFromEvent(event);
-    if (!update) {
-      return;
-    }
-    applyThreadNotificationsState(update.threadId, update.notificationsEnabled);
-  }
-
-  function applyThreadPinEvent(event: EventEnvelope) {
-    const update = threadPinUpdateFromEvent(event);
-    if (!update) {
-      return;
-    }
-    applyThreadPinState(update.threadId, update.pinnedAt);
-  }
-
-  function applyThreadUpsertEvent(event: EventEnvelope) {
-    const update = threadUpsertFromEvent(event);
-    if (!update) {
-      return;
-    }
-
+  function applyThreadUpsert(update: ThreadUpsert) {
     if (update.scope === "project") {
       upsertProjectThread(queryClientForShell, update.projectId, update.thread);
       void queryClientForShell.invalidateQueries({ queryKey: queryKeys.projectThreads(update.projectId) });
@@ -1437,38 +1407,27 @@ function KodexShell({
   }
 
   function refreshSidebarThreadsForLiveEvent(event: EventEnvelope) {
-    if (!event.threadId || !eventCanRefreshSidebarThread(event)) {
+    const route = sidebarLiveCacheRoute(event, event.threadId ? findThreadSidebarLocation(event.threadId) : null);
+    if (route.kind === "ignore") {
       return;
     }
-
-    const location = findThreadSidebarLocation(event.threadId);
-    if (!location) {
-      if (event.kind !== "thread_view.patch") {
-        return;
-      }
+    if (route.kind === "invalidateAllThreadLists") {
+      recordCacheInvalidation("projectThreadsRoot");
+      recordCacheInvalidation("chatThreads");
       void queryClientForShell.invalidateQueries({ queryKey: queryKeys.projectThreadsRoot });
       void queryClientForShell.invalidateQueries({ queryKey: queryKeys.chatThreads });
       return;
     }
-
-    if (!eventShouldRefreshKnownSidebarThread(event, location.thread)) {
-      return;
-    }
-
-    if (location.scope === "project") {
-      void queryClientForShell.invalidateQueries({ queryKey: queryKeys.projectThreads(location.projectId) });
+    if (route.location.scope === "project") {
+      recordCacheInvalidation("projectThreads");
+      void queryClientForShell.invalidateQueries({ queryKey: queryKeys.projectThreads(route.location.projectId) });
     } else {
+      recordCacheInvalidation("chatThreads");
       void queryClientForShell.invalidateQueries({ queryKey: queryKeys.chatThreads });
     }
   }
 
-  function eventShouldRefreshKnownSidebarThread(event: EventEnvelope, thread: ThreadSummary) {
-    return event.kind === "thread_view.patch" && !threadHasDisplayTitle(thread);
-  }
-
-  function findThreadSidebarLocation(
-    threadId: string,
-  ): { scope: "project"; projectId: string; thread: ThreadSummary } | { scope: "chat"; thread: ThreadSummary } | null {
+  function findThreadSidebarLocation(threadId: string): SidebarThreadLocation | null {
     for (const [projectId, threads] of Object.entries(threadsByProjectIdRef.current)) {
       const thread = threads.find((item) => item.id === threadId);
       if (thread) {
@@ -1479,13 +1438,15 @@ function KodexShell({
     return chatThread ? { scope: "chat", thread: chatThread } : null;
   }
 
-  function eventCanRefreshSidebarThread(event: EventEnvelope) {
-    return event.kind === "thread_view.patch" || event.kind === "timeline.thread_metadata";
-  }
-
   function applyThreadPinState(threadId: string, pinnedAt: string | null) {
     setPinnedStateTrusted(true);
-    const knownThread = findKnownThread(threadId);
+    const knownThread = findKnownThreadInCaches(
+      threadId,
+      threadsByProjectIdRef.current,
+      chatThreadsRef.current,
+      pinnedThreadsRef.current,
+      routeSelectedThreadRef.current,
+    );
     setRouteSelectedThreadState(
       routeSelectedThreadRef.current?.id === threadId
         ? withThreadPinnedAt(routeSelectedThreadRef.current, pinnedAt)
@@ -1515,44 +1476,9 @@ function KodexShell({
     void queryClientForShell.invalidateQueries({ queryKey: queryKeys.threadSubagents(threadId) });
   }
 
-  function findKnownThread(threadId: string): ThreadSummary | null {
-    for (const threads of Object.values(threadsByProjectIdRef.current)) {
-      const thread = threads.find((item) => item.id === threadId);
-      if (thread) {
-        return thread;
-      }
-    }
-    return (
-      chatThreadsRef.current.find((thread) => thread.id === threadId) ??
-      pinnedThreadsRef.current.find((thread) => thread.id === threadId) ??
-      (routeSelectedThreadRef.current?.id === threadId ? routeSelectedThreadRef.current : null)
-    );
-  }
-
   function reportError(error: unknown, context?: string) {
     const message = errorMessageFrom(error);
     setErrorMessage(context ? `${context}: ${message}` : message);
-  }
-
-  function applyQueueEvent(event: EventEnvelope) {
-    if (event.kind === "turn_queue.item_upsert") {
-      const row = event.payload as QueuedInput;
-      if (!row?.id || !row.threadId) {
-        return;
-      }
-      upsertQueuedInput(row);
-      return;
-    }
-    if (event.kind !== "turn_queue.item_deleted") {
-      return;
-    }
-    const payload = event.payload as { id?: unknown; threadId?: unknown };
-    const id = typeof payload.id === "string" ? payload.id : null;
-    const threadId = typeof payload.threadId === "string" ? payload.threadId : event.threadId;
-    if (!id || !threadId) {
-      return;
-    }
-    removeQueuedInput(threadId, id);
   }
 
   function upsertQueuedInput(row: QueuedInput) {
@@ -1610,36 +1536,6 @@ function KodexShell({
     }
     selectRouteThread(route.threadId);
     setMobilePanel(route.panel ?? "chat");
-  }
-
-  function pushKodexRoute(route: KodexRoute) {
-    const nextPath =
-      route.view === "automations"
-        ? automationsPath({ panel: route.panel })
-        : route.view === "project" && route.projectId
-          ? projectPath(route.projectId, { panel: route.panel })
-        : route.threadId
-          ? threadPath(route.threadId, { panel: route.panel })
-          : emptyPath({ panel: route.panel });
-    if (currentLocationPath() === nextPath) {
-      return;
-    }
-    window.history.pushState({ kodexRoute: true }, "", nextPath);
-  }
-
-  function replaceKodexRoute(route: KodexRoute) {
-    const nextPath =
-      route.view === "automations"
-        ? automationsPath({ panel: route.panel })
-        : route.view === "project" && route.projectId
-          ? projectPath(route.projectId, { panel: route.panel })
-        : route.threadId
-          ? threadPath(route.threadId, { panel: route.panel })
-          : emptyPath({ panel: route.panel });
-    if (currentLocationPath() === nextPath) {
-      return;
-    }
-    window.history.replaceState({ kodexRoute: true }, "", nextPath);
   }
 
   const handleArchiveSelectedThread = useEventCallback(() => void handleArchiveThread());
@@ -1884,123 +1780,4 @@ function KodexShell({
       <MarkdownPreviewPane preview={markdownPreview} threadId={selectedThreadId ?? undefined} onClose={handleCloseMarkdownPreview} />
     </>
   );
-}
-
-function selectedThreadShouldAttachLive(thread: ThreadSummary): boolean {
-  return thread.status === "notLoaded" || thread.status === "active";
-}
-
-function defaultSubagent(subagents: ThreadSubagentSummary[]): ThreadSubagentSummary | null {
-  return (
-    subagents.find((subagent) => subagent.status === "active" || subagent.liveState === "streaming") ??
-    subagents[0] ??
-    null
-  );
-}
-
-function eventCanAffectSubagentDiscovery(event: EventEnvelope): boolean {
-  return event.kind === "thread_view.patch" && threadViewPatchContainsCollabAgent(event.payload);
-}
-
-function threadViewPatchContainsCollabAgent(payload: unknown): boolean {
-  const patch = recordValue(payload);
-  if (!patch) {
-    return false;
-  }
-  return (
-    arrayValue(patch.items).some(timelineItemLooksLikeCollabAgent) ||
-    arrayValue(patch.rows).some(timelineRowContainsCollabAgent) ||
-    arrayValue(patch.upsertRows).some(timelineRowContainsCollabAgent)
-  );
-}
-
-function timelineRowContainsCollabAgent(value: unknown): boolean {
-  const row = recordValue(value);
-  if (!row) {
-    return false;
-  }
-  return (
-    collabAgentTypeValue(row.kind) ||
-    timelineItemLooksLikeCollabAgent(row.item) ||
-    arrayValue(row.items).some(timelineItemLooksLikeCollabAgent) ||
-    arrayValue(row.collapsedRows).some(timelineRowContainsCollabAgent)
-  );
-}
-
-function timelineItemLooksLikeCollabAgent(value: unknown): boolean {
-  const item = recordValue(value);
-  if (!item) {
-    return false;
-  }
-  const payload = recordValue(item.payload);
-  const rawItem = recordValue(payload?.item);
-  const itemSnapshot = recordValue(payload?.itemSnapshot);
-  return (
-    collabAgentTypeValue(item.itemType) ||
-    collabAgentTypeValue(item.kind) ||
-    collabAgentTypeValue(rawItem?.type) ||
-    collabAgentTypeValue(itemSnapshot?.itemType)
-  );
-}
-
-function collabAgentTypeValue(value: unknown): boolean {
-  return typeof value === "string" && value.toLowerCase().replace(/[_-]/g, "").includes("collabagent");
-}
-
-function recordValue(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
-}
-
-function arrayValue(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
-
-function queryResultLoadState(query: {
-  data?: unknown;
-  isError?: boolean;
-  isFetching?: boolean;
-  isLoading?: boolean;
-} | undefined): "error" | "loaded" | "loading" | "refetching" {
-  if (!query || (query.data === undefined && (query.isLoading || query.isFetching))) {
-    return "loading";
-  }
-  if (query.isError) {
-    return "error";
-  }
-  if (query.isFetching) {
-    return "refetching";
-  }
-  return "loaded";
-}
-
-function currentKodexRoute(): KodexRoute {
-  return parseKodexLocation(window.location);
-}
-
-function currentLocationPath(): string {
-  return `${window.location.pathname}${window.location.search}`;
-}
-
-function historyState(): Record<string, unknown> {
-  const state = window.history.state;
-  return state && typeof state === "object" ? { ...(state as Record<string, unknown>) } : {};
-}
-
-function isMobileViewport(): boolean {
-  return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 900px)").matches;
-}
-
-function withThreadPinnedAt(thread: ThreadSummary, pinnedAt: string | null): ThreadSummary {
-  return { ...thread, pinnedAt };
-}
-
-function withThreadNotificationsEnabled(thread: ThreadSummary, notificationsEnabled: boolean): ThreadSummary {
-  return { ...thread, notificationsEnabled };
-}
-
-function createClientRequestId(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }

@@ -143,6 +143,11 @@ export type TimelineIndexes = {
   itemUpdatesById: Map<string, TimelineItem>;
   pendingItemById: Map<string, TimelineItem>;
   hiddenItems: TimelineItem[];
+  rowKeys: string[];
+  rowByKey: Map<string, TimelineRow>;
+  rowKeysByItemId: Map<string, Set<string>>;
+  rowKeysByTurnId: Map<string, Set<string>>;
+  optimisticUserRowKeysByText: Map<string, Set<string>>;
   turnIds: string[];
   turnById: Map<string, TimelineTurn>;
   turnUpdatesById: Map<string, TimelineTurn>;
@@ -154,6 +159,7 @@ export type TimelineDraft = {
   pendingApprovalRequests?: PendingTimelineRequestSummary[];
   pendingUserInputRequests?: PendingTimelineRequestSummary[];
   rows?: TimelineRow[];
+  rowsAreIndexed?: boolean;
   olderCursor?: string | null;
   hasOlderHistory?: boolean;
   isLoadingOlderHistory?: boolean;
@@ -179,9 +185,13 @@ export function createTimelineState(): TimelineState {
 }
 
 export function createTimelineStateFromDraft(draft: TimelineDraft): TimelineState {
+  const rows = draft.rows ?? orderedRows(draft.indexes.rowKeys, draft.indexes);
+  if (!draft.rowsAreIndexed) {
+    syncRowsToIndexes(draft.indexes, rows);
+  }
   const state = {
     activeTurnId: draft.activeTurnId,
-    rows: draft.rows ?? [],
+    rows,
     pendingApprovalRequests: draft.pendingApprovalRequests ?? [],
     pendingUserInputRequests: draft.pendingUserInputRequests ?? [],
     olderCursor: draft.olderCursor ?? null,
@@ -230,6 +240,11 @@ export function createEmptyTimelineIndexes(): TimelineIndexes {
     itemUpdatesById: new Map(),
     pendingItemById: new Map(),
     hiddenItems: [],
+    rowKeys: [],
+    rowByKey: new Map(),
+    rowKeysByItemId: new Map(),
+    rowKeysByTurnId: new Map(),
+    optimisticUserRowKeysByText: new Map(),
     turnIds: [],
     turnById: new Map(),
     turnUpdatesById: new Map(),
@@ -245,6 +260,11 @@ export function prepareTimelineIndexesForUpdate(indexes: TimelineIndexes): Timel
     ...indexes,
     itemUpdatesById: new Map(indexes.itemUpdatesById),
     pendingItemById: new Map(indexes.pendingItemById),
+    rowKeys: [...indexes.rowKeys],
+    rowByKey: new Map(indexes.rowByKey),
+    rowKeysByItemId: cloneRowKeySetMap(indexes.rowKeysByItemId),
+    rowKeysByTurnId: cloneRowKeySetMap(indexes.rowKeysByTurnId),
+    optimisticUserRowKeysByText: cloneRowKeySetMap(indexes.optimisticUserRowKeysByText),
     turnUpdatesById: new Map(indexes.turnUpdatesById),
   };
 }
@@ -276,6 +296,26 @@ export function timelineItems(indexes: TimelineIndexes): TimelineItem[] {
   return orderedItems(indexes.itemIds, indexes);
 }
 
+export function timelineRows(indexes: TimelineIndexes): TimelineRow[] {
+  return orderedRows(indexes.rowKeys, indexes);
+}
+
+export function timelineRowByKey(indexes: TimelineIndexes, rowKey: string): TimelineRow | undefined {
+  return indexes.rowByKey.get(rowKey);
+}
+
+export function timelineRowKeysByItemId(indexes: TimelineIndexes, itemId: string): string[] {
+  return [...(indexes.rowKeysByItemId.get(itemId) ?? [])];
+}
+
+export function timelineRowKeysByTurnId(indexes: TimelineIndexes, turnId: string): string[] {
+  return [...(indexes.rowKeysByTurnId.get(turnId) ?? [])];
+}
+
+export function optimisticUserRowKeysByText(indexes: TimelineIndexes, text: string): string[] {
+  return [...(indexes.optimisticUserRowKeysByText.get(text) ?? [])];
+}
+
 function buildTimelineIndexes(state: TimelineState): TimelineIndexes {
   const indexes = createEmptyTimelineIndexes();
   for (const item of state.items) {
@@ -293,6 +333,7 @@ function buildTimelineIndexes(state: TimelineState): TimelineIndexes {
       completedAtMs: turn.completedAtMs,
     });
   }
+  syncRowsToIndexes(indexes, state.rows);
   stateIndexes.set(state, indexes);
   return indexes;
 }
@@ -323,4 +364,93 @@ function orderedTurns(turnIds: string[], indexes: TimelineIndexes): TimelineTurn
     }
   }
   return turns;
+}
+
+function orderedRows(rowKeys: string[], indexes: TimelineIndexes): TimelineRow[] {
+  const rows: TimelineRow[] = [];
+  for (const rowKey of rowKeys) {
+    const row = indexes.rowByKey.get(rowKey);
+    if (row) {
+      rows.push(row);
+    }
+  }
+  return rows;
+}
+
+function syncRowsToIndexes(indexes: TimelineIndexes, rows: TimelineRow[]) {
+  indexes.rowKeys = rows.map((row) => row.key);
+  indexes.rowByKey = new Map(rows.map((row) => [row.key, row]));
+  indexes.rowKeysByItemId = new Map();
+  indexes.rowKeysByTurnId = new Map();
+  indexes.optimisticUserRowKeysByText = new Map();
+  for (const row of rows) {
+    indexTimelineRow(indexes, row);
+  }
+}
+
+export function indexTimelineRow(indexes: TimelineIndexes, row: TimelineRow) {
+  if (row.turnId) {
+    addSetValue(indexes.rowKeysByTurnId, row.turnId, row.key);
+  }
+  for (const item of timelineRowItems(row)) {
+    addSetValue(indexes.rowKeysByItemId, item.id, row.key);
+    if (item.serverItemId) {
+      addSetValue(indexes.rowKeysByItemId, item.serverItemId, row.key);
+    }
+    if (item.source === "optimistic" && item.kind === "user_message" && item.text) {
+      addSetValue(indexes.optimisticUserRowKeysByText, item.text, row.key);
+    }
+  }
+}
+
+export function unindexTimelineRow(indexes: TimelineIndexes, row: TimelineRow) {
+  if (row.turnId) {
+    deleteSetValue(indexes.rowKeysByTurnId, row.turnId, row.key);
+  }
+  for (const item of timelineRowItems(row)) {
+    deleteSetValue(indexes.rowKeysByItemId, item.id, row.key);
+    if (item.serverItemId) {
+      deleteSetValue(indexes.rowKeysByItemId, item.serverItemId, row.key);
+    }
+    if (item.source === "optimistic" && item.kind === "user_message" && item.text) {
+      deleteSetValue(indexes.optimisticUserRowKeysByText, item.text, row.key);
+    }
+  }
+}
+
+export function timelineRowItems(row: TimelineRow): TimelineItem[] {
+  if (row.type === "item") {
+    return [row.item];
+  }
+  if (row.type === "activity") {
+    return row.items;
+  }
+  if (row.type === "work") {
+    return row.collapsedRows.flatMap(timelineRowItems);
+  }
+  return [];
+}
+
+function addSetValue(target: Map<string, Set<string>>, key: string, value: string) {
+  const existing = target.get(key);
+  if (existing) {
+    existing.add(value);
+    return;
+  }
+  target.set(key, new Set([value]));
+}
+
+function deleteSetValue(target: Map<string, Set<string>>, key: string, value: string) {
+  const existing = target.get(key);
+  if (!existing) {
+    return;
+  }
+  existing.delete(value);
+  if (existing.size === 0) {
+    target.delete(key);
+  }
+}
+
+function cloneRowKeySetMap(source: Map<string, Set<string>>): Map<string, Set<string>> {
+  return new Map([...source].map(([key, value]) => [key, new Set(value)]));
 }

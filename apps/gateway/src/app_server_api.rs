@@ -17,6 +17,7 @@ use crate::{
 
 const ROLLOUT_LOAD_RETRY_ATTEMPTS: usize = 6;
 const ROLLOUT_LOAD_RETRY_DELAY: Duration = Duration::from_millis(50);
+const TIMELINE_PREVIEW_STRING_LIMIT: usize = 16_384;
 
 #[derive(Clone)]
 pub struct CodexClient {
@@ -1954,6 +1955,8 @@ pub struct ThreadTimelineSnapshot {
     pub pending_user_input_requests: Vec<PendingTimelineRequestSummary>,
     pub rows: Vec<ThreadTimelineRow>,
     pub turns: Vec<ThreadTimelineSnapshotTurn>,
+    #[serde(default, skip_serializing)]
+    #[schema(ignore)]
     pub items: Vec<ThreadTimelineSnapshotItem>,
 }
 
@@ -2137,7 +2140,7 @@ impl ThreadTimelineSnapshotItem {
                 source: TimelineUpdateSource::AppServerSnapshot,
                 turn_id: turn.id.clone(),
                 item_id: item.id.clone(),
-                item: item.raw_payload.clone(),
+                item: compact_timeline_item_payload(&item.raw_payload),
                 item_snapshot: item.clone(),
             },
         }
@@ -2528,12 +2531,7 @@ fn is_final_response_item(item: &ThreadTimelineSnapshotItem) -> bool {
     matches!(
         normalized_thread_item_kind(item).as_str(),
         "assistant_message" | "agent_message"
-    ) && item
-        .payload
-        .item
-        .get("phase")
-        .and_then(Value::as_str)
-        .is_some_and(|phase| phase == "final_answer")
+    ) && item.payload.item.phase.as_deref() == Some("final_answer")
 }
 
 fn normalized_thread_item_kind(item: &ThreadTimelineSnapshotItem) -> String {
@@ -2614,14 +2612,18 @@ fn append_unique_diff_chunk(existing: &mut String, incoming: &str) {
 fn file_change_entries_for_item(
     item: &ThreadTimelineSnapshotItem,
 ) -> Vec<ThreadTimelineFileChangeEntry> {
-    let Some(changes) = item.payload.item.get("changes").and_then(Value::as_array) else {
-        let path = string_field(&item.payload.item, "path").unwrap_or_default();
-        let action = file_change_action_label(item.payload.item.get("action"));
+    let Some(changes) = item.payload.item.changes.as_ref().and_then(Value::as_array) else {
+        let path = item.payload.item.path.clone().unwrap_or_default();
+        let action = file_change_action_label(item.payload.item.action.as_ref());
         if path.is_empty() && action.is_empty() {
             return Vec::new();
         }
-        let diff = string_field(&item.payload.item, "diff")
-            .or_else(|| string_field(&item.payload.item, "output"))
+        let diff = item
+            .payload
+            .item
+            .diff
+            .clone()
+            .or_else(|| item.payload.item.output.clone())
             .unwrap_or_default();
         let (additions, deletions) = diff_line_counts(&diff);
         return vec![ThreadTimelineFileChangeEntry {
@@ -2688,6 +2690,202 @@ fn string_field(value: &Value, field: &str) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineDisplayItemPayload {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    pub item_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stdout: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stderr: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changes: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arguments: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub args: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receiver_thread_ids: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agents_states: Option<Value>,
+    #[serde(
+        default,
+        rename = "agent_nickname",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub agent_nickname_snake: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_nickname: Option<String>,
+    #[serde(
+        default,
+        rename = "agent_role",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub agent_role_snake: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saved_path: Option<String>,
+    #[serde(
+        default,
+        rename = "saved_path",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub saved_path_snake: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revised_prompt: Option<String>,
+    #[serde(
+        default,
+        rename = "revised_prompt",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub revised_prompt_snake: Option<String>,
+}
+
+pub(crate) fn compact_timeline_item_payload(item: &Value) -> TimelineDisplayItemPayload {
+    let Some(object) = item.as_object() else {
+        return TimelineDisplayItemPayload::default();
+    };
+    TimelineDisplayItemPayload {
+        id: display_string(object, "id"),
+        item_type: display_string(object, "type"),
+        status: display_string(object, "status"),
+        phase: display_string(object, "phase"),
+        text: display_string(object, "text"),
+        message: display_string(object, "message"),
+        content: display_value(object, "content"),
+        summary: display_value(object, "summary"),
+        review: display_string(object, "review"),
+        command: display_string(object, "command"),
+        cwd: display_string(object, "cwd"),
+        output: display_string(object, "output")
+            .or_else(|| display_string(object, "aggregatedOutput")),
+        diff: display_string(object, "diff"),
+        stdout: display_string(object, "stdout"),
+        stderr: display_string(object, "stderr"),
+        path: display_string(object, "path"),
+        action: display_value(object, "action"),
+        change: display_value(object, "change"),
+        changes: display_value(object, "changes"),
+        query: display_string(object, "query"),
+        tool: display_string(object, "tool"),
+        tool_name: display_string(object, "toolName"),
+        name: display_string(object, "name"),
+        arguments: display_value(object, "arguments"),
+        args: display_value(object, "args"),
+        result: display_string(object, "result"),
+        receiver_thread_ids: object.get("receiverThreadIds").and_then(|value| {
+            value.as_array().map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+        }),
+        agents_states: display_value(object, "agentsStates"),
+        agent_nickname_snake: display_string(object, "agent_nickname"),
+        agent_nickname: display_string(object, "agentNickname"),
+        agent_role_snake: display_string(object, "agent_role"),
+        agent_role: display_string(object, "agentRole"),
+        prompt: display_string(object, "prompt"),
+        model: display_string(object, "model"),
+        reasoning_effort: display_string(object, "reasoningEffort"),
+        saved_path: display_string(object, "savedPath"),
+        saved_path_snake: display_string(object, "saved_path"),
+        revised_prompt: display_string(object, "revisedPrompt"),
+        revised_prompt_snake: display_string(object, "revised_prompt"),
+    }
+}
+
+fn display_string(object: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
+    object
+        .get(key)
+        .and_then(Value::as_str)
+        .map(compact_preview_string)
+}
+
+fn display_value(object: &serde_json::Map<String, Value>, key: &str) -> Option<Value> {
+    object.get(key).map(compact_timeline_preview_value)
+}
+
+fn compact_timeline_preview_value(value: &Value) -> Value {
+    match value {
+        Value::String(text) => Value::String(compact_preview_string(text)),
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(compact_timeline_preview_value)
+                .collect::<Vec<_>>(),
+        ),
+        Value::Object(object) => Value::Object(
+            object
+                .iter()
+                .map(|(key, value)| (key.clone(), compact_timeline_preview_value(value)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+fn compact_preview_string(value: &str) -> String {
+    if value.len() <= TIMELINE_PREVIEW_STRING_LIMIT {
+        return value.to_string();
+    }
+    let mut end = TIMELINE_PREVIEW_STRING_LIMIT;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}...[truncated]", &value[..end])
 }
 
 fn diff_line_counts(diff: &str) -> (i64, i64) {
@@ -3197,7 +3395,7 @@ pub struct TimelineItemUpsertPayload {
     pub source: TimelineUpdateSource,
     pub turn_id: String,
     pub item_id: String,
-    pub item: Value,
+    pub item: TimelineDisplayItemPayload,
     pub item_snapshot: ThreadItemSnapshot,
 }
 
@@ -4318,6 +4516,42 @@ mod tests {
     }
 
     #[test]
+    fn timeline_snapshot_item_serializes_compact_display_payload() {
+        let large_output = "x".repeat(TIMELINE_PREVIEW_STRING_LIMIT + 1024);
+        let turn = ThreadTurnSnapshot {
+            id: "turn-1".to_string(),
+            status: "completed".to_string(),
+            started_at: Some(1),
+            completed_at: Some(2),
+            items: Vec::new(),
+            raw_payload: json!({}),
+        };
+        let item = ThreadItemSnapshot::from_payload(&json!({
+            "id": "command-1",
+            "type": "commandExecution",
+            "command": "cargo test",
+            "aggregatedOutput": large_output,
+            "internal": { "unbounded": "raw payload ballast" }
+        }))
+        .unwrap();
+
+        let snapshot =
+            ThreadTimelineSnapshotItem::from_turn_item("thread-1", &turn, &item, 1, true);
+        let serialized = serde_json::to_value(&snapshot).unwrap();
+
+        assert_eq!(serialized["payload"]["item"]["command"], "cargo test");
+        assert!(serialized["payload"]["item"]["output"]
+            .as_str()
+            .unwrap()
+            .ends_with("...[truncated]"));
+        assert!(serialized["payload"]["item"]["internal"].is_null());
+        assert!(serialized["payload"]["itemSnapshot"]["rawPayload"].is_null());
+        assert!(
+            serde_json::to_vec(&serialized).unwrap().len() < TIMELINE_PREVIEW_STRING_LIMIT + 2_000
+        );
+    }
+
+    #[test]
     fn user_message_snapshot_ignores_unstructured_or_mismatched_skill_ranges() {
         let manual = ThreadItemSnapshot::from_payload(&json!({
             "id": "user-1",
@@ -4673,6 +4907,11 @@ mod tests {
         assert_eq!(response.timeline.items[1].id, "projection-turn-1-agent-1");
         assert_eq!(response.timeline.items[1].display_order, 2);
         assert_eq!(response.timeline.items[1].timestamp_ms, Some(12_000));
+        let serialized_timeline = serde_json::to_value(&response.timeline).unwrap();
+        assert!(
+            serialized_timeline.get("items").is_none(),
+            "selected-thread timeline responses should serialize rows without duplicate flat items"
+        );
     }
 
     #[test]

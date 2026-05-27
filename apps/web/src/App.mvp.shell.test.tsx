@@ -287,12 +287,12 @@ describe("MVP shell flows", () => {
 
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
     expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
-    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
-    expect(globalStream).toBeDefined();
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    expect(selectedThreadStream).toBeDefined();
 
     act(() => {
-      globalStream?.emitNamed("timeline.thread_metadata", {
+      selectedThreadStream?.emitNamed("timeline.thread_metadata", {
         id: "event-thread-metadata-sidebar",
         seq: 10,
         kind: "timeline.thread_metadata",
@@ -951,11 +951,11 @@ describe("MVP shell flows", () => {
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
     expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
-    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
-    expect(globalStream).toBeDefined();
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    expect(selectedThreadStream).toBeDefined();
 
     act(() => {
-      globalStream?.emitNamed("thread.pin_updated", {
+      selectedThreadStream?.emitNamed("thread.pin_updated", {
         id: "event-pin-thread-1",
         seq: 2,
         kind: "thread.pin_updated",
@@ -980,7 +980,7 @@ describe("MVP shell flows", () => {
     expect(within(kodexGroup).queryByRole("button", { name: /implement frontend/i })).not.toBeInTheDocument();
 
     act(() => {
-      globalStream?.emitNamed("thread.pin_updated", {
+      selectedThreadStream?.emitNamed("thread.pin_updated", {
         id: "event-unpin-thread-1",
         seq: 3,
         kind: "thread.pin_updated",
@@ -1319,12 +1319,12 @@ describe("MVP shell flows", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
-    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
-    expect(globalStream).toBeDefined();
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    expect(selectedThreadStream).toBeDefined();
 
     act(() => {
-      globalStream?.emit({
+      selectedThreadStream?.emit({
         id: "event-thread-notifications",
         seq: 10,
         kind: "thread.notifications_updated",
@@ -1451,12 +1451,12 @@ describe("MVP shell flows", () => {
 
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
-    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
-    expect(globalStream).toBeDefined();
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    expect(selectedThreadStream).toBeDefined();
 
     act(() => {
-      globalStream?.emit({
+      selectedThreadStream?.emit({
         id: "event-thread-name-sidebar",
         seq: 10,
         kind: "timeline.thread_metadata",

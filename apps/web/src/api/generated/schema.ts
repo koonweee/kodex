@@ -2441,7 +2441,6 @@ export interface components {
         };
         ThreadTimelineSnapshot: {
             activeTurnId?: string | null;
-            items: components["schemas"]["ThreadTimelineSnapshotItem"][];
             liveState: components["schemas"]["ThreadLiveState"];
             pendingApprovalRequests: components["schemas"]["PendingTimelineRequestSummary"][];
             pendingUserInputRequests: components["schemas"]["PendingTimelineRequestSummary"][];
@@ -2515,7 +2514,6 @@ export interface components {
         };
         ThreadViewPatch: {
             activeTurnId?: string | null;
-            items: components["schemas"]["ThreadTimelineSnapshotItem"][];
             liveState: components["schemas"]["ThreadLiveState"];
             pendingApprovalRequests: components["schemas"]["PendingTimelineRequestSummary"][];
             pendingUserInputRequests: components["schemas"]["PendingTimelineRequestSummary"][];
@@ -2523,7 +2521,7 @@ export interface components {
             rows?: components["schemas"]["ThreadTimelineRow"][] | null;
             scope: components["schemas"]["ThreadViewPatchScope"];
             threadId: string;
-            turns: components["schemas"]["ThreadTimelineSnapshotTurn"][];
+            turns?: components["schemas"]["ThreadTimelineSnapshotTurn"][];
             upsertRows?: components["schemas"]["ThreadTimelineRow"][];
             /** Format: int64 */
             viewRevision: number;
@@ -2565,13 +2563,54 @@ export interface components {
             /** Format: int64 */
             updatedAt: number;
         };
+        TimelineDisplayItemPayload: {
+            action?: unknown;
+            agentNickname?: string | null;
+            agentRole?: string | null;
+            agent_nickname?: string | null;
+            agent_role?: string | null;
+            agentsStates?: unknown;
+            args?: unknown;
+            arguments?: unknown;
+            change?: unknown;
+            changes?: unknown;
+            command?: string | null;
+            content?: unknown;
+            cwd?: string | null;
+            diff?: string | null;
+            id?: string | null;
+            message?: string | null;
+            model?: string | null;
+            name?: string | null;
+            output?: string | null;
+            path?: string | null;
+            phase?: string | null;
+            prompt?: string | null;
+            query?: string | null;
+            reasoningEffort?: string | null;
+            receiverThreadIds?: string[] | null;
+            result?: string | null;
+            review?: string | null;
+            revisedPrompt?: string | null;
+            revised_prompt?: string | null;
+            savedPath?: string | null;
+            saved_path?: string | null;
+            status?: string | null;
+            stderr?: string | null;
+            stdout?: string | null;
+            summary?: unknown;
+            text?: string | null;
+            tool?: string | null;
+            toolName?: string | null;
+            type?: string | null;
+        };
         TimelineItemDeltaPayload: {
             delta: string;
             rawPayload: unknown;
             source: components["schemas"]["TimelineUpdateSource"];
         };
         TimelineItemUpsertPayload: {
-            item: unknown;
+            item: components["schemas"]["TimelineDisplayItemPayload"];
             itemId: string;
             itemSnapshot: components["schemas"]["ThreadItemSnapshot"];
             source: components["schemas"]["TimelineUpdateSource"];

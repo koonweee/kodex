@@ -3,6 +3,7 @@ import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef } fr
 import type { Approval, EventEnvelope, ThreadSummary, ThreadViewThreadSummary } from "../api/client";
 import { getThreadDetail, getThreadTimelinePage } from "../api/client";
 import { isApprovalEvent } from "../approvals/state";
+import { recordLiveEvent, recordReducerBatch } from "../events/liveDiagnostics";
 import { createEventStreamClient } from "../events/stream";
 import { errorMessageFrom } from "../shared/values";
 import { applyTimelineEventBatch } from "./batch";
@@ -120,7 +121,13 @@ export function useSelectedThreadTimeline({
     if (events.length === 0) {
       return;
     }
-    setTimeline((current) => applyTimelineEventBatch(current, events));
+    setTimeline((current) => {
+      const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
+      const next = applyTimelineEventBatch(current, events);
+      const finishedAt = typeof performance !== "undefined" ? performance.now() : startedAt;
+      recordReducerBatch(events.length, finishedAt - startedAt);
+      return next;
+    });
   }
 
   function cancelQueuedTimelineEvents() {
@@ -263,6 +270,7 @@ export function useSelectedThreadTimeline({
           }
         },
         onEvent: (event) => {
+          recordLiveEvent("selected", event);
           if (selectedThreadStreamToken.current !== streamToken) {
             return;
           }

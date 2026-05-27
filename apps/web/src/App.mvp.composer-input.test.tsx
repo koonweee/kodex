@@ -123,7 +123,11 @@ describe("MVP composer input flows", () => {
     expect(within(timelineElement(container)).getByText("Ship it")).toBeInTheDocument();
     expect(within(timelineElement(container)).queryByText("Sending")).not.toBeInTheDocument();
 
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    let selectedThreadStream: FakeEventSource | undefined;
+    await waitFor(() => {
+      selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+      expect(selectedThreadStream).toBeDefined();
+    });
     act(() => {
       selectedThreadStream?.emit(projectionPatchEvent({
         id: "projection-sent-user",
@@ -660,7 +664,7 @@ describe("MVP composer input flows", () => {
         threadId: thread.id,
         turnId: null,
         itemId: null,
-        payload: { scope: "lifecycle", viewRevision: 3, threadId: thread.id, activeTurnId: null, liveState: "idle", items: [] },
+        payload: { scope: "lifecycle", viewRevision: 3, threadId: thread.id, activeTurnId: null, liveState: "idle" },
         receivedAt: "2026-05-02T00:00:02Z",
       });
       globalStream?.emit({

@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { EventEnvelope } from "../api/client";
-import { applyTimelineEventBatch } from "./batch";
-import { applyLiveTimelineUpdate, createTimelineState } from "./reducer";
+import { applyTimelineEventBatch, coalesceTimelineEventBatch } from "./batch";
+import {
+  applyLiveTimelineUpdate,
+  createTimelineState,
+  getTimelineReducerInstrumentationForTest,
+  resetTimelineReducerInstrumentationForTest,
+} from "./reducer";
 
 function event(overrides: Partial<EventEnvelope> & { text?: string }): EventEnvelope {
   const seq = overrides.seq ?? 1;
@@ -25,7 +30,6 @@ function event(overrides: Partial<EventEnvelope> & { text?: string }): EventEnve
       liveState: "streaming",
       upsertRows: [canonicalRow(text)],
       turns: [],
-      items: [canonicalItem(text)],
     },
     receivedAt: "2026-04-30T00:00:00Z",
     ...eventOverrides,
@@ -64,7 +68,7 @@ describe("timeline event batching", () => {
     expect(events.map((queuedEvent) => queuedEvent.id)).toEqual(originalOrder);
   });
 
-  it("applies same-frame projection patch bursts in sequence", () => {
+  it("coalesces same-frame projection patch bursts to the latest row state", () => {
     const events = [
       event({ id: "event-1", seq: 1, text: "H" }),
       event({ id: "event-2", seq: 2, text: "He" }),
@@ -78,6 +82,61 @@ describe("timeline event batching", () => {
       text: "Hello",
     });
     expect(state.items[0].debugEvents).toHaveLength(1);
+  });
+
+  it("collapses large same-frame turn patch bursts before reducer application", () => {
+    const events = Array.from({ length: 100 }, (_, index) =>
+      event({ id: `event-${index + 1}`, seq: index + 1, text: `chunk-${index + 1}` }),
+    );
+
+    expect(coalesceTimelineEventBatch(events)).toHaveLength(1);
+    const state = applyTimelineEventBatch(createTimelineState(), events);
+
+    expect(state.items).toHaveLength(1);
+    expect(state.items[0]).toMatchObject({ text: "chunk-100" });
+    expect(state.items[0].debugEvents).toHaveLength(1);
+    expect(state.lastSeq).toBe(100);
+    expect(state.viewRevision).toBe(100);
+  });
+
+  it("does not re-index every large-thread row for one turn patch", () => {
+    const fullSnapshot = event({
+      id: "event-full-snapshot",
+      seq: 1,
+      payload: {
+        scope: "full_snapshot",
+        viewRevision: 1,
+        threadId: "thread-1",
+        activeTurnId: "turn-1",
+        liveState: "streaming",
+        rows: Array.from({ length: 1000 }, (_, index) => canonicalRow(`row-${index + 1}`, index + 1)),
+        turns: [],
+      },
+    });
+    const initial = applyLiveTimelineUpdate(createTimelineState(), fullSnapshot);
+
+    resetTimelineReducerInstrumentationForTest();
+    const next = applyLiveTimelineUpdate(
+      initial,
+      event({
+        id: "event-turn-patch",
+        seq: 2,
+        text: "updated row 1000",
+        payload: {
+          scope: "turn",
+          viewRevision: 2,
+          threadId: "thread-1",
+          activeTurnId: "turn-1000",
+          liveState: "streaming",
+          upsertRows: [canonicalRow("updated row 1000", 1000)],
+          turns: [],
+        },
+      }),
+    );
+
+    expect(next.items).toHaveLength(1000);
+    expect(next.items.at(-1)).toMatchObject({ text: "updated row 1000" });
+    expect(getTimelineReducerInstrumentationForTest().turnPatchIndexedRows).toBeLessThanOrEqual(2);
   });
 
   it("keeps the latest same-frame canonical row state after sequential patches", () => {
@@ -112,33 +171,33 @@ describe("timeline event batching", () => {
   });
 });
 
-function canonicalItem(text: string) {
+function canonicalItem(text: string, index = 1) {
   return {
-    id: "projection-turn-1-answer-1",
+    id: `projection-turn-${index}-answer-${index}`,
     threadId: "thread-1",
-    turnId: "turn-1",
-    itemId: "answer-1",
+    turnId: `turn-${index}`,
+    itemId: `answer-${index}`,
     itemType: "agentMessage",
-    displayOrder: 1,
+    displayOrder: index,
     status: "running",
     timestampMs: 1,
     codexMethod: "item/upsert",
     payload: {
       source: "gatewayStream",
-      turnId: "turn-1",
-      itemId: "answer-1",
-      item: { id: "answer-1", type: "agentMessage", text },
+      turnId: `turn-${index}`,
+      itemId: `answer-${index}`,
+      item: { id: `answer-${index}`, type: "agentMessage", text },
       itemSnapshot: {
-        id: "answer-1",
+        id: `answer-${index}`,
         itemType: "agentMessage",
-        rawPayload: { id: "answer-1", type: "agentMessage", text },
+        rawPayload: { id: `answer-${index}`, type: "agentMessage", text },
       },
     },
   };
 }
 
-function canonicalRow(text: string) {
-  const item = canonicalItem(text);
+function canonicalRow(text: string, index = 1) {
+  const item = canonicalItem(text, index);
   return {
     id: `item-${item.id}`,
     kind: "assistant_message",

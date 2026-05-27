@@ -30,7 +30,7 @@ describe("thread events", () => {
           kind: "thread_view.patch",
           codexMethod: "thread_view/patch",
           threadId: "thread-1",
-          payload: { scope: "lifecycle", threadId: "thread-1", liveState: "idle", activeTurnId: null, items: [] },
+          payload: { scope: "lifecycle", threadId: "thread-1", liveState: "idle", activeTurnId: null },
         }),
       ),
     ).toEqual({ threadId: "thread-1", seq: 10 });
@@ -41,7 +41,7 @@ describe("thread events", () => {
           kind: "thread_view.patch",
           codexMethod: "thread_view/patch",
           threadId: "thread-1",
-          payload: { scope: "lifecycle", threadId: "thread-1", liveState: "streaming", activeTurnId: "turn-1", items: [] },
+          payload: { scope: "lifecycle", threadId: "thread-1", liveState: "streaming", activeTurnId: "turn-1" },
         }),
       ),
     ).toBeNull();

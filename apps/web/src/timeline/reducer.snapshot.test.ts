@@ -357,6 +357,16 @@ describe("timeline canonical snapshots and patches", () => {
       type: "work",
       collapsedRows: [{ type: "file_changes" }],
     });
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
+      viewRevision: 3,
+      activeTurnId: null,
+      liveState: "idle",
+      rows: undefined,
+      upsertRows: [canonicalRow(user)],
+    }));
+
+    expect(state.rows.map((row) => row.key)).toEqual(["row-projection-turn-1-user-1"]);
   });
 
   it("dedupes repeated file changes rows with identical visible entries from live patches", () => {

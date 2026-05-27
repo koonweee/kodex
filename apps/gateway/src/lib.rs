@@ -6,6 +6,8 @@ pub mod automations;
 pub mod config;
 pub mod error;
 pub mod events;
+mod events_replay;
+mod events_synthetic;
 pub mod mcp;
 pub mod notifications;
 pub mod performance;
@@ -17,6 +19,8 @@ pub mod skills;
 pub mod static_assets;
 pub mod store;
 pub mod thread_view;
+pub mod thread_view_patch;
+mod thread_view_projection;
 pub mod turn_lifecycle;
 
 pub use api::{build_router, AppState};

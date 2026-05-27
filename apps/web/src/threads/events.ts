@@ -4,7 +4,7 @@ import { asRecord, numberValue, stringValue } from "../shared/values";
 
 type ThreadRuntimeStatus = "active" | "idle";
 type ThreadStatusUpdate = { threadId: string; status: ThreadRuntimeStatus; updatedAt: number | null };
-type ThreadUpsert =
+export type ThreadUpsert =
   | { scope: "project"; projectId: string; thread: ThreadSummary }
   | { scope: "chat"; thread: ThreadSummary };
 

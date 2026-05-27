@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+Complete.
 
 ## Context
 
@@ -205,3 +205,17 @@ Browser validation:
 - Incremental reducer indexing can introduce subtle ordering and hidden-item bugs. Keep full snapshots authoritative and add tests for file-change rows, work rows, optimistic user rows, and unknown fallback rows before optimizing.
 - Diagnostics can become noisy or privacy-sensitive if labels include raw payload data. Treat privacy-safe labels as an exit criterion, not a cleanup note.
 
+## Completion Notes
+
+- Removed serialized duplicate flat `timeline.items` and `thread_view.patch.items` from the public hot-path DTOs while keeping server-internal item vectors for projection math.
+- Replaced serialized app-server raw item payloads in timeline rows with the typed `TimelineDisplayItemPayload` display DTO and truncation coverage for large command output.
+- Moved `ThreadViewPatch` scope/validation DTOs into `apps/gateway/src/thread_view_patch.rs` and re-exported them from `thread_view` for API stability.
+- Added serialized-size regression coverage for full snapshot, active-turn, and lifecycle patches.
+- Added selected-thread event batch coalescing for repeated same-frame turn patches against the same row, plus row-key, turn, and item indexes so turn patches update affected rows without rebuilding indexes from the whole thread.
+- Added a regression for successive shape-changing turn patches and fixed incremental row-key secondary indexes so newly upserted rows are indexed for later turn patches.
+- Extracted global/selected live event dispatch into `apps/web/src/events/liveRouting.ts`, moved backend SSE replay/filtering plus synthetic refresh-event construction into dedicated gateway modules, and moved thread-view patch construction into `apps/gateway/src/thread_view_projection.rs`.
+- Extracted sidebar live cache routing and subagent-discovery event decisions from `App.tsx` into `apps/web/src/threads/liveCacheRouting.ts`.
+- Split additional shell responsibilities into `events/useGlobalLiveStream.ts`, `threads/useSelectedThreadAttach.ts`, `threads/selection.ts`, `shell/browserRouting.ts`, and `shell/queryResultLoadState.ts`; moved backend event and thread-view tests into child test modules.
+- Added dev-only live diagnostics for SSE event counts, patch bytes by scope, selected/global duplicate drops, reducer batch duration, cache invalidations, refresh-required counts, and browser long tasks when supported.
+- Restarted `kodex-prod` on the current workspace and validated the reference-project large thread across desktop, narrow, and iPhone-shaped browser viewports, including older-history loading and a short running prompt.
+- Regenerated frontend OpenAPI types after the DTO change.

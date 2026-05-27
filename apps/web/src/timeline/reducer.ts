@@ -24,10 +24,18 @@ import {
   createTimelineState,
   createTimelineStateFromDraft,
   indexesForState,
+  indexTimelineRow,
+  optimisticUserRowKeysByText,
   prepareTimelineIndexesForUpdate,
+  timelineRowByKey,
+  timelineRowKeysByItemId,
+  timelineRowKeysByTurnId,
+  timelineRowItems,
+  timelineRows,
   timelineItemById,
   timelineItems,
   timelineTurnById,
+  unindexTimelineRow,
   type TimelineCollabAgent,
   type TimelineCollabAgentPresentation,
   type TimelineFileChangesRow,
@@ -75,6 +83,22 @@ export function applyLiveTimelineUpdate(state: TimelineState, event: EventEnvelo
 }
 
 export const applyTimelineEvent = applyLiveTimelineUpdate;
+
+type TimelineReducerInstrumentation = {
+  turnPatchIndexedRows: number;
+};
+
+const reducerInstrumentation: TimelineReducerInstrumentation = {
+  turnPatchIndexedRows: 0,
+};
+
+export function getTimelineReducerInstrumentationForTest(): TimelineReducerInstrumentation {
+  return { ...reducerInstrumentation };
+}
+
+export function resetTimelineReducerInstrumentationForTest() {
+  reducerInstrumentation.turnPatchIndexedRows = 0;
+}
 
 export function applyDebugEvent(state: TimelineState, event: EventEnvelope): TimelineState {
   const item = createDiagnosticItem(event);
@@ -247,10 +271,6 @@ function withHistoryPageState(
   });
 }
 
-function canonicalTimelineItemsInDisplayOrder(timeline: ThreadTimelineSnapshot): ThreadTimelineSnapshotItem[] {
-  return [...timeline.items].sort((left, right) => left.displayOrder - right.displayOrder);
-}
-
 function canonicalTimelineRowsToViewRows(
   threadId: string,
   canonicalRows: ThreadTimelineRow[],
@@ -376,28 +396,6 @@ function timelineRowDisplayOrder(row: TimelineRow): number {
   return row.displayOrder;
 }
 
-function applyCanonicalSnapshotItem(
-  state: TimelineState,
-  threadId: string,
-  item: ThreadTimelineSnapshotItem,
-): TimelineState {
-  const event = canonicalSnapshotItemEvent(threadId, item);
-  const currentIndexes = indexesForState(state);
-  const next = timelineDraftFromState(state, {
-    indexes: prepareTimelineIndexesForUpdate(currentIndexes),
-  });
-  const existingItem = timelineItemById(next.indexes, item.id);
-  const presentation = createPresentationItem(event, existingItem, {
-    collabAgentNames: collabAgentNameMap(next.indexes),
-  });
-  if (!presentation) {
-    addHiddenDebugItem(next, event);
-    return createTimelineStateFromDraft(next);
-  }
-
-  return applyPresentedCanonicalItem(next, event, canonicalPresentationItem(presentation, item));
-}
-
 function canonicalSnapshotItemEvent(threadId: string, item: ThreadTimelineSnapshotItem): EventEnvelope {
   return {
     id: item.id,
@@ -519,6 +517,7 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
   if (removedRowIds.size === 0 && upsertRows.length === 0) {
     return state;
   }
+  const currentIndexes = prepareTimelineIndexesForUpdate(indexesForState(state));
   const mappedUpserts = canonicalTimelineRowsToViewRows(
     threadId,
     upsertRows,
@@ -526,28 +525,92 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
   );
   const upsertsByKey = new Map(mappedUpserts.rows.map((row) => [row.key, row]));
   const replacedItemIds = new Set(mappedUpserts.rows.flatMap(timelineRowCanonicalItemIds));
+  const replacedTurnIds = new Set(mappedUpserts.rows.map((row) => row.turnId).filter((turnId): turnId is string => Boolean(turnId)));
   const canonicalUserTexts = canonicalUserMessageTexts(mappedUpserts.rows);
-  const rows = [
-    ...state.rows.filter(
-      (row) =>
-        !removedRowIds.has(row.key) &&
-        !upsertsByKey.has(row.key) &&
-        !timelineRowCanonicalItemIds(row).some((itemId) => replacedItemIds.has(itemId)) &&
-        !optimisticUserRowMatches(row, canonicalUserTexts),
-    ),
-    ...mappedUpserts.rows,
-  ].sort((left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right));
-  const normalizedRows = normalizeTimelineRows(rows);
-  const currentIndexes = createEmptyTimelineIndexes();
-  for (const row of normalizedRows) {
-    addTimelineRowItemsToIndexes(row, currentIndexes);
+  const affectedRowKeys = affectedTurnPatchRowKeys(
+    currentIndexes,
+    removedRowIds,
+    upsertsByKey,
+    replacedItemIds,
+    replacedTurnIds,
+    canonicalUserTexts,
+  );
+  const draft = timelineDraftFromState(state, { indexes: currentIndexes });
+  for (const rowKey of affectedRowKeys) {
+    const row = timelineRowByKey(currentIndexes, rowKey);
+    if (row) {
+      removeTimelineRowFromDraft(draft, row);
+    }
   }
-  currentIndexes.hiddenItems.push(...state.hiddenItems, ...mappedUpserts.hiddenItems);
+  for (const row of mappedUpserts.rows) {
+    addTimelineRowToDraft(draft, row);
+  }
+  reducerInstrumentation.turnPatchIndexedRows += affectedRowKeys.size + mappedUpserts.rows.length;
+  currentIndexes.hiddenItems.push(...mappedUpserts.hiddenItems);
+  currentIndexes.rowKeys = [...currentIndexes.rowKeys].sort((left, right) => {
+    const leftRow = timelineRowByKey(currentIndexes, left);
+    const rightRow = timelineRowByKey(currentIndexes, right);
+    return (leftRow ? timelineRowDisplayOrder(leftRow) : 0) - (rightRow ? timelineRowDisplayOrder(rightRow) : 0);
+  });
+  const rows = timelineRows(currentIndexes);
   return createTimelineStateFromDraft({
     ...timelineDraftFromState(state),
     indexes: currentIndexes,
-    rows: normalizedRows,
+    rows,
+    rowsAreIndexed: true,
   });
+}
+
+function affectedTurnPatchRowKeys(
+  indexes: ReturnType<typeof indexesForState>,
+  removedRowIds: Set<string>,
+  upsertsByKey: Map<string, TimelineRow>,
+  replacedItemIds: Set<string>,
+  replacedTurnIds: Set<string>,
+  canonicalUserTexts: Set<string>,
+): Set<string> {
+  const affected = new Set<string>(removedRowIds);
+  for (const key of upsertsByKey.keys()) {
+    affected.add(key);
+  }
+  for (const itemId of replacedItemIds) {
+    for (const rowKey of timelineRowKeysByItemId(indexes, itemId)) {
+      affected.add(rowKey);
+    }
+  }
+  for (const turnId of replacedTurnIds) {
+    for (const rowKey of timelineRowKeysByTurnId(indexes, turnId)) {
+      affected.add(rowKey);
+    }
+  }
+  for (const text of canonicalUserTexts) {
+    for (const rowKey of optimisticUserRowKeysByText(indexes, text)) {
+      affected.add(rowKey);
+    }
+  }
+  return affected;
+}
+
+function removeTimelineRowFromDraft(draft: TimelineDraft, row: TimelineRow) {
+  unindexTimelineRow(draft.indexes, row);
+  draft.indexes.rowKeys = draft.indexes.rowKeys.filter((key) => key !== row.key);
+  draft.indexes.rowByKey.delete(row.key);
+  for (const item of timelineRowItems(row)) {
+    removeItem(draft, item.id);
+  }
+}
+
+function addTimelineRowToDraft(draft: TimelineDraft, row: TimelineRow) {
+  const existing = draft.indexes.rowByKey.get(row.key);
+  if (existing) {
+    unindexTimelineRow(draft.indexes, existing);
+  }
+  draft.indexes.rowByKey.set(row.key, row);
+  if (!draft.indexes.rowKeys.includes(row.key)) {
+    draft.indexes.rowKeys.push(row.key);
+  }
+  addTimelineRowItemsToIndexes(row, draft.indexes);
+  indexTimelineRow(draft.indexes, row);
 }
 
 type TimelineCollapsedRow = Exclude<TimelineRow, { type: "work" }>;
@@ -778,19 +841,6 @@ function optimisticUserRowMatches(
     return false;
   }
   return canonicalUserTexts.has(row.item.text);
-}
-
-function timelineRowItems(row: TimelineRow): TimelineItem[] {
-  if (row.type === "item") {
-    return [row.item];
-  }
-  if (row.type === "activity") {
-    return row.items;
-  }
-  if (row.type === "work") {
-    return row.collapsedRows.flatMap(timelineRowItems);
-  }
-  return [];
 }
 
 function applyPresentedCanonicalItem(
