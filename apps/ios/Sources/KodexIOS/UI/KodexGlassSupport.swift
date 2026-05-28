@@ -1,4 +1,5 @@
 import SwiftUI
+import KodexCore
 
 struct KodexGlassCluster<Content: View>: View {
     let spacing: CGFloat
@@ -120,10 +121,15 @@ struct KodexBottomComposerShell<Content: View>: View {
 
     var body: some View {
         content()
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
-            .padding(.bottom, 10)
-            .kodexGlass(cornerRadius: 31, tint: KodexTheme.panelBackground.opacity(0.52))
+            .padding(.horizontal, 10)
+            .padding(.top, 9)
+            .padding(.bottom, 9)
+            .background(KodexTheme.composerChrome, in: RoundedRectangle(cornerRadius: 31, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 31, style: .continuous)
+                    .stroke(KodexTheme.hairline, lineWidth: 1)
+            )
+            .kodexGlass(cornerRadius: 31, tint: KodexTheme.composerChrome.opacity(0.72))
             .padding(.horizontal, 10)
             .padding(.top, 8)
             .padding(.bottom, 8)
@@ -135,6 +141,57 @@ struct KodexBottomComposerShell<Content: View>: View {
                 )
                 .ignoresSafeArea()
             )
+    }
+}
+
+struct KodexStatusDot: View {
+    let status: GatewayConnectionStatus
+
+    var body: some View {
+        Image(systemName: "circle.fill")
+            .font(.system(size: 8, weight: .bold))
+            .foregroundStyle(color)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityIdentifier("GatewayStatusDot")
+    }
+
+    private var color: Color {
+        switch status {
+        case .connected:
+            return KodexTheme.positive
+        case .degraded:
+            return KodexTheme.warning
+        case .offline, .invalidURL:
+            return KodexTheme.destructive
+        }
+    }
+
+    private var accessibilityLabel: String {
+        switch status {
+        case .connected:
+            return "Gateway connected"
+        case .degraded:
+            return "Gateway degraded"
+        case .offline:
+            return "Gateway offline"
+        case .invalidURL:
+            return "Gateway URL invalid"
+        }
+    }
+}
+
+struct KodexProfileAvatar: View {
+    let initial: String
+
+    var body: some View {
+        Text(initial)
+            .font(.headline.weight(.semibold))
+            .foregroundStyle(KodexTheme.primaryText)
+            .frame(width: 44, height: 44)
+            .background(KodexTheme.panelBackground, in: Circle())
+            .overlay(Circle().stroke(KodexTheme.hairline, lineWidth: 1))
+            .accessibilityLabel("Profile \(initial)")
+            .accessibilityIdentifier("ProfileAvatar")
     }
 }
 

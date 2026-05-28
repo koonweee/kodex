@@ -30,7 +30,6 @@ struct ConnectionView: View {
     @State private var chatsCollapsed = false
     @State private var collapsedProjectIds: Set<String> = []
     @State private var isConnectionSettingsPresented = false
-    @State private var notificationStatus = "Notifications not enabled"
     @State private var selectedStreamTask: Task<Void, Never>?
     @State private var selectedStreamThreadID: String?
     @State private var globalStreamTask: Task<Void, Never>?
@@ -60,7 +59,6 @@ struct ConnectionView: View {
                 selectedThreadID: selectedThreadID,
                 connection: state.connection,
                 accountState: accountState,
-                notificationStatus: notificationStatus,
                 approvalThreadIds: Set(state.approvals.map(\.threadId)),
                 isBusy: isBusy,
                 launchMode: launchMode,
@@ -124,6 +122,7 @@ struct ConnectionView: View {
                     statusMessage: statusMessage,
                     composerSettings: composerSettings,
                     permissionsPreset: composerPermissionsPreset,
+                    canLoadOlderHistory: true,
                     onShowSidebar: { preferredCompactColumn = .sidebar },
                     onSend: { await sendComposer() },
                     onSettingsChange: { settings in await updateComposerSettings(settings) },
@@ -514,6 +513,24 @@ struct ConnectionView: View {
             statusMessage = "No older timeline page available."
             return
         }
+        guard launchMode == .live else {
+            let olderRows = fixtureOlderTimelineRows(threadId: threadId, before: currentDetail.timeline.rows.first?.displayOrder ?? 1)
+            let mergedRows = WorkspaceNormalizer.mergeOlderHistory(current: currentDetail.timeline.rows, older: olderRows)
+            let mergedDetail = ThreadDetail(
+                thread: currentDetail.thread,
+                timeline: ThreadTimeline(
+                    threadId: currentDetail.timeline.threadId,
+                    liveState: currentDetail.timeline.liveState,
+                    viewRevision: currentDetail.timeline.viewRevision + 1,
+                    rows: mergedRows,
+                    olderCursor: nil,
+                    hasOlder: false
+                )
+            )
+            state = FixtureAppState(connection: state.connection, workspace: state.workspace, selectedThread: mergedDetail, approvals: state.approvals)
+            statusMessage = nil
+            return
+        }
         await runLiveAction {
             let page = try await service().loadOlderTimeline(threadId: threadId, cursor: cursor)
             let mergedRows = WorkspaceNormalizer.mergeOlderHistory(current: currentDetail.timeline.rows, older: page.timeline.rows)
@@ -529,6 +546,18 @@ struct ConnectionView: View {
                 )
             )
             state = FixtureAppState(connection: state.connection, workspace: state.workspace, selectedThread: mergedDetail, approvals: state.approvals)
+        }
+    }
+
+    private func fixtureOlderTimelineRows(threadId: String, before firstDisplayOrder: Int64) -> [TimelineRow] {
+        (1...3).map { index in
+            TimelineRow(
+                id: "\(threadId)-older-\(index)",
+                kind: .message,
+                displayOrder: firstDisplayOrder - Int64(4 - index),
+                title: index.isMultiple(of: 2) ? "Kodex" : "You",
+                body: "Older fixture row \(index)."
+            )
         }
     }
 
@@ -653,13 +682,13 @@ struct ConnectionView: View {
         do {
             NativeNotificationRuntime.gatewayConfiguration = try GatewayConfiguration(userInput: gatewayURL)
             guard try await authorizer.requestAuthorization() else {
-                notificationStatus = "Notifications denied"
+                statusMessage = "Notifications denied"
                 return
             }
             await authorizer.registerForRemoteNotifications()
-            notificationStatus = "Notification registration requested"
+            statusMessage = "Notification registration requested"
         } catch {
-            notificationStatus = "Notifications unavailable: \(error.localizedDescription)"
+            statusMessage = "Notifications unavailable: \(error.localizedDescription)"
         }
     }
 }

@@ -16,6 +16,7 @@ struct ThreadDetailView: View {
     let statusMessage: String?
     let composerSettings: ComposerRunSettings
     let permissionsPreset: String?
+    let canLoadOlderHistory: Bool
     let onShowSidebar: () -> Void
     let onSend: () async -> Void
     let onSettingsChange: (ComposerRunSettings) async -> Void
@@ -31,6 +32,8 @@ struct ThreadDetailView: View {
     let onQueuedDelete: (String) async -> Void
     @State private var isRenamePresented = false
     @State private var renameText = ""
+    @State private var hasSeenOlderSentinel = false
+    @State private var olderLoadInFlightFor: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -78,9 +81,18 @@ struct ThreadDetailView: View {
             NavigationStack {
                 TextEditor(text: $composerText)
                     .font(.body)
+                    .foregroundStyle(KodexTheme.primaryText)
+                    .scrollContentBackground(.hidden)
+                    .background(KodexTheme.background)
                     .padding()
                     .navigationTitle("Compose")
+                    .toolbarBackground(KodexTheme.background, for: .navigationBar)
                     .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") {
+                                isExpandedComposerPresented = false
+                            }
+                        }
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Send") {
                                 Task {
@@ -154,19 +166,8 @@ struct ThreadDetailView: View {
 
     private var timeline: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                Button {
-                    Task {
-                        await onLoadOlder()
-                    }
-                } label: {
-                    Label("Load Older", systemImage: "clock.arrow.circlepath")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .tint(KodexTheme.accent)
-                .disabled(!detail.timeline.hasOlder || detail.timeline.olderCursor == nil)
-                .accessibilityIdentifier("LoadOlderTimeline")
+            LazyVStack(alignment: .leading, spacing: 10) {
+                olderHistorySentinel
 
                 ForEach(queuedInputs) { queuedInput in
                     QueuedInputCard(
@@ -192,6 +193,45 @@ struct ThreadDetailView: View {
         }
         .scrollContentBackground(.hidden)
         .accessibilityIdentifier("ThreadTimeline")
+    }
+
+    @ViewBuilder
+    private var olderHistorySentinel: some View {
+        if canLoadOlderHistory, detail.timeline.hasOlder, let cursor = detail.timeline.olderCursor {
+            HStack {
+                Spacer()
+                if olderLoadInFlightFor == cursor {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(KodexTheme.secondaryText)
+                        .accessibilityLabel("Loading older history")
+                } else {
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .accessibilityHidden(true)
+                }
+                Spacer()
+            }
+            .frame(height: 10)
+            .onAppear {
+                guard hasSeenOlderSentinel else {
+                    hasSeenOlderSentinel = true
+                    return
+                }
+                guard olderLoadInFlightFor != cursor else {
+                    return
+                }
+                olderLoadInFlightFor = cursor
+                Task {
+                    await onLoadOlder()
+                    await MainActor.run {
+                        if olderLoadInFlightFor == cursor {
+                            olderLoadInFlightFor = nil
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -255,37 +295,42 @@ struct TimelineRowView: View {
     var body: some View {
         HStack(alignment: .bottom) {
             if isUserMessage {
-                Spacer(minLength: 54)
+                Spacer(minLength: 46)
                 bubble
             } else {
                 VStack(alignment: .leading, spacing: 6) {
-                    if shouldShowAuthor {
-                        Text(row.title)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(KodexTheme.secondaryText)
-                            .padding(.leading, 6)
-                    }
                     bubble
                 }
-                Spacer(minLength: 54)
+                Spacer(minLength: isStatusRow ? 28 : 46)
             }
         }
         .accessibilityIdentifier("TimelineRow-\(row.kind.rawValue)")
     }
 
     private var bubble: some View {
-        Text(row.body)
-            .font(.body)
-            .lineSpacing(3)
-            .foregroundStyle(KodexTheme.primaryText.opacity(isStatusRow ? 0.82 : 0.94))
-            .textSelection(.enabled)
-            .padding(.horizontal, isStatusRow ? 14 : 18)
-            .padding(.vertical, isStatusRow ? 10 : 14)
-            .background(bubbleBackground, in: RoundedRectangle(cornerRadius: bubbleRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: bubbleRadius, style: .continuous)
-                    .stroke(isStatusRow ? KodexTheme.hairline : Color.clear, lineWidth: 1)
-            )
+        Group {
+            if isThoughtRow {
+                Label(row.body, systemImage: "chevron.right")
+                    .labelStyle(.titleAndIcon)
+                    .font(.callout)
+                    .foregroundStyle(KodexTheme.mutedText)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+            } else {
+                Text(row.body)
+                    .font(isStatusRow ? .callout : .body)
+                    .lineSpacing(3)
+                    .foregroundStyle(KodexTheme.primaryText.opacity(isStatusRow ? 0.78 : 0.94))
+                    .textSelection(.enabled)
+                    .padding(.horizontal, isStatusRow ? 12 : 16)
+                    .padding(.vertical, isStatusRow ? 8 : 12)
+                    .background(bubbleBackground, in: RoundedRectangle(cornerRadius: bubbleRadius, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: bubbleRadius, style: .continuous)
+                            .stroke(isStatusRow ? KodexTheme.hairline : Color.clear, lineWidth: 1)
+                    )
+            }
+        }
     }
 
     private var isUserMessage: Bool {
@@ -296,12 +341,12 @@ struct TimelineRowView: View {
         row.kind != .message
     }
 
-    private var shouldShowAuthor: Bool {
-        row.kind == .message && !isUserMessage && !row.title.isEmpty
+    private var isThoughtRow: Bool {
+        row.kind == .work || row.kind == .activity
     }
 
     private var bubbleRadius: CGFloat {
-        isStatusRow ? 18 : 28
+        isStatusRow ? 16 : 26
     }
 
     private var bubbleBackground: Color {
@@ -314,9 +359,9 @@ struct TimelineRowView: View {
         case .error:
             return KodexTheme.destructive.opacity(0.16)
         case .message:
-            return KodexTheme.background
+            return KodexTheme.assistantBubbleBackground
         default:
-            return KodexTheme.panelBackground.opacity(0.78)
+            return KodexTheme.panelBackground.opacity(0.42)
         }
     }
 }
@@ -349,10 +394,12 @@ struct ComposerBar: View {
                     TextField("", text: $text, prompt: Text("type clever thing here"), axis: .vertical)
                         .lineLimit(1...4)
                         .font(.body)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 13)
+                        .padding(.horizontal, 15)
+                        .padding(.vertical, 12)
                         .foregroundStyle(KodexTheme.primaryText)
-                        .background(KodexTheme.elevatedBackground, in: Capsule(style: .continuous))
+                        .tint(KodexTheme.primaryText)
+                        .background(KodexTheme.composerInput, in: Capsule(style: .continuous))
+                        .overlay(Capsule(style: .continuous).stroke(KodexTheme.hairline, lineWidth: 1))
                         .accessibilityLabel("Message Kodex")
                         .accessibilityIdentifier("ComposerInput")
                     if showStopAction {
@@ -374,7 +421,7 @@ struct ComposerBar: View {
                             .frame(width: 30, height: 30)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(KodexTheme.secondaryText)
+                    .foregroundStyle(KodexTheme.mutedText)
                     .accessibilityLabel("Expanded Composer")
                     permissionsMenu
                     modelMenu
@@ -409,9 +456,11 @@ struct ComposerBar: View {
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 17, weight: .semibold))
-                .frame(width: KodexTheme.iconButtonSize, height: KodexTheme.iconButtonSize)
+                .frame(width: KodexTheme.composerButtonSize, height: KodexTheme.composerButtonSize)
                 .foregroundStyle(KodexTheme.primaryText)
-                .kodexGlass(cornerRadius: KodexTheme.iconButtonSize / 2, tint: KodexTheme.panelBackground.opacity(0.38), interactive: true)
+                .background(KodexTheme.panelBackground.opacity(0.58), in: Circle())
+                .overlay(Circle().stroke(KodexTheme.hairline, lineWidth: 1))
+                .kodexGlass(cornerRadius: KodexTheme.composerButtonSize / 2, tint: KodexTheme.panelBackground.opacity(0.42), interactive: true)
         }
         .accessibilityLabel("Add Attachment")
     }
@@ -439,9 +488,12 @@ struct ComposerBar: View {
         } label: {
             Label(permissionsPreset ?? settings.sandboxDisplay, systemImage: "lock.shield")
                 .lineLimit(1)
-                .padding(.horizontal, 10)
-                .frame(height: 32)
-                .kodexGlass(cornerRadius: 16, tint: KodexTheme.panelBackground.opacity(0.36), interactive: true)
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 9)
+                .frame(height: 30)
+                .foregroundStyle(KodexTheme.secondaryText)
+                .background(KodexTheme.composerInput.opacity(0.72), in: Capsule(style: .continuous))
+                .overlay(Capsule(style: .continuous).stroke(KodexTheme.hairline, lineWidth: 1))
         }
         .accessibilityLabel("Permissions")
     }
@@ -469,9 +521,12 @@ struct ComposerBar: View {
         } label: {
             Label(settings.model ?? "default", systemImage: "cpu")
                 .lineLimit(1)
-                .padding(.horizontal, 10)
-                .frame(height: 32)
-                .kodexGlass(cornerRadius: 16, tint: KodexTheme.panelBackground.opacity(0.36), interactive: true)
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 9)
+                .frame(height: 30)
+                .foregroundStyle(KodexTheme.secondaryText)
+                .background(KodexTheme.composerInput.opacity(0.72), in: Capsule(style: .continuous))
+                .overlay(Capsule(style: .continuous).stroke(KodexTheme.hairline, lineWidth: 1))
         }
         .accessibilityLabel("Composer Options, model \(settings.model ?? "default"), reasoning \(settings.effort ?? "default"), approvals \(settings.approvalPolicy ?? "default"), permissions \(permissionsPreset ?? settings.sandboxDisplay)")
     }

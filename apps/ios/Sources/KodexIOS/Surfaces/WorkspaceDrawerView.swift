@@ -7,7 +7,6 @@ struct WorkspaceDrawerView: View {
     let selectedThreadID: String?
     let connection: GatewayConnectionStatus
     let accountState: KodexAccountState
-    let notificationStatus: String
     let approvalThreadIds: Set<String>
     let isBusy: Bool
     let launchMode: FixtureLaunchMode
@@ -91,7 +90,6 @@ struct WorkspaceDrawerView: View {
                 gatewayURL: $gatewayURL,
                 connection: connection,
                 accountState: accountState,
-                notificationStatus: notificationStatus,
                 isBusy: isBusy,
                 onRefresh: onRefresh,
                 onEnableNotifications: onEnableNotifications
@@ -101,15 +99,11 @@ struct WorkspaceDrawerView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
                 Text("Kodex")
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(KodexTheme.primaryText)
-                Text(connection.displayText)
-                    .font(.caption)
-                    .foregroundStyle(connectionColor)
-                    .lineLimit(1)
-                    .accessibilityIdentifier("GatewayStatus")
+                KodexStatusDot(status: connection)
             }
             Spacer()
             KodexGlassCluster(spacing: 8) {
@@ -241,16 +235,13 @@ struct WorkspaceDrawerView: View {
 
     private var footer: some View {
         HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(accountState.displayText)
-                    .font(.caption.weight(.medium))
+            KodexProfileAvatar(initial: profileInitial)
+            if let displayName = compactProfileName {
+                Text(displayName)
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(KodexTheme.secondaryText)
                     .lineLimit(1)
                     .accessibilityIdentifier("AccountStatus")
-                Text(notificationStatus)
-                    .font(.caption2)
-                    .foregroundStyle(KodexTheme.mutedText)
-                    .lineLimit(1)
             }
             Spacer()
             KodexIconButton(systemName: "gearshape", label: "Connection Settings") {
@@ -307,14 +298,36 @@ struct WorkspaceDrawerView: View {
         }
     }
 
-    private var connectionColor: Color {
-        switch connection {
-        case .connected:
-            return KodexTheme.positive
-        case .degraded:
-            return KodexTheme.warning
-        case .offline, .invalidURL:
-            return KodexTheme.destructive
+    private var profileInitial: String {
+        if let source = profileSource {
+            return String(source.prefix(1)).uppercased()
+        }
+        return "?"
+    }
+
+    private var compactProfileName: String? {
+        switch accountState {
+        case .authenticated:
+            return nil
+        case .requiresOpenAIAuth:
+            return "Sign in"
+        case .unknown:
+            return nil
+        case .unavailable:
+            return nil
+        }
+    }
+
+    private var profileSource: String? {
+        switch accountState {
+        case .authenticated(let email):
+            return email?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "Kodex"
+        case .requiresOpenAIAuth:
+            return "Sign in"
+        case .unknown:
+            return "Kodex"
+        case .unavailable:
+            return "Kodex"
         }
     }
 }
@@ -528,7 +541,6 @@ private struct ConnectionSettingsSheet: View {
     @Binding var gatewayURL: String
     let connection: GatewayConnectionStatus
     let accountState: KodexAccountState
-    let notificationStatus: String
     let isBusy: Bool
     let onRefresh: () async -> Void
     let onEnableNotifications: () async -> Void
@@ -541,12 +553,26 @@ private struct ConnectionSettingsSheet: View {
                     .foregroundStyle(KodexTheme.primaryText)
                     .padding(.top, 28)
 
+                HStack(spacing: 12) {
+                    KodexProfileAvatar(initial: profileInitial)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(accountSummary)
+                            .font(.headline)
+                            .foregroundStyle(KodexTheme.primaryText)
+                            .accessibilityIdentifier("AccountStatus")
+                        Text("Profile")
+                            .font(.caption)
+                            .foregroundStyle(KodexTheme.mutedText)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .background(KodexTheme.panelBackground, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+
                 settingsGroup(title: "Gateway") {
                     settingsRow(systemImage: "bolt.horizontal", title: connection.displayText)
                         .accessibilityIdentifier("GatewayStatus")
-                    settingsDivider
-                    settingsRow(systemImage: "person.crop.circle", title: accountState.displayText)
-                        .accessibilityIdentifier("AccountStatus")
                     settingsDivider
                     HStack(spacing: 12) {
                         Image(systemName: "link")
@@ -568,13 +594,12 @@ private struct ConnectionSettingsSheet: View {
                 }
 
                 settingsGroup(title: "Notifications") {
-                    settingsRow(systemImage: "bell", title: notificationStatus)
-                    settingsDivider
                     Button("Enable Notifications") {
                         Task {
                             await onEnableNotifications()
                         }
                     }
+                    .disabled(isBusy)
                 }
             }
             .padding(.horizontal, 24)
@@ -616,5 +641,35 @@ private struct ConnectionSettingsSheet: View {
             .fill(KodexTheme.hairline)
             .frame(height: 1)
             .padding(.leading, 52)
+    }
+
+    private var accountSummary: String {
+        switch accountState {
+        case .authenticated:
+            return "Signed in"
+        case .requiresOpenAIAuth:
+            return "OpenAI auth required"
+        case .unknown:
+            return "Account unknown"
+        case .unavailable:
+            return "Account unavailable"
+        }
+    }
+
+    private var profileInitial: String {
+        switch accountState {
+        case .authenticated(let email):
+            return String((email?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "Kodex").prefix(1)).uppercased()
+        case .requiresOpenAIAuth:
+            return "?"
+        case .unknown, .unavailable:
+            return "K"
+        }
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }
