@@ -186,9 +186,17 @@ public struct LiveGatewayService: Sendable {
 
     public func loadWorkspace() async throws -> WorkspaceSnapshot {
         if let generatedClient {
-            let response = try await generatedClient.get_sidebar_threads(.init())
-            return Self.workspace(try response.ok.body.json)
+            do {
+                let response = try await generatedClient.get_sidebar_threads(.init())
+                return Self.workspace(try response.ok.body.json)
+            } catch {
+                return try await loadWorkspaceFromRawDTO()
+            }
         }
+        return try await loadWorkspaceFromRawDTO()
+    }
+
+    private func loadWorkspaceFromRawDTO() async throws -> WorkspaceSnapshot {
         let response: SidebarThreadsResponseDTO = try await decode(.sidebarThreads)
         let projects = response.projects.map { project in
             WorkspaceProject(
@@ -202,6 +210,13 @@ public struct LiveGatewayService: Sendable {
             projects: projects,
             chats: response.chatThreads.threads.map { Self.workspaceThread($0) },
             pinned: response.pinnedThreads.threads.map { Self.workspaceThread($0, pinnedOverride: true) }
+        )
+    }
+
+    private static func threadDetail(from response: ThreadViewResponseDTO) -> ThreadDetail {
+        ThreadDetail(
+            thread: Self.workspaceThread(response.thread),
+            timeline: Self.timeline(response.timeline, fallbackThreadId: response.thread.id, historyPage: response.historyPage)
         )
     }
 
@@ -251,37 +266,35 @@ public struct LiveGatewayService: Sendable {
 
     public func loadThreadDetail(threadId: String) async throws -> ThreadDetail {
         if let generatedClient {
-            _ = try await generatedClient.get_thread(.init(path: .init(threadId: threadId)))
-            let response: ThreadViewResponseDTO = try await decode(.thread(threadId))
-            return ThreadDetail(
-                thread: Self.workspaceThread(response.thread),
-                timeline: Self.timeline(response.timeline, fallbackThreadId: response.thread.id, historyPage: response.historyPage)
-            )
+            do {
+                _ = try await generatedClient.get_thread(.init(path: .init(threadId: threadId)))
+                let response: ThreadViewResponseDTO = try await decode(.thread(threadId))
+                return Self.threadDetail(from: response)
+            } catch {
+                let response: ThreadViewResponseDTO = try await decode(.thread(threadId))
+                return Self.threadDetail(from: response)
+            }
         }
         let response: ThreadViewResponseDTO = try await decode(.thread(threadId))
-        return ThreadDetail(
-            thread: Self.workspaceThread(response.thread),
-            timeline: Self.timeline(response.timeline, fallbackThreadId: response.thread.id, historyPage: response.historyPage)
-        )
+        return Self.threadDetail(from: response)
     }
 
     public func loadOlderTimeline(threadId: String, cursor: String?, limit: Int? = 50) async throws -> ThreadDetail {
         if let generatedClient {
-            _ = try await generatedClient.get_thread_timeline_page(.init(
-                path: .init(threadId: threadId),
-                query: .init(cursor: cursor, limit: limit.map(Int32.init))
-            ))
-            let response: ThreadViewResponseDTO = try await decode(.threadTimelinePage(threadId: threadId, cursor: cursor, limit: limit))
-            return ThreadDetail(
-                thread: Self.workspaceThread(response.thread),
-                timeline: Self.timeline(response.timeline, fallbackThreadId: response.thread.id, historyPage: response.historyPage)
-            )
+            do {
+                _ = try await generatedClient.get_thread_timeline_page(.init(
+                    path: .init(threadId: threadId),
+                    query: .init(cursor: cursor, limit: limit.map(Int32.init))
+                ))
+                let response: ThreadViewResponseDTO = try await decode(.threadTimelinePage(threadId: threadId, cursor: cursor, limit: limit))
+                return Self.threadDetail(from: response)
+            } catch {
+                let response: ThreadViewResponseDTO = try await decode(.threadTimelinePage(threadId: threadId, cursor: cursor, limit: limit))
+                return Self.threadDetail(from: response)
+            }
         }
         let response: ThreadViewResponseDTO = try await decode(.threadTimelinePage(threadId: threadId, cursor: cursor, limit: limit))
-        return ThreadDetail(
-            thread: Self.workspaceThread(response.thread),
-            timeline: Self.timeline(response.timeline, fallbackThreadId: response.thread.id, historyPage: response.historyPage)
-        )
+        return Self.threadDetail(from: response)
     }
 
     public func createChatThread(firstMessageText: String) async throws -> WorkspaceThread {
