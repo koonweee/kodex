@@ -6,10 +6,16 @@ final class KodexIOSUITests: XCTestCase {
         let app = launch(arguments: ["--ui-testing", "--fixture-connected"])
 
         XCTAssertTrue(app.staticTexts["Release checklist"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["WorkspaceSearch"].exists)
+        XCTAssertTrue(app.buttons["New Chat"].exists)
+        XCTAssertTrue(app.staticTexts["Pinned"].exists)
+        XCTAssertTrue(app.buttons["Projects"].exists)
 
         app.staticTexts["Release checklist"].tap()
         XCTAssertTrue(app.textFields["Message Kodex"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["Stop"].exists)
+        XCTAssertTrue(app.buttons["Send"].exists)
+        XCTAssertFalse(app.buttons["Stop"].exists)
+        XCTAssertTrue(app.buttons["ThreadActions"].exists)
         XCTAssertTrue(app.staticTexts["Implement native iOS milestone coverage."].exists)
         XCTAssertTrue(app.staticTexts["xcodebuild test"].exists)
         XCTAssertTrue(app.staticTexts["Attached simulator screenshot fixture."].exists)
@@ -56,6 +62,7 @@ final class KodexIOSUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["OpenAI auth required"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["No Threads"].exists)
+        app.buttons["Connection Settings"].tap()
         XCTAssertTrue(app.buttons["Check Connection"].exists)
     }
 
@@ -69,6 +76,20 @@ final class KodexIOSUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Release checklist"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.textFields["Message Kodex"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Implement native iOS milestone coverage."].exists)
+    }
+
+    @MainActor
+    func testThreadActionMenuMatchesMobileWebOrder() {
+        let app = launch(arguments: ["--ui-testing", "--fixture-connected"])
+
+        XCTAssertTrue(app.staticTexts["Release checklist"].waitForExistence(timeout: 5))
+        app.staticTexts["Release checklist"].tap()
+        app.buttons["ThreadActions"].tap()
+
+        XCTAssertTrue(app.buttons["Pin"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Rename"].exists)
+        XCTAssertTrue(app.buttons["Notifications"].exists)
+        XCTAssertTrue(app.buttons["Archive"].exists)
     }
 
     @MainActor

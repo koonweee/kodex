@@ -84,6 +84,7 @@ The app also supports simulator UI-test fixture launch modes so workspace, degra
 
 These modes exercise native workspace/thread/timeline rendering, composer chrome, approvals, and notification payload routing with thin fixture/view models. Live gateway decoding remains intentionally thin and snapshot-oriented; the generated Swift OpenAPI client and checked-in contract define the route inventory, while `KodexCore` owns native view models and service helpers.
 Live mode uses the editable gateway URL to load real account readiness, sidebar snapshots, selected-thread snapshots, queued inputs, approvals, skills, composer sends, image uploads, Stop, pin/archive/notification actions, and notification registration.
+The mobile workspace drawer keeps connection status in the header and moves gateway URL, connection checks, and notification registration into the footer gear settings sheet.
 
 Codex should prefer the Build iOS Apps plugin / XcodeBuildMCP for simulator build, test, launch, screenshot, and UI inspection. Configure the session with:
 

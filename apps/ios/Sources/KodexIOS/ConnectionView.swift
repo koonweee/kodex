@@ -23,6 +23,13 @@ struct ConnectionView: View {
     @State private var isBusy = false
     @State private var statusMessage: String?
     @State private var preferredCompactColumn = NavigationSplitViewColumn.sidebar
+    @State private var workspaceScope: WorkspaceScope = .projects
+    @State private var workspaceSearchQuery = ""
+    @State private var pinnedCollapsed = false
+    @State private var projectsCollapsed = false
+    @State private var chatsCollapsed = false
+    @State private var collapsedProjectIds: Set<String> = []
+    @State private var isConnectionSettingsPresented = false
     @State private var notificationStatus = "Notifications not enabled"
     @State private var selectedStreamTask: Task<Void, Never>?
     @State private var selectedStreamThreadID: String?
@@ -39,41 +46,41 @@ struct ConnectionView: View {
         let fixtureState = FixtureStore.state(for: mode)
         self.launchMode = mode
         self.liveE2EEnabled = ProcessInfo.processInfo.environment["KODEX_IOS_LIVE_E2E"] == "1"
+        let selectedFixtureThreadID = fixtureState.selectedThread?.thread.id ?? fixtureState.workspace.firstThread?.id
         _state = State(initialValue: mode == .live ? FixtureAppState(connection: .offline(message: "Not connected"), workspace: WorkspaceSnapshot(projects: [], chats: [], pinned: []), selectedThread: nil, approvals: []) : fixtureState)
         _accountState = State(initialValue: mode == .authRequired ? .requiresOpenAIAuth : .unknown)
-        _selectedThreadID = State(initialValue: fixtureState.selectedThread?.thread.id ?? fixtureState.workspace.firstThread?.id)
+        _selectedThreadID = State(initialValue: selectedFixtureThreadID)
+        _workspaceScope = State(initialValue: fixtureState.workspace.chats.contains { $0.id == selectedFixtureThreadID } ? .chats : .projects)
     }
 
     var body: some View {
         NavigationSplitView(preferredCompactColumn: $preferredCompactColumn) {
-            List(selection: $selectedThreadID) {
-                gatewaySection
-                actionSection
-
-                if !state.workspace.pinned.isEmpty {
-                    Section("Pinned") {
-                        threadRows(state.workspace.pinned)
-                    }
-                }
-
-                if !state.workspace.chats.isEmpty {
-                    Section("Chats") {
-                        threadRows(state.workspace.chats)
-                    }
-                }
-
-                ForEach(state.workspace.projects) { project in
-                    Section(project.name) {
-                        threadRows(project.threads)
-                    }
-                }
-
-                if state.workspace.firstThread == nil {
-                    ContentUnavailableView("No Threads", systemImage: "tray", description: Text("Connect to a Kodex gateway or use a fixture launch mode."))
-                        .accessibilityIdentifier("EmptyWorkspace")
-                }
-            }
-            .navigationTitle("Kodex")
+            WorkspaceDrawerView(
+                workspace: state.workspace,
+                selectedThreadID: selectedThreadID,
+                connection: state.connection,
+                accountState: accountState,
+                notificationStatus: notificationStatus,
+                approvalThreadIds: Set(state.approvals.map(\.threadId)),
+                isBusy: isBusy,
+                launchMode: launchMode,
+                gatewayURL: $gatewayURL,
+                searchQuery: $workspaceSearchQuery,
+                scope: $workspaceScope,
+                pinnedCollapsed: $pinnedCollapsed,
+                projectsCollapsed: $projectsCollapsed,
+                chatsCollapsed: $chatsCollapsed,
+                collapsedProjectIds: $collapsedProjectIds,
+                isConnectionSettingsPresented: $isConnectionSettingsPresented,
+                onRefresh: { await refresh() },
+                onCreateChat: { await createChatThread() },
+                onCreateProjectThread: { projectId in await createProjectThread(projectId: projectId) },
+                onSelectThread: { threadID in routeToThreadLocally(threadID) },
+                onPinThread: { thread, pinned in await setPinned(thread, pinned: pinned) },
+                onArchiveThread: { threadID in await archiveThread(threadID) },
+                onShowThread: { preferredCompactColumn = .detail },
+                onEnableNotifications: { await enableNotifications() }
+            )
             .refreshable {
                 await refresh()
             }
@@ -117,11 +124,13 @@ struct ConnectionView: View {
                     statusMessage: statusMessage,
                     composerSettings: composerSettings,
                     permissionsPreset: composerPermissionsPreset,
+                    onShowSidebar: { preferredCompactColumn = .sidebar },
                     onSend: { await sendComposer() },
                     onSettingsChange: { settings in await updateComposerSettings(settings) },
                     onStop: { await stopSelectedThread() },
                     onLoadOlder: { await loadOlderTimeline() },
                     onRename: { name in await renameSelectedThread(name: name) },
+                    onSetPinned: { pinned in await setPinned(detail.thread, pinned: pinned) },
                     onToggleNotifications: { await toggleSelectedNotifications() },
                     onArchive: { await archiveSelectedThread() },
                     onApprovalDecision: { approval, decision in await decideApproval(approval, decision: decision) },
@@ -156,91 +165,6 @@ struct ConnectionView: View {
         }
     }
 
-    private var gatewaySection: some View {
-        Section("Gateway") {
-            Text(state.connection.displayText)
-                .font(.footnote)
-                .foregroundStyle(connectionColor)
-                .accessibilityIdentifier("GatewayStatus")
-            Text(accountState.displayText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("AccountStatus")
-            TextField("Gateway URL", text: $gatewayURL)
-                .textContentType(.URL)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            Button("Check Connection") {
-                Task {
-                    await refresh()
-                }
-            }
-            Button("Enable Notifications") {
-                Task {
-                    await enableNotifications()
-                }
-            }
-            Text(notificationStatus)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var actionSection: some View {
-        Section {
-            Button("New Chat") {
-                Task {
-                    await createChatThread()
-                }
-            }
-            .disabled(launchMode != .live || isBusy)
-
-            Button("New Project Thread") {
-                Task {
-                    await createProjectThread()
-                }
-            }
-            .disabled(launchMode != .live || state.workspace.projects.first == nil || isBusy)
-        }
-    }
-
-    @ViewBuilder
-    private func threadRows(_ threads: [WorkspaceThread]) -> some View {
-        ForEach(threads) { thread in
-            NavigationLink(value: thread.id) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(thread.title)
-                            .font(.headline)
-                        Text(thread.cwd)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    if thread.unread {
-                        Circle()
-                            .fill(Color.accentColor)
-                            .frame(width: 9, height: 9)
-                            .accessibilityLabel("Unread")
-                    }
-                }
-            }
-            .swipeActions(edge: .trailing) {
-                Button(thread.pinned ? "Unpin" : "Pin") {
-                    Task {
-                        await setPinned(thread, pinned: !thread.pinned)
-                    }
-                }
-                .tint(.blue)
-                Button("Archive", role: .destructive) {
-                    Task {
-                        await archiveThread(thread.id)
-                    }
-                }
-            }
-        }
-    }
-
     private var selectedDetail: ThreadDetail? {
         if let selectedThreadID, state.selectedThread?.thread.id == selectedThreadID {
             return state.selectedThread
@@ -256,15 +180,9 @@ struct ConnectionView: View {
         return state.selectedThread
     }
 
-    private var connectionColor: Color {
-        switch state.connection {
-        case .connected:
-            return .green
-        case .degraded:
-            return .orange
-        case .offline, .invalidURL:
-            return .red
-        }
+    private func routeToThreadLocally(_ threadID: String) {
+        selectedThreadID = threadID
+        preferredCompactColumn = .detail
     }
 
     private func service() throws -> LiveGatewayService {
@@ -347,6 +265,7 @@ struct ConnectionView: View {
             let live = try service()
             let thread = try await live.createChatThread(firstMessageText: prompt)
             selectedThreadID = thread.id
+            preferredCompactColumn = .detail
             if liveE2EEnabled {
                 _ = try await live.submitTextInput(threadId: thread.id, text: prompt, settings: composerSettings)
             }
@@ -360,9 +279,15 @@ struct ConnectionView: View {
         guard let project = state.workspace.projects.first else {
             return
         }
+        await createProjectThread(projectId: project.id)
+    }
+
+    @MainActor
+    private func createProjectThread(projectId: String) async {
         await runLiveAction {
-            let thread = try await service().createProjectThread(projectId: project.id)
+            let thread = try await service().createProjectThread(projectId: projectId)
             selectedThreadID = thread.id
+            preferredCompactColumn = .detail
             await refresh()
         }
     }
@@ -736,429 +661,6 @@ struct ConnectionView: View {
         } catch {
             notificationStatus = "Notifications unavailable: \(error.localizedDescription)"
         }
-    }
-}
-
-private struct ThreadDetailView: View {
-    let detail: ThreadDetail
-    let approvals: [ApprovalRequest]
-    let queuedInputs: [QueuedInputSummary]
-    let skills: [SkillSummary]
-    let localImagePaths: [String]
-    @Binding var composerText: String
-    @Binding var isExpandedComposerPresented: Bool
-    @Binding var selectedPhotoItem: PhotosPickerItem?
-    let isBusy: Bool
-    let statusMessage: String?
-    let composerSettings: ComposerRunSettings
-    let permissionsPreset: String?
-    let onSend: () async -> Void
-    let onSettingsChange: (ComposerRunSettings) async -> Void
-    let onStop: () async -> Void
-    let onLoadOlder: () async -> Void
-    let onRename: (String) async -> Void
-    let onToggleNotifications: () async -> Void
-    let onArchive: () async -> Void
-    let onApprovalDecision: (ApprovalRequest, ApprovalDecision) async -> Void
-    let onQueuedRetry: (String) async -> Void
-    let onQueuedSteer: (String) async -> Void
-    let onQueuedDelete: (String) async -> Void
-    @State private var isRenamePresented = false
-    @State private var renameText = ""
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    Button {
-                        Task {
-                            await onLoadOlder()
-                        }
-                    } label: {
-                        Label("Load Older", systemImage: "clock.arrow.circlepath")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!detail.timeline.hasOlder || detail.timeline.olderCursor == nil)
-                    .accessibilityIdentifier("LoadOlderTimeline")
-
-                    ForEach(queuedInputs) { queuedInput in
-                        QueuedInputCard(
-                            queuedInput: queuedInput,
-                            onRetry: { await onQueuedRetry(queuedInput.id) },
-                            onSteer: { await onQueuedSteer(queuedInput.id) },
-                            onDelete: { await onQueuedDelete(queuedInput.id) }
-                        )
-                    }
-                    ForEach(approvals) { approval in
-                        ApprovalCard(
-                            approval: approval,
-                            onDecision: { decision in await onApprovalDecision(approval, decision) }
-                        )
-                    }
-                    ForEach(detail.timeline.rows) { row in
-                        TimelineRowView(row: row)
-                    }
-                }
-                .padding()
-            }
-            .accessibilityIdentifier("ThreadTimeline")
-
-            if let statusMessage {
-                Text(statusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-            }
-
-            ComposerBar(
-                text: $composerText,
-                selectedPhotoItem: $selectedPhotoItem,
-                isExpandedComposerPresented: $isExpandedComposerPresented,
-                skills: skills,
-                localImagePaths: localImagePaths,
-                isBusy: isBusy,
-                settings: composerSettings,
-                permissionsPreset: permissionsPreset,
-                onSettingsChange: onSettingsChange,
-                onSend: onSend
-            )
-        }
-        .navigationTitle(detail.thread.title)
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button("Stop") {
-                    Task {
-                        await onStop()
-                    }
-                }
-                .accessibilityIdentifier("StopThread")
-                Menu("Actions") {
-                    Button("Rename") {
-                        renameText = detail.thread.title
-                        isRenamePresented = true
-                    }
-                    Button(detail.thread.notificationsEnabled ? "Mute Notifications" : "Enable Notifications") {
-                        Task {
-                            await onToggleNotifications()
-                        }
-                    }
-                    Button("Archive", role: .destructive) {
-                        Task {
-                            await onArchive()
-                        }
-                    }
-                }
-            }
-        }
-        .alert("Rename Thread", isPresented: $isRenamePresented) {
-            TextField("Name", text: $renameText)
-            Button("Cancel", role: .cancel) {}
-            Button("Save") {
-                Task {
-                    await onRename(renameText)
-                }
-            }
-        }
-        .sheet(isPresented: $isExpandedComposerPresented) {
-            NavigationStack {
-                TextEditor(text: $composerText)
-                    .padding()
-                    .navigationTitle("Compose")
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Send") {
-                                Task {
-                                    await onSend()
-                                    isExpandedComposerPresented = false
-                                }
-                            }
-                            .disabled(isBusy)
-                        }
-                    }
-            }
-        }
-    }
-}
-
-private struct TimelineRowView: View {
-    let row: TimelineRow
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(row.title, systemImage: iconName)
-                .font(.headline)
-            Text(row.body)
-                .font(.body)
-                .textSelection(.enabled)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .accessibilityIdentifier("TimelineRow-\(row.kind.rawValue)")
-    }
-
-    private var iconName: String {
-        switch row.kind {
-        case .message:
-            return "text.bubble"
-        case .work:
-            return "gearshape"
-        case .activity:
-            return "waveform.path.ecg"
-        case .tool:
-            return "hammer"
-        case .fileChange:
-            return "doc.text"
-        case .image:
-            return "photo"
-        case .warning:
-            return "exclamationmark.triangle"
-        case .error:
-            return "xmark.octagon"
-        case .unknown:
-            return "circle"
-        }
-    }
-}
-
-private struct ComposerBar: View {
-    @Binding var text: String
-    @Binding var selectedPhotoItem: PhotosPickerItem?
-    @Binding var isExpandedComposerPresented: Bool
-    let skills: [SkillSummary]
-    let localImagePaths: [String]
-    let isBusy: Bool
-    let settings: ComposerRunSettings
-    let permissionsPreset: String?
-    let onSettingsChange: (ComposerRunSettings) async -> Void
-    let onSend: () async -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if !localImagePaths.isEmpty {
-                Text("\(localImagePaths.count) image attachment\(localImagePaths.count == 1 ? "" : "s")")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            HStack(spacing: 8) {
-                Button {
-                    isExpandedComposerPresented = true
-                } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                }
-                .accessibilityLabel("Expanded Composer")
-
-                TextField("Message Kodex", text: $text, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1...4)
-                    .accessibilityIdentifier("ComposerInput")
-
-                Menu {
-                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                        Label("Attach Photo", systemImage: "photo")
-                    }
-                    if !skills.isEmpty {
-                        Section("Skills") {
-                            ForEach(skills.prefix(8)) { skill in
-                                Button("$\(skill.name)") {
-                                    text.append(text.isEmpty ? "$\(skill.name)" : " $\(skill.name)")
-                                }
-                            }
-                        }
-                    }
-                    Section("Model") {
-                        ForEach(Self.modelOptions, id: \.self) { model in
-                            Button(model) {
-                                Task {
-                                    await onSettingsChange(settings.with(model: model))
-                                }
-                            }
-                        }
-                    }
-                    Section("Reasoning") {
-                        ForEach(Self.effortOptions, id: \.self) { effort in
-                            Button(effort.capitalized) {
-                                Task {
-                                    await onSettingsChange(settings.with(effort: effort))
-                                }
-                            }
-                        }
-                    }
-                    Section("Approvals") {
-                        ForEach(Self.approvalPolicyOptions) { option in
-                            Button(option.label) {
-                                Task {
-                                    await onSettingsChange(settings.with(approvalPolicy: option.value))
-                                }
-                            }
-                        }
-                    }
-                    Section("Sandbox") {
-                        ForEach(Self.sandboxOptions) { option in
-                            Button(option.label) {
-                                Task {
-                                    await onSettingsChange(settings.with(sandboxPolicy: option.policy))
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                }
-                .accessibilityLabel("Composer Options, model \(settings.model ?? "default"), reasoning \(settings.effort ?? "default"), approvals \(settings.approvalPolicy ?? "default"), permissions \(permissionsPreset ?? settings.sandboxDisplay)")
-
-                Button("Send") {
-                    Task {
-                        await onSend()
-                    }
-                }
-                .disabled(isBusy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .buttonStyle(.borderedProminent)
-            }
-        }
-        .padding()
-        .background(.bar)
-    }
-
-    private static let modelOptions = ["gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark"]
-    private static let effortOptions = ["low", "medium", "high", "xhigh"]
-    private static let approvalPolicyOptions = [
-        ComposerTextOption(label: "Ask First", value: "on-request"),
-        ComposerTextOption(label: "On Failure", value: "on-failure"),
-        ComposerTextOption(label: "Never Ask", value: "never")
-    ]
-    private static let sandboxOptions = [
-        ComposerPolicyOption(label: "Read Only", value: "readOnly", policy: .object(["type": .string("readOnly")])),
-        ComposerPolicyOption(label: "Workspace Write", value: "workspaceWrite", policy: .object(["type": .string("workspaceWrite"), "networkAccess": .bool(false), "writableRoots": .array([])])),
-        ComposerPolicyOption(label: "Full Access", value: "dangerFullAccess", policy: .object(["type": .string("dangerFullAccess")]))
-    ]
-}
-
-private struct ComposerTextOption: Identifiable {
-    let label: String
-    let value: String
-
-    var id: String { value }
-}
-
-private struct ComposerPolicyOption: Identifiable {
-    let label: String
-    let value: String
-    let policy: AnySendable
-
-    var id: String { value }
-}
-
-private struct ApprovalCard: View {
-    let approval: ApprovalRequest
-    let onDecision: (ApprovalDecision) async -> Void
-    @State private var pendingDecision: ApprovalDecision?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(approval.title)
-                .font(.headline)
-            Text("Risk: \(approval.risk)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if !approval.context.isEmpty {
-                Text(approval.context)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            }
-            HStack {
-                Button("Decline", role: .destructive) {
-                    Task {
-                        await onDecision(.decline)
-                    }
-                }
-                .accessibilityIdentifier("DeclineApproval-\(approval.id)")
-                Button("Approve") {
-                    submit(.accept)
-                }
-                .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("ApproveApproval-\(approval.id)")
-            }
-        }
-        .padding(12)
-        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-        .confirmationDialog(
-            "Approve Risky Action?",
-            isPresented: Binding(
-                get: { pendingDecision != nil },
-                set: { if !$0 { pendingDecision = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Approve", role: .destructive) {
-                guard let pendingDecision else {
-                    return
-                }
-                Task {
-                    await onDecision(pendingDecision)
-                    self.pendingDecision = nil
-                }
-            }
-            Button("Cancel", role: .cancel) {
-                pendingDecision = nil
-            }
-        } message: {
-            Text("\(approval.title) has \(approval.risk) risk.")
-        }
-    }
-
-    private func submit(_ decision: ApprovalDecision) {
-        if ApprovalRiskPolicy.requiresConfirmation(approval, decision: decision) {
-            pendingDecision = decision
-        } else {
-            Task {
-                await onDecision(decision)
-            }
-        }
-    }
-}
-
-private struct QueuedInputCard: View {
-    let queuedInput: QueuedInputSummary
-    let onRetry: () async -> Void
-    let onSteer: () async -> Void
-    let onDelete: () async -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Queued input")
-                .font(.headline)
-            Text(queuedInput.status)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if let lastError = queuedInput.lastError {
-                Text(lastError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-            HStack {
-                Button("Retry") {
-                    Task {
-                        await onRetry()
-                    }
-                }
-                Button("Steer") {
-                    Task {
-                        await onSteer()
-                    }
-                }
-                Button("Delete", role: .destructive) {
-                    Task {
-                        await onDelete()
-                    }
-                }
-            }
-        }
-        .padding(12)
-        .background(Color.blue.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
-        .accessibilityIdentifier("QueuedInputCard")
     }
 }
 
