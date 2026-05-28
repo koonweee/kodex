@@ -59,6 +59,7 @@ async fn main() -> anyhow::Result<()> {
     recover_queued_inputs(&state).await?;
     recover_automations_after_restart(&state).await?;
     start_automation_scheduler(state.clone());
+    state.notifications.start_delivery_worker(state.clone());
     tokio::spawn(run_inbound_ingest(inbound_rx, state.clone()));
 
     let app = build_router(state.clone());

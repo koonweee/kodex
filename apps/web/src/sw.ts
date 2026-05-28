@@ -21,17 +21,17 @@ self.addEventListener("notificationclick", (event) => {
 
 async function showPushNotification(event: PushEvent) {
   const payload = parsePushPayload(event.data);
-  if (!payload || payload.kind !== "unreadAgentMessage") {
+  if (!payload || (payload.kind !== "unreadAgentMessage" && payload.kind !== "test")) {
     return;
   }
 
   await setWorkerBadge(payload.badgeCount ?? 1);
   await self.registration.showNotification(payload.title || "Kodex", {
     badge: "/kodex-badge.png",
-    body: payload.body || "Agent has a new message.",
+    body: payload.body || notificationBody(payload.kind),
     data: payload,
     icon: "/icon-192.png",
-    tag: payload.threadId ? `kodex-unread-agent-message:${payload.threadId}` : "kodex-unread-agent-message",
+    tag: notificationTag(payload),
   });
 }
 
@@ -49,7 +49,14 @@ function parsePushPayload(data: PushMessageData | null): KodexNotificationPayloa
 
 function notificationRoute(data: unknown): string {
   const route = data && typeof data === "object" && "route" in data ? (data as { route?: unknown }).route : null;
-  return typeof route === "string" && route.startsWith("/") ? route : "/";
+  if (typeof route !== "string" || !route.startsWith("/")) {
+    return "/";
+  }
+  const url = new URL(route, self.location.origin);
+  if (url.origin !== self.location.origin) {
+    return "/";
+  }
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 async function focusOrOpenKodex(route: string) {
@@ -83,4 +90,15 @@ async function setWorkerBadge(count: number) {
   } catch {
     // Badging support varies; notifications should still display.
   }
+}
+
+function notificationBody(kind: KodexNotificationPayload["kind"]): string {
+  return kind === "test" ? "Push notifications are working." : "Agent has a new message.";
+}
+
+function notificationTag(payload: KodexNotificationPayload): string {
+  if (payload.kind === "test") {
+    return "kodex-test-notification";
+  }
+  return payload.threadId ? `kodex-unread-agent-message:${payload.threadId}` : "kodex-unread-agent-message";
 }

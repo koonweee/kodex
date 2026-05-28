@@ -1,9 +1,10 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { VirtuosoMockContext } from "react-virtuoso";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
+import { queryClient } from "./api/queryClient";
 import { mockGateway } from "./test/gatewayMock";
 
 function renderApp() {
@@ -20,6 +21,12 @@ async function waitForTimelineReady() {
       "data-initial-bottom-aligned",
       "true",
     );
+  });
+}
+
+async function waitForAnimationFrame() {
+  await act(async () => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   });
 }
 
@@ -297,8 +304,11 @@ class FakeEventSource {
 
 describe("App shell", () => {
   afterEach(() => {
+    cleanup();
+    queryClient.clear();
     FakeEventSource.instances = [];
     window.localStorage.clear();
+    window.history.replaceState(null, "", "/");
     document.documentElement.removeAttribute("data-kodex-color-scheme");
     document.documentElement.removeAttribute("data-mantine-color-scheme");
     document.documentElement.removeAttribute("style");
@@ -514,7 +524,8 @@ describe("App shell", () => {
     await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /show debug events/i }));
 
     expect(await within(thread).findAllByText(/item\/completed/i)).not.toHaveLength(0);
-    expect(within(thread).getByText(/"text": "Visible answer"/i)).toBeInTheDocument();
+    await userEvent.click(within(thread).getByText("Debug details"));
+    expect(within(thread).getByText(/answer-1/i)).toBeInTheDocument();
   });
 
   it("opens local markdown links in a right-side preview pane", async () => {
@@ -804,11 +815,12 @@ describe("App shell", () => {
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     });
 
-    renderApp();
+    const { container } = renderApp();
 
     expect(await screen.findByText("Large answer 0")).toBeInTheDocument();
     await waitForTimelineReady();
-    const scrollRegion = document.querySelector(".kodex-timeline-scroll") as HTMLElement;
+    await waitForAnimationFrame();
+    const scrollRegion = container.querySelector(".kodex-timeline-scroll") as HTMLElement;
     Object.defineProperties(scrollRegion, {
       clientHeight: { configurable: true, value: 400 },
       scrollHeight: { configurable: true, value: 3600 },
@@ -817,8 +829,10 @@ describe("App shell", () => {
     fireEvent.scroll(scrollRegion);
     expect(screen.queryByRole("button", { name: /scroll to bottom/i })).not.toBeInTheDocument();
 
-    scrollRegion.scrollTop = 600;
-    fireEvent.scroll(scrollRegion);
+    act(() => {
+      scrollRegion.scrollTop = 600;
+      scrollRegion.dispatchEvent(new Event("scroll"));
+    });
     const scrollButton = await screen.findByRole("button", { name: /scroll to bottom/i });
     expect(scrollButton).toBeInTheDocument();
 
@@ -878,16 +892,19 @@ describe("App shell", () => {
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     });
 
-    renderApp();
+    const { container } = renderApp();
 
     expect(await screen.findByText("Large answer 0")).toBeInTheDocument();
     await waitForTimelineReady();
-    const scrollRegion = document.querySelector(".kodex-timeline-scroll") as HTMLElement;
+    await waitForAnimationFrame();
+    const scrollRegion = container.querySelector(".kodex-timeline-scroll") as HTMLElement;
     Object.defineProperties(scrollRegion, {
       clientHeight: { configurable: true, value: 400 },
       scrollHeight: { configurable: true, value: 3600 },
-      scrollTop: { configurable: true, writable: true, value: 600 },
+      scrollTop: { configurable: true, writable: true, value: 3200 },
     });
+    fireEvent.scroll(scrollRegion);
+    scrollRegion.scrollTop = 600;
     fireEvent.scroll(scrollRegion);
     expect(await screen.findByRole("button", { name: /scroll to bottom/i })).toBeInTheDocument();
 
@@ -950,18 +967,21 @@ describe("App shell", () => {
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     });
 
-    renderApp();
+    const { container } = renderApp();
 
     expect(await screen.findByText("Large answer 0")).toBeInTheDocument();
     await waitForTimelineReady();
+    await waitForAnimationFrame();
     await waitFor(() => expect(FakeEventSource.instances.some((instance) => instance.url.includes("threadId=thread-1"))).toBe(true));
     const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
-    const scrollRegion = document.querySelector(".kodex-timeline-scroll") as HTMLElement;
+    const scrollRegion = container.querySelector(".kodex-timeline-scroll") as HTMLElement;
     Object.defineProperties(scrollRegion, {
       clientHeight: { configurable: true, value: 400 },
       scrollHeight: { configurable: true, value: 3600 },
-      scrollTop: { configurable: true, writable: true, value: 600 },
+      scrollTop: { configurable: true, writable: true, value: 3200 },
     });
+    fireEvent.scroll(scrollRegion);
+    scrollRegion.scrollTop = 600;
     fireEvent.scroll(scrollRegion);
     expect(await screen.findByRole("button", { name: /scroll to bottom/i })).toBeInTheDocument();
 

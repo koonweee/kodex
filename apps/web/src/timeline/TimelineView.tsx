@@ -374,6 +374,7 @@ function useBottomPinnedVirtuosoTimeline({
 }) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const nearBottomRef = useRef(true);
+  const initialAlignmentSnapshotRef = useRef<{ rowCount: number; timelineLastSeq: number } | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [initialBottomAligned, setInitialBottomAligned] = useState(false);
 
@@ -435,8 +436,8 @@ function useBottomPinnedVirtuosoTimeline({
   );
 
   const followOutput = useCallback<Exclude<FollowOutput, boolean | string>>(
-    (isAtBottom) => timelineFollowOutputBehavior(isAtBottom || nearBottomRef.current),
-    [],
+    (isAtBottom) => timelineFollowOutputBehavior(isAtBottom || (nearBottomRef.current && !showScrollToBottom)),
+    [showScrollToBottom],
   );
 
   useEffect(() => {
@@ -457,12 +458,14 @@ function useBottomPinnedVirtuosoTimeline({
 
     if (rowCount === 0) {
       setShowScrollToBottom(false);
+      initialAlignmentSnapshotRef.current = { rowCount, timelineLastSeq };
       markTimelineReady();
       return;
     }
 
     if (!nearBottomRef.current) {
       setShowScrollToBottom(true);
+      initialAlignmentSnapshotRef.current = { rowCount, timelineLastSeq };
       markTimelineReady();
       return;
     }
@@ -470,6 +473,7 @@ function useBottomPinnedVirtuosoTimeline({
     const frameId = requestAnimationFrame(() => {
       scrollToTimelineBottom();
       updateNearBottom();
+      initialAlignmentSnapshotRef.current = { rowCount, timelineLastSeq };
       markTimelineReady();
     });
     return () => cancelAnimationFrame(frameId);
@@ -478,11 +482,25 @@ function useBottomPinnedVirtuosoTimeline({
     markTimelineReady,
     rowCount,
     scrollToTimelineBottom,
+    timelineLastSeq,
     updateNearBottom,
   ]);
 
   useEffect(() => {
     if (!initialBottomAligned || rowCount === 0) {
+      return;
+    }
+
+    const initialAlignmentSnapshot = initialAlignmentSnapshotRef.current;
+    if (
+      initialAlignmentSnapshot?.rowCount === rowCount &&
+      initialAlignmentSnapshot.timelineLastSeq === timelineLastSeq
+    ) {
+      return;
+    }
+
+    if (showScrollToBottom) {
+      nearBottomRef.current = false;
       return;
     }
 
@@ -502,6 +520,7 @@ function useBottomPinnedVirtuosoTimeline({
     initialBottomAligned,
     rowCount,
     scrollToTimelineBottom,
+    showScrollToBottom,
     timelineLastSeq,
     updateNearBottom,
   ]);

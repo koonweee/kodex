@@ -85,6 +85,8 @@ export type TurnStartOptions = Omit<components["schemas"]["TurnStartRequest"], "
 export type NotificationStatusResponse = components["schemas"]["NotificationStatusResponse"];
 export type PushSubscriptionDeleteResponse = components["schemas"]["PushSubscriptionDeleteResponse"];
 export type PushSubscriptionUpsertResponse = components["schemas"]["PushSubscriptionUpsertResponse"];
+export type CurrentPushSubscriptionStatusResponse = components["schemas"]["CurrentPushSubscriptionResponse"];
+export type TestNotificationResponse = components["schemas"]["TestNotificationResponse"];
 
 type GatewayErrorBody = {
   message?: unknown;
@@ -399,6 +401,12 @@ export async function getNotificationStatus(): Promise<NotificationStatusRespons
   return unwrap(api.GET("/v1/notifications/status"));
 }
 
+export async function getCurrentPushSubscriptionStatus(
+  endpoint: string,
+): Promise<CurrentPushSubscriptionStatusResponse> {
+  return unwrap(api.GET("/v1/notifications/subscription/current", { params: { query: { endpoint } } }));
+}
+
 export async function upsertPushSubscription(
   subscription: PushSubscription,
   userAgent: string | null = typeof navigator === "undefined" ? null : navigator.userAgent,
@@ -430,6 +438,14 @@ export async function deletePushSubscription(subscriptionId: string): Promise<Pu
       params: { path: { subscriptionId } },
     }),
   );
+}
+
+export async function deleteCurrentPushSubscription(endpoint: string): Promise<CurrentPushSubscriptionStatusResponse> {
+  return unwrap(api.DELETE("/v1/notifications/subscription/current", { params: { query: { endpoint } } }));
+}
+
+export async function sendTestNotification(): Promise<TestNotificationResponse> {
+  return unwrap(api.POST("/v1/notifications/test"));
 }
 
 export async function submitThreadInput(

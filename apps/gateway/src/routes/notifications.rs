@@ -1,12 +1,12 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::{delete, get, post},
     Json, Router,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::{
     api::AppState,
@@ -25,6 +25,11 @@ pub fn router() -> Router<AppState> {
             "/v1/notifications/subscriptions/{subscription_id}",
             delete(delete_push_subscription),
         )
+        .route(
+            "/v1/notifications/subscription/current",
+            get(current_push_subscription).delete(delete_current_push_subscription),
+        )
+        .route("/v1/notifications/test", post(test_notification))
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -86,14 +91,35 @@ pub struct PushSubscriptionDeleteResponse {
     pub subscription: Option<PushSubscriptionResponse>,
 }
 
+#[derive(Debug, Serialize, Deserialize, IntoParams, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurrentPushSubscriptionQuery {
+    pub endpoint: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CurrentPushSubscriptionResponse {
+    pub configured: bool,
+    pub subscribed: bool,
+    pub subscription: Option<PushSubscriptionResponse>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TestNotificationResponse {
+    pub configured: bool,
+    pub active_subscription_count: usize,
+    pub enqueued: bool,
+    pub delivery_ids: Vec<String>,
+}
+
 #[utoipa::path(get, path = "/v1/notifications/status", responses((status = 200, body = NotificationStatusResponse)))]
 pub async fn notification_status(
     State(state): State<AppState>,
 ) -> ApiResult<Json<NotificationStatusResponse>> {
     let vapid_public_key = state.config.notifications.vapid_public_key.clone();
-    let configured = vapid_public_key.is_some()
-        && state.config.notifications.vapid_private_key.is_some()
-        && state.config.notifications.vapid_subject.is_some();
+    let configured = notifications_configured(&state);
     Ok(Json(NotificationStatusResponse {
         configured,
         vapid_public_key,
@@ -146,4 +172,86 @@ pub async fn delete_push_subscription(
     Ok(Json(PushSubscriptionDeleteResponse {
         subscription: subscription.map(Into::into),
     }))
+}
+
+#[utoipa::path(get, path = "/v1/notifications/subscription/current", params(CurrentPushSubscriptionQuery), responses((status = 200, body = CurrentPushSubscriptionResponse)))]
+pub async fn current_push_subscription(
+    State(state): State<AppState>,
+    Query(query): Query<CurrentPushSubscriptionQuery>,
+) -> ApiResult<Json<CurrentPushSubscriptionResponse>> {
+    let endpoint = validate_endpoint(query.endpoint)?;
+    let status = state
+        .store
+        .get_push_subscription_status_by_endpoint(&endpoint)
+        .await?;
+    Ok(Json(CurrentPushSubscriptionResponse {
+        configured: notifications_configured(&state),
+        subscribed: status.subscribed,
+        subscription: status.subscription.map(Into::into),
+    }))
+}
+
+#[utoipa::path(delete, path = "/v1/notifications/subscription/current", params(CurrentPushSubscriptionQuery), responses((status = 200, body = CurrentPushSubscriptionResponse)))]
+pub async fn delete_current_push_subscription(
+    State(state): State<AppState>,
+    Query(query): Query<CurrentPushSubscriptionQuery>,
+) -> ApiResult<Json<CurrentPushSubscriptionResponse>> {
+    let endpoint = validate_endpoint(query.endpoint)?;
+    let subscription = state
+        .store
+        .disable_push_subscription_by_endpoint(&endpoint)
+        .await?;
+    Ok(Json(CurrentPushSubscriptionResponse {
+        configured: notifications_configured(&state),
+        subscribed: false,
+        subscription: subscription.map(Into::into),
+    }))
+}
+
+#[utoipa::path(post, path = "/v1/notifications/test", responses((status = 200, body = TestNotificationResponse)))]
+pub async fn test_notification(
+    State(state): State<AppState>,
+) -> ApiResult<Json<TestNotificationResponse>> {
+    let configured = notifications_configured(&state);
+    if !configured {
+        return Ok(Json(TestNotificationResponse {
+            configured,
+            active_subscription_count: 0,
+            enqueued: false,
+            delivery_ids: Vec::new(),
+        }));
+    }
+    let active_subscription_count = state.store.list_enabled_push_subscriptions().await?.len();
+    if active_subscription_count == 0 {
+        return Ok(Json(TestNotificationResponse {
+            configured,
+            active_subscription_count,
+            enqueued: false,
+            delivery_ids: Vec::new(),
+        }));
+    }
+    let delivery = state
+        .notifications
+        .enqueue_test_notification(&state)
+        .await?;
+    Ok(Json(TestNotificationResponse {
+        configured,
+        active_subscription_count,
+        enqueued: true,
+        delivery_ids: vec![delivery.id],
+    }))
+}
+
+fn validate_endpoint(endpoint: String) -> ApiResult<String> {
+    let endpoint = endpoint.trim().to_string();
+    if endpoint.is_empty() {
+        return Err(ApiError::BadRequest("endpoint is required".to_string()));
+    }
+    Ok(endpoint)
+}
+
+fn notifications_configured(state: &AppState) -> bool {
+    state.config.notifications.vapid_public_key.is_some()
+        && state.config.notifications.vapid_private_key.is_some()
+        && state.config.notifications.vapid_subject.is_some()
 }

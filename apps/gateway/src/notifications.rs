@@ -1,6 +1,8 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use async_trait::async_trait;
+use chrono::{Duration as ChronoDuration, Utc};
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::time::{sleep, Duration};
@@ -11,15 +13,19 @@ use web_push::{
 };
 
 use crate::{
-    api::AppState, app_server_api, config::NotificationsConfig, error::ApiResult,
-    store::PushSubscription,
+    api::AppState,
+    app_server_api,
+    config::NotificationsConfig,
+    error::ApiResult,
+    store::{NewNotificationDelivery, NotificationDelivery, PushSubscription},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct NotificationPayload {
     pub kind: NotificationKind,
-    pub thread_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
@@ -31,12 +37,22 @@ pub struct NotificationPayload {
 #[serde(rename_all = "camelCase")]
 pub enum NotificationKind {
     UnreadAgentMessage,
+    Test,
+}
+
+impl NotificationKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::UnreadAgentMessage => "unreadAgentMessage",
+            Self::Test => "test",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PushDeliveryOutcome {
     Sent,
-    PermanentFailure,
+    StaleEndpoint,
     TemporaryFailure,
 }
 
@@ -44,6 +60,10 @@ const UNREAD_AGENT_MESSAGE_FALLBACK_THREAD_TITLE: &str = "New message";
 const UNREAD_AGENT_MESSAGE_FALLBACK_BODY: &str = "Agent has a new message.";
 const UNREAD_AGENT_MESSAGE_PREVIEW_MAX_CHARS: usize = 240;
 const UNREAD_AGENT_MESSAGE_TITLE_MAX_CHARS: usize = 48;
+const DELIVERY_CLAIM_LIMIT: i64 = 10;
+const DELIVERY_MAX_ATTEMPTS: i64 = 3;
+const DELIVERY_PROCESSING_STALE_AFTER: ChronoDuration = ChronoDuration::minutes(5);
+const DELIVERY_WORKER_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 #[async_trait]
 pub trait PushSender: Send + Sync {
@@ -114,9 +134,9 @@ impl PushSender for WebPushSenderImpl {
     ) -> PushDeliveryOutcome {
         match self.send_inner(subscription, payload).await {
             Ok(()) => PushDeliveryOutcome::Sent,
-            Err(error) if permanent_delivery_error(&error) => {
-                tracing::warn!(%error, subscription_id = subscription.id, "permanent push delivery failure");
-                PushDeliveryOutcome::PermanentFailure
+            Err(error) if stale_endpoint_error(&error) => {
+                tracing::warn!(%error, subscription_id = subscription.id, "stale push endpoint");
+                PushDeliveryOutcome::StaleEndpoint
             }
             Err(error) => {
                 tracing::warn!(%error, subscription_id = subscription.id, "temporary push delivery failure");
@@ -159,19 +179,60 @@ impl NotificationService {
         }
     }
 
-    pub fn schedule_unread_agent_message_recheck(
+    pub async fn enqueue_unread_agent_message_recheck(
         &self,
-        state: AppState,
+        state: &AppState,
         thread_id: String,
+        turn_id: Option<String>,
         delay: Duration,
-    ) {
+    ) -> ApiResult<NotificationDelivery> {
+        let available_at =
+            Utc::now() + ChronoDuration::from_std(delay).unwrap_or_else(|_| ChronoDuration::zero());
+        let delivery = state
+            .store
+            .create_notification_delivery(NewNotificationDelivery {
+                kind: NotificationKind::UnreadAgentMessage.as_str().to_string(),
+                thread_id: Some(thread_id),
+                turn_id,
+                payload: None,
+                available_at,
+            })
+            .await?;
+        Ok(delivery)
+    }
+
+    pub async fn enqueue_test_notification(
+        &self,
+        state: &AppState,
+    ) -> ApiResult<NotificationDelivery> {
+        let payload = NotificationPayload {
+            kind: NotificationKind::Test,
+            thread_id: None,
+            title: "Kodex test notification".to_string(),
+            body: Some("Push notifications are working.".to_string()),
+            route: "/".to_string(),
+            badge_count: 0,
+        };
+        let delivery = state
+            .store
+            .create_notification_delivery(NewNotificationDelivery {
+                kind: NotificationKind::Test.as_str().to_string(),
+                thread_id: None,
+                turn_id: None,
+                payload: Some(serde_json::to_value(payload)?),
+                available_at: Utc::now(),
+            })
+            .await?;
+        Ok(delivery)
+    }
+
+    pub fn start_delivery_worker(&self, state: AppState) {
         tokio::spawn(async move {
-            if !delay.is_zero() {
-                sleep(delay).await;
-            }
-            if let Err(error) = deliver_unread_agent_message_if_still_unread(state, thread_id).await
-            {
-                tracing::debug!(%error, "skipped unread agent message push notification");
+            loop {
+                if let Err(error) = process_due_deliveries(state.clone()).await {
+                    tracing::warn!(%error, "notification delivery worker tick failed");
+                }
+                sleep(DELIVERY_WORKER_POLL_INTERVAL).await;
             }
         });
     }
@@ -181,19 +242,61 @@ impl NotificationService {
         state: &AppState,
         payload: NotificationPayload,
     ) -> ApiResult<()> {
+        self.deliver_payload_to_enabled_subscriptions(state, &payload, None, 1, &[])
+            .await?;
+        Ok(())
+    }
+
+    async fn deliver_payload_to_enabled_subscriptions(
+        &self,
+        state: &AppState,
+        payload: &NotificationPayload,
+        delivery_id: Option<&str>,
+        attempt_count: i64,
+        delivered_subscription_ids: &[String],
+    ) -> ApiResult<DeliveryAttemptSummary> {
         let subscriptions = state.store.list_enabled_push_subscriptions().await?;
+        let delivered_subscription_ids = delivered_subscription_ids
+            .iter()
+            .map(String::as_str)
+            .collect::<HashSet<_>>();
+        let mut summary = DeliveryAttemptSummary::default();
         for subscription in subscriptions {
-            match self.sender.send(&subscription, &payload).await {
-                PushDeliveryOutcome::Sent => {}
-                PushDeliveryOutcome::TemporaryFailure => {
-                    tracing::warn!(
+            if delivered_subscription_ids.contains(subscription.id.as_str()) {
+                continue;
+            }
+            let endpoint_host = endpoint_host(&subscription.endpoint);
+            match self.sender.send(&subscription, payload).await {
+                PushDeliveryOutcome::Sent => {
+                    summary.sent_count += 1;
+                    summary.sent_subscription_ids.push(subscription.id.clone());
+                    tracing::debug!(
+                        delivery_id,
+                        attempt_count,
                         subscription_id = subscription.id,
+                        endpoint_host,
+                        "push notification delivery accepted"
+                    );
+                }
+                PushDeliveryOutcome::TemporaryFailure => {
+                    summary.temporary_failure_count += 1;
+                    tracing::warn!(
+                        delivery_id,
+                        attempt_count,
+                        subscription_id = subscription.id,
+                        endpoint_host,
+                        classification = "temporary",
                         "temporary push notification delivery failure"
                     );
                 }
-                PushDeliveryOutcome::PermanentFailure => {
+                PushDeliveryOutcome::StaleEndpoint => {
+                    summary.stale_endpoint_count += 1;
                     tracing::warn!(
+                        delivery_id,
+                        attempt_count,
                         subscription_id = subscription.id,
+                        endpoint_host,
+                        classification = "stale_endpoint",
                         "disabling stale push notification subscription"
                     );
                     state
@@ -203,21 +306,169 @@ impl NotificationService {
                 }
             }
         }
-        Ok(())
+        Ok(summary)
     }
 }
 
-async fn deliver_unread_agent_message_if_still_unread(
-    state: AppState,
+#[derive(Debug, Default)]
+struct DeliveryAttemptSummary {
+    sent_count: usize,
+    temporary_failure_count: usize,
+    stale_endpoint_count: usize,
+    sent_subscription_ids: Vec<String>,
+}
+
+pub async fn process_due_deliveries(state: AppState) -> ApiResult<()> {
+    let now = Utc::now();
+    let stale_before = now - DELIVERY_PROCESSING_STALE_AFTER;
+    let deliveries = state
+        .store
+        .claim_due_notification_deliveries(DELIVERY_CLAIM_LIMIT, now, stale_before)
+        .await?;
+    for delivery in deliveries {
+        if let Err(error) = process_delivery(state.clone(), delivery.clone()).await {
+            let message = error.to_string();
+            let should_retry = delivery.attempt_count < DELIVERY_MAX_ATTEMPTS;
+            if should_retry {
+                let available_at = Utc::now() + retry_delay(delivery.attempt_count);
+                state
+                    .store
+                    .mark_notification_delivery_retry(
+                        &delivery.id,
+                        available_at,
+                        message,
+                        &delivery.delivered_subscription_ids,
+                    )
+                    .await?;
+            } else {
+                state
+                    .store
+                    .mark_notification_delivery_failed(
+                        &delivery.id,
+                        message,
+                        None,
+                        &delivery.delivered_subscription_ids,
+                    )
+                    .await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn process_delivery(state: AppState, delivery: NotificationDelivery) -> ApiResult<()> {
+    let payload = notification_payload_for_delivery(&state, &delivery).await?;
+    let Some(payload) = payload else {
+        state
+            .store
+            .mark_notification_delivery_sent(
+                &delivery.id,
+                None,
+                &delivery.delivered_subscription_ids,
+            )
+            .await?;
+        return Ok(());
+    };
+    let payload_json = serde_json::to_value(&payload)?;
+    let mut delivered_subscription_ids = delivery.delivered_subscription_ids.clone();
+    let summary = state
+        .notifications
+        .deliver_payload_to_enabled_subscriptions(
+            &state,
+            &payload,
+            Some(&delivery.id),
+            delivery.attempt_count,
+            &delivered_subscription_ids,
+        )
+        .await?;
+    for subscription_id in summary.sent_subscription_ids {
+        if !delivered_subscription_ids.contains(&subscription_id) {
+            delivered_subscription_ids.push(subscription_id);
+        }
+    }
+    if summary.temporary_failure_count > 0 {
+        if delivery.attempt_count < DELIVERY_MAX_ATTEMPTS {
+            let available_at = Utc::now() + retry_delay(delivery.attempt_count);
+            state
+                .store
+                .mark_notification_delivery_retry(
+                    &delivery.id,
+                    available_at,
+                    format!(
+                        "{} temporary push delivery failure(s)",
+                        summary.temporary_failure_count
+                    ),
+                    &delivered_subscription_ids,
+                )
+                .await?;
+        } else {
+            state
+                .store
+                .mark_notification_delivery_failed(
+                    &delivery.id,
+                    format!(
+                        "{} temporary push delivery failure(s)",
+                        summary.temporary_failure_count
+                    ),
+                    Some(&payload_json),
+                    &delivered_subscription_ids,
+                )
+                .await?;
+        }
+        return Ok(());
+    }
+    if summary.stale_endpoint_count > 0 && delivered_subscription_ids.is_empty() {
+        state
+            .store
+            .mark_notification_delivery_failed(
+                &delivery.id,
+                format!("{} stale push endpoint(s)", summary.stale_endpoint_count),
+                Some(&payload_json),
+                &delivered_subscription_ids,
+            )
+            .await?;
+        return Ok(());
+    }
+    state
+        .store
+        .mark_notification_delivery_sent(
+            &delivery.id,
+            Some(&payload_json),
+            &delivered_subscription_ids,
+        )
+        .await?;
+    Ok(())
+}
+
+async fn notification_payload_for_delivery(
+    state: &AppState,
+    delivery: &NotificationDelivery,
+) -> ApiResult<Option<NotificationPayload>> {
+    if let Some(payload) = delivery.payload.clone() {
+        return Ok(Some(serde_json::from_value(payload)?));
+    }
+    match delivery.kind.as_str() {
+        "unreadAgentMessage" => {
+            let Some(thread_id) = delivery.thread_id.clone() else {
+                return Ok(None);
+            };
+            unread_agent_message_payload_if_still_unread(state, thread_id).await
+        }
+        _ => Ok(None),
+    }
+}
+
+async fn unread_agent_message_payload_if_still_unread(
+    state: &AppState,
     thread_id: String,
-) -> ApiResult<()> {
+) -> ApiResult<Option<NotificationPayload>> {
     if !state.store.thread_notifications_enabled(&thread_id).await? {
         tracing::debug!(
             thread_id,
             reason = "disabled_by_thread_setting",
             "skipped unread agent message push notification"
         );
-        return Ok(());
+        return Ok(None);
     }
 
     let snapshot = app_server_api::client(&state.app_server)
@@ -229,7 +480,7 @@ async fn deliver_unread_agent_message_if_still_unread(
             reason = "suppressed_by_thread_source",
             "skipped unread agent message push notification"
         );
-        return Ok(());
+        return Ok(None);
     }
 
     let badge_count = unread_badge_count(&state, &thread_id)
@@ -245,19 +496,13 @@ async fn deliver_unread_agent_message_if_still_unread(
     let body = unread_agent_message_body(&snapshot);
     let payload = NotificationPayload {
         kind: NotificationKind::UnreadAgentMessage,
-        thread_id: thread_id.clone(),
+        thread_id: Some(thread_id.clone()),
         title: thread_title.clone(),
         body: Some(body),
         route: format!("/threads/{thread_id}"),
         badge_count,
     };
-    state.notifications.deliver_payload(&state, payload).await?;
-    tracing::debug!(
-        thread_id,
-        reason = "delivered",
-        "delivered unread agent message push notification"
-    );
-    Ok(())
+    Ok(Some(payload))
 }
 
 fn suppress_unread_agent_message_notification(thread: &serde_json::Value) -> bool {
@@ -431,14 +676,19 @@ pub fn notification_planning_event_payload(thread_id: &str) -> serde_json::Value
     })
 }
 
-fn permanent_delivery_error(error: &WebPushError) -> bool {
+fn retry_delay(attempt_count: i64) -> ChronoDuration {
+    ChronoDuration::seconds((attempt_count.max(1) * 2).min(30))
+}
+
+fn endpoint_host(endpoint: &str) -> Option<String> {
+    Url::parse(endpoint)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+}
+
+fn stale_endpoint_error(error: &WebPushError) -> bool {
     matches!(
         error,
-        WebPushError::BadRequest(_)
-            | WebPushError::EndpointNotFound(_)
-            | WebPushError::EndpointNotValid(_)
-            | WebPushError::InvalidCryptoKeys
-            | WebPushError::InvalidUri
-            | WebPushError::MissingCryptoKeys
+        WebPushError::EndpointNotFound(_) | WebPushError::EndpointNotValid(_)
     )
 }

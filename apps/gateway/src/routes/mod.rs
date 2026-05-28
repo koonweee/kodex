@@ -19,9 +19,12 @@ pub mod turns;
 pub mod uploads;
 #[cfg(test)]
 mod tests {
-    use std::sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc, Mutex as StdMutex,
+    use std::{
+        collections::HashMap,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc, Mutex as StdMutex,
+        },
     };
 
     use async_trait::async_trait;
@@ -48,11 +51,15 @@ mod tests {
         config::Config,
         error::{ApiError, ApiResult},
         events::ingest_inbound,
-        notifications::{NotificationKind, NotificationPayload, PushDeliveryOutcome, PushSender},
+        notifications::{
+            process_due_deliveries, NotificationKind, NotificationPayload, PushDeliveryOutcome,
+            PushSender,
+        },
         queue,
         store::{
-            NewApproval, NewEvent, NewPushSubscription, PushSubscription, Store,
-            ThreadComposerSettings, ThreadRuntimeState,
+            NewApproval, NewEvent, NewNotificationDelivery, NewPushSubscription,
+            NotificationDeliveryStatus, PushSubscription, Store, ThreadComposerSettings,
+            ThreadRuntimeState,
         },
         thread_view,
     };
@@ -232,6 +239,193 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn current_notification_subscription_reports_endpoint_status_and_disables_by_endpoint() {
+        let (mut state, _) = test_state().await;
+        Arc::make_mut(&mut state.config)
+            .notifications
+            .vapid_public_key = Some("public-key".to_string());
+        Arc::make_mut(&mut state.config)
+            .notifications
+            .vapid_private_key = Some("private-key".to_string());
+        Arc::make_mut(&mut state.config).notifications.vapid_subject =
+            Some("mailto:admin@example.test".to_string());
+        state
+            .store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/current".to_string(),
+                p256dh: "public".to_string(),
+                auth: "auth".to_string(),
+                user_agent: Some("browser".to_string()),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state);
+
+        let missing = app
+            .clone()
+            .oneshot(
+                Request::get(
+                    "/v1/notifications/subscription/current?endpoint=https%3A%2F%2Fpush.example%2Fmissing",
+                )
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), StatusCode::OK);
+        let body = response_json(missing).await;
+        assert_eq!(body["configured"], true);
+        assert_eq!(body["subscribed"], false);
+        assert!(body["subscription"].is_null());
+
+        let enabled = app
+            .clone()
+            .oneshot(
+                Request::get(
+                    "/v1/notifications/subscription/current?endpoint=https%3A%2F%2Fpush.example%2Fcurrent",
+                )
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(enabled.status(), StatusCode::OK);
+        let body = response_json(enabled).await;
+        assert_eq!(body["configured"], true);
+        assert_eq!(body["subscribed"], true);
+        assert_eq!(
+            body["subscription"]["endpoint"],
+            "https://push.example/current"
+        );
+
+        let disabled = app
+            .clone()
+            .oneshot(
+                Request::delete(
+                    "/v1/notifications/subscription/current?endpoint=https%3A%2F%2Fpush.example%2Fcurrent",
+                )
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(disabled.status(), StatusCode::OK);
+        let body = response_json(disabled).await;
+        assert_eq!(body["subscribed"], false);
+        assert_eq!(body["subscription"]["enabled"], false);
+
+        let disabled_status = app
+            .oneshot(
+                Request::get(
+                    "/v1/notifications/subscription/current?endpoint=https%3A%2F%2Fpush.example%2Fcurrent",
+                )
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = response_json(disabled_status).await;
+        assert_eq!(body["subscribed"], false);
+        assert_eq!(body["subscription"]["enabled"], false);
+    }
+
+    #[tokio::test]
+    async fn current_notification_subscription_reports_unconfigured_state() {
+        let (state, _) = test_state().await;
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get(
+                    "/v1/notifications/subscription/current?endpoint=https%3A%2F%2Fpush.example%2Fcurrent",
+                )
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["configured"], false);
+        assert_eq!(body["subscribed"], false);
+    }
+
+    #[tokio::test]
+    async fn test_notification_route_reports_configuration_and_enqueues_for_active_subscriptions() {
+        let (state, _) = test_state().await;
+        let app = build_router(state);
+        let unconfigured = app
+            .oneshot(
+                Request::post("/v1/notifications/test")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(unconfigured.status(), StatusCode::OK);
+        let body = response_json(unconfigured).await;
+        assert_eq!(body["configured"], false);
+        assert_eq!(body["enqueued"], false);
+
+        let (mut state, _) = test_state().await;
+        Arc::make_mut(&mut state.config)
+            .notifications
+            .vapid_public_key = Some("public-key".to_string());
+        Arc::make_mut(&mut state.config)
+            .notifications
+            .vapid_private_key = Some("private-key".to_string());
+        Arc::make_mut(&mut state.config).notifications.vapid_subject =
+            Some("mailto:admin@example.test".to_string());
+        let app = build_router(state.clone());
+        let no_active = app
+            .oneshot(
+                Request::post("/v1/notifications/test")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = response_json(no_active).await;
+        assert_eq!(body["configured"], true);
+        assert_eq!(body["activeSubscriptionCount"], 0);
+        assert_eq!(body["enqueued"], false);
+
+        state
+            .store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/active".to_string(),
+                p256dh: "public".to_string(),
+                auth: "auth".to_string(),
+                user_agent: None,
+            })
+            .await
+            .unwrap();
+        let sender = Arc::new(RecordingPushSender::new(PushDeliveryOutcome::Sent));
+        state = state.with_notification_sender(sender);
+        let app = build_router(state.clone());
+        let active = app
+            .oneshot(
+                Request::post("/v1/notifications/test")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = response_json(active).await;
+        assert_eq!(body["configured"], true);
+        assert_eq!(body["activeSubscriptionCount"], 1);
+        assert_eq!(body["enqueued"], true);
+        let delivery_id = body["deliveryIds"][0].as_str().unwrap();
+        let delivery = state
+            .store
+            .get_notification_delivery(delivery_id)
+            .await
+            .unwrap();
+        assert_eq!(delivery.kind, "test");
+    }
+
+    #[tokio::test]
     async fn terminal_turn_upsert_schedules_unread_agent_message_delivery() {
         let (mut state, app_server) = test_state().await;
         Arc::make_mut(&mut state.config)
@@ -250,6 +444,7 @@ mod tests {
             .await
             .unwrap();
         app_server.queued_responses.lock().unwrap().extend([
+            thread_read_response("thread-1", 1),
             thread_read_response_with_agent_message(
                 "thread-1",
                 "Octopus Heart Facts With An Overly Long Thread Title That Should Not Fill The Banner",
@@ -276,13 +471,11 @@ mod tests {
         .await
         .unwrap();
 
-        timeout(Duration::from_secs(2), sender.notified.notified())
-            .await
-            .unwrap();
+        process_due_deliveries(state.clone()).await.unwrap();
         let payloads = sender.payloads.lock().unwrap();
         assert_eq!(payloads.len(), 1);
         assert_eq!(payloads[0].kind, NotificationKind::UnreadAgentMessage);
-        assert_eq!(payloads[0].thread_id, "thread-1");
+        assert_eq!(payloads[0].thread_id.as_deref(), Some("thread-1"));
         assert_eq!(
             payloads[0].title,
             "Octopus Heart Facts With An Overly Long Thread T..."
@@ -305,39 +498,44 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn duplicate_terminal_turn_notifications_send_one_unread_agent_message_delivery() {
-        let (mut state, app_server) = test_state().await;
+    async fn terminal_turn_planning_persists_pending_notification_delivery_before_worker_runs() {
+        let (mut state, _) = test_state().await;
         Arc::make_mut(&mut state.config)
             .notifications
-            .recheck_delay_ms = 0;
-        let sender = Arc::new(RecordingPushSender::new(PushDeliveryOutcome::Sent));
-        state = state.with_notification_sender(sender.clone());
-        state
-            .store
-            .upsert_push_subscription(NewPushSubscription {
-                endpoint: "https://push.example/sub-1".to_string(),
-                p256dh: "public".to_string(),
-                auth: "auth".to_string(),
-                user_agent: None,
-            })
-            .await
-            .unwrap();
-        app_server.queued_responses.lock().unwrap().extend([
-            thread_read_response_with_agent_message(
-                "thread-1",
-                "Thread 1",
-                "Tool output should stay hidden.",
-                "Only notify once.",
-            ),
-            json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
-            thread_read_response_with_agent_message(
-                "thread-1",
-                "Thread 1",
-                "Tool output should stay hidden.",
-                "Only notify once.",
-            ),
-            json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
-        ]);
+            .recheck_delay_ms = 60_000;
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "turn/upsert".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turn": {
+                        "id": "turn-1",
+                        "status": {"type": "completed"},
+                        "items": []
+                    }
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let deliveries = state.store.list_notification_deliveries().await.unwrap();
+        assert_eq!(deliveries.len(), 1);
+        assert_eq!(deliveries[0].kind, "unreadAgentMessage");
+        assert_eq!(deliveries[0].thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(deliveries[0].turn_id.as_deref(), Some("turn-1"));
+        assert_eq!(deliveries[0].status, NotificationDeliveryStatus::Pending);
+        assert_eq!(deliveries[0].attempt_count, 0);
+    }
+
+    #[tokio::test]
+    async fn duplicate_terminal_turn_notifications_enqueue_one_unread_agent_message_delivery() {
+        let (mut state, _app_server) = test_state().await;
+        Arc::make_mut(&mut state.config)
+            .notifications
+            .recheck_delay_ms = 60_000;
 
         for method in ["turn/upsert", "turn/completed"] {
             ingest_inbound(
@@ -358,8 +556,12 @@ mod tests {
             .unwrap();
         }
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        assert_eq!(sender.payloads.lock().unwrap().len(), 1);
+        let deliveries = state.store.list_notification_deliveries().await.unwrap();
+        assert_eq!(deliveries.len(), 1);
+        assert_eq!(deliveries[0].kind, "unreadAgentMessage");
+        assert_eq!(deliveries[0].thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(deliveries[0].turn_id.as_deref(), Some("turn-1"));
+        assert_eq!(deliveries[0].status, NotificationDeliveryStatus::Pending);
     }
 
     #[tokio::test]
@@ -387,6 +589,7 @@ mod tests {
             .unwrap();
         app_server.queued_responses.lock().unwrap().extend([
             thread_read_response("thread-1", 1),
+            thread_read_response("thread-1", 1),
             json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
         ]);
 
@@ -407,9 +610,7 @@ mod tests {
         .await
         .unwrap();
 
-        timeout(Duration::from_secs(2), sender.notified.notified())
-            .await
-            .unwrap();
+        process_due_deliveries(state.clone()).await.unwrap();
         assert_eq!(sender.payloads.lock().unwrap().len(), 1);
     }
 
@@ -459,7 +660,7 @@ mod tests {
         .await
         .unwrap();
 
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        process_due_deliveries(state.clone()).await.unwrap();
         assert!(sender.payloads.lock().unwrap().is_empty());
     }
 
@@ -497,6 +698,7 @@ mod tests {
                 .await
                 .unwrap();
             app_server.queued_responses.lock().unwrap().extend([
+                thread_read_response("thread-subagent", 1),
                 thread_read_response_with_agent_message_source(
                     "thread-subagent",
                     "Subagent",
@@ -525,7 +727,7 @@ mod tests {
             .await
             .unwrap();
 
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            process_due_deliveries(state.clone()).await.unwrap();
             assert!(sender.payloads.lock().unwrap().is_empty());
         }
     }
@@ -533,9 +735,7 @@ mod tests {
     #[tokio::test]
     async fn permanent_push_failure_disables_stale_subscription() {
         let (state, _) = test_state().await;
-        let sender = Arc::new(RecordingPushSender::new(
-            PushDeliveryOutcome::PermanentFailure,
-        ));
+        let sender = Arc::new(RecordingPushSender::new(PushDeliveryOutcome::StaleEndpoint));
         let state = state.with_notification_sender(sender);
         state
             .store
@@ -554,7 +754,7 @@ mod tests {
                 &state,
                 NotificationPayload {
                     kind: NotificationKind::UnreadAgentMessage,
-                    thread_id: "thread-1".to_string(),
+                    thread_id: Some("thread-1".to_string()),
                     title: "Thread".to_string(),
                     body: Some("Thread\nAgent has a new message.".to_string()),
                     route: "/threads/thread-1".to_string(),
@@ -595,7 +795,7 @@ mod tests {
                 &state,
                 NotificationPayload {
                     kind: NotificationKind::UnreadAgentMessage,
-                    thread_id: "thread-1".to_string(),
+                    thread_id: Some("thread-1".to_string()),
                     title: "Thread".to_string(),
                     body: Some("Thread\nAgent has a new message.".to_string()),
                     route: "/threads/thread-1".to_string(),
@@ -608,6 +808,203 @@ mod tests {
         let subscriptions = state.store.list_enabled_push_subscriptions().await.unwrap();
         assert_eq!(subscriptions.len(), 1);
         assert_eq!(subscriptions[0].endpoint, "https://push.example/temporary");
+    }
+
+    #[tokio::test]
+    async fn durable_notification_delivery_retries_temporary_failure_without_disabling_subscription(
+    ) {
+        let (state, _) = test_state().await;
+        let sender = Arc::new(RecordingPushSender::new(
+            PushDeliveryOutcome::TemporaryFailure,
+        ));
+        let state = state.with_notification_sender(sender);
+        state
+            .store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/temporary".to_string(),
+                p256dh: "public".to_string(),
+                auth: "auth".to_string(),
+                user_agent: None,
+            })
+            .await
+            .unwrap();
+        let delivery = state
+            .store
+            .create_notification_delivery(NewNotificationDelivery {
+                kind: "test".to_string(),
+                thread_id: None,
+                turn_id: None,
+                payload: Some(json!({
+                    "kind": "test",
+                    "title": "Kodex test notification",
+                    "body": "Push notifications are working.",
+                    "route": "/",
+                    "badgeCount": 0
+                })),
+                available_at: chrono::Utc::now(),
+            })
+            .await
+            .unwrap();
+
+        process_due_deliveries(state.clone()).await.unwrap();
+
+        let delivery = state
+            .store
+            .get_notification_delivery(&delivery.id)
+            .await
+            .unwrap();
+        assert_eq!(delivery.status, NotificationDeliveryStatus::Pending);
+        assert_eq!(delivery.attempt_count, 1);
+        assert!(delivery
+            .last_error
+            .as_deref()
+            .unwrap()
+            .contains("temporary"));
+        let subscriptions = state.store.list_enabled_push_subscriptions().await.unwrap();
+        assert_eq!(subscriptions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn durable_notification_delivery_disables_only_stale_endpoint() {
+        let (state, _) = test_state().await;
+        state
+            .store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/stale".to_string(),
+                p256dh: "public".to_string(),
+                auth: "auth".to_string(),
+                user_agent: None,
+            })
+            .await
+            .unwrap();
+        state
+            .store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/active".to_string(),
+                p256dh: "public".to_string(),
+                auth: "auth".to_string(),
+                user_agent: None,
+            })
+            .await
+            .unwrap();
+        let sender = Arc::new(SelectivePushSender {
+            stale_endpoint: "https://push.example/stale".to_string(),
+            payloads: StdMutex::new(Vec::new()),
+        });
+        let state = state.with_notification_sender(sender);
+        let delivery = state
+            .store
+            .create_notification_delivery(NewNotificationDelivery {
+                kind: "test".to_string(),
+                thread_id: None,
+                turn_id: None,
+                payload: Some(json!({
+                    "kind": "test",
+                    "title": "Kodex test notification",
+                    "body": "Push notifications are working.",
+                    "route": "/",
+                    "badgeCount": 0
+                })),
+                available_at: chrono::Utc::now(),
+            })
+            .await
+            .unwrap();
+
+        process_due_deliveries(state.clone()).await.unwrap();
+
+        let delivery = state
+            .store
+            .get_notification_delivery(&delivery.id)
+            .await
+            .unwrap();
+        assert_eq!(delivery.status, NotificationDeliveryStatus::Sent);
+        let subscriptions = state.store.list_enabled_push_subscriptions().await.unwrap();
+        assert_eq!(subscriptions.len(), 1);
+        assert_eq!(subscriptions[0].endpoint, "https://push.example/active");
+    }
+
+    #[tokio::test]
+    async fn durable_notification_delivery_retry_skips_already_sent_subscription() {
+        let (state, _) = test_state().await;
+        state
+            .store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/active".to_string(),
+                p256dh: "public".to_string(),
+                auth: "auth".to_string(),
+                user_agent: None,
+            })
+            .await
+            .unwrap();
+        state
+            .store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/flaky".to_string(),
+                p256dh: "public".to_string(),
+                auth: "auth".to_string(),
+                user_agent: None,
+            })
+            .await
+            .unwrap();
+        let sender = Arc::new(FlakyEndpointPushSender {
+            flaky_endpoint: "https://push.example/flaky".to_string(),
+            attempts_by_endpoint: StdMutex::new(HashMap::new()),
+        });
+        let state = state.with_notification_sender(sender.clone());
+        let delivery = state
+            .store
+            .create_notification_delivery(NewNotificationDelivery {
+                kind: "test".to_string(),
+                thread_id: None,
+                turn_id: None,
+                payload: Some(json!({
+                    "kind": "test",
+                    "title": "Kodex test notification",
+                    "body": "Push notifications are working.",
+                    "route": "/",
+                    "badgeCount": 0
+                })),
+                available_at: chrono::Utc::now(),
+            })
+            .await
+            .unwrap();
+
+        process_due_deliveries(state.clone()).await.unwrap();
+        let retry = state
+            .store
+            .get_notification_delivery(&delivery.id)
+            .await
+            .unwrap();
+        assert_eq!(retry.status, NotificationDeliveryStatus::Pending);
+        assert_eq!(retry.delivered_subscription_ids.len(), 1);
+
+        state
+            .store
+            .mark_notification_delivery_retry(
+                &delivery.id,
+                chrono::Utc::now(),
+                "retry now".to_string(),
+                &retry.delivered_subscription_ids,
+            )
+            .await
+            .unwrap();
+        process_due_deliveries(state.clone()).await.unwrap();
+
+        let delivery = state
+            .store
+            .get_notification_delivery(&delivery.id)
+            .await
+            .unwrap();
+        assert_eq!(delivery.status, NotificationDeliveryStatus::Sent);
+        let attempts_by_endpoint = sender.attempts_by_endpoint.lock().unwrap();
+        assert_eq!(
+            attempts_by_endpoint.get("https://push.example/active"),
+            Some(&1)
+        );
+        assert_eq!(
+            attempts_by_endpoint.get("https://push.example/flaky"),
+            Some(&2)
+        );
     }
 
     #[tokio::test]
@@ -870,8 +1267,10 @@ mod tests {
             "/v1/account/rate-limits",
             "/v1/models",
             "/v1/notifications/status",
+            "/v1/notifications/subscription/current",
             "/v1/notifications/subscriptions",
             "/v1/notifications/subscriptions/{subscriptionId}",
+            "/v1/notifications/test",
             "/v1/skills",
             "/v1/kodex-control-plugin",
             "/v1/kodex-control-plugin/install",
@@ -10679,7 +11078,6 @@ mod tests {
     struct RecordingPushSender {
         outcome: PushDeliveryOutcome,
         payloads: StdMutex<Vec<NotificationPayload>>,
-        notified: Notify,
     }
 
     impl RecordingPushSender {
@@ -10687,7 +11085,6 @@ mod tests {
             Self {
                 outcome,
                 payloads: StdMutex::new(Vec::new()),
-                notified: Notify::new(),
             }
         }
     }
@@ -10700,8 +11097,53 @@ mod tests {
             payload: &NotificationPayload,
         ) -> PushDeliveryOutcome {
             self.payloads.lock().unwrap().push(payload.clone());
-            self.notified.notify_waiters();
             self.outcome.clone()
+        }
+    }
+
+    struct SelectivePushSender {
+        stale_endpoint: String,
+        payloads: StdMutex<Vec<NotificationPayload>>,
+    }
+
+    #[async_trait]
+    impl PushSender for SelectivePushSender {
+        async fn send(
+            &self,
+            subscription: &PushSubscription,
+            payload: &NotificationPayload,
+        ) -> PushDeliveryOutcome {
+            self.payloads.lock().unwrap().push(payload.clone());
+            if subscription.endpoint == self.stale_endpoint {
+                PushDeliveryOutcome::StaleEndpoint
+            } else {
+                PushDeliveryOutcome::Sent
+            }
+        }
+    }
+
+    struct FlakyEndpointPushSender {
+        flaky_endpoint: String,
+        attempts_by_endpoint: StdMutex<HashMap<String, usize>>,
+    }
+
+    #[async_trait]
+    impl PushSender for FlakyEndpointPushSender {
+        async fn send(
+            &self,
+            subscription: &PushSubscription,
+            _payload: &NotificationPayload,
+        ) -> PushDeliveryOutcome {
+            let mut attempts_by_endpoint = self.attempts_by_endpoint.lock().unwrap();
+            let attempts = attempts_by_endpoint
+                .entry(subscription.endpoint.clone())
+                .or_insert(0);
+            *attempts += 1;
+            if subscription.endpoint == self.flaky_endpoint && *attempts == 1 {
+                PushDeliveryOutcome::TemporaryFailure
+            } else {
+                PushDeliveryOutcome::Sent
+            }
         }
     }
 

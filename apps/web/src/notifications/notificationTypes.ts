@@ -1,4 +1,4 @@
-export type KodexNotificationKind = "unreadAgentMessage";
+export type KodexNotificationKind = "test" | "unreadAgentMessage";
 
 export type KodexNotificationPayload = {
   badgeCount?: number;

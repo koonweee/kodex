@@ -981,10 +981,10 @@ describe("MVP composer settings flows", () => {
       expect(gateway.callsFor("PATCH", "/v1/composer-settings")).toHaveLength(1);
     });
 
-    const globalStreams = FakeEventSource.instances.filter((instance) => !instance.url.includes("threadId="));
-    expect(globalStreams).toHaveLength(2);
+    const selectedThreadStreams = FakeEventSource.instances.filter((instance) => instance.url.includes("threadId=thread-1"));
+    expect(selectedThreadStreams).toHaveLength(2);
     act(() => {
-      for (const stream of globalStreams) {
+      for (const stream of selectedThreadStreams) {
         stream.emitNamed("timeline.thread_metadata", {
           id: `event-refreshed-${stream.url}`,
           seq: 12,

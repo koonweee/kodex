@@ -125,7 +125,9 @@ describe("MVP composer input flows", () => {
 
     let selectedThreadStream: FakeEventSource | undefined;
     await waitFor(() => {
-      selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+      selectedThreadStream = FakeEventSource.instances.find(
+        (instance) => instance.url.includes("threadId=thread-1") && !instance.closed,
+      );
       expect(selectedThreadStream).toBeDefined();
     });
     act(() => {
@@ -170,7 +172,13 @@ describe("MVP composer input flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    let selectedThreadStream: FakeEventSource | undefined;
+    await waitFor(() => {
+      selectedThreadStream = FakeEventSource.instances.find(
+        (instance) => instance.url.includes("threadId=thread-1") && !instance.closed,
+      );
+      expect(selectedThreadStream).toBeDefined();
+    });
 
     act(() => {
       selectedThreadStream?.emit(projectionPatchEvent({

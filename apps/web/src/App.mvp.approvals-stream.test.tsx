@@ -204,9 +204,16 @@ describe("MVP approvals stream flows", () => {
     await userEvent.click(secondThreadButton);
     const timeline = await screen.findByRole("main", { name: /thread/i });
     expect(await within(timeline).findByText(/cargo fmt/i)).toBeInTheDocument();
+    let selectedThreadStream: FakeEventSource | undefined;
+    await waitFor(() => {
+      selectedThreadStream = [...FakeEventSource.instances]
+        .reverse()
+        .find((instance) => instance.url.includes("threadId=thread-2"));
+      expect(selectedThreadStream).toBeDefined();
+    });
 
     act(() => {
-      globalApprovalStream?.emit({
+      selectedThreadStream?.emit({
         id: "event-other-approval-resolved",
         seq: 3,
         kind: "approval.resolved",

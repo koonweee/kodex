@@ -500,6 +500,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/notifications/subscription/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["current_push_subscription"];
+        put?: never;
+        post?: never;
+        delete: operations["delete_current_push_subscription"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/notifications/subscriptions": {
         parameters: {
             query?: never;
@@ -527,6 +543,22 @@ export interface paths {
         put?: never;
         post?: never;
         delete: operations["delete_push_subscription"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/notifications/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["test_notification"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1527,6 +1559,14 @@ export interface components {
             hasCredits: boolean;
             unlimited: boolean;
         };
+        CurrentPushSubscriptionQuery: {
+            endpoint: string;
+        };
+        CurrentPushSubscriptionResponse: {
+            configured: boolean;
+            subscribed: boolean;
+            subscription?: null | components["schemas"]["PushSubscriptionResponse"];
+        };
         EventEnvelope: {
             codexMethod?: string | null;
             id: string;
@@ -2277,6 +2317,12 @@ export interface components {
         SkillsQuery: {
             cwd?: string | null;
             forceReload?: boolean;
+        };
+        TestNotificationResponse: {
+            activeSubscriptionCount: number;
+            configured: boolean;
+            deliveryIds: string[];
+            enqueued: boolean;
         };
         TextElement: {
             byteRange: components["schemas"]["ByteRange"];
@@ -3498,6 +3544,48 @@ export interface operations {
             };
         };
     };
+    current_push_subscription: {
+        parameters: {
+            query: {
+                endpoint: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentPushSubscriptionResponse"];
+                };
+            };
+        };
+    };
+    delete_current_push_subscription: {
+        parameters: {
+            query: {
+                endpoint: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentPushSubscriptionResponse"];
+                };
+            };
+        };
+    };
     upsert_push_subscription: {
         parameters: {
             query?: never;
@@ -3538,6 +3626,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PushSubscriptionDeleteResponse"];
+                };
+            };
+        };
+    };
+    test_notification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestNotificationResponse"];
                 };
             };
         };

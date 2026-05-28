@@ -10,10 +10,14 @@ import { queryKeys } from "./api/queryKeys";
 import { PreferencesModal } from "./PreferencesModal";
 
 const apiMocks = vi.hoisted(() => ({
+  deleteCurrentPushSubscription: vi.fn(),
   deletePushSubscription: vi.fn(),
+  getCurrentPushSubscriptionStatus: vi.fn(),
   getKodexControlPluginStatus: vi.fn(),
   getNotificationStatus: vi.fn(),
   installKodexControlPlugin: vi.fn(),
+  sendTestNotification: vi.fn(),
+  upsertPushSubscription: vi.fn(),
   addMcpServer: vi.fn(),
   listConfiguredMcpServers: vi.fn(),
   listMcpServers: vi.fn(),
@@ -27,10 +31,14 @@ const apiMocks = vi.hoisted(() => ({
 
 vi.mock("./api/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./api/client")>()),
+  deleteCurrentPushSubscription: apiMocks.deleteCurrentPushSubscription,
   deletePushSubscription: apiMocks.deletePushSubscription,
+  getCurrentPushSubscriptionStatus: apiMocks.getCurrentPushSubscriptionStatus,
   getKodexControlPluginStatus: apiMocks.getKodexControlPluginStatus,
   getNotificationStatus: apiMocks.getNotificationStatus,
   installKodexControlPlugin: apiMocks.installKodexControlPlugin,
+  sendTestNotification: apiMocks.sendTestNotification,
+  upsertPushSubscription: apiMocks.upsertPushSubscription,
   addMcpServer: apiMocks.addMcpServer,
   listConfiguredMcpServers: apiMocks.listConfiguredMcpServers,
   listMcpServers: apiMocks.listMcpServers,
@@ -78,11 +86,69 @@ function renderPreferences(initialSection: "appearance" | "notifications" | "plu
   };
 }
 
+function installNotificationEnvironment({
+  permission = "default",
+  subscription = null,
+}: {
+  permission?: NotificationPermission;
+  subscription?: PushSubscription | null;
+} = {}) {
+  const originalNotification = Object.getOwnPropertyDescriptor(globalThis, "Notification");
+  const originalPushManager = Object.getOwnPropertyDescriptor(globalThis, "PushManager");
+  const originalServiceWorker = Object.getOwnPropertyDescriptor(navigator, "serviceWorker");
+  const notificationConstructor = vi.fn();
+  Object.defineProperty(notificationConstructor, "permission", {
+    configurable: true,
+    value: permission,
+  });
+  Object.defineProperty(notificationConstructor, "requestPermission", {
+    configurable: true,
+    value: vi.fn().mockResolvedValue("granted"),
+  });
+  Object.defineProperty(globalThis, "Notification", {
+    configurable: true,
+    value: notificationConstructor,
+  });
+  Object.defineProperty(globalThis, "PushManager", {
+    configurable: true,
+    value: function PushManager() {},
+  });
+  Object.defineProperty(navigator, "serviceWorker", {
+    configurable: true,
+    value: {
+      getRegistration: vi.fn().mockResolvedValue({
+        pushManager: {
+          getSubscription: vi.fn().mockResolvedValue(subscription),
+        },
+      }),
+      ready: Promise.resolve(undefined),
+    },
+  });
+
+  return () => {
+    restoreDescriptor(globalThis, "Notification", originalNotification);
+    restoreDescriptor(globalThis, "PushManager", originalPushManager);
+    restoreDescriptor(navigator, "serviceWorker", originalServiceWorker);
+  };
+}
+
+function restoreDescriptor(target: object, key: string, descriptor: PropertyDescriptor | undefined) {
+  if (descriptor) {
+    Object.defineProperty(target, key, descriptor);
+  } else {
+    Reflect.deleteProperty(target, key);
+  }
+}
+
 describe("PreferencesModal plugins tab", () => {
   beforeEach(() => {
+    apiMocks.deleteCurrentPushSubscription.mockReset();
     apiMocks.deletePushSubscription.mockReset();
+    apiMocks.getCurrentPushSubscriptionStatus.mockReset();
     apiMocks.getKodexControlPluginStatus.mockReset();
     apiMocks.getNotificationStatus.mockReset();
+    apiMocks.sendTestNotification.mockReset();
+    apiMocks.upsertPushSubscription.mockReset();
     apiMocks.installKodexControlPlugin.mockReset();
     apiMocks.addMcpServer.mockReset();
     apiMocks.listConfiguredMcpServers.mockReset();
@@ -208,33 +274,18 @@ describe("PreferencesModal plugins tab", () => {
 
 describe("PreferencesModal notifications tab", () => {
   beforeEach(() => {
+    apiMocks.deleteCurrentPushSubscription.mockReset();
     apiMocks.deletePushSubscription.mockReset();
+    apiMocks.getCurrentPushSubscriptionStatus.mockReset();
     apiMocks.getKodexControlPluginStatus.mockReset();
     apiMocks.getNotificationStatus.mockReset();
+    apiMocks.sendTestNotification.mockReset();
+    apiMocks.upsertPushSubscription.mockReset();
     localStorage.clear();
   });
 
   it("shows notification availability without iOS-specific guidance", async () => {
-    const originalNotification = Object.getOwnPropertyDescriptor(globalThis, "Notification");
-    const originalPushManager = Object.getOwnPropertyDescriptor(globalThis, "PushManager");
-    const originalServiceWorker = Object.getOwnPropertyDescriptor(navigator, "serviceWorker");
-    const notificationConstructor = vi.fn();
-    Object.defineProperty(notificationConstructor, "permission", {
-      configurable: true,
-      value: "default",
-    });
-    Object.defineProperty(globalThis, "Notification", {
-      configurable: true,
-      value: notificationConstructor,
-    });
-    Object.defineProperty(globalThis, "PushManager", {
-      configurable: true,
-      value: function PushManager() {},
-    });
-    Object.defineProperty(navigator, "serviceWorker", {
-      configurable: true,
-      value: {},
-    });
+    const restoreNotifications = installNotificationEnvironment({ permission: "default" });
 
     apiMocks.getNotificationStatus.mockResolvedValue({
       configured: true,
@@ -250,21 +301,7 @@ describe("PreferencesModal notifications tab", () => {
       expect(screen.getByRole("button", { name: /enable/i })).toBeInTheDocument();
       expect(screen.queryByText(/ios/i)).not.toBeInTheDocument();
     } finally {
-      if (originalNotification) {
-        Object.defineProperty(globalThis, "Notification", originalNotification);
-      } else {
-        Reflect.deleteProperty(globalThis, "Notification");
-      }
-      if (originalPushManager) {
-        Object.defineProperty(globalThis, "PushManager", originalPushManager);
-      } else {
-        Reflect.deleteProperty(globalThis, "PushManager");
-      }
-      if (originalServiceWorker) {
-        Object.defineProperty(navigator, "serviceWorker", originalServiceWorker);
-      } else {
-        Reflect.deleteProperty(navigator, "serviceWorker");
-      }
+      restoreNotifications();
     }
   });
 
@@ -307,103 +344,53 @@ describe("PreferencesModal notifications tab", () => {
     }
   });
 
-  it("allows disabling a stored push subscription even when browser permission is not granted", async () => {
-    const originalNotification = Object.getOwnPropertyDescriptor(globalThis, "Notification");
-    const originalPushManager = Object.getOwnPropertyDescriptor(globalThis, "PushManager");
-    const originalServiceWorker = Object.getOwnPropertyDescriptor(navigator, "serviceWorker");
-    const notificationConstructor = vi.fn();
-    Object.defineProperty(notificationConstructor, "permission", {
-      configurable: true,
-      value: "default",
-    });
-    Object.defineProperty(globalThis, "Notification", {
-      configurable: true,
-      value: notificationConstructor,
-    });
-    Object.defineProperty(globalThis, "PushManager", {
-      configurable: true,
-      value: function PushManager() {},
-    });
-    Object.defineProperty(navigator, "serviceWorker", {
-      configurable: true,
-      value: {},
-    });
+  it("does not treat a stale localStorage subscription id as enabled", async () => {
+    const restoreNotifications = installNotificationEnvironment({ permission: "granted" });
     localStorage.setItem("kodex.pushSubscriptionId", "subscription-1");
     apiMocks.getNotificationStatus.mockResolvedValue({
       configured: true,
       subscriptionsEnabled: true,
       vapidPublicKey: "AQIDBA",
     });
-    apiMocks.deletePushSubscription.mockResolvedValue({
-      subscription: {
-        createdAt: "2026-05-15T00:00:00Z",
-        enabled: false,
-        endpoint: "https://push.example/sub",
-        id: "subscription-1",
-        updatedAt: "2026-05-15T00:00:00Z",
-        userAgent: null,
-      },
-    });
 
     try {
       renderPreferences("notifications");
 
-      expect(await screen.findByText("Enabled")).toBeInTheDocument();
-      await userEvent.click(screen.getByRole("button", { name: /disable/i }));
-
-      await waitFor(() => expect(apiMocks.deletePushSubscription).toHaveBeenCalledWith("subscription-1"));
-      expect(localStorage.getItem("kodex.pushSubscriptionId")).toBeNull();
+      expect(await screen.findByText("Available")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /enable/i })).toBeEnabled();
+      expect(screen.getByRole("button", { name: /disable/i })).toBeDisabled();
+      await waitFor(() => expect(localStorage.getItem("kodex.pushSubscriptionId")).toBeNull());
+      expect(apiMocks.deletePushSubscription).not.toHaveBeenCalled();
     } finally {
-      if (originalNotification) {
-        Object.defineProperty(globalThis, "Notification", originalNotification);
-      } else {
-        Reflect.deleteProperty(globalThis, "Notification");
-      }
-      if (originalPushManager) {
-        Object.defineProperty(globalThis, "PushManager", originalPushManager);
-      } else {
-        Reflect.deleteProperty(globalThis, "PushManager");
-      }
-      if (originalServiceWorker) {
-        Object.defineProperty(navigator, "serviceWorker", originalServiceWorker);
-      } else {
-        Reflect.deleteProperty(navigator, "serviceWorker");
-      }
+      restoreNotifications();
     }
   });
 
   it("shows notifications as available after disabling while browser permission remains granted", async () => {
-    const originalNotification = Object.getOwnPropertyDescriptor(globalThis, "Notification");
-    const originalPushManager = Object.getOwnPropertyDescriptor(globalThis, "PushManager");
-    const originalServiceWorker = Object.getOwnPropertyDescriptor(navigator, "serviceWorker");
-    const notificationConstructor = vi.fn();
-    Object.defineProperty(notificationConstructor, "permission", {
-      configurable: true,
-      value: "granted",
-    });
-    Object.defineProperty(globalThis, "Notification", {
-      configurable: true,
-      value: notificationConstructor,
-    });
-    Object.defineProperty(globalThis, "PushManager", {
-      configurable: true,
-      value: function PushManager() {},
-    });
-    Object.defineProperty(navigator, "serviceWorker", {
-      configurable: true,
-      value: {},
-    });
-    localStorage.setItem("kodex.pushSubscriptionId", "subscription-1");
+    const unsubscribe = vi.fn().mockResolvedValue(true);
+    const subscription = { endpoint: "https://push.example/sub", unsubscribe } as unknown as PushSubscription;
+    const restoreNotifications = installNotificationEnvironment({ permission: "granted", subscription });
     apiMocks.getNotificationStatus.mockResolvedValue({
       configured: true,
       subscriptionsEnabled: true,
       vapidPublicKey: "AQIDBA",
     });
-    apiMocks.deletePushSubscription.mockResolvedValue({
+    apiMocks.getCurrentPushSubscriptionStatus
+      .mockResolvedValueOnce({
+        configured: true,
+        subscribed: true,
+        subscription: null,
+      })
+      .mockResolvedValue({
+        configured: true,
+        subscribed: false,
+        subscription: null,
+      });
+    apiMocks.deleteCurrentPushSubscription.mockResolvedValue({
       subscription: {
         createdAt: "2026-05-15T00:00:00Z",
         enabled: false,
-        endpoint: "https://push.example/sub",
+        endpoint: subscription.endpoint,
         id: "subscription-1",
         updatedAt: "2026-05-15T00:00:00Z",
         userAgent: null,
@@ -416,35 +403,118 @@ describe("PreferencesModal notifications tab", () => {
       expect(await screen.findByText("Enabled")).toBeInTheDocument();
       await userEvent.click(screen.getByRole("button", { name: /disable/i }));
 
-      await waitFor(() => expect(localStorage.getItem("kodex.pushSubscriptionId")).toBeNull());
+      await waitFor(() => expect(apiMocks.deleteCurrentPushSubscription).toHaveBeenCalledWith(subscription.endpoint));
+      expect(unsubscribe).toHaveBeenCalled();
       await waitFor(() => expect(screen.getByText("Available")).toBeInTheDocument());
+      expect(screen.getByText("Notifications disabled.")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /enable/i })).toBeEnabled();
       expect(screen.getByRole("button", { name: /disable/i })).toBeDisabled();
     } finally {
-      if (originalNotification) {
-        Object.defineProperty(globalThis, "Notification", originalNotification);
-      } else {
-        Reflect.deleteProperty(globalThis, "Notification");
-      }
-      if (originalPushManager) {
-        Object.defineProperty(globalThis, "PushManager", originalPushManager);
-      } else {
-        Reflect.deleteProperty(globalThis, "PushManager");
-      }
-      if (originalServiceWorker) {
-        Object.defineProperty(navigator, "serviceWorker", originalServiceWorker);
-      } else {
-        Reflect.deleteProperty(navigator, "serviceWorker");
-      }
+      restoreNotifications();
+    }
+  });
+
+  it("shows a test action only when subscribed and reports mutation feedback", async () => {
+    const subscription = { endpoint: "https://push.example/sub" } as PushSubscription;
+    const restoreNotifications = installNotificationEnvironment({ permission: "granted", subscription });
+    apiMocks.getNotificationStatus.mockResolvedValue({
+      configured: true,
+      subscriptionsEnabled: true,
+      vapidPublicKey: "AQIDBA",
+    });
+    apiMocks.getCurrentPushSubscriptionStatus.mockResolvedValue({
+      configured: true,
+      subscribed: true,
+      subscription: null,
+    });
+    apiMocks.sendTestNotification.mockResolvedValue({
+      activeSubscriptionCount: 1,
+      configured: true,
+      deliveryIds: ["delivery-1"],
+      enqueued: true,
+    });
+
+    try {
+      renderPreferences("notifications");
+
+      expect(await screen.findByText("Enabled")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: /test/i }));
+
+      await waitFor(() => expect(apiMocks.sendTestNotification).toHaveBeenCalledTimes(1));
+      expect(await screen.findByText("Test notification sent.")).toBeInTheDocument();
+    } finally {
+      restoreNotifications();
+    }
+  });
+
+  it("reports when a test notification request does not enqueue a delivery", async () => {
+    const subscription = { endpoint: "https://push.example/sub" } as PushSubscription;
+    const restoreNotifications = installNotificationEnvironment({ permission: "granted", subscription });
+    apiMocks.getNotificationStatus.mockResolvedValue({
+      configured: true,
+      subscriptionsEnabled: true,
+      vapidPublicKey: "AQIDBA",
+    });
+    apiMocks.getCurrentPushSubscriptionStatus.mockResolvedValue({
+      configured: true,
+      subscribed: true,
+      subscription: null,
+    });
+    apiMocks.sendTestNotification.mockResolvedValue({
+      activeSubscriptionCount: 0,
+      configured: true,
+      deliveryIds: [],
+      enqueued: false,
+    });
+
+    try {
+      renderPreferences("notifications");
+
+      expect(await screen.findByText("Enabled")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: /test/i }));
+
+      await waitFor(() => expect(apiMocks.sendTestNotification).toHaveBeenCalledTimes(1));
+      expect(await screen.findByText("No active notification subscriptions.")).toBeInTheDocument();
+      expect(screen.queryByText("Test notification sent.")).not.toBeInTheDocument();
+    } finally {
+      restoreNotifications();
+    }
+  });
+
+  it("hides the test action when the gateway reports the endpoint disabled", async () => {
+    const subscription = { endpoint: "https://push.example/sub" } as PushSubscription;
+    const restoreNotifications = installNotificationEnvironment({ permission: "granted", subscription });
+    apiMocks.getNotificationStatus.mockResolvedValue({
+      configured: true,
+      subscriptionsEnabled: true,
+      vapidPublicKey: "AQIDBA",
+    });
+    apiMocks.getCurrentPushSubscriptionStatus.mockResolvedValue({
+      configured: true,
+      subscribed: false,
+      subscription: null,
+    });
+
+    try {
+      renderPreferences("notifications");
+
+      expect(await screen.findByText("Available")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /test/i })).not.toBeInTheDocument();
+    } finally {
+      restoreNotifications();
     }
   });
 });
 
 describe("PreferencesModal MCP tab", () => {
   beforeEach(() => {
+    apiMocks.deleteCurrentPushSubscription.mockReset();
     apiMocks.deletePushSubscription.mockReset();
+    apiMocks.getCurrentPushSubscriptionStatus.mockReset();
     apiMocks.getKodexControlPluginStatus.mockReset();
     apiMocks.installKodexControlPlugin.mockReset();
+    apiMocks.sendTestNotification.mockReset();
+    apiMocks.upsertPushSubscription.mockReset();
     apiMocks.addMcpServer.mockReset();
     apiMocks.listConfiguredMcpServers.mockReset();
     apiMocks.listMcpServers.mockReset();

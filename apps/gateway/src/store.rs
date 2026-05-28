@@ -201,6 +201,73 @@ pub struct NewPushSubscription {
     pub user_agent: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PushSubscriptionStatus {
+    pub subscription: Option<PushSubscription>,
+    pub subscribed: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum NotificationDeliveryStatus {
+    Pending,
+    Processing,
+    Sent,
+    Failed,
+}
+
+impl NotificationDeliveryStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Processing => "processing",
+            Self::Sent => "sent",
+            Self::Failed => "failed",
+        }
+    }
+
+    fn from_str(value: &str) -> ApiResult<Self> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "processing" => Ok(Self::Processing),
+            "sent" => Ok(Self::Sent),
+            "failed" => Ok(Self::Failed),
+            _ => Err(ApiError::Other(anyhow::anyhow!(
+                "unknown notification delivery status {value}"
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationDelivery {
+    pub id: String,
+    pub kind: String,
+    pub thread_id: Option<String>,
+    pub turn_id: Option<String>,
+    pub payload: Option<Value>,
+    pub delivered_subscription_ids: Vec<String>,
+    pub status: NotificationDeliveryStatus,
+    pub attempt_count: i64,
+    pub available_at: DateTime<Utc>,
+    pub processing_started_at: Option<DateTime<Utc>>,
+    pub sent_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewNotificationDelivery {
+    pub kind: String,
+    pub thread_id: Option<String>,
+    pub turn_id: Option<String>,
+    pub payload: Option<Value>,
+    pub available_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ThreadReadState {
     pub seen_completed_agent_turn_seq: i64,
@@ -576,6 +643,34 @@ impl Store {
         .await?;
         sqlx::query(
             r#"
+            create table if not exists notification_deliveries (
+                id text primary key,
+                kind text not null,
+                thread_id text,
+                turn_id text,
+                payload_json text,
+                delivered_subscription_ids_json text not null default '[]',
+                status text not null,
+                attempt_count integer not null default 0,
+                available_at text not null,
+                processing_started_at text,
+                sent_at text,
+                last_error text,
+                created_at text not null,
+                updated_at text not null
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        self.add_column_if_missing(
+            "notification_deliveries",
+            "delivered_subscription_ids_json",
+            "text not null default '[]'",
+        )
+        .await?;
+        sqlx::query(
+            r#"
             create table if not exists thread_notification_settings (
                 thread_id text primary key,
                 notifications_enabled integer not null default 1,
@@ -748,6 +843,11 @@ impl Store {
         .await?;
         sqlx::query(
             "create index if not exists automation_runs_pending_idx on automation_runs (automation_id, status, created_at)",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "create index if not exists notification_deliveries_due_idx on notification_deliveries (status, available_at, processing_started_at, created_at)",
         )
         .execute(&self.pool)
         .await?;
@@ -2070,6 +2170,30 @@ impl Store {
             .ok_or_else(|| ApiError::NotFound(format!("push subscription endpoint {endpoint}")))
     }
 
+    pub async fn get_push_subscription_status_by_endpoint(
+        &self,
+        endpoint: &str,
+    ) -> ApiResult<PushSubscriptionStatus> {
+        let row = sqlx::query(
+            r#"
+            select id, endpoint, p256dh, auth, user_agent, enabled, created_at, updated_at
+            from push_subscriptions
+            where endpoint = ?
+            "#,
+        )
+        .bind(endpoint)
+        .fetch_optional(&self.pool)
+        .await?;
+        let subscription = row.map(row_to_push_subscription).transpose()?;
+        let subscribed = subscription
+            .as_ref()
+            .is_some_and(|subscription| subscription.enabled);
+        Ok(PushSubscriptionStatus {
+            subscription,
+            subscribed,
+        })
+    }
+
     pub async fn list_enabled_push_subscriptions(&self) -> ApiResult<Vec<PushSubscription>> {
         let rows = sqlx::query(
             r#"
@@ -2109,6 +2233,246 @@ impl Store {
         .fetch_optional(&self.pool)
         .await?;
         row.map(row_to_push_subscription).transpose()
+    }
+
+    pub async fn disable_push_subscription_by_endpoint(
+        &self,
+        endpoint: &str,
+    ) -> ApiResult<Option<PushSubscription>> {
+        let now = Utc::now();
+        sqlx::query(
+            r#"
+            update push_subscriptions
+            set enabled = 0, updated_at = ?
+            where endpoint = ?
+            "#,
+        )
+        .bind(now)
+        .bind(endpoint)
+        .execute(&self.pool)
+        .await?;
+
+        let row = sqlx::query(
+            r#"
+            select id, endpoint, p256dh, auth, user_agent, enabled, created_at, updated_at
+            from push_subscriptions
+            where endpoint = ?
+            "#,
+        )
+        .bind(endpoint)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(row_to_push_subscription).transpose()
+    }
+
+    pub async fn create_notification_delivery(
+        &self,
+        delivery: NewNotificationDelivery,
+    ) -> ApiResult<NotificationDelivery> {
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now();
+        let payload_json = delivery
+            .payload
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?;
+        sqlx::query(
+            r#"
+            insert into notification_deliveries (
+                id, kind, thread_id, turn_id, payload_json, delivered_subscription_ids_json,
+                status, attempt_count,
+                available_at, processing_started_at, sent_at, last_error, created_at, updated_at
+            )
+            values (?, ?, ?, ?, ?, '[]', 'pending', 0, ?, null, null, null, ?, ?)
+            "#,
+        )
+        .bind(&id)
+        .bind(delivery.kind)
+        .bind(delivery.thread_id)
+        .bind(delivery.turn_id)
+        .bind(payload_json)
+        .bind(delivery.available_at)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        self.get_notification_delivery(&id).await
+    }
+
+    pub async fn get_notification_delivery(&self, id: &str) -> ApiResult<NotificationDelivery> {
+        let query = notification_delivery_select_sql("where id = ?");
+        let row = sqlx::query(&query)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        row.map(row_to_notification_delivery)
+            .transpose()?
+            .ok_or_else(|| ApiError::NotFound(format!("notification delivery {id}")))
+    }
+
+    pub async fn list_notification_deliveries(&self) -> ApiResult<Vec<NotificationDelivery>> {
+        let query = notification_delivery_select_sql("order by created_at asc, id asc");
+        let rows = sqlx::query(&query).fetch_all(&self.pool).await?;
+        rows.into_iter().map(row_to_notification_delivery).collect()
+    }
+
+    pub async fn claim_due_notification_deliveries(
+        &self,
+        limit: i64,
+        now: DateTime<Utc>,
+        stale_processing_before: DateTime<Utc>,
+    ) -> ApiResult<Vec<NotificationDelivery>> {
+        let rows = sqlx::query(
+            r#"
+            select id
+            from notification_deliveries
+            where (
+                status = 'pending' and available_at <= ?
+            ) or (
+                status = 'processing'
+                and processing_started_at is not null
+                and processing_started_at <= ?
+            )
+            order by available_at asc, created_at asc, id asc
+            limit ?
+            "#,
+        )
+        .bind(now)
+        .bind(stale_processing_before)
+        .bind(limit.max(1))
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut claimed = Vec::new();
+        for row in rows {
+            let id: String = row.try_get("id")?;
+            let affected = sqlx::query(
+                r#"
+                update notification_deliveries
+                set status = 'processing',
+                    attempt_count = attempt_count + 1,
+                    processing_started_at = ?,
+                    last_error = null,
+                    updated_at = ?
+                where id = ?
+                  and (
+                    (status = 'pending' and available_at <= ?)
+                    or (
+                        status = 'processing'
+                        and processing_started_at is not null
+                        and processing_started_at <= ?
+                    )
+                  )
+                "#,
+            )
+            .bind(now)
+            .bind(now)
+            .bind(&id)
+            .bind(now)
+            .bind(stale_processing_before)
+            .execute(&self.pool)
+            .await?
+            .rows_affected();
+            if affected > 0 {
+                claimed.push(self.get_notification_delivery(&id).await?);
+            }
+        }
+        Ok(claimed)
+    }
+
+    pub async fn mark_notification_delivery_sent(
+        &self,
+        id: &str,
+        payload: Option<&Value>,
+        delivered_subscription_ids: &[String],
+    ) -> ApiResult<NotificationDelivery> {
+        let now = Utc::now();
+        let payload_json = payload.map(serde_json::to_string).transpose()?;
+        let delivered_subscription_ids_json = serde_json::to_string(delivered_subscription_ids)?;
+        sqlx::query(
+            r#"
+            update notification_deliveries
+            set status = 'sent',
+                payload_json = coalesce(?, payload_json),
+                delivered_subscription_ids_json = ?,
+                processing_started_at = null,
+                sent_at = ?,
+                last_error = null,
+                updated_at = ?
+            where id = ?
+            "#,
+        )
+        .bind(payload_json)
+        .bind(delivered_subscription_ids_json)
+        .bind(now)
+        .bind(now)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        self.get_notification_delivery(id).await
+    }
+
+    pub async fn mark_notification_delivery_retry(
+        &self,
+        id: &str,
+        available_at: DateTime<Utc>,
+        error: String,
+        delivered_subscription_ids: &[String],
+    ) -> ApiResult<NotificationDelivery> {
+        let now = Utc::now();
+        let delivered_subscription_ids_json = serde_json::to_string(delivered_subscription_ids)?;
+        sqlx::query(
+            r#"
+            update notification_deliveries
+            set status = 'pending',
+                available_at = ?,
+                delivered_subscription_ids_json = ?,
+                processing_started_at = null,
+                last_error = ?,
+                updated_at = ?
+            where id = ?
+            "#,
+        )
+        .bind(available_at)
+        .bind(delivered_subscription_ids_json)
+        .bind(error)
+        .bind(now)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        self.get_notification_delivery(id).await
+    }
+
+    pub async fn mark_notification_delivery_failed(
+        &self,
+        id: &str,
+        error: String,
+        payload: Option<&Value>,
+        delivered_subscription_ids: &[String],
+    ) -> ApiResult<NotificationDelivery> {
+        let now = Utc::now();
+        let payload_json = payload.map(serde_json::to_string).transpose()?;
+        let delivered_subscription_ids_json = serde_json::to_string(delivered_subscription_ids)?;
+        sqlx::query(
+            r#"
+            update notification_deliveries
+            set status = 'failed',
+                payload_json = coalesce(?, payload_json),
+                delivered_subscription_ids_json = ?,
+                processing_started_at = null,
+                last_error = ?,
+                updated_at = ?
+            where id = ?
+            "#,
+        )
+        .bind(payload_json)
+        .bind(delivered_subscription_ids_json)
+        .bind(error)
+        .bind(now)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        self.get_notification_delivery(id).await
     }
 
     pub async fn create_queued_input(
@@ -3651,6 +4015,42 @@ fn row_to_push_subscription(row: sqlx::sqlite::SqliteRow) -> ApiResult<PushSubsc
     })
 }
 
+fn notification_delivery_select_sql(suffix: &str) -> String {
+    format!(
+        r#"
+        select id, kind, thread_id, turn_id, payload_json, delivered_subscription_ids_json,
+               status, attempt_count,
+               available_at, processing_started_at, sent_at, last_error, created_at, updated_at
+        from notification_deliveries
+        {suffix}
+        "#
+    )
+}
+
+fn row_to_notification_delivery(row: sqlx::sqlite::SqliteRow) -> ApiResult<NotificationDelivery> {
+    let payload_json: Option<String> = row.try_get("payload_json")?;
+    let delivered_subscription_ids_json: String = row.try_get("delivered_subscription_ids_json")?;
+    let status: String = row.try_get("status")?;
+    Ok(NotificationDelivery {
+        id: row.try_get("id")?,
+        kind: row.try_get("kind")?,
+        thread_id: row.try_get("thread_id")?,
+        turn_id: row.try_get("turn_id")?,
+        payload: payload_json
+            .map(|json| serde_json::from_str(&json))
+            .transpose()?,
+        delivered_subscription_ids: serde_json::from_str(&delivered_subscription_ids_json)?,
+        status: NotificationDeliveryStatus::from_str(&status)?,
+        attempt_count: row.try_get("attempt_count")?,
+        available_at: row.try_get("available_at")?,
+        processing_started_at: row.try_get("processing_started_at")?,
+        sent_at: row.try_get("sent_at")?,
+        last_error: row.try_get("last_error")?,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
 fn row_to_approval(row: sqlx::sqlite::SqliteRow) -> ApiResult<Approval> {
     let payload_json: String = row.try_get("payload_json")?;
     let response_json: Option<String> = row.try_get("response_json")?;
@@ -3701,7 +4101,7 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'project_preview_services', 'project_previews', 'project_preview_routes', 'approvals', 'thread_reads', 'push_subscriptions', 'thread_notification_settings', 'thread_composer_settings', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'project_preview_services', 'project_previews', 'project_preview_routes', 'approvals', 'thread_reads', 'push_subscriptions', 'notification_deliveries', 'thread_notification_settings', 'thread_composer_settings', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
         )
         .fetch_all(store.pool())
         .await
@@ -3713,6 +4113,7 @@ mod tests {
                 "automation_runs",
                 "automations",
                 "events",
+                "notification_deliveries",
                 "pending_timeline_skill_mentions",
                 "project_preview_routes",
                 "project_preview_services",
@@ -4007,6 +4408,181 @@ mod tests {
             .await
             .unwrap()
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn push_subscription_status_tracks_missing_disabled_and_reenabled_endpoint() {
+        let store = Store::in_memory().await.unwrap();
+
+        let missing = store
+            .get_push_subscription_status_by_endpoint("https://push.example/current")
+            .await
+            .unwrap();
+        assert!(missing.subscription.is_none());
+        assert!(!missing.subscribed);
+
+        let subscription = store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/current".to_string(),
+                p256dh: "public".to_string(),
+                auth: "auth".to_string(),
+                user_agent: None,
+            })
+            .await
+            .unwrap();
+        let enabled = store
+            .get_push_subscription_status_by_endpoint("https://push.example/current")
+            .await
+            .unwrap();
+        assert_eq!(
+            enabled
+                .subscription
+                .as_ref()
+                .map(|subscription| &subscription.id),
+            Some(&subscription.id)
+        );
+        assert!(enabled.subscribed);
+
+        let disabled = store
+            .disable_push_subscription_by_endpoint("https://push.example/current")
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!disabled.enabled);
+        let status = store
+            .get_push_subscription_status_by_endpoint("https://push.example/current")
+            .await
+            .unwrap();
+        assert!(status.subscription.is_some());
+        assert!(!status.subscribed);
+
+        let reenabled = store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/current".to_string(),
+                p256dh: "public-2".to_string(),
+                auth: "auth-2".to_string(),
+                user_agent: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(reenabled.id, subscription.id);
+        assert!(reenabled.enabled);
+        assert!(
+            store
+                .get_push_subscription_status_by_endpoint("https://push.example/current")
+                .await
+                .unwrap()
+                .subscribed
+        );
+    }
+
+    #[tokio::test]
+    async fn notification_delivery_jobs_create_claim_retry_recover_and_finish() {
+        let store = Store::in_memory().await.unwrap();
+        let now = Utc::now();
+        let created = store
+            .create_notification_delivery(NewNotificationDelivery {
+                kind: "test".to_string(),
+                thread_id: None,
+                turn_id: None,
+                payload: Some(json!({"kind": "test"})),
+                available_at: now,
+            })
+            .await
+            .unwrap();
+        assert_eq!(created.status, NotificationDeliveryStatus::Pending);
+        assert_eq!(created.attempt_count, 0);
+
+        let claimed = store
+            .claim_due_notification_deliveries(10, now, now - chrono::Duration::minutes(5))
+            .await
+            .unwrap();
+        assert_eq!(claimed.len(), 1);
+        assert_eq!(claimed[0].id, created.id);
+        assert_eq!(claimed[0].status, NotificationDeliveryStatus::Processing);
+        assert_eq!(claimed[0].attempt_count, 1);
+
+        let unavailable_until = now + chrono::Duration::seconds(30);
+        let retry = store
+            .mark_notification_delivery_retry(
+                &created.id,
+                unavailable_until,
+                "temporary push failure".to_string(),
+                &["subscription-1".to_string()],
+            )
+            .await
+            .unwrap();
+        assert_eq!(retry.status, NotificationDeliveryStatus::Pending);
+        assert_eq!(retry.available_at, unavailable_until);
+        assert_eq!(retry.last_error.as_deref(), Some("temporary push failure"));
+        assert_eq!(
+            retry.delivered_subscription_ids,
+            vec!["subscription-1".to_string()]
+        );
+
+        assert!(store
+            .claim_due_notification_deliveries(10, now, now - chrono::Duration::minutes(5))
+            .await
+            .unwrap()
+            .is_empty());
+        let reclaimed = store
+            .claim_due_notification_deliveries(
+                10,
+                unavailable_until,
+                now - chrono::Duration::minutes(5),
+            )
+            .await
+            .unwrap();
+        assert_eq!(reclaimed.len(), 1);
+        assert_eq!(reclaimed[0].attempt_count, 2);
+
+        let stale_recovered = store
+            .claim_due_notification_deliveries(
+                10,
+                unavailable_until + chrono::Duration::minutes(10),
+                unavailable_until + chrono::Duration::minutes(1),
+            )
+            .await
+            .unwrap();
+        assert_eq!(stale_recovered.len(), 1);
+        assert_eq!(stale_recovered[0].attempt_count, 3);
+
+        let sent = store
+            .mark_notification_delivery_sent(&created.id, None, &["subscription-1".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(sent.status, NotificationDeliveryStatus::Sent);
+        assert!(sent.sent_at.is_some());
+        assert_eq!(
+            sent.delivered_subscription_ids,
+            vec!["subscription-1".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn pending_notification_delivery_survives_store_reopen() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("gateway.db");
+        let store = Store::connect(&path).await.unwrap();
+        let created = store
+            .create_notification_delivery(NewNotificationDelivery {
+                kind: "unreadAgentMessage".to_string(),
+                thread_id: Some("thread-1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                payload: None,
+                available_at: Utc::now() + chrono::Duration::minutes(5),
+            })
+            .await
+            .unwrap();
+        drop(store);
+
+        let reopened = Store::connect(&path).await.unwrap();
+        let deliveries = reopened.list_notification_deliveries().await.unwrap();
+        assert_eq!(deliveries.len(), 1);
+        assert_eq!(deliveries[0].id, created.id);
+        assert_eq!(deliveries[0].status, NotificationDeliveryStatus::Pending);
+        assert_eq!(deliveries[0].thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(deliveries[0].turn_id.as_deref(), Some("turn-1"));
     }
 
     #[tokio::test]
