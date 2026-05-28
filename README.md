@@ -154,6 +154,53 @@ Preferences > MCP can write global Codex MCP config. Inline stdio environment va
 
 Image uploads default to the system temp directory so Codex app-server can read `localImage` paths from its sandbox. If you override `KODEX_UPLOADS_DIR`, choose a path that app-server can read from the active sandbox profile, such as a project root or `/tmp`.
 
+## Native iOS Development
+
+The native iOS client lives in `apps/ios`. It is a SwiftUI companion app over the existing gateway, not a wrapped React client. The simulator default gateway URL is `http://127.0.0.1:8787`; physical devices need a reachable trusted LAN, VPN, or tailnet gateway URL. Kodex still has no MVP gateway auth, so do not expose the gateway directly to the public internet.
+
+Prerequisites:
+
+- Full Xcode selected with `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
+- At least one iOS Simulator runtime installed in Xcode Settings > Platforms.
+- Homebrew helpers: `brew install xcodegen xcbeautify`.
+- For Codex-driven simulator verification, use the Build iOS Apps plugin / XcodeBuildMCP tools with `apps/ios/KodexIOS.xcodeproj`, scheme `KodexIOS`, and an available iPhone simulator.
+
+Commands:
+
+```bash
+apps/ios/scripts/doctor.sh
+KODEX_GATEWAY_URL=http://127.0.0.1:8787 apps/ios/scripts/generate-api.sh
+cd apps/ios && xcodegen generate
+cd apps/ios && swift test
+```
+
+`generate-api.sh` fetches the gateway OpenAPI contract, refreshes checked-in Swift OpenAPI `Client`/`Types` sources under `apps/ios/Sources/KodexAPI/GeneratedSources`, and updates generated operation metadata. The iOS generator uses defensive naming to avoid schema key collisions; narrow manual bridges remain for OpenAPI `null`, multipart, and free-form JSON gaps.
+
+After generating the project, build and test on a simulator either through the Build iOS Apps plugin or with:
+
+```bash
+xcodebuild build -project apps/ios/KodexIOS.xcodeproj -scheme KodexIOS -destination 'platform=iOS Simulator,name=<doctor-selected-iPhone>' | xcbeautify
+xcodebuild test -project apps/ios/KodexIOS.xcodeproj -scheme KodexIOS -destination 'platform=iOS Simulator,name=<doctor-selected-iPhone>' | xcbeautify
+```
+
+For a live smoke against a running gateway and authenticated app-server account:
+
+```bash
+KODEX_GATEWAY_URL=http://127.0.0.1:8787 apps/ios/scripts/run-live-e2e.sh
+```
+
+The live smoke skips with exit code `77` when the gateway, simulator, app-server readiness, or Codex/OpenAI auth prerequisites are not satisfied.
+
+The Xcode project is generated from `apps/ios/project.yml`; do not edit or commit `apps/ios/KodexIOS.xcodeproj` unless the iOS workflow deliberately changes away from XcodeGen.
+
+Native APNs support uses separate gateway registration/status routes from browser Web Push. The local scaffold can register and manage APNs device metadata and parse simulator notification payloads, but real APNs delivery requires Apple developer credentials and gateway provider configuration before it should be considered enabled:
+
+```bash
+KODEX_APNS_TEAM_ID=ABCDE12345
+KODEX_APNS_KEY_ID=ABC123DEFG
+KODEX_APNS_PRIVATE_KEY_PATH=/path/to/AuthKey_ABC123DEFG.p8
+```
+
 ## Project Previews
 
 Project previews expose local dev services on stable ports through an isolated Caddy process owned by the gateway. They are intended for localhost or trusted-tailnet access only, matching the gateway's MVP security model.

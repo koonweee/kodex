@@ -2,6 +2,9 @@
 node_modules/
 dist/
 apps/web/dist/
+apps/ios/.build/
+apps/ios/DerivedData/
+apps/ios/KodexIOS.xcodeproj/
 *.tsbuildinfo
 playwright-report/
 test-results/

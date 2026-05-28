@@ -1,0 +1,243 @@
+import Foundation
+import Testing
+@testable import KodexCore
+
+@Test func workspaceTitleDisplayUsesNamePathThenId() {
+    #expect(WorkspaceNormalizer.title(name: "Plan Review", cwd: "/tmp/kodex", id: "abcdef123") == "Plan Review")
+    #expect(WorkspaceNormalizer.title(name: nil, cwd: "/tmp/kodex", id: "abcdef123") == "kodex")
+    #expect(WorkspaceNormalizer.title(name: " ", cwd: "/", id: "abcdef123") == "Thread abcdef12")
+}
+
+@Test func workspaceFixtureCoversConnectedDegradedAndOfflineStates() {
+    let connected = FixtureStore.state(for: .connected)
+    let degraded = FixtureStore.state(for: .degraded)
+    let offline = FixtureStore.state(for: .offline)
+
+    #expect(connected.workspace.firstThread?.id == "fixture-thread")
+    #expect(degraded.connection == .degraded(message: "app-server unavailable"))
+    #expect(offline.workspace.firstThread == nil)
+    #expect(offline.connection == .offline(message: "Could not reach http://127.0.0.1:8787"))
+}
+
+@Test func timelineRowMappingCoversNativeRowFamilies() {
+    #expect(TimelineRowKind(gatewayKind: "message", status: "complete") == .message)
+    #expect(TimelineRowKind(gatewayKind: "work", status: "running") == .work)
+    #expect(TimelineRowKind(gatewayKind: "tool_call", status: "complete") == .tool)
+    #expect(TimelineRowKind(gatewayKind: "anything", status: "complete", hasFileChanges: true) == .fileChange)
+    #expect(TimelineRowKind(gatewayKind: "image", status: "complete", itemType: "image") == .image)
+    #expect(TimelineRowKind(gatewayKind: "warning", status: "complete") == .warning)
+    #expect(TimelineRowKind(gatewayKind: "message", status: "system_error") == .error)
+}
+
+@Test func olderHistoryMergePrependsWithoutDuplicates() {
+    let current = [
+        TimelineRow(id: "row-2", kind: .message, displayOrder: 2, title: "Current", body: "current")
+    ]
+    let older = [
+        TimelineRow(id: "row-1", kind: .message, displayOrder: 1, title: "Older", body: "older"),
+        TimelineRow(id: "row-2", kind: .message, displayOrder: 2, title: "Duplicate", body: "duplicate")
+    ]
+
+    let merged = WorkspaceNormalizer.mergeOlderHistory(current: current, older: older)
+
+    #expect(merged.map(\.id) == ["row-1", "row-2"])
+}
+
+@Test func timelineCarriesOlderHistoryCursor() {
+    let timeline = ThreadTimeline(
+        threadId: "thread-1",
+        liveState: .idle,
+        viewRevision: 1,
+        rows: [],
+        olderCursor: "older-1",
+        hasOlder: true
+    )
+
+    #expect(timeline.olderCursor == "older-1")
+    #expect(timeline.hasOlder == true)
+}
+
+@Test func composerPayloadBuildsSkillMentionByteRangesAndLocalImages() {
+    let text = "Use $swift to inspect café"
+    let range = text.range(of: "$swift")!
+    let mention = SkillMention(name: "swift", path: "/skills/swift/SKILL.md", range: range)
+
+    let payload = ComposerPayloadBuilder.turnStartPayload(
+        text: text,
+        skillMentions: [mention],
+        localImagePaths: ["/tmp/uploaded.png"]
+    )
+
+    let expectedRange = ByteRange(start: 4, end: 10)
+    #expect(ComposerPayloadBuilder.byteRange(for: range, in: text) == expectedRange)
+
+    guard case .object(let root) = payload, case .array(let input)? = root["input"] else {
+        Issue.record("Expected object payload with input array")
+        return
+    }
+
+    #expect(input.count == 3)
+    #expect(input[1] == .object(["type": .string("skill"), "name": .string("swift"), "path": .string("/skills/swift/SKILL.md")]))
+    #expect(input[2] == .object(["type": .string("localImage"), "path": .string("/tmp/uploaded.png")]))
+}
+
+@Test func composerPayloadCarriesNativeRunSettingsAndDetectedSkillMentions() {
+    let text = "Use $swift, then ignore $swiftish"
+    let mentions = SkillMentionDetector.mentions(in: text, skills: [
+        SkillCatalogEntry(name: "swift", path: "/skills/swift/SKILL.md")
+    ])
+    let payload = ComposerPayloadBuilder.turnStartPayload(
+        text: text,
+        skillMentions: mentions,
+        settings: ComposerRunSettings(
+            model: "gpt-5.4-mini",
+            effort: "high",
+            approvalPolicy: "on-request",
+            sandboxPolicy: .object(["type": .string("readOnly")])
+        )
+    )
+
+    #expect(mentions.count == 1)
+    guard case .object(let root) = payload, case .array(let input)? = root["input"] else {
+        Issue.record("Expected object payload with input array")
+        return
+    }
+
+    #expect(root["model"] == .string("gpt-5.4-mini"))
+    #expect(root["effort"] == .string("high"))
+    #expect(root["approvalPolicy"] == .string("on-request"))
+    #expect(root["sandboxPolicy"] == .object(["type": .string("readOnly")]))
+    #expect(input[1] == .object(["type": .string("skill"), "name": .string("swift"), "path": .string("/skills/swift/SKILL.md")]))
+}
+
+@Test func uploadAndInputRoutesMapComposerOperations() {
+    #expect(UploadRouteMapper.routeForImageUpload() == .imageUploads)
+    #expect(UploadRouteMapper.input(forUploadedLocalPath: "/tmp/kodex-image.png") == .localImage(path: "/tmp/kodex-image.png"))
+    #expect(GatewayConfiguration.simulatorDefault.endpoint(.threadInput("t1")).path == "/v1/threads/t1/input")
+    #expect(GatewayConfiguration.simulatorDefault.endpoint(.queuedInputRetry(threadId: "t1", queueId: "q1")).path == "/v1/threads/t1/queued-inputs/q1/retry")
+}
+
+@Test func approvalDecisionPayloadsUseGatewayDecisionEnvelope() {
+    #expect(ApprovalDecisionPayloadBuilder.route(approvalId: "a1") == .approvalDecision("a1"))
+    #expect(ApprovalDecisionPayloadBuilder.payload(for: .accept) == .object(["decision": .object(["decision": .string("accept")])]))
+    #expect(ApprovalDecisionPayloadBuilder.payload(for: .decline) == .object(["decision": .object(["decision": .string("decline")])]))
+    #expect(ApprovalDecisionPayloadBuilder.payload(for: .acceptForSession) == .object(["decision": .object(["decision": .string("acceptForSession")])]))
+    #expect(ApprovalDecisionPayloadBuilder.payload(for: .cancel) == .object(["decision": .object(["decision": .string("cancel")])]))
+}
+
+@Test func approvalRiskPolicyConfirmsRiskyAcceptsOnly() {
+    let medium = ApprovalRequest(id: "a1", threadId: "t1", title: "Run tests", risk: "medium")
+    let destructiveTitle = ApprovalRequest(id: "a2", threadId: "t1", title: "rm -rf build", risk: "low")
+    let low = ApprovalRequest(id: "a3", threadId: "t1", title: "Read file", risk: "low")
+
+    #expect(ApprovalRiskPolicy.requiresConfirmation(medium, decision: .accept))
+    #expect(ApprovalRiskPolicy.requiresConfirmation(destructiveTitle, decision: .accept))
+    #expect(!ApprovalRiskPolicy.requiresConfirmation(medium, decision: .decline))
+    #expect(!ApprovalRiskPolicy.requiresConfirmation(low, decision: .accept))
+}
+
+@Test func nativeNotificationPayloadParsesBadgeAndThreadRouting() throws {
+    let data = Data(#"{"aps":{"badge":1},"threadId":"fixture-thread"}"#.utf8)
+    let intent = try NativeNotificationParser.parseAPNSFixture(data)
+
+    #expect(intent == .unreadAgentMessage(threadId: "fixture-thread"))
+    #expect(intent.badgeDelta == 1)
+    #expect(intent.routeThreadId == "fixture-thread")
+    #expect(NativeNotificationParser.parse(userInfo: ["kind": "test"]) == .test)
+}
+
+@Test func nativeNotificationRoutesAndRegistrationUseApnsGatewaySurface() {
+    let baseURL = GatewayConfiguration.simulatorDefault
+    let intent = NativeNotificationRegistrationIntent(
+        deviceToken: "abc123",
+        bundleId: "dev.kodex.KodexIOS",
+        environment: "sandbox",
+        deviceName: "iPhone 17 Pro"
+    )
+
+    #expect(baseURL.endpoint(.nativeNotificationStatus).path == "/v1/notifications/native/status")
+    #expect(baseURL.endpoint(intent.route).path == "/v1/notifications/apns/devices")
+    #expect(baseURL.endpoint(.apnsDeviceDelete("device/one")).absoluteString.contains("/v1/notifications/apns/devices/device%2Fone"))
+    #expect(baseURL.endpoint(.apnsTestNotification).path == "/v1/notifications/apns/test")
+    #expect(intent.registration.route == .apnsDeviceRegister)
+}
+
+@Test func nativeNotificationRegistrarPostsApnsTokenToGateway() async {
+    let intent = NativeNotificationRegistrationIntent(
+        deviceToken: "abc123",
+        bundleId: "dev.kodex.KodexIOS",
+        environment: "sandbox",
+        deviceName: "iPhone 17 Pro"
+    )
+    let client = GatewayClient(configuration: .simulatorDefault) { request in
+        #expect(request.method == .post)
+        #expect(request.url.path == "/v1/notifications/apns/devices")
+        #expect(request.headers["Content-Type"] == "application/json")
+        let decoded = try JSONDecoder().decode(ApnsDeviceRegistration.self, from: request.body ?? Data())
+        #expect(decoded == intent.registration)
+        return GatewayHTTPResponse(statusCode: 200, body: Data(#"{"registered":true}"#.utf8))
+    }
+
+    let result = await NativeNotificationGatewayRegistrar(client: client).upload(intent)
+
+    #expect(result == .success(Data(#"{"registered":true}"#.utf8)))
+}
+
+@Test func liveUpdateParserConsumesCanonicalGatewayEvents() throws {
+    let patch = try LiveUpdateParser.parse(Data(#"{"kind":"thread_view.patch","payload":{"threadId":"t1","viewRevision":7}}"#.utf8))
+    let refresh = try LiveUpdateParser.parse(Data(#"{"kind":"thread_view.refresh_required","payload":{"threadId":"t1"}}"#.utf8))
+    let queue = try LiveUpdateParser.parse(Data(#"{"kind":"turn_queue.item_upsert","payload":{"threadId":"t1","queueId":"q1"}}"#.utf8))
+    let legacyTypeFallback = try LiveUpdateParser.parse(Data(#"{"type":"thread.read_updated","payload":{"threadId":"t1"}}"#.utf8))
+
+    #expect(patch == .threadViewPatch(threadId: "t1", viewRevision: 7))
+    #expect(refresh == .refreshRequired(threadId: "t1"))
+    #expect(queue == .turnQueueItemUpsert(threadId: "t1", queueId: "q1"))
+    #expect(legacyTypeFallback == .threadReadUpdated(threadId: "t1"))
+}
+
+@Test func gatewayEventStreamBuildsSelectedThreadURL() throws {
+    let stream = GatewayEventStream(configuration: .simulatorDefault, cursor: 42, threadId: "thread-1", excludeThreadId: "thread-2")
+    let url = stream.configuration.endpoint(.events(cursor: stream.cursor, projectId: nil, threadId: stream.threadId, excludeThreadId: stream.excludeThreadId))
+
+    #expect(url.absoluteString == "http://127.0.0.1:8787/v1/events?cursor=42&threadId=thread-1&excludeThreadId=thread-2")
+}
+
+@Test func gatewayLiveEventDecoderConsumesQueueEvents() throws {
+    let decoder = GatewayLiveEventDecoder()
+    let upsertData = Data(#"{"seq":44,"kind":"turn_queue.item_upsert","payload":{"threadId":"t1","id":"q1"}}"#.utf8)
+    let upsert = try decoder.decode(upsertData)
+    let upsertEnvelope = try decoder.decodeEnvelope(upsertData)
+    let deleted = try decoder.decode(Data(#"{"kind":"turn_queue.item_deleted","payload":{"threadId":"t1","id":"q1"}}"#.utf8))
+
+    #expect(upsert == .queuedInputUpdated(threadId: "t1"))
+    #expect(upsertEnvelope == GatewayLiveEnvelope(seq: 44, event: .queuedInputUpdated(threadId: "t1")))
+    #expect(deleted == .queuedInputUpdated(threadId: "t1"))
+}
+
+@Test func gatewayStreamCheckpointAdvancesCursorAndTracksReconnects() {
+    var checkpoint = GatewayStreamCheckpoint(cursor: 10)
+
+    checkpoint.observe(GatewayLiveEnvelope(seq: 12, event: .threadUpserted(threadId: "t1")))
+    checkpoint.recordDisconnect()
+    checkpoint.observe(GatewayLiveEnvelope(seq: 11, event: .threadUpserted(threadId: "t1")))
+
+    #expect(checkpoint.cursor == 12)
+    #expect(checkpoint.reconnectAttempts == 0)
+}
+
+@Test func gatewayStreamScopeDedupesSelectedAndGlobalEventsAndFallsBackToPolling() {
+    let selectedScope = GatewayEventScope.selected(threadId: "selected")
+    let globalScope = GatewayEventScope.global(excludingThreadId: "selected")
+    var checkpoint = GatewayStreamCheckpoint()
+
+    checkpoint.recordDisconnect()
+    #expect(!checkpoint.shouldUsePollingFallback())
+    checkpoint.recordDisconnect()
+
+    #expect(selectedScope.accepts(threadId: "selected"))
+    #expect(!selectedScope.accepts(threadId: "other"))
+    #expect(!globalScope.accepts(threadId: "selected"))
+    #expect(globalScope.accepts(threadId: "other"))
+    #expect(globalScope.accepts(threadId: nil))
+    #expect(checkpoint.shouldUsePollingFallback())
+}

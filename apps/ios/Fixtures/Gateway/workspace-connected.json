@@ -1,0 +1,45 @@
+{
+  "mode": "connected",
+  "workspace": {
+    "projects": [
+      {
+        "id": "project-kodex",
+        "name": "Kodex",
+        "path": "/Users/example/kodex",
+        "threads": [
+          {
+            "id": "fixture-project-thread",
+            "title": "Native iOS milestone",
+            "cwd": "/Users/example/kodex",
+            "status": "active",
+            "unread": true,
+            "pinned": false,
+            "notificationsEnabled": true
+          }
+        ]
+      }
+    ],
+    "chats": [
+      {
+        "id": "fixture-chat",
+        "title": "Release checklist",
+        "cwd": "/Users/example/kodex",
+        "status": "idle",
+        "unread": false,
+        "pinned": false,
+        "notificationsEnabled": true
+      }
+    ],
+    "pinned": [
+      {
+        "id": "fixture-thread",
+        "title": "Unread agent message",
+        "cwd": "/Users/example/kodex",
+        "status": "idle",
+        "unread": true,
+        "pinned": true,
+        "notificationsEnabled": true
+      }
+    ]
+  }
+}

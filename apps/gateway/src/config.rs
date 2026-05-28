@@ -71,6 +71,9 @@ pub struct NotificationsConfig {
     pub vapid_public_key: Option<String>,
     pub vapid_private_key: Option<String>,
     pub vapid_subject: Option<String>,
+    pub apns_team_id: Option<String>,
+    pub apns_key_id: Option<String>,
+    pub apns_private_key_path: Option<PathBuf>,
     pub recheck_delay_ms: u64,
 }
 
@@ -118,6 +121,9 @@ impl Default for Config {
                 vapid_public_key: None,
                 vapid_private_key: None,
                 vapid_subject: None,
+                apns_team_id: None,
+                apns_key_id: None,
+                apns_private_key_path: None,
                 recheck_delay_ms: 2_000,
             },
         }
@@ -196,6 +202,15 @@ impl Config {
         }
         if let Ok(subject) = env::var("KODEX_VAPID_SUBJECT") {
             config.notifications.vapid_subject = Some(subject);
+        }
+        if let Ok(team_id) = env::var("KODEX_APNS_TEAM_ID") {
+            config.notifications.apns_team_id = Some(team_id);
+        }
+        if let Ok(key_id) = env::var("KODEX_APNS_KEY_ID") {
+            config.notifications.apns_key_id = Some(key_id);
+        }
+        if let Ok(path) = env::var("KODEX_APNS_PRIVATE_KEY_PATH") {
+            config.notifications.apns_private_key_path = Some(expand_home(path));
         }
         if let Ok(delay_ms) = env::var("KODEX_NOTIFICATIONS_RECHECK_DELAY_MS") {
             config.notifications.recheck_delay_ms = delay_ms.parse().unwrap_or_else(|err| {

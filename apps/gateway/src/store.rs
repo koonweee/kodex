@@ -203,6 +203,27 @@ pub struct NewPushSubscription {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct ApnsDevice {
+    pub id: String,
+    pub device_token: String,
+    pub bundle_id: String,
+    pub environment: String,
+    pub device_name: Option<String>,
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewApnsDevice {
+    pub device_token: String,
+    pub bundle_id: String,
+    pub environment: String,
+    pub device_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct PushSubscriptionStatus {
     pub subscription: Option<PushSubscription>,
     pub subscribed: bool,
@@ -643,6 +664,23 @@ impl Store {
         .await?;
         sqlx::query(
             r#"
+            create table if not exists apns_devices (
+                id text primary key,
+                device_token text not null,
+                bundle_id text not null,
+                environment text not null,
+                device_name text,
+                enabled integer not null default 1,
+                created_at text not null,
+                updated_at text not null,
+                unique (device_token, bundle_id, environment)
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
             create table if not exists notification_deliveries (
                 id text primary key,
                 kind text not null,
@@ -848,6 +886,11 @@ impl Store {
         .await?;
         sqlx::query(
             "create index if not exists notification_deliveries_due_idx on notification_deliveries (status, available_at, processing_started_at, created_at)",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "create index if not exists apns_devices_enabled_idx on apns_devices (enabled, updated_at, id)",
         )
         .execute(&self.pool)
         .await?;
@@ -2263,6 +2306,87 @@ impl Store {
         .fetch_optional(&self.pool)
         .await?;
         row.map(row_to_push_subscription).transpose()
+    }
+
+    pub async fn upsert_apns_device(&self, device: NewApnsDevice) -> ApiResult<ApnsDevice> {
+        let now = Utc::now();
+        let id = Uuid::new_v4().to_string();
+        sqlx::query(
+            r#"
+            insert into apns_devices (
+                id, device_token, bundle_id, environment, device_name, enabled, created_at, updated_at
+            )
+            values (?, ?, ?, ?, ?, 1, ?, ?)
+            on conflict(device_token, bundle_id, environment) do update set
+                device_name = excluded.device_name,
+                enabled = 1,
+                updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(id)
+        .bind(&device.device_token)
+        .bind(&device.bundle_id)
+        .bind(&device.environment)
+        .bind(&device.device_name)
+        .bind(now)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_apns_device_by_token_bundle_environment(
+            &device.device_token,
+            &device.bundle_id,
+            &device.environment,
+        )
+        .await
+    }
+
+    pub async fn get_apns_device_by_token_bundle_environment(
+        &self,
+        device_token: &str,
+        bundle_id: &str,
+        environment: &str,
+    ) -> ApiResult<ApnsDevice> {
+        let query =
+            apns_device_select_sql("where device_token = ? and bundle_id = ? and environment = ?");
+        let row = sqlx::query(&query)
+            .bind(device_token)
+            .bind(bundle_id)
+            .bind(environment)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        row.map(row_to_apns_device)
+            .transpose()?
+            .ok_or_else(|| ApiError::NotFound("APNs device".to_string()))
+    }
+
+    pub async fn list_enabled_apns_devices(&self) -> ApiResult<Vec<ApnsDevice>> {
+        let query = apns_device_select_sql("where enabled = 1 order by updated_at desc, id");
+        let rows = sqlx::query(&query).fetch_all(&self.pool).await?;
+        rows.into_iter().map(row_to_apns_device).collect()
+    }
+
+    pub async fn disable_apns_device(&self, id: &str) -> ApiResult<Option<ApnsDevice>> {
+        let now = Utc::now();
+        sqlx::query(
+            r#"
+            update apns_devices
+            set enabled = 0, updated_at = ?
+            where id = ?
+            "#,
+        )
+        .bind(now)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+
+        let query = apns_device_select_sql("where id = ?");
+        let row = sqlx::query(&query)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        row.map(row_to_apns_device).transpose()
     }
 
     pub async fn create_notification_delivery(
@@ -4015,6 +4139,29 @@ fn row_to_push_subscription(row: sqlx::sqlite::SqliteRow) -> ApiResult<PushSubsc
     })
 }
 
+fn apns_device_select_sql(suffix: &str) -> String {
+    format!(
+        r#"
+        select id, device_token, bundle_id, environment, device_name, enabled, created_at, updated_at
+        from apns_devices
+        {suffix}
+        "#
+    )
+}
+
+fn row_to_apns_device(row: sqlx::sqlite::SqliteRow) -> ApiResult<ApnsDevice> {
+    Ok(ApnsDevice {
+        id: row.try_get("id")?,
+        device_token: row.try_get("device_token")?,
+        bundle_id: row.try_get("bundle_id")?,
+        environment: row.try_get("environment")?,
+        device_name: row.try_get("device_name")?,
+        enabled: row.try_get::<i64, _>("enabled")? != 0,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+    })
+}
+
 fn notification_delivery_select_sql(suffix: &str) -> String {
     format!(
         r#"
@@ -4101,7 +4248,7 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'project_preview_services', 'project_previews', 'project_preview_routes', 'approvals', 'thread_reads', 'push_subscriptions', 'notification_deliveries', 'thread_notification_settings', 'thread_composer_settings', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'project_preview_services', 'project_previews', 'project_preview_routes', 'approvals', 'thread_reads', 'push_subscriptions', 'apns_devices', 'notification_deliveries', 'thread_notification_settings', 'thread_composer_settings', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
         )
         .fetch_all(store.pool())
         .await
@@ -4109,6 +4256,7 @@ mod tests {
         assert_eq!(
             tables,
             vec![
+                "apns_devices",
                 "approvals",
                 "automation_runs",
                 "automations",
@@ -4474,6 +4622,72 @@ mod tests {
                 .unwrap()
                 .subscribed
         );
+    }
+
+    #[tokio::test]
+    async fn apns_device_upsert_is_idempotent_by_token_bundle_and_environment() {
+        let store = Store::in_memory().await.unwrap();
+        let first = store
+            .upsert_apns_device(NewApnsDevice {
+                device_token: "token-1".to_string(),
+                bundle_id: "com.example.Kodex".to_string(),
+                environment: "sandbox".to_string(),
+                device_name: Some("First iPhone".to_string()),
+            })
+            .await
+            .unwrap();
+        let second = store
+            .upsert_apns_device(NewApnsDevice {
+                device_token: "token-1".to_string(),
+                bundle_id: "com.example.Kodex".to_string(),
+                environment: "sandbox".to_string(),
+                device_name: Some("Renamed iPhone".to_string()),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(second.id, first.id);
+        assert_eq!(second.device_token, "token-1");
+        assert_eq!(second.bundle_id, "com.example.Kodex");
+        assert_eq!(second.environment, "sandbox");
+        assert_eq!(second.device_name.as_deref(), Some("Renamed iPhone"));
+        assert!(second.enabled);
+        assert_eq!(store.list_enabled_apns_devices().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn disabled_apns_device_is_removed_from_enabled_lookup_and_can_reenable() {
+        let store = Store::in_memory().await.unwrap();
+        let device = store
+            .upsert_apns_device(NewApnsDevice {
+                device_token: "token-2".to_string(),
+                bundle_id: "com.example.Kodex".to_string(),
+                environment: "production".to_string(),
+                device_name: None,
+            })
+            .await
+            .unwrap();
+
+        let disabled = store
+            .disable_apns_device(&device.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!disabled.enabled);
+        assert!(store.list_enabled_apns_devices().await.unwrap().is_empty());
+
+        let reenabled = store
+            .upsert_apns_device(NewApnsDevice {
+                device_token: "token-2".to_string(),
+                bundle_id: "com.example.Kodex".to_string(),
+                environment: "production".to_string(),
+                device_name: Some("Work phone".to_string()),
+            })
+            .await
+            .unwrap();
+        assert_eq!(reenabled.id, device.id);
+        assert!(reenabled.enabled);
+        assert_eq!(store.list_enabled_apns_devices().await.unwrap().len(), 1);
     }
 
     #[tokio::test]

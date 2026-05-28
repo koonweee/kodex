@@ -1,0 +1,12 @@
+{
+  "Simulator Target Bundle": "dev.kodex.KodexIOS",
+  "aps": {
+    "alert": {
+      "title": "Kodex",
+      "body": "New agent response"
+    },
+    "badge": 1
+  },
+  "threadId": "fixture-thread",
+  "kodexRouteOnForeground": true
+}

@@ -1784,6 +1784,7 @@ dependencies = [
  "async-trait",
  "axum",
  "chrono",
+ "crc32fast",
  "futures-core",
  "http-body-util",
  "jsonschema",

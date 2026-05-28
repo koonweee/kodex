@@ -1,0 +1,26 @@
+{
+  "mode": "degraded",
+  "message": "app-server unavailable",
+  "workspace": {
+    "projects": [
+      {
+        "id": "project-kodex",
+        "name": "Kodex",
+        "path": "/Users/example/kodex",
+        "threads": [
+          {
+            "id": "fixture-project-thread",
+            "title": "Native iOS milestone",
+            "cwd": "/Users/example/kodex",
+            "status": "active",
+            "unread": true,
+            "pinned": false,
+            "notificationsEnabled": true
+          }
+        ]
+      }
+    ],
+    "chats": [],
+    "pinned": []
+  }
+}

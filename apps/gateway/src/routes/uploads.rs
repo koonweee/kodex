@@ -5,6 +5,7 @@ use axum::{
     routing::post,
     Json, Router,
 };
+use crc32fast::Hasher;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 use utoipa::ToSchema;
@@ -86,6 +87,7 @@ pub async fn upload_images(
                 MAX_IMAGE_BYTES
             )));
         }
+        validate_image_bytes(&mime_type, &bytes)?;
 
         let id = Uuid::new_v4().to_string();
         let path = image_dir.join(format!("{id}.{extension}"));
@@ -119,6 +121,89 @@ fn image_extension(mime_type: &str) -> Option<&'static str> {
         value if value.starts_with("image/") => Some("img"),
         _ => None,
     }
+}
+
+fn validate_image_bytes(mime_type: &str, bytes: &[u8]) -> ApiResult<()> {
+    match mime_type {
+        "image/png" => validate_png(bytes)
+            .map_err(|message| ApiError::BadRequest(format!("invalid PNG image: {message}"))),
+        _ => Ok(()),
+    }
+}
+
+fn validate_png(bytes: &[u8]) -> Result<(), String> {
+    const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+    if !bytes.starts_with(PNG_SIGNATURE) {
+        return Err("missing PNG signature".to_string());
+    }
+
+    let mut offset = PNG_SIGNATURE.len();
+    let mut saw_ihdr = false;
+    let mut saw_iend = false;
+
+    while offset + 12 <= bytes.len() {
+        let length = u32::from_be_bytes(
+            bytes[offset..offset + 4]
+                .try_into()
+                .expect("slice length checked"),
+        ) as usize;
+        let chunk_type_start = offset + 4;
+        let data_start = offset + 8;
+        let Some(data_end) = data_start.checked_add(length) else {
+            return Err("chunk length overflow".to_string());
+        };
+        let Some(crc_end) = data_end.checked_add(4) else {
+            return Err("chunk length overflow".to_string());
+        };
+        if crc_end > bytes.len() {
+            return Err("truncated chunk".to_string());
+        }
+
+        let chunk_type = &bytes[chunk_type_start..data_start];
+        let data = &bytes[data_start..data_end];
+        let stored_crc = u32::from_be_bytes(
+            bytes[data_end..crc_end]
+                .try_into()
+                .expect("slice length checked"),
+        );
+        let mut hasher = Hasher::new();
+        hasher.update(chunk_type);
+        hasher.update(data);
+        let calculated_crc = hasher.finalize();
+        if stored_crc != calculated_crc {
+            return Err(format!(
+                "{} chunk CRC mismatch",
+                std::str::from_utf8(chunk_type).unwrap_or("unknown")
+            ));
+        }
+
+        match chunk_type {
+            b"IHDR" => {
+                if offset != PNG_SIGNATURE.len() {
+                    return Err("IHDR must be the first chunk".to_string());
+                }
+                saw_ihdr = true;
+            }
+            b"IEND" => {
+                if crc_end != bytes.len() {
+                    return Err("trailing bytes after IEND".to_string());
+                }
+                saw_iend = true;
+                break;
+            }
+            _ => {}
+        }
+
+        offset = crc_end;
+    }
+
+    if !saw_ihdr {
+        return Err("missing IHDR chunk".to_string());
+    }
+    if !saw_iend {
+        return Err("missing IEND chunk".to_string());
+    }
+    Ok(())
 }
 
 fn absolute_upload_dir(path: PathBuf) -> ApiResult<PathBuf> {

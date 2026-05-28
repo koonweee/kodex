@@ -484,6 +484,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/notifications/apns/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["upsert_apns_device"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/notifications/apns/devices/{deviceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_apns_device"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/notifications/apns/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["test_apns_notification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/notifications/native/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["native_notification_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/notifications/status": {
         parameters: {
             query?: never;
@@ -1331,6 +1395,39 @@ export interface components {
             message: string;
             retryable: boolean;
         };
+        ApnsDeviceDeleteResponse: {
+            device?: null | components["schemas"]["ApnsDeviceResponse"];
+        };
+        ApnsDeviceResponse: {
+            bundleId: string;
+            /** Format: date-time */
+            createdAt: string;
+            deviceName?: string | null;
+            enabled: boolean;
+            environment: string;
+            id: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ApnsDeviceUpsertRequest: {
+            bundleId: string;
+            deviceName?: string | null;
+            deviceToken: string;
+            environment: components["schemas"]["ApnsEnvironment"];
+        };
+        ApnsDeviceUpsertResponse: {
+            device: components["schemas"]["ApnsDeviceResponse"];
+        };
+        /** @enum {string} */
+        ApnsEnvironment: "sandbox" | "production";
+        ApnsTestNotificationResponse: {
+            activeDeviceCount: number;
+            configured: boolean;
+            deliveryIds: string[];
+            deliverySupported: boolean;
+            enqueued: boolean;
+            message: string;
+        };
         AppServerCapabilities: {
             experimentalApi: boolean;
             ready: boolean;
@@ -1796,6 +1893,12 @@ export interface components {
         };
         ModelsQuery: {
             includeHidden?: boolean;
+        };
+        NativeNotificationStatusResponse: {
+            activeDeviceCount: number;
+            apnsConfigured: boolean;
+            apnsDeliverySupported: boolean;
+            gatewayScope: string;
         };
         NotificationStatusResponse: {
             configured: boolean;
@@ -3521,6 +3624,88 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelListResponse"];
+                };
+            };
+        };
+    };
+    upsert_apns_device: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApnsDeviceUpsertRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApnsDeviceUpsertResponse"];
+                };
+            };
+        };
+    };
+    delete_apns_device: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deviceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApnsDeviceDeleteResponse"];
+                };
+            };
+        };
+    };
+    test_apns_notification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApnsTestNotificationResponse"];
+                };
+            };
+        };
+    };
+    native_notification_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NativeNotificationStatusResponse"];
                 };
             };
         };

@@ -239,6 +239,193 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn native_notification_routes_manage_apns_devices_without_exposing_tokens() {
+        let (state, _) = test_state().await;
+        let app = build_router(state.clone());
+
+        let initial_status = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/notifications/native/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(initial_status.status(), StatusCode::OK);
+        let body = response_json(initial_status).await;
+        assert_eq!(body["apnsConfigured"], false);
+        assert_eq!(body["apnsDeliverySupported"], false);
+        assert_eq!(body["activeDeviceCount"], 0);
+        assert_eq!(body["gatewayScope"], "localhostOrTrustedNetworkOnly");
+
+        let create_body = json!({
+            "deviceToken": "test-device-token",
+            "bundleId": "dev.kodex.KodexIOS",
+            "environment": "sandbox",
+            "deviceName": "iPhone 17 Pro"
+        });
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/notifications/apns/devices")
+                    .header("content-type", "application/json")
+                    .body(Body::from(create_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let body = response_json(created).await;
+        let device_id = body["device"]["id"].as_str().unwrap().to_string();
+        assert_eq!(body["device"]["bundleId"], "dev.kodex.KodexIOS");
+        assert_eq!(body["device"]["environment"], "sandbox");
+        assert_eq!(body["device"]["deviceName"], "iPhone 17 Pro");
+        assert_eq!(body["device"]["enabled"], true);
+        assert!(body["device"].get("deviceToken").is_none());
+
+        let update_body = json!({
+            "deviceToken": "test-device-token",
+            "bundleId": "dev.kodex.KodexIOS",
+            "environment": "sandbox",
+            "deviceName": "Personal iPhone"
+        });
+        let updated = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/notifications/apns/devices")
+                    .header("content-type", "application/json")
+                    .body(Body::from(update_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(updated.status(), StatusCode::CREATED);
+        let body = response_json(updated).await;
+        assert_eq!(body["device"]["id"], device_id);
+        assert_eq!(body["device"]["deviceName"], "Personal iPhone");
+
+        let status = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/notifications/native/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = response_json(status).await;
+        assert_eq!(body["activeDeviceCount"], 1);
+
+        let test = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/notifications/apns/test")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = response_json(test).await;
+        assert_eq!(body["configured"], false);
+        assert_eq!(body["activeDeviceCount"], 1);
+        assert_eq!(body["deliverySupported"], false);
+        assert_eq!(body["enqueued"], false);
+        assert!(body["message"]
+            .as_str()
+            .unwrap()
+            .contains("trusted VPN/LAN"));
+
+        let deleted = app
+            .oneshot(
+                Request::delete(format!("/v1/notifications/apns/devices/{device_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(deleted.status(), StatusCode::OK);
+        let body = response_json(deleted).await;
+        assert_eq!(body["device"]["enabled"], false);
+        assert!(state
+            .store
+            .list_enabled_apns_devices()
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn native_notification_status_reports_apns_provider_configuration_separately() {
+        let (mut state, _) = test_state().await;
+        Arc::make_mut(&mut state.config).notifications.apns_team_id =
+            Some("TEAMID1234".to_string());
+        Arc::make_mut(&mut state.config).notifications.apns_key_id = Some("KEYID12345".to_string());
+        Arc::make_mut(&mut state.config)
+            .notifications
+            .apns_private_key_path = Some(tempdir().unwrap().path().join("AuthKey_KEYID12345.p8"));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/notifications/native/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["apnsConfigured"], true);
+        assert_eq!(body["apnsDeliverySupported"], false);
+        assert_eq!(body["gatewayScope"], "localhostOrTrustedNetworkOnly");
+    }
+
+    #[tokio::test]
+    async fn native_notification_device_route_validates_required_apns_fields() {
+        let (state, _) = test_state().await;
+        let app = build_router(state);
+
+        let empty_token = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/notifications/apns/devices")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "deviceToken": " ",
+                            "bundleId": "dev.kodex.KodexIOS",
+                            "environment": "sandbox"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(empty_token.status(), StatusCode::BAD_REQUEST);
+
+        let bad_environment = app
+            .oneshot(
+                Request::post("/v1/notifications/apns/devices")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "deviceToken": "abcdef",
+                            "bundleId": "dev.kodex.KodexIOS",
+                            "environment": "development"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(bad_environment.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
     async fn current_notification_subscription_reports_endpoint_status_and_disables_by_endpoint() {
         let (mut state, _) = test_state().await;
         Arc::make_mut(&mut state.config)
@@ -1267,10 +1454,14 @@ mod tests {
             "/v1/account/rate-limits",
             "/v1/models",
             "/v1/notifications/status",
+            "/v1/notifications/native/status",
             "/v1/notifications/subscription/current",
             "/v1/notifications/subscriptions",
             "/v1/notifications/subscriptions/{subscriptionId}",
             "/v1/notifications/test",
+            "/v1/notifications/apns/devices",
+            "/v1/notifications/apns/devices/{deviceId}",
+            "/v1/notifications/apns/test",
             "/v1/skills",
             "/v1/kodex-control-plugin",
             "/v1/kodex-control-plugin/install",
@@ -1293,6 +1484,24 @@ mod tests {
         ] {
             assert!(openapi["paths"].get(path).is_some(), "missing {path}");
         }
+        for schema in [
+            "NativeNotificationStatusResponse",
+            "ApnsEnvironment",
+            "ApnsDeviceResponse",
+            "ApnsDeviceUpsertRequest",
+            "ApnsDeviceUpsertResponse",
+            "ApnsDeviceDeleteResponse",
+            "ApnsTestNotificationResponse",
+        ] {
+            assert!(
+                openapi["components"]["schemas"].get(schema).is_some(),
+                "missing {schema}"
+            );
+        }
+        assert_eq!(
+            openapi["components"]["schemas"]["ApnsEnvironment"]["enum"],
+            json!(["sandbox", "production"])
+        );
 
         let upload_request_schema = &openapi["paths"]["/v1/uploads/images"]["post"]["requestBody"]
             ["content"]["multipart/form-data"]["schema"];
@@ -9226,7 +9435,7 @@ mod tests {
                     .body(Body::from(multipart_body(
                         "image.png",
                         "image/png",
-                        b"not really png",
+                        VALID_1X1_PNG,
                     )))
                     .unwrap(),
             )
@@ -9256,6 +9465,36 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn image_upload_rejects_corrupt_pngs() {
+        let (mut state, _) = test_state().await;
+        let dir = tempdir().unwrap();
+        Arc::make_mut(&mut state.config).uploads.dir = dir.path().join("uploads");
+        let app = build_router(state);
+        let mut corrupt_png = VALID_1X1_PNG.to_vec();
+        corrupt_png[53] = 0xbf;
+        corrupt_png[55] = 0xdb;
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/uploads/images")
+                    .header(
+                        "content-type",
+                        "multipart/form-data; boundary=kodexboundary",
+                    )
+                    .body(Body::from(multipart_body(
+                        "corrupt.png",
+                        "image/png",
+                        &corrupt_png,
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
@@ -11577,6 +11816,14 @@ mod tests {
             }]
         })
     }
+
+    const VALID_1X1_PNG: &[u8] = &[
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x04, 0x00, 0x00, 0x00, 0xb5,
+        0x1c, 0x0c, 0x02, 0x00, 0x00, 0x00, 0x0b, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xfc,
+        0xff, 0x1f, 0x00, 0x03, 0x03, 0x02, 0x00, 0xef, 0xa2, 0xa7, 0x5b, 0x00, 0x00, 0x00, 0x00,
+        0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ];
 
     fn multipart_body(file_name: &str, content_type: &str, bytes: &[u8]) -> Vec<u8> {
         let mut body = Vec::new();

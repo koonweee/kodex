@@ -26,6 +26,14 @@ function clickMenuItem(name: RegExp) {
   return clickMenuItemWithDeps(name, screen, waitFor, fireEvent);
 }
 
+function latestFakeEventSource(predicate: (instance: FakeEventSource) => boolean) {
+  return [...FakeEventSource.instances].reverse().find(predicate);
+}
+
+function hasThreadId(instance: FakeEventSource, threadId: string) {
+  return new URL(instance.url, window.location.origin).searchParams.get("threadId") === threadId;
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: unknown) => void;
@@ -125,13 +133,14 @@ describe("MVP composer input flows", () => {
 
     let selectedThreadStream: FakeEventSource | undefined;
     await waitFor(() => {
-      selectedThreadStream = FakeEventSource.instances.find(
-        (instance) => instance.url.includes("threadId=thread-1") && !instance.closed,
+      selectedThreadStream = latestFakeEventSource(
+        (instance) => hasThreadId(instance, "thread-1") && !instance.closed,
       );
       expect(selectedThreadStream).toBeDefined();
+      expect(selectedThreadStream?.onmessage).toBeTypeOf("function");
     });
     act(() => {
-      selectedThreadStream?.emit(projectionPatchEvent({
+      selectedThreadStream?.emitNamed("thread_view.patch", projectionPatchEvent({
         id: "projection-sent-user",
         seq: 3,
         threadId: thread.id,
@@ -174,14 +183,15 @@ describe("MVP composer input flows", () => {
     });
     let selectedThreadStream: FakeEventSource | undefined;
     await waitFor(() => {
-      selectedThreadStream = FakeEventSource.instances.find(
-        (instance) => instance.url.includes("threadId=thread-1") && !instance.closed,
+      selectedThreadStream = latestFakeEventSource(
+        (instance) => hasThreadId(instance, "thread-1") && !instance.closed,
       );
       expect(selectedThreadStream).toBeDefined();
+      expect(selectedThreadStream?.onmessage).toBeTypeOf("function");
     });
 
     act(() => {
-      selectedThreadStream?.emit(projectionPatchEvent({
+      selectedThreadStream?.emitNamed("thread_view.patch", projectionPatchEvent({
         id: "pending-user-projection",
         seq: 2,
         threadId: thread.id,
