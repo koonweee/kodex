@@ -115,6 +115,17 @@
   - Confirm assistant text updates incrementally without a full selected-thread refetch per patch.
   - Trigger or simulate stream reconnect and confirm snapshot recovery.
 
+## Implementation Notes
+
+- Status: Complete.
+- Implemented canonical `thread_view.patch` decoding in `KodexCore`, including patch scope, revisions, live state, upsert/remove rows, singular `item` rows, and nested user-message content.
+- Added a pure `ThreadTimeline.applying(_:)` reducer that ignores stale revisions, applies turn/lifecycle/full-snapshot patches, and requests snapshot refresh for unsupported or unsafe patches.
+- Updated the iOS live selected-thread stream to buffer and coalesce turn patches, apply them on `MainActor`, keep queue/approval refresh behavior conservative, and cancel buffered work on thread changes.
+- Added bounded post-submit snapshot recovery so first-turn races or missed selected-stream events converge without returning to per-patch full refetches.
+- Verification completed:
+  - `cd apps/ios && swift test` passed with 51 Swift tests.
+  - `apps/ios/scripts/run-live-e2e.sh` passed against the local live gateway, including the live UI prompt smoke and simulator push fixture routing.
+
 ## Risks And Open Questions
 
 - `LiveUpdates.swift` lives in `KodexCore`, while generated OpenAPI patch types live in `KodexAPI`. The implementation should avoid a dependency cycle by either defining a small Core patch DTO or moving only reusable row-normalization logic into Core.

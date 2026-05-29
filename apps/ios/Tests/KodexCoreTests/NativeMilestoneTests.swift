@@ -214,6 +214,237 @@ import Testing
     #expect(deleted == .queuedInputUpdated(threadId: "t1"))
 }
 
+@Test func gatewayLiveEventDecoderConsumesThreadViewPatchPayloads() throws {
+    let decoder = GatewayLiveEventDecoder()
+    let data = Data("""
+    {
+      "seq": 45,
+      "kind": "thread_view.patch",
+      "payload": {
+        "threadId": "t1",
+        "viewRevision": 8,
+        "scope": "turn",
+        "liveState": "streaming",
+        "activeTurnId": "turn-1",
+        "removeRowIds": ["old-row"],
+        "upsertRows": [
+          {
+            "id": "row-user",
+            "kind": "user_message",
+            "displayOrder": 9,
+            "status": "completed",
+            "turnId": "turn-1",
+            "item": {
+              "id": "projection-item-0",
+              "threadId": "t1",
+              "turnId": "turn-1",
+              "itemId": "item-0",
+              "itemType": "userMessage",
+              "status": "completed",
+              "displayOrder": 9,
+              "codexMethod": "item/completed",
+              "payload": {
+                "item": {
+                  "id": "item-0",
+                  "type": "userMessage",
+                  "content": [{"text": "Say pong", "type": "text"}]
+                }
+              }
+            },
+            "items": [],
+            "fileChanges": [],
+            "collapsedRows": []
+          },
+          {
+            "id": "row-agent",
+            "kind": "message",
+            "displayOrder": 10,
+            "status": "streaming",
+            "turnId": "turn-1",
+            "items": [
+              {
+                "id": "item-1",
+                "threadId": "t1",
+                "turnId": "turn-1",
+                "itemId": "item-1",
+                "itemType": "assistant_message",
+                "status": "streaming",
+                "displayOrder": 10,
+                "codexMethod": "item/assistantmessage/delta",
+                "payload": {
+                  "item": {"role": "assistant", "text": "partial assistant text"}
+                }
+              }
+            ],
+            "fileChanges": [],
+            "collapsedRows": []
+          }
+        ]
+      }
+    }
+    """.utf8)
+
+    let envelope = try decoder.decodeEnvelope(data)
+
+    guard case .threadViewPatch(let patch) = envelope.event else {
+        Issue.record("Expected decoded thread view patch")
+        return
+    }
+    #expect(envelope.seq == 45)
+    #expect(patch.threadId == "t1")
+    #expect(patch.viewRevision == 8)
+    #expect(patch.scope == .turn)
+	    #expect(patch.liveState == .streaming)
+	    #expect(patch.activeTurnId == "turn-1")
+	    #expect(patch.removeRowIds == ["old-row"])
+	    #expect(patch.upsertRows.map(\.id) == ["row-user", "row-agent"])
+	    #expect(patch.upsertRows.first?.turnId == "turn-1")
+	    #expect(patch.upsertRows.first?.speaker == .user)
+	    #expect(patch.upsertRows.first?.body == "Say pong")
+	    #expect(patch.upsertRows.last?.speaker == .assistant)
+	    #expect(patch.upsertRows.last?.body == "partial assistant text")
+    #expect(patch.rows == nil)
+    #expect(GatewayEventScope.selected(threadId: "t1").accepts(threadId: envelope.event.threadId))
+}
+
+@Test func threadTimelineAppliesCanonicalTurnPatchesAndPreservesHistoryWindow() {
+    let timeline = ThreadTimeline(
+        threadId: "t1",
+        liveState: .streaming,
+        viewRevision: 4,
+        rows: [
+            TimelineRow(id: "old-row", kind: .message, speaker: .assistant, displayOrder: 9, title: "Kodex", body: "old", turnId: "turn-1"),
+            TimelineRow(id: "row-user", kind: .message, speaker: .user, displayOrder: 8, title: "You", body: "hello", turnId: "turn-1")
+        ],
+        olderCursor: "older-1",
+        hasOlder: true
+    )
+    let patch = GatewayThreadViewPatch(
+        threadId: "t1",
+        viewRevision: 5,
+        scope: .turn,
+        liveState: .streaming,
+        activeTurnId: "turn-1",
+        rows: nil,
+        upsertRows: [
+            TimelineRow(id: "row-agent", kind: .message, speaker: .assistant, displayOrder: 10, title: "Kodex", body: "new text", status: "streaming", turnId: "turn-1")
+        ],
+        removeRowIds: ["old-row"]
+    )
+
+    let result = timeline.applying(patch)
+
+    guard case .applied(let updated) = result else {
+        Issue.record("Expected applied timeline patch")
+        return
+    }
+    #expect(updated.viewRevision == 5)
+    #expect(updated.liveState == .streaming)
+    #expect(updated.rows.map(\.id) == ["row-user", "row-agent"])
+    #expect(updated.rows.last?.body == "new text")
+    #expect(updated.olderCursor == "older-1")
+    #expect(updated.hasOlder)
+}
+
+@Test func threadTimelineHandlesSnapshotLifecycleStaleAndInvalidPatches() {
+    let timeline = ThreadTimeline(
+        threadId: "t1",
+        liveState: .streaming,
+        viewRevision: 4,
+        rows: [TimelineRow(id: "row-1", kind: .message, displayOrder: 1, title: "Kodex", body: "old")]
+    )
+
+    let stale = GatewayThreadViewPatch(threadId: "t1", viewRevision: 4, scope: .turn, liveState: .streaming, upsertRows: [
+        TimelineRow(id: "row-1", kind: .message, displayOrder: 1, title: "Kodex", body: "stale")
+    ])
+    let lifecycle = GatewayThreadViewPatch(threadId: "t1", viewRevision: 5, scope: .lifecycle, liveState: .idle)
+    let fullSnapshot = GatewayThreadViewPatch(threadId: "t1", viewRevision: 6, scope: .fullSnapshot, liveState: .idle, rows: [
+        TimelineRow(id: "row-2", kind: .message, displayOrder: 2, title: "Kodex", body: "snapshot")
+    ])
+    let invalidSnapshot = GatewayThreadViewPatch(threadId: "t1", viewRevision: 7, scope: .fullSnapshot, liveState: .idle, rows: nil)
+
+    guard case .ignoredStale(let unchanged) = timeline.applying(stale) else {
+        Issue.record("Expected stale patch to be ignored")
+        return
+    }
+    #expect(unchanged.rows.first?.body == "old")
+
+    guard case .applied(let lifecycleOnly) = timeline.applying(lifecycle) else {
+        Issue.record("Expected lifecycle patch to apply")
+        return
+    }
+    #expect(lifecycleOnly.liveState == .idle)
+    #expect(lifecycleOnly.rows.first?.body == "old")
+
+    guard case .applied(let replaced) = lifecycleOnly.applying(fullSnapshot) else {
+        Issue.record("Expected full snapshot patch to replace rows")
+        return
+    }
+    #expect(replaced.rows.map(\.id) == ["row-2"])
+
+    guard case .needsSnapshotRefresh = replaced.applying(invalidSnapshot) else {
+        Issue.record("Expected invalid snapshot patch to request refresh")
+        return
+    }
+}
+
+@Test func threadTimelineAppliesDuplicateRowIdsDeterministically() {
+    let timeline = ThreadTimeline(
+        threadId: "t1",
+        liveState: .streaming,
+        viewRevision: 1,
+        rows: [
+            TimelineRow(id: "row-1", kind: .message, displayOrder: 1, title: "First", body: "first"),
+            TimelineRow(id: "row-1", kind: .message, displayOrder: 2, title: "Second", body: "second")
+        ]
+    )
+    let patch = GatewayThreadViewPatch(
+        threadId: "t1",
+        viewRevision: 2,
+        scope: .turn,
+        liveState: .streaming,
+        upsertRows: [
+            TimelineRow(id: "row-1", kind: .message, displayOrder: 3, title: "Latest", body: "latest")
+        ]
+    )
+
+    guard case .applied(let updated) = timeline.applying(patch) else {
+        Issue.record("Expected duplicate row IDs to be reduced deterministically")
+        return
+    }
+    #expect(updated.rows.map(\.id) == ["row-1"])
+    #expect(updated.rows.first?.body == "latest")
+}
+
+@Test func gatewayLiveEventBatchCoalescesSupersededTurnPatches() {
+    let first = GatewayLiveEnvelope(seq: 10, event: .threadViewPatch(GatewayThreadViewPatch(
+        threadId: "t1",
+        viewRevision: 10,
+        scope: .turn,
+        liveState: .streaming,
+        activeTurnId: "turn-1",
+        upsertRows: [TimelineRow(id: "row-agent", kind: .message, displayOrder: 1, title: "Kodex", body: "hel", turnId: "turn-1")]
+    )))
+    let latest = GatewayLiveEnvelope(seq: 11, event: .threadViewPatch(GatewayThreadViewPatch(
+        threadId: "t1",
+        viewRevision: 11,
+        scope: .turn,
+        liveState: .streaming,
+        activeTurnId: "turn-1",
+        upsertRows: [TimelineRow(id: "row-agent", kind: .message, displayOrder: 1, title: "Kodex", body: "hello", turnId: "turn-1")]
+    )))
+    let refresh = GatewayLiveEnvelope(seq: 12, event: .refreshRequired(threadId: "t1"))
+
+    let coalesced = GatewayLiveEventBatch.coalesce([refresh, latest, first])
+
+    #expect(coalesced.map(\.seq) == [11, 12])
+    guard case .threadViewPatch(let patch) = coalesced.first?.event else {
+        Issue.record("Expected latest patch to remain")
+        return
+    }
+    #expect(patch.upsertRows.first?.body == "hello")
+}
+
 @Test func gatewayStreamCheckpointAdvancesCursorAndTracksReconnects() {
     var checkpoint = GatewayStreamCheckpoint(cursor: 10)
 
@@ -223,6 +454,16 @@ import Testing
 
     #expect(checkpoint.cursor == 12)
     #expect(checkpoint.reconnectAttempts == 0)
+}
+
+@Test func gatewayStreamCheckpointCanResetAcrossSelectedThreadChanges() {
+    var checkpoint = GatewayStreamCheckpoint(cursor: 42, reconnectAttempts: 2)
+
+    checkpoint.reset()
+
+    #expect(checkpoint.cursor == nil)
+    #expect(checkpoint.reconnectAttempts == 0)
+    #expect(!checkpoint.shouldUsePollingFallback())
 }
 
 @Test func gatewayStreamScopeDedupesSelectedAndGlobalEventsAndFallsBackToPolling() {

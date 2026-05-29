@@ -1,7 +1,7 @@
 import Foundation
 
 public enum GatewayLiveEvent: Equatable, Sendable {
-    case threadViewPatch(threadId: String)
+    case threadViewPatch(GatewayThreadViewPatch)
     case refreshRequired(threadId: String)
     case threadReadUpdated(threadId: String)
     case threadPinUpdated(threadId: String)
@@ -13,8 +13,9 @@ public enum GatewayLiveEvent: Equatable, Sendable {
 
     public var threadId: String? {
         switch self {
-        case .threadViewPatch(let threadId),
-             .refreshRequired(let threadId),
+        case .threadViewPatch(let patch):
+            return patch.threadId
+        case .refreshRequired(let threadId),
              .threadReadUpdated(let threadId),
              .threadPinUpdated(let threadId),
              .threadNotificationsUpdated(let threadId),
@@ -60,6 +61,11 @@ public struct GatewayStreamCheckpoint: Equatable, Sendable {
         reconnectAttempts += 1
     }
 
+    public mutating func reset() {
+        cursor = nil
+        reconnectAttempts = 0
+    }
+
     public func shouldUsePollingFallback(threshold: Int = 2) -> Bool {
         reconnectAttempts >= threshold
     }
@@ -95,7 +101,7 @@ public struct GatewayLiveEventDecoder: Sendable {
     private func event(from envelope: EventEnvelope) -> GatewayLiveEvent {
         switch envelope.kind {
         case "thread_view.patch":
-            return .threadViewPatch(threadId: envelope.payload.threadId ?? "")
+            return .threadViewPatch(envelope.payload.threadViewPatch)
         case "thread_view.refresh_required":
             return .refreshRequired(threadId: envelope.payload.threadId ?? "")
         case "thread.read_updated":
@@ -186,6 +192,47 @@ public struct GatewayEventStream: Sendable {
     }
 }
 
+public enum GatewayLiveEventBatch {
+    public static func coalesce(_ envelopes: [GatewayLiveEnvelope]) -> [GatewayLiveEnvelope] {
+        let sorted = envelopes.sorted { ($0.seq ?? 0) < ($1.seq ?? 0) }
+        var result: [GatewayLiveEnvelope] = []
+        var turnPatchIndexes: [String: Int] = [:]
+
+        for envelope in sorted {
+            guard let key = turnPatchCoalesceKey(envelope) else {
+                result.append(envelope)
+                continue
+            }
+            if let existingIndex = turnPatchIndexes[key] {
+                result[existingIndex] = envelope
+            } else {
+                turnPatchIndexes[key] = result.count
+                result.append(envelope)
+            }
+        }
+
+        return result.sorted { ($0.seq ?? 0) < ($1.seq ?? 0) }
+    }
+
+    private static func turnPatchCoalesceKey(_ envelope: GatewayLiveEnvelope) -> String? {
+        guard case .threadViewPatch(let patch) = envelope.event else {
+            return nil
+        }
+        guard patch.scope == .turn, !patch.upsertRows.isEmpty, patch.removeRowIds.isEmpty else {
+            return nil
+        }
+        let rowIds = patch.upsertRows.map(\.id)
+        guard rowIds.count == Set(rowIds).count else {
+            return nil
+        }
+        let turnId = patch.activeTurnId ?? patch.upsertRows.first?.turnId
+        guard let turnId, !turnId.isEmpty else {
+            return nil
+        }
+        return "\(patch.threadId):\(turnId):\(rowIds.sorted().joined(separator: ","))"
+    }
+}
+
 private struct EventEnvelope: Decodable {
     let seq: Int64?
     let kind: String
@@ -195,8 +242,220 @@ private struct EventEnvelope: Decodable {
 private struct EventPayload: Decodable {
     let threadId: String?
     let thread: EventThreadPayload?
+    let viewRevision: Int64?
+    let scope: String?
+    let liveState: String?
+    let activeTurnId: String?
+    let rows: [EventTimelineRow]?
+    let upsertRows: [EventTimelineRow]?
+    let removeRowIds: [String]?
+
+    var threadViewPatch: GatewayThreadViewPatch {
+        GatewayThreadViewPatch(
+            threadId: threadId ?? "",
+            viewRevision: viewRevision ?? 0,
+            scope: GatewayThreadViewPatchScope(rawValue: scope ?? ""),
+            liveState: ThreadLiveState(rawValue: liveState ?? "") ?? .syncing,
+            activeTurnId: activeTurnId,
+            rows: rows?.map(\.timelineRow),
+            upsertRows: upsertRows?.map(\.timelineRow) ?? [],
+            removeRowIds: removeRowIds ?? []
+        )
+    }
 }
 
 private struct EventThreadPayload: Decodable {
     let id: String?
+}
+
+private struct EventTimelineRow: Decodable {
+    let id: String
+    let kind: String
+    let displayOrder: Int64
+    let status: String
+    let turnId: String?
+    let items: [EventTimelineItem]
+    let item: EventTimelineItem?
+    let fileChanges: [EventTimelineFileChange]
+    let work: EventTimelineWorkSummary?
+
+    var timelineRow: TimelineRow {
+        TimelineRow(
+            id: id,
+            kind: TimelineRowKind(
+                gatewayKind: kind,
+                status: status,
+                hasFileChanges: !fileChanges.isEmpty,
+                itemType: item?.itemType ?? items.first?.itemType
+            ),
+            speaker: speaker,
+            displayOrder: displayOrder,
+            title: title,
+            body: body,
+            status: status,
+            turnId: turnId ?? item?.turnId ?? items.first?.turnId
+        )
+    }
+
+    private var title: String {
+        if let workTitle = work?.title, !workTitle.isEmpty {
+            return workTitle
+        }
+        if let role = item?.role ?? items.first?.role, !role.isEmpty {
+            return role.capitalized
+        }
+        return kind.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    private var speaker: TimelineSpeaker {
+        TimelineSpeaker(role: item?.role ?? items.first?.role)
+    }
+
+    private var body: String {
+        if let text = item?.text ?? items.lazy.compactMap(\.text).first, !text.isEmpty {
+            return text
+        }
+        if let summary = work?.summary, !summary.isEmpty {
+            return summary
+        }
+        if !fileChanges.isEmpty {
+            return fileChanges.map(\.path).joined(separator: "\n")
+        }
+        return status
+    }
+}
+
+private struct EventTimelineItem: Decodable {
+    let itemType: String
+    let turnId: String?
+    let payload: EventTimelineItemPayload
+
+    var role: String? { payload.role }
+    var text: String? { payload.text }
+}
+
+private struct EventTimelineItemPayload: Decodable {
+    let rawRole: String?
+    let rawText: String?
+    let message: String?
+    let title: String?
+    let content: [EventTimelineContent]?
+    let item: EventTimelineDisplayItem?
+    let itemSnapshot: EventTimelineSnapshotItem?
+
+    enum CodingKeys: String, CodingKey {
+        case rawRole = "role"
+        case rawText = "text"
+        case message
+        case title
+        case content
+        case item
+        case itemSnapshot
+    }
+
+    var text: String? {
+        if let rawText, !rawText.isEmpty {
+            return rawText
+        }
+        if let message, !message.isEmpty {
+            return message
+        }
+        if let title, !title.isEmpty {
+            return title
+        }
+        if let itemText = item?.text, !itemText.isEmpty {
+            return itemText
+        }
+        if let snapshotText = itemSnapshot?.text, !snapshotText.isEmpty {
+            return snapshotText
+        }
+        return content?.lazy.compactMap(\.text).first { !$0.isEmpty }
+    }
+
+    var role: String? {
+        rawRole ?? item?.role ?? itemSnapshot?.role
+    }
+}
+
+private struct EventTimelineContent: Decodable {
+    let text: String?
+}
+
+private struct EventTimelineDisplayItem: Decodable {
+    let type: String?
+    let role: String?
+    let rawText: String?
+    let message: String?
+    let content: [EventTimelineContent]?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case role
+        case rawText = "text"
+        case message
+        case content
+    }
+
+    var text: String? {
+        if let rawText, !rawText.isEmpty {
+            return rawText
+        }
+        if let message, !message.isEmpty {
+            return message
+        }
+        return content?.lazy.compactMap(\.text).first { !$0.isEmpty }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decodeIfPresent(String.self, forKey: .type)
+        role = try container.decodeIfPresent(String.self, forKey: .role) ?? Self.inferredRole(for: type)
+        rawText = try container.decodeIfPresent(String.self, forKey: .rawText)
+        message = try container.decodeIfPresent(String.self, forKey: .message)
+        content = try container.decodeIfPresent([EventTimelineContent].self, forKey: .content)
+    }
+
+    private static func inferredRole(for type: String?) -> String? {
+        switch type {
+        case "userMessage":
+            return "User"
+        case "agentMessage":
+            return "Assistant"
+        default:
+            return nil
+        }
+    }
+}
+
+private struct EventTimelineSnapshotItem: Decodable {
+    let role: String?
+    let rawText: String?
+    let message: String?
+    let content: [EventTimelineContent]?
+
+    enum CodingKeys: String, CodingKey {
+        case role
+        case rawText = "text"
+        case message
+        case content
+    }
+
+    var text: String? {
+        if let rawText, !rawText.isEmpty {
+            return rawText
+        }
+        if let message, !message.isEmpty {
+            return message
+        }
+        return content?.lazy.compactMap(\.text).first { !$0.isEmpty }
+    }
+}
+
+private struct EventTimelineFileChange: Decodable {
+    let path: String
+}
+
+private struct EventTimelineWorkSummary: Decodable {
+    let title: String?
+    let summary: String?
 }

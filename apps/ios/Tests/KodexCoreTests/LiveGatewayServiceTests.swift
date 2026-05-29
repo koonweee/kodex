@@ -75,7 +75,8 @@ import KodexAPI
             "turns": [],
             "rows": [
               {"id":"row-1","kind":"message","displayOrder":1,"status":"complete","items":[{"id":"item-1","threadId":"thread-1","turnId":"turn-1","itemId":"item-1","itemType":"message","status":"complete","displayOrder":1,"codexMethod":"item","payload":{"item":{"type":"userMessage","content":[{"text":"Say pong","type":"text"}]}}}],"fileChanges":[],"collapsedRows":[]},
-              {"id":"row-2","kind":"work","displayOrder":2,"status":"running","items":[],"fileChanges":[],"collapsedRows":[],"work":{"title":"Kodex","summary":"Thinking"}}
+              {"id":"row-2","kind":"work","displayOrder":2,"status":"running","items":[],"fileChanges":[],"collapsedRows":[],"work":{"title":"Kodex","summary":"Thinking"}},
+              {"id":"row-3","kind":"assistant_message","displayOrder":3,"status":"complete","item":{"id":"item-2","threadId":"thread-1","turnId":"turn-1","itemId":"item-2","itemType":"agentMessage","status":"complete","displayOrder":2,"codexMethod":"item/completed","payload":{"item":{"type":"agentMessage","text":"pong"}}},"items":[],"fileChanges":[],"collapsedRows":[]}
             ]
           },
           "historyPage": {"olderCursor":"older-1","newerCursor":null,"hasOlder":true,"loadedTurnCount":2,"limit":50}
@@ -88,8 +89,9 @@ import KodexAPI
     #expect(detail.thread.title == "Build iOS")
     #expect(detail.timeline.viewRevision == 5)
     #expect(detail.timeline.liveState == .streaming)
-    #expect(detail.timeline.rows.map(\.kind) == [.message, .work])
+    #expect(detail.timeline.rows.map(\.kind) == [.message, .work, .message])
     #expect(detail.timeline.rows.first?.body == "Say pong")
+    #expect(detail.timeline.rows.last?.body == "pong")
     #expect(detail.timeline.olderCursor == "older-1")
     #expect(detail.timeline.hasOlder == true)
 }

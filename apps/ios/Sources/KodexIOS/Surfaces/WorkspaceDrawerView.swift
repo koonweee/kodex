@@ -74,6 +74,7 @@ struct WorkspaceDrawerView: View {
                 }
                 .tag(WorkspaceScope.chats)
         }
+        .tint(KodexTheme.primaryText)
         .accessibilityIdentifier("WorkspaceScopeControl")
     }
 

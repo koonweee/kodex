@@ -34,6 +34,9 @@ final class ConnectionModel {
 
     @ObservationIgnored var selectedStreamTask: Task<Void, Never>?
     @ObservationIgnored var selectedStreamThreadID: String?
+    @ObservationIgnored var selectedPatchBuffer: [GatewayLiveEnvelope] = []
+    @ObservationIgnored var selectedPatchFlushTask: Task<Void, Never>?
+    @ObservationIgnored var selectedSnapshotRecoveryTask: Task<Void, Never>?
     @ObservationIgnored var globalStreamTask: Task<Void, Never>?
     @ObservationIgnored var globalStreamExcludedThreadID: String?
 
@@ -95,6 +98,17 @@ final class ConnectionModel {
     }
 
     func showThreadDetail(_ threadID: String, usesCompactStackNavigation: Bool) {
+        if selectedThreadID != threadID {
+            selectedStreamTask?.cancel()
+            selectedStreamTask = nil
+            selectedStreamThreadID = nil
+            selectedPatchFlushTask?.cancel()
+            selectedPatchFlushTask = nil
+            selectedPatchBuffer.removeAll()
+            selectedSnapshotRecoveryTask?.cancel()
+            selectedSnapshotRecoveryTask = nil
+            selectedStreamCheckpoint.reset()
+        }
         selectedThreadID = threadID
         if usesCompactStackNavigation {
             compactThreadPath = [threadID]
@@ -113,6 +127,11 @@ final class ConnectionModel {
 
     func cancelStreams() {
         selectedStreamTask?.cancel()
+        selectedPatchFlushTask?.cancel()
+        selectedSnapshotRecoveryTask?.cancel()
+        selectedPatchFlushTask = nil
+        selectedSnapshotRecoveryTask = nil
+        selectedPatchBuffer.removeAll()
         globalStreamTask?.cancel()
     }
 

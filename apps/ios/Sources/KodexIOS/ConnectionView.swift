@@ -5,6 +5,8 @@ import KodexAPI
 
 struct ConnectionView: View {
     private static let gatewayURLStorageKey = "kodex.gatewayURL"
+    private static let selectedPatchFlushDelay: Duration = .milliseconds(25)
+    private static let selectedSnapshotRecoveryDelays: [Duration] = [.seconds(2), .seconds(6), .seconds(12)]
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.scenePhase) private var scenePhase
     private let launchMode: FixtureLaunchMode
@@ -269,11 +271,8 @@ struct ConnectionView: View {
             let live = try service()
             let thread = try await live.createChatThread(firstMessageText: prompt)
             showThreadDetail(thread.id)
-            if liveE2EEnabled {
-                _ = try await live.submitTextInput(threadId: thread.id, text: prompt, settings: model.composerSettings)
-            }
             await refresh()
-            await pollSelectedThreadUntilIdle(thread.id)
+            scheduleSelectedSnapshotRecovery(threadId: thread.id, submittedText: prompt)
         }
     }
 
@@ -303,6 +302,9 @@ struct ConnectionView: View {
         let submittedImagePaths = model.localImagePaths
         let submittedSettings = model.composerSettings
         let submittedSkills = model.skills
+        let baselineTimeline = model.detail(for: threadId)?.timeline
+        let baselineViewRevision = baselineTimeline?.viewRevision
+        let baselineRowIds = Set(baselineTimeline?.rows.map(\.id) ?? [])
         guard !submittedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
@@ -323,7 +325,12 @@ struct ConnectionView: View {
                 model.localImagePaths = []
             }
             startSelectedStream(threadId)
-            await pollSelectedThreadUntilIdle(threadId)
+            scheduleSelectedSnapshotRecovery(
+                threadId: threadId,
+                submittedText: submittedText,
+                baselineViewRevision: baselineViewRevision,
+                baselineRowIds: baselineRowIds
+            )
         }
     }
 
@@ -396,6 +403,7 @@ struct ConnectionView: View {
             return
         }
         model.selectedStreamTask?.cancel()
+        cancelSelectedPatchFlush()
         model.selectedStreamThreadID = threadId
         let cursor = model.selectedStreamCheckpoint.cursor
         model.selectedStreamTask = Task {
@@ -410,30 +418,48 @@ struct ConnectionView: View {
                     await MainActor.run {
                         model.selectedStreamCheckpoint.observe(envelope)
                     }
+                    if case .threadViewPatch = envelope.event {
+                        await enqueueSelectedThreadPatch(envelope, threadId: threadId)
+                        continue
+                    }
                     await handleLiveEvent(envelope.event, selectedThreadId: threadId)
                 }
+                guard !Task.isCancelled else {
+                    return
+                }
+                await handleSelectedStreamDisconnect(threadId: threadId, message: "Live stream ended. Reconnecting.")
             } catch {
-                await MainActor.run {
-                    model.selectedStreamCheckpoint.recordDisconnect()
-                    model.selectedStreamTask = nil
-                    model.selectedStreamThreadID = nil
-                    model.statusMessage = "Live stream reconnect needed: \(error.localizedDescription)"
+                guard !Task.isCancelled else {
+                    return
                 }
-                let usePollingFallback = await MainActor.run {
-                    model.selectedStreamCheckpoint.shouldUsePollingFallback()
-                }
-                if usePollingFallback {
-                    await pollSelectedThreadUntilIdle(threadId)
-                } else {
-                    await loadSelectedThread(threadId, markSeen: false)
-                }
-                try? await Task.sleep(for: .seconds(2))
-                await MainActor.run {
-                    if model.selectedThreadID == threadId {
-                        startSelectedStream(threadId)
-                    }
-                }
+                await handleSelectedStreamDisconnect(
+                    threadId: threadId,
+                    message: "Live stream reconnect needed: \(error.localizedDescription)"
+                )
             }
+        }
+    }
+
+    @MainActor
+    private func handleSelectedStreamDisconnect(threadId: String, message: String) async {
+        guard model.selectedThreadID == threadId else {
+            return
+        }
+        cancelSelectedPatchFlush()
+        model.selectedStreamCheckpoint.recordDisconnect()
+        model.selectedStreamTask = nil
+        model.selectedStreamThreadID = nil
+        model.statusMessage = message
+
+        if model.selectedStreamCheckpoint.shouldUsePollingFallback() {
+            await pollSelectedThreadUntilIdle(threadId)
+        } else {
+            await loadSelectedThread(threadId, markSeen: false)
+        }
+
+        try? await Task.sleep(for: .seconds(2))
+        if model.selectedThreadID == threadId {
+            startSelectedStream(threadId)
         }
     }
 
@@ -488,10 +514,14 @@ struct ConnectionView: View {
     @MainActor
     private func handleLiveEvent(_ event: GatewayLiveEvent, selectedThreadId: String?) async {
         switch event {
-        case .threadViewPatch(let threadId),
-             .refreshRequired(let threadId),
+        case .threadViewPatch(let patch):
+            if patch.threadId == selectedThreadId {
+                await enqueueSelectedThreadPatch(GatewayLiveEnvelope(seq: nil, event: event), threadId: patch.threadId)
+            }
+        case .refreshRequired(let threadId),
              .queuedInputUpdated(let threadId):
             if threadId == selectedThreadId {
+                cancelSelectedPatchFlush()
                 await loadSelectedThread(threadId, markSeen: false)
             }
         case .approvalUpdated(let threadId):
@@ -503,6 +533,134 @@ struct ConnectionView: View {
         case .unknown:
             break
         }
+    }
+
+    @MainActor
+    private func enqueueSelectedThreadPatch(_ envelope: GatewayLiveEnvelope, threadId: String) async {
+        guard model.selectedThreadID == threadId else {
+            return
+        }
+        model.selectedPatchBuffer.append(envelope)
+        guard model.selectedPatchFlushTask == nil else {
+            return
+        }
+        model.selectedPatchFlushTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: Self.selectedPatchFlushDelay)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else {
+                return
+            }
+            await flushSelectedThreadPatches(threadId: threadId)
+        }
+    }
+
+    @MainActor
+    private func flushSelectedThreadPatches(threadId: String) async {
+        guard model.selectedThreadID == threadId else {
+            model.selectedPatchBuffer.removeAll()
+            model.selectedPatchFlushTask = nil
+            return
+        }
+
+        let envelopes = GatewayLiveEventBatch.coalesce(model.selectedPatchBuffer)
+        model.selectedPatchBuffer.removeAll()
+        model.selectedPatchFlushTask = nil
+
+        for envelope in envelopes {
+            guard case .threadViewPatch(let patch) = envelope.event else {
+                continue
+            }
+            switch applySelectedThreadPatch(patch, selectedThreadId: threadId) {
+            case .applied, .ignoredStale:
+                continue
+            case .needsSnapshotRefresh(let reason):
+                model.statusMessage = "Refreshing selected thread: \(reason)"
+                await loadSelectedThread(threadId, markSeen: false)
+                return
+            }
+        }
+    }
+
+    @MainActor
+    private func applySelectedThreadPatch(_ patch: GatewayThreadViewPatch, selectedThreadId: String) -> ThreadTimelinePatchResult {
+        guard patch.threadId == selectedThreadId, let currentDetail = model.detail(for: selectedThreadId) else {
+            return .needsSnapshotRefresh(reason: "Selected thread patch did not match the loaded thread.")
+        }
+
+        let result = currentDetail.timeline.applying(patch)
+        switch result {
+        case .applied(let timeline), .ignoredStale(let timeline):
+            model.state = FixtureAppState(
+                connection: model.state.connection,
+                workspace: model.state.workspace,
+                selectedThread: ThreadDetail(thread: currentDetail.thread, timeline: timeline),
+                approvals: model.state.approvals
+            )
+        case .needsSnapshotRefresh:
+            break
+        }
+        return result
+    }
+
+    @MainActor
+    private func cancelSelectedPatchFlush() {
+        model.selectedPatchFlushTask?.cancel()
+        model.selectedPatchFlushTask = nil
+        model.selectedPatchBuffer.removeAll()
+    }
+
+    @MainActor
+    private func scheduleSelectedSnapshotRecovery(
+        threadId: String,
+        submittedText: String,
+        baselineViewRevision: Int64? = nil,
+        baselineRowIds: Set<String> = []
+    ) {
+        model.selectedSnapshotRecoveryTask?.cancel()
+        model.selectedSnapshotRecoveryTask = Task { @MainActor in
+            for delay in Self.selectedSnapshotRecoveryDelays {
+                do {
+                    try await Task.sleep(for: delay)
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled, model.selectedThreadID == threadId else {
+                    return
+                }
+                if selectedThreadHasConvergedAfterSubmit(
+                    threadId: threadId,
+                    submittedText: submittedText,
+                    baselineViewRevision: baselineViewRevision,
+                    baselineRowIds: baselineRowIds
+                ) {
+                    return
+                }
+                await loadSelectedThread(threadId, markSeen: false)
+            }
+        }
+    }
+
+    @MainActor
+    private func selectedThreadHasConvergedAfterSubmit(
+        threadId: String,
+        submittedText: String,
+        baselineViewRevision: Int64?,
+        baselineRowIds: Set<String>
+    ) -> Bool {
+        guard let timeline = model.detail(for: threadId)?.timeline else {
+            return false
+        }
+        if let baselineViewRevision, timeline.viewRevision <= baselineViewRevision {
+            return false
+        }
+        let containsSubmittedText = timeline.rows.contains { row in
+            !baselineRowIds.contains(row.id) &&
+            row.body.localizedCaseInsensitiveContains(submittedText)
+        }
+        return containsSubmittedText && timeline.liveState == .idle
     }
 
     @MainActor

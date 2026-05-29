@@ -287,6 +287,7 @@ public struct TimelineRow: Identifiable, Codable, Equatable, Sendable {
     public let title: String
     public let body: String
     public let status: String
+    public let turnId: String?
 
     public init(
         id: String,
@@ -295,7 +296,8 @@ public struct TimelineRow: Identifiable, Codable, Equatable, Sendable {
         displayOrder: Int64,
         title: String,
         body: String,
-        status: String = "complete"
+        status: String = "complete",
+        turnId: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -304,6 +306,7 @@ public struct TimelineRow: Identifiable, Codable, Equatable, Sendable {
         self.title = title
         self.body = body
         self.status = status
+        self.turnId = turnId
     }
 }
 
@@ -332,6 +335,139 @@ public struct ThreadDetail: Codable, Equatable, Sendable {
     public init(thread: WorkspaceThread, timeline: ThreadTimeline) {
         self.thread = thread
         self.timeline = timeline
+    }
+}
+
+public enum GatewayThreadViewPatchScope: Equatable, Sendable {
+    case fullSnapshot
+    case turn
+    case lifecycle
+    case unsupported(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "full_snapshot":
+            self = .fullSnapshot
+        case "turn":
+            self = .turn
+        case "lifecycle":
+            self = .lifecycle
+        default:
+            self = .unsupported(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .fullSnapshot:
+            return "full_snapshot"
+        case .turn:
+            return "turn"
+        case .lifecycle:
+            return "lifecycle"
+        case .unsupported(let rawValue):
+            return rawValue
+        }
+    }
+
+    public var isRenderable: Bool {
+        switch self {
+        case .fullSnapshot, .turn, .lifecycle:
+            return true
+        case .unsupported:
+            return false
+        }
+    }
+}
+
+public struct GatewayThreadViewPatch: Equatable, Sendable {
+    public let threadId: String
+    public let viewRevision: Int64
+    public let scope: GatewayThreadViewPatchScope
+    public let liveState: ThreadLiveState
+    public let activeTurnId: String?
+    public let rows: [TimelineRow]?
+    public let upsertRows: [TimelineRow]
+    public let removeRowIds: [String]
+
+    public init(
+        threadId: String,
+        viewRevision: Int64,
+        scope: GatewayThreadViewPatchScope,
+        liveState: ThreadLiveState,
+        activeTurnId: String? = nil,
+        rows: [TimelineRow]? = nil,
+        upsertRows: [TimelineRow] = [],
+        removeRowIds: [String] = []
+    ) {
+        self.threadId = threadId
+        self.viewRevision = viewRevision
+        self.scope = scope
+        self.liveState = liveState
+        self.activeTurnId = activeTurnId
+        self.rows = rows
+        self.upsertRows = upsertRows
+        self.removeRowIds = removeRowIds
+    }
+}
+
+public enum ThreadTimelinePatchResult: Equatable, Sendable {
+    case applied(ThreadTimeline)
+    case ignoredStale(ThreadTimeline)
+    case needsSnapshotRefresh(reason: String)
+}
+
+public extension ThreadTimeline {
+    func applying(_ patch: GatewayThreadViewPatch) -> ThreadTimelinePatchResult {
+        guard patch.threadId == threadId else {
+            return .needsSnapshotRefresh(reason: "Patch thread did not match timeline thread.")
+        }
+        guard patch.scope.isRenderable else {
+            return .needsSnapshotRefresh(reason: "Unsupported patch scope: \(patch.scope.rawValue)")
+        }
+        guard patch.viewRevision > viewRevision else {
+            return .ignoredStale(self)
+        }
+
+        switch patch.scope {
+        case .fullSnapshot:
+            guard let rows = patch.rows else {
+                return .needsSnapshotRefresh(reason: "Full snapshot patch did not include rows.")
+            }
+            return .applied(replacing(rows: rows, liveState: patch.liveState, viewRevision: patch.viewRevision))
+        case .turn:
+            guard patch.rows == nil else {
+                return .needsSnapshotRefresh(reason: "Turn patch unexpectedly included full rows.")
+            }
+            return .applied(applyingTurnPatch(patch))
+        case .lifecycle:
+            return .applied(replacing(rows: rows, liveState: patch.liveState, viewRevision: patch.viewRevision))
+        case .unsupported:
+            return .needsSnapshotRefresh(reason: "Unsupported patch scope: \(patch.scope.rawValue)")
+        }
+    }
+
+    private func applyingTurnPatch(_ patch: GatewayThreadViewPatch) -> ThreadTimeline {
+        let removedIds = Set(patch.removeRowIds)
+        var rowsById: [String: TimelineRow] = [:]
+        for row in rows where !removedIds.contains(row.id) {
+            rowsById[row.id] = row
+        }
+        for row in patch.upsertRows {
+            rowsById[row.id] = row
+        }
+        return replacing(rows: Array(rowsById.values), liveState: patch.liveState, viewRevision: patch.viewRevision)
+    }
+
+    private func replacing(rows: [TimelineRow], liveState: ThreadLiveState, viewRevision: Int64) -> ThreadTimeline {
+        ThreadTimeline(
+            threadId: threadId,
+            liveState: liveState,
+            viewRevision: viewRevision,
+            rows: rows,
+            olderCursor: olderCursor,
+            hasOlder: hasOlder
+        )
     }
 }
 

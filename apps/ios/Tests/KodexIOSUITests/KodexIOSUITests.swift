@@ -226,14 +226,21 @@ final class KodexIOSUITests: XCTestCase {
         let newProjectThread = app.buttons["New Project Thread"]
         if newProjectThread.exists && newProjectThread.isEnabled {
             newProjectThread.tap()
-            XCTAssertTrue(app.textFields["Message Kodex"].waitForExistence(timeout: 20))
-            XCTAssertTrue(waitForSidebar(app, timeout: 10))
+            let composer = app.textFields["Message Kodex"]
+            XCTAssertTrue(composer.waitForExistence(timeout: 20))
+            composer.tap()
+            app.typeText("Say pong")
+            XCTAssertTrue(app.buttons["Send"].waitForExistence(timeout: 5))
+            app.buttons["Send"].tap()
+            XCTAssertTrue(labelContaining("Say pong", in: app).waitForExistence(timeout: 30))
+            XCTAssertTrue(labelContaining("pong", in: app).waitForExistence(timeout: 120))
+            return
         }
 
         app.buttons["New Chat"].tap()
 
-        XCTAssertTrue(app.staticTexts["Say pong"].waitForExistence(timeout: 30))
-        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", "pong")).firstMatch.waitForExistence(timeout: 120))
+        XCTAssertTrue(labelContaining("Say pong", in: app).waitForExistence(timeout: 30))
+        XCTAssertTrue(labelContaining("pong", in: app).waitForExistence(timeout: 120))
     }
 
     @MainActor
