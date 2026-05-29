@@ -64,25 +64,12 @@ struct ThreadComposerBar: View {
                         .focused(isComposerFocused)
                         .accessibilityLabel("Message Kodex")
                         .accessibilityIdentifier("ComposerInput")
-                    if showStopAction {
-                        KodexComposerRoundButton(systemName: "stop.fill", label: "Stop") {
-                            Task {
-                                await onStop()
-                            }
-                        }
-                        .frame(minWidth: 44, minHeight: 44)
-                        .disabled(isBusy)
-                    } else {
-                        sendButton
-                    }
+                    primaryActionButton
                 }
                 HStack(spacing: 8) {
                     permissionsMenu
                     modelMenu
                     Spacer(minLength: 4)
-                    if showStopAction {
-                        sendButton
-                    }
                 }
                 .font(.caption.weight(.semibold))
             }
@@ -202,6 +189,25 @@ struct ThreadComposerBar: View {
         )
     }
 
+    @ViewBuilder
+    private var primaryActionButton: some View {
+        if showStopAction && !hasDraftText {
+            stopButton
+        } else {
+            sendButton
+        }
+    }
+
+    private var stopButton: some View {
+        KodexComposerRoundButton(systemName: "stop.fill", label: "Stop", role: .destructive) {
+            Task {
+                await onStop()
+            }
+        }
+        .frame(minWidth: 44, minHeight: 44)
+        .disabled(isBusy)
+    }
+
     private var sendButton: some View {
         KodexComposerRoundButton(systemName: "arrow.up", label: "Send", isProminent: true) {
             Task {
@@ -209,7 +215,11 @@ struct ThreadComposerBar: View {
             }
         }
         .frame(minWidth: 44, minHeight: 44)
-        .disabled(isBusy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .disabled(isBusy || !hasDraftText)
+    }
+
+    private var hasDraftText: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var resolvedModelOptions: [ComposerModelOption] {

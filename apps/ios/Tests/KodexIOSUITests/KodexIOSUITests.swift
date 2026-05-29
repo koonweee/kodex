@@ -60,6 +60,25 @@ final class KodexIOSUITests: XCTestCase {
     }
 
     @MainActor
+    func testActiveComposerSwitchesStopToSendWhenDraftExists() {
+        let app = launch(arguments: ["--ui-testing", "--fixture-degraded"])
+
+        XCTAssertTrue(threadElement("Native iOS milestone", in: app).waitForExistence(timeout: 5))
+        threadElement("Native iOS milestone", in: app).tap()
+        let composer = app.textFields["Message Kodex"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Stop"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Send"].exists)
+
+        composer.tap()
+        app.typeText("follow up")
+
+        XCTAssertTrue(app.buttons["Send"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Send"].isEnabled)
+        XCTAssertFalse(app.buttons["Stop"].exists)
+    }
+
+    @MainActor
     func testWorkspaceNativeSearchAndScopeRemainAccessible() {
         let app = launch(arguments: ["--ui-testing", "--fixture-connected"])
 
