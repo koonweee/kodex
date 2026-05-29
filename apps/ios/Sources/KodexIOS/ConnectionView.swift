@@ -5,39 +5,21 @@ import KodexAPI
 
 struct ConnectionView: View {
     private static let gatewayURLStorageKey = "kodex.gatewayURL"
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.scenePhase) private var scenePhase
     private let launchMode: FixtureLaunchMode
     private let liveE2EEnabled: Bool
+    private let makeService: (String) throws -> LiveGatewayService
     @AppStorage(Self.gatewayURLStorageKey) private var gatewayURL = GatewayConfiguration.simulatorDefault.baseURL.absoluteString
-    @State private var state: FixtureAppState
-    @State private var accountState: KodexAccountState = .unknown
-    @State private var selectedThreadID: String?
-    @State private var composerText = ""
-    @State private var localImagePaths: [String] = []
-    @State private var selectedPhotoItem: PhotosPickerItem?
-    @State private var queuedInputs: [QueuedInputSummary] = []
-    @State private var skills: [SkillSummary] = []
-    @State private var composerSettings = ComposerRunSettings(model: "gpt-5.4", effort: "medium")
-    @State private var composerPermissionsPreset: String?
-    @State private var isExpandedComposerPresented = false
-    @State private var isBusy = false
-    @State private var statusMessage: String?
-    @State private var preferredCompactColumn = NavigationSplitViewColumn.sidebar
-    @State private var workspaceScope: WorkspaceScope = .projects
-    @State private var workspaceSearchQuery = ""
-    @State private var pinnedCollapsed = false
-    @State private var projectsCollapsed = false
-    @State private var chatsCollapsed = false
-    @State private var collapsedProjectIds: Set<String> = []
-    @State private var isConnectionSettingsPresented = false
-    @State private var selectedStreamTask: Task<Void, Never>?
-    @State private var selectedStreamThreadID: String?
-    @State private var globalStreamTask: Task<Void, Never>?
-    @State private var globalStreamExcludedThreadID: String?
-    @State private var selectedStreamCheckpoint = GatewayStreamCheckpoint()
-    @State private var globalStreamCheckpoint = GatewayStreamCheckpoint()
+    @State private var model: ConnectionModel
 
-    init(launchArguments: [String] = ProcessInfo.processInfo.arguments) {
+    init(
+        launchArguments: [String] = ProcessInfo.processInfo.arguments,
+        makeService: @escaping (String) throws -> LiveGatewayService = { userInput in
+            let configuration = try GatewayConfiguration(userInput: userInput)
+            return LiveGatewayService(configuration: configuration)
+        }
+    ) {
         let mode = FixtureLaunchMode(arguments: launchArguments)
         if let configuredURL = ProcessInfo.processInfo.environment["KODEX_GATEWAY_URL"] {
             UserDefaults.standard.set(configuredURL, forKey: Self.gatewayURLStorageKey)
@@ -45,100 +27,49 @@ struct ConnectionView: View {
         let fixtureState = FixtureStore.state(for: mode)
         self.launchMode = mode
         self.liveE2EEnabled = ProcessInfo.processInfo.environment["KODEX_IOS_LIVE_E2E"] == "1"
-        let selectedFixtureThreadID = fixtureState.selectedThread?.thread.id ?? fixtureState.workspace.firstThread?.id
-        _state = State(initialValue: mode == .live ? FixtureAppState(connection: .offline(message: "Not connected"), workspace: WorkspaceSnapshot(projects: [], chats: [], pinned: []), selectedThread: nil, approvals: []) : fixtureState)
-        _accountState = State(initialValue: mode == .authRequired ? .requiresOpenAIAuth : .unknown)
-        _selectedThreadID = State(initialValue: selectedFixtureThreadID)
-        _workspaceScope = State(initialValue: fixtureState.workspace.chats.contains { $0.id == selectedFixtureThreadID } ? .chats : .projects)
+        self.makeService = makeService
+        _model = State(initialValue: ConnectionModel(launchMode: mode, fixtureState: fixtureState))
     }
 
     var body: some View {
-        NavigationSplitView(preferredCompactColumn: $preferredCompactColumn) {
-            WorkspaceDrawerView(
-                workspace: state.workspace,
-                selectedThreadID: selectedThreadID,
-                connection: state.connection,
-                accountState: accountState,
-                approvalThreadIds: Set(state.approvals.map(\.threadId)),
-                isBusy: isBusy,
-                launchMode: launchMode,
-                gatewayURL: $gatewayURL,
-                searchQuery: $workspaceSearchQuery,
-                scope: $workspaceScope,
-                pinnedCollapsed: $pinnedCollapsed,
-                projectsCollapsed: $projectsCollapsed,
-                chatsCollapsed: $chatsCollapsed,
-                collapsedProjectIds: $collapsedProjectIds,
-                isConnectionSettingsPresented: $isConnectionSettingsPresented,
-                onRefresh: { await refresh() },
-                onCreateChat: { await createChatThread() },
-                onCreateProjectThread: { projectId in await createProjectThread(projectId: projectId) },
-                onSelectThread: { threadID in routeToThreadLocally(threadID) },
-                onPinThread: { thread, pinned in await setPinned(thread, pinned: pinned) },
-                onArchiveThread: { threadID in await archiveThread(threadID) },
-                onShowThread: { preferredCompactColumn = .detail },
-                onEnableNotifications: { await enableNotifications() }
-            )
-            .refreshable {
+        Group {
+            if usesCompactStackNavigation {
+                NavigationStack(path: model.binding(\.compactThreadPath)) {
+                    workspaceDrawer
+                        .navigationDestination(for: String.self) { _ in
+                            detailColumn
+                        }
+                }
+            } else {
+                NavigationSplitView(preferredCompactColumn: model.binding(\.preferredCompactColumn)) {
+                    workspaceDrawer
+                } detail: {
+                    detailColumn
+                }
+            }
+        }
+        .task {
+            if launchMode == .live {
                 await refresh()
             }
-            .task {
-                if launchMode == .live {
-                    await refresh()
-                }
+        }
+        .onDisappear {
+            model.cancelStreams()
+        }
+        .onChange(of: model.selectedThreadID) { _, newValue in
+            guard launchMode == .live, let newValue else {
+                return
             }
-            .onDisappear {
-                selectedStreamTask?.cancel()
-                globalStreamTask?.cancel()
+            Task {
+                await loadSelectedThread(newValue, markSeen: true)
             }
-            .onChange(of: selectedThreadID) { _, newValue in
-                guard launchMode == .live, let newValue else {
-                    return
-                }
-                Task {
-                    await loadSelectedThread(newValue, markSeen: true)
-                }
+        }
+        .onChange(of: model.selectedPhotoItem) { _, newValue in
+            guard let newValue else {
+                return
             }
-            .onChange(of: selectedPhotoItem) { _, newValue in
-                guard let newValue else {
-                    return
-                }
-                Task {
-                    await uploadPhoto(newValue)
-                }
-            }
-        } detail: {
-            if let detail = selectedDetail {
-                ThreadDetailView(
-                    detail: detail,
-                    approvals: state.approvals.filter { $0.threadId.isEmpty || $0.threadId == detail.thread.id },
-                    queuedInputs: queuedInputs,
-                    skills: skills,
-                    localImagePaths: localImagePaths,
-                    composerText: $composerText,
-                    isExpandedComposerPresented: $isExpandedComposerPresented,
-                    selectedPhotoItem: $selectedPhotoItem,
-                    isBusy: isBusy,
-                    statusMessage: statusMessage,
-                    composerSettings: composerSettings,
-                    permissionsPreset: composerPermissionsPreset,
-                    canLoadOlderHistory: true,
-                    onShowSidebar: { preferredCompactColumn = .sidebar },
-                    onSend: { await sendComposer() },
-                    onSettingsChange: { settings in await updateComposerSettings(settings) },
-                    onStop: { await stopSelectedThread() },
-                    onLoadOlder: { await loadOlderTimeline() },
-                    onRename: { name in await renameSelectedThread(name: name) },
-                    onSetPinned: { pinned in await setPinned(detail.thread, pinned: pinned) },
-                    onToggleNotifications: { await toggleSelectedNotifications() },
-                    onArchive: { await archiveSelectedThread() },
-                    onApprovalDecision: { approval, decision in await decideApproval(approval, decision: decision) },
-                    onQueuedRetry: { queueId in await retryQueuedInput(queueId) },
-                    onQueuedSteer: { queueId in await steerQueuedInput(queueId) },
-                    onQueuedDelete: { queueId in await deleteQueuedInput(queueId) }
-                )
-            } else {
-                ContentUnavailableView("Select a Thread", systemImage: "bubble.left.and.bubble.right")
+            Task {
+                await uploadPhoto(newValue)
             }
         }
         .onChange(of: scenePhase) { _, newValue in
@@ -164,66 +95,131 @@ struct ConnectionView: View {
         }
     }
 
-    private var selectedDetail: ThreadDetail? {
-        if let selectedThreadID, state.selectedThread?.thread.id == selectedThreadID {
-            return state.selectedThread
+    private var usesCompactStackNavigation: Bool {
+        horizontalSizeClass == .compact
+    }
+
+    private var workspaceDrawer: some View {
+        WorkspaceDrawerView(
+            workspace: model.state.workspace,
+            selectedThreadID: model.selectedThreadID,
+            connection: model.state.connection,
+            accountState: model.accountState,
+            approvalThreadIds: model.approvalThreadIds,
+            isBusy: model.isBusy,
+            launchMode: launchMode,
+            gatewayURL: $gatewayURL,
+            searchQuery: model.binding(\.workspaceSearchQuery),
+            scope: model.binding(\.workspaceScope),
+            pinnedCollapsed: model.binding(\.pinnedCollapsed),
+            projectsCollapsed: model.binding(\.projectsCollapsed),
+            chatsCollapsed: model.binding(\.chatsCollapsed),
+            collapsedProjectIds: model.binding(\.collapsedProjectIds),
+            isConnectionSettingsPresented: model.binding(\.isConnectionSettingsPresented),
+            onRefresh: { await refresh() },
+            onCreateChat: { await createChatThread() },
+            onCreateProjectThread: { projectId in await createProjectThread(projectId: projectId) },
+            onSelectThread: { threadID in routeToThreadLocally(threadID) },
+            onPinThread: { thread, pinned in await setPinned(thread, pinned: pinned) },
+            onArchiveThread: { threadID in await archiveThread(threadID) },
+            onEnableNotifications: { await enableNotifications() }
+        )
+        .refreshable {
+            await refresh()
         }
-        if launchMode != .live, let selectedThreadID, let thread = state.workspace.thread(id: selectedThreadID) {
-            return ThreadDetail(
-                thread: thread,
-                timeline: ThreadTimeline(threadId: thread.id, liveState: thread.status == .active ? .streaming : .idle, viewRevision: 1, rows: [
-                    TimelineRow(id: "\(thread.id)-summary", kind: .message, displayOrder: 1, title: thread.title, body: "Fixture timeline row for \(thread.cwd).")
-                ])
+    }
+
+    @ViewBuilder
+    private var detailColumn: some View {
+        if let detail = model.selectedDetail {
+            ThreadDetailView(
+                detail: detail,
+                approvals: model.state.approvals.filter { $0.threadId.isEmpty || $0.threadId == detail.thread.id },
+                queuedInputs: model.queuedInputs,
+                modelOptions: model.availableModels,
+                localImagePaths: model.localImagePaths,
+                composerText: model.binding(\.composerText),
+                selectedPhotoItem: model.binding(\.selectedPhotoItem),
+                isBusy: model.isBusy,
+                statusMessage: model.statusMessage,
+                composerSettings: model.composerSettings,
+                permissionsPreset: model.composerPermissionsPreset,
+                canLoadOlderHistory: true,
+                usesNativeNavigationBar: usesCompactStackNavigation,
+                onShowSidebar: { showSidebar() },
+                onSend: { await sendComposer() },
+                onSettingsChange: { settings in await updateComposerSettings(settings) },
+                onStop: { await stopSelectedThread() },
+                onLoadOlder: { await loadOlderTimeline() },
+                onRename: { name in await renameSelectedThread(name: name) },
+                onSetPinned: { pinned in await setPinned(detail.thread, pinned: pinned) },
+                onToggleNotifications: { await toggleSelectedNotifications() },
+                onArchive: { await archiveSelectedThread() },
+                onApprovalDecision: { approval, decision in await decideApproval(approval, decision: decision) },
+                onQueuedRetry: { queueId in await retryQueuedInput(queueId) },
+                onQueuedSteer: { queueId in await steerQueuedInput(queueId) },
+                onQueuedDelete: { queueId in await deleteQueuedInput(queueId) }
             )
+        } else {
+            ContentUnavailableView("Select a Thread", systemImage: "bubble.left.and.bubble.right")
         }
-        return state.selectedThread
     }
 
     private func routeToThreadLocally(_ threadID: String) {
-        selectedThreadID = threadID
-        preferredCompactColumn = .detail
+        showThreadDetail(threadID)
+    }
+
+    private func showThreadDetail(_ threadID: String) {
+        model.showThreadDetail(threadID, usesCompactStackNavigation: usesCompactStackNavigation)
+    }
+
+    private func showSidebar() {
+        model.showSidebar(usesCompactStackNavigation: usesCompactStackNavigation)
     }
 
     private func service() throws -> LiveGatewayService {
-        let configuration = try GatewayConfiguration(userInput: gatewayURL)
-        return LiveGatewayService(configuration: configuration)
+        try makeService(gatewayURL)
     }
 
     @MainActor
     private func refresh() async {
         if launchMode != .live {
-            state = FixtureStore.state(for: .connected)
-            selectedThreadID = state.selectedThread?.thread.id
+            model.state = FixtureStore.state(for: .connected)
+            model.selectedThreadID = model.state.selectedThread?.thread.id
             return
         }
 
-        isBusy = true
-        defer { isBusy = false }
+        model.isBusy = true
+        defer { model.isBusy = false }
 
         do {
             let connection = await GatewayConnectionChecker(probe: GatewayProbe(load: URLSessionGatewayLoader.load)).check(userInput: gatewayURL)
-            state = FixtureAppState(connection: connection, workspace: state.workspace, selectedThread: state.selectedThread, approvals: state.approvals)
+            model.state = FixtureAppState(connection: connection, workspace: model.state.workspace, selectedThread: model.state.selectedThread, approvals: model.state.approvals)
             guard connection.canLoadLiveWorkspace else {
-                accountState = .unavailable(message: connection.displayText)
-                statusMessage = connection.displayText
+                model.accountState = .unavailable(message: connection.displayText)
+                model.statusMessage = connection.displayText
                 return
             }
 
             let live = try service()
-            accountState = await live.loadAccount()
+            model.accountState = await live.loadAccount()
             try await live.loadCapabilities()
+            let models = try? await live.listModels()
             let workspace = try await live.loadWorkspace()
-            let nextSelected = selectedThreadID ?? workspace.firstThread?.id
-            state = FixtureAppState(connection: connection, workspace: workspace, selectedThread: nil, approvals: [])
-            selectedThreadID = nextSelected
+            let nextSelected = model.selectedThreadID ?? workspace.firstThread?.id
+            model.state = FixtureAppState(connection: connection, workspace: workspace, selectedThread: nil, approvals: [])
+            if let models {
+                model.availableModels = ComposerModelOption.options(from: models)
+            }
+            model.selectedThreadID = nextSelected
             if let nextSelected {
                 await loadSelectedThread(nextSelected, markSeen: false)
             }
             startGlobalStream()
-            statusMessage = nil
+            model.statusMessage = nil
         } catch {
-            state = FixtureAppState(connection: state.connection, workspace: state.workspace, selectedThread: state.selectedThread, approvals: state.approvals)
-            statusMessage = error.localizedDescription
+            model.state = FixtureAppState(connection: model.state.connection, workspace: model.state.workspace, selectedThread: model.state.selectedThread, approvals: model.state.approvals)
+            model.statusMessage = error.localizedDescription
         }
     }
 
@@ -242,18 +238,18 @@ struct ConnectionView: View {
             let queue = try await live.listQueuedInputs(threadId: threadId)
             let loadedSkills = try? await live.listSkills(cwd: detail.thread.cwd)
             let loadedSettings = try? await live.loadComposerSettings()
-            state = FixtureAppState(connection: state.connection, workspace: state.workspace, selectedThread: detail, approvals: approvals)
-            queuedInputs = queue
-            skills = loadedSkills ?? []
+            model.state = FixtureAppState(connection: model.state.connection, workspace: model.state.workspace, selectedThread: detail, approvals: approvals)
+            model.queuedInputs = queue
+            model.skills = loadedSkills ?? []
             if let loadedSettings {
-                composerSettings = loadedSettings.settings
-                composerPermissionsPreset = loadedSettings.permissionsPreset
+                model.composerSettings = loadedSettings.settings
+                model.composerPermissionsPreset = loadedSettings.permissionsPreset
             }
-            statusMessage = nil
+            model.statusMessage = nil
             startSelectedStream(threadId)
             startGlobalStream()
         } catch {
-            statusMessage = error.localizedDescription
+            model.statusMessage = error.localizedDescription
         }
     }
 
@@ -263,10 +259,9 @@ struct ConnectionView: View {
             let prompt = liveE2EEnabled ? "Say pong" : "Hello from Kodex iOS"
             let live = try service()
             let thread = try await live.createChatThread(firstMessageText: prompt)
-            selectedThreadID = thread.id
-            preferredCompactColumn = .detail
+            showThreadDetail(thread.id)
             if liveE2EEnabled {
-                _ = try await live.submitTextInput(threadId: thread.id, text: prompt, settings: composerSettings)
+                _ = try await live.submitTextInput(threadId: thread.id, text: prompt, settings: model.composerSettings)
             }
             await refresh()
             await pollSelectedThreadUntilIdle(thread.id)
@@ -275,7 +270,7 @@ struct ConnectionView: View {
 
     @MainActor
     private func createProjectThread() async {
-        guard let project = state.workspace.projects.first else {
+        guard let project = model.state.workspace.projects.first else {
             return
         }
         await createProjectThread(projectId: project.id)
@@ -285,31 +280,30 @@ struct ConnectionView: View {
     private func createProjectThread(projectId: String) async {
         await runLiveAction {
             let thread = try await service().createProjectThread(projectId: projectId)
-            selectedThreadID = thread.id
-            preferredCompactColumn = .detail
+            showThreadDetail(thread.id)
             await refresh()
         }
     }
 
     @MainActor
     private func sendComposer() async {
-        guard let threadId = selectedThreadID, !composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard let threadId = model.selectedThreadID, !model.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
         await runLiveAction {
             let skillMentions = SkillMentionDetector.mentions(
-                in: composerText,
-                skills: skills.map { SkillCatalogEntry(name: $0.name, path: $0.path) }
+                in: model.composerText,
+                skills: model.skills.map { SkillCatalogEntry(name: $0.name, path: $0.path) }
             )
             _ = try await service().submitTextInput(
                 threadId: threadId,
-                text: composerText,
+                text: model.composerText,
                 skillMentions: skillMentions,
-                localImagePaths: localImagePaths,
-                settings: composerSettings
+                localImagePaths: model.localImagePaths,
+                settings: model.composerSettings
             )
-            composerText = ""
-            localImagePaths = []
+            model.composerText = ""
+            model.localImagePaths = []
             startSelectedStream(threadId)
             await pollSelectedThreadUntilIdle(threadId)
         }
@@ -317,7 +311,7 @@ struct ConnectionView: View {
 
     @MainActor
     private func updateComposerSettings(_ settings: ComposerRunSettings) async {
-        composerSettings = settings
+        model.composerSettings = settings
         guard launchMode == .live else {
             return
         }
@@ -328,6 +322,9 @@ struct ConnectionView: View {
 
     @MainActor
     private func uploadPhoto(_ item: PhotosPickerItem) async {
+        defer {
+            model.selectedPhotoItem = nil
+        }
         guard launchMode == .live else {
             return
         }
@@ -336,13 +333,13 @@ struct ConnectionView: View {
                 return
             }
             let images = try await service().uploadImageData(data, fileName: "ios-photo-\(UUID().uuidString).png")
-            localImagePaths.append(contentsOf: images.map(\.path))
+            model.localImagePaths.append(contentsOf: images.map(\.path))
         }
     }
 
     @MainActor
     private func stopSelectedThread() async {
-        guard let threadId = selectedThreadID else {
+        guard let threadId = model.selectedThreadID else {
             return
         }
         await runLiveAction {
@@ -355,7 +352,7 @@ struct ConnectionView: View {
     private func pollSelectedThreadUntilIdle(_ threadId: String) async {
         for _ in 0..<45 {
             await loadSelectedThread(threadId, markSeen: false)
-            if state.selectedThread?.timeline.liveState == .idle {
+            if model.state.selectedThread?.timeline.liveState == .idle {
                 return
             }
             try? await Task.sleep(for: .seconds(2))
@@ -367,13 +364,13 @@ struct ConnectionView: View {
         guard launchMode == .live else {
             return
         }
-        guard selectedStreamThreadID != threadId else {
+        guard model.selectedStreamThreadID != threadId else {
             return
         }
-        selectedStreamTask?.cancel()
-        selectedStreamThreadID = threadId
-        let cursor = selectedStreamCheckpoint.cursor
-        selectedStreamTask = Task {
+        model.selectedStreamTask?.cancel()
+        model.selectedStreamThreadID = threadId
+        let cursor = model.selectedStreamCheckpoint.cursor
+        model.selectedStreamTask = Task {
             do {
                 let configuration = try GatewayConfiguration(userInput: gatewayURL)
                 let stream = GatewayEventStream(configuration: configuration, cursor: cursor, threadId: threadId)
@@ -383,19 +380,19 @@ struct ConnectionView: View {
                         continue
                     }
                     await MainActor.run {
-                        selectedStreamCheckpoint.observe(envelope)
+                        model.selectedStreamCheckpoint.observe(envelope)
                     }
                     await handleLiveEvent(envelope.event, selectedThreadId: threadId)
                 }
             } catch {
                 await MainActor.run {
-                    selectedStreamCheckpoint.recordDisconnect()
-                    selectedStreamTask = nil
-                    selectedStreamThreadID = nil
-                    statusMessage = "Live stream reconnect needed: \(error.localizedDescription)"
+                    model.selectedStreamCheckpoint.recordDisconnect()
+                    model.selectedStreamTask = nil
+                    model.selectedStreamThreadID = nil
+                    model.statusMessage = "Live stream reconnect needed: \(error.localizedDescription)"
                 }
                 let usePollingFallback = await MainActor.run {
-                    selectedStreamCheckpoint.shouldUsePollingFallback()
+                    model.selectedStreamCheckpoint.shouldUsePollingFallback()
                 }
                 if usePollingFallback {
                     await pollSelectedThreadUntilIdle(threadId)
@@ -404,7 +401,7 @@ struct ConnectionView: View {
                 }
                 try? await Task.sleep(for: .seconds(2))
                 await MainActor.run {
-                    if selectedThreadID == threadId {
+                    if model.selectedThreadID == threadId {
                         startSelectedStream(threadId)
                     }
                 }
@@ -417,14 +414,14 @@ struct ConnectionView: View {
         guard launchMode == .live else {
             return
         }
-        let excludedThreadId = selectedThreadID
-        guard globalStreamTask == nil || globalStreamExcludedThreadID != excludedThreadId else {
+        let excludedThreadId = model.selectedThreadID
+        guard model.globalStreamTask == nil || model.globalStreamExcludedThreadID != excludedThreadId else {
             return
         }
-        globalStreamTask?.cancel()
-        globalStreamExcludedThreadID = excludedThreadId
-        let cursor = globalStreamCheckpoint.cursor
-        globalStreamTask = Task {
+        model.globalStreamTask?.cancel()
+        model.globalStreamExcludedThreadID = excludedThreadId
+        let cursor = model.globalStreamCheckpoint.cursor
+        model.globalStreamTask = Task {
             do {
                 let configuration = try GatewayConfiguration(userInput: gatewayURL)
                 let stream = GatewayEventStream(configuration: configuration, cursor: cursor, excludeThreadId: excludedThreadId)
@@ -434,22 +431,22 @@ struct ConnectionView: View {
                         continue
                     }
                     await MainActor.run {
-                        globalStreamCheckpoint.observe(envelope)
+                        model.globalStreamCheckpoint.observe(envelope)
                     }
-                    await handleLiveEvent(envelope.event, selectedThreadId: selectedThreadID)
+                    await handleLiveEvent(envelope.event, selectedThreadId: model.selectedThreadID)
                 }
             } catch {
                 await MainActor.run {
-                    globalStreamCheckpoint.recordDisconnect()
-                    globalStreamTask = nil
-                    globalStreamExcludedThreadID = nil
-                    statusMessage = "Global stream reconnect needed: \(error.localizedDescription)"
+                    model.globalStreamCheckpoint.recordDisconnect()
+                    model.globalStreamTask = nil
+                    model.globalStreamExcludedThreadID = nil
+                    model.statusMessage = "Global stream reconnect needed: \(error.localizedDescription)"
                 }
                 await refreshWorkspacePreservingSelection()
                 let usePollingFallback = await MainActor.run {
-                    globalStreamCheckpoint.shouldUsePollingFallback()
+                    model.globalStreamCheckpoint.shouldUsePollingFallback()
                 }
-                if usePollingFallback, let selectedThreadID {
+                if usePollingFallback, let selectedThreadID = model.selectedThreadID {
                     await loadSelectedThread(selectedThreadID, markSeen: false)
                 }
                 try? await Task.sleep(for: .seconds(2))
@@ -487,15 +484,15 @@ struct ConnectionView: View {
         }
         do {
             let workspace = try await service().loadWorkspace()
-            state = FixtureAppState(connection: state.connection, workspace: workspace, selectedThread: state.selectedThread, approvals: state.approvals)
+            model.state = FixtureAppState(connection: model.state.connection, workspace: workspace, selectedThread: model.state.selectedThread, approvals: model.state.approvals)
         } catch {
-            statusMessage = error.localizedDescription
+            model.statusMessage = error.localizedDescription
         }
     }
 
     @MainActor
     private func toggleSelectedNotifications() async {
-        guard let detail = state.selectedThread else {
+        guard let detail = model.state.selectedThread else {
             return
         }
         await runLiveAction {
@@ -506,15 +503,15 @@ struct ConnectionView: View {
 
     @MainActor
     private func loadOlderTimeline() async {
-        guard let threadId = selectedThreadID, let currentDetail = state.selectedThread else {
+        guard let threadId = model.selectedThreadID, let currentDetail = model.state.selectedThread else {
             return
         }
         guard let cursor = currentDetail.timeline.olderCursor else {
-            statusMessage = "No older timeline page available."
+            model.statusMessage = "No older timeline page available."
             return
         }
         guard launchMode == .live else {
-            let olderRows = fixtureOlderTimelineRows(threadId: threadId, before: currentDetail.timeline.rows.first?.displayOrder ?? 1)
+            let olderRows = ConnectionModel.fixtureOlderTimelineRows(threadId: threadId, before: currentDetail.timeline.rows.first?.displayOrder ?? 1)
             let mergedRows = WorkspaceNormalizer.mergeOlderHistory(current: currentDetail.timeline.rows, older: olderRows)
             let mergedDetail = ThreadDetail(
                 thread: currentDetail.thread,
@@ -527,8 +524,8 @@ struct ConnectionView: View {
                     hasOlder: false
                 )
             )
-            state = FixtureAppState(connection: state.connection, workspace: state.workspace, selectedThread: mergedDetail, approvals: state.approvals)
-            statusMessage = nil
+            model.state = FixtureAppState(connection: model.state.connection, workspace: model.state.workspace, selectedThread: mergedDetail, approvals: model.state.approvals)
+            model.statusMessage = nil
             return
         }
         await runLiveAction {
@@ -545,26 +542,13 @@ struct ConnectionView: View {
                     hasOlder: page.timeline.hasOlder
                 )
             )
-            state = FixtureAppState(connection: state.connection, workspace: state.workspace, selectedThread: mergedDetail, approvals: state.approvals)
-        }
-    }
-
-    private func fixtureOlderTimelineRows(threadId: String, before firstDisplayOrder: Int64) -> [TimelineRow] {
-        (1...3).map { index in
-            TimelineRow(
-                id: "\(threadId)-older-\(index)",
-                kind: .message,
-                displayOrder: firstDisplayOrder - Int64(4 - index),
-                title: index.isMultiple(of: 2) ? "Kodex" : "You",
-                body: "Older fixture row \(index)."
-            )
+            model.state = FixtureAppState(connection: model.state.connection, workspace: model.state.workspace, selectedThread: mergedDetail, approvals: model.state.approvals)
         }
     }
 
     @MainActor
     private func routeToThread(_ threadId: String) async {
-        selectedThreadID = threadId
-        preferredCompactColumn = .detail
+        showThreadDetail(threadId)
         if launchMode == .live {
             await loadSelectedThread(threadId, markSeen: true)
         }
@@ -572,7 +556,7 @@ struct ConnectionView: View {
 
     @MainActor
     private func renameSelectedThread(name: String) async {
-        guard let threadId = selectedThreadID else {
+        guard let threadId = model.selectedThreadID else {
             return
         }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -587,7 +571,7 @@ struct ConnectionView: View {
 
     @MainActor
     private func archiveSelectedThread() async {
-        guard let threadId = selectedThreadID else {
+        guard let threadId = model.selectedThreadID else {
             return
         }
         await archiveThread(threadId)
@@ -597,7 +581,8 @@ struct ConnectionView: View {
     private func archiveThread(_ threadId: String) async {
         await runLiveAction {
             try await service().archiveThread(threadId: threadId)
-            selectedThreadID = nil
+            model.selectedThreadID = nil
+            showSidebar()
             await refresh()
         }
     }
@@ -613,17 +598,17 @@ struct ConnectionView: View {
     @MainActor
     private func decideApproval(_ approval: ApprovalRequest, decision: ApprovalDecision) async {
         guard launchMode == .live else {
-            state = FixtureAppState(
-                connection: state.connection,
-                workspace: state.workspace,
-                selectedThread: state.selectedThread,
-                approvals: state.approvals.filter { $0.id != approval.id }
+            model.state = FixtureAppState(
+                connection: model.state.connection,
+                workspace: model.state.workspace,
+                selectedThread: model.state.selectedThread,
+                approvals: model.state.approvals.filter { $0.id != approval.id }
             )
             return
         }
         await runLiveAction {
             try await service().decideApproval(approvalId: approval.id, decision: decision)
-            if let selectedThreadID {
+            if let selectedThreadID = model.selectedThreadID {
                 await loadSelectedThread(selectedThreadID, markSeen: false)
             }
         }
@@ -631,7 +616,7 @@ struct ConnectionView: View {
 
     @MainActor
     private func retryQueuedInput(_ queueId: String) async {
-        guard let threadId = selectedThreadID else {
+        guard let threadId = model.selectedThreadID else {
             return
         }
         await runLiveAction {
@@ -642,7 +627,7 @@ struct ConnectionView: View {
 
     @MainActor
     private func steerQueuedInput(_ queueId: String) async {
-        guard let threadId = selectedThreadID else {
+        guard let threadId = model.selectedThreadID else {
             return
         }
         await runLiveAction {
@@ -653,7 +638,7 @@ struct ConnectionView: View {
 
     @MainActor
     private func deleteQueuedInput(_ queueId: String) async {
-        guard let threadId = selectedThreadID else {
+        guard let threadId = model.selectedThreadID else {
             return
         }
         await runLiveAction {
@@ -667,13 +652,13 @@ struct ConnectionView: View {
         guard launchMode == .live else {
             return
         }
-        isBusy = true
-        defer { isBusy = false }
+        model.isBusy = true
+        defer { model.isBusy = false }
         do {
             try await action()
-            statusMessage = nil
+            model.statusMessage = nil
         } catch {
-            statusMessage = error.localizedDescription
+            model.statusMessage = error.localizedDescription
         }
     }
 
@@ -682,13 +667,13 @@ struct ConnectionView: View {
         do {
             NativeNotificationRuntime.gatewayConfiguration = try GatewayConfiguration(userInput: gatewayURL)
             guard try await authorizer.requestAuthorization() else {
-                statusMessage = "Notifications denied"
+                model.statusMessage = "Notifications denied"
                 return
             }
             await authorizer.registerForRemoteNotifications()
-            statusMessage = "Notification registration requested"
+            model.statusMessage = "Notification registration requested"
         } catch {
-            statusMessage = "Notifications unavailable: \(error.localizedDescription)"
+            model.statusMessage = "Notifications unavailable: \(error.localizedDescription)"
         }
     }
 }

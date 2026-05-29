@@ -4,19 +4,21 @@ import KodexAPI
 import KodexCore
 
 struct ThreadDetailView: View {
+    private static let timelineBottomTolerance: CGFloat = 44
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let detail: ThreadDetail
     let approvals: [ApprovalRequest]
     let queuedInputs: [QueuedInputSummary]
-    let skills: [SkillSummary]
+    let modelOptions: [ComposerModelOption]
     let localImagePaths: [String]
     @Binding var composerText: String
-    @Binding var isExpandedComposerPresented: Bool
     @Binding var selectedPhotoItem: PhotosPickerItem?
     let isBusy: Bool
     let statusMessage: String?
     let composerSettings: ComposerRunSettings
     let permissionsPreset: String?
     let canLoadOlderHistory: Bool
+    let usesNativeNavigationBar: Bool
     let onShowSidebar: () -> Void
     let onSend: () async -> Void
     let onSettingsChange: (ComposerRunSettings) async -> Void
@@ -34,10 +36,15 @@ struct ThreadDetailView: View {
     @State private var renameText = ""
     @State private var hasSeenOlderSentinel = false
     @State private var olderLoadInFlightFor: String?
+    @State private var isTimelineAtBottom = true
+    @State private var hasPerformedInitialScroll = false
+    @FocusState private var isComposerFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            if !usesNativeNavigationBar {
+                header
+            }
             timeline
             if let statusMessage {
                 Text(statusMessage)
@@ -49,17 +56,16 @@ struct ThreadDetailView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            ComposerBar(
+            ThreadComposerBar(
                 text: $composerText,
                 selectedPhotoItem: $selectedPhotoItem,
-                isExpandedComposerPresented: $isExpandedComposerPresented,
-                skills: skills,
+                isComposerFocused: $isComposerFocused,
+                modelOptions: modelOptions,
                 localImagePaths: localImagePaths,
                 isBusy: isBusy,
                 showStopAction: showsStopAction,
                 settings: composerSettings,
                 permissionsPreset: permissionsPreset,
-                cwd: detail.thread.cwd,
                 onSettingsChange: onSettingsChange,
                 onSend: onSend,
                 onStop: onStop
@@ -67,7 +73,17 @@ struct ThreadDetailView: View {
         }
         .background(KodexTheme.background.ignoresSafeArea())
         .foregroundStyle(KodexTheme.primaryText)
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationTitle(usesNativeNavigationBar ? detail.thread.title : "")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(usesNativeNavigationBar ? .visible : .hidden, for: .navigationBar)
+        .toolbarBackground(KodexTheme.background, for: .navigationBar)
+        .toolbar {
+            if usesNativeNavigationBar {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    threadActionControls
+                }
+            }
+        }
         .alert("Rename Thread", isPresented: $isRenamePresented) {
             TextField("Name", text: $renameText)
             Button("Cancel", role: .cancel) {}
@@ -75,34 +91,6 @@ struct ThreadDetailView: View {
                 Task {
                     await onRename(renameText)
                 }
-            }
-        }
-        .sheet(isPresented: $isExpandedComposerPresented) {
-            NavigationStack {
-                TextEditor(text: $composerText)
-                    .font(.body)
-                    .foregroundStyle(KodexTheme.primaryText)
-                    .scrollContentBackground(.hidden)
-                    .background(KodexTheme.background)
-                    .padding()
-                    .navigationTitle("Compose")
-                    .toolbarBackground(KodexTheme.background, for: .navigationBar)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Close") {
-                                isExpandedComposerPresented = false
-                            }
-                        }
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Send") {
-                                Task {
-                                    await onSend()
-                                    isExpandedComposerPresented = false
-                                }
-                            }
-                            .disabled(isBusy || composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                    }
             }
         }
     }
@@ -113,42 +101,20 @@ struct ThreadDetailView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            KodexIconButton(systemName: "sidebar.left", label: "BackButton") {
-                onShowSidebar()
+            if showsSidebarButton {
+                KodexGlassToolbarButton(systemName: "sidebar.left", label: "BackButton") {
+                    onShowSidebar()
+                }
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(detail.thread.title)
                     .font(.headline.weight(.semibold))
                     .lineLimit(1)
-                HStack(spacing: 6) {
-                    statusDot
-                    Text(detail.thread.cwd)
-                        .font(.caption2)
-                        .foregroundStyle(KodexTheme.secondaryText)
-                        .lineLimit(1)
-                }
             }
             Spacer(minLength: 8)
             KodexGlassCluster(spacing: 8) {
                 HStack(spacing: 8) {
-                    if showsStopAction {
-                        KodexIconButton(systemName: "stop.fill", label: "Stop") {
-                            Task {
-                                await onStop()
-                            }
-                        }
-                        .disabled(isBusy)
-                    }
-                    ThreadActionMenu(
-                        thread: detail.thread,
-                        onRename: {
-                            renameText = detail.thread.title
-                            isRenamePresented = true
-                        },
-                        onSetPinned: onSetPinned,
-                        onToggleNotifications: onToggleNotifications,
-                        onArchive: onArchive
-                    )
+                    threadActionControls
                 }
             }
         }
@@ -158,41 +124,158 @@ struct ThreadDetailView: View {
         .background(KodexTheme.background.opacity(0.98))
     }
 
-    private var statusDot: some View {
-        Circle()
-            .fill(detail.thread.status == .active ? KodexTheme.positive : KodexTheme.accent.opacity(0.65))
-            .frame(width: 7, height: 7)
+    private var showsSidebarButton: Bool {
+        horizontalSizeClass == .compact && !usesNativeNavigationBar
+    }
+
+    @ViewBuilder
+    private var threadActionControls: some View {
+        ThreadActionMenu(
+            thread: detail.thread,
+            onRename: {
+                renameText = detail.thread.title
+                isRenamePresented = true
+            },
+            onSetPinned: onSetPinned,
+            onToggleNotifications: onToggleNotifications,
+            onArchive: onArchive
+        )
     }
 
     private var timeline: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 10) {
-                olderHistorySentinel
+        GeometryReader { viewport in
+            ScrollViewReader { proxy in
+                ZStack(alignment: .bottomTrailing) {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 10) {
+                            olderHistorySentinel
 
-                ForEach(queuedInputs) { queuedInput in
-                    QueuedInputCard(
-                        queuedInput: queuedInput,
-                        onRetry: { await onQueuedRetry(queuedInput.id) },
-                        onSteer: { await onQueuedSteer(queuedInput.id) },
-                        onDelete: { await onQueuedDelete(queuedInput.id) }
-                    )
-                }
-                ForEach(approvals) { approval in
-                    ApprovalCard(
-                        approval: approval,
-                        onDecision: { decision in await onApprovalDecision(approval, decision) }
-                    )
-                }
-                ForEach(detail.timeline.rows) { row in
-                    TimelineRowView(row: row)
+                            ForEach(queuedInputs) { queuedInput in
+                                QueuedInputCard(
+                                    queuedInput: queuedInput,
+                                    onRetry: { await onQueuedRetry(queuedInput.id) },
+                                    onSteer: { await onQueuedSteer(queuedInput.id) },
+                                    onDelete: { await onQueuedDelete(queuedInput.id) }
+                                )
+                            }
+                            ForEach(approvals) { approval in
+                                ApprovalCard(
+                                    approval: approval,
+                                    onDecision: { decision in await onApprovalDecision(approval, decision) }
+                                )
+                            }
+                            ForEach(detail.timeline.rows) { row in
+                                TimelineRowView(row: row)
+                            }
+                            timelineBottomAnchor
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            dismissKeyboard()
+                        }
+                    }
+                    .coordinateSpace(name: timelineCoordinateSpace)
+                    .scrollContentBackground(.hidden)
+                    .defaultScrollAnchor(.bottom)
+                    .scrollDismissesKeyboard(.interactively)
+                    .accessibilityIdentifier("ThreadTimeline")
+                    .onPreferenceChange(TimelineBottomMaxYPreferenceKey.self) { bottomMaxY in
+                        guard bottomMaxY.isFinite else {
+                            return
+                        }
+                        isTimelineAtBottom = bottomMaxY <= viewport.size.height + Self.timelineBottomTolerance
+                    }
+                    .onAppear {
+                        scrollTimelineToBottom(proxy, animated: false)
+                    }
+                    .onChange(of: detail.thread.id) { _, _ in
+                        hasSeenOlderSentinel = false
+                        olderLoadInFlightFor = nil
+                        hasPerformedInitialScroll = false
+                        scrollTimelineToBottom(proxy, animated: false)
+                    }
+                    .onChange(of: timelineFollowToken) { _, _ in
+                        guard isTimelineAtBottom else {
+                            return
+                        }
+                        scrollTimelineToBottom(proxy, animated: hasPerformedInitialScroll)
+                    }
+
+                    if showsJumpToBottom {
+                        Button {
+                            scrollTimelineToBottom(proxy, animated: true)
+                        } label: {
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 15, weight: .semibold))
+                                .frame(width: 38, height: 38)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(KodexTheme.primaryText)
+                        .background(KodexTheme.panelBackground.opacity(0.82), in: Circle())
+                        .overlay(Circle().stroke(KodexTheme.hairline, lineWidth: 1))
+                        .kodexGlass(cornerRadius: 19, tint: KodexTheme.panelBackground.opacity(0.54), interactive: true)
+                        .padding(.trailing, 20)
+                        .padding(.bottom, 18)
+                        .accessibilityLabel("Jump to Latest")
+                    }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 14)
-            .padding(.bottom, 24)
         }
-        .scrollContentBackground(.hidden)
-        .accessibilityIdentifier("ThreadTimeline")
+    }
+
+    private var timelineBottomAnchor: some View {
+        Color.clear
+            .frame(height: 24)
+            .id(timelineBottomID)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: TimelineBottomMaxYPreferenceKey.self,
+                        value: proxy.frame(in: .named(timelineCoordinateSpace)).maxY
+                    )
+                }
+            }
+    }
+
+    private var timelineFollowToken: String {
+        [
+            detail.thread.id,
+            String(detail.timeline.viewRevision)
+        ].joined(separator: ":")
+    }
+
+    private var showsJumpToBottom: Bool {
+        !isTimelineAtBottom && (!detail.timeline.rows.isEmpty || !queuedInputs.isEmpty || !approvals.isEmpty)
+    }
+
+    private var timelineBottomID: String {
+        "timeline-bottom-\(detail.thread.id)"
+    }
+
+    private var timelineCoordinateSpace: String {
+        "thread-timeline-\(detail.thread.id)"
+    }
+
+    private func scrollTimelineToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
+        let action = {
+            proxy.scrollTo(timelineBottomID, anchor: .bottom)
+            hasPerformedInitialScroll = true
+        }
+        if animated {
+            withAnimation(.easeOut(duration: 0.2)) {
+                action()
+            }
+        } else {
+            DispatchQueue.main.async {
+                action()
+            }
+        }
+    }
+
+    private func dismissKeyboard() {
+        isComposerFocused = false
     }
 
     @ViewBuilder
@@ -235,461 +318,10 @@ struct ThreadDetailView: View {
     }
 }
 
-struct ThreadActionMenu: View {
-    let thread: WorkspaceThread
-    let onRename: () -> Void
-    let onSetPinned: (Bool) async -> Void
-    let onToggleNotifications: () async -> Void
-    let onArchive: () async -> Void
+private struct TimelineBottomMaxYPreferenceKey: PreferenceKey {
+    static let defaultValue = CGFloat.infinity
 
-    var body: some View {
-        Menu {
-            Button {
-                Task {
-                    await onSetPinned(!thread.pinned)
-                }
-            } label: {
-                KodexMenuRow(
-                    title: thread.pinned ? "Unpin" : "Pin",
-                    subtitle: thread.pinned ? "Remove from Pinned" : "Keep near the top",
-                    systemImage: thread.pinned ? "pin.slash" : "pin"
-                )
-            }
-            Button(action: onRename) {
-                KodexMenuRow(title: "Rename", subtitle: nil, systemImage: "pencil")
-            }
-            Button {
-                Task {
-                    await onToggleNotifications()
-                }
-            } label: {
-                KodexMenuRow(
-                    title: "Notifications",
-                    subtitle: thread.notificationsEnabled ? "Enabled" : "Muted",
-                    systemImage: thread.notificationsEnabled ? "bell.badge" : "bell.slash"
-                )
-            }
-            Button(role: .destructive) {
-                Task {
-                    await onArchive()
-                }
-            } label: {
-                KodexMenuRow(title: "Archive", subtitle: nil, systemImage: "archivebox", isDestructive: true)
-            }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 16, weight: .semibold))
-                .frame(width: KodexTheme.iconButtonSize, height: KodexTheme.iconButtonSize)
-                .foregroundStyle(KodexTheme.primaryText)
-                .contentShape(Rectangle())
-                .kodexGlass(cornerRadius: 13, interactive: true)
-        }
-        .accessibilityLabel("Thread Actions")
-        .accessibilityIdentifier("ThreadActions")
-    }
-}
-
-struct TimelineRowView: View {
-    let row: TimelineRow
-
-    var body: some View {
-        HStack(alignment: .bottom) {
-            if isUserMessage {
-                Spacer(minLength: 46)
-                bubble
-            } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    bubble
-                }
-                Spacer(minLength: isStatusRow ? 28 : 46)
-            }
-        }
-        .accessibilityIdentifier("TimelineRow-\(row.kind.rawValue)")
-    }
-
-    private var bubble: some View {
-        Group {
-            if isThoughtRow {
-                Label(row.body, systemImage: "chevron.right")
-                    .labelStyle(.titleAndIcon)
-                    .font(.callout)
-                    .foregroundStyle(KodexTheme.mutedText)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
-            } else {
-                Text(row.body)
-                    .font(isStatusRow ? .callout : .body)
-                    .lineSpacing(3)
-                    .foregroundStyle(KodexTheme.primaryText.opacity(isStatusRow ? 0.78 : 0.94))
-                    .textSelection(.enabled)
-                    .padding(.horizontal, isStatusRow ? 12 : 16)
-                    .padding(.vertical, isStatusRow ? 8 : 12)
-                    .background(bubbleBackground, in: RoundedRectangle(cornerRadius: bubbleRadius, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: bubbleRadius, style: .continuous)
-                            .stroke(isStatusRow ? KodexTheme.hairline : Color.clear, lineWidth: 1)
-                    )
-            }
-        }
-    }
-
-    private var isUserMessage: Bool {
-        row.title.localizedCaseInsensitiveCompare("You") == .orderedSame
-    }
-
-    private var isStatusRow: Bool {
-        row.kind != .message
-    }
-
-    private var isThoughtRow: Bool {
-        row.kind == .work || row.kind == .activity
-    }
-
-    private var bubbleRadius: CGFloat {
-        isStatusRow ? 16 : 26
-    }
-
-    private var bubbleBackground: Color {
-        if isUserMessage {
-            return KodexTheme.bubbleBackground
-        }
-        switch row.kind {
-        case .warning:
-            return KodexTheme.warning.opacity(0.16)
-        case .error:
-            return KodexTheme.destructive.opacity(0.16)
-        case .message:
-            return KodexTheme.assistantBubbleBackground
-        default:
-            return KodexTheme.panelBackground.opacity(0.42)
-        }
-    }
-}
-
-struct ComposerBar: View {
-    @Binding var text: String
-    @Binding var selectedPhotoItem: PhotosPickerItem?
-    @Binding var isExpandedComposerPresented: Bool
-    let skills: [SkillSummary]
-    let localImagePaths: [String]
-    let isBusy: Bool
-    let showStopAction: Bool
-    let settings: ComposerRunSettings
-    let permissionsPreset: String?
-    let cwd: String
-    let onSettingsChange: (ComposerRunSettings) async -> Void
-    let onSend: () async -> Void
-    let onStop: () async -> Void
-
-    var body: some View {
-        KodexBottomComposerShell {
-            VStack(alignment: .leading, spacing: 9) {
-                if !localImagePaths.isEmpty {
-                    Label("\(localImagePaths.count) image attachment\(localImagePaths.count == 1 ? "" : "s")", systemImage: "photo")
-                        .font(.caption)
-                        .foregroundStyle(KodexTheme.secondaryText)
-                }
-                HStack(alignment: .center, spacing: 8) {
-                    attachmentMenu
-                    TextField("", text: $text, prompt: Text("type clever thing here"), axis: .vertical)
-                        .lineLimit(1...4)
-                        .font(.body)
-                        .padding(.horizontal, 15)
-                        .padding(.vertical, 12)
-                        .foregroundStyle(KodexTheme.primaryText)
-                        .tint(KodexTheme.primaryText)
-                        .background(KodexTheme.composerInput, in: Capsule(style: .continuous))
-                        .overlay(Capsule(style: .continuous).stroke(KodexTheme.hairline, lineWidth: 1))
-                        .accessibilityLabel("Message Kodex")
-                        .accessibilityIdentifier("ComposerInput")
-                    if showStopAction {
-                        KodexIconButton(systemName: "stop.fill", label: "Stop") {
-                            Task {
-                                await onStop()
-                            }
-                        }
-                        .disabled(isBusy)
-                    } else {
-                        sendButton
-                    }
-                }
-                HStack(spacing: 8) {
-                    Button {
-                        isExpandedComposerPresented = true
-                    } label: {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .frame(width: 30, height: 30)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(KodexTheme.mutedText)
-                    .accessibilityLabel("Expanded Composer")
-                    permissionsMenu
-                    modelMenu
-                    Spacer(minLength: 4)
-                    if showStopAction {
-                        sendButton
-                    }
-                }
-                .font(.caption.weight(.semibold))
-                Text("\(lastPathComponent(cwd))  \(settings.model ?? "default") / \(settings.effort ?? "default")")
-                    .font(.caption2)
-                    .foregroundStyle(KodexTheme.mutedText)
-                    .lineLimit(1)
-            }
-        }
-    }
-
-    private var attachmentMenu: some View {
-        Menu {
-            PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                Label("Attach Photo", systemImage: "photo")
-            }
-            if !skills.isEmpty {
-                Section("Skills") {
-                    ForEach(skills.prefix(8)) { skill in
-                        Button("$\(skill.name)") {
-                            text.append(text.isEmpty ? "$\(skill.name)" : " $\(skill.name)")
-                        }
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 17, weight: .semibold))
-                .frame(width: KodexTheme.composerButtonSize, height: KodexTheme.composerButtonSize)
-                .foregroundStyle(KodexTheme.primaryText)
-                .background(KodexTheme.panelBackground.opacity(0.58), in: Circle())
-                .overlay(Circle().stroke(KodexTheme.hairline, lineWidth: 1))
-                .kodexGlass(cornerRadius: KodexTheme.composerButtonSize / 2, tint: KodexTheme.panelBackground.opacity(0.42), interactive: true)
-        }
-        .accessibilityLabel("Add Attachment")
-    }
-
-    private var permissionsMenu: some View {
-        Menu {
-            Section("Approvals") {
-                ForEach(Self.approvalPolicyOptions) { option in
-                    Button(option.label) {
-                        Task {
-                            await onSettingsChange(settings.with(approvalPolicy: option.value))
-                        }
-                    }
-                }
-            }
-            Section("Sandbox") {
-                ForEach(Self.sandboxOptions) { option in
-                    Button(option.label) {
-                        Task {
-                            await onSettingsChange(settings.with(sandboxPolicy: option.policy))
-                        }
-                    }
-                }
-            }
-        } label: {
-            Label(permissionsPreset ?? settings.sandboxDisplay, systemImage: "lock.shield")
-                .lineLimit(1)
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 9)
-                .frame(height: 30)
-                .foregroundStyle(KodexTheme.secondaryText)
-                .background(KodexTheme.composerInput.opacity(0.72), in: Capsule(style: .continuous))
-                .overlay(Capsule(style: .continuous).stroke(KodexTheme.hairline, lineWidth: 1))
-        }
-        .accessibilityLabel("Permissions")
-    }
-
-    private var modelMenu: some View {
-        Menu {
-            Section("Model") {
-                ForEach(Self.modelOptions, id: \.self) { model in
-                    Button(model) {
-                        Task {
-                            await onSettingsChange(settings.with(model: model))
-                        }
-                    }
-                }
-            }
-            Section("Reasoning") {
-                ForEach(Self.effortOptions, id: \.self) { effort in
-                    Button(effort.capitalized) {
-                        Task {
-                            await onSettingsChange(settings.with(effort: effort))
-                        }
-                    }
-                }
-            }
-        } label: {
-            Label(settings.model ?? "default", systemImage: "cpu")
-                .lineLimit(1)
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 9)
-                .frame(height: 30)
-                .foregroundStyle(KodexTheme.secondaryText)
-                .background(KodexTheme.composerInput.opacity(0.72), in: Capsule(style: .continuous))
-                .overlay(Capsule(style: .continuous).stroke(KodexTheme.hairline, lineWidth: 1))
-        }
-        .accessibilityLabel("Composer Options, model \(settings.model ?? "default"), reasoning \(settings.effort ?? "default"), approvals \(settings.approvalPolicy ?? "default"), permissions \(permissionsPreset ?? settings.sandboxDisplay)")
-    }
-
-    private var sendButton: some View {
-        KodexIconButton(systemName: "arrow.up", label: "Send", isProminent: true) {
-            Task {
-                await onSend()
-            }
-        }
-        .disabled(isBusy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-    }
-
-    private func lastPathComponent(_ path: String) -> String {
-        URL(fileURLWithPath: path).lastPathComponent
-    }
-
-    private static let modelOptions = ["gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark"]
-    private static let effortOptions = ["low", "medium", "high", "xhigh"]
-    private static let approvalPolicyOptions = [
-        ComposerTextOption(label: "Ask First", value: "on-request"),
-        ComposerTextOption(label: "On Failure", value: "on-failure"),
-        ComposerTextOption(label: "Never Ask", value: "never")
-    ]
-    private static let sandboxOptions = [
-        ComposerPolicyOption(label: "Read Only", value: "readOnly", policy: .object(["type": .string("readOnly")])),
-        ComposerPolicyOption(label: "Workspace Write", value: "workspaceWrite", policy: .object(["type": .string("workspaceWrite"), "networkAccess": .bool(false), "writableRoots": .array([])])),
-        ComposerPolicyOption(label: "Full Access", value: "dangerFullAccess", policy: .object(["type": .string("dangerFullAccess")]))
-    ]
-}
-
-struct ComposerTextOption: Identifiable {
-    let label: String
-    let value: String
-
-    var id: String { value }
-}
-
-struct ComposerPolicyOption: Identifiable {
-    let label: String
-    let value: String
-    let policy: AnySendable
-
-    var id: String { value }
-}
-
-struct ApprovalCard: View {
-    let approval: ApprovalRequest
-    let onDecision: (ApprovalDecision) async -> Void
-    @State private var pendingDecision: ApprovalDecision?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(approval.title, systemImage: "exclamationmark.triangle.fill")
-                .font(.headline)
-                .foregroundStyle(KodexTheme.warning)
-            Text("Risk: \(approval.risk)")
-                .font(.caption)
-                .foregroundStyle(KodexTheme.secondaryText)
-            if !approval.context.isEmpty {
-                Text(approval.context)
-                    .font(.caption)
-                    .foregroundStyle(KodexTheme.secondaryText)
-                    .textSelection(.enabled)
-            }
-            HStack {
-                Button("Decline", role: .destructive) {
-                    Task {
-                        await onDecision(.decline)
-                    }
-                }
-                .accessibilityIdentifier("DeclineApproval-\(approval.id)")
-                Button("Approve") {
-                    submit(.accept)
-                }
-                .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("ApproveApproval-\(approval.id)")
-            }
-        }
-        .padding(12)
-        .background(KodexTheme.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(KodexTheme.warning.opacity(0.25), lineWidth: 1)
-        )
-        .confirmationDialog(
-            "Approve Risky Action?",
-            isPresented: Binding(
-                get: { pendingDecision != nil },
-                set: { if !$0 { pendingDecision = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Approve", role: .destructive) {
-                guard let pendingDecision else {
-                    return
-                }
-                Task {
-                    await onDecision(pendingDecision)
-                    self.pendingDecision = nil
-                }
-            }
-            Button("Cancel", role: .cancel) {
-                pendingDecision = nil
-            }
-        } message: {
-            Text("\(approval.title) has \(approval.risk) risk.")
-        }
-    }
-
-    private func submit(_ decision: ApprovalDecision) {
-        if ApprovalRiskPolicy.requiresConfirmation(approval, decision: decision) {
-            pendingDecision = decision
-        } else {
-            Task {
-                await onDecision(decision)
-            }
-        }
-    }
-}
-
-struct QueuedInputCard: View {
-    let queuedInput: QueuedInputSummary
-    let onRetry: () async -> Void
-    let onSteer: () async -> Void
-    let onDelete: () async -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Queued input", systemImage: "tray.and.arrow.up")
-                .font(.headline)
-            Text(queuedInput.status)
-                .font(.caption)
-                .foregroundStyle(KodexTheme.secondaryText)
-            if let lastError = queuedInput.lastError {
-                Text(lastError)
-                    .font(.caption)
-                    .foregroundStyle(KodexTheme.destructive)
-            }
-            HStack {
-                Button("Retry") {
-                    Task {
-                        await onRetry()
-                    }
-                }
-                Button("Steer") {
-                    Task {
-                        await onSteer()
-                    }
-                }
-                Button("Delete", role: .destructive) {
-                    Task {
-                        await onDelete()
-                    }
-                }
-            }
-        }
-        .padding(12)
-        .background(KodexTheme.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(KodexTheme.accent.opacity(0.22), lineWidth: 1)
-        )
-        .accessibilityIdentifier("QueuedInputCard")
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }

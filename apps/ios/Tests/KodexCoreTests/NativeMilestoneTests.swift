@@ -2,10 +2,10 @@ import Foundation
 import Testing
 @testable import KodexCore
 
-@Test func workspaceTitleDisplayUsesNamePathThenId() {
-    #expect(WorkspaceNormalizer.title(name: "Plan Review", cwd: "/tmp/kodex", id: "abcdef123") == "Plan Review")
-    #expect(WorkspaceNormalizer.title(name: nil, cwd: "/tmp/kodex", id: "abcdef123") == "kodex")
-    #expect(WorkspaceNormalizer.title(name: " ", cwd: "/", id: "abcdef123") == "Thread abcdef12")
+@Test func workspaceTitleDisplayUsesNameThenPreviewThenUntitledFallback() {
+    #expect(WorkspaceNormalizer.title(name: "Plan Review", preview: "ignored", id: "abcdef123") == "Plan Review")
+    #expect(WorkspaceNormalizer.title(name: nil, preview: "Investigate deploy action failure", id: "abcdef123") == "Investigate deploy action failure")
+    #expect(WorkspaceNormalizer.title(name: " ", preview: " \n", id: "abcdef123") == "Untitled Thread")
 }
 
 @Test func workspaceFixtureCoversConnectedDegradedAndOfflineStates() {

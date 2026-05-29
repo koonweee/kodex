@@ -228,6 +228,14 @@ public struct LiveGatewayService: Sendable {
         try await requireSuccess(.capabilities)
     }
 
+    public func listModels(includeHidden: Bool = false) async throws -> [Components.Schemas.ModelSummary] {
+        if let generatedClient {
+            let response = try await generatedClient.list_models(.init(query: .init(includeHidden: includeHidden)))
+            return try response.ok.body.json.models
+        }
+        return []
+    }
+
     public func loadComposerSettings(projectId: String? = nil) async throws -> ComposerSettingsSnapshot {
         if let generatedClient {
             let response = try await generatedClient.read_composer_settings(.init(query: .init(projectId: projectId)))
@@ -617,7 +625,7 @@ public struct LiveGatewayService: Sendable {
     private static func workspaceThread(_ dto: ThreadSummaryDTO, pinnedOverride: Bool? = nil) -> WorkspaceThread {
         WorkspaceThread(
             id: dto.id,
-            title: WorkspaceNormalizer.title(name: dto.name, cwd: dto.cwd, id: dto.id),
+            title: WorkspaceNormalizer.title(name: dto.name, preview: dto.preview, id: dto.id),
             cwd: dto.cwd,
             status: ThreadStatus(rawValue: dto.status) ?? .idle,
             unread: dto.unreadCompletedAgentTurn,
@@ -652,7 +660,7 @@ public struct LiveGatewayService: Sendable {
     private static func workspaceThread(_ dto: Components.Schemas.SidebarThreadSummary, pinnedOverride: Bool? = nil) -> WorkspaceThread {
         WorkspaceThread(
             id: dto.id,
-            title: WorkspaceNormalizer.title(name: dto.name, cwd: dto.cwd, id: dto.id),
+            title: WorkspaceNormalizer.title(name: dto.name, preview: previewText(from: dto.preview), id: dto.id),
             cwd: dto.cwd,
             status: ThreadStatus(rawValue: dto.status.rawValue) ?? .idle,
             unread: dto.unreadCompletedAgentTurn,
@@ -664,7 +672,7 @@ public struct LiveGatewayService: Sendable {
     private static func workspaceThread(_ dto: Components.Schemas.ThreadSummary, pinnedOverride: Bool? = nil) -> WorkspaceThread {
         WorkspaceThread(
             id: dto.id,
-            title: WorkspaceNormalizer.title(name: dto.name, cwd: dto.cwd, id: dto.id),
+            title: WorkspaceNormalizer.title(name: dto.name, preview: previewText(from: dto.preview), id: dto.id),
             cwd: dto.cwd,
             status: ThreadStatus(rawValue: dto.status.rawValue) ?? .idle,
             unread: dto.unreadCompletedAgentTurn,
@@ -676,7 +684,7 @@ public struct LiveGatewayService: Sendable {
     private static func workspaceThread(_ dto: Components.Schemas.ThreadViewThreadSummary) -> WorkspaceThread {
         WorkspaceThread(
             id: dto.id,
-            title: WorkspaceNormalizer.title(name: dto.name, cwd: dto.cwd, id: dto.id),
+            title: WorkspaceNormalizer.title(name: dto.name, preview: previewText(from: dto.preview), id: dto.id),
             cwd: dto.cwd,
             status: ThreadStatus(rawValue: dto.status.rawValue) ?? .idle,
             unread: dto.unreadCompletedAgentTurn,
@@ -699,6 +707,7 @@ public struct LiveGatewayService: Sendable {
                         hasFileChanges: !row.fileChanges.isEmpty,
                         itemType: row.items.first?.itemType
                     ),
+                    speaker: TimelineSpeaker(role: generatedRole(row.items.first)),
                     displayOrder: row.displayOrder,
                     title: generatedRowTitle(row),
                     body: generatedRowBody(row),
@@ -828,6 +837,7 @@ public struct LiveGatewayService: Sendable {
                         hasFileChanges: !row.fileChanges.isEmpty,
                         itemType: row.item?.itemType ?? row.items.first?.itemType
                     ),
+                    speaker: row.speaker,
                     displayOrder: row.displayOrder,
                     title: row.title,
                     body: row.body,
@@ -837,6 +847,13 @@ public struct LiveGatewayService: Sendable {
             olderCursor: historyPage?.olderCursor,
             hasOlder: historyPage?.hasOlder ?? false
         )
+    }
+
+    private static func previewText(from preview: OpenAPIValueContainer?) -> String? {
+        guard let preview, let data = try? JSONEncoder().encode(preview) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(String.self, from: data)
     }
 }
 
@@ -914,6 +931,7 @@ private struct ThreadCommandResponseDTO: Decodable {
 private struct ThreadSummaryDTO: Decodable {
     let id: String
     let name: String?
+    let preview: String?
     let cwd: String
     let status: String
     let unreadCompletedAgentTurn: Bool
@@ -945,6 +963,10 @@ private struct ThreadTimelineRowDTO: Decodable {
             return role.capitalized
         }
         return kind.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    var speaker: TimelineSpeaker {
+        TimelineSpeaker(role: item?.role ?? items.first?.role)
     }
 
     var body: String {

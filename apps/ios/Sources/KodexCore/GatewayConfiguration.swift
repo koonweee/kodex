@@ -260,7 +260,8 @@ public enum FixtureStore {
             WorkspaceThread(id: "fixture-chat", title: "Release checklist", cwd: "/Users/example/kodex", status: .idle, unread: false, pinned: false)
         ],
         pinned: [
-            WorkspaceThread(id: "fixture-thread", title: "Unread agent message", cwd: "/Users/example/kodex", status: .idle, unread: true, pinned: true)
+            WorkspaceThread(id: "fixture-thread", title: "Unread agent message", cwd: "/Users/example/kodex", status: .idle, unread: true, pinned: true),
+            WorkspaceThread(id: "fixture-pinned-chat", title: "Pinned chat follow-up", cwd: "/Users/example/Documents/Codex/2026-05-28/pinned-chat", status: .idle, unread: false, pinned: true)
         ]
     )
 
@@ -281,8 +282,8 @@ public enum FixtureStore {
                 liveState: thread.status == .active ? .streaming : .idle,
                 viewRevision: 12,
                 rows: [
-                    TimelineRow(id: "\(threadId)-1", kind: .message, displayOrder: 1, title: "You", body: "Implement native iOS milestone coverage."),
-                    TimelineRow(id: "\(threadId)-2", kind: .work, displayOrder: 2, title: "Kodex", body: "Mapping workspace, thread, timeline, composer, approvals, and notifications."),
+                    TimelineRow(id: "\(threadId)-1", kind: .message, speaker: .user, displayOrder: 1, title: "You", body: "Implement native iOS milestone coverage."),
+                    TimelineRow(id: "\(threadId)-2", kind: .work, speaker: .assistant, displayOrder: 2, title: "Kodex", body: "Mapping workspace, thread, timeline, composer, approvals, and notifications."),
                     TimelineRow(id: "\(threadId)-3", kind: .activity, displayOrder: 3, title: "Activity", body: "Running deterministic simulator checks."),
                     TimelineRow(id: "\(threadId)-4", kind: .tool, displayOrder: 4, title: "Tool", body: "xcodebuild test"),
                     TimelineRow(id: "\(threadId)-5", kind: .image, displayOrder: 5, title: "Image", body: "Attached simulator screenshot fixture."),
@@ -290,7 +291,7 @@ public enum FixtureStore {
                     TimelineRow(id: "\(threadId)-7", kind: .warning, displayOrder: 7, title: "Warning", body: "OpenAI auth required for live smoke."),
                     TimelineRow(id: "\(threadId)-8", kind: .error, displayOrder: 8, title: "Error", body: "Fixture-only error row.")
                 ] + (9...34).map { index in
-                    TimelineRow(id: "\(threadId)-long-\(index)", kind: .message, displayOrder: index, title: "Long Row \(index)", body: "Long-thread fixture row \(index).")
+                    TimelineRow(id: "\(threadId)-long-\(index)", kind: .message, speaker: index.isMultiple(of: 2) ? .assistant : .user, displayOrder: index, title: "Long Row \(index)", body: "Long-thread fixture row \(index).")
                 },
                 olderCursor: "fixture-older",
                 hasOlder: true

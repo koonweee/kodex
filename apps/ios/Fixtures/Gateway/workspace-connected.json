@@ -39,6 +39,15 @@
         "unread": true,
         "pinned": true,
         "notificationsEnabled": true
+      },
+      {
+        "id": "fixture-pinned-chat",
+        "title": "Pinned chat follow-up",
+        "cwd": "/Users/example/Documents/Codex/2026-05-28/pinned-chat",
+        "status": "idle",
+        "unread": false,
+        "pinned": true,
+        "notificationsEnabled": true
       }
     ]
   }

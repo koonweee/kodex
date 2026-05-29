@@ -257,17 +257,49 @@ public enum TimelineRowKind: String, Codable, Sendable {
     }
 }
 
+public enum TimelineSpeaker: String, Codable, Sendable {
+    case user
+    case assistant
+    case system
+    case unknown
+
+    public init(role: String?) {
+        switch role?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() {
+        case "user", "you", "human", "user_message", "usermessage":
+            self = .user
+        case "assistant", "agent", "kodex", "codex", "agent_message", "agentmessage":
+            self = .assistant
+        case "system", "tool", "activity", "work":
+            self = .system
+        default:
+            self = .unknown
+        }
+    }
+}
+
 public struct TimelineRow: Identifiable, Codable, Equatable, Sendable {
     public let id: String
     public let kind: TimelineRowKind
+    public let speaker: TimelineSpeaker
     public let displayOrder: Int64
     public let title: String
     public let body: String
     public let status: String
 
-    public init(id: String, kind: TimelineRowKind, displayOrder: Int64, title: String, body: String, status: String = "complete") {
+    public init(
+        id: String,
+        kind: TimelineRowKind,
+        speaker: TimelineSpeaker = .unknown,
+        displayOrder: Int64,
+        title: String,
+        body: String,
+        status: String = "complete"
+    ) {
         self.id = id
         self.kind = kind
+        self.speaker = speaker
         self.displayOrder = displayOrder
         self.title = title
         self.body = body
@@ -304,15 +336,20 @@ public struct ThreadDetail: Codable, Equatable, Sendable {
 }
 
 public enum WorkspaceNormalizer {
-    public static func title(name: String?, cwd: String, id: String) -> String {
+    public static func title(name: String?, preview: String?, id: String) -> String {
         if let name, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return name
         }
-        let lastPathComponent = URL(fileURLWithPath: cwd).lastPathComponent
-        if !lastPathComponent.isEmpty, lastPathComponent != "/" {
-            return lastPathComponent
+        if let preview {
+            let firstLine = preview
+                .split(whereSeparator: \.isNewline)
+                .first?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let firstLine, !firstLine.isEmpty {
+                return firstLine
+            }
         }
-        return "Thread \(id.prefix(8))"
+        return "Untitled Thread"
     }
 
     public static func mergeOlderHistory(current: [TimelineRow], older: [TimelineRow]) -> [TimelineRow] {
