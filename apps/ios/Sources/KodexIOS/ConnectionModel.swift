@@ -56,18 +56,30 @@ final class ConnectionModel {
     }
 
     var selectedDetail: ThreadDetail? {
-        if let selectedThreadID, state.selectedThread?.thread.id == selectedThreadID {
+        detail(for: selectedThreadID)
+    }
+
+    func detail(for threadID: String?) -> ThreadDetail? {
+        guard let threadID else {
+            return nil
+        }
+        if state.selectedThread?.thread.id == threadID {
             return state.selectedThread
         }
-        if launchMode != .live, let selectedThreadID, let thread = state.workspace.thread(id: selectedThreadID) {
+        if launchMode != .live, let thread = state.workspace.thread(id: threadID) {
             return ThreadDetail(
                 thread: thread,
-                timeline: ThreadTimeline(threadId: thread.id, liveState: thread.status == .active ? .streaming : .idle, viewRevision: 1, rows: [
-                    TimelineRow(id: "\(thread.id)-summary", kind: .message, speaker: .assistant, displayOrder: 1, title: thread.title, body: "Fixture timeline row for \(thread.cwd).")
-                ])
+                timeline: ThreadTimeline(
+                    threadId: thread.id,
+                    liveState: thread.status == .active ? .streaming : .idle,
+                    viewRevision: 1,
+                    rows: [
+                        TimelineRow(id: "\(thread.id)-summary", kind: .message, speaker: .assistant, displayOrder: 1, title: thread.title, body: "Fixture timeline row for \(thread.cwd).")
+                    ]
+                )
             )
         }
-        return state.selectedThread
+        return nil
     }
 
     var approvalThreadIds: Set<String> {

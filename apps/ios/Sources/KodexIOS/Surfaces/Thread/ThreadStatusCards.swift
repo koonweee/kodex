@@ -2,6 +2,26 @@ import SwiftUI
 import KodexAPI
 import KodexCore
 
+struct ThreadLoadingView: View {
+    let title: String
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .controlSize(.regular)
+            Text(title)
+                .font(.headline.weight(.semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(KodexTheme.secondaryText)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(KodexTheme.background.ignoresSafeArea())
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("ThreadLoadingView")
+    }
+}
+
 struct ApprovalCard: View {
     let approval: ApprovalRequest
     let onDecision: (ApprovalDecision) async -> Void

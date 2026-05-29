@@ -36,15 +36,15 @@ struct ConnectionView: View {
             if usesCompactStackNavigation {
                 NavigationStack(path: model.binding(\.compactThreadPath)) {
                     workspaceDrawer
-                        .navigationDestination(for: String.self) { _ in
-                            detailColumn
+                        .navigationDestination(for: String.self) { threadID in
+                            detailColumn(for: threadID)
                         }
                 }
             } else {
                 NavigationSplitView(preferredCompactColumn: model.binding(\.preferredCompactColumn)) {
                     workspaceDrawer
                 } detail: {
-                    detailColumn
+                    detailColumn(for: model.selectedThreadID)
                 }
             }
         }
@@ -53,16 +53,14 @@ struct ConnectionView: View {
                 await refresh()
             }
         }
-        .onDisappear {
-            model.cancelStreams()
-        }
-        .onChange(of: model.selectedThreadID) { _, newValue in
-            guard launchMode == .live, let newValue else {
+        .task(id: model.selectedThreadID) {
+            guard launchMode == .live, let threadID = model.selectedThreadID else {
                 return
             }
-            Task {
-                await loadSelectedThread(newValue, markSeen: true)
-            }
+            await loadSelectedThread(threadID, markSeen: true)
+        }
+        .onDisappear {
+            model.cancelStreams()
         }
         .onChange(of: model.selectedPhotoItem) { _, newValue in
             guard let newValue else {
@@ -130,8 +128,8 @@ struct ConnectionView: View {
     }
 
     @ViewBuilder
-    private var detailColumn: some View {
-        if let detail = model.selectedDetail {
+    private func detailColumn(for threadID: String?) -> some View {
+        if let detail = model.detail(for: threadID) {
             ThreadDetailView(
                 detail: detail,
                 approvals: model.state.approvals.filter { $0.threadId.isEmpty || $0.threadId == detail.thread.id },
@@ -160,6 +158,9 @@ struct ConnectionView: View {
                 onQueuedSteer: { queueId in await steerQueuedInput(queueId) },
                 onQueuedDelete: { queueId in await deleteQueuedInput(queueId) }
             )
+            .id(detail.thread.id)
+        } else if let threadID {
+            ThreadLoadingView(title: model.state.workspace.thread(id: threadID)?.title ?? "Loading Thread")
         } else {
             ContentUnavailableView("Select a Thread", systemImage: "bubble.left.and.bubble.right")
         }
@@ -228,6 +229,9 @@ struct ConnectionView: View {
         guard launchMode == .live else {
             return
         }
+        guard model.selectedThreadID == threadId else {
+            return
+        }
         do {
             let live = try service()
             if markSeen {
@@ -238,6 +242,9 @@ struct ConnectionView: View {
             let queue = try await live.listQueuedInputs(threadId: threadId)
             let loadedSkills = try? await live.listSkills(cwd: detail.thread.cwd)
             let loadedSettings = try? await live.loadComposerSettings()
+            guard !Task.isCancelled, model.selectedThreadID == threadId else {
+                return
+            }
             model.state = FixtureAppState(connection: model.state.connection, workspace: model.state.workspace, selectedThread: detail, approvals: approvals)
             model.queuedInputs = queue
             model.skills = loadedSkills ?? []
@@ -249,7 +256,9 @@ struct ConnectionView: View {
             startSelectedStream(threadId)
             startGlobalStream()
         } catch {
-            model.statusMessage = error.localizedDescription
+            if model.selectedThreadID == threadId {
+                model.statusMessage = error.localizedDescription
+            }
         }
     }
 
@@ -287,23 +296,32 @@ struct ConnectionView: View {
 
     @MainActor
     private func sendComposer() async {
-        guard let threadId = model.selectedThreadID, !model.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard let threadId = model.selectedThreadID else {
+            return
+        }
+        let submittedText = model.composerText
+        let submittedImagePaths = model.localImagePaths
+        let submittedSettings = model.composerSettings
+        let submittedSkills = model.skills
+        guard !submittedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
         await runLiveAction {
             let skillMentions = SkillMentionDetector.mentions(
-                in: model.composerText,
-                skills: model.skills.map { SkillCatalogEntry(name: $0.name, path: $0.path) }
+                in: submittedText,
+                skills: submittedSkills.map { SkillCatalogEntry(name: $0.name, path: $0.path) }
             )
             _ = try await service().submitTextInput(
                 threadId: threadId,
-                text: model.composerText,
+                text: submittedText,
                 skillMentions: skillMentions,
-                localImagePaths: model.localImagePaths,
-                settings: model.composerSettings
+                localImagePaths: submittedImagePaths,
+                settings: submittedSettings
             )
-            model.composerText = ""
-            model.localImagePaths = []
+            if model.selectedThreadID == threadId {
+                model.composerText = ""
+                model.localImagePaths = []
+            }
             startSelectedStream(threadId)
             await pollSelectedThreadUntilIdle(threadId)
         }
@@ -322,6 +340,7 @@ struct ConnectionView: View {
 
     @MainActor
     private func uploadPhoto(_ item: PhotosPickerItem) async {
+        let threadId = model.selectedThreadID
         defer {
             model.selectedPhotoItem = nil
         }
@@ -333,6 +352,9 @@ struct ConnectionView: View {
                 return
             }
             let images = try await service().uploadImageData(data, fileName: "ios-photo-\(UUID().uuidString).png")
+            guard model.selectedThreadID == threadId else {
+                return
+            }
             model.localImagePaths.append(contentsOf: images.map(\.path))
         }
     }
@@ -351,8 +373,11 @@ struct ConnectionView: View {
     @MainActor
     private func pollSelectedThreadUntilIdle(_ threadId: String) async {
         for _ in 0..<45 {
+            guard !Task.isCancelled, model.selectedThreadID == threadId else {
+                return
+            }
             await loadSelectedThread(threadId, markSeen: false)
-            if model.state.selectedThread?.timeline.liveState == .idle {
+            if model.detail(for: threadId)?.timeline.liveState == .idle {
                 return
             }
             try? await Task.sleep(for: .seconds(2))
@@ -362,6 +387,9 @@ struct ConnectionView: View {
     @MainActor
     private func startSelectedStream(_ threadId: String) {
         guard launchMode == .live else {
+            return
+        }
+        guard model.selectedThreadID == threadId else {
             return
         }
         guard model.selectedStreamThreadID != threadId else {
@@ -492,7 +520,7 @@ struct ConnectionView: View {
 
     @MainActor
     private func toggleSelectedNotifications() async {
-        guard let detail = model.state.selectedThread else {
+        guard let selectedThreadID = model.selectedThreadID, let detail = model.detail(for: selectedThreadID) else {
             return
         }
         await runLiveAction {
@@ -503,7 +531,7 @@ struct ConnectionView: View {
 
     @MainActor
     private func loadOlderTimeline() async {
-        guard let threadId = model.selectedThreadID, let currentDetail = model.state.selectedThread else {
+        guard let threadId = model.selectedThreadID, let currentDetail = model.detail(for: threadId) else {
             return
         }
         guard let cursor = currentDetail.timeline.olderCursor else {
@@ -524,6 +552,9 @@ struct ConnectionView: View {
                     hasOlder: false
                 )
             )
+            guard model.selectedThreadID == threadId else {
+                return
+            }
             model.state = FixtureAppState(connection: model.state.connection, workspace: model.state.workspace, selectedThread: mergedDetail, approvals: model.state.approvals)
             model.statusMessage = nil
             return
@@ -542,6 +573,9 @@ struct ConnectionView: View {
                     hasOlder: page.timeline.hasOlder
                 )
             )
+            guard model.selectedThreadID == threadId else {
+                return
+            }
             model.state = FixtureAppState(connection: model.state.connection, workspace: model.state.workspace, selectedThread: mergedDetail, approvals: model.state.approvals)
         }
     }
