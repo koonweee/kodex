@@ -1276,6 +1276,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads/{threadId}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["update_thread_settings"];
+        trace?: never;
+    };
     "/v1/threads/{threadId}/subagents": {
         parameters: {
             query?: never;
@@ -2513,6 +2529,19 @@ export interface components {
             seenCompletedAgentTurnSeq: number;
             threadId: string;
             unreadCompletedAgentTurn: boolean;
+        };
+        ThreadSettingsUpdateRequest: {
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            effort?: string | null;
+            model?: string | null;
+            permissions?: string | null;
+            sandboxPolicy?: unknown;
+            serviceTier?: string | null;
+        };
+        ThreadSettingsUpdateResponse: {
+            rawPayload: unknown;
+            thread: components["schemas"]["ThreadSummary"];
         };
         /** @enum {string} */
         ThreadStatus: "notLoaded" | "idle" | "systemError" | "active";
@@ -4897,6 +4926,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadRead"];
+                };
+            };
+        };
+    };
+    update_thread_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadSettingsUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadSettingsUpdateResponse"];
                 };
             };
         };

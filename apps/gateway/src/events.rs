@@ -34,7 +34,9 @@ use crate::{
     },
     events_synthetic::{synthetic_event, thread_view_refresh_required_event},
     queue,
-    routes::threads::{ThreadReadStateUpdate, THREAD_READ_UPDATED_EVENT},
+    routes::threads::{
+        apply_thread_summary_state, ThreadReadStateUpdate, THREAD_READ_UPDATED_EVENT,
+    },
     schema::is_supported_approval_method,
     skills,
     store::{EventEnvelope, NewApproval, NewEvent, ThreadRuntimeState},
@@ -131,6 +133,12 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             }
             if let Some(event) =
                 normalized_account_event(state, &method, &params, &metadata).await?
+            {
+                let _ = state.events.send(event);
+                emitted = true;
+            }
+            if let Some(event) =
+                normalized_thread_settings_event(state, &method, &params, &metadata).await?
             {
                 let _ = state.events.send(event);
                 emitted = true;
@@ -1013,6 +1021,43 @@ async fn normalized_account_event(
             kind: ACCOUNT_RATE_LIMITS_UPDATED_EVENT.to_string(),
             codex_method: Some(method.to_string()),
             payload: params.clone(),
+        })
+        .await
+        .map(Some)
+}
+
+async fn normalized_thread_settings_event(
+    state: &AppState,
+    method: &str,
+    _params: &Value,
+    metadata: &EventMetadata,
+) -> ApiResult<Option<EventEnvelope>> {
+    if !method.eq_ignore_ascii_case("thread/settings/updated") {
+        return Ok(None);
+    }
+    let Some(thread_id) = metadata.thread_id.clone() else {
+        return Ok(None);
+    };
+    let mut thread = app_server_api::client(&state.app_server)
+        .thread_read_summary(thread_id)
+        .await?;
+    apply_thread_summary_state(state, std::slice::from_mut(&mut thread)).await?;
+    let payload = TimelineThreadMetadataPayload {
+        source: TimelineUpdateSource::GatewayStream,
+        thread_id: thread.id.clone(),
+        thread: Some(thread),
+        git_info: None,
+    };
+    state
+        .store
+        .append_event(NewEvent {
+            project_id: metadata.project_id.clone(),
+            thread_id: Some(payload.thread_id.clone()),
+            turn_id: None,
+            item_id: None,
+            kind: "timeline.thread_metadata".to_string(),
+            codex_method: Some(method.to_string()),
+            payload: serde_json::to_value(payload)?,
         })
         .await
         .map(Some)

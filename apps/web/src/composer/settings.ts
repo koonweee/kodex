@@ -4,6 +4,7 @@ import type {
   CreateThreadOptions,
   EventEnvelope,
   ModelSummary,
+  ThreadSettingsUpdateRequest,
   ThreadSummary,
   TurnStartOptions,
 } from "../api/client";
@@ -118,6 +119,35 @@ export function composerTurnOptions(settings: ComposerSettings): TurnStartOption
     options.sandboxPolicy = permissions.turnSandboxPolicy;
   }
   return options;
+}
+
+export function composerThreadSettingsPatch(
+  previousSettings: ComposerSettings,
+  nextSettings: ComposerSettings,
+): ThreadSettingsUpdateRequest {
+  const patch: ThreadSettingsUpdateRequest = {};
+  if (previousSettings.model !== nextSettings.model) {
+    patch.model = nextSettings.model ?? null;
+  }
+  if (previousSettings.effort !== nextSettings.effort) {
+    patch.effort = nextSettings.effort ?? null;
+  }
+  if (previousSettings.fast !== nextSettings.fast) {
+    patch.serviceTier = nextSettings.fast ? "fast" : null;
+  }
+  if (previousSettings.permissionPreset !== nextSettings.permissionPreset) {
+    const permissions = permissionSettings(nextSettings.permissionPreset);
+    if (permissions) {
+      patch.approvalPolicy = permissions.approvalPolicy;
+      patch.approvalsReviewer = permissions.approvalsReviewer;
+      patch.sandboxPolicy = permissions.turnSandboxPolicy;
+    } else {
+      patch.approvalPolicy = null;
+      patch.approvalsReviewer = null;
+      patch.sandboxPolicy = null;
+    }
+  }
+  return patch;
 }
 
 export function contextUsageFromEvent(event: EventEnvelope): ContextUsage | null {

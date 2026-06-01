@@ -7,6 +7,7 @@ public enum GatewayLiveEvent: Equatable, Sendable {
     case threadPinUpdated(threadId: String)
     case threadNotificationsUpdated(threadId: String)
     case threadUpserted(threadId: String)
+    case threadMetadataUpdated(threadId: String)
     case queuedInputUpdated(threadId: String)
     case approvalUpdated(threadId: String?)
     case unknown(kind: String)
@@ -20,6 +21,7 @@ public enum GatewayLiveEvent: Equatable, Sendable {
              .threadPinUpdated(let threadId),
              .threadNotificationsUpdated(let threadId),
              .threadUpserted(let threadId),
+             .threadMetadataUpdated(let threadId),
              .queuedInputUpdated(let threadId):
             return threadId
         case .approvalUpdated(let threadId):
@@ -112,6 +114,8 @@ public struct GatewayLiveEventDecoder: Sendable {
             return .threadNotificationsUpdated(threadId: envelope.payload.threadId ?? "")
         case "thread.upserted":
             return .threadUpserted(threadId: envelope.payload.threadId ?? envelope.payload.thread?.id ?? "")
+        case "timeline.thread_metadata":
+            return .threadMetadataUpdated(threadId: envelope.payload.threadId ?? envelope.payload.thread?.id ?? "")
         case "turn_queue.item_upsert", "turn_queue.item_deleted", "queued_input.created", "queued_input.updated", "queued_input.deleted":
             return .queuedInputUpdated(threadId: envelope.payload.threadId ?? "")
         case "approval.created", "approval.updated", "approval.resolved":

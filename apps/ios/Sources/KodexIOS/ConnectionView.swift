@@ -250,7 +250,10 @@ struct ConnectionView: View {
             model.state = FixtureAppState(connection: model.state.connection, workspace: model.state.workspace, selectedThread: detail, approvals: approvals)
             model.queuedInputs = queue
             model.skills = loadedSkills ?? []
-            if let loadedSettings {
+            if let threadSettings = detail.thread.composerSettings {
+                model.composerSettings = threadSettings
+                model.composerPermissionsPreset = detail.thread.permissionsPreset
+            } else if let loadedSettings {
                 model.composerSettings = loadedSettings.settings
                 model.composerPermissionsPreset = loadedSettings.permissionsPreset
             }
@@ -341,7 +344,26 @@ struct ConnectionView: View {
             return
         }
         await runLiveAction {
-            try await service().persistComposerSettings(settings)
+            if let threadId = model.selectedThreadID {
+                let previousSettings = model.detail(for: threadId)?.thread.composerSettings
+                let thread = try await service().updateThreadSettings(
+                    threadId: threadId,
+                    settings: settings,
+                    previousSettings: previousSettings
+                )
+                if model.selectedThreadID == threadId, let detail = model.detail(for: threadId) {
+                    model.state = FixtureAppState(
+                        connection: model.state.connection,
+                        workspace: model.state.workspace,
+                        selectedThread: ThreadDetail(thread: thread, timeline: detail.timeline),
+                        approvals: model.state.approvals
+                    )
+                    model.composerSettings = thread.composerSettings ?? settings
+                    model.composerPermissionsPreset = thread.permissionsPreset
+                }
+            } else {
+                try await service().persistComposerSettings(settings)
+            }
         }
     }
 
@@ -530,6 +552,12 @@ struct ConnectionView: View {
             }
         case .threadReadUpdated, .threadPinUpdated, .threadNotificationsUpdated, .threadUpserted:
             await refreshWorkspacePreservingSelection()
+        case .threadMetadataUpdated(let threadId):
+            await refreshWorkspacePreservingSelection()
+            if threadId == selectedThreadId {
+                cancelSelectedPatchFlush()
+                await loadSelectedThread(threadId, markSeen: false)
+            }
         case .unknown:
             break
         }

@@ -166,8 +166,10 @@ public struct WorkspaceThread: Identifiable, Codable, Equatable, Sendable {
     public let unread: Bool
     public let pinned: Bool
     public let notificationsEnabled: Bool
+    public let composerSettings: ComposerRunSettings?
+    public let permissionsPreset: String?
 
-    public init(id: String, title: String, cwd: String, status: ThreadStatus = .idle, unread: Bool = false, pinned: Bool = false, notificationsEnabled: Bool = true) {
+    public init(id: String, title: String, cwd: String, status: ThreadStatus = .idle, unread: Bool = false, pinned: Bool = false, notificationsEnabled: Bool = true, composerSettings: ComposerRunSettings? = nil, permissionsPreset: String? = nil) {
         self.id = id
         self.title = title
         self.cwd = cwd
@@ -175,6 +177,8 @@ public struct WorkspaceThread: Identifiable, Codable, Equatable, Sendable {
         self.unread = unread
         self.pinned = pinned
         self.notificationsEnabled = notificationsEnabled
+        self.composerSettings = composerSettings
+        self.permissionsPreset = permissionsPreset
     }
 
     public func replacing(status: ThreadStatus) -> WorkspaceThread {
@@ -185,7 +189,9 @@ public struct WorkspaceThread: Identifiable, Codable, Equatable, Sendable {
             status: status,
             unread: unread,
             pinned: pinned,
-            notificationsEnabled: notificationsEnabled
+            notificationsEnabled: notificationsEnabled,
+            composerSettings: composerSettings,
+            permissionsPreset: permissionsPreset
         )
     }
 

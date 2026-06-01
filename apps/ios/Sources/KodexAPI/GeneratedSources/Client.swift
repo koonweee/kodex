@@ -5887,6 +5887,75 @@ public struct Client: APIProtocol {
             }
         )
     }
+    /// - Remark: HTTP `PATCH /v1/threads/{threadId}/settings`.
+    /// - Remark: Generated from `#/paths//v1/threads/{threadId}/settings/patch(update_thread_settings)`.
+    public func update_thread_settings(_ input: Operations.update_thread_settings.Input) async throws -> Operations.update_thread_settings.Output {
+        try await client.send(
+            input: input,
+            forOperation: Operations.update_thread_settings.id,
+            serializer: { input in
+                let path = try converter.renderedPath(
+                    template: "/v1/threads/{}/settings",
+                    parameters: [
+                        input.path.threadId
+                    ]
+                )
+                var request: HTTPTypes.HTTPRequest = .init(
+                    soar_path: path,
+                    method: .patch
+                )
+                suppressMutabilityWarning(&request)
+                converter.setAcceptHeader(
+                    in: &request.headerFields,
+                    contentTypes: input.headers.accept
+                )
+                let body: OpenAPIRuntime.HTTPBody?
+                switch input.body {
+                case let .json(value):
+                    body = try converter.setRequiredRequestBodyAsJSON(
+                        value,
+                        headerFields: &request.headerFields,
+                        contentType: "application/json; charset=utf-8"
+                    )
+                }
+                return (request, body)
+            },
+            deserializer: { response, responseBody in
+                switch response.status.code {
+                case 200:
+                    let contentType = converter.extractContentTypeIfPresent(in: response.headerFields)
+                    let body: Operations.update_thread_settings.Output.Ok.Body
+                    let chosenContentType = try converter.bestContentType(
+                        received: contentType,
+                        options: [
+                            "application/json"
+                        ]
+                    )
+                    switch chosenContentType {
+                    case "application/json":
+                        body = try await converter.getResponseBodyAsJSON(
+                            Components.Schemas.ThreadSettingsUpdateResponse.self,
+                            from: responseBody,
+                            transforming: { value in
+                                .json(value)
+                            }
+                        )
+                    default:
+                        preconditionFailure("bestContentType chose an invalid content type.")
+                    }
+                    return .ok(.init(body: body))
+                default:
+                    return .undocumented(
+                        statusCode: response.status.code,
+                        .init(
+                            headerFields: response.headerFields,
+                            body: responseBody
+                        )
+                    )
+                }
+            }
+        )
+    }
     /// - Remark: HTTP `GET /v1/threads/{threadId}/subagents`.
     /// - Remark: Generated from `#/paths//v1/threads/{threadId}/subagents/get(list_subagents)`.
     public func list_subagents(_ input: Operations.list_subagents.Input) async throws -> Operations.list_subagents.Output {

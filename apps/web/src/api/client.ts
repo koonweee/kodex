@@ -47,6 +47,8 @@ export type SkillMetadata = components["schemas"]["SkillMetadata"];
 export type SkillsCatalogResponse = components["schemas"]["SkillsCatalogResponse"];
 export type ThreadRead = components["schemas"]["ThreadRead"];
 export type ThreadReadStateUpdate = components["schemas"]["ThreadReadStateUpdate"];
+export type ThreadSettingsUpdateRequest = components["schemas"]["ThreadSettingsUpdateRequest"];
+export type ThreadSettingsUpdateResponse = components["schemas"]["ThreadSettingsUpdateResponse"];
 export type ThreadNotificationSettingsResponse = components["schemas"]["ThreadNotificationSettingsResponse"];
 export type ThreadAttachResponse = components["schemas"]["ThreadAttachResponse"];
 export type ThreadListResponse = components["schemas"]["ThreadListResponse"];
@@ -373,6 +375,18 @@ export async function setThreadNotificationsEnabled(
     api.PATCH("/v1/threads/{threadId}/notifications", {
       params: { path: { threadId } },
       body: { enabled },
+    }),
+  );
+}
+
+export async function updateThreadSettings(
+  threadId: string,
+  input: ThreadSettingsUpdateRequest,
+): Promise<ThreadSettingsUpdateResponse> {
+  return unwrap(
+    api.PATCH("/v1/threads/{threadId}/settings", {
+      params: { path: { threadId } },
+      body: input,
     }),
   );
 }

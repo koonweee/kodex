@@ -23,7 +23,8 @@ use crate::{
         self, enrich_timeline_skill_mentions, timeline_skill_mentions_from_text,
         visible_text_from_thread_item, GitInfo, RawAppServerResponse, ThreadCommandResponse,
         ThreadDetailResponse, ThreadItemSnapshot, ThreadListResponse, ThreadLiveState,
-        ThreadStatus, ThreadSummary, ThreadViewResponse, TimelineSkillMention,
+        ThreadSettingsUpdateRequest, ThreadStatus, ThreadSummary, ThreadViewResponse,
+        TimelineSkillMention, TimelineThreadMetadataPayload, TimelineUpdateSource,
     },
     error::{ApiError, ApiResult},
     store::{
@@ -54,6 +55,10 @@ pub fn router() -> Router<AppState> {
         )
         .route("/v1/threads/{thread_id}", get(get_thread))
         .route("/v1/threads/{thread_id}/name", patch(rename_thread))
+        .route(
+            "/v1/threads/{thread_id}/settings",
+            patch(update_thread_settings),
+        )
         .route(
             "/v1/threads/{thread_id}/notifications",
             patch(update_thread_notifications),
@@ -318,6 +323,13 @@ pub struct ThreadPinResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadNotificationSettingsUpdateRequest {
     pub enabled: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadSettingsUpdateResponse {
+    pub thread: ThreadSummary,
+    pub raw_payload: Value,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -1110,6 +1122,26 @@ pub async fn rename_thread(
     Ok(Json(RenameThreadResponse { thread }))
 }
 
+#[utoipa::path(patch, path = "/v1/threads/{threadId}/settings", request_body = ThreadSettingsUpdateRequest, responses((status = 200, body = ThreadSettingsUpdateResponse)))]
+pub async fn update_thread_settings(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+    Json(request): Json<ThreadSettingsUpdateRequest>,
+) -> ApiResult<Json<ThreadSettingsUpdateResponse>> {
+    request.validate()?;
+    let client = app_server_api::client(&state.app_server);
+    let raw_response = client
+        .thread_update_settings(thread_id.clone(), request)
+        .await?;
+    let mut thread = client.thread_read_summary(thread_id).await?;
+    apply_thread_summary_state(&state, std::slice::from_mut(&mut thread)).await?;
+    broadcast_thread_metadata_update(&state, &thread).await?;
+    Ok(Json(ThreadSettingsUpdateResponse {
+        thread,
+        raw_payload: raw_response.payload,
+    }))
+}
+
 #[utoipa::path(patch, path = "/v1/threads/{threadId}/notifications", request_body = ThreadNotificationSettingsUpdateRequest, responses((status = 200, body = ThreadNotificationSettingsResponse)))]
 pub async fn update_thread_notifications(
     State(state): State<AppState>,
@@ -1510,7 +1542,7 @@ async fn apply_thread_item_skill_mentions(
     Ok(())
 }
 
-async fn apply_thread_summary_state(
+pub(crate) async fn apply_thread_summary_state(
     state: &AppState,
     threads: &mut [ThreadSummary],
 ) -> ApiResult<()> {
@@ -1764,6 +1796,32 @@ pub(crate) async fn broadcast_thread_upserted(
                 "scope": scope.as_str(),
                 "projectId": project_id,
             }),
+        })
+        .await?;
+    let _ = state.events.send(event.clone());
+    Ok(event)
+}
+
+async fn broadcast_thread_metadata_update(
+    state: &AppState,
+    thread: &ThreadSummary,
+) -> ApiResult<EventEnvelope> {
+    let payload = TimelineThreadMetadataPayload {
+        source: TimelineUpdateSource::GatewayStream,
+        thread_id: thread.id.clone(),
+        thread: Some(thread.clone()),
+        git_info: None,
+    };
+    let event = state
+        .store
+        .append_event(NewEvent {
+            project_id: None,
+            thread_id: Some(thread.id.clone()),
+            turn_id: None,
+            item_id: None,
+            kind: "timeline.thread_metadata".to_string(),
+            codex_method: Some("thread/settings/updated".to_string()),
+            payload: serde_json::to_value(payload)?,
         })
         .await?;
     let _ = state.events.send(event.clone());

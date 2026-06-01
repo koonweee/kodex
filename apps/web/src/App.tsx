@@ -533,6 +533,7 @@ function KodexShell({
   } = useComposerSettingsState({
     draftChatThreadSelected,
     onError: reportError,
+    onThreadUpdated: replaceThread,
     selectedProjectId,
     selectedThread,
   });

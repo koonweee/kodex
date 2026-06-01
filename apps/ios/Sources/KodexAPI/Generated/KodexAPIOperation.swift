@@ -100,6 +100,7 @@ public enum KodexAPIOperation: String, CaseIterable, Sendable {
     case updatePreviewService = "update_preview_service"
     case updateSelfControlAutomation = "update_self_control_automation"
     case updateThreadNotifications = "update_thread_notifications"
+    case updateThreadSettings = "update_thread_settings"
     case uploadImages = "upload_images"
     case upsertApnsDevice = "upsert_apns_device"
     case upsertPushSubscription = "upsert_push_subscription"

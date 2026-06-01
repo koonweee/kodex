@@ -255,6 +255,62 @@ import KodexAPI
     #expect(requests.last?.2 == .object(["effort": .string("high"), "model": .string("gpt-5.4-mini"), "serviceTier": .string("priority")]))
 }
 
+@Test func liveGatewayServiceUpdatesSelectedThreadSettings() async throws {
+    let seen = RequestRecorder()
+    let service = LiveGatewayService(client: stubClient { request in
+        let payload = request.body.flatMap { try? JSONDecoder().decode(AnySendable.self, from: $0) }
+        await seen.append((request.url.path, request.method, payload))
+        return jsonResponse("""
+        {
+          "thread": {
+            "id":"thread-1",
+            "name":"Build iOS",
+            "cwd":"/repo",
+            "status":"idle",
+            "createdAt":1,
+            "updatedAt":2,
+            "seenCompletedAgentTurnSeq":0,
+            "unreadCompletedAgentTurn":false,
+            "notificationsEnabled":true,
+            "model":"gpt-5.4-mini",
+            "reasoningEffort":"high",
+            "serviceTier":null,
+            "approvalPolicy":"on-request",
+            "sandbox":{"type":"workspaceWrite","networkAccess":false,"writableRoots":[]}
+          },
+          "rawPayload": {}
+        }
+        """)
+    })
+
+    let thread = try await service.updateThreadSettings(
+        threadId: "thread-1",
+        settings: ComposerRunSettings(
+            model: nil,
+            effort: "high",
+            serviceTier: "priority",
+            approvalPolicy: "on-request",
+            sandboxPolicy: .object(["type": .string("workspaceWrite"), "networkAccess": .bool(false), "writableRoots": .array([])])
+        ),
+        previousSettings: ComposerRunSettings(
+            model: "gpt-5.4",
+            effort: "high",
+            serviceTier: "priority",
+            sandboxPolicy: .object(["type": .string("workspaceWrite"), "networkAccess": .bool(false), "writableRoots": .array([])])
+        )
+    )
+    let requests = await seen.values
+
+    #expect(thread.composerSettings?.model == "gpt-5.4-mini")
+    #expect(thread.composerSettings?.effort == "high")
+    #expect(requests.map(\.0) == ["/v1/threads/thread-1/settings"])
+    #expect(requests.map(\.1) == [.patch])
+    #expect(requests.first?.2 == .object([
+        "approvalPolicy": .string("on-request"),
+        "model": .null
+    ]))
+}
+
 @Test func liveGatewayServiceMapsApprovalPayloadContextAndRisk() async throws {
     let service = LiveGatewayService(client: stubClient { request in
         #expect(request.url.path == "/v1/approvals")

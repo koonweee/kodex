@@ -366,6 +366,18 @@ impl CodexClient {
         .await
     }
 
+    pub async fn thread_update_settings(
+        &self,
+        thread_id: String,
+        request: ThreadSettingsUpdateRequest,
+    ) -> ApiResult<RawAppServerResponse> {
+        self.raw_request(
+            "thread/settings/update",
+            request.into_app_server_payload(thread_id),
+        )
+        .await
+    }
+
     pub async fn turn_start(
         &self,
         thread_id: String,
@@ -795,6 +807,98 @@ impl TurnStartOptions {
         if let Some(sandbox_policy) = self.sandbox_policy {
             payload["sandboxPolicy"] = sandbox_policy;
         }
+    }
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadSettingsUpdateRequest {
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_string_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub model: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_string_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub effort: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_string_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub service_tier: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_string_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub approval_policy: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_string_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub approvals_reviewer: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_string_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub permissions: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_value_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub sandbox_policy: Option<Value>,
+}
+
+impl ThreadSettingsUpdateRequest {
+    pub fn validate(&self) -> ApiResult<()> {
+        let selects_permissions = self
+            .permissions
+            .as_ref()
+            .is_some_and(|permissions| permissions.is_some());
+        let selects_sandbox = self
+            .sandbox_policy
+            .as_ref()
+            .is_some_and(|sandbox_policy| !sandbox_policy.is_null());
+        if selects_permissions && selects_sandbox {
+            return Err(ApiError::BadRequest(
+                "permissions and sandboxPolicy cannot be combined".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn into_app_server_payload(self, thread_id: String) -> Value {
+        let mut payload = json!({ "threadId": thread_id });
+        if let Some(model) = self.model {
+            payload["model"] = option_string_value(model);
+        }
+        if let Some(effort) = self.effort {
+            payload["effort"] = option_string_value(effort);
+        }
+        if let Some(service_tier) = self.service_tier {
+            payload["serviceTier"] = option_string_value(service_tier);
+        }
+        if let Some(approval_policy) = self.approval_policy {
+            payload["approvalPolicy"] = option_string_value(approval_policy);
+        }
+        if let Some(approvals_reviewer) = self.approvals_reviewer {
+            payload["approvalsReviewer"] = option_string_value(approvals_reviewer);
+        }
+        if let Some(permissions) = self.permissions {
+            payload["permissions"] = option_string_value(permissions);
+        }
+        if let Some(sandbox_policy) = self.sandbox_policy {
+            payload["sandboxPolicy"] = sandbox_policy;
+        }
+        payload
     }
 }
 
@@ -3916,6 +4020,13 @@ where
     D: Deserializer<'de>,
 {
     Option::<String>::deserialize(deserializer).map(Some)
+}
+
+fn deserialize_optional_value_update<'de, D>(deserializer: D) -> Result<Option<Value>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Value::deserialize(deserializer).map(Some)
 }
 
 fn composer_permissions_preset(payload: &Value) -> Option<ComposerPermissionsPreset> {

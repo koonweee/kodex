@@ -327,6 +327,9 @@ public protocol APIProtocol: Sendable {
     /// - Remark: HTTP `POST /v1/threads/{threadId}/seen`.
     /// - Remark: Generated from `#/paths//v1/threads/{threadId}/seen/post(mark_thread_seen)`.
     func mark_thread_seen(_ input: Operations.mark_thread_seen.Input) async throws -> Operations.mark_thread_seen.Output
+    /// - Remark: HTTP `PATCH /v1/threads/{threadId}/settings`.
+    /// - Remark: Generated from `#/paths//v1/threads/{threadId}/settings/patch(update_thread_settings)`.
+    func update_thread_settings(_ input: Operations.update_thread_settings.Input) async throws -> Operations.update_thread_settings.Output
     /// - Remark: HTTP `GET /v1/threads/{threadId}/subagents`.
     /// - Remark: Generated from `#/paths//v1/threads/{threadId}/subagents/get(list_subagents)`.
     func list_subagents(_ input: Operations.list_subagents.Input) async throws -> Operations.list_subagents.Output
@@ -1305,6 +1308,19 @@ extension APIProtocol {
             body: body
         ))
     }
+    /// - Remark: HTTP `PATCH /v1/threads/{threadId}/settings`.
+    /// - Remark: Generated from `#/paths//v1/threads/{threadId}/settings/patch(update_thread_settings)`.
+    public func update_thread_settings(
+        path: Operations.update_thread_settings.Input.Path,
+        headers: Operations.update_thread_settings.Input.Headers = .init(),
+        body: Operations.update_thread_settings.Input.Body
+    ) async throws -> Operations.update_thread_settings.Output {
+        try await update_thread_settings(Operations.update_thread_settings.Input(
+            path: path,
+            headers: headers,
+            body: body
+        ))
+    }
     /// - Remark: HTTP `GET /v1/threads/{threadId}/subagents`.
     /// - Remark: Generated from `#/paths//v1/threads/{threadId}/subagents/get(list_subagents)`.
     public func list_subagents(
@@ -1650,25 +1666,43 @@ public enum Components {
         }
         /// - Remark: Generated from `#/components/schemas/AppServerCapabilities`.
         public struct AppServerCapabilities: Codable, Hashable, Sendable {
+            /// - Remark: Generated from `#/components/schemas/AppServerCapabilities/detectedVersion`.
+            public var detectedVersion: Swift.String?
+            /// - Remark: Generated from `#/components/schemas/AppServerCapabilities/detectedVersionMatchesSchema`.
+            public var detectedVersionMatchesSchema: Swift.Bool?
             /// - Remark: Generated from `#/components/schemas/AppServerCapabilities/experimentalApi`.
             public var experimentalApi: Swift.Bool
             /// - Remark: Generated from `#/components/schemas/AppServerCapabilities/ready`.
             public var ready: Swift.Bool
+            /// - Remark: Generated from `#/components/schemas/AppServerCapabilities/schemaVersion`.
+            public var schemaVersion: Swift.String
             /// Creates a new `AppServerCapabilities`.
             ///
             /// - Parameters:
+            ///   - detectedVersion:
+            ///   - detectedVersionMatchesSchema:
             ///   - experimentalApi:
             ///   - ready:
+            ///   - schemaVersion:
             public init(
+                detectedVersion: Swift.String? = nil,
+                detectedVersionMatchesSchema: Swift.Bool? = nil,
                 experimentalApi: Swift.Bool,
-                ready: Swift.Bool
+                ready: Swift.Bool,
+                schemaVersion: Swift.String
             ) {
+                self.detectedVersion = detectedVersion
+                self.detectedVersionMatchesSchema = detectedVersionMatchesSchema
                 self.experimentalApi = experimentalApi
                 self.ready = ready
+                self.schemaVersion = schemaVersion
             }
             public enum CodingKeys: String, CodingKey {
+                case detectedVersion
+                case detectedVersionMatchesSchema
                 case experimentalApi
                 case ready
+                case schemaVersion
             }
         }
         /// - Remark: Generated from `#/components/schemas/AppSummary`.
@@ -7315,6 +7349,82 @@ public enum Components {
                 case seenCompletedAgentTurnSeq
                 case threadId
                 case unreadCompletedAgentTurn
+            }
+        }
+        /// - Remark: Generated from `#/components/schemas/ThreadSettingsUpdateRequest`.
+        public struct ThreadSettingsUpdateRequest: Codable, Hashable, Sendable {
+            /// - Remark: Generated from `#/components/schemas/ThreadSettingsUpdateRequest/approvalPolicy`.
+            public var approvalPolicy: Swift.String?
+            /// - Remark: Generated from `#/components/schemas/ThreadSettingsUpdateRequest/approvalsReviewer`.
+            public var approvalsReviewer: Swift.String?
+            /// - Remark: Generated from `#/components/schemas/ThreadSettingsUpdateRequest/effort`.
+            public var effort: Swift.String?
+            /// - Remark: Generated from `#/components/schemas/ThreadSettingsUpdateRequest/model`.
+            public var model: Swift.String?
+            /// - Remark: Generated from `#/components/schemas/ThreadSettingsUpdateRequest/permissions`.
+            public var permissions: Swift.String?
+            /// - Remark: Generated from `#/components/schemas/ThreadSettingsUpdateRequest/sandboxPolicy`.
+            public var sandboxPolicy: OpenAPIRuntime.OpenAPIValueContainer?
+            /// - Remark: Generated from `#/components/schemas/ThreadSettingsUpdateRequest/serviceTier`.
+            public var serviceTier: Swift.String?
+            /// Creates a new `ThreadSettingsUpdateRequest`.
+            ///
+            /// - Parameters:
+            ///   - approvalPolicy:
+            ///   - approvalsReviewer:
+            ///   - effort:
+            ///   - model:
+            ///   - permissions:
+            ///   - sandboxPolicy:
+            ///   - serviceTier:
+            public init(
+                approvalPolicy: Swift.String? = nil,
+                approvalsReviewer: Swift.String? = nil,
+                effort: Swift.String? = nil,
+                model: Swift.String? = nil,
+                permissions: Swift.String? = nil,
+                sandboxPolicy: OpenAPIRuntime.OpenAPIValueContainer? = nil,
+                serviceTier: Swift.String? = nil
+            ) {
+                self.approvalPolicy = approvalPolicy
+                self.approvalsReviewer = approvalsReviewer
+                self.effort = effort
+                self.model = model
+                self.permissions = permissions
+                self.sandboxPolicy = sandboxPolicy
+                self.serviceTier = serviceTier
+            }
+            public enum CodingKeys: String, CodingKey {
+                case approvalPolicy
+                case approvalsReviewer
+                case effort
+                case model
+                case permissions
+                case sandboxPolicy
+                case serviceTier
+            }
+        }
+        /// - Remark: Generated from `#/components/schemas/ThreadSettingsUpdateResponse`.
+        public struct ThreadSettingsUpdateResponse: Codable, Hashable, Sendable {
+            /// - Remark: Generated from `#/components/schemas/ThreadSettingsUpdateResponse/rawPayload`.
+            public var rawPayload: OpenAPIRuntime.OpenAPIValueContainer
+            /// - Remark: Generated from `#/components/schemas/ThreadSettingsUpdateResponse/thread`.
+            public var thread: Components.Schemas.ThreadSummary
+            /// Creates a new `ThreadSettingsUpdateResponse`.
+            ///
+            /// - Parameters:
+            ///   - rawPayload:
+            ///   - thread:
+            public init(
+                rawPayload: OpenAPIRuntime.OpenAPIValueContainer,
+                thread: Components.Schemas.ThreadSummary
+            ) {
+                self.rawPayload = rawPayload
+                self.thread = thread
+            }
+            public enum CodingKeys: String, CodingKey {
+                case rawPayload
+                case thread
             }
         }
         /// - Remark: Generated from `#/components/schemas/ThreadStatus`.
@@ -20478,6 +20588,141 @@ public enum Operations {
             /// - Throws: An error if `self` is not `.ok`.
             /// - SeeAlso: `.ok`.
             public var ok: Operations.mark_thread_seen.Output.Ok {
+                get throws {
+                    switch self {
+                    case let .ok(response):
+                        return response
+                    default:
+                        try throwUnexpectedResponseStatus(
+                            expectedStatus: "ok",
+                            response: self
+                        )
+                    }
+                }
+            }
+            /// Undocumented response.
+            ///
+            /// A response with a code that is not documented in the OpenAPI document.
+            case undocumented(statusCode: Swift.Int, OpenAPIRuntime.UndocumentedPayload)
+        }
+        @frozen public enum AcceptableContentType: AcceptableProtocol {
+            case json
+            case other(Swift.String)
+            public init?(rawValue: Swift.String) {
+                switch rawValue.lowercased() {
+                case "application/json":
+                    self = .json
+                default:
+                    self = .other(rawValue)
+                }
+            }
+            public var rawValue: Swift.String {
+                switch self {
+                case let .other(string):
+                    return string
+                case .json:
+                    return "application/json"
+                }
+            }
+            public static var allCases: [Self] {
+                [
+                    .json
+                ]
+            }
+        }
+    }
+    /// - Remark: HTTP `PATCH /v1/threads/{threadId}/settings`.
+    /// - Remark: Generated from `#/paths//v1/threads/{threadId}/settings/patch(update_thread_settings)`.
+    public enum update_thread_settings {
+        public static let id: Swift.String = "update_thread_settings"
+        public struct Input: Sendable, Hashable {
+            /// - Remark: Generated from `#/paths/v1/threads/{threadId}/settings/PATCH/path`.
+            public struct Path: Sendable, Hashable {
+                /// - Remark: Generated from `#/paths/v1/threads/{threadId}/settings/PATCH/path/threadId`.
+                public var threadId: Swift.String
+                /// Creates a new `Path`.
+                ///
+                /// - Parameters:
+                ///   - threadId:
+                public init(threadId: Swift.String) {
+                    self.threadId = threadId
+                }
+            }
+            public var path: Operations.update_thread_settings.Input.Path
+            /// - Remark: Generated from `#/paths/v1/threads/{threadId}/settings/PATCH/header`.
+            public struct Headers: Sendable, Hashable {
+                public var accept: [OpenAPIRuntime.AcceptHeaderContentType<Operations.update_thread_settings.AcceptableContentType>]
+                /// Creates a new `Headers`.
+                ///
+                /// - Parameters:
+                ///   - accept:
+                public init(accept: [OpenAPIRuntime.AcceptHeaderContentType<Operations.update_thread_settings.AcceptableContentType>] = .defaultValues()) {
+                    self.accept = accept
+                }
+            }
+            public var headers: Operations.update_thread_settings.Input.Headers
+            /// - Remark: Generated from `#/paths/v1/threads/{threadId}/settings/PATCH/requestBody`.
+            @frozen public enum Body: Sendable, Hashable {
+                /// - Remark: Generated from `#/paths/v1/threads/{threadId}/settings/PATCH/requestBody/content/application\/json`.
+                case json(Components.Schemas.ThreadSettingsUpdateRequest)
+            }
+            public var body: Operations.update_thread_settings.Input.Body
+            /// Creates a new `Input`.
+            ///
+            /// - Parameters:
+            ///   - path:
+            ///   - headers:
+            ///   - body:
+            public init(
+                path: Operations.update_thread_settings.Input.Path,
+                headers: Operations.update_thread_settings.Input.Headers = .init(),
+                body: Operations.update_thread_settings.Input.Body
+            ) {
+                self.path = path
+                self.headers = headers
+                self.body = body
+            }
+        }
+        @frozen public enum Output: Sendable, Hashable {
+            public struct Ok: Sendable, Hashable {
+                /// - Remark: Generated from `#/paths/v1/threads/{threadId}/settings/PATCH/responses/200/content`.
+                @frozen public enum Body: Sendable, Hashable {
+                    /// - Remark: Generated from `#/paths/v1/threads/{threadId}/settings/PATCH/responses/200/content/application\/json`.
+                    case json(Components.Schemas.ThreadSettingsUpdateResponse)
+                    /// The associated value of the enum case if `self` is `.json`.
+                    ///
+                    /// - Throws: An error if `self` is not `.json`.
+                    /// - SeeAlso: `.json`.
+                    public var json: Components.Schemas.ThreadSettingsUpdateResponse {
+                        get throws {
+                            switch self {
+                            case let .json(body):
+                                return body
+                            }
+                        }
+                    }
+                }
+                /// Received HTTP response body
+                public var body: Operations.update_thread_settings.Output.Ok.Body
+                /// Creates a new `Ok`.
+                ///
+                /// - Parameters:
+                ///   - body: Received HTTP response body
+                public init(body: Operations.update_thread_settings.Output.Ok.Body) {
+                    self.body = body
+                }
+            }
+            ///
+            ///
+            /// - Remark: Generated from `#/paths//v1/threads/{threadId}/settings/patch(update_thread_settings)/responses/200`.
+            ///
+            /// HTTP response code: `200 ok`.
+            case ok(Operations.update_thread_settings.Output.Ok)
+            /// The associated value of the enum case if `self` is `.ok`.
+            ///
+            /// - Throws: An error if `self` is not `.ok`.
+            /// - SeeAlso: `.ok`.
+            public var ok: Operations.update_thread_settings.Output.Ok {
                 get throws {
                     switch self {
                     case let .ok(response):

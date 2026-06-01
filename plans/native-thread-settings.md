@@ -2,7 +2,11 @@
 
 ## Status
 
-Proposed.
+Complete.
+
+Implemented in the native thread settings review loop. Gateway and web selected-thread setting changes now use `thread/settings/update`, native notifications refresh gateway-owned thread metadata, generated OpenAPI clients were regenerated, and the iOS client can update selected-thread settings through the same gateway route.
+
+Surviving gateway `thread_composer_settings` storage is intentionally fallback-scoped for draft thread creation, queued/automation submission data, and legacy fill-only overlays when app-server summaries omit structured settings.
 
 ## Context
 
@@ -10,7 +14,7 @@ Codex app-server 0.133+ added `thread/settings/update` and emits `thread/setting
 
 Contract sources are the checked-in generated schema under `apps/gateway/app-server-schema/<version>/json` after the bump and the upstream app-server README. Do not infer request shapes from the current Kodex wrappers.
 
-## Current State
+## Starting State
 
 - `apps/gateway/src/schema.rs` pins `APP_SERVER_SCHEMA_VERSION` to `0.130.0`, so the native method is not in the local generated schema yet.
 - `apps/gateway/src/routes/threads.rs` manually saves and overlays thread composer settings through `save_thread_creation_options`, `save_thread_turn_options`, and `overlay_stored_thread_composer_settings`.

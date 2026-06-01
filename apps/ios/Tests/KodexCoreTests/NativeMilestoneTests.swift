@@ -214,6 +214,7 @@ import Testing
     let pin = try decoder.decode(Data(#"{"kind":"thread.pin_updated","payload":{"threadId":"t1"}}"#.utf8))
     let notifications = try decoder.decode(Data(#"{"kind":"thread.notifications_updated","payload":{"threadId":"t1"}}"#.utf8))
     let upserted = try decoder.decode(Data(#"{"kind":"thread.upserted","payload":{"thread":{"id":"t1"}}}"#.utf8))
+    let metadata = try decoder.decode(Data(#"{"kind":"timeline.thread_metadata","payload":{"threadId":"t1","thread":{"id":"t1"}}}"#.utf8))
     let approval = try decoder.decode(Data(#"{"kind":"approval.updated","payload":{"threadId":"t1","approvalId":"a1"}}"#.utf8))
     let unknown = try decoder.decode(Data(#"{"kind":"future.event","payload":{}}"#.utf8))
 
@@ -222,6 +223,7 @@ import Testing
     #expect(pin == .threadPinUpdated(threadId: "t1"))
     #expect(notifications == .threadNotificationsUpdated(threadId: "t1"))
     #expect(upserted == .threadUpserted(threadId: "t1"))
+    #expect(metadata == .threadMetadataUpdated(threadId: "t1"))
     #expect(approval == .approvalUpdated(threadId: "t1"))
     #expect(unknown == .unknown(kind: "future.event"))
 }

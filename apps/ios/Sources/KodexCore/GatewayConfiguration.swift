@@ -79,6 +79,7 @@ public enum GatewayRoute: Equatable, Sendable {
     case threadPin(String)
     case threadName(String)
     case threadArchive(String)
+    case threadSettings(String)
     case threadNotifications(String)
     case nativeNotificationStatus
     case apnsDeviceRegister
@@ -138,6 +139,8 @@ public enum GatewayRoute: Equatable, Sendable {
             return "/v1/threads/\(threadId.percentEncodedPathSegment)/name"
         case .threadArchive(let threadId):
             return "/v1/threads/\(threadId.percentEncodedPathSegment)/archive"
+        case .threadSettings(let threadId):
+            return "/v1/threads/\(threadId.percentEncodedPathSegment)/settings"
         case .threadNotifications(let threadId):
             return "/v1/threads/\(threadId.percentEncodedPathSegment)/notifications"
         case .nativeNotificationStatus:

@@ -237,6 +237,16 @@ public struct LiveGatewayService: Sendable {
         try await requireSuccess(.composerSettings(projectId: nil), method: .patch, body: body)
     }
 
+    public func updateThreadSettings(
+        threadId: String,
+        settings: ComposerRunSettings,
+        previousSettings: ComposerRunSettings? = nil
+    ) async throws -> WorkspaceThread {
+        let body = try encode(Self.threadSettingsPayload(settings, previousSettings: previousSettings))
+        let response: ThreadSettingsUpdateResponseDTO = try await decode(.threadSettings(threadId), method: .patch, body: body)
+        return Self.workspaceThread(response.thread)
+    }
+
     public func loadThreadDetail(threadId: String) async throws -> ThreadDetail {
         if let generatedClient {
             do {
@@ -572,6 +582,37 @@ public struct LiveGatewayService: Sendable {
         )
     }
 
+    private static func threadSettingsPayload(
+        _ settings: ComposerRunSettings,
+        previousSettings: ComposerRunSettings?
+    ) -> AnySendable {
+        var payload: [String: AnySendable] = [:]
+
+        func addString(_ key: String, _ value: String?, previousValue: String?) {
+            if previousSettings != nil {
+                if value != previousValue {
+                    payload[key] = value.map(AnySendable.string) ?? .null
+                }
+            } else if let value {
+                payload[key] = .string(value)
+            }
+        }
+
+        addString("model", settings.model, previousValue: previousSettings?.model)
+        addString("effort", settings.effort, previousValue: previousSettings?.effort)
+        addString("serviceTier", settings.serviceTier, previousValue: previousSettings?.serviceTier)
+        addString("approvalPolicy", settings.approvalPolicy, previousValue: previousSettings?.approvalPolicy)
+        if let previousSettings {
+            if settings.sandboxPolicy != previousSettings.sandboxPolicy {
+                payload["sandboxPolicy"] = settings.sandboxPolicy ?? .null
+            }
+        } else if let sandboxPolicy = settings.sandboxPolicy {
+            payload["sandboxPolicy"] = sandboxPolicy
+        }
+
+        return .object(payload)
+    }
+
 
     private static func openAPIValue(_ value: AnySendable) throws -> OpenAPIValueContainer {
         try OpenAPIValueContainer(unvalidatedValue: value.openAPIValue)
@@ -595,7 +636,9 @@ public struct LiveGatewayService: Sendable {
             status: ThreadStatus(rawValue: dto.status) ?? .idle,
             unread: dto.unreadCompletedAgentTurn,
             pinned: pinnedOverride ?? (dto.pinnedAt != nil),
-            notificationsEnabled: dto.notificationsEnabled
+            notificationsEnabled: dto.notificationsEnabled,
+            composerSettings: dto.composerSettings,
+            permissionsPreset: nil
         )
     }
 
@@ -630,7 +673,15 @@ public struct LiveGatewayService: Sendable {
             status: ThreadStatus(rawValue: dto.status.rawValue) ?? .idle,
             unread: dto.unreadCompletedAgentTurn,
             pinned: pinnedOverride ?? (dto.pinnedAt != nil),
-            notificationsEnabled: dto.notificationsEnabled
+            notificationsEnabled: dto.notificationsEnabled,
+            composerSettings: ComposerRunSettings(
+                model: dto.model,
+                effort: dto.reasoningEffort,
+                serviceTier: dto.serviceTier,
+                approvalPolicy: dto.approvalPolicy,
+                sandboxPolicy: Self.anySendable(from: dto.sandbox)
+            ),
+            permissionsPreset: nil
         )
     }
 
@@ -642,7 +693,15 @@ public struct LiveGatewayService: Sendable {
             status: ThreadStatus(rawValue: dto.status.rawValue) ?? .idle,
             unread: dto.unreadCompletedAgentTurn,
             pinned: pinnedOverride ?? (dto.pinnedAt != nil),
-            notificationsEnabled: dto.notificationsEnabled
+            notificationsEnabled: dto.notificationsEnabled,
+            composerSettings: ComposerRunSettings(
+                model: dto.model,
+                effort: dto.reasoningEffort,
+                serviceTier: dto.serviceTier,
+                approvalPolicy: dto.approvalPolicy,
+                sandboxPolicy: Self.anySendable(from: dto.sandbox)
+            ),
+            permissionsPreset: nil
         )
     }
 
@@ -654,7 +713,15 @@ public struct LiveGatewayService: Sendable {
             status: ThreadStatus(rawValue: dto.status.rawValue) ?? .idle,
             unread: dto.unreadCompletedAgentTurn,
             pinned: dto.pinnedAt != nil,
-            notificationsEnabled: dto.notificationsEnabled
+            notificationsEnabled: dto.notificationsEnabled,
+            composerSettings: ComposerRunSettings(
+                model: dto.model,
+                effort: dto.reasoningEffort,
+                serviceTier: dto.serviceTier,
+                approvalPolicy: dto.approvalPolicy,
+                sandboxPolicy: Self.anySendable(from: dto.sandbox)
+            ),
+            permissionsPreset: nil
         )
     }
 
@@ -820,6 +887,13 @@ public struct LiveGatewayService: Sendable {
         }
         return try? JSONDecoder().decode(String.self, from: data)
     }
+
+    private static func anySendable(from value: OpenAPIValueContainer?) -> AnySendable? {
+        guard let value, let data = try? JSONEncoder().encode(value) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(AnySendable.self, from: data)
+    }
 }
 
 private struct AccountResponseDTO: Decodable {
@@ -893,6 +967,10 @@ private struct ThreadCommandResponseDTO: Decodable {
     let thread: ThreadSummaryDTO
 }
 
+private struct ThreadSettingsUpdateResponseDTO: Decodable {
+    let thread: ThreadSummaryDTO
+}
+
 private struct ThreadSummaryDTO: Decodable {
     let id: String
     let name: String?
@@ -902,6 +980,22 @@ private struct ThreadSummaryDTO: Decodable {
     let unreadCompletedAgentTurn: Bool
     let notificationsEnabled: Bool
     let pinnedAt: String?
+    let model: String?
+    let reasoningEffort: String?
+    let serviceTier: String?
+    let approvalPolicy: String?
+    let sandbox: AnySendable?
+
+    var composerSettings: ComposerRunSettings? {
+        let settings = ComposerRunSettings(
+            model: model,
+            effort: reasoningEffort,
+            serviceTier: serviceTier,
+            approvalPolicy: approvalPolicy,
+            sandboxPolicy: sandbox
+        )
+        return settings.gatewayPayload.isEmpty ? nil : settings
+    }
 }
 
 private struct ThreadTimelineSnapshotDTO: Decodable {

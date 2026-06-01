@@ -5,6 +5,7 @@ import {
   getComposerSettings,
   listModels,
   persistComposerSettings,
+  updateThreadSettings,
   type ModelSummary,
   type ThreadSummary,
 } from "../api/client";
@@ -13,6 +14,7 @@ import type { ComposerSettings } from "../ComposerFooterControls";
 import { errorMessageFrom } from "../shared/values";
 import {
   composerSettingsFromThread,
+  composerThreadSettingsPatch,
   DEFAULT_COMPOSER_SETTINGS,
   mergeDurableComposerSettings,
   normalizePersistedComposerSettings,
@@ -20,6 +22,7 @@ import {
 
 type UseComposerSettingsStateParams = {
   onError: (error: unknown) => void;
+  onThreadUpdated: (thread: ThreadSummary) => void;
   draftChatThreadSelected: boolean;
   selectedProjectId: string | null;
   selectedThread: ThreadSummary | null;
@@ -27,6 +30,7 @@ type UseComposerSettingsStateParams = {
 
 export function useComposerSettingsState({
   onError,
+  onThreadUpdated,
   draftChatThreadSelected,
   selectedProjectId,
   selectedThread,
@@ -39,6 +43,16 @@ export function useComposerSettingsState({
   const [selectedThreadComposerOverride, setSelectedThreadComposerOverride] = useState<ComposerSettings | null>(null);
   const [composerSettingsError, setComposerSettingsError] = useState<string | null>(null);
   const draftComposerEditedRef = useRef(false);
+  const updateThreadSettingsMutation = useMutation({
+    mutationFn: ({ patch, threadId }: { patch: ReturnType<typeof composerThreadSettingsPatch>; threadId: string }) =>
+      updateThreadSettings(threadId, patch),
+    onError: (error) => {
+      setComposerSettingsError(`Thread settings were not saved: ${errorMessageFrom(error)}`);
+    },
+    onSuccess: (response) => {
+      onThreadUpdated(response.thread);
+    },
+  });
   const persistSettingsMutation = useMutation({
     mutationFn: persistComposerSettings,
     onError: (error) => {
@@ -111,11 +125,27 @@ export function useComposerSettingsState({
     const previousSettings = composerSettings;
     if (selectedThread) {
       setSelectedThreadComposerOverride(nextSettings);
+      persistSelectedThreadSettings(selectedThread, previousSettings, nextSettings);
+      return;
     } else {
       draftComposerEditedRef.current = true;
       setDraftComposerSettings(nextSettings);
     }
     persistDurableComposerSettings(previousSettings, nextSettings);
+  }
+
+  function persistSelectedThreadSettings(
+    thread: ThreadSummary,
+    previousSettings: ComposerSettings,
+    nextSettings: ComposerSettings,
+  ) {
+    const patch = composerThreadSettingsPatch(previousSettings, nextSettings);
+    if (Object.keys(patch).length === 0) {
+      return;
+    }
+
+    setComposerSettingsError(null);
+    updateThreadSettingsMutation.mutate({ threadId: thread.id, patch });
   }
 
   function persistDurableComposerSettings(previousSettings: ComposerSettings, nextSettings: ComposerSettings) {

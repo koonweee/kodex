@@ -1430,6 +1430,7 @@ mod tests {
             "/v1/threads/{threadId}/timeline/pages",
             "/v1/threads/{threadId}/subagents",
             "/v1/threads/{threadId}/name",
+            "/v1/threads/{threadId}/settings",
             "/v1/threads/{threadId}/notifications",
             "/v1/threads/{threadId}/attach",
             "/v1/threads/{threadId}/resume",
@@ -1491,6 +1492,8 @@ mod tests {
         }
         for schema in [
             "NativeNotificationStatusResponse",
+            "ThreadSettingsUpdateRequest",
+            "ThreadSettingsUpdateResponse",
             "ApnsEnvironment",
             "ApnsDeviceResponse",
             "ApnsDeviceUpsertRequest",
@@ -2926,6 +2929,155 @@ mod tests {
         assert_eq!(requests[0].1["approvalsReviewer"], "auto_review");
         assert_eq!(requests[0].1["sandbox"], "workspace-write");
         assert_eq!(requests[0].1["persistExtendedHistory"], true);
+    }
+
+    #[tokio::test]
+    async fn thread_settings_update_forwards_native_partial_patch_and_returns_refreshed_thread() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({}),
+            json!({
+                "thread": {
+                    "id": "thread-1",
+                    "cwd": "/workspace",
+                    "status": {"type": "idle"},
+                    "source": "cli",
+                    "preview": "hello",
+                    "model": "gpt-5.4-mini",
+                    "reasoningEffort": null,
+                    "serviceTier": "fast",
+                    "approvalPolicy": "on-request",
+                    "approvalsReviewer": "auto_review",
+                    "sandbox": {"type":"workspaceWrite","networkAccess":false,"writableRoots":[]},
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_601_i64
+                }
+            }),
+        ]);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::patch("/v1/threads/thread-1/settings")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "model": "gpt-5.4-mini",
+                            "effort": null,
+                            "serviceTier": "fast",
+                            "approvalPolicy": "on-request",
+                            "approvalsReviewer": "auto_review",
+                            "sandboxPolicy": {"type":"workspaceWrite","networkAccess":false,"writableRoots":[]}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["thread"]["model"], "gpt-5.4-mini");
+        assert!(body["thread"]["reasoningEffort"].is_null());
+        assert_eq!(body["thread"]["serviceTier"], "fast");
+        assert_eq!(body["thread"]["approvalPolicy"], "on-request");
+        assert_eq!(body["thread"]["approvalsReviewer"], "auto_review");
+        assert_eq!(body["thread"]["sandbox"]["type"], "workspaceWrite");
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/settings/update");
+        assert_eq!(requests[0].1["threadId"], "thread-1");
+        assert_eq!(requests[0].1["model"], "gpt-5.4-mini");
+        assert!(requests[0].1["effort"].is_null());
+        assert_eq!(requests[0].1["serviceTier"], "fast");
+        assert_eq!(requests[0].1["approvalPolicy"], "on-request");
+        assert_eq!(requests[0].1["approvalsReviewer"], "auto_review");
+        assert_eq!(requests[0].1["sandboxPolicy"]["type"], "workspaceWrite");
+        assert_eq!(requests[1].0, "thread/read");
+        assert_eq!(requests[1].1["threadId"], "thread-1");
+        assert_eq!(requests[1].1["includeTurns"], false);
+    }
+
+    #[tokio::test]
+    async fn thread_settings_update_rejects_permissions_and_sandbox_conflict() {
+        let (state, app_server) = test_state().await;
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::patch("/v1/threads/thread-1/settings")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "permissions": "fullAccess",
+                            "sandboxPolicy": {"type":"dangerFullAccess"}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(app_server.requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn thread_settings_updated_notification_applies_gateway_owned_overlays() {
+        let (state, app_server) = test_state().await;
+        let pin = state.store.pin_thread("thread-1").await.unwrap();
+        state
+            .store
+            .set_thread_notifications_enabled("thread-1", false)
+            .await
+            .unwrap();
+        state
+            .store
+            .save_thread_composer_settings(
+                "thread-1",
+                &ThreadComposerSettings {
+                    model: Some("fallback-model".to_string()),
+                    reasoning_effort: Some("medium".to_string()),
+                    ..ThreadComposerSettings::default()
+                },
+            )
+            .await
+            .unwrap();
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"thread": thread_summary("thread-1")}));
+        let mut receiver = state.events.subscribe();
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "thread/settings/updated".to_string(),
+                params: json!({"threadId": "thread-1"}),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let event = timeout(Duration::from_secs(1), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(event.kind, "timeline.thread_metadata");
+        assert_eq!(
+            event.codex_method.as_deref(),
+            Some("thread/settings/updated")
+        );
+        assert_eq!(event.payload["thread"]["pinnedAt"], json!(pin.pinned_at));
+        assert_eq!(
+            event.payload["thread"]["notificationsEnabled"],
+            json!(false)
+        );
+        assert_eq!(event.payload["thread"]["model"], json!("fallback-model"));
+        assert_eq!(event.payload["thread"]["reasoningEffort"], json!("medium"));
     }
 
     #[tokio::test]

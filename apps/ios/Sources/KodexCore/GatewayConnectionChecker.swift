@@ -70,7 +70,7 @@ public struct SkillMention: Equatable, Sendable {
     }
 }
 
-public struct ComposerRunSettings: Equatable, Sendable {
+public struct ComposerRunSettings: Codable, Equatable, Sendable {
     public var model: String?
     public var effort: String?
     public var serviceTier: String?

@@ -56,10 +56,26 @@ describe("MVP composer settings flows", () => {
 
   it("sends composer footer model, speed, permissions, and context settings", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
+    let latestThread: Record<string, unknown> = { ...thread, model: "gpt-5.4", reasoningEffort: "medium", serviceTier: null, rawPayload: {} };
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
+        "GET /v1/threads": { threads: [latestThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         "GET /v1/events": { events: [] },
+        "PATCH /v1/threads/thread-1/settings": async (request: Request) => {
+          const patch = await requestJson(request);
+          latestThread = {
+            ...latestThread,
+            model: (patch.model as string | undefined | null) ?? latestThread.model,
+            reasoningEffort: (patch.effort as string | undefined | null) ?? latestThread.reasoningEffort,
+            serviceTier: (patch.serviceTier as string | undefined | null) ?? latestThread.serviceTier,
+            approvalPolicy: (patch.approvalPolicy as string | undefined | null) ?? latestThread.approvalPolicy,
+            approvalsReviewer: (patch.approvalsReviewer as string | undefined | null) ?? latestThread.approvalsReviewer,
+            sandbox: patch.sandboxPolicy ?? latestThread.sandbox,
+            rawPayload: {},
+          };
+          return { thread: latestThread, rawPayload: {} };
+        },
         "POST /v1/threads/thread-1/input": { payload: {} },
       }),
     );
@@ -101,6 +117,9 @@ describe("MVP composer settings flows", () => {
     expect(screen.getByRole("button", { name: /permissions: default permissions/i })).toBeInTheDocument();
     await clickMenuItem(/confirm full access/i);
     expect(await screen.findByRole("button", { name: /permissions: full access/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(3);
+    });
 
     await userEvent.type(screen.getByLabelText(/message composer/i), "Use the selected controls");
     const sendButton = screen.getByRole("button", { name: /send message/i });
@@ -113,9 +132,9 @@ describe("MVP composer settings flows", () => {
     });
 
     await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toMatchObject({
-      model: "gpt-5.4",
-      effort: "high",
-      serviceTier: "fast",
+      input: [{ text: "Use the selected controls", type: "text" }],
+    });
+    await expect(requestJson(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")[2])).resolves.toMatchObject({
       approvalPolicy: "never",
       approvalsReviewer: "user",
       sandboxPolicy: { type: "dangerFullAccess" },
@@ -125,9 +144,11 @@ describe("MVP composer settings flows", () => {
   it("hydrates and persists composer model effort and fast mode without browser storage or permission writes", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const storageSpy = vi.spyOn(Storage.prototype, "setItem");
+    let latestThread: Record<string, unknown> = { ...thread, model: "gpt-5.4", reasoningEffort: "high", serviceTier: "fast", rawPayload: {} };
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
+        "GET /v1/threads": { threads: [latestThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         "GET /v1/composer-settings": {
           model: "gpt-5.4",
           effort: "high",
@@ -135,14 +156,29 @@ describe("MVP composer settings flows", () => {
           permissionsPreset: "autoReview",
         },
         "GET /v1/events": { events: [] },
-        "PATCH /v1/composer-settings": { saved: true },
+        "PATCH /v1/threads/thread-1/settings": async (request: Request) => {
+          const patch = await requestJson(request);
+          latestThread = {
+            ...latestThread,
+            model: Object.prototype.hasOwnProperty.call(patch, "model") ? patch.model : latestThread.model,
+            reasoningEffort: Object.prototype.hasOwnProperty.call(patch, "effort") ? patch.effort : latestThread.reasoningEffort,
+            serviceTier: Object.prototype.hasOwnProperty.call(patch, "serviceTier") ? patch.serviceTier : latestThread.serviceTier,
+            approvalPolicy: Object.prototype.hasOwnProperty.call(patch, "approvalPolicy") ? patch.approvalPolicy : latestThread.approvalPolicy,
+            approvalsReviewer: Object.prototype.hasOwnProperty.call(patch, "approvalsReviewer")
+              ? patch.approvalsReviewer
+              : latestThread.approvalsReviewer,
+            sandbox: Object.prototype.hasOwnProperty.call(patch, "sandboxPolicy") ? patch.sandboxPolicy : latestThread.sandbox,
+            rawPayload: {},
+          };
+          return { thread: latestThread, rawPayload: {} };
+        },
       }),
     );
 
     render(<App />);
 
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /permissions: default permissions/i })).toBeInTheDocument();
     expect(appCss).toMatch(/\.kodex-composer-model-control\s*\{[^}]*width:\s*fit-content;/s);
     expect(appCss).toMatch(/\.kodex-composer-model-control\s*\{[^}]*max-width:\s*none;/s);
     expect(appCss).toMatch(/\.kodex-composer-control\s+\.mantine-Button-label\s*\{[^}]*overflow:\s*visible;/s);
@@ -172,21 +208,14 @@ describe("MVP composer settings flows", () => {
     await clickMenuItem(/^medium$/i);
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
     await clickFastSwitch();
-    await userEvent.click(screen.getByRole("button", { name: /permissions: auto review/i }));
-    await clickMenuItem(/default permissions/i);
-
     await waitFor(() => {
-      expect(gateway.callsFor("PATCH", "/v1/composer-settings")).toHaveLength(2);
+      expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(2);
     });
-    await expect(requestJson(gateway.callsFor("PATCH", "/v1/composer-settings")[0])).resolves.toEqual({
+    await expect(requestJson(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")[0])).resolves.toEqual({
       effort: "medium",
     });
-    await expect(requestJson(gateway.callsFor("PATCH", "/v1/composer-settings")[1])).resolves.toEqual({
+    await expect(requestJson(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")[1])).resolves.toEqual({
       serviceTier: null,
-    });
-    await waitFor(() => {
-      expect(gateway.callsFor("GET", "/v1/composer-settings").length).toBeGreaterThan(1);
-      expect(gateway.callsFor("GET", "/v1/models").length).toBeGreaterThan(1);
     });
     expect(storageSpy).not.toHaveBeenCalled();
   });
@@ -217,7 +246,7 @@ describe("MVP composer settings flows", () => {
       baseRoutes({
         "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
         "GET /v1/events": { events: [] },
-        "PATCH /v1/composer-settings": undefined,
+        "PATCH /v1/threads/thread-1/settings": undefined,
       }),
     );
 
@@ -227,9 +256,9 @@ describe("MVP composer settings flows", () => {
     await clickMenuItem(/^high$/i);
 
     await waitFor(() => {
-      expect(gateway.callsFor("PATCH", "/v1/composer-settings")).toHaveLength(1);
+      expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(1);
     });
-    expect(await screen.findByLabelText(/composer settings were not saved/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/thread settings were not saved/i)).toBeInTheDocument();
     expect(screen.queryByText("Gateway request failed")).not.toBeInTheDocument();
   });
 
@@ -963,7 +992,7 @@ describe("MVP composer settings flows", () => {
           rawPayload: {},
         },
         "GET /v1/threads/thread-1": threadDetail(initialThread),
-        "PATCH /v1/composer-settings": { saved: true },
+        "PATCH /v1/threads/thread-1/settings": { thread: { ...initialThread, model: "gpt-5.4-mini" }, rawPayload: {} },
       }),
     );
 
@@ -983,7 +1012,7 @@ describe("MVP composer settings flows", () => {
       await within(firstClient.container).findByRole("button", { name: /model: gpt-5\.4-mini, medium/i }),
     ).toBeInTheDocument();
     await waitFor(() => {
-      expect(gateway.callsFor("PATCH", "/v1/composer-settings")).toHaveLength(1);
+      expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(1);
     });
 
     const selectedThreadStreams = FakeEventSource.instances.filter((instance) => instance.url.includes("threadId=thread-1"));
