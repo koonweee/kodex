@@ -139,7 +139,14 @@ function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
     "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     "GET /v1/account/rate-limits": { rateLimits: null, rateLimitsByLimitId: null, rawPayload: {} },
     "GET /v1/models": { models: [model], nextCursor: null, rawPayload: {} },
-    "GET /v1/composer-settings": { model: null, effort: null, serviceTier: null, permissionsPreset: null },
+    "GET /v1/permission-profiles": {
+      profiles: [
+        { id: ":workspace", label: "Default permissions", description: "Ask before sandbox escapes and write inside the workspace." },
+        { id: "auto-review", label: "Auto review", description: "Route approval decisions through the auto reviewer." },
+        { id: "full-access", label: "Full access", description: "Runs without sandbox restrictions on this local machine." },
+      ],
+    },
+    "GET /v1/composer-settings": { model: null, effort: null, serviceTier: null, permissionProfileId: null, permissionsPreset: null },
     ...overrides,
   };
   routes["GET /v1/sidebar/threads"] ??= canBuildStaticSidebarThreadsSnapshot(routes)

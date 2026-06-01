@@ -75,9 +75,8 @@ export function useComposerSettingsState({
     selectedThread?.model,
     selectedThread?.reasoningEffort,
     selectedThread?.serviceTier,
-    selectedThread?.approvalPolicy,
-    selectedThread?.approvalsReviewer,
-    selectedThread?.sandbox,
+    selectedThread?.activePermissionProfile?.id,
+    selectedThread?.activePermissionProfile?.extends,
   ]);
 
   const selectedThreadSettings = selectedThread ? composerSettingsFromThread(selectedThread) : null;

@@ -323,7 +323,8 @@ describe("App shell", () => {
       "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
       "GET /v1/account/rate-limits": { rateLimits: null, rateLimitsByLimitId: null, rawPayload: {} },
       "GET /v1/models": { models: [], nextCursor: null, rawPayload: {} },
-      "GET /v1/composer-settings": { model: null, effort: null, serviceTier: null, permissionsPreset: null },
+      "GET /v1/permission-profiles": { profiles: [] },
+      "GET /v1/composer-settings": { model: null, effort: null, serviceTier: null, permissionProfileId: null, permissionsPreset: null },
     });
 
     renderApp();

@@ -10,6 +10,7 @@ pub mod kodex_control_plugin;
 pub mod mcp;
 pub mod models;
 pub mod notifications;
+pub mod permission_profiles;
 pub mod project_previews;
 pub mod projects;
 pub mod self_control;
@@ -1459,6 +1460,7 @@ mod tests {
             "/v1/account/logout",
             "/v1/account/rate-limits",
             "/v1/models",
+            "/v1/permission-profiles",
             "/v1/notifications/status",
             "/v1/notifications/native/status",
             "/v1/notifications/subscription/current",
@@ -1492,6 +1494,9 @@ mod tests {
         }
         for schema in [
             "NativeNotificationStatusResponse",
+            "ActivePermissionProfile",
+            "PermissionProfileListResponse",
+            "PermissionProfileSummary",
             "ThreadSettingsUpdateRequest",
             "ThreadSettingsUpdateResponse",
             "ApnsEnvironment",
@@ -2800,6 +2805,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn self_control_thread_input_rejects_permissions_and_sandbox_conflict_before_queue() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "active".to_string(),
+                active_turn_id: Some("turn-active".to_string()),
+                updated_at: chrono::Utc::now(),
+                last_event_seq: None,
+            })
+            .await
+            .unwrap();
+        mark_thread_session_active(&state, "thread-1", "turn-active").await;
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/self-control/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "input": [{"type": "text", "text": "invalid"}],
+                            "permissions": "full-access",
+                            "sandboxPolicy": {"type": "dangerFullAccess"}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(state
+            .store
+            .list_queued_inputs("thread-1")
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(app_server.requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn self_control_source_type_must_be_kodex_control() {
         let (state, _) = test_state().await;
         let project = state
@@ -3025,6 +3074,299 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn thread_settings_update_preserves_permissions_when_refreshed_thread_omits_profile() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .save_thread_composer_settings(
+                "thread-1",
+                &ThreadComposerSettings {
+                    approval_policy: Some("on-request".to_string()),
+                    approvals_reviewer: Some("auto_review".to_string()),
+                    permissions: Some("old-profile".to_string()),
+                    sandbox: Some(json!({"type": "dangerFullAccess"})),
+                    ..ThreadComposerSettings::default()
+                },
+            )
+            .await
+            .unwrap();
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({}),
+            json!({
+                "thread": {
+                    "id": "thread-1",
+                    "cwd": "/workspace",
+                    "status": {"type": "idle"},
+                    "source": "cli",
+                    "preview": "hello",
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_601_i64
+                }
+            }),
+            json!({}),
+            json!({
+                "thread": {
+                    "id": "thread-1",
+                    "cwd": "/workspace",
+                    "status": {"type": "idle"},
+                    "source": "cli",
+                    "preview": "hello",
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_602_i64
+                }
+            }),
+        ]);
+        let app = build_router(state.clone());
+
+        let select = app
+            .clone()
+            .oneshot(
+                Request::patch("/v1/threads/thread-1/settings")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"permissions": "auto-review"}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(select.status(), StatusCode::OK);
+        let body = response_json(select).await;
+        assert_eq!(
+            body["thread"]["activePermissionProfile"]["id"],
+            "auto-review"
+        );
+        let events = state.store.replay_events(None, None, None).await.unwrap();
+        assert_eq!(
+            events[0].payload["thread"]["activePermissionProfile"]["id"],
+            "auto-review"
+        );
+        let stored = state
+            .store
+            .thread_composer_settings(&["thread-1".to_string()])
+            .await
+            .unwrap();
+        let selected_options = stored["thread-1"].to_turn_options();
+        assert_eq!(selected_options.permissions.as_deref(), Some("auto-review"));
+        assert!(selected_options.approval_policy.is_none());
+        assert!(selected_options.approvals_reviewer.is_none());
+        assert!(selected_options.sandbox_policy.is_none());
+
+        let clear = app
+            .oneshot(
+                Request::patch("/v1/threads/thread-1/settings")
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"permissions": null}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(clear.status(), StatusCode::OK);
+        let body = response_json(clear).await;
+        assert!(body["thread"]["activePermissionProfile"].is_null());
+        let events = state.store.replay_events(None, None, None).await.unwrap();
+        assert!(events[1].payload["thread"]["activePermissionProfile"].is_null());
+
+        let stored = state
+            .store
+            .thread_composer_settings(&["thread-1".to_string()])
+            .await
+            .unwrap();
+        assert!(stored["thread-1"].permissions.is_none());
+        assert!(stored["thread-1"].sandbox.is_none());
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/settings/update");
+        assert_eq!(requests[0].1["permissions"], "auto-review");
+        assert_eq!(requests[1].0, "thread/read");
+        assert_eq!(requests[2].0, "thread/settings/update");
+        assert!(requests[2].1["permissions"].is_null());
+        assert_eq!(requests[3].0, "thread/read");
+    }
+
+    #[tokio::test]
+    async fn permission_profiles_route_paginates_and_resolves_project_cwd() {
+        let (state, app_server) = test_state().await;
+        let cwd = tempdir().unwrap().path().to_string_lossy().to_string();
+        let project = state
+            .store
+            .create_project("Kodex".to_string(), cwd.clone())
+            .await
+            .unwrap();
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({
+                "data": [
+                    {"id": ":workspace", "description": "Ask before leaving the workspace"}
+                ],
+                "nextCursor": "next-page"
+            }),
+            json!({
+                "data": [
+                    {"id": "full-access", "description": null}
+                ],
+                "nextCursor": null
+            }),
+        ]);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get(format!("/v1/permission-profiles?projectId={}", project.id))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["profiles"][0]["id"], ":workspace");
+        assert_eq!(body["profiles"][0]["label"], ":workspace");
+        assert_eq!(
+            body["profiles"][0]["description"],
+            "Ask before leaving the workspace"
+        );
+        assert_eq!(body["profiles"][1]["id"], "full-access");
+        assert_eq!(body["profiles"][1]["label"], "full-access");
+        assert!(body["profiles"][1]["description"].is_null());
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "permissionProfile/list");
+        assert_eq!(requests[0].1["cwd"], cwd);
+        assert!(requests[0].1["cursor"].is_null());
+        assert_eq!(requests[1].0, "permissionProfile/list");
+        assert_eq!(requests[1].1["cursor"], "next-page");
+    }
+
+    #[tokio::test]
+    async fn create_and_turn_start_forward_native_permissions_profile_ids() {
+        let (state, app_server) = test_state().await;
+        let cwd = tempdir().unwrap().path().to_string_lossy().to_string();
+        let project = state
+            .store
+            .create_project("Kodex".to_string(), cwd)
+            .await
+            .unwrap();
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({
+                "thread": {
+                    "id": "thread-1",
+                    "cwd": "/workspace",
+                    "status": {"type": "idle"},
+                    "source": "cli",
+                    "preview": "hello",
+                    "activePermissionProfile": {"id": "auto-review"},
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_600_i64
+                },
+                "cwd": "/workspace"
+            }),
+            json!({
+                "thread": {
+                    "id": "thread-1",
+                    "cwd": "/workspace",
+                    "status": {"type": "idle"},
+                    "source": "cli",
+                    "turns": [],
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_600_i64
+                }
+            }),
+            json!({"turnId": "turn-1"}),
+        ]);
+        let app = build_router(state);
+
+        let create = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "projectId": project.id,
+                            "permissions": "auto-review",
+                            "payload": {"prompt": "hi"}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(create.status(), StatusCode::OK);
+
+        let turn = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "input": [{"type": "text", "text": "next"}],
+                            "permissions": "read-only"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(turn.status(), StatusCode::OK);
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/start");
+        assert_eq!(requests[0].1["permissions"], "auto-review");
+        assert!(requests[0].1.get("approvalPolicy").is_none());
+        assert!(requests[0].1.get("approvalsReviewer").is_none());
+        assert!(requests[0].1.get("sandbox").is_none());
+        assert_eq!(requests[2].0, "turn/start");
+        assert_eq!(requests[2].1["permissions"], "read-only");
+        assert!(requests[2].1.get("approvalPolicy").is_none());
+        assert!(requests[2].1.get("approvalsReviewer").is_none());
+        assert!(requests[2].1.get("sandboxPolicy").is_none());
+    }
+
+    #[tokio::test]
+    async fn thread_summaries_expose_active_permission_profile() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().push(json!({
+            "data": [{
+                "id": "thread-1",
+                "cwd": "/workspace",
+                "status": {"type": "idle"},
+                "source": "cli",
+                "preview": "hello",
+                "activePermissionProfile": {"id": ":workspace", "extends": "base"},
+                "approvalPolicy": "never",
+                "approvalsReviewer": "auto_review",
+                "sandbox": {"type": "dangerFullAccess"},
+                "createdAt": 1_767_225_600_i64,
+                "updatedAt": 1_767_225_600_i64
+            }],
+            "nextCursor": null,
+            "backwardsCursor": null
+        }));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(Request::get("/v1/threads").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(
+            body["threads"][0]["activePermissionProfile"]["id"],
+            ":workspace"
+        );
+        assert_eq!(
+            body["threads"][0]["activePermissionProfile"]["extends"],
+            "base"
+        );
+    }
+
+    #[tokio::test]
     async fn thread_settings_updated_notification_applies_gateway_owned_overlays() {
         let (state, app_server) = test_state().await;
         let pin = state.store.pin_thread("thread-1").await.unwrap();
@@ -3078,6 +3420,60 @@ mod tests {
         );
         assert_eq!(event.payload["thread"]["model"], json!("fallback-model"));
         assert_eq!(event.payload["thread"]["reasoningEffort"], json!("medium"));
+    }
+
+    #[tokio::test]
+    async fn thread_settings_updated_notification_clears_active_permission_profile() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .save_thread_composer_settings(
+                "thread-1",
+                &ThreadComposerSettings {
+                    permissions: Some("stale-profile".to_string()),
+                    ..ThreadComposerSettings::default()
+                },
+            )
+            .await
+            .unwrap();
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"thread": thread_summary("thread-1")}));
+        let mut receiver = state.events.subscribe();
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "thread/settings/updated".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "threadSettings": {
+                        "activePermissionProfile": null
+                    }
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let event = timeout(Duration::from_secs(1), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(event.kind, "timeline.thread_metadata");
+        assert!(event.payload["thread"]["activePermissionProfile"].is_null());
+        assert!(event.payload["thread"]["rawPayload"]
+            .get("activePermissionProfile")
+            .is_none());
+
+        let stored = state
+            .store
+            .thread_composer_settings(&["thread-1".to_string()])
+            .await
+            .unwrap();
+        assert!(stored["thread-1"].permissions.is_none());
     }
 
     #[tokio::test]
@@ -3416,6 +3812,7 @@ mod tests {
                     service_tier: Some("fast".to_string()),
                     approval_policy: Some("on-request".to_string()),
                     approvals_reviewer: Some("auto_review".to_string()),
+                    permissions: None,
                     sandbox: Some(json!({
                         "type": "workspaceWrite",
                         "networkAccess": false,
@@ -4783,6 +5180,7 @@ mod tests {
                     service_tier: Some("fast".to_string()),
                     approval_policy: Some("on-request".to_string()),
                     approvals_reviewer: Some("auto_review".to_string()),
+                    permissions: Some("auto-review".to_string()),
                     sandbox: Some(json!({"type": "workspaceWrite", "networkAccess": false, "writableRoots": []})),
                 },
             )
@@ -4868,6 +5266,7 @@ mod tests {
                     service_tier: Some("fast".to_string()),
                     approval_policy: None,
                     approvals_reviewer: None,
+                    permissions: None,
                     sandbox: None,
                 },
             )
@@ -4919,6 +5318,7 @@ mod tests {
                     service_tier: Some("fast".to_string()),
                     approval_policy: Some("on-request".to_string()),
                     approvals_reviewer: Some("auto_review".to_string()),
+                    permissions: None,
                     sandbox: Some(json!({"type": "workspaceWrite", "networkAccess": false, "writableRoots": []})),
                 },
             )
@@ -8788,6 +9188,7 @@ mod tests {
                     service_tier: Some("fast".to_string()),
                     approval_policy: Some("on-request".to_string()),
                     approvals_reviewer: Some("auto_review".to_string()),
+                    permissions: None,
                     sandbox: Some(json!({"type": "workspaceWrite"})),
                 },
             )

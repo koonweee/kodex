@@ -309,6 +309,7 @@ pub struct ThreadComposerSettings {
     pub service_tier: Option<String>,
     pub approval_policy: Option<String>,
     pub approvals_reviewer: Option<String>,
+    pub permissions: Option<String>,
     pub sandbox: Option<Value>,
 }
 
@@ -319,6 +320,7 @@ impl ThreadComposerSettings {
             || self.service_tier.is_some()
             || self.approval_policy.is_some()
             || self.approvals_reviewer.is_some()
+            || self.permissions.is_some()
             || self.sandbox.is_some()
     }
 
@@ -329,6 +331,7 @@ impl ThreadComposerSettings {
             service_tier: options.service_tier.clone(),
             approval_policy: options.approval_policy.clone(),
             approvals_reviewer: options.approvals_reviewer.clone(),
+            permissions: options.permissions.clone(),
             sandbox: options.sandbox_policy.clone(),
         }
     }
@@ -340,6 +343,7 @@ impl ThreadComposerSettings {
             service_tier: self.service_tier.clone(),
             approval_policy: self.approval_policy.clone(),
             approvals_reviewer: self.approvals_reviewer.clone(),
+            permissions: self.permissions.clone(),
             sandbox_policy: self.sandbox.clone(),
         }
     }
@@ -727,6 +731,7 @@ impl Store {
                 service_tier text,
                 approval_policy text,
                 approvals_reviewer text,
+                permissions text,
                 sandbox_json text,
                 created_at text not null,
                 updated_at text not null
@@ -735,6 +740,8 @@ impl Store {
         )
         .execute(&self.pool)
         .await?;
+        self.add_column_if_missing("thread_composer_settings", "permissions", "text")
+            .await?;
         sqlx::query(
             r#"
             create table if not exists thread_pins (
@@ -1847,15 +1854,16 @@ impl Store {
             r#"
             insert into thread_composer_settings (
                 thread_id, model, reasoning_effort, service_tier, approval_policy,
-                approvals_reviewer, sandbox_json, created_at, updated_at
+                approvals_reviewer, permissions, sandbox_json, created_at, updated_at
             )
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             on conflict(thread_id) do update set
                 model = excluded.model,
                 reasoning_effort = excluded.reasoning_effort,
                 service_tier = excluded.service_tier,
                 approval_policy = excluded.approval_policy,
                 approvals_reviewer = excluded.approvals_reviewer,
+                permissions = excluded.permissions,
                 sandbox_json = excluded.sandbox_json,
                 updated_at = excluded.updated_at
             "#,
@@ -1866,6 +1874,7 @@ impl Store {
         .bind(&settings.service_tier)
         .bind(&settings.approval_policy)
         .bind(&settings.approvals_reviewer)
+        .bind(&settings.permissions)
         .bind(sandbox_json)
         .bind(now)
         .bind(now)
@@ -1898,6 +1907,7 @@ impl Store {
                 .approvals_reviewer
                 .clone()
                 .or(settings.approvals_reviewer);
+            settings.permissions = existing.permissions.clone().or(settings.permissions);
             settings.sandbox = existing.sandbox.clone().or(settings.sandbox);
         }
         self.save_thread_composer_settings(thread_id, &settings)
@@ -1913,7 +1923,7 @@ impl Store {
         }
 
         let mut builder = QueryBuilder::<Sqlite>::new(
-            "select thread_id, model, reasoning_effort, service_tier, approval_policy, approvals_reviewer, sandbox_json from thread_composer_settings where thread_id in (",
+            "select thread_id, model, reasoning_effort, service_tier, approval_policy, approvals_reviewer, permissions, sandbox_json from thread_composer_settings where thread_id in (",
         );
         {
             let mut separated = builder.separated(", ");
@@ -1935,6 +1945,7 @@ impl Store {
                     service_tier: row.try_get("service_tier")?,
                     approval_policy: row.try_get("approval_policy")?,
                     approvals_reviewer: row.try_get("approvals_reviewer")?,
+                    permissions: row.try_get("permissions")?,
                     sandbox: sandbox_json
                         .map(|value| serde_json::from_str(&value))
                         .transpose()?,
@@ -4811,6 +4822,7 @@ mod tests {
                     service_tier: Some("fast".to_string()),
                     approval_policy: Some("on-request".to_string()),
                     approvals_reviewer: Some("auto_review".to_string()),
+                    permissions: Some("auto-review".to_string()),
                     sandbox: Some(json!("workspace-write")),
                 },
             )
@@ -4826,6 +4838,7 @@ mod tests {
         assert_eq!(settings.service_tier.as_deref(), Some("fast"));
         assert_eq!(settings.approval_policy.as_deref(), Some("on-request"));
         assert_eq!(settings.approvals_reviewer.as_deref(), Some("auto_review"));
+        assert_eq!(settings.permissions.as_deref(), Some("auto-review"));
         assert_eq!(settings.sandbox.as_ref(), Some(&json!("workspace-write")));
 
         store
@@ -4840,6 +4853,7 @@ mod tests {
         assert_eq!(settings.service_tier.as_deref(), Some("fast"));
         assert_eq!(settings.approval_policy.as_deref(), Some("on-request"));
         assert_eq!(settings.approvals_reviewer.as_deref(), Some("auto_review"));
+        assert_eq!(settings.permissions.as_deref(), Some("auto-review"));
         assert_eq!(settings.sandbox.as_ref(), Some(&json!("workspace-write")));
 
         store
@@ -4851,6 +4865,7 @@ mod tests {
                     service_tier: None,
                     approval_policy: None,
                     approvals_reviewer: None,
+                    permissions: None,
                     sandbox_policy: None,
                 },
             )

@@ -4,7 +4,7 @@ import type { RefObject } from "react";
 
 import { ComposerFooterControls } from "../ComposerFooterControls";
 import type { ComposerSettings, ContextUsage } from "../ComposerFooterControls";
-import type { ModelSummary } from "../api/client";
+import type { ModelSummary, PermissionProfileSummary } from "../api/client";
 
 const COMPOSER_TOOLBAR_TEXT = {
   addAttachment: "Add attachment",
@@ -22,6 +22,9 @@ type ComposerToolbarProps = {
   contextUsage?: ContextUsage | null;
   disabled: boolean;
   models: ModelSummary[];
+  permissionProfiles?: PermissionProfileSummary[];
+  permissionProfilesError?: string | null;
+  permissionProfilesLoading?: boolean;
   onExpandComposer?: () => void;
   onSettingsChange: (settings: ComposerSettings) => void;
   onStopTurn: () => void;
@@ -39,6 +42,9 @@ export function ComposerToolbar({
   contextUsage,
   disabled,
   models,
+  permissionProfiles,
+  permissionProfilesError,
+  permissionProfilesLoading,
   onExpandComposer,
   onSettingsChange,
   onStopTurn,
@@ -85,6 +91,9 @@ export function ComposerToolbar({
           contextUsage={contextUsage}
           disabled={disabled}
           models={models}
+          permissionProfiles={permissionProfiles}
+          permissionProfilesError={permissionProfilesError}
+          permissionProfilesLoading={permissionProfilesLoading}
           showContextUsage={showContextUsage}
           settingsError={settingsError}
           settings={settings}

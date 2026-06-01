@@ -84,6 +84,7 @@ pub async fn create_queued_input(
     Path(thread_id): Path<String>,
     Json(request): Json<QueuedInputCreateRequest>,
 ) -> ApiResult<Json<QueuedInputResponse>> {
+    request.options.validate()?;
     let input = skills::resolve_turn_input_for_thread(&state, &thread_id, request.input).await?;
     let queued_input = state
         .store

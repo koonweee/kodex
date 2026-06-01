@@ -69,9 +69,9 @@ describe("MVP composer settings flows", () => {
             model: (patch.model as string | undefined | null) ?? latestThread.model,
             reasoningEffort: (patch.effort as string | undefined | null) ?? latestThread.reasoningEffort,
             serviceTier: (patch.serviceTier as string | undefined | null) ?? latestThread.serviceTier,
-            approvalPolicy: (patch.approvalPolicy as string | undefined | null) ?? latestThread.approvalPolicy,
-            approvalsReviewer: (patch.approvalsReviewer as string | undefined | null) ?? latestThread.approvalsReviewer,
-            sandbox: patch.sandboxPolicy ?? latestThread.sandbox,
+            activePermissionProfile: patch.permissions
+              ? { id: patch.permissions }
+              : (patch.permissions === null ? null : latestThread.activePermissionProfile),
             rawPayload: {},
           };
           return { thread: latestThread, rawPayload: {} };
@@ -114,8 +114,6 @@ describe("MVP composer settings flows", () => {
     await clickFastSwitch();
     await userEvent.click(screen.getByRole("button", { name: /permissions: default permissions/i }));
     await clickMenuItem(/full access/i);
-    expect(screen.getByRole("button", { name: /permissions: default permissions/i })).toBeInTheDocument();
-    await clickMenuItem(/confirm full access/i);
     expect(await screen.findByRole("button", { name: /permissions: full access/i })).toBeInTheDocument();
     await waitFor(() => {
       expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(3);
@@ -135,9 +133,7 @@ describe("MVP composer settings flows", () => {
       input: [{ text: "Use the selected controls", type: "text" }],
     });
     await expect(requestJson(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")[2])).resolves.toMatchObject({
-      approvalPolicy: "never",
-      approvalsReviewer: "user",
-      sandboxPolicy: { type: "dangerFullAccess" },
+      permissions: "full-access",
     });
   }, 20_000);
 
@@ -153,7 +149,7 @@ describe("MVP composer settings flows", () => {
           model: "gpt-5.4",
           effort: "high",
           serviceTier: "fast",
-          permissionsPreset: "autoReview",
+          permissionProfileId: null,
         },
         "GET /v1/events": { events: [] },
         "PATCH /v1/threads/thread-1/settings": async (request: Request) => {
@@ -163,11 +159,11 @@ describe("MVP composer settings flows", () => {
             model: Object.prototype.hasOwnProperty.call(patch, "model") ? patch.model : latestThread.model,
             reasoningEffort: Object.prototype.hasOwnProperty.call(patch, "effort") ? patch.effort : latestThread.reasoningEffort,
             serviceTier: Object.prototype.hasOwnProperty.call(patch, "serviceTier") ? patch.serviceTier : latestThread.serviceTier,
-            approvalPolicy: Object.prototype.hasOwnProperty.call(patch, "approvalPolicy") ? patch.approvalPolicy : latestThread.approvalPolicy,
-            approvalsReviewer: Object.prototype.hasOwnProperty.call(patch, "approvalsReviewer")
-              ? patch.approvalsReviewer
-              : latestThread.approvalsReviewer,
-            sandbox: Object.prototype.hasOwnProperty.call(patch, "sandboxPolicy") ? patch.sandboxPolicy : latestThread.sandbox,
+            activePermissionProfile: Object.prototype.hasOwnProperty.call(patch, "permissions")
+              ? patch.permissions === null
+                ? null
+                : { id: patch.permissions }
+              : latestThread.activePermissionProfile,
             rawPayload: {},
           };
           return { thread: latestThread, rawPayload: {} };
@@ -458,19 +454,16 @@ describe("MVP composer settings flows", () => {
     });
 
     await expect(requestJson(gateway.callsFor("POST", "/v1/threads")[0])).resolves.toMatchObject({
+      effort: "high",
+      permissions: "auto-review",
       projectId: project.id,
       model: "gpt-5.4",
       serviceTier: "fast",
-      approvalPolicy: "on-request",
-      approvalsReviewer: "auto_review",
-      sandbox: "workspace-write",
     });
     await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-2/input")[0])).resolves.toMatchObject({
       effort: "high",
+      permissions: "auto-review",
       serviceTier: "fast",
-      approvalPolicy: "on-request",
-      approvalsReviewer: "auto_review",
-      sandboxPolicy: { type: "workspaceWrite", networkAccess: false, writableRoots: [] },
     });
   });
 
@@ -489,8 +482,8 @@ describe("MVP composer settings flows", () => {
         "GET /v1/composer-settings": (request: Request) => {
           const projectId = new URL(request.url).searchParams.get("projectId");
           return projectId === project.id
-            ? { model: "gpt-5.4", effort: "high", serviceTier: "fast", permissionsPreset: "autoReview" }
-            : { model: null, effort: null, serviceTier: null, permissionsPreset: null };
+            ? { model: "gpt-5.4", effort: "high", serviceTier: "fast", permissionProfileId: "auto-review" }
+            : { model: null, effort: null, serviceTier: null, permissionProfileId: null };
         },
         "POST /v1/chats/threads": { thread: chatThread, rawPayload: {} },
         "GET /v1/threads/chat-thread-1": threadDetail(chatThread),
@@ -512,9 +505,7 @@ describe("MVP composer settings flows", () => {
     expect(body).toMatchObject({ firstMessageText: "Use global defaults" });
     expect(body).not.toHaveProperty("model");
     expect(body).not.toHaveProperty("serviceTier");
-    expect(body).not.toHaveProperty("approvalPolicy");
-    expect(body).not.toHaveProperty("approvalsReviewer");
-    expect(body).not.toHaveProperty("sandbox");
+    expect(body).not.toHaveProperty("permissions");
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/chat-thread-1/input")).toHaveLength(1);
@@ -523,9 +514,7 @@ describe("MVP composer settings flows", () => {
     expect(turnBody).not.toHaveProperty("model");
     expect(turnBody).not.toHaveProperty("effort");
     expect(turnBody).not.toHaveProperty("serviceTier");
-    expect(turnBody).not.toHaveProperty("approvalPolicy");
-    expect(turnBody).not.toHaveProperty("approvalsReviewer");
-    expect(turnBody).not.toHaveProperty("sandboxPolicy");
+    expect(turnBody).not.toHaveProperty("permissions");
   });
 
   it("hydrates global composer defaults when selecting an existing chat without a snapshot", async () => {
@@ -543,8 +532,8 @@ describe("MVP composer settings flows", () => {
         "GET /v1/composer-settings": (request: Request) => {
           const projectId = new URL(request.url).searchParams.get("projectId");
           return projectId === project.id
-            ? { model: "gpt-5.4", effort: "high", serviceTier: "fast", permissionsPreset: "autoReview" }
-            : { model: null, effort: null, serviceTier: null, permissionsPreset: null };
+            ? { model: "gpt-5.4", effort: "high", serviceTier: "fast", permissionProfileId: "auto-review" }
+            : { model: null, effort: null, serviceTier: null, permissionProfileId: null };
         },
         "GET /v1/chats/threads": { threads: [chatThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         "GET /v1/threads/chat-thread-1": threadDetail(chatThread),
@@ -567,7 +556,7 @@ describe("MVP composer settings flows", () => {
       model: null;
       effort: null;
       serviceTier: null;
-      permissionsPreset: null;
+      permissionProfileId: null;
     }>();
     const chatThread = {
       ...thread,
@@ -582,7 +571,7 @@ describe("MVP composer settings flows", () => {
         "GET /v1/composer-settings": (request: Request) => {
           const projectId = new URL(request.url).searchParams.get("projectId");
           return projectId === project.id
-            ? { model: "gpt-5.4", effort: "high", serviceTier: "fast", permissionsPreset: "autoReview" }
+            ? { model: "gpt-5.4", effort: "high", serviceTier: "fast", permissionProfileId: "auto-review" }
             : globalSettings.promise;
         },
         "GET /v1/chats/threads": { threads: [chatThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
@@ -606,9 +595,7 @@ describe("MVP composer settings flows", () => {
     expect(turnBody).not.toHaveProperty("model");
     expect(turnBody).not.toHaveProperty("effort");
     expect(turnBody).not.toHaveProperty("serviceTier");
-    expect(turnBody).not.toHaveProperty("approvalPolicy");
-    expect(turnBody).not.toHaveProperty("approvalsReviewer");
-    expect(turnBody).not.toHaveProperty("sandboxPolicy");
+    expect(turnBody).not.toHaveProperty("permissions");
     expect(gateway.callsFor("GET", "/v1/composer-settings").some((request) => !new URL(request.url).searchParams.has("projectId"))).toBe(true);
   });
 
@@ -621,7 +608,7 @@ describe("MVP composer settings flows", () => {
           model: "gpt-5.4",
           effort: "medium",
           serviceTier: null,
-          permissionsPreset: "default",
+          permissionProfileId: null,
         },
         "GET /v1/threads": {
           threads: [{ ...thread, status: "notLoaded" }],
@@ -635,7 +622,7 @@ describe("MVP composer settings flows", () => {
             ...thread,
             reasoningEffort: "high",
             serviceTier: "fast",
-            approvalsReviewer: "auto_review",
+            activePermissionProfile: { id: "auto-review" },
           },
           rawPayload: {},
         },
@@ -643,7 +630,7 @@ describe("MVP composer settings flows", () => {
           ...thread,
           reasoningEffort: "high",
           serviceTier: "fast",
-          approvalsReviewer: "auto_review",
+          activePermissionProfile: { id: "auto-review" },
         }),
       }),
     );

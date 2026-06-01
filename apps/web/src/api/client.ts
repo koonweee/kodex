@@ -26,6 +26,8 @@ export type McpServerListResponse = components["schemas"]["McpServerListResponse
 export type McpServerStatus = components["schemas"]["McpServerStatus"];
 export type ModelSummary = components["schemas"]["ModelSummary"];
 export type PendingTimelineRequestSummary = components["schemas"]["PendingTimelineRequestSummary"];
+export type PermissionProfileListResponse = components["schemas"]["PermissionProfileListResponse"];
+export type PermissionProfileSummary = components["schemas"]["PermissionProfileSummary"];
 export type Project = components["schemas"]["Project"];
 export type PreviewCreateRequest = components["schemas"]["PreviewCreateRequest"];
 export type PreviewListResponse = components["schemas"]["PreviewListResponse"];
@@ -709,6 +711,15 @@ export async function listSkills(cwd?: string | null, forceReload = false): Prom
       params: { query: { cwd: cwd ?? undefined, forceReload } },
     }),
   );
+}
+
+export async function listPermissionProfiles(cwd?: string | null): Promise<PermissionProfileSummary[]> {
+  const response = await unwrap(
+    api.GET("/v1/permission-profiles", {
+      params: { query: { cwd: cwd ?? undefined } },
+    }),
+  );
+  return response.profiles;
 }
 
 export async function getComposerSettings(projectId?: string | null): Promise<ComposerSettingsResponse> {

@@ -378,12 +378,32 @@ impl CodexClient {
         .await
     }
 
+    pub async fn permission_profile_list(
+        &self,
+        cwd: Option<String>,
+        cursor: Option<String>,
+        limit: Option<u32>,
+    ) -> ApiResult<PermissionProfileListPage> {
+        let payload = self
+            .request(
+                "permissionProfile/list",
+                json!({
+                    "cwd": cwd,
+                    "cursor": cursor,
+                    "limit": limit,
+                }),
+            )
+            .await?;
+        PermissionProfileListPage::from_payload(payload)
+    }
+
     pub async fn turn_start(
         &self,
         thread_id: String,
         input: Vec<UserInput>,
         options: TurnStartOptions,
     ) -> ApiResult<RawAppServerResponse> {
+        options.validate()?;
         let mut payload = json!({ "threadId": thread_id, "input": input });
         options.apply_to_payload(&mut payload);
         let payload = self
@@ -784,10 +804,26 @@ pub struct TurnStartOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approvals_reviewer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox_policy: Option<Value>,
 }
 
 impl TurnStartOptions {
+    pub fn validate(&self) -> ApiResult<()> {
+        if self.permissions.is_some()
+            && self
+                .sandbox_policy
+                .as_ref()
+                .is_some_and(|sandbox_policy| !sandbox_policy.is_null())
+        {
+            return Err(ApiError::BadRequest(
+                "permissions and sandboxPolicy cannot be combined".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
     fn apply_to_payload(self, payload: &mut Value) {
         if let Some(model) = self.model {
             payload["model"] = Value::String(model);
@@ -803,6 +839,9 @@ impl TurnStartOptions {
         }
         if let Some(approvals_reviewer) = self.approvals_reviewer {
             payload["approvalsReviewer"] = Value::String(approvals_reviewer);
+        }
+        if let Some(permissions) = self.permissions {
+            payload["permissions"] = Value::String(permissions);
         }
         if let Some(sandbox_policy) = self.sandbox_policy {
             payload["sandboxPolicy"] = sandbox_policy;
@@ -1319,6 +1358,7 @@ pub struct ComposerSettingsResponse {
     pub model: Option<String>,
     pub effort: Option<String>,
     pub service_tier: Option<String>,
+    pub permission_profile_id: Option<String>,
     pub permissions_preset: Option<ComposerPermissionsPreset>,
 }
 
@@ -1331,6 +1371,7 @@ impl ComposerSettingsResponse {
             model: optional_string(config, "model"),
             effort: optional_string(config, "model_reasoning_effort"),
             service_tier: optional_string(config, "service_tier"),
+            permission_profile_id: optional_string(config, "default_permissions"),
             permissions_preset: composer_permissions_preset(config),
         })
     }
@@ -1393,6 +1434,51 @@ impl ComposerSettingsUpdateRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ComposerSettingsUpdateResponse {
     pub saved: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivePermissionProfile {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extends: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionProfileSummary {
+    pub id: String,
+    pub label: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionProfileListResponse {
+    pub profiles: Vec<PermissionProfileSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionProfileListPage {
+    pub data: Vec<PermissionProfileSummary>,
+    pub next_cursor: Option<String>,
+}
+
+impl PermissionProfileListPage {
+    fn from_payload(payload: Value) -> ApiResult<Self> {
+        let data = payload
+            .get("data")
+            .and_then(Value::as_array)
+            .ok_or_else(|| bad_gateway("permissionProfile/list response missing data array"))?
+            .iter()
+            .map(permission_profile_summary_from_payload)
+            .collect::<ApiResult<Vec<_>>>()?;
+        Ok(Self {
+            data,
+            next_cursor: optional_string(&payload, "nextCursor"),
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -1741,6 +1827,7 @@ pub struct ThreadSummary {
     pub service_tier: Option<String>,
     pub approval_policy: Option<String>,
     pub approvals_reviewer: Option<String>,
+    pub active_permission_profile: Option<ActivePermissionProfile>,
     pub agent_nickname: Option<String>,
     pub agent_role: Option<String>,
     pub sandbox: Option<Value>,
@@ -1788,6 +1875,7 @@ impl ThreadSummary {
             service_tier: optional_string(payload, "serviceTier"),
             approval_policy: optional_string(payload, "approvalPolicy"),
             approvals_reviewer: optional_string(payload, "approvalsReviewer"),
+            active_permission_profile: active_permission_profile_from_payload(payload)?,
             agent_nickname: optional_string(payload, "agentNickname"),
             agent_role: optional_string(payload, "agentRole"),
             sandbox: optional_value(payload, "sandbox"),
@@ -1929,6 +2017,7 @@ pub struct ThreadViewThreadSummary {
     pub service_tier: Option<String>,
     pub approval_policy: Option<String>,
     pub approvals_reviewer: Option<String>,
+    pub active_permission_profile: Option<ActivePermissionProfile>,
     pub agent_nickname: Option<String>,
     pub agent_role: Option<String>,
     pub sandbox: Option<Value>,
@@ -1956,6 +2045,7 @@ impl From<ThreadSummary> for ThreadViewThreadSummary {
             service_tier: thread.service_tier,
             approval_policy: thread.approval_policy,
             approvals_reviewer: thread.approvals_reviewer,
+            active_permission_profile: thread.active_permission_profile,
             agent_nickname: thread.agent_nickname,
             agent_role: thread.agent_role,
             sandbox: thread.sandbox,
@@ -3549,6 +3639,7 @@ pub struct ThreadCommandResponse {
     pub service_tier: Option<String>,
     pub approval_policy: Option<String>,
     pub approvals_reviewer: Option<String>,
+    pub active_permission_profile: Option<ActivePermissionProfile>,
     pub sandbox: Option<Value>,
     pub raw_payload: Value,
 }
@@ -3569,6 +3660,7 @@ impl ThreadCommandResponse {
             service_tier: optional_string(&payload, "serviceTier"),
             approval_policy: optional_string(&payload, "approvalPolicy"),
             approvals_reviewer: optional_string(&payload, "approvalsReviewer"),
+            active_permission_profile: active_permission_profile_from_payload(&payload)?,
             sandbox: optional_value(&payload, "sandbox"),
             raw_payload: payload,
         })
@@ -3892,6 +3984,30 @@ fn optional_value(payload: &Value, field: &str) -> Option<Value> {
     payload.get(field).filter(|value| !value.is_null()).cloned()
 }
 
+fn active_permission_profile_from_payload(
+    payload: &Value,
+) -> ApiResult<Option<ActivePermissionProfile>> {
+    let Some(profile) = payload
+        .get("activePermissionProfile")
+        .filter(|value| !value.is_null())
+    else {
+        return Ok(None);
+    };
+    Ok(Some(ActivePermissionProfile {
+        id: required_string(profile, "id")?,
+        extends: optional_string(profile, "extends"),
+    }))
+}
+
+fn permission_profile_summary_from_payload(payload: &Value) -> ApiResult<PermissionProfileSummary> {
+    let id = required_string(payload, "id")?;
+    Ok(PermissionProfileSummary {
+        label: optional_string(payload, "label").unwrap_or_else(|| id.clone()),
+        description: optional_string(payload, "description"),
+        id,
+    })
+}
+
 fn string_vec(value: Option<&Value>) -> Vec<String> {
     value
         .and_then(Value::as_array)
@@ -4069,6 +4185,9 @@ fn overlay_thread_composer_state(thread: &mut ThreadSummary, payload: &Value) {
     }
     if let Some(approvals_reviewer) = optional_string(payload, "approvalsReviewer") {
         thread.approvals_reviewer = Some(approvals_reviewer);
+    }
+    if let Ok(Some(active_permission_profile)) = active_permission_profile_from_payload(payload) {
+        thread.active_permission_profile = Some(active_permission_profile);
     }
     if let Some(sandbox) = optional_value(payload, "sandbox") {
         thread.sandbox = Some(sandbox);

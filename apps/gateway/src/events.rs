@@ -976,7 +976,7 @@ async fn normalized_account_event(
 async fn normalized_thread_settings_event(
     state: &AppState,
     method: &str,
-    _params: &Value,
+    params: &Value,
     metadata: &EventMetadata,
 ) -> ApiResult<Option<EventEnvelope>> {
     if !method.eq_ignore_ascii_case("thread/settings/updated") {
@@ -988,7 +988,27 @@ async fn normalized_thread_settings_event(
     let mut thread = app_server_api::client(&state.app_server)
         .thread_read_summary(thread_id)
         .await?;
+    let active_permission_profile_patch = params
+        .get("threadSettings")
+        .map(active_permission_profile_patch_from_settings)
+        .transpose()?
+        .unwrap_or(ActivePermissionProfilePatch::Missing);
+    if let Some(permissions) = active_permission_profile_patch.permissions() {
+        save_thread_settings_permissions_patch(state, &thread.id, permissions).await?;
+    }
+    if let Some(settings) = params.get("threadSettings") {
+        if let Some(profile) = active_permission_profile_from_value(settings)? {
+            thread.active_permission_profile = Some(profile.clone());
+            if let Some(raw_payload) = thread.raw_payload.as_object_mut() {
+                raw_payload.insert(
+                    "activePermissionProfile".to_string(),
+                    serde_json::to_value(profile)?,
+                );
+            }
+        }
+    }
     apply_thread_summary_state(state, std::slice::from_mut(&mut thread)).await?;
+    apply_active_permission_profile_patch(&mut thread, &active_permission_profile_patch)?;
     let payload = TimelineThreadMetadataPayload {
         source: TimelineUpdateSource::GatewayStream,
         thread_id: thread.id.clone(),
@@ -1008,6 +1028,89 @@ async fn normalized_thread_settings_event(
         })
         .await
         .map(Some)
+}
+
+#[derive(Debug, Clone)]
+enum ActivePermissionProfilePatch {
+    Missing,
+    Clear,
+    Set(app_server_api::ActivePermissionProfile),
+}
+
+impl ActivePermissionProfilePatch {
+    fn permissions(&self) -> Option<Option<String>> {
+        match self {
+            Self::Missing => None,
+            Self::Clear => Some(None),
+            Self::Set(profile) => Some(Some(profile.id.clone())),
+        }
+    }
+}
+
+async fn save_thread_settings_permissions_patch(
+    state: &AppState,
+    thread_id: &str,
+    permissions: Option<String>,
+) -> ApiResult<()> {
+    let mut settings = state
+        .store
+        .thread_composer_settings(&[thread_id.to_string()])
+        .await?
+        .remove(thread_id)
+        .unwrap_or_default();
+    settings.permissions = permissions;
+    settings.approval_policy = None;
+    settings.approvals_reviewer = None;
+    settings.sandbox = None;
+    state
+        .store
+        .save_thread_composer_settings(thread_id, &settings)
+        .await
+}
+
+fn active_permission_profile_patch_from_settings(
+    settings: &Value,
+) -> ApiResult<ActivePermissionProfilePatch> {
+    let Some(settings) = settings.as_object() else {
+        return Ok(ActivePermissionProfilePatch::Missing);
+    };
+    let Some(profile) = settings.get("activePermissionProfile") else {
+        return Ok(ActivePermissionProfilePatch::Missing);
+    };
+    if profile.is_null() {
+        return Ok(ActivePermissionProfilePatch::Clear);
+    }
+    Ok(ActivePermissionProfilePatch::Set(
+        app_server_api::ActivePermissionProfile {
+            id: required_payload_string(profile, "id")?,
+            extends: string_field(profile, &["extends"]),
+        },
+    ))
+}
+
+fn apply_active_permission_profile_patch(
+    thread: &mut ThreadSummary,
+    patch: &ActivePermissionProfilePatch,
+) -> ApiResult<()> {
+    match patch {
+        ActivePermissionProfilePatch::Missing => {}
+        ActivePermissionProfilePatch::Clear => {
+            thread.active_permission_profile = None;
+            if let Some(raw_payload) = thread.raw_payload.as_object_mut() {
+                raw_payload.remove("activePermissionProfile");
+            }
+        }
+        ActivePermissionProfilePatch::Set(profile) => {
+            thread.active_permission_profile = Some(profile.clone());
+            if let Some(raw_payload) = thread.raw_payload.as_object_mut() {
+                raw_payload.insert(
+                    "activePermissionProfile".to_string(),
+                    serde_json::to_value(profile)?,
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn normalized_subagent_events(
@@ -1372,6 +1475,7 @@ fn thread_summary_from_value(thread: &Value) -> ApiResult<ThreadSummary> {
         service_tier: string_field(thread, &["serviceTier"]),
         approval_policy: string_field(thread, &["approvalPolicy"]),
         approvals_reviewer: string_field(thread, &["approvalsReviewer"]),
+        active_permission_profile: active_permission_profile_from_value(thread)?,
         agent_nickname: string_field(thread, &["agentNickname"]),
         agent_role: string_field(thread, &["agentRole"]),
         sandbox: thread
@@ -1387,6 +1491,21 @@ fn thread_summary_from_value(thread: &Value) -> ApiResult<ThreadSummary> {
         notifications_enabled: true,
         raw_payload: thread.clone(),
     })
+}
+
+fn active_permission_profile_from_value(
+    thread: &Value,
+) -> ApiResult<Option<app_server_api::ActivePermissionProfile>> {
+    let Some(profile) = thread
+        .get("activePermissionProfile")
+        .filter(|value| !value.is_null())
+    else {
+        return Ok(None);
+    };
+    Ok(Some(app_server_api::ActivePermissionProfile {
+        id: required_payload_string(profile, "id")?,
+        extends: string_field(profile, &["extends"]),
+    }))
 }
 
 fn thread_status_from_value(status: &Value) -> Option<ThreadStatus> {

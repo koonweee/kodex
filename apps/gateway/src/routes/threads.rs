@@ -257,6 +257,8 @@ pub struct CreateThreadRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approvals_reviewer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<String>,
     #[serde(default)]
     pub payload: Value,
@@ -276,6 +278,8 @@ pub struct CreateChatThreadRequest {
     pub approval_policy: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approvals_reviewer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<String>,
     #[serde(default)]
@@ -472,9 +476,11 @@ pub async fn create_thread(
         service_tier: request.service_tier,
         approval_policy: request.approval_policy,
         approvals_reviewer: request.approvals_reviewer,
+        permissions: request.permissions,
         sandbox: request.sandbox,
         payload: request.payload,
     };
+    options.validate()?;
     let payload = create_thread_payload(&options);
     let mut response = app_server_api::client(&state.app_server)
         .thread_start(project.id, project.cwd, payload)
@@ -615,9 +621,11 @@ pub async fn create_chat_thread(
         service_tier: request.service_tier,
         approval_policy: request.approval_policy,
         approvals_reviewer: request.approvals_reviewer,
+        permissions: request.permissions,
         sandbox: request.sandbox,
         payload: request.payload,
     };
+    options.validate()?;
     let payload = create_thread_payload(&options);
     let mut response = app_server_api::client(&state.app_server)
         .thread_start_in_cwd(cwd, payload)
@@ -635,8 +643,20 @@ pub(crate) struct ThreadCreationOptions {
     pub(crate) service_tier: Option<String>,
     pub(crate) approval_policy: Option<String>,
     pub(crate) approvals_reviewer: Option<String>,
+    pub(crate) permissions: Option<String>,
     pub(crate) sandbox: Option<String>,
     pub(crate) payload: Value,
+}
+
+impl ThreadCreationOptions {
+    pub(crate) fn validate(&self) -> ApiResult<()> {
+        if self.permissions.is_some() && self.sandbox.is_some() {
+            return Err(crate::error::ApiError::BadRequest(
+                "permissions and sandbox cannot be combined".to_string(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 pub(crate) fn create_thread_payload(options: &ThreadCreationOptions) -> Value {
@@ -656,6 +676,9 @@ pub(crate) fn create_thread_payload(options: &ThreadCreationOptions) -> Value {
     }
     if let Some(approvals_reviewer) = options.approvals_reviewer.as_ref() {
         payload["approvalsReviewer"] = Value::String(approvals_reviewer.clone());
+    }
+    if let Some(permissions) = options.permissions.as_ref() {
+        payload["permissions"] = Value::String(permissions.clone());
     }
     if let Some(sandbox) = options.sandbox.as_ref() {
         payload["sandbox"] = Value::String(sandbox.clone());
@@ -682,6 +705,14 @@ pub(crate) fn overlay_thread_creation_options(
     if thread.approvals_reviewer.is_none() {
         thread.approvals_reviewer = options.approvals_reviewer.clone();
     }
+    if thread.active_permission_profile.is_none() {
+        thread.active_permission_profile = options.permissions.as_ref().map(|permissions| {
+            app_server_api::ActivePermissionProfile {
+                id: permissions.clone(),
+                extends: None,
+            }
+        });
+    }
     if thread.sandbox.is_none() {
         thread.sandbox = options
             .sandbox
@@ -701,6 +732,7 @@ pub(crate) async fn save_thread_creation_options(
         service_tier: options.service_tier.clone(),
         approval_policy: options.approval_policy.clone(),
         approvals_reviewer: options.approvals_reviewer.clone(),
+        permissions: options.permissions.clone(),
         sandbox: options
             .sandbox
             .as_ref()
@@ -1129,17 +1161,70 @@ pub async fn update_thread_settings(
     Json(request): Json<ThreadSettingsUpdateRequest>,
 ) -> ApiResult<Json<ThreadSettingsUpdateResponse>> {
     request.validate()?;
+    let permissions_patch = request.permissions.clone();
     let client = app_server_api::client(&state.app_server);
     let raw_response = client
         .thread_update_settings(thread_id.clone(), request)
         .await?;
+    if let Some(permissions) = permissions_patch.clone() {
+        save_thread_settings_permissions_patch(&state, &thread_id, permissions).await?;
+    }
     let mut thread = client.thread_read_summary(thread_id).await?;
     apply_thread_summary_state(&state, std::slice::from_mut(&mut thread)).await?;
+    apply_thread_settings_permissions_patch(&mut thread, &permissions_patch);
     broadcast_thread_metadata_update(&state, &thread).await?;
     Ok(Json(ThreadSettingsUpdateResponse {
         thread,
         raw_payload: raw_response.payload,
     }))
+}
+
+async fn save_thread_settings_permissions_patch(
+    state: &AppState,
+    thread_id: &str,
+    permissions: Option<String>,
+) -> ApiResult<()> {
+    let mut settings = state
+        .store
+        .thread_composer_settings(&[thread_id.to_string()])
+        .await?
+        .remove(thread_id)
+        .unwrap_or_default();
+    settings.permissions = permissions;
+    settings.approval_policy = None;
+    settings.approvals_reviewer = None;
+    settings.sandbox = None;
+    state
+        .store
+        .save_thread_composer_settings(thread_id, &settings)
+        .await
+}
+
+fn apply_thread_settings_permissions_patch(
+    thread: &mut ThreadSummary,
+    permissions_patch: &Option<Option<String>>,
+) {
+    match permissions_patch {
+        Some(Some(permissions)) => {
+            thread.active_permission_profile = Some(app_server_api::ActivePermissionProfile {
+                id: permissions.clone(),
+                extends: None,
+            });
+            if let Some(raw_payload) = thread.raw_payload.as_object_mut() {
+                raw_payload.insert(
+                    "activePermissionProfile".to_string(),
+                    json!({ "id": permissions }),
+                );
+            }
+        }
+        Some(None) => {
+            thread.active_permission_profile = None;
+            if let Some(raw_payload) = thread.raw_payload.as_object_mut() {
+                raw_payload.remove("activePermissionProfile");
+            }
+        }
+        None => {}
+    }
 }
 
 #[utoipa::path(patch, path = "/v1/threads/{threadId}/notifications", request_body = ThreadNotificationSettingsUpdateRequest, responses((status = 200, body = ThreadNotificationSettingsResponse)))]
@@ -1515,6 +1600,7 @@ fn sync_thread_command_response(response: &mut ThreadCommandResponse) {
     response.service_tier = response.thread.service_tier.clone();
     response.approval_policy = response.thread.approval_policy.clone();
     response.approvals_reviewer = response.thread.approvals_reviewer.clone();
+    response.active_permission_profile = response.thread.active_permission_profile.clone();
     response.sandbox = response.thread.sandbox.clone();
 
     sync_raw_response_thread(&mut response.raw_payload, &response.thread);
@@ -1524,6 +1610,11 @@ fn sync_thread_command_response(response: &mut ThreadCommandResponse) {
         service_tier: response.thread.service_tier.clone(),
         approval_policy: response.thread.approval_policy.clone(),
         approvals_reviewer: response.thread.approvals_reviewer.clone(),
+        permissions: response
+            .thread
+            .active_permission_profile
+            .as_ref()
+            .map(|profile| profile.id.clone()),
         sandbox: response.thread.sandbox.clone(),
     };
     sync_raw_thread_composer_settings(&mut response.raw_payload, &settings);
@@ -1788,6 +1879,15 @@ fn overlay_stored_thread_composer_settings(
         thread.approvals_reviewer = settings.approvals_reviewer.clone();
         overlay.approvals_reviewer = settings.approvals_reviewer.clone();
     }
+    if thread.active_permission_profile.is_none() {
+        thread.active_permission_profile = settings.permissions.as_ref().map(|permissions| {
+            app_server_api::ActivePermissionProfile {
+                id: permissions.clone(),
+                extends: None,
+            }
+        });
+        overlay.permissions = settings.permissions.clone();
+    }
     if thread.sandbox.is_none() {
         thread.sandbox = settings.sandbox.clone();
         overlay.sandbox = settings.sandbox.clone();
@@ -1812,6 +1912,12 @@ fn sync_raw_thread_composer_settings_present(
         "approvalsReviewer",
         &settings.approvals_reviewer,
     );
+    if let Some(permissions) = settings.permissions.as_ref() {
+        raw_payload.insert(
+            "activePermissionProfile".to_string(),
+            json!({ "id": permissions }),
+        );
+    }
     if let Some(sandbox) = settings.sandbox.as_ref() {
         raw_payload.insert("sandbox".to_string(), sandbox.clone());
     }
@@ -1831,6 +1937,14 @@ fn sync_raw_thread_composer_settings(raw_payload: &mut Value, settings: &ThreadC
         "approvalsReviewer",
         &settings.approvals_reviewer,
     );
+    if let Some(permissions) = settings.permissions.as_ref() {
+        raw_payload.insert(
+            "activePermissionProfile".to_string(),
+            json!({ "id": permissions }),
+        );
+    } else {
+        raw_payload.remove("activePermissionProfile");
+    }
     if let Some(sandbox) = settings.sandbox.as_ref() {
         raw_payload.insert("sandbox".to_string(), sandbox.clone());
     } else {

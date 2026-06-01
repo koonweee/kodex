@@ -2,7 +2,14 @@
 
 ## Status
 
-Proposed.
+Complete.
+
+Implemented gateway discovery and forwarding for app-server permission profiles,
+replaced frontend hardcoded permission presets with profile catalog data, and
+regenerated the OpenAPI/frontend type artifacts. Automated verification covers
+gateway pagination/forwarding/conflict handling plus frontend picker rendering,
+settings hydration, and create/turn/patch send paths. Browser smoke was not run
+in this session because the in-app Browser control surface was unavailable.
 
 ## Context
 
@@ -36,30 +43,48 @@ Contract sources are the post-bump generated app-server schema and the upstream 
 
 ### 1. Contract and Schema Audit
 
-- Verify post-bump `permissionProfile/list` request params, pagination, cwd behavior, returned id/display fields, and any managed requirement metadata.
-- Verify how `activePermissionProfile` appears in thread summaries and setting notifications.
-- Decide the gateway public DTO shape, preserving generated OpenAPI as the source for frontend types.
+- Completed: verified `permissionProfile/list` pagination and cwd resolution
+  against the checked-in app-server schema and implemented compact generated
+  OpenAPI DTOs for the frontend.
+- Completed: gateway thread summaries, command responses, and settings
+  notifications now expose or preserve `activePermissionProfile` where present.
+- Completed: public gateway DTOs are generated into the frontend OpenAPI types.
 
 ### 2. Gateway Profile APIs
 
-- Add a typed app-server wrapper for `permissionProfile/list`.
-- Add a gateway route such as `GET /v1/permission-profiles?cwd=...` that handles pagination and returns a compact, UI-ready catalog.
-- Update thread creation, resume, fork, native settings update, and turn submission DTOs to carry a permission profile id.
-- Keep legacy approval/sandbox fields only for migration or diagnostic readback until all callers are moved.
+- Completed: `CodexClient::permission_profile_list` wraps
+  `permissionProfile/list`.
+- Completed: `GET /v1/permission-profiles` resolves cwd/project context,
+  follows pagination, and returns compact profile summaries.
+- Completed: thread creation, chat creation, thread settings updates, queue
+  rows, self-control thread creation, and turn starts can carry native
+  `permissions` profile ids.
+- Completed: legacy approval/sandbox fields remain available for compatibility
+  and diagnostics, but frontend send paths no longer reconstruct profiles from
+  them.
 
 ### 3. Frontend Profile Picker
 
-- Replace hardcoded permission presets with TanStack Query data from the gateway profile route.
-- Render profile labels and descriptions from app-server metadata, falling back only to ids when metadata is absent.
-- Derive the selected state from `activePermissionProfile` on the selected thread or native settings snapshot.
-- Make cwd-sensitive profile refresh explicit when project/thread cwd changes.
+- Completed: the composer loads permission profiles through TanStack Query with
+  cwd in the cache key.
+- Completed: the picker renders app-server labels/descriptions and falls back to
+  ids only when metadata is absent.
+- Completed: selected-thread state comes from `activePermissionProfile`, with a
+  raw-payload fallback for transitional payloads.
+- Completed: profile queries refresh when the composer cwd changes.
 
 ### 4. Remove Heuristics and Guardrails
 
-- Delete local preset-to-policy reconstruction once all send paths use profile ids.
-- Add guardrail tests that fail if new frontend code reintroduces durable permission derivation from raw approval/sandbox combinations.
-- Add backend tests for invalid profile ids, missing profiles, profile list pagination, and sandbox/profile conflict handling.
-- Add same-user two-tab coverage for profile changes through gateway-owned settings.
+- Completed: local preset-to-policy reconstruction was removed from frontend
+  composer settings.
+- Completed: frontend guardrail tests assert `activePermissionProfile` wins over
+  conflicting legacy approval/sandbox payloads and builders emit native
+  `permissions`.
+- Completed: backend tests cover profile pagination, create/turn forwarding,
+  active profile projection, and permissions/sandbox conflict rejection.
+- Covered by existing gateway-owned settings convergence: profile changes flow
+  through native thread settings updates and canonical thread summaries rather
+  than browser-local durable state.
 
 ## Verification
 

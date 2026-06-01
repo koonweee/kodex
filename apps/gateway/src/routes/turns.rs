@@ -84,6 +84,7 @@ pub async fn submit_thread_input(
     Path(thread_id): Path<String>,
     Json(request): Json<ThreadInputRequest>,
 ) -> ApiResult<Json<ThreadInputResponse>> {
+    request.options.validate()?;
     let resolved =
         skills::resolve_turn_input_with_skills_for_thread(&state, &thread_id, request.input)
             .await?;
@@ -217,6 +218,7 @@ pub async fn start_turn(
     Path(thread_id): Path<String>,
     Json(request): Json<TurnStartRequest>,
 ) -> ApiResult<Json<RawAppServerResponse>> {
+    request.options.validate()?;
     let resolved =
         skills::resolve_turn_input_with_skills_for_thread(&state, &thread_id, request.input)
             .await?;

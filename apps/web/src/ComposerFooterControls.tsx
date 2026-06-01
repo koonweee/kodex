@@ -3,16 +3,14 @@ import { AlertCircle, Check, Gauge, Shield, X } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useState } from "react";
 
-import type { ModelSummary } from "./api/client";
+import type { ModelSummary, PermissionProfileSummary } from "./api/client";
 import { CheckboxMenuItem } from "./ui/CheckboxMenuItem";
-
-export type PermissionPresetId = "default" | "autoReview" | "fullAccess";
 
 export type ComposerSettings = {
   model?: string;
   effort?: string;
   fast: boolean;
-  permissionPreset?: PermissionPresetId;
+  permissionProfileId?: string;
 };
 
 export type ContextUsage = {
@@ -24,40 +22,22 @@ type ComposerFooterControlsProps = {
   contextUsage?: ContextUsage | null;
   disabled?: boolean;
   models: ModelSummary[];
+  permissionProfiles?: PermissionProfileSummary[];
+  permissionProfilesError?: string | null;
+  permissionProfilesLoading?: boolean;
   showContextUsage?: boolean;
   settingsError?: string | null;
   settings: ComposerSettings;
   onSettingsChange: (settings: ComposerSettings) => void;
 };
 
-const PERMISSION_PRESETS: Array<{
-  id: PermissionPresetId;
-  label: string;
-  description: string;
-  tone?: "danger";
-}> = [
-  {
-    id: "default",
-    label: "Default permissions",
-    description: "Ask before sandbox escapes and write inside the workspace.",
-  },
-  {
-    id: "autoReview",
-    label: "Auto review",
-    description: "Route approval decisions through the auto reviewer.",
-  },
-  {
-    id: "fullAccess",
-    label: "Full access",
-    description: "Runs without sandbox restrictions on this local machine.",
-    tone: "danger",
-  },
-];
-
 export function ComposerFooterControls({
   contextUsage,
   disabled = false,
   models,
+  permissionProfiles = [],
+  permissionProfilesError = null,
+  permissionProfilesLoading = false,
   showContextUsage = true,
   settingsError,
   settings,
@@ -68,10 +48,9 @@ export function ComposerFooterControls({
   const selectedModelLabel = modelFullLabel(selectedModel);
   const selectedModelShortLabel = modelShortLabel(selectedModel);
   const selectedEffort = settings.effort ?? selectedModel?.defaultReasoningEffort ?? null;
-  const selectedPermission = PERMISSION_PRESETS.find((preset) => preset.id === settings.permissionPreset);
-  const permissionLabel = selectedPermission?.label ?? "Default permissions";
+  const selectedPermission = permissionProfiles.find((profile) => profile.id === settings.permissionProfileId);
+  const permissionLabel = selectedPermission?.label ?? settings.permissionProfileId ?? "Default permissions";
   const supportedEfforts = selectedModel?.supportedReasoningEfforts ?? [];
-  const [confirmingFullAccess, setConfirmingFullAccess] = useState(false);
   const [permissionMenuOpened, setPermissionMenuOpened] = useState(false);
   const [modelMenuOpened, setModelMenuOpened] = useState(false);
 
@@ -84,21 +63,8 @@ export function ComposerFooterControls({
     setModelMenuOpened(false);
   }
 
-  function selectPermissionPreset(preset: PermissionPresetId) {
-    if (preset !== "fullAccess") {
-      setConfirmingFullAccess(false);
-      updateSettings({ permissionPreset: preset });
-      setPermissionMenuOpened(false);
-      return;
-    }
-
-    if (!confirmingFullAccess) {
-      setConfirmingFullAccess(true);
-      return;
-    }
-
-    setConfirmingFullAccess(false);
-    updateSettings({ permissionPreset: preset });
+  function selectPermissionProfile(profileId: string | undefined) {
+    updateSettings({ permissionProfileId: profileId });
     setPermissionMenuOpened(false);
   }
 
@@ -110,7 +76,6 @@ export function ComposerFooterControls({
           withinPortal
           opened={permissionMenuOpened}
           onChange={setPermissionMenuOpened}
-          onClose={() => setConfirmingFullAccess(false)}
         >
           <Menu.Target>
             <Button
@@ -125,32 +90,65 @@ export function ComposerFooterControls({
               {permissionLabel}
             </Button>
           </Menu.Target>
-          <Menu.Dropdown aria-label="Permissions presets" className="kodex-composer-menu kodex-permissions-menu">
+          <Menu.Dropdown aria-label="Permission profiles" className="kodex-composer-menu kodex-permissions-menu">
             <MobileMenuHeader title="Permissions" onClose={() => setPermissionMenuOpened(false)} />
             <Box className="kodex-permissions-row-list">
-              {PERMISSION_PRESETS.map((preset) => (
+              <Menu.Item
+                className="kodex-permission-row"
+                data-active={settings.permissionProfileId ? undefined : "true"}
+                leftSection={settings.permissionProfileId ? <Shield size={14} /> : <Check size={14} />}
+                onClick={() => selectPermissionProfile(undefined)}
+              >
+                <Box className="kodex-composer-menu-item">
+                  <Text size="sm" fw={600}>
+                    Default permissions
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    Use the configured Codex default profile.
+                  </Text>
+                </Box>
+              </Menu.Item>
+              {permissionProfiles.map((profile) => (
                 <Menu.Item
                   className="kodex-permission-row"
-                  key={preset.id}
-                  closeMenuOnClick={preset.id !== "fullAccess" || confirmingFullAccess}
-                  color={preset.tone === "danger" ? "red" : undefined}
-                  data-active={settings.permissionPreset === preset.id ? "true" : undefined}
-                  data-tone={preset.tone}
-                  leftSection={settings.permissionPreset === preset.id ? <Check size={14} /> : <Shield size={14} />}
-                  onClick={() => selectPermissionPreset(preset.id)}
+                  key={profile.id}
+                  data-active={settings.permissionProfileId === profile.id ? "true" : undefined}
+                  leftSection={settings.permissionProfileId === profile.id ? <Check size={14} /> : <Shield size={14} />}
+                  onClick={() => selectPermissionProfile(profile.id)}
                 >
                   <Box className="kodex-composer-menu-item">
                     <Text size="sm" fw={600}>
-                      {preset.id === "fullAccess" && confirmingFullAccess ? "Confirm full access" : preset.label}
+                      {profile.label || profile.id}
                     </Text>
-                    <Text size="xs" c={preset.tone === "danger" ? "red.3" : "dimmed"}>
-                      {preset.id === "fullAccess" && confirmingFullAccess
-                        ? "Click again to run without sandbox restrictions."
-                        : preset.description}
-                    </Text>
+                    {profile.description ? (
+                      <Text size="xs" c="dimmed">
+                        {profile.description}
+                      </Text>
+                    ) : null}
                   </Box>
                 </Menu.Item>
               ))}
+              {permissionProfilesLoading ? (
+                <Menu.Item className="kodex-permission-row" disabled leftSection={<Shield size={14} />}>
+                  <Box className="kodex-composer-menu-item">
+                    <Text size="sm" fw={600}>
+                      Loading profiles
+                    </Text>
+                  </Box>
+                </Menu.Item>
+              ) : null}
+              {permissionProfilesError ? (
+                <Menu.Item className="kodex-permission-row" disabled leftSection={<AlertCircle size={14} />}>
+                  <Box className="kodex-composer-menu-item">
+                    <Text size="sm" fw={600}>
+                      Profiles unavailable
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {permissionProfilesError}
+                    </Text>
+                  </Box>
+                </Menu.Item>
+              ) : null}
             </Box>
           </Menu.Dropdown>
         </Menu>

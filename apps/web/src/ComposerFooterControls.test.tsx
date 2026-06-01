@@ -94,43 +94,45 @@ describe("ComposerFooterControls", () => {
     expect(screen.getByRole("menuitemcheckbox", { name: /fast/i, hidden: true })).toHaveAttribute("aria-checked", "true");
   });
 
-  it("requires a second confirmation click before applying full access", async () => {
+  it("renders app-server permission profile metadata and selects a profile id", async () => {
     const onSettingsChange = vi.fn();
 
     renderWithProvider(
-      <ComposerFooterControls models={[model]} settings={settings} onSettingsChange={onSettingsChange} />,
+      <ComposerFooterControls
+        models={[model]}
+        permissionProfiles={[
+          { id: ":workspace", label: "Workspace", description: "Ask before leaving the workspace" },
+          { id: "full-access", label: "Full access", description: null },
+        ]}
+        settings={settings}
+        onSettingsChange={onSettingsChange}
+      />,
     );
 
     await userEvent.click(screen.getByRole("button", { name: /permissions: default permissions/i }));
-    await clickMenuItem(/full access/i);
+    expect(await screen.findByText("Ask before leaving the workspace")).toBeInTheDocument();
+    await clickMenuItem(/workspace/i);
 
-    expect(onSettingsChange).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: /permissions: default permissions/i })).toBeInTheDocument();
-
-    await clickMenuItem(/confirm full access/i);
-
-    expect(onSettingsChange).toHaveBeenCalledTimes(1);
-    expect(onSettingsChange).toHaveBeenCalledWith({ fast: false, permissionPreset: "fullAccess" });
+    expect(onSettingsChange).toHaveBeenCalledWith({ fast: false, permissionProfileId: ":workspace" });
   });
 
-  it("applies ordinary permission presets with one click", async () => {
+  it("falls back to profile ids and can clear to configured defaults", async () => {
     const onSettingsChange = vi.fn();
 
     renderWithProvider(
-      <ComposerFooterControls models={[model]} settings={settings} onSettingsChange={onSettingsChange} />,
+      <ComposerFooterControls
+        models={[model]}
+        permissionProfiles={[{ id: "custom-profile", label: "custom-profile", description: null }]}
+        settings={{ fast: false, permissionProfileId: "custom-profile" }}
+        onSettingsChange={onSettingsChange}
+      />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: /permissions: default permissions/i }));
+    expect(screen.getByRole("button", { name: /permissions: custom-profile/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /permissions: custom-profile/i }));
     await clickMenuItem(/default permissions/i);
 
-    expect(onSettingsChange).toHaveBeenCalledWith({ fast: false, permissionPreset: "default" });
-
-    onSettingsChange.mockClear();
-    await userEvent.click(screen.getByRole("button", { name: /permissions: default permissions/i }));
-    await clickMenuItem(/auto review/i);
-
-    expect(onSettingsChange).toHaveBeenCalledTimes(1);
-    expect(onSettingsChange).toHaveBeenCalledWith({ fast: false, permissionPreset: "autoReview" });
+    expect(onSettingsChange).toHaveBeenCalledWith({ fast: false, permissionProfileId: undefined });
   });
 });
 

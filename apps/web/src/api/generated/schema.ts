@@ -628,6 +628,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/permission-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_permission_profiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/project-previews/reload": {
         parameters: {
             query?: never;
@@ -1406,6 +1422,10 @@ export interface components {
             planType?: string | null;
             rawPayload: unknown;
         };
+        ActivePermissionProfile: {
+            extends?: string | null;
+            id: string;
+        };
         ApiErrorBody: {
             code: string;
             message: string;
@@ -1588,6 +1608,7 @@ export interface components {
         ComposerSettingsResponse: {
             effort?: string | null;
             model?: string | null;
+            permissionProfileId?: string | null;
             permissionsPreset?: null | components["schemas"]["ComposerPermissionsPreset"];
             serviceTier?: string | null;
         };
@@ -1652,6 +1673,7 @@ export interface components {
             firstMessageText: string;
             model?: string | null;
             payload?: unknown;
+            permissions?: string | null;
             sandbox?: string | null;
             serviceTier?: string | null;
         };
@@ -1666,6 +1688,7 @@ export interface components {
             effort?: string | null;
             model?: string | null;
             payload?: unknown;
+            permissions?: string | null;
             projectId: string;
             sandbox?: string | null;
             serviceTier?: string | null;
@@ -1937,6 +1960,20 @@ export interface components {
             threadId?: string | null;
             title: string;
             turnId?: string | null;
+        };
+        PermissionProfileListResponse: {
+            profiles: components["schemas"]["PermissionProfileSummary"][];
+        };
+        PermissionProfileSummary: {
+            description?: string | null;
+            id: string;
+            label: string;
+        };
+        PermissionProfilesQuery: {
+            cwd?: string | null;
+            /** Format: int32 */
+            limit?: number | null;
+            projectId?: string | null;
         };
         PluginDetail: {
             apps?: components["schemas"]["AppSummary"][];
@@ -2272,6 +2309,7 @@ export interface components {
             maxSelfControlDepth?: number | null;
             model?: string | null;
             payload?: unknown;
+            permissions?: string | null;
             projectId: string;
             sandbox?: string | null;
             serviceTier?: string | null;
@@ -2457,6 +2495,7 @@ export interface components {
             thread?: null | components["schemas"]["ThreadSummary"];
         };
         ThreadCommandResponse: {
+            activePermissionProfile?: null | components["schemas"]["ActivePermissionProfile"];
             approvalPolicy?: string | null;
             approvalsReviewer?: string | null;
             cwd?: string | null;
@@ -2564,6 +2603,7 @@ export interface components {
             updatedAt: number;
         };
         ThreadSummary: {
+            activePermissionProfile?: null | components["schemas"]["ActivePermissionProfile"];
             agentNickname?: string | null;
             agentRole?: string | null;
             approvalPolicy?: string | null;
@@ -2722,6 +2762,7 @@ export interface components {
             timeline: components["schemas"]["ThreadTimelineSnapshot"];
         };
         ThreadViewThreadSummary: {
+            activePermissionProfile?: null | components["schemas"]["ActivePermissionProfile"];
             agentNickname?: string | null;
             agentRole?: string | null;
             approvalPolicy?: string | null;
@@ -2840,6 +2881,7 @@ export interface components {
             approvalsReviewer?: string | null;
             effort?: string | null;
             model?: string | null;
+            permissions?: string | null;
             sandboxPolicy?: unknown;
             serviceTier?: string | null;
         };
@@ -3868,6 +3910,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TestNotificationResponse"];
+                };
+            };
+        };
+    };
+    list_permission_profiles: {
+        parameters: {
+            query?: {
+                projectId?: string | null;
+                cwd?: string | null;
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionProfileListResponse"];
                 };
             };
         };

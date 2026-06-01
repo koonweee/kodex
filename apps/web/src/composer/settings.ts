@@ -8,7 +8,7 @@ import type {
   ThreadSummary,
   TurnStartOptions,
 } from "../api/client";
-import type { ComposerSettings, ContextUsage, PermissionPresetId } from "../ComposerFooterControls";
+import type { ComposerSettings, ContextUsage } from "../ComposerFooterControls";
 import { asRecord, numberValue, stringValue } from "../shared/values";
 
 export type ComposerContext = {
@@ -36,7 +36,7 @@ export function normalizePersistedComposerSettings(
     model,
     effort,
     fast: settings.serviceTier === "fast",
-    permissionPreset: permissionPresetFromGateway(settings.permissionsPreset),
+    permissionProfileId: settings.permissionProfileId ?? undefined,
   };
 }
 
@@ -54,7 +54,7 @@ export function mergeDurableComposerSettings(
 
 type ThreadComposerSettingsSource = Pick<
   ThreadSummary,
-  "approvalPolicy" | "approvalsReviewer" | "model" | "reasoningEffort" | "sandbox" | "serviceTier"
+  "activePermissionProfile" | "model" | "reasoningEffort" | "serviceTier"
 > & {
   rawPayload?: unknown;
 };
@@ -64,12 +64,13 @@ export function composerSettingsFromThread(thread: ThreadComposerSettingsSource)
   const model = stringValue(thread.model) ?? stringValue(rawPayload.model);
   const effort = stringValue(thread.reasoningEffort) ?? stringValue(rawPayload.reasoningEffort);
   const serviceTier = stringValue(thread.serviceTier) ?? stringValue(rawPayload.serviceTier);
-  const approvalPolicy = stringValue(thread.approvalPolicy) ?? stringValue(rawPayload.approvalPolicy);
-  const approvalsReviewer = stringValue(thread.approvalsReviewer) ?? stringValue(rawPayload.approvalsReviewer);
-  const sandbox = thread.sandbox ?? rawPayload.sandbox;
-  const permissionPreset = permissionPresetFromThread(approvalPolicy, approvalsReviewer, sandbox);
+  const activePermissionProfile =
+    thread.activePermissionProfile === undefined
+      ? asRecord(rawPayload.activePermissionProfile)
+      : asRecord(thread.activePermissionProfile);
+  const permissionProfileId = stringValue(activePermissionProfile.id);
 
-  if (!model && !effort && !serviceTier && !permissionPreset) {
+  if (!model && !effort && !serviceTier && !permissionProfileId) {
     return null;
   }
 
@@ -77,7 +78,7 @@ export function composerSettingsFromThread(thread: ThreadComposerSettingsSource)
     model: model ?? undefined,
     effort: effort ?? undefined,
     fast: serviceTier === "fast",
-    permissionPreset,
+    permissionProfileId: permissionProfileId ?? undefined,
   };
 }
 
@@ -92,11 +93,8 @@ export function createThreadOptions(settings: ComposerSettings): CreateThreadOpt
   if (settings.fast) {
     options.serviceTier = "fast";
   }
-  const permissions = permissionSettings(settings.permissionPreset);
-  if (permissions) {
-    options.approvalPolicy = permissions.approvalPolicy;
-    options.approvalsReviewer = permissions.approvalsReviewer;
-    options.sandbox = permissions.threadSandbox;
+  if (settings.permissionProfileId) {
+    options.permissions = settings.permissionProfileId;
   }
   return options;
 }
@@ -112,11 +110,8 @@ export function composerTurnOptions(settings: ComposerSettings): TurnStartOption
   if (settings.fast) {
     options.serviceTier = "fast";
   }
-  const permissions = permissionSettings(settings.permissionPreset);
-  if (permissions) {
-    options.approvalPolicy = permissions.approvalPolicy;
-    options.approvalsReviewer = permissions.approvalsReviewer;
-    options.sandboxPolicy = permissions.turnSandboxPolicy;
+  if (settings.permissionProfileId) {
+    options.permissions = settings.permissionProfileId;
   }
   return options;
 }
@@ -135,17 +130,8 @@ export function composerThreadSettingsPatch(
   if (previousSettings.fast !== nextSettings.fast) {
     patch.serviceTier = nextSettings.fast ? "fast" : null;
   }
-  if (previousSettings.permissionPreset !== nextSettings.permissionPreset) {
-    const permissions = permissionSettings(nextSettings.permissionPreset);
-    if (permissions) {
-      patch.approvalPolicy = permissions.approvalPolicy;
-      patch.approvalsReviewer = permissions.approvalsReviewer;
-      patch.sandboxPolicy = permissions.turnSandboxPolicy;
-    } else {
-      patch.approvalPolicy = null;
-      patch.approvalsReviewer = null;
-      patch.sandboxPolicy = null;
-    }
+  if (previousSettings.permissionProfileId !== nextSettings.permissionProfileId) {
+    patch.permissions = nextSettings.permissionProfileId ?? null;
   }
   return patch;
 }
@@ -181,68 +167,4 @@ export function sameComposerContext(left: ComposerContext | null, right: Compose
 
 function supportsReasoningEffort(model: ModelSummary, effort: string) {
   return model.supportedReasoningEfforts.some((option) => option.reasoningEffort === effort);
-}
-
-function permissionPresetFromGateway(
-  preset: ComposerSettingsResponse["permissionsPreset"] | undefined | null,
-): PermissionPresetId | undefined {
-  if (preset === "autoReview") {
-    return "autoReview";
-  }
-  if (preset === "fullAccess") {
-    return "fullAccess";
-  }
-  if (preset === "default") {
-    return "default";
-  }
-  return undefined;
-}
-
-function permissionPresetFromThread(
-  approvalPolicy: string | null,
-  approvalsReviewer: string | null,
-  sandbox: unknown,
-): PermissionPresetId | undefined {
-  const sandboxKind = sandboxPolicyKind(sandbox);
-  if (approvalPolicy === "never" || sandboxKind === "danger-full-access" || sandboxKind === "dangerFullAccess") {
-    return "fullAccess";
-  }
-  if (approvalsReviewer === "auto_review" || approvalsReviewer === "guardian_subagent") {
-    return "autoReview";
-  }
-  if (approvalPolicy || approvalsReviewer || sandboxKind || sandbox != null) {
-    return "default";
-  }
-  return undefined;
-}
-
-function sandboxPolicyKind(sandbox: unknown): string | null {
-  const legacyMode = stringValue(sandbox);
-  if (legacyMode) {
-    return legacyMode;
-  }
-
-  return stringValue(asRecord(sandbox).type);
-}
-
-function permissionSettings(preset: PermissionPresetId | undefined) {
-  if (!preset) {
-    return null;
-  }
-
-  if (preset === "fullAccess") {
-    return {
-      approvalPolicy: "never",
-      approvalsReviewer: "user",
-      threadSandbox: "danger-full-access",
-      turnSandboxPolicy: { type: "dangerFullAccess" },
-    };
-  }
-
-  return {
-    approvalPolicy: "on-request",
-    approvalsReviewer: preset === "autoReview" ? "auto_review" : "user",
-    threadSandbox: "workspace-write",
-    turnSandboxPolicy: { type: "workspaceWrite", networkAccess: false, writableRoots: [] },
-  };
 }

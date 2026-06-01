@@ -661,6 +661,8 @@ pub struct SelfControlCreateThreadRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approvals_reviewer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<String>,
     #[serde(default)]
     pub payload: Value,
@@ -690,9 +692,11 @@ pub async fn create_self_control_thread(
         service_tier: request.service_tier,
         approval_policy: request.approval_policy,
         approvals_reviewer: request.approvals_reviewer,
+        permissions: request.permissions,
         sandbox: request.sandbox,
         payload: request.payload,
     };
+    options.validate()?;
     let payload = create_thread_payload(&options);
     let mut response = app_server_api::client(&state.app_server)
         .thread_start(project.id.clone(), project.cwd, payload)
@@ -761,6 +765,7 @@ pub async fn send_self_control_thread_input(
     Json(request): Json<SelfControlThreadInputRequest>,
 ) -> ApiResult<Json<SelfControlThreadInputResponse>> {
     enforce_self_control_depth(request.max_self_control_depth)?;
+    request.options.validate()?;
     if should_queue_self_control_input(&state, &thread_id).await? {
         let input =
             skills::resolve_turn_input_for_thread(&state, &thread_id, request.input).await?;

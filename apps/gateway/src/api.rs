@@ -9,17 +9,18 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::{
     app_server::DynAppServer,
     app_server_api::{
-        AccountResponse, AppSummary, ComposerPermissionsPreset, ComposerSettingsResponse,
-        ComposerSettingsUpdateRequest, ComposerSettingsUpdateResponse, ConfiguredMcpSecret,
-        ConfiguredMcpServer, ConfiguredMcpServerListResponse, ConfiguredMcpTransport,
-        LoginStartResponse, MarketplaceAddResponse, McpAuthStatus, McpConfigMutationResponse,
-        McpOAuthLoginRequest, McpOAuthLoginResponse, McpReloadResponse, McpResource,
-        McpResourceReadResponse, McpResourceTemplate, McpServerInstallRequest,
+        AccountResponse, ActivePermissionProfile, AppSummary, ComposerPermissionsPreset,
+        ComposerSettingsResponse, ComposerSettingsUpdateRequest, ComposerSettingsUpdateResponse,
+        ConfiguredMcpSecret, ConfiguredMcpServer, ConfiguredMcpServerListResponse,
+        ConfiguredMcpTransport, LoginStartResponse, MarketplaceAddResponse, McpAuthStatus,
+        McpConfigMutationResponse, McpOAuthLoginRequest, McpOAuthLoginResponse, McpReloadResponse,
+        McpResource, McpResourceReadResponse, McpResourceTemplate, McpServerInstallRequest,
         McpServerListResponse, McpServerStatus, McpServerStatusDetail, McpServerToggleRequest,
         McpServerTransportRequest, McpTool, ModelListResponse, PendingTimelineRequestSummary,
-        PluginDetail, PluginInstallResponse, PluginInterface, PluginListResponse,
-        PluginMarketplaceEntry, PluginReadResponse, PluginSummary, RateLimitsResponse,
-        RawAppServerResponse, SkillErrorInfo, SkillInterface, SkillMetadata, SkillsCatalogResponse,
+        PermissionProfileListResponse, PermissionProfileSummary, PluginDetail,
+        PluginInstallResponse, PluginInterface, PluginListResponse, PluginMarketplaceEntry,
+        PluginReadResponse, PluginSummary, RateLimitsResponse, RawAppServerResponse,
+        SkillErrorInfo, SkillInterface, SkillMetadata, SkillsCatalogResponse,
         ThreadCommandResponse, ThreadItemSnapshot, ThreadListResponse, ThreadLiveState,
         ThreadSettingsUpdateRequest, ThreadTimelineFileChangeEntry, ThreadTimelineRow,
         ThreadTimelineSnapshot, ThreadTimelineSnapshotItem, ThreadTimelineWindowPage,
@@ -67,6 +68,7 @@ use crate::{
             PushSubscriptionUpsertRequest, PushSubscriptionUpsertResponse,
             TestNotificationResponse,
         },
+        permission_profiles::PermissionProfilesQuery,
         project_previews::{
             PreviewCreateRequest, PreviewListResponse, PreviewRouteCreateRequest,
             PreviewRouteResponse, PreviewRouteUpdateRequest, PreviewServiceCreateRequest,
@@ -164,6 +166,7 @@ impl AppState {
         crate::routes::capabilities::capabilities,
         crate::routes::composer_settings::read_composer_settings,
         crate::routes::composer_settings::update_composer_settings,
+        crate::routes::permission_profiles::list_permission_profiles,
         crate::events::events,
         crate::events::debug_events,
         crate::routes::projects::list_projects,
@@ -271,6 +274,10 @@ impl AppState {
         ComposerSettingsUpdateRequest,
         ComposerSettingsUpdateResponse,
         ComposerPermissionsPreset,
+        ActivePermissionProfile,
+        PermissionProfilesQuery,
+        PermissionProfileListResponse,
+        PermissionProfileSummary,
         EventEnvelope,
         EventListResponse,
         Project,
@@ -479,6 +486,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::account::router())
         .merge(routes::models::router())
         .merge(routes::notifications::router())
+        .merge(routes::permission_profiles::router())
         .merge(routes::skills::router())
         .merge(routes::kodex_control_plugin::router())
         .merge(routes::mcp::router())

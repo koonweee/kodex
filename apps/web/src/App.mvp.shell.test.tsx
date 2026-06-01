@@ -196,7 +196,7 @@ describe("MVP shell flows", () => {
     20_000,
   );
 
-  it("derives full access from app-server sandbox policy objects on active threads", async () => {
+  it("hydrates active permissions from app-server permission profiles on active threads", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     mockGateway(
       baseRoutes({
@@ -205,7 +205,7 @@ describe("MVP shell flows", () => {
           model: "gpt-5.4",
           effort: "medium",
           serviceTier: null,
-          permissionsPreset: "default",
+          permissionProfileId: null,
         },
         "GET /v1/threads": {
           threads: [{ ...thread, status: "notLoaded" }],
@@ -218,9 +218,7 @@ describe("MVP shell flows", () => {
           thread: {
             ...thread,
             model: "gpt-5.4",
-            approvalPolicy: "on-request",
-            approvalsReviewer: "user",
-            sandbox: { type: "dangerFullAccess" },
+            activePermissionProfile: { id: "full-access" },
           },
           rawPayload: {},
         },

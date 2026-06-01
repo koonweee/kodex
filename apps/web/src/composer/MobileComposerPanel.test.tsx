@@ -8,7 +8,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps, FormEvent, RefObject } from "react";
 
-import { listSkills } from "../api/client";
+import { listPermissionProfiles, listSkills } from "../api/client";
 import { createKodexQueryClient } from "../api/queryClient";
 import type { SkillMetadata } from "../api/client";
 import type { ComposerSettings } from "../ComposerFooterControls";
@@ -18,6 +18,7 @@ const mobileComposerCss = readFileSync(join(process.cwd(), "src/styles/mobile-co
 
 vi.mock("../api/client", async (importActual) => ({
   ...(await importActual<typeof import("../api/client")>()),
+  listPermissionProfiles: vi.fn(),
   listSkills: vi.fn(),
 }));
 
@@ -25,8 +26,13 @@ const composerSettings: ComposerSettings = {
   effort: "high",
   fast: false,
   model: "gpt-5.5",
-  permissionPreset: "autoReview",
+  permissionProfileId: "auto-review",
 };
+
+const permissionProfiles = [
+  { id: ":workspace", label: "Default permissions", description: null },
+  { id: "auto-review", label: "Auto review", description: null },
+];
 
 function noopSubmit(event: FormEvent) {
   event.preventDefault();
@@ -34,6 +40,8 @@ function noopSubmit(event: FormEvent) {
 
 describe("Mobile composer panel", () => {
   beforeEach(() => {
+    vi.mocked(listPermissionProfiles).mockReset();
+    vi.mocked(listPermissionProfiles).mockResolvedValue(permissionProfiles);
     vi.mocked(listSkills).mockReset();
     setMobileViewport(true);
   });
@@ -43,7 +51,7 @@ describe("Mobile composer panel", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders the shared inline composer with mobile density and the same underbar", () => {
+  it("renders the shared inline composer with mobile density and the same underbar", async () => {
     renderComposerPanel({
       contextUsage: { contextTokens: 24_000, modelContextWindow: 120_000 },
       selectedGitBranch: "main",
@@ -51,7 +59,7 @@ describe("Mobile composer panel", () => {
 
     expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile");
     expect(screen.getByLabelText(/message composer/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /model: gpt-5\.5, high/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /expand composer/i })).not.toBeInTheDocument();
     expect(screen.getByRole("img", { name: /context/i })).toBeInTheDocument();
@@ -219,7 +227,7 @@ describe("Mobile composer panel", () => {
     await userEvent.click(screen.getByLabelText(/message composer/i));
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /open attachment menu/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /model: gpt-5\.5, high/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /send message/i })).toHaveClass("kodex-composer-action");
     expect(screen.queryByRole("button", { name: /settings/i })).not.toBeInTheDocument();
