@@ -1,16 +1,15 @@
 import { ActionIcon, Box, Button, Group, Menu, Switch, Text, Tooltip } from "@mantine/core";
-import { AlertCircle, Check, Gauge, Shield, X } from "lucide-react";
+import { AlertCircle, Check, Gauge, X } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useState } from "react";
 
-import type { ModelSummary, PermissionProfileSummary } from "./api/client";
+import type { ModelSummary } from "./api/client";
 import { CheckboxMenuItem } from "./ui/CheckboxMenuItem";
 
 export type ComposerSettings = {
   model?: string;
   effort?: string;
   fast: boolean;
-  permissionProfileId?: string;
 };
 
 export type ContextUsage = {
@@ -22,9 +21,6 @@ type ComposerFooterControlsProps = {
   contextUsage?: ContextUsage | null;
   disabled?: boolean;
   models: ModelSummary[];
-  permissionProfiles?: PermissionProfileSummary[];
-  permissionProfilesError?: string | null;
-  permissionProfilesLoading?: boolean;
   showContextUsage?: boolean;
   settingsError?: string | null;
   settings: ComposerSettings;
@@ -35,9 +31,6 @@ export function ComposerFooterControls({
   contextUsage,
   disabled = false,
   models,
-  permissionProfiles = [],
-  permissionProfilesError = null,
-  permissionProfilesLoading = false,
   showContextUsage = true,
   settingsError,
   settings,
@@ -48,10 +41,7 @@ export function ComposerFooterControls({
   const selectedModelLabel = modelFullLabel(selectedModel);
   const selectedModelShortLabel = modelShortLabel(selectedModel);
   const selectedEffort = settings.effort ?? selectedModel?.defaultReasoningEffort ?? null;
-  const selectedPermission = permissionProfiles.find((profile) => profile.id === settings.permissionProfileId);
-  const permissionLabel = selectedPermission?.label ?? settings.permissionProfileId ?? "Default permissions";
   const supportedEfforts = selectedModel?.supportedReasoningEfforts ?? [];
-  const [permissionMenuOpened, setPermissionMenuOpened] = useState(false);
   const [modelMenuOpened, setModelMenuOpened] = useState(false);
 
   function updateSettings(next: Partial<ComposerSettings>) {
@@ -63,96 +53,9 @@ export function ComposerFooterControls({
     setModelMenuOpened(false);
   }
 
-  function selectPermissionProfile(profileId: string | undefined) {
-    updateSettings({ permissionProfileId: profileId });
-    setPermissionMenuOpened(false);
-  }
-
   return (
     <Group className="kodex-composer-footer-controls" gap={6} wrap="nowrap">
       <Group className="kodex-composer-footer-left" gap={6} wrap="nowrap">
-        <Menu
-          position="top-start"
-          withinPortal
-          opened={permissionMenuOpened}
-          onChange={setPermissionMenuOpened}
-        >
-          <Menu.Target>
-            <Button
-              aria-label={`Permissions: ${permissionLabel}`}
-              className="kodex-composer-control"
-              disabled={disabled}
-              leftSection={<Shield size={14} />}
-              size="compact-sm"
-              type="button"
-              variant="subtle"
-            >
-              {permissionLabel}
-            </Button>
-          </Menu.Target>
-          <Menu.Dropdown aria-label="Permission profiles" className="kodex-composer-menu kodex-permissions-menu">
-            <MobileMenuHeader title="Permissions" onClose={() => setPermissionMenuOpened(false)} />
-            <Box className="kodex-permissions-row-list">
-              <Menu.Item
-                className="kodex-permission-row"
-                data-active={settings.permissionProfileId ? undefined : "true"}
-                leftSection={settings.permissionProfileId ? <Shield size={14} /> : <Check size={14} />}
-                onClick={() => selectPermissionProfile(undefined)}
-              >
-                <Box className="kodex-composer-menu-item">
-                  <Text size="sm" fw={600}>
-                    Default permissions
-                  </Text>
-                  <Text size="xs" c="dimmed">
-                    Use the configured Codex default profile.
-                  </Text>
-                </Box>
-              </Menu.Item>
-              {permissionProfiles.map((profile) => (
-                <Menu.Item
-                  className="kodex-permission-row"
-                  key={profile.id}
-                  data-active={settings.permissionProfileId === profile.id ? "true" : undefined}
-                  leftSection={settings.permissionProfileId === profile.id ? <Check size={14} /> : <Shield size={14} />}
-                  onClick={() => selectPermissionProfile(profile.id)}
-                >
-                  <Box className="kodex-composer-menu-item">
-                    <Text size="sm" fw={600}>
-                      {profile.label || profile.id}
-                    </Text>
-                    {profile.description ? (
-                      <Text size="xs" c="dimmed">
-                        {profile.description}
-                      </Text>
-                    ) : null}
-                  </Box>
-                </Menu.Item>
-              ))}
-              {permissionProfilesLoading ? (
-                <Menu.Item className="kodex-permission-row" disabled leftSection={<Shield size={14} />}>
-                  <Box className="kodex-composer-menu-item">
-                    <Text size="sm" fw={600}>
-                      Loading profiles
-                    </Text>
-                  </Box>
-                </Menu.Item>
-              ) : null}
-              {permissionProfilesError ? (
-                <Menu.Item className="kodex-permission-row" disabled leftSection={<AlertCircle size={14} />}>
-                  <Box className="kodex-composer-menu-item">
-                    <Text size="sm" fw={600}>
-                      Profiles unavailable
-                    </Text>
-                    <Text size="xs" c="dimmed">
-                      {permissionProfilesError}
-                    </Text>
-                  </Box>
-                </Menu.Item>
-              ) : null}
-            </Box>
-          </Menu.Dropdown>
-        </Menu>
-
         {settingsError ? (
           <Tooltip label={settingsError}>
             <ActionIcon aria-label={settingsError} color="red" size="md" type="button" variant="subtle">

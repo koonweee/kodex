@@ -124,6 +124,7 @@ pub struct AppState {
     pub notifications: crate::notifications::NotificationService,
     pub subagents: SubagentProjection,
     pub thread_views: ThreadViewStore,
+    pub title_generation: crate::title_generation::TitleGenerationService,
     pub chat_cwd_cache: crate::routes::threads::ChatCwdCache,
     pub thread_input_locks: crate::turn_lifecycle::ThreadInputLocks,
 }
@@ -144,6 +145,7 @@ impl AppState {
             notifications,
             subagents: SubagentProjection::default(),
             thread_views: ThreadViewStore::default(),
+            title_generation: crate::title_generation::TitleGenerationService::default(),
             chat_cwd_cache: crate::routes::threads::ChatCwdCache::default(),
             thread_input_locks: crate::turn_lifecycle::ThreadInputLocks::default(),
         }
@@ -154,6 +156,14 @@ impl AppState {
         sender: Arc<dyn crate::notifications::PushSender>,
     ) -> Self {
         self.notifications = crate::notifications::NotificationService::new(sender);
+        self
+    }
+
+    pub fn with_title_generation_service(
+        mut self,
+        service: crate::title_generation::TitleGenerationService,
+    ) -> Self {
+        self.title_generation = service;
         self
     }
 }

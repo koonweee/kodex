@@ -8,7 +8,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useRef, useState, type ComponentProps, type FormEvent, type ReactElement, type ReactNode, type RefObject } from "react";
 
-import { listPermissionProfiles, listSkills } from "../api/client";
+import { listSkills } from "../api/client";
 import { createKodexQueryClient } from "../api/queryClient";
 import type { SkillMetadata } from "../api/client";
 import type { ComposerSettings } from "../ComposerFooterControls";
@@ -18,7 +18,6 @@ const composerCss = readFileSync(join(process.cwd(), "src/styles/composer.css"),
 
 vi.mock("../api/client", async (importActual) => ({
   ...(await importActual<typeof import("../api/client")>()),
-  listPermissionProfiles: vi.fn(),
   listSkills: vi.fn(),
 }));
 
@@ -26,13 +25,7 @@ const composerSettings: ComposerSettings = {
   effort: "medium",
   fast: false,
   model: "gpt-5.4",
-  permissionProfileId: ":workspace",
 };
-
-const permissionProfiles = [
-  { id: ":workspace", label: "Default permissions", description: null },
-  { id: "auto-review", label: "Auto review", description: null },
-];
 
 function noopSubmit(event: FormEvent) {
   event.preventDefault();
@@ -116,8 +109,6 @@ function renderComposerPanel(
 
 describe("ComposerPanel", () => {
   beforeEach(() => {
-    vi.mocked(listPermissionProfiles).mockReset();
-    vi.mocked(listPermissionProfiles).mockResolvedValue(permissionProfiles);
     vi.mocked(listSkills).mockReset();
   });
 

@@ -63,6 +63,7 @@ mod tests {
             ThreadRuntimeState,
         },
         thread_view,
+        title_generation::{ThreadTitleGenerator, ThreadTitleRequest, TitleGenerationService},
     };
 
     async fn test_state() -> (AppState, Arc<RecordingAppServer>) {
@@ -70,7 +71,10 @@ mod tests {
         let app_server = Arc::new(RecordingAppServer::default());
         app_server.ready.store(true, Ordering::SeqCst);
         (
-            AppState::new(Config::default(), store, app_server.clone()),
+            AppState::new(Config::default(), store, app_server.clone())
+                .with_title_generation_service(
+                    crate::title_generation::TitleGenerationService::disabled(),
+                ),
             app_server,
         )
     }
@@ -4089,7 +4093,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn composer_settings_reads_project_config_and_persists_only_toolbar_defaults() {
+    async fn composer_settings_reads_project_config_and_persists_execution_defaults() {
         let (state, app_server) = test_state().await;
         let cwd = std::env::current_dir().unwrap().display().to_string();
         let project = state
@@ -4102,6 +4106,7 @@ mod tests {
                 "model": "gpt-5.4",
                 "model_reasoning_effort": "high",
                 "service_tier": "fast",
+                "default_permissions": ":workspace",
                 "approval_policy": "on-request",
                 "approvals_reviewer": "auto_review",
                 "sandbox_mode": "workspace-write"
@@ -4124,6 +4129,9 @@ mod tests {
         assert_eq!(body["model"], "gpt-5.4");
         assert_eq!(body["effort"], "high");
         assert_eq!(body["serviceTier"], "fast");
+        assert_eq!(body["permissionProfileId"], ":workspace");
+        assert_eq!(body["approvalPolicy"], "on-request");
+        assert_eq!(body["approvalsReviewer"], "auto_review");
         assert_eq!(body["permissionsPreset"], "autoReview");
 
         let write = app
@@ -4135,7 +4143,9 @@ mod tests {
                             "model": "gpt-5.4",
                             "effort": "medium",
                             "serviceTier": null,
-                            "permissionsPreset": "fullAccess"
+                            "permissionProfileId": ":read-only",
+                            "approvalPolicy": "on-request",
+                            "approvalsReviewer": "user"
                         })
                         .to_string(),
                     ))
@@ -4160,7 +4170,10 @@ mod tests {
                 "edits": [
                     {"keyPath": "model", "mergeStrategy": "replace", "value": "gpt-5.4"},
                     {"keyPath": "model_reasoning_effort", "mergeStrategy": "replace", "value": "medium"},
-                    {"keyPath": "service_tier", "mergeStrategy": "replace", "value": null}
+                    {"keyPath": "service_tier", "mergeStrategy": "replace", "value": null},
+                    {"keyPath": "default_permissions", "mergeStrategy": "replace", "value": ":read-only"},
+                    {"keyPath": "approval_policy", "mergeStrategy": "replace", "value": "on-request"},
+                    {"keyPath": "approvals_reviewer", "mergeStrategy": "replace", "value": "user"}
                 ],
                 "reloadUserConfig": true
             })
@@ -6933,6 +6946,195 @@ mod tests {
             requests[2].1,
             json!({"threadId": "thread-1", "turnId": "turn-1"})
         );
+    }
+
+    #[tokio::test]
+    async fn thread_input_sets_model_generated_name_after_started_turn() {
+        let (state, app_server) = test_state().await;
+        let title_generator = Arc::new(RecordingTitleGenerator::new(Some("Implement Naming")));
+        let state = state.with_title_generation_service(TitleGenerationService::with_generator(
+            title_generator.clone(),
+        ));
+        app_server.queued_responses.lock().unwrap().extend([
+            thread_read_response("thread-1", 0),
+            json!({"turnId": "turn-started"}),
+            thread_read_response("thread-1", 1),
+            thread_read_response("thread-1", 1),
+        ]);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"Create model generated thread naming"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response_json(response).await["disposition"], "started");
+        wait_for_app_server_method(&app_server, "thread/name/set").await;
+
+        let title_requests = title_generator.requests.lock().unwrap();
+        assert_eq!(title_requests.len(), 1);
+        assert_eq!(
+            title_requests[0].user_request,
+            "Create model generated thread naming"
+        );
+        drop(title_requests);
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[1].0, "turn/start");
+        assert!(requests
+            .iter()
+            .any(|(method, params)| method == "thread/read"
+                && params == &json!({"threadId": "thread-1", "includeTurns": true})));
+        assert!(requests
+            .iter()
+            .any(|(method, params)| method == "thread/name/set"
+                && params == &json!({"threadId": "thread-1", "name": "Implement Naming"})));
+    }
+
+    #[tokio::test]
+    async fn turn_start_sets_model_generated_name_after_started_turn() {
+        let (state, app_server) = test_state().await;
+        let title_generator = Arc::new(RecordingTitleGenerator::new(Some("Direct Turn Title")));
+        let state = state
+            .with_title_generation_service(TitleGenerationService::with_generator(title_generator));
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"turnId": "turn-started"}),
+            thread_read_response("thread-1", 1),
+            thread_read_response("thread-1", 1),
+        ]);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/turns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"Name direct turns"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        wait_for_app_server_method(&app_server, "thread/name/set").await;
+        let requests = app_server.requests.lock().unwrap();
+        assert!(requests
+            .iter()
+            .any(|(method, params)| method == "thread/name/set"
+                && params == &json!({"threadId": "thread-1", "name": "Direct Turn Title"})));
+    }
+
+    #[tokio::test]
+    async fn model_generated_name_skips_already_named_thread() {
+        let (state, app_server) = test_state().await;
+        let title_generator = Arc::new(RecordingTitleGenerator::new(Some("Should Not Apply")));
+        let state = state.with_title_generation_service(TitleGenerationService::with_generator(
+            title_generator.clone(),
+        ));
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"turnId": "turn-started"}),
+            named_thread_read_response("thread-1", "User Name", 1),
+        ]);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/turns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"do not rename"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        wait_for_app_server_request_count(&app_server, "thread/read", 1).await;
+        assert_eq!(title_generator.requests.lock().unwrap().len(), 0);
+        let requests = app_server.requests.lock().unwrap();
+        assert!(requests
+            .iter()
+            .all(|(method, _)| method != "thread/name/set"));
+    }
+
+    #[tokio::test]
+    async fn model_generated_name_skips_threads_after_first_turn() {
+        let (state, app_server) = test_state().await;
+        let title_generator = Arc::new(RecordingTitleGenerator::new(Some("Should Not Apply")));
+        let state = state.with_title_generation_service(TitleGenerationService::with_generator(
+            title_generator.clone(),
+        ));
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"turnId": "turn-started"}),
+            thread_read_response("thread-1", 2),
+        ]);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/turns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"second turn"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        wait_for_app_server_request_count(&app_server, "thread/read", 1).await;
+        assert_eq!(title_generator.requests.lock().unwrap().len(), 0);
+        let requests = app_server.requests.lock().unwrap();
+        assert!(requests
+            .iter()
+            .all(|(method, _)| method != "thread/name/set"));
+    }
+
+    #[tokio::test]
+    async fn queued_thread_input_does_not_generate_thread_name() {
+        let (state, app_server) = test_state().await;
+        let title_generator = Arc::new(RecordingTitleGenerator::new(Some("Should Not Run")));
+        let state = state.with_title_generation_service(TitleGenerationService::with_generator(
+            title_generator.clone(),
+        ));
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(active_thread_read_response("thread-1", "turn-active"));
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"queue me"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response_json(response).await["disposition"], "queued");
+        assert_eq!(title_generator.requests.lock().unwrap().len(), 0);
+        let requests = app_server.requests.lock().unwrap();
+        assert!(requests
+            .iter()
+            .all(|(method, _)| method != "thread/name/set"));
     }
 
     #[tokio::test]
@@ -12162,6 +12364,12 @@ mod tests {
         })
     }
 
+    fn named_thread_read_response(thread_id: &str, name: &str, completed_turns: usize) -> Value {
+        let mut response = thread_read_response(thread_id, completed_turns);
+        response["thread"]["name"] = json!(name);
+        response
+    }
+
     fn active_thread_read_response(thread_id: &str, turn_id: &str) -> Value {
         json!({
             "thread": {
@@ -12181,6 +12389,57 @@ mod tests {
                 "updatedAt": 1_767_225_600_i64
             }
         })
+    }
+
+    async fn wait_for_app_server_method(app_server: &RecordingAppServer, expected_method: &str) {
+        wait_for_app_server_request_count(app_server, expected_method, 1).await;
+    }
+
+    async fn wait_for_app_server_request_count(
+        app_server: &RecordingAppServer,
+        expected_method: &str,
+        expected_count: usize,
+    ) {
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if app_server
+                    .requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|(method, _)| method == expected_method)
+                    .count()
+                    >= expected_count
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    struct RecordingTitleGenerator {
+        title: Option<String>,
+        requests: StdMutex<Vec<ThreadTitleRequest>>,
+    }
+
+    impl RecordingTitleGenerator {
+        fn new(title: Option<&str>) -> Self {
+            Self {
+                title: title.map(str::to_string),
+                requests: StdMutex::new(Vec::new()),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl ThreadTitleGenerator for RecordingTitleGenerator {
+        async fn generate_title(&self, request: ThreadTitleRequest) -> ApiResult<Option<String>> {
+            self.requests.lock().unwrap().push(request);
+            Ok(self.title.clone())
+        }
     }
 
     #[derive(Default)]

@@ -63,9 +63,6 @@ export function MobileComposerPanel({
   onStopTurn,
   onSubmitTurn,
   pendingAttachments,
-  permissionProfiles,
-  permissionProfilesError,
-  permissionProfilesLoading,
   selectedThreadPresent,
   selectSkill,
   setComposerShellNode,
@@ -234,9 +231,6 @@ export function MobileComposerPanel({
                 contextUsage={contextUsage}
                 disabled={isComposerControlsDisabled}
                 models={models}
-                permissionProfiles={permissionProfiles}
-                permissionProfilesError={permissionProfilesError}
-                permissionProfilesLoading={permissionProfilesLoading}
                 onSettingsChange={onComposerSettingsChange}
                 onStopTurn={onStopTurn}
                 selectedThreadPresent={selectedThreadPresent}
@@ -282,9 +276,6 @@ export function MobileComposerPanel({
       onStopTurn={onStopTurn}
       onSubmitTurn={onSubmitTurn}
       pendingAttachments={pendingAttachments}
-      permissionProfiles={permissionProfiles}
-      permissionProfilesError={permissionProfilesError}
-      permissionProfilesLoading={permissionProfilesLoading}
       selectedThreadPresent={selectedThreadPresent}
       selectSkill={selectSkill}
       setComposerShellNode={setComposerShellNode}

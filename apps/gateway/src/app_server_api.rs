@@ -1359,6 +1359,8 @@ pub struct ComposerSettingsResponse {
     pub effort: Option<String>,
     pub service_tier: Option<String>,
     pub permission_profile_id: Option<String>,
+    pub approval_policy: Option<String>,
+    pub approvals_reviewer: Option<String>,
     pub permissions_preset: Option<ComposerPermissionsPreset>,
 }
 
@@ -1372,6 +1374,8 @@ impl ComposerSettingsResponse {
             effort: optional_string(config, "model_reasoning_effort"),
             service_tier: optional_string(config, "service_tier"),
             permission_profile_id: optional_string(config, "default_permissions"),
+            approval_policy: optional_string(config, "approval_policy"),
+            approvals_reviewer: optional_string(config, "approvals_reviewer"),
             permissions_preset: composer_permissions_preset(config),
         })
     }
@@ -1406,6 +1410,24 @@ pub struct ComposerSettingsUpdateRequest {
         skip_serializing_if = "Option::is_none"
     )]
     pub service_tier: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_string_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub permission_profile_id: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_string_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub approval_policy: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_string_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub approvals_reviewer: Option<Option<String>>,
 }
 
 impl ComposerSettingsUpdateRequest {
@@ -1424,6 +1446,24 @@ impl ComposerSettingsUpdateRequest {
             edits.push(config_edit(
                 "service_tier",
                 option_string_value(service_tier),
+            ));
+        }
+        if let Some(permission_profile_id) = self.permission_profile_id {
+            edits.push(config_edit(
+                "default_permissions",
+                option_string_value(permission_profile_id),
+            ));
+        }
+        if let Some(approval_policy) = self.approval_policy {
+            edits.push(config_edit(
+                "approval_policy",
+                option_string_value(approval_policy),
+            ));
+        }
+        if let Some(approvals_reviewer) = self.approvals_reviewer {
+            edits.push(config_edit(
+                "approvals_reviewer",
+                option_string_value(approvals_reviewer),
             ));
         }
         edits
@@ -4897,7 +4937,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn adapter_reads_and_writes_composer_settings_without_permissions() {
+    async fn adapter_reads_and_writes_composer_settings_with_execution_defaults() {
         let server = Arc::new(RecordingServer {
             ready: AtomicBool::new(true),
             response: StdMutex::new(json!({
@@ -4905,6 +4945,7 @@ mod tests {
                     "model": "gpt-5.4",
                     "model_reasoning_effort": "high",
                     "service_tier": "fast",
+                    "default_permissions": ":workspace",
                     "approval_policy": "on-request",
                     "approvals_reviewer": "auto_review",
                     "sandbox_mode": "workspace-write"
@@ -4923,6 +4964,12 @@ mod tests {
         assert_eq!(settings.effort.as_deref(), Some("high"));
         assert_eq!(settings.service_tier.as_deref(), Some("fast"));
         assert_eq!(
+            settings.permission_profile_id.as_deref(),
+            Some(":workspace")
+        );
+        assert_eq!(settings.approval_policy.as_deref(), Some("on-request"));
+        assert_eq!(settings.approvals_reviewer.as_deref(), Some("auto_review"));
+        assert_eq!(
             settings.permissions_preset,
             Some(ComposerPermissionsPreset::AutoReview)
         );
@@ -4933,6 +4980,9 @@ mod tests {
                 model: Some(Some("gpt-5.4".to_string())),
                 effort: Some(Some("medium".to_string())),
                 service_tier: Some(None),
+                permission_profile_id: Some(Some(":read-only".to_string())),
+                approval_policy: Some(Some("on-request".to_string())),
+                approvals_reviewer: Some(Some("user".to_string())),
             })
             .await
             .unwrap();
@@ -4952,7 +5002,10 @@ mod tests {
                 "edits": [
                     {"keyPath": "model", "mergeStrategy": "replace", "value": "gpt-5.4"},
                     {"keyPath": "model_reasoning_effort", "mergeStrategy": "replace", "value": "medium"},
-                    {"keyPath": "service_tier", "mergeStrategy": "replace", "value": null}
+                    {"keyPath": "service_tier", "mergeStrategy": "replace", "value": null},
+                    {"keyPath": "default_permissions", "mergeStrategy": "replace", "value": ":read-only"},
+                    {"keyPath": "approval_policy", "mergeStrategy": "replace", "value": "on-request"},
+                    {"keyPath": "approvals_reviewer", "mergeStrategy": "replace", "value": "user"}
                 ],
                 "reloadUserConfig": true
             })

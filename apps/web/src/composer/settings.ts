@@ -36,7 +36,6 @@ export function normalizePersistedComposerSettings(
     model,
     effort,
     fast: settings.serviceTier === "fast",
-    permissionProfileId: settings.permissionProfileId ?? undefined,
   };
 }
 
@@ -54,7 +53,7 @@ export function mergeDurableComposerSettings(
 
 type ThreadComposerSettingsSource = Pick<
   ThreadSummary,
-  "activePermissionProfile" | "model" | "reasoningEffort" | "serviceTier"
+  "model" | "reasoningEffort" | "serviceTier"
 > & {
   rawPayload?: unknown;
 };
@@ -64,13 +63,8 @@ export function composerSettingsFromThread(thread: ThreadComposerSettingsSource)
   const model = stringValue(thread.model) ?? stringValue(rawPayload.model);
   const effort = stringValue(thread.reasoningEffort) ?? stringValue(rawPayload.reasoningEffort);
   const serviceTier = stringValue(thread.serviceTier) ?? stringValue(rawPayload.serviceTier);
-  const activePermissionProfile =
-    thread.activePermissionProfile === undefined
-      ? asRecord(rawPayload.activePermissionProfile)
-      : asRecord(thread.activePermissionProfile);
-  const permissionProfileId = stringValue(activePermissionProfile.id);
 
-  if (!model && !effort && !serviceTier && !permissionProfileId) {
+  if (!model && !effort && !serviceTier) {
     return null;
   }
 
@@ -78,7 +72,6 @@ export function composerSettingsFromThread(thread: ThreadComposerSettingsSource)
     model: model ?? undefined,
     effort: effort ?? undefined,
     fast: serviceTier === "fast",
-    permissionProfileId: permissionProfileId ?? undefined,
   };
 }
 
@@ -93,9 +86,6 @@ export function createThreadOptions(settings: ComposerSettings): CreateThreadOpt
   if (settings.fast) {
     options.serviceTier = "fast";
   }
-  if (settings.permissionProfileId) {
-    options.permissions = settings.permissionProfileId;
-  }
   return options;
 }
 
@@ -109,9 +99,6 @@ export function composerTurnOptions(settings: ComposerSettings): TurnStartOption
   }
   if (settings.fast) {
     options.serviceTier = "fast";
-  }
-  if (settings.permissionProfileId) {
-    options.permissions = settings.permissionProfileId;
   }
   return options;
 }
@@ -129,9 +116,6 @@ export function composerThreadSettingsPatch(
   }
   if (previousSettings.fast !== nextSettings.fast) {
     patch.serviceTier = nextSettings.fast ? "fast" : null;
-  }
-  if (previousSettings.permissionProfileId !== nextSettings.permissionProfileId) {
-    patch.permissions = nextSettings.permissionProfileId ?? null;
   }
   return patch;
 }

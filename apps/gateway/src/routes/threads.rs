@@ -1147,8 +1147,10 @@ pub async fn rename_thread(
 ) -> ApiResult<Json<RenameThreadResponse>> {
     let name = normalize_thread_name(&request.name)
         .ok_or_else(|| ApiError::BadRequest("thread name cannot be empty".to_string()))?;
+    let _name_guard = state.title_generation.name_write_guard(&thread_id).await;
     let client = app_server_api::client(&state.app_server);
     client.thread_set_name(thread_id.clone(), name).await?;
+    state.title_generation.mark_thread_named(&thread_id);
     let mut thread = client.thread_read_summary(thread_id).await?;
     apply_thread_summary_state(&state, std::slice::from_mut(&mut thread)).await?;
     Ok(Json(RenameThreadResponse { thread }))

@@ -54,6 +54,10 @@
 
 .kodex-plugin-row,
 .kodex-plugin-copy,
+.kodex-execution-panel,
+.kodex-execution-option-list,
+.kodex-execution-option,
+.kodex-execution-option-copy,
 .kodex-mcp-layout,
 .kodex-mcp-server-list,
 .kodex-mcp-detail,
@@ -131,6 +135,42 @@
   border-radius: var(--kodex-radius-md);
   background: var(--kodex-bg-raised-muted);
   color: var(--kodex-text-accent);
+}
+
+.kodex-execution-option-list {
+  display: grid;
+  gap: 6px;
+}
+
+.kodex-execution-option {
+  width: 100%;
+  height: auto;
+  min-height: 54px;
+  padding: 9px 12px;
+}
+
+.kodex-execution-option .kodex-mantine-button-inner {
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+
+.kodex-execution-option .kodex-mantine-button-label {
+  min-width: 0;
+  white-space: normal;
+}
+
+.kodex-execution-option-copy {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+}
+
+.kodex-execution-review-control {
+  max-width: 320px;
 }
 
 .kodex-mcp-layout {

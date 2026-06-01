@@ -80,9 +80,6 @@ export function InlineComposerPanel({
   onSubmitQueuedSteer,
   onSubmitTurn,
   pendingAttachments,
-  permissionProfiles,
-  permissionProfilesError,
-  permissionProfilesLoading,
   queuedSteerRows,
   selectedGitBranch,
   selectedThreadPresent,
@@ -224,9 +221,6 @@ export function InlineComposerPanel({
           contextUsage={contextUsage}
           disabled={isComposerControlsDisabled}
           models={models}
-          permissionProfiles={permissionProfiles}
-          permissionProfilesError={permissionProfilesError}
-          permissionProfilesLoading={permissionProfilesLoading}
           onExpandComposer={onExpandComposer}
           onSettingsChange={onComposerSettingsChange}
           onStopTurn={onStopTurn}

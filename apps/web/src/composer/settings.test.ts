@@ -3,10 +3,9 @@ import { describe, expect, it } from "vitest";
 import { composerSettingsFromThread, composerThreadSettingsPatch, composerTurnOptions, createThreadOptions } from "./settings";
 
 describe("composerSettingsFromThread", () => {
-  it("uses activePermissionProfile without deriving from legacy policy or sandbox fields", () => {
+  it("uses model, reasoning, and speed without deriving from legacy policy or sandbox fields", () => {
     expect(
       composerSettingsFromThread({
-        activePermissionProfile: { id: "read-only", extends: null },
         model: "gpt-5.5",
         rawPayload: {
           approvalPolicy: "never",
@@ -20,17 +19,15 @@ describe("composerSettingsFromThread", () => {
       fast: true,
       model: "gpt-5.5",
       effort: "high",
-      permissionProfileId: "read-only",
     });
   });
 
-  it("keeps raw activePermissionProfile only when the typed field is absent", () => {
+  it("keeps raw model fields when typed fields are absent", () => {
     expect(
       composerSettingsFromThread({
         model: null,
         reasoningEffort: null,
         rawPayload: {
-          activePermissionProfile: { id: ":workspace" },
           model: "gpt-5.4-mini",
           reasoningEffort: "medium",
         },
@@ -39,14 +36,12 @@ describe("composerSettingsFromThread", () => {
     ).toMatchObject({
       model: "gpt-5.4-mini",
       effort: "medium",
-      permissionProfileId: ":workspace",
     });
   });
 
-  it("treats typed null activePermissionProfile as an authoritative clear", () => {
+  it("does not treat permission profile metadata as composer settings", () => {
     expect(
       composerSettingsFromThread({
-        activePermissionProfile: null,
         model: null,
         reasoningEffort: null,
         rawPayload: {
@@ -58,12 +53,14 @@ describe("composerSettingsFromThread", () => {
   });
 });
 
-describe("native permission profile option builders", () => {
-  it("emits only permissions profile ids for thread creation, turns, and settings patches", () => {
-    const settings = { fast: false, permissionProfileId: "auto-review" };
+describe("composer option builders", () => {
+  it("omits execution permission overrides so app-server defaults apply", () => {
+    const settings = { fast: false };
 
-    expect(createThreadOptions(settings)).toEqual({ permissions: "auto-review" });
-    expect(composerTurnOptions(settings)).toEqual({ permissions: "auto-review" });
-    expect(composerThreadSettingsPatch({ fast: false }, settings)).toEqual({ permissions: "auto-review" });
+    // Execution defaults are app-server config, so same-user tabs converge by
+    // omitting browser-local permission state from future thread and turn sends.
+    expect(createThreadOptions(settings)).toEqual({});
+    expect(composerTurnOptions(settings)).toEqual({});
+    expect(composerThreadSettingsPatch({ fast: false }, settings)).toEqual({});
   });
 });

@@ -13,9 +13,12 @@ const apiMocks = vi.hoisted(() => ({
   deleteCurrentPushSubscription: vi.fn(),
   deletePushSubscription: vi.fn(),
   getCurrentPushSubscriptionStatus: vi.fn(),
+  getComposerSettings: vi.fn(),
   getKodexControlPluginStatus: vi.fn(),
   getNotificationStatus: vi.fn(),
   installKodexControlPlugin: vi.fn(),
+  listPermissionProfiles: vi.fn(),
+  persistComposerSettings: vi.fn(),
   sendTestNotification: vi.fn(),
   upsertPushSubscription: vi.fn(),
   addMcpServer: vi.fn(),
@@ -34,9 +37,12 @@ vi.mock("./api/client", async (importOriginal) => ({
   deleteCurrentPushSubscription: apiMocks.deleteCurrentPushSubscription,
   deletePushSubscription: apiMocks.deletePushSubscription,
   getCurrentPushSubscriptionStatus: apiMocks.getCurrentPushSubscriptionStatus,
+  getComposerSettings: apiMocks.getComposerSettings,
   getKodexControlPluginStatus: apiMocks.getKodexControlPluginStatus,
   getNotificationStatus: apiMocks.getNotificationStatus,
   installKodexControlPlugin: apiMocks.installKodexControlPlugin,
+  listPermissionProfiles: apiMocks.listPermissionProfiles,
+  persistComposerSettings: apiMocks.persistComposerSettings,
   sendTestNotification: apiMocks.sendTestNotification,
   upsertPushSubscription: apiMocks.upsertPushSubscription,
   addMcpServer: apiMocks.addMcpServer,
@@ -50,7 +56,7 @@ vi.mock("./api/client", async (importOriginal) => ({
   startMcpOAuthLogin: apiMocks.startMcpOAuthLogin,
 }));
 
-function renderPreferences(initialSection: "appearance" | "notifications" | "plugins" | "mcp" = "plugins") {
+function renderPreferences(initialSection: "appearance" | "execution" | "notifications" | "plugins" | "mcp" = "plugins") {
   const queryClient = createKodexQueryClient();
   queryClient.setDefaultOptions({
     queries: {
@@ -67,7 +73,7 @@ function renderPreferences(initialSection: "appearance" | "notifications" | "plu
   }
 
   function Harness() {
-    const [section, setSection] = useState<"appearance" | "notifications" | "plugins" | "mcp">(initialSection);
+    const [section, setSection] = useState<"appearance" | "execution" | "notifications" | "plugins" | "mcp">(initialSection);
     return (
       <PreferencesModal
         activeSection={section}
@@ -269,6 +275,132 @@ describe("PreferencesModal plugins tab", () => {
     expect(screen.getByRole("radio", { name: /oled black/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Plugins" }));
     expect(await screen.findByText("Kodex Control")).toBeInTheDocument();
+  });
+});
+
+describe("PreferencesModal execution tab", () => {
+  beforeEach(() => {
+    apiMocks.getComposerSettings.mockReset();
+    apiMocks.listPermissionProfiles.mockReset();
+    apiMocks.persistComposerSettings.mockReset();
+  });
+
+  it("loads execution defaults and saves permission scope and approval review changes", async () => {
+    apiMocks.getComposerSettings.mockResolvedValue({
+      approvalPolicy: "on-request",
+      approvalsReviewer: "user",
+      effort: null,
+      model: null,
+      permissionProfileId: ":workspace",
+      permissionsPreset: "default",
+      serviceTier: null,
+    });
+    apiMocks.listPermissionProfiles.mockResolvedValue([
+      { id: ":read-only", label: ":read-only", description: null },
+      { id: ":workspace", label: ":workspace", description: null },
+      { id: ":danger-full-access", label: ":danger-full-access", description: null },
+    ]);
+    apiMocks.persistComposerSettings.mockResolvedValue(undefined);
+
+    const { queryClient } = renderPreferences("execution");
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    expect(await screen.findByText("Permission scope")).toBeInTheDocument();
+    expect(await screen.findByRole("radio", { name: /workspace/i })).toHaveAttribute("aria-checked", "true");
+
+    await userEvent.click(screen.getByRole("radio", { name: /read only/i }));
+    await waitFor(() => {
+      expect(apiMocks.persistComposerSettings).toHaveBeenCalledWith(
+        {
+          approvalPolicy: "on-request",
+          approvalsReviewer: "user",
+          permissionProfileId: ":read-only",
+        },
+        expect.anything(),
+      );
+    });
+
+    await userEvent.click(screen.getByText("Auto review"));
+    await waitFor(() => {
+      expect(apiMocks.persistComposerSettings).toHaveBeenCalledWith(
+        {
+          approvalPolicy: "on-request",
+          approvalsReviewer: "auto_review",
+        },
+        expect.anything(),
+      );
+    });
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: queryKeys.composerSettingsRoot,
+        refetchType: "all",
+      }),
+    );
+  });
+
+  it("does not present legacy no-approval config as an active Ask me mode", async () => {
+    apiMocks.getComposerSettings.mockResolvedValue({
+      approvalPolicy: "never",
+      approvalsReviewer: "user",
+      effort: null,
+      model: null,
+      permissionProfileId: ":workspace",
+      permissionsPreset: null,
+      serviceTier: null,
+    });
+    apiMocks.listPermissionProfiles.mockResolvedValue([
+      { id: ":read-only", label: ":read-only", description: null },
+      { id: ":workspace", label: ":workspace", description: null },
+    ]);
+    apiMocks.persistComposerSettings.mockResolvedValue(undefined);
+
+    renderPreferences("execution");
+
+    expect(await screen.findByText("Choose a review mode to replace the previous no-approval default.")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Ask me" })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: "Auto review" })).not.toBeChecked();
+
+    await userEvent.click(screen.getByRole("radio", { name: /read only/i }));
+    await waitFor(() => {
+      expect(apiMocks.persistComposerSettings).toHaveBeenCalledWith(
+        {
+          approvalPolicy: "on-request",
+          approvalsReviewer: "user",
+          permissionProfileId: ":read-only",
+        },
+        expect.anything(),
+      );
+    });
+  });
+
+  it("shows loading, fetch errors, and save errors", async () => {
+    apiMocks.getComposerSettings.mockImplementation(() => new Promise(() => {}));
+    apiMocks.listPermissionProfiles.mockResolvedValue([]);
+
+    const loadingRender = renderPreferences("execution");
+    expect(await screen.findByText("Loading execution defaults")).toBeInTheDocument();
+    loadingRender.unmount();
+
+    apiMocks.getComposerSettings.mockReset();
+    apiMocks.getComposerSettings.mockRejectedValue(new Error("settings unavailable"));
+    const errorRender = renderPreferences("execution");
+    expect(await screen.findByText("settings unavailable")).toBeInTheDocument();
+    errorRender.unmount();
+
+    apiMocks.getComposerSettings.mockReset();
+    apiMocks.getComposerSettings.mockResolvedValue({
+      approvalPolicy: "on-request",
+      approvalsReviewer: "user",
+      effort: null,
+      model: null,
+      permissionProfileId: null,
+      permissionsPreset: null,
+      serviceTier: null,
+    });
+    apiMocks.persistComposerSettings.mockRejectedValue(new Error("save failed"));
+    renderPreferences("execution");
+    await userEvent.click(await screen.findByRole("radio", { name: /^default/i }));
+    expect(await screen.findByText("save failed")).toBeInTheDocument();
   });
 });
 

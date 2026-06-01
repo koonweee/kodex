@@ -49,6 +49,7 @@ describe("ComposerFooterControls", () => {
     expect(screen.getByRole("img", { name: /context left/i })).toHaveClass("kodex-context-usage");
     expect(screen.queryByRole("button", { name: /context left/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i })).toHaveTextContent("5.4 Medium");
+    expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
   });
 
   it("uses model ids in the menu, compact reasoning labels, and toggles Fast from the row", async () => {
@@ -94,57 +95,16 @@ describe("ComposerFooterControls", () => {
     expect(screen.getByRole("menuitemcheckbox", { name: /fast/i, hidden: true })).toHaveAttribute("aria-checked", "true");
   });
 
-  it("renders app-server permission profile metadata and selects a profile id", async () => {
-    const onSettingsChange = vi.fn();
-
+  it("does not render execution permission controls in the composer", () => {
     renderWithProvider(
-      <ComposerFooterControls
-        models={[model]}
-        permissionProfiles={[
-          { id: ":workspace", label: "Workspace", description: "Ask before leaving the workspace" },
-          { id: "full-access", label: "Full access", description: null },
-        ]}
-        settings={settings}
-        onSettingsChange={onSettingsChange}
-      />,
+      <ComposerFooterControls models={[model]} settings={settings} onSettingsChange={vi.fn()} />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: /permissions: default permissions/i }));
-    expect(await screen.findByText("Ask before leaving the workspace")).toBeInTheDocument();
-    await clickMenuItem(/workspace/i);
-
-    expect(onSettingsChange).toHaveBeenCalledWith({ fast: false, permissionProfileId: ":workspace" });
-  });
-
-  it("falls back to profile ids and can clear to configured defaults", async () => {
-    const onSettingsChange = vi.fn();
-
-    renderWithProvider(
-      <ComposerFooterControls
-        models={[model]}
-        permissionProfiles={[{ id: "custom-profile", label: "custom-profile", description: null }]}
-        settings={{ fast: false, permissionProfileId: "custom-profile" }}
-        onSettingsChange={onSettingsChange}
-      />,
-    );
-
-    expect(screen.getByRole("button", { name: /permissions: custom-profile/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /permissions: custom-profile/i }));
-    await clickMenuItem(/default permissions/i);
-
-    expect(onSettingsChange).toHaveBeenCalledWith({ fast: false, permissionProfileId: undefined });
+    expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menu", { name: /permission profiles/i })).not.toBeInTheDocument();
   });
 });
 
 function renderWithProvider(element: ReactElement) {
   return render(<MantineProvider>{element}</MantineProvider>);
-}
-
-async function clickMenuItem(name: RegExp) {
-  let item: HTMLElement | undefined;
-  await waitFor(() => {
-    item = screen.queryAllByRole("menuitem", { hidden: true }).find((element) => name.test(element.textContent ?? ""));
-    expect(item).toBeInTheDocument();
-  });
-  await userEvent.click(item!);
 }

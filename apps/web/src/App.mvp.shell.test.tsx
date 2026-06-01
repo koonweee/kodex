@@ -196,7 +196,7 @@ describe("MVP shell flows", () => {
     20_000,
   );
 
-  it("hydrates active permissions from app-server permission profiles on active threads", async () => {
+  it("does not render active app-server permission profiles as composer controls", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     mockGateway(
       baseRoutes({
@@ -227,7 +227,8 @@ describe("MVP shell flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("button", { name: /permissions: full access/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
   }, 20_000);
 
   it("shows the selected thread git branch under the composer and updates from thread metadata", async () => {

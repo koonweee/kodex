@@ -100,7 +100,7 @@ describe("deep link navigation", () => {
     await userEvent.type(composer, "Draft while loading");
     expect(composer).toHaveValue("Draft while loading");
     expect(screen.getByRole("button", { name: /open attachment menu/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /permissions:/i })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
 
     await act(async () => {
@@ -140,7 +140,7 @@ describe("deep link navigation", () => {
     await userEvent.type(composer, "Draft before thread list");
     expect(composer).toHaveValue("Draft before thread list");
     expect(screen.getByRole("button", { name: /open attachment menu/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /permissions:/i })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
   });
 

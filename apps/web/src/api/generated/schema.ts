@@ -1606,6 +1606,8 @@ export interface components {
             projectId?: string | null;
         };
         ComposerSettingsResponse: {
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
             effort?: string | null;
             model?: string | null;
             permissionProfileId?: string | null;
@@ -1613,8 +1615,11 @@ export interface components {
             serviceTier?: string | null;
         };
         ComposerSettingsUpdateRequest: {
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
             effort?: string | null;
             model?: string | null;
+            permissionProfileId?: string | null;
             serviceTier?: string | null;
         };
         ComposerSettingsUpdateResponse: {

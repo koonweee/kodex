@@ -54,7 +54,7 @@ describe("MVP composer settings flows", () => {
     FakeEventSource.instances = [];
   });
 
-  it("sends composer footer model, speed, permissions, and context settings", async () => {
+  it("sends composer footer model, speed, and context settings without permission overrides", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     let latestThread: Record<string, unknown> = { ...thread, model: "gpt-5.4", reasoningEffort: "medium", serviceTier: null, rawPayload: {} };
     const gateway = mockGateway(
@@ -69,9 +69,6 @@ describe("MVP composer settings flows", () => {
             model: (patch.model as string | undefined | null) ?? latestThread.model,
             reasoningEffort: (patch.effort as string | undefined | null) ?? latestThread.reasoningEffort,
             serviceTier: (patch.serviceTier as string | undefined | null) ?? latestThread.serviceTier,
-            activePermissionProfile: patch.permissions
-              ? { id: patch.permissions }
-              : (patch.permissions === null ? null : latestThread.activePermissionProfile),
             rawPayload: {},
           };
           return { thread: latestThread, rawPayload: {} };
@@ -112,11 +109,8 @@ describe("MVP composer settings flows", () => {
     await clickMenuItem(/^high$/i);
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, high/i }));
     await clickFastSwitch();
-    await userEvent.click(screen.getByRole("button", { name: /permissions: default permissions/i }));
-    await clickMenuItem(/full access/i);
-    expect(await screen.findByRole("button", { name: /permissions: full access/i })).toBeInTheDocument();
     await waitFor(() => {
-      expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(3);
+      expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(2);
     });
 
     await userEvent.type(screen.getByLabelText(/message composer/i), "Use the selected controls");
@@ -129,12 +123,15 @@ describe("MVP composer settings flows", () => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
 
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toMatchObject({
+    const turnBody = await requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0]);
+    expect(turnBody).toMatchObject({
       input: [{ text: "Use the selected controls", type: "text" }],
     });
-    await expect(requestJson(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")[2])).resolves.toMatchObject({
-      permissions: "full-access",
-    });
+    expect(turnBody).not.toHaveProperty("permissions");
+    const firstSettingsPatch = await requestJson(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")[0]);
+    const secondSettingsPatch = await requestJson(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")[1]);
+    expect(firstSettingsPatch).not.toHaveProperty("permissions");
+    expect(secondSettingsPatch).not.toHaveProperty("permissions");
   }, 20_000);
 
   it("hydrates and persists composer model effort and fast mode without browser storage or permission writes", async () => {
@@ -159,11 +156,6 @@ describe("MVP composer settings flows", () => {
             model: Object.prototype.hasOwnProperty.call(patch, "model") ? patch.model : latestThread.model,
             reasoningEffort: Object.prototype.hasOwnProperty.call(patch, "effort") ? patch.effort : latestThread.reasoningEffort,
             serviceTier: Object.prototype.hasOwnProperty.call(patch, "serviceTier") ? patch.serviceTier : latestThread.serviceTier,
-            activePermissionProfile: Object.prototype.hasOwnProperty.call(patch, "permissions")
-              ? patch.permissions === null
-                ? null
-                : { id: patch.permissions }
-              : latestThread.activePermissionProfile,
             rawPayload: {},
           };
           return { thread: latestThread, rawPayload: {} };
@@ -174,7 +166,7 @@ describe("MVP composer settings flows", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /permissions: default permissions/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
     expect(appCss).toMatch(/\.kodex-composer-model-control\s*\{[^}]*width:\s*fit-content;/s);
     expect(appCss).toMatch(/\.kodex-composer-model-control\s*\{[^}]*max-width:\s*none;/s);
     expect(appCss).toMatch(/\.kodex-composer-control\s+\.mantine-Button-label\s*\{[^}]*overflow:\s*visible;/s);
@@ -190,12 +182,7 @@ describe("MVP composer settings flows", () => {
     expect(appCss).toMatch(
       /@media \(max-width: 700px\) and \(pointer: coarse\), \(max-width: 700px\) and \(any-pointer: coarse\)\s*\{[\s\S]*?\.kodex-run-settings-chip-row\s*\{[^}]*display:\s*flex/s,
     );
-    expect(appCss).toMatch(
-      /@media \(max-width: 700px\) and \(pointer: coarse\), \(max-width: 700px\) and \(any-pointer: coarse\)\s*\{[\s\S]*?\.kodex-permissions-row-list\s*\{[^}]*display:\s*grid/s,
-    );
-    expect(appCss).toMatch(
-      /@media \(max-width: 700px\) and \(pointer: coarse\), \(max-width: 700px\) and \(any-pointer: coarse\)\s*\{[\s\S]*?\.kodex-permission-row\s*\{[^}]*width:\s*100%/s,
-    );
+    expect(appCss).not.toMatch(/kodex-permissions-menu|kodex-permission-row|kodex-permissions-row-list/);
     expect(appCss).toMatch(
       /@media \(max-width: 700px\) and \(pointer: coarse\), \(max-width: 700px\) and \(any-pointer: coarse\)\s*\{[\s\S]*?\.kodex-run-settings-menu\s+\.mantine-Menu-label\s*\{[^}]*padding:/s,
     );
@@ -438,9 +425,7 @@ describe("MVP composer settings flows", () => {
     await clickMenuItem(/^high$/i);
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, high/i }));
     await clickFastSwitch();
-    await userEvent.click(screen.getByRole("button", { name: /permissions: default permissions/i }));
-    await clickMenuItem(/auto review/i);
-    expect(await screen.findByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText(/message composer/i), "Start with toolbar settings");
     const sendButton = screen.getByRole("button", { name: /send message/i });
@@ -453,18 +438,20 @@ describe("MVP composer settings flows", () => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(1);
     });
 
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads")[0])).resolves.toMatchObject({
+    const createThreadBody = await requestJson(gateway.callsFor("POST", "/v1/threads")[0]);
+    expect(createThreadBody).toMatchObject({
       effort: "high",
-      permissions: "auto-review",
       projectId: project.id,
       model: "gpt-5.4",
       serviceTier: "fast",
     });
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-2/input")[0])).resolves.toMatchObject({
+    const inputBody = await requestJson(gateway.callsFor("POST", "/v1/threads/thread-2/input")[0]);
+    expect(inputBody).toMatchObject({
       effort: "high",
-      permissions: "auto-review",
       serviceTier: "fast",
     });
+    expect(createThreadBody).not.toHaveProperty("permissions");
+    expect(inputBody).not.toHaveProperty("permissions");
   });
 
   it("uses global composer defaults when creating a chat from project-scoped defaults", async () => {
@@ -493,7 +480,8 @@ describe("MVP composer settings flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /start new chat from desktop header/i }));
     await userEvent.type(screen.getByLabelText(/message composer/i), "Use global defaults");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
@@ -542,11 +530,12 @@ describe("MVP composer settings flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /^chats$/i }));
     await userEvent.click(await screen.findByRole("button", { name: /chat without settings/i }));
 
-    expect(await screen.findByRole("button", { name: /permissions: default permissions/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
     expect(gateway.callsFor("GET", "/v1/composer-settings").some((request) => !new URL(request.url).searchParams.has("projectId"))).toBe(true);
   });
 
@@ -556,7 +545,6 @@ describe("MVP composer settings flows", () => {
       model: null;
       effort: null;
       serviceTier: null;
-      permissionProfileId: null;
     }>();
     const chatThread = {
       ...thread,
@@ -582,7 +570,8 @@ describe("MVP composer settings flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /^chats$/i }));
     await userEvent.click(await screen.findByRole("button", { name: /chat without settings/i }));
     await userEvent.type(screen.getByLabelText(/message composer/i), "Send before global hydration");
@@ -638,7 +627,7 @@ describe("MVP composer settings flows", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
   });
 
   it("restores thread-specific model settings when switching between threads", async () => {

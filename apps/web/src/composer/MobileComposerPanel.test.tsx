@@ -8,7 +8,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps, FormEvent, RefObject } from "react";
 
-import { listPermissionProfiles, listSkills } from "../api/client";
+import { listSkills } from "../api/client";
 import { createKodexQueryClient } from "../api/queryClient";
 import type { SkillMetadata } from "../api/client";
 import type { ComposerSettings } from "../ComposerFooterControls";
@@ -18,7 +18,6 @@ const mobileComposerCss = readFileSync(join(process.cwd(), "src/styles/mobile-co
 
 vi.mock("../api/client", async (importActual) => ({
   ...(await importActual<typeof import("../api/client")>()),
-  listPermissionProfiles: vi.fn(),
   listSkills: vi.fn(),
 }));
 
@@ -26,13 +25,7 @@ const composerSettings: ComposerSettings = {
   effort: "high",
   fast: false,
   model: "gpt-5.5",
-  permissionProfileId: "auto-review",
 };
-
-const permissionProfiles = [
-  { id: ":workspace", label: "Default permissions", description: null },
-  { id: "auto-review", label: "Auto review", description: null },
-];
 
 function noopSubmit(event: FormEvent) {
   event.preventDefault();
@@ -40,8 +33,6 @@ function noopSubmit(event: FormEvent) {
 
 describe("Mobile composer panel", () => {
   beforeEach(() => {
-    vi.mocked(listPermissionProfiles).mockReset();
-    vi.mocked(listPermissionProfiles).mockResolvedValue(permissionProfiles);
     vi.mocked(listSkills).mockReset();
     setMobileViewport(true);
   });
@@ -59,7 +50,7 @@ describe("Mobile composer panel", () => {
 
     expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile");
     expect(screen.getByLabelText(/message composer/i)).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /model: gpt-5\.5, high/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /expand composer/i })).not.toBeInTheDocument();
     expect(screen.getByRole("img", { name: /context/i })).toBeInTheDocument();
@@ -167,15 +158,16 @@ describe("Mobile composer panel", () => {
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /collapse composer/i }));
-    expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile");
-
-    await userEvent.click(screen.getByLabelText(/message composer/i));
-    expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /collapse composer/i }));
-
     await waitFor(() =>
       expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile"),
     );
+
+    await userEvent.click(screen.getByLabelText(/message composer/i));
+    expect(await screen.findByRole("dialog", { name: /compose/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /collapse composer/i }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /compose/i })).not.toBeInTheDocument());
+    expect(document.querySelector(".kodex-composer-shell")).toHaveAttribute("data-inline-density", "mobile");
   });
 
   it("closes expanded composer after submit and preserves the shared submit controls", async () => {
@@ -227,7 +219,7 @@ describe("Mobile composer panel", () => {
     await userEvent.click(screen.getByLabelText(/message composer/i));
     expect(screen.getByRole("dialog", { name: /compose/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /open attachment menu/i })).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /permissions: auto review/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /model: gpt-5\.5, high/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /send message/i })).toHaveClass("kodex-composer-action");
     expect(screen.queryByRole("button", { name: /settings/i })).not.toBeInTheDocument();

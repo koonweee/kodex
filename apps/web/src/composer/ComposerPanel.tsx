@@ -12,7 +12,7 @@ import {
   type ComposerSettings,
   type ContextUsage,
 } from "../ComposerFooterControls";
-import type { ModelSummary, PermissionProfileSummary, TextElement, TimelineSkillMention, UserInput } from "../api/client";
+import type { ModelSummary, TextElement, TimelineSkillMention, UserInput } from "../api/client";
 import type { ImageLightboxImage } from "../images/types";
 import { useInputCapabilities } from "../shared/inputCapabilities";
 import { InlineComposerPanel } from "./InlineComposerPanel";
@@ -20,7 +20,6 @@ import { MobileComposerPanel } from "./MobileComposerPanel";
 import { filterSkillsForQuery } from "./skillMentions";
 import type { PendingAttachment, QueuedSteerRow } from "./types";
 import { useComposerDraftState } from "./useComposerDraftState";
-import { usePermissionProfiles } from "./usePermissionProfiles";
 import { useSkillCatalog } from "./useSkillCatalog";
 
 export type ComposerDraftControls = {
@@ -59,9 +58,6 @@ export type ComposerPanelProps = {
   isSelectedTimelineReady: boolean;
   skillsInvalidationGeneration?: number;
   models: ModelSummary[];
-  permissionProfiles?: PermissionProfileSummary[];
-  permissionProfilesError?: string | null;
-  permissionProfilesLoading?: boolean;
   onAbortQueuedSteer: (row: QueuedSteerRow) => void;
   onAttachmentInputChange: (event: ReactChangeEvent<HTMLInputElement>) => void;
   onComposerDragLeave: (event: ReactDragEvent<HTMLElement>) => void;
@@ -145,7 +141,6 @@ export function ComposerPanel({
     enabled: skillPopupOpen,
     invalidationGeneration: skillsInvalidationGeneration,
   });
-  const permissionProfiles = usePermissionProfiles({ cwd: composerCwd });
   const filteredSkills = useMemo(
     () => filterSkillsForQuery(skillCatalog.skills, draftState.skillToken?.query ?? ""),
     [skillCatalog.skills, draftState.skillToken?.query],
@@ -278,9 +273,6 @@ export function ComposerPanel({
     onSubmitQueuedSteer,
     onSubmitTurn,
     pendingAttachments,
-    permissionProfiles: permissionProfiles.profiles,
-    permissionProfilesError: permissionProfiles.error,
-    permissionProfilesLoading: permissionProfiles.isLoading,
     queuedSteerRows,
     selectedGitBranch,
     selectedThreadPresent,

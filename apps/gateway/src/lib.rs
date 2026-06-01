@@ -22,6 +22,7 @@ pub mod subagents;
 pub mod thread_view;
 pub mod thread_view_patch;
 mod thread_view_projection;
+pub mod title_generation;
 pub mod turn_lifecycle;
 
 pub use api::{build_router, AppState};
