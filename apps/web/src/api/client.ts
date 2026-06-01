@@ -73,6 +73,7 @@ export type ThreadTimelineWorkSummary = components["schemas"]["ThreadTimelineWor
 export type ThreadTimelineWindowPage = components["schemas"]["ThreadTimelineWindowPage"];
 export type ThreadInputResponse = components["schemas"]["ThreadInputResponse"];
 export type ThreadInterruptCurrentResponse = components["schemas"]["ThreadInterruptCurrentResponse"];
+export type ThreadCompactResponse = components["schemas"]["ThreadCompactResponse"];
 export type TimelineSkillMention = components["schemas"]["TimelineSkillMention"];
 export type TimelineItemDeltaPayload = components["schemas"]["TimelineItemDeltaPayload"];
 export type TimelineItemUpsertPayload = components["schemas"]["TimelineItemUpsertPayload"];
@@ -473,6 +474,14 @@ export async function submitThreadInput(
     api.POST("/v1/threads/{threadId}/input", {
       params: { path: { threadId } },
       body: { input, ...options },
+    }),
+  );
+}
+
+export async function compactThread(threadId: string): Promise<ThreadCompactResponse> {
+  return unwrap(
+    api.POST("/v1/threads/{threadId}/compact", {
+      params: { path: { threadId } },
     }),
   );
 }

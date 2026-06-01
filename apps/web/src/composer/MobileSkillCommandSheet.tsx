@@ -1,5 +1,4 @@
-import { Box, Group } from "@mantine/core";
-import { useEffect, useRef } from "react";
+import { Group } from "@mantine/core";
 import type { CSSProperties } from "react";
 
 import type { SkillMetadata } from "../api/client";
@@ -11,6 +10,8 @@ import {
   skillIconUrlIsSvg,
   skillSmallIconUrl,
 } from "./skillMentions";
+import { MobileTriggerCommandSheet } from "./MobileTriggerCommandSheet";
+import type { TriggerSuggestionItem } from "./TriggerSuggestionPopup";
 
 type MobileSkillCommandSheetProps = {
   activeIndex: number;
@@ -27,93 +28,65 @@ export function MobileSkillCommandSheet({
   onSelect,
   skills,
 }: MobileSkillCommandSheetProps) {
-  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const scrollArea = scrollAreaRef.current;
-    const option = scrollArea?.querySelector<HTMLElement>(`[data-skill-option-index="${activeIndex}"]`);
-    if (!scrollArea || !option) {
-      return;
-    }
-
-    const optionTop = option.offsetTop;
-    const optionBottom = optionTop + option.offsetHeight;
-    const visibleTop = scrollArea.scrollTop;
-    const visibleBottom = visibleTop + scrollArea.clientHeight;
-    if (optionTop < visibleTop) {
-      scrollArea.scrollTop = optionTop;
-    } else if (optionBottom > visibleBottom) {
-      scrollArea.scrollTop = optionBottom - scrollArea.clientHeight;
-    }
-  }, [activeIndex]);
-
-  if (loading || error || skills.length === 0) {
-    return (
-      <Box
-        className="kodex-mobile-skill-command-list kodex-mobile-skill-command-status-list"
-        onPointerDownCapture={(event) => event.stopPropagation()}
-      >
-        {loading ? <Box className="kodex-mobile-skill-command-status">Loading skills...</Box> : null}
-        {!loading && error ? <Box className="kodex-mobile-skill-command-status">{error}</Box> : null}
-        {!loading && !error && skills.length === 0 ? (
-          <Box className="kodex-mobile-skill-command-status">No matching skills</Box>
-        ) : null}
-      </Box>
-    );
-  }
-
   return (
-    <Box
-      ref={scrollAreaRef}
-      aria-label="Skill suggestions"
-      className="kodex-mobile-skill-command-list"
-      role="listbox"
-      onPointerDownCapture={(event) => event.stopPropagation()}
-    >
-      {skills.map((skill, index) => {
-        const brandColor = skillBrandColor(skill);
-        const iconUrl = skillSmallIconUrl(skill);
-        const isSvgIcon = skillIconUrlIsSvg(iconUrl);
-        const fallbackLabel = skillFallbackIconLabel(skill);
-        const iconStyle = brandColor ? ({ "--skill-brand-color": brandColor } as CSSProperties) : undefined;
-        const svgIconStyle =
-          iconUrl && isSvgIcon
-            ? ({
-                "--skill-icon-mask": cssUrl(iconUrl),
-              } as CSSProperties)
-            : undefined;
-        return (
-          <Box
-            component="button"
-            key={skill.path}
-            aria-selected={index === activeIndex}
-            className="kodex-mobile-skill-command-row"
-            data-skill-option-index={index}
-            role="option"
-            type="button"
-            onClick={() => onSelect(skill)}
-          >
-            <span
-              aria-hidden="true"
-              className="kodex-skill-option-icon"
-              data-has-accent={brandColor ? "true" : undefined}
-              style={iconStyle}
-            >
-              {iconUrl && isSvgIcon ? (
-                <span className="kodex-skill-option-icon-svg" style={svgIconStyle} />
-              ) : iconUrl ? (
-                <img alt="" src={iconUrl} />
-              ) : (
-                <span className="kodex-skill-option-icon-label">{fallbackLabel}</span>
-              )}
-            </span>
-            <Group className="kodex-mobile-skill-command-copy" justify="space-between" gap={10} wrap="nowrap">
-              <span className="kodex-mobile-skill-command-name">{skillDisplayName(skill)}</span>
-              <span className="kodex-mobile-skill-command-token">${skill.name}</span>
-            </Group>
-          </Box>
-        );
-      })}
-    </Box>
+    <MobileTriggerCommandSheet
+      activeIndex={activeIndex}
+      ariaLabel="Skill suggestions"
+      emptyLabel="No matching skills"
+      error={error}
+      itemIndexAttribute="data-skill-option-index"
+      items={skills.map(skillSuggestionItem)}
+      loading={loading}
+      loadingLabel="Loading skills..."
+      onSelect={(item) => onSelect(item.skill)}
+      renderItem={(item) => <MobileSkillSuggestionContent skill={item.skill} />}
+    />
+  );
+}
+
+type SkillSuggestionItem = TriggerSuggestionItem & {
+  skill: SkillMetadata;
+};
+
+function skillSuggestionItem(skill: SkillMetadata): SkillSuggestionItem {
+  return {
+    id: skill.path,
+    skill,
+  };
+}
+
+function MobileSkillSuggestionContent({ skill }: { skill: SkillMetadata }) {
+  const brandColor = skillBrandColor(skill);
+  const iconUrl = skillSmallIconUrl(skill);
+  const isSvgIcon = skillIconUrlIsSvg(iconUrl);
+  const fallbackLabel = skillFallbackIconLabel(skill);
+  const iconStyle = brandColor ? ({ "--skill-brand-color": brandColor } as CSSProperties) : undefined;
+  const svgIconStyle =
+    iconUrl && isSvgIcon
+      ? ({
+          "--skill-icon-mask": cssUrl(iconUrl),
+        } as CSSProperties)
+      : undefined;
+  return (
+    <>
+      <span
+        aria-hidden="true"
+        className="kodex-skill-option-icon"
+        data-has-accent={brandColor ? "true" : undefined}
+        style={iconStyle}
+      >
+        {iconUrl && isSvgIcon ? (
+          <span className="kodex-skill-option-icon-svg" style={svgIconStyle} />
+        ) : iconUrl ? (
+          <img alt="" src={iconUrl} />
+        ) : (
+          <span className="kodex-skill-option-icon-label">{fallbackLabel}</span>
+        )}
+      </span>
+      <Group className="kodex-mobile-skill-command-copy" justify="space-between" gap={10} wrap="nowrap">
+        <span className="kodex-mobile-skill-command-name">{skillDisplayName(skill)}</span>
+        <span className="kodex-mobile-skill-command-token">${skill.name}</span>
+      </Group>
+    </>
   );
 }

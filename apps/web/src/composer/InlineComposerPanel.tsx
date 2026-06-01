@@ -7,7 +7,9 @@ import { AttachmentTray } from "./AttachmentTray";
 import type { ComposerPanelProps } from "./ComposerPanel";
 import { ComposerToolbar } from "./ComposerToolbar";
 import { QueuedSteerCard } from "./QueuedSteerCard";
+import { SlashCommandPopup } from "./SlashCommandPopup";
 import { SkillMentionPopup } from "./SkillMentionPopup";
+import type { SlashCommandItem } from "./slashCommands";
 import type { ComposerDraftState } from "./useComposerDraftState";
 import type { SkillCatalogState } from "./useSkillCatalog";
 
@@ -25,6 +27,7 @@ type InlineComposerPanelProps = ComposerPanelProps & {
   density?: "desktop" | "mobile";
   draftState: ComposerDraftState;
   filteredSkills: SkillMetadata[];
+  filteredSlashCommands: SlashCommandItem[];
   handleTextareaKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
   isComposerBusy: boolean;
   isComposerControlsDisabled: boolean;
@@ -34,10 +37,12 @@ type InlineComposerPanelProps = ComposerPanelProps & {
   onFocusComposer?: () => void;
   renderSkillSuggestions?: () => ReactNode;
   selectSkill: (skillIndex?: number) => void;
+  selectSlashCommand: (commandIndex?: number) => void;
   setComposerShellNode: (node: HTMLDivElement | null) => void;
   shouldShowStopAction: boolean;
   skillCatalog: SkillCatalogState;
   skillPopupOpen: boolean;
+  slashPopupOpen: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 };
 
@@ -54,6 +59,7 @@ export function InlineComposerPanel({
   draftProjectSelector,
   draftState,
   filteredSkills,
+  filteredSlashCommands,
   handleTextareaKeyDown,
   isDraftThreadSelected,
   isDraftComposerTransitioning,
@@ -84,10 +90,12 @@ export function InlineComposerPanel({
   selectedGitBranch,
   selectedThreadPresent,
   selectSkill,
+  selectSlashCommand,
   setComposerShellNode,
   shouldShowStopAction,
   skillCatalog,
   skillPopupOpen,
+  slashPopupOpen,
   renderSkillSuggestions,
   textareaRef,
 }: InlineComposerPanelProps) {
@@ -156,14 +164,22 @@ export function InlineComposerPanel({
           )
         }
       >
-        {skillPopupOpen ? (
-          renderSkillSuggestions ? renderSkillSuggestions() : (
+        {skillPopupOpen || slashPopupOpen ? (
+          renderSkillSuggestions ? renderSkillSuggestions() : skillPopupOpen ? (
             <SkillMentionPopup
               activeIndex={draftState.activeSkillIndex}
               error={skillCatalog.error}
               loading={skillCatalog.loading}
               skills={filteredSkills}
               onSelect={(skill) => selectSkill(filteredSkills.findIndex((item) => item.path === skill.path))}
+            />
+          ) : (
+            <SlashCommandPopup
+              activeIndex={draftState.activeSlashIndex}
+              commands={filteredSlashCommands}
+              onSelect={(command) =>
+                selectSlashCommand(filteredSlashCommands.findIndex((item) => item.id === command.id))
+              }
             />
           )
         ) : null}

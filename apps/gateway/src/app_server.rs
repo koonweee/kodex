@@ -369,6 +369,7 @@ fn api_error_classification(error: &ApiError) -> &'static str {
         ApiError::NotFound(_) => "not_found",
         ApiError::BadRequest(_) => "bad_request",
         ApiError::UnsupportedMediaType(_) => "unsupported_media_type",
+        ApiError::Conflict(_) => "conflict",
         ApiError::AppServerUnavailable => "unavailable",
         ApiError::Retryable(_) => "retryable",
         ApiError::BadGateway(_) => "bad_gateway",

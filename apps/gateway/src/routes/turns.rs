@@ -8,9 +8,11 @@ use utoipa::ToSchema;
 
 use crate::{
     api::AppState,
-    app_server_api::{self, CodexClient, RawAppServerResponse, TurnStartOptions, UserInput},
+    app_server_api::{
+        self, CodexClient, RawAppServerResponse, ThreadLiveState, TurnStartOptions, UserInput,
+    },
     error::{ApiError, ApiResult},
-    queue, skills, turn_lifecycle,
+    events, queue, skills, thread_view, turn_lifecycle,
 };
 
 pub fn router() -> Router<AppState> {
@@ -20,6 +22,7 @@ pub fn router() -> Router<AppState> {
             "/v1/threads/{thread_id}/interrupt-current",
             post(interrupt_current_turn),
         )
+        .route("/v1/threads/{thread_id}/compact", post(compact_thread))
         .route("/v1/threads/{thread_id}/turns", post(start_turn))
         .route(
             "/v1/threads/{thread_id}/turns/{turn_id}/steer",
@@ -76,6 +79,19 @@ pub struct ThreadInterruptCurrentResponse {
 pub enum ThreadInterruptCurrentDisposition {
     Interrupted,
     Idle,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadCompactResponse {
+    pub disposition: ThreadCompactDisposition,
+    pub raw_payload: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum ThreadCompactDisposition {
+    Started,
 }
 
 #[utoipa::path(post, path = "/v1/threads/{threadId}/input", request_body = TurnStartRequest, responses((status = 200, body = ThreadInputResponse)))]
@@ -159,6 +175,65 @@ pub async fn submit_thread_input(
         queued_input: None,
         raw_payload: Some(response.payload),
     }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/threads/{threadId}/compact",
+    responses(
+        (status = 200, body = ThreadCompactResponse),
+        (status = 409, body = crate::error::ApiErrorBody),
+    )
+)]
+pub async fn compact_thread(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+) -> ApiResult<Json<ThreadCompactResponse>> {
+    let submit_guard = state.thread_input_locks.lock(&thread_id).await;
+    if turn_lifecycle::routed_active_turn_id(&state, &thread_id)
+        .await?
+        .is_some()
+    {
+        return Err(ApiError::Conflict(
+            "cannot compact while a task is in progress".to_string(),
+        ));
+    }
+
+    turn_lifecycle::record_compaction_starting(&state, &thread_id).await?;
+    drop(submit_guard);
+    let response = match app_server_api::client(&state.app_server)
+        .thread_compact_start(thread_id.clone())
+        .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            turn_lifecycle::record_turn_start_failed(&state, &thread_id).await?;
+            queue::trigger_queue_drain(state.clone(), thread_id.clone());
+            return Err(error);
+        }
+    };
+    broadcast_thread_live_state(&state, &thread_id, ThreadLiveState::Syncing).await?;
+    Ok(Json(ThreadCompactResponse {
+        disposition: ThreadCompactDisposition::Started,
+        raw_payload: Some(response.payload),
+    }))
+}
+
+async fn broadcast_thread_live_state(
+    state: &AppState,
+    thread_id: &str,
+    live_state: ThreadLiveState,
+) -> ApiResult<()> {
+    let patch = thread_view::record_thread_live_state(
+        &state.thread_views,
+        thread_id,
+        live_state,
+        state.store.latest_event_seq().await?,
+    )
+    .await?;
+    let event = events::thread_view_patch_payload_event(state, patch).await?;
+    let _ = state.events.send(event);
+    Ok(())
 }
 
 async fn turn_start_resuming_missing_thread_once(

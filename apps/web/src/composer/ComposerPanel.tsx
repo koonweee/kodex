@@ -17,6 +17,7 @@ import type { ImageLightboxImage } from "../images/types";
 import { useInputCapabilities } from "../shared/inputCapabilities";
 import { InlineComposerPanel } from "./InlineComposerPanel";
 import { MobileComposerPanel } from "./MobileComposerPanel";
+import { filterSlashCommands, replaceSlashCommandToken, slashCommandItems } from "./slashCommands";
 import { filterSkillsForQuery } from "./skillMentions";
 import type { PendingAttachment, QueuedSteerRow } from "./types";
 import { useComposerDraftState } from "./useComposerDraftState";
@@ -136,6 +137,8 @@ export function ComposerPanel({
     !isComposerControlsDisabled && (Boolean(draftState.composerText.trim()) || pendingAttachments.length > 0);
   const shouldShowStopAction = activeSelectedTurnId !== null && !canSubmitComposer && !isComposerSubmitting;
   const skillPopupOpen = !isComposerControlsDisabled && draftState.skillToken !== null;
+  const slashPopupOpen = !isComposerControlsDisabled && draftState.slashToken !== null;
+  const triggerPopupOpen = skillPopupOpen || slashPopupOpen;
   const skillCatalog = useSkillCatalog({
     cwd: composerCwd,
     enabled: skillPopupOpen,
@@ -145,13 +148,32 @@ export function ComposerPanel({
     () => filterSkillsForQuery(skillCatalog.skills, draftState.skillToken?.query ?? ""),
     [skillCatalog.skills, draftState.skillToken?.query],
   );
+  const slashCommands = useMemo(() => {
+    const compactDisabledReason = !selectedThreadPresent
+      ? "Select a thread before compacting"
+      : activeSelectedTurnId !== null
+        ? "Wait for the current task to finish"
+        : "Compact is unavailable right now";
+    return slashCommandItems({
+      canCompact: selectedThreadPresent && activeSelectedTurnId === null,
+      compactDisabledReason,
+    });
+  }, [activeSelectedTurnId, selectedThreadPresent]);
+  const filteredSlashCommands = useMemo(
+    () => filterSlashCommands(slashCommands, draftState.slashToken?.query ?? ""),
+    [draftState.slashToken?.query, slashCommands],
+  );
 
   useEffect(() => {
     draftState.clampActiveSkillIndex(filteredSkills.length);
   }, [filteredSkills.length]);
 
   useEffect(() => {
-    if (!skillPopupOpen) {
+    draftState.clampActiveSlashIndex(filteredSlashCommands.length);
+  }, [filteredSlashCommands.length]);
+
+  useEffect(() => {
+    if (!triggerPopupOpen) {
       return;
     }
 
@@ -164,17 +186,32 @@ export function ComposerPanel({
         return;
       }
       draftState.closeSkillToken();
+      draftState.closeSlashToken();
     }
 
     document.addEventListener("pointerdown", handleDocumentPointerDown);
     return () => document.removeEventListener("pointerdown", handleDocumentPointerDown);
-  }, [skillPopupOpen]);
+  }, [triggerPopupOpen]);
 
   function selectSkill(skillIndex = draftState.activeSkillIndex) {
     const cursor = draftState.selectSkill(filteredSkills[skillIndex]);
     if (cursor === null) {
       return;
     }
+    window.requestAnimationFrame(() => {
+      textareaRef.current?.setSelectionRange(cursor, cursor);
+      textareaRef.current?.focus({ preventScroll: true });
+    });
+  }
+
+  function selectSlashCommand(commandIndex = draftState.activeSlashIndex) {
+    const token = draftState.slashToken;
+    const command = filteredSlashCommands[commandIndex];
+    if (!token || !command || command.disabledReason) {
+      return;
+    }
+    const replacement = replaceSlashCommandToken(draftState.composerText, token, command);
+    const cursor = draftState.replaceSlashToken(replacement.text, replacement.cursor);
     window.requestAnimationFrame(() => {
       textareaRef.current?.setSelectionRange(cursor, cursor);
       textareaRef.current?.focus({ preventScroll: true });
@@ -192,6 +229,35 @@ export function ComposerPanel({
         window.requestAnimationFrame(() => {
           textareaRef.current?.setSelectionRange(cursor, cursor);
         });
+        return;
+      }
+    }
+
+    if (slashPopupOpen) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        draftState.setActiveSlashIndex((current) =>
+          filteredSlashCommands.length === 0 ? 0 : (current + 1) % filteredSlashCommands.length,
+        );
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        draftState.setActiveSlashIndex((current) =>
+          filteredSlashCommands.length === 0 ? 0 : (current - 1 + filteredSlashCommands.length) % filteredSlashCommands.length,
+        );
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        if (filteredSlashCommands.length > 0) {
+          selectSlashCommand();
+        }
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        draftState.closeSlashToken();
         return;
       }
     }
@@ -247,6 +313,7 @@ export function ComposerPanel({
     draftProjectSelector,
     draftState,
     filteredSkills,
+    filteredSlashCommands,
     handleTextareaKeyDown,
     isComposerBusy,
     isComposerControlsDisabled,
@@ -277,10 +344,12 @@ export function ComposerPanel({
     selectedGitBranch,
     selectedThreadPresent,
     selectSkill,
+    selectSlashCommand,
     setComposerShellNode,
     shouldShowStopAction,
     skillCatalog,
     skillPopupOpen,
+    slashPopupOpen,
     skillsInvalidationGeneration,
     textareaRef,
   };

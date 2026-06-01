@@ -1,5 +1,11 @@
 # Performance Overhaul Plan
 
+## Status
+
+Archived.
+
+This plan is closed after partial implementation. Timing instrumentation, sidebar startup improvements, visible older-history handling, submit routing improvements, and static asset delivery changes landed; the remaining compact DTO/detail hydration and browser render profiling work is not active.
+
 ## Context
 
 Kodex can still feel sluggish after the completed sidebar, timeline, thread-open, and streaming-delta performance work. The current target is an extensive overhaul of perceived latency for:

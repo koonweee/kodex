@@ -17,6 +17,8 @@ pub enum ApiError {
     BadRequest(String),
     #[error("unsupported media type: {0}")]
     UnsupportedMediaType(String),
+    #[error("conflict: {0}")]
+    Conflict(String),
     #[error("app-server unavailable")]
     AppServerUnavailable,
     #[error("retryable app-server error: {0}")]
@@ -45,6 +47,7 @@ impl ApiError {
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::UnsupportedMediaType(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Self::Conflict(_) => StatusCode::CONFLICT,
             Self::AppServerUnavailable => StatusCode::SERVICE_UNAVAILABLE,
             Self::Retryable(_) => StatusCode::TOO_MANY_REQUESTS,
             Self::BadGateway(_) => StatusCode::BAD_GATEWAY,
@@ -66,6 +69,11 @@ impl ApiError {
             },
             Self::UnsupportedMediaType(message) => ApiErrorBody {
                 code: "unsupported_media_type".to_string(),
+                message: message.clone(),
+                retryable: false,
+            },
+            Self::Conflict(message) => ApiErrorBody {
+                code: "conflict".to_string(),
                 message: message.clone(),
                 retryable: false,
             },

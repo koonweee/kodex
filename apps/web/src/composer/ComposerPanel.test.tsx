@@ -354,6 +354,35 @@ describe("ComposerPanel", () => {
     expect(composer).toHaveValue("$beta-skill ");
   });
 
+  it("opens slash command suggestions and inserts the selected command", async () => {
+    renderComposerPanel();
+
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "/co");
+    const compact = await screen.findByRole("option", { name: /compact/i });
+
+    expect(screen.getByRole("listbox", { name: /slash command suggestions/i })).toBeInTheDocument();
+    expect(compact).toHaveAttribute("aria-selected", "true");
+
+    await userEvent.keyboard("{Enter}");
+
+    expect(composer).toHaveValue("/compact ");
+    expect(screen.queryByRole("listbox", { name: /slash command suggestions/i })).not.toBeInTheDocument();
+  });
+
+  it("closes slash command suggestions with Escape without changing draft text", async () => {
+    renderComposerPanel();
+
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "/co");
+    expect(await screen.findByRole("option", { name: /compact/i })).toBeInTheDocument();
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.queryByRole("listbox", { name: /slash command suggestions/i })).not.toBeInTheDocument();
+    expect(composer).toHaveValue("/co");
+  });
+
   it("closes skill autocomplete with Escape without changing draft text", async () => {
     mockSkills([skillFixture({ interface: { displayName: "Review Fix" }, name: "review-fix" })]);
     renderComposerPanel();

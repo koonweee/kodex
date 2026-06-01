@@ -1,5 +1,9 @@
 # Future Extensions Overview
 
+## Status
+
+Archived.
+
 This document is not an implementation plan. It maps likely post-MVP product features to the Codex app-server APIs they can build on. Keep YAGNI in force: do not implement these until an MVP user need or explicit plan justifies them.
 
 ## Operating Rules

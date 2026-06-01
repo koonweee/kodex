@@ -158,6 +158,109 @@ describe("MVP composer input flows", () => {
     });
   });
 
+  it("starts thread compaction from the /compact command without sending model input", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads/thread-1/compact": { disposition: "started", rawPayload: {} },
+        "POST /v1/threads/thread-1/input": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "/compact");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/compact")).toHaveLength(1);
+    });
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(0);
+    expect(composer).toHaveValue("");
+  });
+
+  it("rejects /compact with attachments without clearing the draft or uploading files", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:compact-attachment");
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/uploads/images": {
+          images: [{ id: "upload-1", fileName: "diagram.png", mimeType: "image/png", sizeBytes: 4, path: "/tmp/diagram.png" }],
+        },
+        "POST /v1/threads/thread-1/compact": { disposition: "started", rawPayload: {} },
+        "POST /v1/threads/thread-1/input": { payload: {} },
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    await userEvent.upload(input!, new File(["fake"], "diagram.png", { type: "image/png" }));
+    expect(createObjectUrl).toHaveBeenCalled();
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "/compact");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    expect(await screen.findByText(/\/compact does not support attachments/i)).toBeInTheDocument();
+    expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/compact")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(0);
+    expect(composer).toHaveValue("/compact");
+    expect(screen.getByRole("button", { name: /remove diagram\.png/i })).toBeInTheDocument();
+  });
+
+  it("rejects unknown first-token slash commands without sending model input", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads/thread-1/input": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const composer = screen.getByLabelText(/message composer/i);
+    await userEvent.type(composer, "/nope please");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    expect(await screen.findByText(/unknown command: \/nope please/i)).toBeInTheDocument();
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/compact")).toHaveLength(0);
+    expect(composer).toHaveValue("/nope please");
+  });
+
+  it("sends slash text in ordinary prompt content as model input", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads/thread-1/input": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Please run /compact later");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
+    });
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/compact")).toHaveLength(0);
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({
+      input: [{ type: "text", text: "Please run /compact later" }],
+    });
+  });
+
   it("treats accepted pending user projection as active before app-server materializes the turn", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const gateway = mockGateway(

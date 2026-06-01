@@ -378,6 +378,11 @@ impl CodexClient {
         .await
     }
 
+    pub async fn thread_compact_start(&self, thread_id: String) -> ApiResult<RawAppServerResponse> {
+        self.raw_request("thread/compact/start", json!({ "threadId": thread_id }))
+            .await
+    }
+
     pub async fn permission_profile_list(
         &self,
         cwd: Option<String>,

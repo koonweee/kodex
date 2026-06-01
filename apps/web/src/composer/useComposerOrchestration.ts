@@ -11,6 +11,7 @@ import {
 import { useMutation } from "@tanstack/react-query";
 
 import {
+  compactThread,
   deleteQueuedInput,
   interruptCurrentTurn,
   retryQueuedInput,
@@ -25,6 +26,7 @@ import {
 import type { ComposerSettings } from "../ComposerFooterControls";
 import { errorMessageFrom } from "../shared/values";
 import { composerTurnOptions, sameComposerContext, type ComposerContext } from "./settings";
+import { slashCommandFromSubmittedText } from "./slashCommands";
 import {
   createObjectUrl,
   hasImageFiles,
@@ -166,6 +168,33 @@ export function useComposerOrchestration({
     }
 
     const text = composerText.trim();
+    const slashCommand = slashCommandFromSubmittedText(text);
+    if (slashCommand === "unknown") {
+      onError(new Error(`Unknown command: ${text}`));
+      return;
+    }
+    if (slashCommand === "compact") {
+      if (!selectedThreadId) {
+        onError(new Error("/compact is only available in a selected thread"));
+        return;
+      }
+      if (pendingAttachments.length > 0) {
+        onError(new Error("/compact does not support attachments"));
+        return;
+      }
+      setIsComposerSubmitting(true);
+      try {
+        await compactThread(selectedThreadId);
+        draftControls.clearText();
+        clearPendingAttachments();
+      } catch (error) {
+        onError(error);
+      } finally {
+        setIsComposerSubmitting(false);
+      }
+      return;
+    }
+
     const attachments = pendingAttachments;
     let startedThreadId: string | null = null;
     let optimisticClientRequestId: string | null = null;

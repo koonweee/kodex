@@ -273,6 +273,24 @@ describe("Mobile composer panel", () => {
     await waitFor(() => expect(screen.getByLabelText(/message composer/i)).toHaveValue("$imagegen "));
   });
 
+  it("uses the mobile command sheet for slash command suggestions", async () => {
+    renderComposerPanel();
+
+    await userEvent.click(screen.getByLabelText(/message composer/i));
+    await userEvent.type(screen.getByLabelText(/message composer/i), "/co");
+
+    expect(await screen.findByRole("listbox", { name: /slash command suggestions/i })).toHaveClass(
+      "kodex-mobile-skill-command-list",
+    );
+    const option = screen.getByRole("option", { name: /compact/i });
+    expect(option).toHaveTextContent("/compact");
+    expect(document.querySelector(".kodex-skill-popup")).not.toBeInTheDocument();
+
+    await userEvent.click(option);
+
+    await waitFor(() => expect(screen.getByLabelText(/message composer/i)).toHaveValue("/compact "));
+  });
+
   it("renders generated first-character icons for mobile skill suggestions without icon assets", async () => {
     mockSkills([
       skillFixture({

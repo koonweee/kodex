@@ -9,7 +9,9 @@ import { AttachmentTray } from "./AttachmentTray";
 import type { ComposerPanelProps } from "./ComposerPanel";
 import { ComposerToolbar } from "./ComposerToolbar";
 import { InlineComposerPanel } from "./InlineComposerPanel";
+import { MobileSlashCommandSheet } from "./MobileSlashCommandSheet";
 import { MobileSkillCommandSheet } from "./MobileSkillCommandSheet";
+import type { SlashCommandItem } from "./slashCommands";
 import type { ComposerDraftState } from "./useComposerDraftState";
 import { useComposerKeyboardViewport } from "./useComposerKeyboardViewport";
 import type { SkillCatalogState } from "./useSkillCatalog";
@@ -26,16 +28,19 @@ type MobileComposerPanelProps = ComposerPanelProps & {
   canSubmitComposer: boolean;
   draftState: ComposerDraftState;
   filteredSkills: SkillMetadata[];
+  filteredSlashCommands: SlashCommandItem[];
   handleTextareaKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
   isComposerBusy: boolean;
   isComposerControlsDisabled: boolean;
   isComposerDisabled: boolean;
   isEntryPending: boolean;
   selectSkill: (skillIndex?: number) => void;
+  selectSlashCommand: (commandIndex?: number) => void;
   setComposerShellNode: (node: HTMLDivElement | null) => void;
   shouldShowStopAction: boolean;
   skillCatalog: SkillCatalogState;
   skillPopupOpen: boolean;
+  slashPopupOpen: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 };
 
@@ -48,6 +53,7 @@ export function MobileComposerPanel({
   contextUsage,
   draftState,
   filteredSkills,
+  filteredSlashCommands,
   handleTextareaKeyDown,
   isComposerBusy,
   isComposerControlsDisabled,
@@ -65,10 +71,12 @@ export function MobileComposerPanel({
   pendingAttachments,
   selectedThreadPresent,
   selectSkill,
+  selectSlashCommand,
   setComposerShellNode,
   shouldShowStopAction,
   skillCatalog,
   skillPopupOpen,
+  slashPopupOpen,
   textareaRef,
   ...inlineComposerProps
 }: MobileComposerPanelProps) {
@@ -135,7 +143,8 @@ export function MobileComposerPanel({
   }
 
   function renderSkillCommandSheet() {
-    return skillPopupOpen ? (
+    if (skillPopupOpen) {
+      return (
       <MobileSkillCommandSheet
         activeIndex={draftState.activeSkillIndex}
         error={skillCatalog.error}
@@ -143,7 +152,20 @@ export function MobileComposerPanel({
         skills={filteredSkills}
         onSelect={(skill) => selectSkill(filteredSkills.findIndex((item) => item.path === skill.path))}
       />
-    ) : null;
+      );
+    }
+    if (slashPopupOpen) {
+      return (
+        <MobileSlashCommandSheet
+          activeIndex={draftState.activeSlashIndex}
+          commands={filteredSlashCommands}
+          onSelect={(command) =>
+            selectSlashCommand(filteredSlashCommands.findIndex((item) => item.id === command.id))
+          }
+        />
+      );
+    }
+    return null;
   }
 
   return isExpanded ? (
@@ -173,13 +195,13 @@ export function MobileComposerPanel({
         <Box
           component="form"
           className="kodex-mobile-composer-expanded-body"
-          data-skill-command-open={skillPopupOpen ? "true" : undefined}
+          data-skill-command-open={skillPopupOpen || slashPopupOpen ? "true" : undefined}
           onSubmit={handleSubmit}
         >
           {renderHiddenAttachmentInput()}
           <Box
             className="kodex-mobile-composer-expanded-main"
-            data-skill-command-open={skillPopupOpen ? "true" : undefined}
+            data-skill-command-open={skillPopupOpen || slashPopupOpen ? "true" : undefined}
           >
             {pendingAttachments.length > 0 && !isComposerBusy ? (
               <AttachmentTray
@@ -223,7 +245,7 @@ export function MobileComposerPanel({
               {MOBILE_COMPOSER_TEXT.dropImages}
             </Box>
           ) : null}
-          {skillPopupOpen ? null : (
+          {skillPopupOpen || slashPopupOpen ? null : (
             <Box className="kodex-mobile-composer-expanded-footer">
               <ComposerToolbar
                 attachmentInputRef={attachmentInputRef}
@@ -256,6 +278,7 @@ export function MobileComposerPanel({
       density="mobile"
       draftState={draftState}
       filteredSkills={filteredSkills}
+      filteredSlashCommands={filteredSlashCommands}
       handleTextareaKeyDown={handleTextareaKeyDown}
       isComposerBusy={isComposerBusy}
       isComposerControlsDisabled={isComposerControlsDisabled}
@@ -278,10 +301,12 @@ export function MobileComposerPanel({
       pendingAttachments={pendingAttachments}
       selectedThreadPresent={selectedThreadPresent}
       selectSkill={selectSkill}
+      selectSlashCommand={selectSlashCommand}
       setComposerShellNode={setComposerShellNode}
       shouldShowStopAction={shouldShowStopAction}
       skillCatalog={skillCatalog}
       skillPopupOpen={skillPopupOpen}
+      slashPopupOpen={slashPopupOpen}
       renderSkillSuggestions={renderSkillCommandSheet}
       textareaRef={textareaRef}
     />

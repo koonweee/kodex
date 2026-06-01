@@ -1443,6 +1443,7 @@ mod tests {
             "/v1/threads/{threadId}/archive",
             "/v1/threads/{threadId}/pin",
             "/v1/threads/{threadId}/turns",
+            "/v1/threads/{threadId}/compact",
             "/v1/threads/{threadId}/turns/{turnId}/steer",
             "/v1/threads/{threadId}/turns/{turnId}/interrupt",
             "/v1/threads/{threadId}/queued-inputs",
@@ -1503,6 +1504,8 @@ mod tests {
             "PermissionProfileSummary",
             "ThreadSettingsUpdateRequest",
             "ThreadSettingsUpdateResponse",
+            "ThreadCompactDisposition",
+            "ThreadCompactResponse",
             "ApnsEnvironment",
             "ApnsDeviceResponse",
             "ApnsDeviceUpsertRequest",
@@ -1518,6 +1521,11 @@ mod tests {
         assert_eq!(
             openapi["components"]["schemas"]["ApnsEnvironment"]["enum"],
             json!(["sandbox", "production"])
+        );
+        assert_eq!(
+            openapi["paths"]["/v1/threads/{threadId}/compact"]["post"]["responses"]["409"]
+                ["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiErrorBody"
         );
 
         let upload_request_schema = &openapi["paths"]["/v1/uploads/images"]["post"]["requestBody"]
@@ -7210,6 +7218,132 @@ mod tests {
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].0, "thread/read");
+    }
+
+    #[tokio::test]
+    async fn compact_thread_starts_app_server_compaction_and_marks_syncing() {
+        let (state, app_server) = test_state().await;
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(thread_read_response("thread-1", 0));
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"started": true}));
+        let mut events = state.events.subscribe();
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/compact")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "started");
+        assert_eq!(body["rawPayload"], json!({"started": true}));
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[1].0, "thread/compact/start");
+        assert_eq!(requests[1].1, json!({"threadId": "thread-1"}));
+
+        let event = timeout(Duration::from_secs(2), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(event.kind, "thread_view.patch");
+        assert_eq!(event.codex_method.as_deref(), Some("thread_view/patch"));
+        assert_eq!(event.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(event.payload["liveState"], "syncing");
+    }
+
+    #[tokio::test]
+    async fn compact_thread_rejects_gateway_busy_runtime_without_app_server_call() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "syncing".to_string(),
+                active_turn_id: None,
+                updated_at: chrono::Utc::now(),
+                last_event_seq: None,
+            })
+            .await
+            .unwrap();
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/compact")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let body = response_json(response).await;
+        assert_eq!(body["code"], "conflict");
+        assert!(body["message"]
+            .as_str()
+            .unwrap()
+            .contains("task is in progress"));
+        assert!(app_server.requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn thread_input_queues_while_compaction_syncing_without_draining() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "syncing".to_string(),
+                active_turn_id: None,
+                updated_at: chrono::Utc::now(),
+                last_event_seq: Some(10),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"wait behind compaction"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "queued");
+        assert_eq!(
+            body["queuedInput"]["input"][0]["text"],
+            "wait behind compaction"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(app_server.requests.lock().unwrap().is_empty());
+        let runtime = state
+            .store
+            .get_thread_runtime_state("thread-1")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(runtime.status, "syncing");
+        assert_eq!(runtime.active_turn_id, None);
     }
 
     #[tokio::test]

@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed.
+Archived.
+
+This plan is closed without completing its full original scope. The remaining fork/settings cleanup is not active; later native settings work covered most of the intended product value.
 
 ## Context
 
