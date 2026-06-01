@@ -2,8 +2,7 @@ import type { EventEnvelope, ThreadNotificationSettingsResponse, ThreadReadState
 import type { ThreadSummary } from "../api/client";
 import { asRecord, numberValue, stringValue } from "../shared/values";
 
-type ThreadRuntimeStatus = "active" | "idle";
-type ThreadStatusUpdate = { threadId: string; status: ThreadRuntimeStatus; updatedAt: number | null };
+type ThreadStatusUpdate = { threadId: string; status: ThreadSummary["status"]; updatedAt: number | null };
 export type ThreadUpsert =
   | { scope: "project"; projectId: string; thread: ThreadSummary }
   | { scope: "chat"; thread: ThreadSummary };
@@ -115,12 +114,14 @@ export function threadStatusUpdateFromEvent(event: EventEnvelope): ThreadStatusU
   }
 
   if (event.kind === "thread_view.patch") {
-    const status = normalizeRuntimeStatus(stringValue(payload.liveState));
+    const status =
+      normalizeThreadStatus(stringValue(payload.threadStatus) ?? stringValue(payload.thread_status)) ??
+      normalizeRuntimeStatus(stringValue(payload.liveState));
     return status
       ? {
           threadId,
           status,
-          updatedAt: status === "idle" ? eventReceivedAtSeconds(event.receivedAt) : null,
+          updatedAt: status === "active" ? null : eventReceivedAtSeconds(event.receivedAt),
         }
       : null;
   }
@@ -151,7 +152,11 @@ export function threadNameUpdateFromEvent(event: EventEnvelope): { threadId: str
   };
 }
 
-function normalizeRuntimeStatus(status: string | null): ThreadRuntimeStatus | null {
+function normalizeThreadStatus(status: string | null): ThreadSummary["status"] | null {
+  return isThreadStatus(status) ? status : null;
+}
+
+function normalizeRuntimeStatus(status: string | null): ThreadSummary["status"] | null {
   const normalized = status?.toLowerCase();
   if (!normalized) {
     return null;
@@ -161,6 +166,9 @@ function normalizeRuntimeStatus(status: string | null): ThreadRuntimeStatus | nu
   }
   if (["idle", "completed", "complete", "failed", "cancelled", "canceled", "interrupted"].includes(normalized)) {
     return "idle";
+  }
+  if (normalized === "notloaded" || normalized === "not_loaded") {
+    return "notLoaded";
   }
   return null;
 }

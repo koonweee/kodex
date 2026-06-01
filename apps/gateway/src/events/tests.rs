@@ -175,6 +175,99 @@ async fn notification_ingest_emits_thread_view_patch_for_timeline_delta() {
 }
 
 #[tokio::test]
+async fn native_thread_status_changed_emits_exact_canonical_status_patch() {
+    let state = test_state().await;
+    let mut receiver = state.events.subscribe();
+
+    ingest_inbound(
+        InboundMessage::Notification {
+            method: "thread/status/changed".to_string(),
+            params: json!({
+                "threadId": "thread-1",
+                "status": {"type": "systemError"},
+            }),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+
+    let patch = timeout(Duration::from_secs(1), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
+    assert_eq!(patch.thread_id.as_deref(), Some("thread-1"));
+    assert_eq!(patch.payload["scope"], "lifecycle");
+    assert_eq!(patch.payload["liveState"], "idle");
+    assert_eq!(patch.payload["threadStatus"], "systemError");
+
+    let replay = state
+        .store
+        .replay_events(None, None, Some("thread-1".to_string()))
+        .await
+        .unwrap();
+    assert!(replay.iter().any(|event| {
+        event.kind == THREAD_VIEW_CURSOR_KIND
+            && event.payload["sourceKind"] == "timeline.thread_status"
+            && event.payload["sourceMethod"] == "thread/status/changed"
+    }));
+}
+
+#[tokio::test]
+async fn native_not_loaded_status_clears_active_runtime_routing() {
+    let state = test_state().await;
+    state
+        .store
+        .upsert_thread_runtime_state(ThreadRuntimeState {
+            thread_id: "thread-1".to_string(),
+            status: "active".to_string(),
+            active_turn_id: Some("stale-turn".to_string()),
+            updated_at: Utc::now(),
+            last_event_seq: Some(10),
+        })
+        .await
+        .unwrap();
+    let mut receiver = state.events.subscribe();
+
+    ingest_inbound(
+        InboundMessage::Notification {
+            method: "thread/status/changed".to_string(),
+            params: json!({
+                "threadId": "thread-1",
+                "status": {"type": "notLoaded"},
+            }),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+
+    let patch = timeout(Duration::from_secs(1), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
+    assert_eq!(patch.payload["liveState"], "notLoaded");
+    assert_eq!(patch.payload["threadStatus"], "notLoaded");
+
+    let runtime = state
+        .store
+        .get_thread_runtime_state("thread-1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(runtime.status, "idle");
+    assert_eq!(runtime.active_turn_id, None);
+    assert!(runtime.last_event_seq.is_some());
+
+    let routed_active_turn_id = crate::turn_lifecycle::routed_active_turn_id(&state, "thread-1")
+        .await
+        .unwrap();
+    assert_eq!(routed_active_turn_id, None);
+}
+
+#[tokio::test]
 async fn realtime_transcript_notifications_persist_only_cursor_metadata() {
     let state = test_state().await;
 
@@ -450,68 +543,4 @@ async fn thread_metadata_patch_preserves_omitted_git_info_fields() {
     assert_eq!(normalized.payload["threadId"], "thread-1");
     assert!(normalized.payload["gitInfo"].get("branch").is_none());
     assert_eq!(normalized.payload["gitInfo"]["sha"], "abc123");
-}
-
-#[tokio::test]
-async fn selected_thread_reconciliation_polls_recent_threads_and_coalesces_reads() {
-    let store = Store::in_memory().await.unwrap();
-    let app_server = Arc::new(RecordingAppServer::default());
-    app_server.ready.store(true, Ordering::SeqCst);
-    let state = AppState::new(Config::default(), store, app_server.clone());
-    *app_server.next_response.lock().unwrap() = Some(json!({
-        "data": [{
-            "id": "thread-1",
-            "cliVersion": "0.130.0",
-            "cwd": "/workspace",
-            "ephemeral": false,
-            "modelProvider": "openai",
-            "preview": "hello",
-            "source": "cli",
-            "status": {"type": "active"},
-            "turns": [],
-            "createdAt": 1_i64,
-            "updatedAt": 2_i64
-        }],
-        "nextCursor": null,
-        "backwardsCursor": null
-    }));
-    let mut sync = SelectedThreadSync::default();
-
-    let event = reconcile_selected_thread(&state, "thread-1", 10, &mut sync)
-        .await
-        .unwrap()
-        .unwrap();
-    sync.last_snapshot_updated_at = Some(2);
-    *app_server.next_response.lock().unwrap() = Some(json!({
-        "data": [{
-            "id": "thread-1",
-            "cliVersion": "0.130.0",
-            "cwd": "/workspace",
-            "ephemeral": false,
-            "modelProvider": "openai",
-            "preview": "hello",
-            "source": "cli",
-            "status": {"type": "active"},
-            "turns": [],
-            "createdAt": 1_i64,
-            "updatedAt": 2_i64
-        }],
-        "nextCursor": null,
-        "backwardsCursor": null
-    }));
-    let coalesced = reconcile_selected_thread(&state, "thread-1", 10, &mut sync)
-        .await
-        .unwrap();
-
-    assert_eq!(event.kind, THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND);
-    assert_eq!(event.seq, 10);
-    assert_eq!(event.thread_id.as_deref(), Some("thread-1"));
-    assert_eq!(event.payload["reason"], "thread_changed");
-    assert!(coalesced.is_none());
-    let requests = app_server.requests.lock().unwrap();
-    assert_eq!(requests[0].0, "thread/list");
-    assert_eq!(requests[0].1["sortKey"], "updated_at");
-    assert_eq!(requests[0].1["limit"], SELECTED_THREAD_POLL_LIMIT);
-    assert_eq!(requests[1].0, "thread/list");
-    assert_eq!(requests.len(), 2);
 }

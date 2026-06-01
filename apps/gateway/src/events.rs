@@ -44,7 +44,6 @@ use crate::{
 };
 
 const SSE_REPLAY_PAGE_SIZE: i64 = 500;
-const SELECTED_THREAD_POLL_LIMIT: u32 = 25;
 const TURN_COMPLETION_HEAD_REFRESH_LIMIT: u32 = 50;
 pub const MCP_CONFIG_CHANGED_EVENT: &str = "mcp.config_changed";
 pub const MCP_SERVER_STATUS_UPDATED_EVENT: &str = "mcp.server_status_updated";
@@ -345,8 +344,6 @@ async fn event_stream(
 
     Ok(stream! {
         let mut high_water = replay_high_water;
-        let mut selected_sync = SelectedThreadSync::default();
-
         for event in replay {
             high_water = high_water.max(event.seq);
             if let Ok(sse_event) = event_to_sse(event) {
@@ -378,70 +375,10 @@ async fn event_stream(
                     }
                 }
                 Ok(Err(broadcast::error::RecvError::Closed)) => break,
-                Err(_) => {
-                    let Some(thread_id) = query.thread_id.clone() else {
-                        continue;
-                    };
-                    match reconcile_selected_thread(&state, &thread_id, high_water, &mut selected_sync).await {
-                        Ok(Some(event)) => {
-                            debug_assert!(event.seq <= high_water);
-                            if let Ok(sse_event) = event_to_sse(event) {
-                                yield Ok(sse_event);
-                            }
-                        }
-                        Err(error) => tracing::debug!(%error, thread_id, "selected thread reconciliation failed"),
-                        Ok(None) => {}
-                    }
-                }
+                Err(_) => {}
             }
         }
     })
-}
-
-#[derive(Default)]
-struct SelectedThreadSync {
-    last_seen_updated_at: Option<i64>,
-    last_snapshot_updated_at: Option<i64>,
-}
-
-async fn reconcile_selected_thread(
-    state: &AppState,
-    thread_id: &str,
-    seq: i64,
-    sync: &mut SelectedThreadSync,
-) -> ApiResult<Option<EventEnvelope>> {
-    let Some(summary) = find_recent_thread_summary(state, thread_id).await? else {
-        return Ok(None);
-    };
-
-    let updated_at_changed = sync
-        .last_seen_updated_at
-        .is_none_or(|updated_at| summary.updated_at > updated_at);
-    sync.last_seen_updated_at = Some(summary.updated_at);
-
-    let snapshot_stale = sync
-        .last_snapshot_updated_at
-        .is_none_or(|updated_at| summary.updated_at > updated_at);
-
-    if !updated_at_changed && !snapshot_stale {
-        return Ok(None);
-    }
-
-    sync.last_snapshot_updated_at = Some(summary.updated_at);
-    thread_view_refresh_required_event(seq, thread_id.to_string(), "thread_changed").map(Some)
-}
-
-async fn find_recent_thread_summary(
-    state: &AppState,
-    thread_id: &str,
-) -> ApiResult<Option<ThreadSummary>> {
-    let response = app_server_api::client(&state.app_server)
-        .thread_list_recent_updated(SELECTED_THREAD_POLL_LIMIT)
-        .await?;
-    Ok(response
-        .threads
-        .into_iter()
-        .find(|thread| thread.id == thread_id))
 }
 
 async fn replay_operational_events(
@@ -508,7 +445,8 @@ async fn normalized_timeline_events(
     {
         events.push(event);
     }
-    let thread_status = timeline_thread_status_event(state, params, metadata, source).await?;
+    let thread_status =
+        timeline_thread_status_event(state, method, params, metadata, source).await?;
     events.extend(thread_status.events);
     drain_thread_ids.extend(thread_status.drain_thread_ids);
 
@@ -1065,6 +1003,7 @@ async fn normalized_thread_settings_event(
 
 async fn timeline_thread_status_event(
     state: &AppState,
+    method: &str,
     params: &Value,
     metadata: &EventMetadata,
     _source: TimelineUpdateSource,
@@ -1078,24 +1017,21 @@ async fn timeline_thread_status_event(
     let Some(status) = status_value.and_then(thread_status_from_value) else {
         return Ok(NormalizedTimelineEvents::default());
     };
-    let cursor = append_timeline_changed_cursor(
-        state,
-        metadata,
-        "timeline.thread_status",
-        Some("thread/status"),
-    )
-    .await?;
+    let cursor =
+        append_timeline_changed_cursor(state, metadata, "timeline.thread_status", Some(method))
+            .await?;
     let mut events = Vec::new();
-    let patch = thread_view::record_thread_live_state(
+    let mut patch = thread_view::record_thread_live_state(
         &state.thread_views,
         &thread_id,
         live_state_from_thread_status(status),
         cursor.seq,
     )
     .await?;
+    patch.thread_status = Some(status);
     events.push(thread_view_patch_payload_event(state, patch).await?);
     match status {
-        ThreadStatus::Idle | ThreadStatus::SystemError => {
+        ThreadStatus::Idle | ThreadStatus::SystemError | ThreadStatus::NotLoaded => {
             state
                 .store
                 .upsert_thread_runtime_state(ThreadRuntimeState {
@@ -1127,7 +1063,6 @@ async fn timeline_thread_status_event(
                 })
                 .await?;
         }
-        ThreadStatus::NotLoaded => {}
     }
     Ok(NormalizedTimelineEvents {
         events,

@@ -2702,6 +2702,7 @@ export interface components {
             rows?: components["schemas"]["ThreadTimelineRow"][] | null;
             scope: components["schemas"]["ThreadViewPatchScope"];
             threadId: string;
+            threadStatus?: null | components["schemas"]["ThreadStatus"];
             turns?: components["schemas"]["ThreadTimelineSnapshotTurn"][];
             upsertRows?: components["schemas"]["ThreadTimelineRow"][];
             /** Format: int64 */

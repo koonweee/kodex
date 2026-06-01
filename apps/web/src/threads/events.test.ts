@@ -68,6 +68,36 @@ describe("thread events", () => {
     ).toEqual({ threadId: "thread-1", status: "idle", updatedAt: 1_777_680_000 });
   });
 
+  it("prefers exact native thread status carried by canonical projection patches", () => {
+    expect(
+      threadStatusUpdateFromEvent(
+        event({
+          kind: "thread_view.patch",
+          threadId: "thread-1",
+          payload: {
+            scope: "lifecycle",
+            liveState: "idle",
+            threadStatus: "systemError",
+          },
+        }),
+      ),
+    ).toEqual({ threadId: "thread-1", status: "systemError", updatedAt: 1_777_680_000 });
+
+    expect(
+      threadStatusUpdateFromEvent(
+        event({
+          kind: "thread_view.patch",
+          payload: {
+            scope: "lifecycle",
+            threadId: "thread-2",
+            liveState: "notLoaded",
+            threadStatus: "notLoaded",
+          },
+        }),
+      ),
+    ).toEqual({ threadId: "thread-2", status: "notLoaded", updatedAt: 1_777_680_000 });
+  });
+
   it("parses current and legacy thread name update notifications", () => {
     expect(
       threadNameUpdateFromEvent(

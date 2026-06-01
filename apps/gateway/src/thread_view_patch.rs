@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::app_server_api::{
-    PendingTimelineRequestSummary, ThreadLiveState, ThreadTimelineRow, ThreadTimelineSnapshotItem,
-    ThreadTimelineSnapshotTurn,
+    PendingTimelineRequestSummary, ThreadLiveState, ThreadStatus, ThreadTimelineRow,
+    ThreadTimelineSnapshotItem, ThreadTimelineSnapshotTurn,
 };
 
 pub const THREAD_VIEW_PATCH_EVENT_KIND: &str = "thread_view.patch";
@@ -25,6 +25,8 @@ pub struct ThreadViewPatch {
     pub thread_id: String,
     pub active_turn_id: Option<String>,
     pub live_state: ThreadLiveState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_status: Option<ThreadStatus>,
     pub pending_approval_requests: Vec<PendingTimelineRequestSummary>,
     pub pending_user_input_requests: Vec<PendingTimelineRequestSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -58,6 +60,7 @@ impl ThreadViewPatch {
             thread_id,
             active_turn_id,
             live_state,
+            thread_status: None,
             pending_approval_requests,
             pending_user_input_requests,
             rows: Some(rows),
@@ -86,6 +89,7 @@ impl ThreadViewPatch {
             thread_id,
             active_turn_id,
             live_state,
+            thread_status: None,
             pending_approval_requests,
             pending_user_input_requests,
             rows: None,
@@ -110,6 +114,7 @@ impl ThreadViewPatch {
             thread_id,
             active_turn_id,
             live_state,
+            thread_status: None,
             pending_approval_requests,
             pending_user_input_requests,
             rows: None,
