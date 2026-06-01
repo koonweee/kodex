@@ -40,6 +40,11 @@ use crate::{
     schema::is_supported_approval_method,
     skills,
     store::{EventEnvelope, NewApproval, NewEvent, ThreadRuntimeState},
+    subagents::{
+        SubagentProjectionChange, SubagentProjectionChangeKind, ThreadSubagentEventPayload,
+        THREAD_SUBAGENTS_CHANGED_EVENT, THREAD_SUBAGENT_STARTED_EVENT,
+        THREAD_SUBAGENT_STOPPED_EVENT, THREAD_SUBAGENT_UPDATED_EVENT,
+    },
     thread_view::{self, THREAD_VIEW_PATCH_EVENT_KIND},
 };
 
@@ -139,6 +144,10 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             if let Some(event) =
                 normalized_thread_settings_event(state, &method, &params, &metadata).await?
             {
+                let _ = state.events.send(event);
+                emitted = true;
+            }
+            for event in normalized_subagent_events(state, &method, &params, &metadata).await? {
                 let _ = state.events.send(event);
                 emitted = true;
             }
@@ -999,6 +1008,164 @@ async fn normalized_thread_settings_event(
         })
         .await
         .map(Some)
+}
+
+async fn normalized_subagent_events(
+    state: &AppState,
+    method: &str,
+    params: &Value,
+    metadata: &EventMetadata,
+) -> ApiResult<Vec<EventEnvelope>> {
+    if method.eq_ignore_ascii_case("thread/started") {
+        let Some(thread) = params
+            .get("thread")
+            .filter(|thread| thread.is_object())
+            .and_then(|thread| thread_summary_from_value(thread).ok())
+        else {
+            return Ok(Vec::new());
+        };
+        let Some(change) = state.subagents.upsert_from_thread_summary(&thread).await else {
+            return Ok(Vec::new());
+        };
+        return Ok(vec![
+            subagent_projection_event(state, change, metadata).await?,
+        ]);
+    }
+
+    if let Some(thread) = params
+        .get("thread")
+        .filter(|thread| thread.is_object())
+        .and_then(|thread| thread_summary_from_value(thread).ok())
+    {
+        if let Some(change) = state.subagents.upsert_from_thread_summary(&thread).await {
+            return Ok(vec![
+                subagent_projection_event(state, change, metadata).await?,
+            ]);
+        }
+    }
+
+    if method.eq_ignore_ascii_case("thread/status/changed") {
+        let Some(thread_id) = metadata.thread_id.as_deref() else {
+            return Ok(Vec::new());
+        };
+        let status_value = params
+            .get("status")
+            .or_else(|| params.get("thread").and_then(|thread| thread.get("status")));
+        let Some(status) = status_value.and_then(thread_status_from_value) else {
+            return Ok(Vec::new());
+        };
+        let change = state
+            .subagents
+            .update_status(
+                thread_id,
+                status,
+                params.get("updatedAt").and_then(Value::as_i64),
+            )
+            .await;
+        let Some(change) = change else {
+            return Ok(Vec::new());
+        };
+        return Ok(vec![
+            subagent_projection_event(state, change, metadata).await?,
+        ]);
+    }
+
+    if method.eq_ignore_ascii_case("thread/closed") {
+        let Some(thread_id) = metadata.thread_id.as_deref() else {
+            return Ok(Vec::new());
+        };
+        let change = state
+            .subagents
+            .update_status(thread_id, ThreadStatus::NotLoaded, None)
+            .await;
+        let Some(change) = change else {
+            return Ok(Vec::new());
+        };
+        return Ok(vec![
+            subagent_projection_event(state, change, metadata).await?,
+        ]);
+    }
+
+    if is_subagent_hook_notification(method, params) {
+        if let Some(parent_thread_id) = metadata.thread_id.as_deref() {
+            state
+                .subagents
+                .mark_parent_uncertain(parent_thread_id)
+                .await;
+            return Ok(vec![
+                subagent_changed_event(state, parent_thread_id, metadata).await?,
+            ]);
+        }
+    }
+
+    Ok(Vec::new())
+}
+
+async fn subagent_projection_event(
+    state: &AppState,
+    change: SubagentProjectionChange,
+    metadata: &EventMetadata,
+) -> ApiResult<EventEnvelope> {
+    let kind = match change.kind {
+        SubagentProjectionChangeKind::Started => THREAD_SUBAGENT_STARTED_EVENT,
+        SubagentProjectionChangeKind::Updated => THREAD_SUBAGENT_UPDATED_EVENT,
+        SubagentProjectionChangeKind::Stopped => THREAD_SUBAGENT_STOPPED_EVENT,
+    };
+    state
+        .store
+        .append_event(NewEvent {
+            project_id: metadata.project_id.clone(),
+            thread_id: Some(change.parent_thread_id.clone()),
+            turn_id: metadata.turn_id.clone(),
+            item_id: None,
+            kind: kind.to_string(),
+            codex_method: Some("thread/subagent".to_string()),
+            payload: serde_json::to_value(ThreadSubagentEventPayload {
+                parent_thread_id: change.parent_thread_id,
+                subagent_id: Some(change.subagent_id),
+                subagent: change.subagent,
+            })?,
+        })
+        .await
+}
+
+async fn subagent_changed_event(
+    state: &AppState,
+    parent_thread_id: &str,
+    metadata: &EventMetadata,
+) -> ApiResult<EventEnvelope> {
+    state
+        .store
+        .append_event(NewEvent {
+            project_id: metadata.project_id.clone(),
+            thread_id: Some(parent_thread_id.to_string()),
+            turn_id: metadata.turn_id.clone(),
+            item_id: None,
+            kind: THREAD_SUBAGENTS_CHANGED_EVENT.to_string(),
+            codex_method: Some("thread/subagents_changed".to_string()),
+            payload: serde_json::to_value(ThreadSubagentEventPayload {
+                parent_thread_id: parent_thread_id.to_string(),
+                subagent_id: None,
+                subagent: None,
+            })?,
+        })
+        .await
+}
+
+fn is_subagent_hook_notification(method: &str, params: &Value) -> bool {
+    if !method.eq_ignore_ascii_case("hook/started")
+        && !method.eq_ignore_ascii_case("hook/completed")
+    {
+        return false;
+    }
+    let Some(event_name) = params
+        .get("run")
+        .and_then(|run| run.get("eventName"))
+        .and_then(Value::as_str)
+    else {
+        return false;
+    };
+    matches!(event_name, "subagentStart" | "subagentStop")
 }
 
 async fn timeline_thread_status_event(

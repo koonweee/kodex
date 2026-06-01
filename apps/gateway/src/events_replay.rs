@@ -13,6 +13,10 @@ use crate::{
     },
     skills,
     store::EventEnvelope,
+    subagents::{
+        THREAD_SUBAGENTS_CHANGED_EVENT, THREAD_SUBAGENT_STARTED_EVENT,
+        THREAD_SUBAGENT_STOPPED_EVENT, THREAD_SUBAGENT_UPDATED_EVENT,
+    },
     thread_view::{self, THREAD_VIEW_PATCH_EVENT_KIND, THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND},
 };
 
@@ -50,6 +54,10 @@ pub(crate) fn is_operational_replay_event(event: &EventEnvelope) -> bool {
             | THREAD_READ_UPDATED_EVENT
             | THREAD_PIN_UPDATED_EVENT
             | THREAD_UPSERTED_EVENT
+            | THREAD_SUBAGENT_STARTED_EVENT
+            | THREAD_SUBAGENT_UPDATED_EVENT
+            | THREAD_SUBAGENT_STOPPED_EVENT
+            | THREAD_SUBAGENTS_CHANGED_EVENT
             | automations::AUTOMATION_UPSERT_EVENT
             | automations::AUTOMATION_DELETE_EVENT
             | queue::QUEUE_UPSERT_EVENT

@@ -2,7 +2,15 @@
 
 ## Status
 
-Proposed.
+Complete.
+
+## Implementation Notes
+
+- App-server 0.135 does not expose dedicated subagent start/stop client notifications. `thread/started` carries enough thread-summary data to discover a spawned subagent, including child id, parent id, status, nickname, and role.
+- Hook `subagentStart` and `subagentStop` notifications are extension hook lifecycle signals. They identify the parent thread but do not include child thread id or subagent metadata, so the gateway treats them as parent-scoped uncertainty signals and repairs the projection from loaded thread summaries.
+- `thread/status/changed` and `thread/closed` update or remove known child threads from the gateway projection. Unknown closed/status events do not fabricate parent relationships.
+- `GET /v1/threads/{threadId}/subagents` reads the gateway projection. It performs bounded loaded-list/read repair only when the parent has no known projection yet or a hook event marked the parent uncertain.
+- The browser now converges from parent-scoped `thread.subagent_started`, `thread.subagent_updated`, `thread.subagent_stopped`, and `thread.subagents_changed` events instead of scanning timeline patches for collaboration rows.
 
 ## Context
 

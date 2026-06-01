@@ -2545,6 +2545,11 @@ export interface components {
         };
         /** @enum {string} */
         ThreadStatus: "notLoaded" | "idle" | "systemError" | "active";
+        ThreadSubagentEventPayload: {
+            parentThreadId: string;
+            subagent?: null | components["schemas"]["ThreadSubagentSummary"];
+            subagentId?: string | null;
+        };
         ThreadSubagentListResponse: {
             subagents: components["schemas"]["ThreadSubagentSummary"][];
         };

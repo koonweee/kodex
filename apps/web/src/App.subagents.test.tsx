@@ -2,6 +2,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { ThreadSubagentSummary } from "./api/client";
 import {
   App,
   FakeEventSource,
@@ -15,7 +16,7 @@ import {
   threadDetail,
 } from "./test/mvpAppHarness";
 
-const subagent = {
+const subagent: ThreadSubagentSummary = {
   id: "subagent-1",
   parentThreadId: "thread-1",
   agentNickname: "Scout",
@@ -23,9 +24,9 @@ const subagent = {
   status: "active",
   liveState: "streaming",
   updatedAt: 1777501300,
-} as const;
+};
 
-const secondSubagent = {
+const secondSubagent: ThreadSubagentSummary = {
   ...subagent,
   id: "subagent-2",
   agentNickname: "Builder",
@@ -33,7 +34,7 @@ const secondSubagent = {
   status: "idle",
   liveState: "idle",
   updatedAt: 1777501400,
-} as const;
+};
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -175,10 +176,9 @@ describe("subagent thread viewer", () => {
   });
 
   it("preserves manual selection while that subagent remains available", async () => {
-    let subagents = [subagent, secondSubagent];
     const gateway = mockGateway(
       baseRoutes({
-        "GET /v1/threads/thread-1/subagents": () => ({ subagents }),
+        "GET /v1/threads/thread-1/subagents": { subagents: [subagent, secondSubagent] },
         "GET /v1/threads/subagent-1": threadDetail(subagentThread, [
           snapshotTurn("sub-turn-1", [
             snapshotItem("sub-answer-1", "agentMessage", { text: "Scout snapshot" }),
@@ -201,27 +201,22 @@ describe("subagent thread viewer", () => {
     await userEvent.click(await screen.findByRole("radio", { name: /builder/i }));
     expect(await screen.findByText(/builder snapshot/i)).toBeInTheDocument();
 
-    subagents = [subagent, secondSubagent];
     const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
     act(() => {
-      selectedThreadStream?.emitNamed("thread_view.patch", projectionPatchEvent({
-        id: "main-collab-refresh",
+      selectedThreadStream?.emitNamed("thread.subagent_updated", subagentDiscoveryEvent({
+        id: "subagent-update",
         seq: 10,
-        projectId: project.id,
-        threadId: "thread-1",
-        turnId: "turn-1",
-        itemId: "collab-refresh",
-        itemType: "collabAgentToolCall",
-        text: "Subagent list changed",
+        subagent: { ...secondSubagent, status: "active", liveState: "streaming", updatedAt: 1777501500 },
       }));
     });
-    await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/thread-1/subagents").length).toBeGreaterThan(1));
+    await new Promise((resolve) => setTimeout(resolve, 25));
 
     expect(screen.getByText(/builder snapshot/i)).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /builder/i })).toBeChecked();
+    expect(gateway.callsFor("GET", "/v1/threads/thread-1/subagents")).toHaveLength(1);
   });
 
-  it("does not refetch subagents for ordinary selected-thread streaming patches", async () => {
+  it("does not refetch subagents for selected-thread streaming patches", async () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads/thread-1/subagents": { subagents: [subagent] },
@@ -244,9 +239,9 @@ describe("subagent thread viewer", () => {
         projectId: project.id,
         threadId: "thread-1",
         turnId: "turn-1",
-        itemId: "ordinary-agent-message",
-        itemType: "agentMessage",
-        text: "Ordinary streaming update",
+        itemId: "collab-agent-message",
+        itemType: "collabAgentToolCall",
+        text: "Collab agent output is not a discovery signal",
       }));
     });
     await new Promise((resolve) => setTimeout(resolve, 25));
@@ -255,10 +250,9 @@ describe("subagent thread viewer", () => {
   });
 
   it("falls back when the selected subagent disappears from the gateway list", async () => {
-    let subagents = [subagent, secondSubagent];
     const gateway = mockGateway(
       baseRoutes({
-        "GET /v1/threads/thread-1/subagents": () => ({ subagents }),
+        "GET /v1/threads/thread-1/subagents": { subagents: [subagent, secondSubagent] },
         "GET /v1/threads/subagent-1": threadDetail(subagentThread, [
           snapshotTurn("sub-turn-1", [
             snapshotItem("sub-answer-1", "agentMessage", { text: "Scout snapshot" }),
@@ -280,23 +274,81 @@ describe("subagent thread viewer", () => {
     await userEvent.click(await screen.findByRole("button", { name: /show subagents/i }));
     expect(await screen.findByText(/scout snapshot/i)).toBeInTheDocument();
 
-    subagents = [secondSubagent];
     const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
     act(() => {
-      selectedThreadStream?.emitNamed("thread_view.patch", projectionPatchEvent({
-        id: "main-collab-change",
+      selectedThreadStream?.emitNamed("thread.subagent_stopped", subagentDiscoveryEvent({
+        id: "subagent-stop",
+        kind: "thread.subagent_stopped",
         seq: 10,
-        projectId: project.id,
-        threadId: "thread-1",
-        turnId: "turn-1",
-        itemId: "collab-1",
-        itemType: "collabAgentToolCall",
-        text: "Subagent list changed",
+        subagentId: "subagent-1",
+        subagent: null,
       }));
     });
-    await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/thread-1/subagents").length).toBeGreaterThan(1));
 
     expect(await screen.findByText(/builder snapshot/i)).toBeInTheDocument();
     expect(screen.queryByRole("radio", { name: /scout/i })).not.toBeInTheDocument();
+    expect(gateway.callsFor("GET", "/v1/threads/thread-1/subagents")).toHaveLength(1);
+  });
+
+  it("shows the subagent action when a parent-scoped start event arrives", async () => {
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads/thread-1/subagents": { subagents: [] },
+        "GET /v1/threads/subagent-1": threadDetail(subagentThread, [
+          snapshotTurn("sub-turn-1", [
+            snapshotItem("sub-answer-1", "agentMessage", { text: "Subagent snapshot" }),
+          ]),
+        ]),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /show subagents/i })).not.toBeInTheDocument();
+
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    act(() => {
+      selectedThreadStream?.emitNamed("thread.subagent_started", subagentDiscoveryEvent({
+        id: "subagent-start",
+        kind: "thread.subagent_started",
+        seq: 10,
+        subagent,
+      }));
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: /show subagents/i }));
+    expect(await screen.findByText(/subagent snapshot/i)).toBeInTheDocument();
   });
 });
+
+function subagentDiscoveryEvent({
+  id,
+  kind = "thread.subagent_updated",
+  seq,
+  subagent: payloadSubagent = subagent,
+  subagentId = payloadSubagent?.id ?? null,
+}: {
+  id: string;
+  kind?: "thread.subagent_started" | "thread.subagent_updated" | "thread.subagent_stopped";
+  seq: number;
+  subagent?: typeof subagent | typeof secondSubagent | null;
+  subagentId?: string | null;
+}) {
+  return {
+    id,
+    seq,
+    kind,
+    codexMethod: "thread/subagent",
+    projectId: project.id,
+    threadId: "thread-1",
+    turnId: null,
+    itemId: null,
+    payload: {
+      parentThreadId: "thread-1",
+      subagentId,
+      subagent: payloadSubagent,
+    },
+    receivedAt: "2026-05-31T00:00:00Z",
+  };
+}

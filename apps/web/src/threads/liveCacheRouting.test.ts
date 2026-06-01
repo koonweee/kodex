@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { EventEnvelope, ThreadSummary } from "../api/client";
-import { eventCanAffectSubagentDiscovery, sidebarLiveCacheRoute } from "./liveCacheRouting";
+import { sidebarLiveCacheRoute } from "./liveCacheRouting";
 
 describe("thread live cache routing", () => {
   it("invalidates all thread lists only when a selected patch has no cached location", () => {
@@ -37,34 +37,6 @@ describe("thread live cache routing", () => {
         thread: titled,
       }),
     ).toEqual({ kind: "ignore" });
-  });
-
-  it("detects subagent discovery changes from row-carried collab agent payloads only", () => {
-    expect(
-      eventCanAffectSubagentDiscovery(event({
-        kind: "thread_view.patch",
-        payload: {
-          scope: "turn",
-          upsertRows: [
-            {
-              id: "row-1",
-              kind: "activity",
-              items: [{ itemType: "collab_agent", payload: {} }],
-            },
-          ],
-        },
-      })),
-    ).toBe(true);
-
-    expect(
-      eventCanAffectSubagentDiscovery(event({
-        kind: "thread_view.patch",
-        payload: {
-          scope: "turn",
-          items: [{ itemType: "collab_agent", payload: {} }],
-        },
-      })),
-    ).toBe(false);
   });
 });
 

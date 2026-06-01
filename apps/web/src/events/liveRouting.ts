@@ -4,7 +4,9 @@ import { isApprovalEvent } from "../approvals/state";
 import {
   threadNotificationsUpdateFromEvent,
   threadPinUpdateFromEvent,
+  threadSubagentDiscoveryEventFromEvent,
   threadUpsertFromEvent,
+  type ThreadSubagentDiscoveryEvent,
   type ThreadUpsert,
 } from "../threads/events";
 
@@ -19,7 +21,7 @@ export type LiveEventRouteHandlers = {
   applyThreadReadStateEvent: (event: EventEnvelope) => void;
   applyThreadNotificationsState: (threadId: string, notificationsEnabled: boolean) => void;
   refreshSidebarThreadsForLiveEvent: (event: EventEnvelope) => void;
-  invalidateSelectedSubagentsForEvent: (event: EventEnvelope) => void;
+  applySubagentDiscoveryEvent: (event: ThreadSubagentDiscoveryEvent) => void;
   applyUsageLimitSnapshot: (snapshot: RateLimitSnapshot) => void;
   applyApprovalEvent: (event: EventEnvelope) => void;
   applySkillsChangedEvent: () => void;
@@ -88,8 +90,9 @@ function routeSharedLiveEvent(event: EventEnvelope, handlers: SelectedThreadLive
   if (event.kind === "thread_view.patch" || event.kind === "timeline.thread_metadata") {
     handlers.refreshSidebarThreadsForLiveEvent(event);
   }
-  if (event.kind === "thread_view.patch") {
-    handlers.invalidateSelectedSubagentsForEvent(event);
+  const subagentDiscoveryEvent = threadSubagentDiscoveryEventFromEvent(event);
+  if (subagentDiscoveryEvent) {
+    handlers.applySubagentDiscoveryEvent(subagentDiscoveryEvent);
   }
 }
 

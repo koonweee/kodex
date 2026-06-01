@@ -1,8 +1,17 @@
-import type { EventEnvelope, ThreadNotificationSettingsResponse, ThreadReadStateUpdate } from "../api/client";
+import type {
+  EventEnvelope,
+  ThreadNotificationSettingsResponse,
+  ThreadReadStateUpdate,
+  ThreadSubagentSummary,
+} from "../api/client";
 import type { ThreadSummary } from "../api/client";
 import { asRecord, numberValue, stringValue } from "../shared/values";
 
 type ThreadStatusUpdate = { threadId: string; status: ThreadSummary["status"]; updatedAt: number | null };
+export type ThreadSubagentDiscoveryEvent =
+  | { kind: "upsert"; parentThreadId: string; subagent: ThreadSubagentSummary }
+  | { kind: "delete"; parentThreadId: string; subagentId: string }
+  | { kind: "refresh"; parentThreadId: string };
 export type ThreadUpsert =
   | { scope: "project"; projectId: string; thread: ThreadSummary }
   | { scope: "chat"; thread: ThreadSummary };
@@ -106,6 +115,31 @@ export function threadNotificationsUpdateFromEvent(event: EventEnvelope): Thread
   };
 }
 
+export function threadSubagentDiscoveryEventFromEvent(event: EventEnvelope): ThreadSubagentDiscoveryEvent | null {
+  if (
+    event.kind !== "thread.subagent_started" &&
+    event.kind !== "thread.subagent_updated" &&
+    event.kind !== "thread.subagent_stopped" &&
+    event.kind !== "thread.subagents_changed"
+  ) {
+    return null;
+  }
+  const payload = asRecord(event.payload);
+  const parentThreadId = stringValue(payload.parentThreadId) ?? stringValue(payload.parent_thread_id) ?? event.threadId;
+  if (!parentThreadId) {
+    return null;
+  }
+  if (event.kind === "thread.subagents_changed") {
+    return { kind: "refresh", parentThreadId };
+  }
+  if (event.kind === "thread.subagent_stopped") {
+    const subagentId = stringValue(payload.subagentId) ?? stringValue(payload.subagent_id);
+    return subagentId ? { kind: "delete", parentThreadId, subagentId } : { kind: "refresh", parentThreadId };
+  }
+  const subagent = threadSubagentSummaryFromValue(payload.subagent);
+  return subagent ? { kind: "upsert", parentThreadId, subagent } : { kind: "refresh", parentThreadId };
+}
+
 export function threadStatusUpdateFromEvent(event: EventEnvelope): ThreadStatusUpdate | null {
   const payload = asRecord(event.payload);
   const threadId = event.threadId ?? stringValue(payload.threadId) ?? stringValue(payload.thread_id);
@@ -203,6 +237,31 @@ function threadSummaryFromValue(value: unknown): ThreadSummary | null {
   return thread as ThreadSummary;
 }
 
+function threadSubagentSummaryFromValue(value: unknown): ThreadSubagentSummary | null {
+  const subagent = asRecord(value);
+  const id = stringValue(subagent.id);
+  const parentThreadId = stringValue(subagent.parentThreadId) ?? stringValue(subagent.parent_thread_id);
+  const status = stringValue(subagent.status);
+  const liveState = stringValue(subagent.liveState) ?? stringValue(subagent.live_state);
+  const updatedAt = numberValue(subagent.updatedAt ?? subagent.updated_at);
+  if (!id || !parentThreadId || !isThreadStatus(status) || !isThreadLiveState(liveState) || updatedAt === null) {
+    return null;
+  }
+  return {
+    id,
+    parentThreadId,
+    agentNickname: stringValue(subagent.agentNickname) ?? stringValue(subagent.agent_nickname),
+    agentRole: stringValue(subagent.agentRole) ?? stringValue(subagent.agent_role),
+    status,
+    liveState,
+    updatedAt,
+  };
+}
+
 function isThreadStatus(status: string | null): status is ThreadSummary["status"] {
   return status === "active" || status === "idle" || status === "notLoaded" || status === "systemError";
+}
+
+function isThreadLiveState(liveState: string | null): liveState is ThreadSubagentSummary["liveState"] {
+  return liveState === "idle" || liveState === "notLoaded" || liveState === "streaming" || liveState === "syncing";
 }

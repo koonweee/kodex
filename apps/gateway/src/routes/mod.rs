@@ -4591,6 +4591,126 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn thread_subagents_uses_repaired_projection_on_repeated_request() {
+        let (state, app_server) = test_state().await;
+        *app_server.queued_responses.lock().unwrap() = vec![
+            json!({
+                "data": ["thread-parent", "thread-child-a"],
+                "nextCursor": null
+            }),
+            json!({"thread": subagent_thread_summary(
+                "thread-child-a",
+                "thread-parent",
+                10,
+                100,
+                "Scout",
+                "explorer",
+                "active"
+            )}),
+        ];
+        let app = build_router(state);
+
+        let first = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/threads/thread-parent/subagents")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+        assert_eq!(
+            response_json(first).await["subagents"][0]["id"],
+            "thread-child-a"
+        );
+        app_server.requests.lock().unwrap().clear();
+
+        let second = app
+            .oneshot(
+                Request::get("/v1/threads/thread-parent/subagents")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(second.status(), StatusCode::OK);
+        assert_eq!(
+            response_json(second).await["subagents"][0]["id"],
+            "thread-child-a"
+        );
+        assert!(app_server.requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn thread_subagents_repairs_again_after_subagent_hook_uncertainty() {
+        let (state, app_server) = test_state().await;
+        *app_server.queued_responses.lock().unwrap() = vec![json!({
+            "data": ["thread-parent"],
+            "nextCursor": null
+        })];
+        let app = build_router(state.clone());
+
+        let empty = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/threads/thread-parent/subagents")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(empty.status(), StatusCode::OK);
+        assert_eq!(response_json(empty).await["subagents"], json!([]));
+        app_server.requests.lock().unwrap().clear();
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "hook/started".to_string(),
+                params: json!({
+                    "threadId": "thread-parent",
+                    "run": {"id": "hook-1", "eventName": "subagentStart"}
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+        *app_server.queued_responses.lock().unwrap() = vec![
+            json!({
+                "data": ["thread-parent", "thread-child-a"],
+                "nextCursor": null
+            }),
+            json!({"thread": subagent_thread_summary(
+                "thread-child-a",
+                "thread-parent",
+                10,
+                100,
+                "Scout",
+                "explorer",
+                "active"
+            )}),
+        ];
+
+        let repaired = app
+            .oneshot(
+                Request::get("/v1/threads/thread-parent/subagents")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(repaired.status(), StatusCode::OK);
+        assert_eq!(
+            response_json(repaired).await["subagents"][0]["id"],
+            "thread-child-a"
+        );
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/loaded/list");
+        assert_eq!(requests[1].0, "thread/read");
+    }
+
+    #[tokio::test]
     async fn thread_subagents_returns_empty_list_without_loaded_descendants() {
         let (state, app_server) = test_state().await;
         *app_server.queued_responses.lock().unwrap() = vec![json!({
@@ -10924,6 +11044,78 @@ mod tests {
         assert!(live_chunk.contains(&format!("id: {}", live.seq)));
         assert!(live_chunk.contains("thread.read_updated"));
         assert!(live_chunk.contains("\"unreadCompletedAgentTurn\":true"));
+    }
+
+    #[tokio::test]
+    async fn sse_replays_and_streams_parent_scoped_subagent_events() {
+        let (state, _) = test_state().await;
+        let replay = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("thread-parent".to_string()),
+                turn_id: None,
+                item_id: None,
+                kind: crate::subagents::THREAD_SUBAGENT_STARTED_EVENT.to_string(),
+                codex_method: Some("thread/subagent".to_string()),
+                payload: json!({
+                    "parentThreadId": "thread-parent",
+                    "subagentId": "subagent-1",
+                    "subagent": {
+                        "id": "subagent-1",
+                        "parentThreadId": "thread-parent",
+                        "agentNickname": "Scout",
+                        "agentRole": "explorer",
+                        "status": "active",
+                        "liveState": "streaming",
+                        "updatedAt": 100
+                    }
+                }),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?threadId=thread-parent&cursor=0")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let live = state
+            .store
+            .append_event(NewEvent {
+                project_id: None,
+                thread_id: Some("thread-parent".to_string()),
+                turn_id: None,
+                item_id: None,
+                kind: crate::subagents::THREAD_SUBAGENT_STOPPED_EVENT.to_string(),
+                codex_method: Some("thread/subagent".to_string()),
+                payload: json!({
+                    "parentThreadId": "thread-parent",
+                    "subagentId": "subagent-1",
+                    "subagent": null
+                }),
+            })
+            .await
+            .unwrap();
+        state.events.send(live.clone()).unwrap();
+
+        let mut body = response.into_body();
+        let replay_chunk = next_sse_chunk(&mut body).await;
+        assert!(replay_chunk.contains(&format!("id: {}", replay.seq)));
+        assert!(replay_chunk.contains(crate::subagents::THREAD_SUBAGENT_STARTED_EVENT));
+        assert!(replay_chunk.contains("\"subagentId\":\"subagent-1\""));
+
+        let live_chunk = next_sse_chunk(&mut body).await;
+        assert!(live_chunk.contains(&format!("id: {}", live.seq)));
+        assert!(live_chunk.contains(crate::subagents::THREAD_SUBAGENT_STOPPED_EVENT));
+        assert!(live_chunk.contains("\"subagent\":null"));
     }
 
     #[tokio::test]

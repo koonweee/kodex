@@ -22,6 +22,41 @@ async fn test_state() -> AppState {
     test_state_with_app_server().await.0
 }
 
+fn subagent_thread_summary(
+    id: &str,
+    parent_thread_id: &str,
+    created_at: i64,
+    updated_at: i64,
+    nickname: &str,
+    role: &str,
+    status: &str,
+) -> Value {
+    json!({
+        "id": id,
+        "cliVersion": "0.135.0",
+        "cwd": "/workspace",
+        "ephemeral": false,
+        "modelProvider": "openai",
+        "preview": "hello",
+        "source": {
+            "subAgent": {
+                "thread_spawn": {
+                    "parent_thread_id": parent_thread_id,
+                    "depth": 1,
+                    "agent_nickname": nickname,
+                    "agent_role": role
+                }
+            }
+        },
+        "agentNickname": nickname,
+        "agentRole": role,
+        "status": {"type": status},
+        "turns": [],
+        "createdAt": created_at,
+        "updatedAt": updated_at
+    })
+}
+
 #[tokio::test]
 async fn notification_ingest_persists_thread_view_cursor_before_broadcast() {
     let state = test_state().await;
@@ -212,6 +247,212 @@ async fn native_thread_status_changed_emits_exact_canonical_status_patch() {
             && event.payload["sourceKind"] == "timeline.thread_status"
             && event.payload["sourceMethod"] == "thread/status/changed"
     }));
+}
+
+#[tokio::test]
+async fn thread_started_subagent_updates_projection_and_emits_parent_event() {
+    let state = test_state().await;
+    let mut receiver = state.events.subscribe();
+
+    ingest_inbound(
+        InboundMessage::Notification {
+            method: "thread/started".to_string(),
+            params: json!({
+                "thread": subagent_thread_summary("subagent-1", "thread-parent", 10, 20, "Scout", "explorer", "active")
+            }),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+
+    let event = timeout(Duration::from_secs(1), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(event.kind, THREAD_SUBAGENT_STARTED_EVENT);
+    assert_eq!(event.thread_id.as_deref(), Some("thread-parent"));
+    assert_eq!(event.payload["parentThreadId"], "thread-parent");
+    assert_eq!(event.payload["subagentId"], "subagent-1");
+    assert_eq!(event.payload["subagent"]["agentNickname"], "Scout");
+    assert_eq!(event.payload["subagent"]["liveState"], "streaming");
+
+    let subagents = state.subagents.list_descendants("thread-parent").await;
+    assert_eq!(subagents.len(), 1);
+    assert_eq!(subagents[0].id, "subagent-1");
+}
+
+#[tokio::test]
+async fn duplicate_thread_started_subagent_does_not_emit_duplicate_projection_event() {
+    let state = test_state().await;
+
+    for _ in 0..2 {
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "thread/started".to_string(),
+                params: json!({
+                    "thread": subagent_thread_summary("subagent-1", "thread-parent", 10, 20, "Scout", "explorer", "active")
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+    }
+
+    let replay = state
+        .store
+        .replay_events(None, None, Some("thread-parent".to_string()))
+        .await
+        .unwrap();
+    assert_eq!(
+        replay
+            .iter()
+            .filter(|event| event.kind == THREAD_SUBAGENT_STARTED_EVENT)
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn thread_status_changed_updates_known_subagent_under_parent() {
+    let state = test_state().await;
+    let _ = state
+        .subagents
+        .upsert_from_thread_summary(
+            &thread_summary_from_value(&subagent_thread_summary(
+                "subagent-1",
+                "thread-parent",
+                10,
+                20,
+                "Scout",
+                "explorer",
+                "active",
+            ))
+            .unwrap(),
+        )
+        .await;
+    let mut receiver = state.events.subscribe();
+
+    ingest_inbound(
+        InboundMessage::Notification {
+            method: "thread/status/changed".to_string(),
+            params: json!({
+                "threadId": "subagent-1",
+                "status": {"type": "idle"},
+                "updatedAt": 30
+            }),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+
+    let event = timeout(Duration::from_secs(1), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(event.kind, THREAD_SUBAGENT_UPDATED_EVENT);
+    assert_eq!(event.thread_id.as_deref(), Some("thread-parent"));
+    assert_eq!(event.payload["subagent"]["status"], "idle");
+    assert_eq!(event.payload["subagent"]["liveState"], "idle");
+    assert_eq!(event.payload["subagent"]["updatedAt"], 30);
+}
+
+#[tokio::test]
+async fn thread_closed_removes_known_subagent_without_fabricating_unknown_parent() {
+    let state = test_state().await;
+    let _ = state
+        .subagents
+        .upsert_from_thread_summary(
+            &thread_summary_from_value(&subagent_thread_summary(
+                "subagent-1",
+                "thread-parent",
+                10,
+                20,
+                "Scout",
+                "explorer",
+                "active",
+            ))
+            .unwrap(),
+        )
+        .await;
+    let mut receiver = state.events.subscribe();
+
+    ingest_inbound(
+        InboundMessage::Notification {
+            method: "thread/closed".to_string(),
+            params: json!({"threadId": "subagent-1"}),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+
+    let event = timeout(Duration::from_secs(1), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(event.kind, THREAD_SUBAGENT_STOPPED_EVENT);
+    assert_eq!(event.thread_id.as_deref(), Some("thread-parent"));
+    assert!(state
+        .subagents
+        .list_descendants("thread-parent")
+        .await
+        .is_empty());
+
+    ingest_inbound(
+        InboundMessage::Notification {
+            method: "thread/closed".to_string(),
+            params: json!({"threadId": "unknown-subagent"}),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+    let replay = state
+        .store
+        .replay_events(None, None, Some("unknown-subagent".to_string()))
+        .await
+        .unwrap();
+    assert!(replay
+        .iter()
+        .all(|event| event.kind != THREAD_SUBAGENT_STOPPED_EVENT));
+}
+
+#[tokio::test]
+async fn subagent_hook_marks_parent_for_repair_and_emits_parent_refresh_event() {
+    let state = test_state().await;
+    state
+        .subagents
+        .replace_repaired_descendants("thread-parent", Vec::new())
+        .await;
+    assert!(!state.subagents.needs_repair("thread-parent").await);
+    let mut receiver = state.events.subscribe();
+
+    ingest_inbound(
+        InboundMessage::Notification {
+            method: "hook/started".to_string(),
+            params: json!({
+                "threadId": "thread-parent",
+                "run": {
+                    "id": "hook-1",
+                    "eventName": "subagentStart"
+                }
+            }),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+
+    let event = timeout(Duration::from_secs(1), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(event.kind, THREAD_SUBAGENTS_CHANGED_EVENT);
+    assert_eq!(event.thread_id.as_deref(), Some("thread-parent"));
+    assert!(state.subagents.needs_repair("thread-parent").await);
 }
 
 #[tokio::test]

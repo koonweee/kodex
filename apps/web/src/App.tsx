@@ -95,11 +95,7 @@ import {
   withoutPinnedThreads,
   type ThreadsByProjectId,
 } from "./threads/helpers";
-import {
-  eventCanAffectSubagentDiscovery,
-  sidebarLiveCacheRoute,
-  type SidebarThreadLocation,
-} from "./threads/liveCacheRouting";
+import { sidebarLiveCacheRoute, type SidebarThreadLocation } from "./threads/liveCacheRouting";
 import {
   applyThreadPinState as applyThreadPinStateToCache,
   applyThreadNotificationsState as applyThreadNotificationsStateToCache,
@@ -122,7 +118,7 @@ import {
   mergeQueuedInputData,
   upsertCachedQueuedInput,
 } from "./queuedInputs/cache";
-import type { ThreadUpsert } from "./threads/events";
+import type { ThreadSubagentDiscoveryEvent, ThreadUpsert } from "./threads/events";
 import {
   defaultSubagent,
   findKnownThread as findKnownThreadInCaches,
@@ -785,7 +781,7 @@ function KodexShell({
     applyThreadReadStateEvent,
     applyThreadNotificationsState,
     refreshSidebarThreadsForLiveEvent,
-    invalidateSelectedSubagentsForEvent,
+    applySubagentDiscoveryEvent,
     applyUsageLimitSnapshot,
     applyApprovalEvent,
     applySkillsChangedEvent,
@@ -1469,12 +1465,33 @@ function KodexShell({
     applyThreadNotificationsStateToCache(queryClientForShell, threadId, notificationsEnabled);
   }
 
-  function invalidateSelectedSubagentsForEvent(event: EventEnvelope) {
-    const threadId = selectedThreadIdRef.current;
-    if (!threadId || event.threadId !== threadId || !eventCanAffectSubagentDiscovery(event)) {
+  function applySubagentDiscoveryEvent(event: ThreadSubagentDiscoveryEvent) {
+    const key = queryKeys.threadSubagents(event.parentThreadId);
+    if (event.kind === "refresh") {
+      void queryClientForShell.invalidateQueries({ queryKey: key });
       return;
     }
-    void queryClientForShell.invalidateQueries({ queryKey: queryKeys.threadSubagents(threadId) });
+    let hadCachedList = false;
+    queryClientForShell.setQueryData(key, (current: unknown) => {
+      if (!Array.isArray(current)) {
+        return current;
+      }
+      hadCachedList = true;
+      if (event.kind === "delete") {
+        return current.filter((subagent) => subagent?.id !== event.subagentId);
+      }
+      const next = [...current];
+      const existingIndex = next.findIndex((subagent) => subagent?.id === event.subagent.id);
+      if (existingIndex >= 0) {
+        next[existingIndex] = event.subagent;
+        return next;
+      }
+      next.push(event.subagent);
+      return next;
+    });
+    if (!hadCachedList && selectedThreadIdRef.current === event.parentThreadId) {
+      void queryClientForShell.invalidateQueries({ queryKey: key });
+    }
   }
 
   function reportError(error: unknown, context?: string) {

@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap},
     path::{Path as FsPath, PathBuf},
     sync::{Arc, Mutex as StdMutex},
     time::{Duration, Instant},
@@ -1162,6 +1162,16 @@ pub async fn list_subagents(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
 ) -> ApiResult<Json<ThreadSubagentListResponse>> {
+    if state.subagents.needs_repair(&thread_id).await {
+        repair_subagent_projection(&state, &thread_id).await?;
+    }
+
+    Ok(Json(ThreadSubagentListResponse {
+        subagents: state.subagents.list_descendants(&thread_id).await,
+    }))
+}
+
+async fn repair_subagent_projection(state: &AppState, thread_id: &str) -> ApiResult<()> {
     let client = app_server_api::client(&state.app_server);
     let loaded = client.thread_loaded_list().await?;
     let mut threads = Vec::new();
@@ -1179,7 +1189,7 @@ pub async fn list_subagents(
                 tracing::warn!(
                     thread_id = loaded_thread_id,
                     %error,
-                    "failed to read loaded thread during subagent discovery"
+                    "failed to read loaded thread during subagent repair"
                 );
             }
         }
@@ -1189,10 +1199,11 @@ pub async fn list_subagents(
             "failed to read any loaded thread during subagent discovery".to_string(),
         ));
     }
-
-    Ok(Json(ThreadSubagentListResponse {
-        subagents: loaded_descendant_subagents(&thread_id, threads),
-    }))
+    state
+        .subagents
+        .replace_repaired_descendants(thread_id, threads)
+        .await;
+    Ok(())
 }
 
 #[utoipa::path(post, path = "/v1/threads/{threadId}/resume", responses((status = 200, body = ThreadCommandResponse)))]
@@ -1283,86 +1294,6 @@ pub async fn mark_thread_seen(
     )
     .await?;
     Ok(Json(read))
-}
-
-fn loaded_descendant_subagents(
-    parent_thread_id: &str,
-    threads: Vec<ThreadSummary>,
-) -> Vec<ThreadSubagentSummary> {
-    let mut included_thread_ids = HashSet::new();
-    let mut parent_ids = HashSet::from([parent_thread_id.to_string()]);
-    let mut subagents = Vec::new();
-
-    loop {
-        let mut changed = false;
-        for thread in &threads {
-            if included_thread_ids.contains(&thread.id) {
-                continue;
-            }
-            let Some(source_parent_thread_id) = subagent_parent_thread_id(&thread.raw_payload)
-            else {
-                continue;
-            };
-            if !parent_ids.contains(&source_parent_thread_id) {
-                continue;
-            }
-            included_thread_ids.insert(thread.id.clone());
-            parent_ids.insert(thread.id.clone());
-            subagents.push((
-                thread.created_at,
-                thread.id.clone(),
-                source_parent_thread_id,
-            ));
-            changed = true;
-        }
-        if !changed {
-            break;
-        }
-    }
-
-    subagents.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
-    subagents
-        .into_iter()
-        .filter_map(|(_, thread_id, source_parent_thread_id)| {
-            let thread = threads.iter().find(|thread| thread.id == thread_id)?;
-            Some(ThreadSubagentSummary {
-                id: thread.id.clone(),
-                parent_thread_id: source_parent_thread_id,
-                agent_nickname: thread.agent_nickname.clone(),
-                agent_role: thread.agent_role.clone(),
-                status: thread.status,
-                live_state: live_state_for_thread_status(thread.status),
-                updated_at: thread.updated_at,
-            })
-        })
-        .collect()
-}
-
-fn subagent_parent_thread_id(payload: &Value) -> Option<String> {
-    payload
-        .get("source")?
-        .get("subAgent")?
-        .get("thread_spawn")
-        .or_else(|| payload.get("source")?.get("subAgent")?.get("threadSpawn"))?
-        .get("parent_thread_id")
-        .or_else(|| {
-            payload
-                .get("source")?
-                .get("subAgent")?
-                .get("thread_spawn")
-                .or_else(|| payload.get("source")?.get("subAgent")?.get("threadSpawn"))?
-                .get("parentThreadId")
-        })?
-        .as_str()
-        .map(str::to_string)
-}
-
-fn live_state_for_thread_status(status: ThreadStatus) -> ThreadLiveState {
-    match status {
-        ThreadStatus::Active => ThreadLiveState::Streaming,
-        ThreadStatus::Idle | ThreadStatus::SystemError => ThreadLiveState::Idle,
-        ThreadStatus::NotLoaded => ThreadLiveState::NotLoaded,
-    }
 }
 
 async fn apply_thread_list_response_state(
@@ -1549,7 +1480,11 @@ pub(crate) async fn apply_thread_summary_state(
     apply_thread_pin_state(state, threads).await?;
     apply_thread_composer_settings(state, threads).await?;
     apply_thread_notification_settings(state, threads).await?;
-    apply_thread_read_state(state, threads).await
+    apply_thread_read_state(state, threads).await?;
+    for thread in threads {
+        let _ = state.subagents.upsert_from_thread_summary(thread).await;
+    }
+    Ok(())
 }
 
 fn sync_thread_list_raw_payload(response: &mut ThreadListResponse) {

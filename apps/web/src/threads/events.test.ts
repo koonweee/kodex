@@ -6,6 +6,7 @@ import {
   threadNotificationsUpdateFromEvent,
   threadNameUpdateFromEvent,
   threadStatusUpdateFromEvent,
+  threadSubagentDiscoveryEventFromEvent,
   threadUpsertFromEvent,
 } from "./events";
 
@@ -223,6 +224,48 @@ describe("thread events", () => {
         }),
       ),
     ).toBeNull();
+  });
+
+  it("parses parent-scoped subagent discovery events", () => {
+    const subagent = {
+      id: "subagent-1",
+      parentThreadId: "thread-parent",
+      agentNickname: "Scout",
+      agentRole: "explorer",
+      status: "active",
+      liveState: "streaming",
+      updatedAt: 30,
+    } as const;
+
+    expect(
+      threadSubagentDiscoveryEventFromEvent(
+        event({
+          kind: "thread.subagent_started",
+          threadId: "thread-parent",
+          payload: { parentThreadId: "thread-parent", subagentId: "subagent-1", subagent },
+        }),
+      ),
+    ).toEqual({ kind: "upsert", parentThreadId: "thread-parent", subagent });
+
+    expect(
+      threadSubagentDiscoveryEventFromEvent(
+        event({
+          kind: "thread.subagent_stopped",
+          threadId: "thread-parent",
+          payload: { parentThreadId: "thread-parent", subagentId: "subagent-1" },
+        }),
+      ),
+    ).toEqual({ kind: "delete", parentThreadId: "thread-parent", subagentId: "subagent-1" });
+
+    expect(
+      threadSubagentDiscoveryEventFromEvent(
+        event({
+          kind: "thread.subagents_changed",
+          threadId: "thread-parent",
+          payload: { parentThreadId: "thread-parent" },
+        }),
+      ),
+    ).toEqual({ kind: "refresh", parentThreadId: "thread-parent" });
   });
 });
 

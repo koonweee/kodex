@@ -107,6 +107,7 @@ use crate::{
         ProjectPreviewService, QueuedInput, QueuedInputPriority, QueuedInputStatus, Store,
         ThreadRead,
     },
+    subagents::{SubagentProjection, ThreadSubagentEventPayload},
     thread_view::{ThreadViewPatch, ThreadViewStore},
 };
 
@@ -119,6 +120,7 @@ pub struct AppState {
     pub skills: crate::skills::SkillCatalogCache,
     pub previews: crate::previews::PreviewManager,
     pub notifications: crate::notifications::NotificationService,
+    pub subagents: SubagentProjection,
     pub thread_views: ThreadViewStore,
     pub chat_cwd_cache: crate::routes::threads::ChatCwdCache,
     pub thread_input_locks: crate::turn_lifecycle::ThreadInputLocks,
@@ -138,6 +140,7 @@ impl AppState {
             events,
             skills: crate::skills::SkillCatalogCache::default(),
             notifications,
+            subagents: SubagentProjection::default(),
             thread_views: ThreadViewStore::default(),
             chat_cwd_cache: crate::routes::threads::ChatCwdCache::default(),
             thread_input_locks: crate::turn_lifecycle::ThreadInputLocks::default(),
@@ -340,6 +343,7 @@ impl AppState {
         ThreadPinResponse,
         ThreadSubagentSummary,
         ThreadSubagentListResponse,
+        ThreadSubagentEventPayload,
         ThreadRead,
         UserInput,
         TurnStartRequest,
