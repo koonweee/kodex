@@ -285,22 +285,6 @@ import KodexAPI
     #expect(approvals.first.map { ApprovalRiskPolicy.requiresConfirmation($0, decision: .accept) } == true)
 }
 
-@Test func selectedThreadStoreAppliesLivePatchAndRefreshRequired() async throws {
-    let store = SelectedThreadProjection(
-        detail: ThreadDetail(
-            thread: WorkspaceThread(id: "thread-1", title: "Build iOS", cwd: "/repo"),
-            timeline: ThreadTimeline(threadId: "thread-1", liveState: .idle, viewRevision: 1, rows: [])
-        )
-    )
-
-    let patched = store.applying(.threadViewPatch(threadId: "thread-1", viewRevision: 4))
-    let refresh = patched.applying(.refreshRequired(threadId: "thread-1"))
-
-    #expect(patched.detail?.timeline.viewRevision == 4)
-    #expect(patched.needsRefresh == false)
-    #expect(refresh.needsRefresh == true)
-}
-
 @Test func liveE2ESkipReasonRequiresGatewayReadyAndAccount() async {
     let ready = LiveE2EReadiness(connection: .connected(baseURL: "http://127.0.0.1:8787"), account: .authenticated(email: "dev@example.test"))
     let authRequired = LiveE2EReadiness(connection: .connected(baseURL: "http://127.0.0.1:8787"), account: .requiresOpenAIAuth)

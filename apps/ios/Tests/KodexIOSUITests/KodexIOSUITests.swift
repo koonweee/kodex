@@ -241,6 +241,7 @@ final class KodexIOSUITests: XCTestCase {
 
         XCTAssertTrue(waitForSidebar(app, timeout: 20))
         XCTAssertTrue(app.buttons["New Chat"].waitForExistence(timeout: 10))
+        let prompt = "Reply with the common four-letter response to ping."
 
         let newProjectThread = app.buttons["New Project Thread"]
         if newProjectThread.exists && newProjectThread.isEnabled {
@@ -248,18 +249,20 @@ final class KodexIOSUITests: XCTestCase {
             let composer = app.textFields["Message Kodex"]
             XCTAssertTrue(composer.waitForExistence(timeout: 20))
             composer.tap()
-            app.typeText("Say pong")
+            app.typeText(prompt)
             XCTAssertTrue(app.buttons["Send"].waitForExistence(timeout: 5))
             app.buttons["Send"].tap()
-            XCTAssertTrue(labelContaining("Say pong", in: app).waitForExistence(timeout: 30))
             XCTAssertTrue(labelContaining("pong", in: app).waitForExistence(timeout: 120))
+            XCTAssertTrue(app.buttons["Send"].waitForExistence(timeout: 30))
+            XCTAssertFalse(app.buttons["Stop"].exists)
             return
         }
 
         app.buttons["New Chat"].tap()
 
-        XCTAssertTrue(labelContaining("Say pong", in: app).waitForExistence(timeout: 30))
         XCTAssertTrue(labelContaining("pong", in: app).waitForExistence(timeout: 120))
+        XCTAssertTrue(app.buttons["Send"].waitForExistence(timeout: 30))
+        XCTAssertFalse(app.buttons["Stop"].exists)
     }
 
     @MainActor

@@ -273,7 +273,11 @@ impl ThreadView {
             if is_prunable_empty_reasoning(&item) {
                 continue;
             }
-            if is_prunable_missing_context_compaction(&item, &base.turns) {
+            if is_prunable_missing_context_compaction(
+                &item,
+                &base.turns,
+                base.active_turn_id.as_deref(),
+            ) {
                 continue;
             }
             if is_live_status(&item.status) && base.active_turn_id.is_none() {
@@ -417,10 +421,11 @@ impl ThreadView {
         }
     }
 
-    fn update_turn_status(&mut self, turn: &ThreadTurnSnapshot) -> bool {
+    fn update_turn_status(&mut self, turn: &ThreadTurnSnapshot) -> (bool, Vec<String>) {
         let terminal = is_terminal_turn_status(&turn.status);
         let newly_terminal = terminal && !self.terminal_turn_ids.contains(&turn.id);
         self.upsert_turn_from_snapshot(turn);
+        let remove_row_ids = self.prune_missing_context_compactions_for_turn(turn);
         for item in &mut self.items {
             if item.turn_id == turn.id {
                 item.status = if terminal {
@@ -442,7 +447,7 @@ impl ThreadView {
         } else {
             self.terminal_turn_ids.remove(&turn.id);
         }
-        newly_terminal
+        (newly_terminal, remove_row_ids)
     }
 
     fn set_live_state(
@@ -579,6 +584,32 @@ impl ThreadView {
             completed_at,
         };
         replace_or_push_turn(&mut self.turns, next_turn);
+    }
+
+    fn prune_missing_context_compactions_for_turn(
+        &mut self,
+        turn: &ThreadTurnSnapshot,
+    ) -> Vec<String> {
+        if !is_terminal_turn_status(&turn.status) {
+            return Vec::new();
+        }
+        let snapshot_context_compaction_ids = turn
+            .items
+            .iter()
+            .filter(|item| is_context_compaction_type(&item.item_type))
+            .map(|item| item.id.as_str())
+            .collect::<HashSet<_>>();
+        let mut remove_row_ids = Vec::new();
+        self.items.retain(|item| {
+            let should_remove = item.turn_id == turn.id
+                && is_context_compaction_type(&item.item_type)
+                && !snapshot_context_compaction_ids.contains(item.item_id.as_str());
+            if should_remove {
+                remove_row_ids.push(format!("item-{}", item.id));
+            }
+            !should_remove
+        });
+        remove_row_ids
     }
 }
 
@@ -912,8 +943,10 @@ pub async fn record_turn_status(
 ) -> ApiResult<(bool, ThreadViewPatch)> {
     let (newly_terminal, patch) = sessions
         .with_thread_view(thread_id, updated_seq, |view| {
-            let newly_terminal = view.update_turn_status(turn);
-            (newly_terminal, view.turn_patch(&turn.id))
+            let (newly_terminal, remove_row_ids) = view.update_turn_status(turn);
+            let mut patch = view.turn_patch(&turn.id);
+            patch.remove_row_ids = remove_row_ids;
+            (newly_terminal, patch)
         })
         .await;
     Ok((newly_terminal, patch))
@@ -1121,13 +1154,22 @@ fn is_prunable_empty_reasoning(item: &ThreadTimelineSnapshotItem) -> bool {
 fn is_prunable_missing_context_compaction(
     item: &ThreadTimelineSnapshotItem,
     turns: &[ThreadTimelineSnapshotTurn],
+    active_turn_id: Option<&str>,
 ) -> bool {
-    let item_type = item.item_type.to_ascii_lowercase().replace('_', "");
-    item_type == "contextcompaction"
-        && turns
-            .iter()
-            .find(|turn| turn.id == item.turn_id)
-            .is_some_and(|turn| is_terminal_turn_status(&turn.status))
+    if !is_context_compaction_type(&item.item_type) {
+        return false;
+    }
+    if active_turn_id == Some(item.turn_id.as_str()) && is_live_status(&item.status) {
+        return false;
+    }
+    turns
+        .iter()
+        .find(|turn| turn.id == item.turn_id)
+        .map_or(true, |turn| is_terminal_turn_status(&turn.status))
+}
+
+fn is_context_compaction_type(item_type: &str) -> bool {
+    item_type.to_ascii_lowercase().replace(['_', '-'], "") == "contextcompaction"
 }
 
 impl Default for ThreadLiveState {

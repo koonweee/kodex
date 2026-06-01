@@ -19,6 +19,30 @@ import Testing
     #expect(offline.connection == .offline(message: "Could not reach http://127.0.0.1:8787"))
 }
 
+@Test func workspaceThreadStatusProjectsGatewayLiveState() {
+    let projectThread = WorkspaceThread(id: "thread-1", title: "Project thread", cwd: "/repo", status: .active)
+    let chatThread = WorkspaceThread(id: "thread-2", title: "Chat thread", cwd: "/repo", status: .idle)
+    let pinnedThread = WorkspaceThread(id: "thread-1", title: "Pinned thread", cwd: "/repo", status: .active, pinned: true)
+    let workspace = WorkspaceSnapshot(
+        projects: [WorkspaceProject(id: "project-1", name: "Project", path: "/repo", threads: [projectThread])],
+        chats: [chatThread],
+        pinned: [pinnedThread]
+    )
+
+    let idleWorkspace = workspace.replacingThreadStatus(threadId: "thread-1", liveState: .idle)
+    let activeWorkspace = idleWorkspace.replacingThreadStatus(threadId: "thread-1", liveState: .streaming)
+
+    #expect(ThreadStatus(liveState: .idle) == .idle)
+    #expect(ThreadStatus(liveState: .streaming) == .active)
+    #expect(ThreadStatus(liveState: .syncing) == .active)
+    #expect(ThreadStatus(liveState: .notLoaded) == .notLoaded)
+    #expect(idleWorkspace.projects.first?.threads.first?.status == .idle)
+    #expect(idleWorkspace.pinned.first?.status == .idle)
+    #expect(idleWorkspace.chats.first?.status == .idle)
+    #expect(activeWorkspace.projects.first?.threads.first?.status == .active)
+    #expect(activeWorkspace.pinned.first?.status == .active)
+}
+
 @Test func timelineRowMappingCoversNativeRowFamilies() {
     #expect(TimelineRowKind(gatewayKind: "message", status: "complete") == .message)
     #expect(TimelineRowKind(gatewayKind: "work", status: "running") == .work)
@@ -183,16 +207,23 @@ import Testing
     #expect(result == .success(Data(#"{"registered":true}"#.utf8)))
 }
 
-@Test func liveUpdateParserConsumesCanonicalGatewayEvents() throws {
-    let patch = try LiveUpdateParser.parse(Data(#"{"kind":"thread_view.patch","payload":{"threadId":"t1","viewRevision":7}}"#.utf8))
-    let refresh = try LiveUpdateParser.parse(Data(#"{"kind":"thread_view.refresh_required","payload":{"threadId":"t1"}}"#.utf8))
-    let queue = try LiveUpdateParser.parse(Data(#"{"kind":"turn_queue.item_upsert","payload":{"threadId":"t1","queueId":"q1"}}"#.utf8))
-    let legacyTypeFallback = try LiveUpdateParser.parse(Data(#"{"type":"thread.read_updated","payload":{"threadId":"t1"}}"#.utf8))
+@Test func gatewayLiveEventDecoderConsumesCanonicalGatewayEvents() throws {
+    let decoder = GatewayLiveEventDecoder()
+    let refresh = try decoder.decode(Data(#"{"kind":"thread_view.refresh_required","payload":{"threadId":"t1"}}"#.utf8))
+    let read = try decoder.decode(Data(#"{"kind":"thread.read_updated","payload":{"threadId":"t1"}}"#.utf8))
+    let pin = try decoder.decode(Data(#"{"kind":"thread.pin_updated","payload":{"threadId":"t1"}}"#.utf8))
+    let notifications = try decoder.decode(Data(#"{"kind":"thread.notifications_updated","payload":{"threadId":"t1"}}"#.utf8))
+    let upserted = try decoder.decode(Data(#"{"kind":"thread.upserted","payload":{"thread":{"id":"t1"}}}"#.utf8))
+    let approval = try decoder.decode(Data(#"{"kind":"approval.updated","payload":{"threadId":"t1","approvalId":"a1"}}"#.utf8))
+    let unknown = try decoder.decode(Data(#"{"kind":"future.event","payload":{}}"#.utf8))
 
-    #expect(patch == .threadViewPatch(threadId: "t1", viewRevision: 7))
     #expect(refresh == .refreshRequired(threadId: "t1"))
-    #expect(queue == .turnQueueItemUpsert(threadId: "t1", queueId: "q1"))
-    #expect(legacyTypeFallback == .threadReadUpdated(threadId: "t1"))
+    #expect(read == .threadReadUpdated(threadId: "t1"))
+    #expect(pin == .threadPinUpdated(threadId: "t1"))
+    #expect(notifications == .threadNotificationsUpdated(threadId: "t1"))
+    #expect(upserted == .threadUpserted(threadId: "t1"))
+    #expect(approval == .approvalUpdated(threadId: "t1"))
+    #expect(unknown == .unknown(kind: "future.event"))
 }
 
 @Test func gatewayEventStreamBuildsSelectedThreadURL() throws {
@@ -200,6 +231,41 @@ import Testing
     let url = stream.configuration.endpoint(.events(cursor: stream.cursor, projectId: nil, threadId: stream.threadId, excludeThreadId: stream.excludeThreadId))
 
     #expect(url.absoluteString == "http://127.0.0.1:8787/v1/events?cursor=42&threadId=thread-1&excludeThreadId=thread-2")
+}
+
+@Test func gatewaySSELineParserDispatchesMultilineFramesOnBlankLines() throws {
+    var parser = GatewaySSELineParser()
+
+    #expect(try parser.consume("event: thread.read_updated") == nil)
+    #expect(try parser.consume(#"data: {"seq":7,"kind":"thread.read_updated","#) == nil)
+    #expect(try parser.consume(#"data: "payload":{"threadId":"t1"}}"#) == nil)
+    let envelope = try parser.consume("")
+
+    #expect(envelope == GatewayLiveEnvelope(seq: 7, event: .threadReadUpdated(threadId: "t1")))
+}
+
+@Test func gatewaySSELineParserClearsMalformedFramesBeforeNextEvent() throws {
+    var parser = GatewaySSELineParser()
+
+    #expect(try parser.consume("data: {not-json") == nil)
+    #expect(throws: (any Error).self) {
+        _ = try parser.consume("")
+    }
+    #expect(try parser.consume(#"data: {"seq":8,"kind":"thread.pin_updated","payload":{"threadId":"t1"}}"#) == nil)
+    let envelope = try parser.consume("")
+
+    #expect(envelope == GatewayLiveEnvelope(seq: 8, event: .threadPinUpdated(threadId: "t1")))
+}
+
+@Test func gatewayEventStreamResponseValidatorRejectsNonSuccessResponses() throws {
+    let url = URL(string: "http://127.0.0.1:8787/v1/events")!
+    let ok = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+    let unavailable = HTTPURLResponse(url: url, statusCode: 503, httpVersion: nil, headerFields: nil)!
+
+    try GatewayEventStreamResponseValidator.validate(ok)
+    #expect(throws: GatewayClientError.gateway(statusCode: 503, message: "Live event stream failed.")) {
+        try GatewayEventStreamResponseValidator.validate(unavailable)
+    }
 }
 
 @Test func gatewayLiveEventDecoderConsumesQueueEvents() throws {
@@ -351,7 +417,9 @@ import Testing
         threadId: "t1",
         liveState: .streaming,
         viewRevision: 4,
-        rows: [TimelineRow(id: "row-1", kind: .message, displayOrder: 1, title: "Kodex", body: "old")]
+        rows: [TimelineRow(id: "row-1", kind: .message, displayOrder: 1, title: "Kodex", body: "old")],
+        olderCursor: "older-1",
+        hasOlder: true
     )
 
     let stale = GatewayThreadViewPatch(threadId: "t1", viewRevision: 4, scope: .turn, liveState: .streaming, upsertRows: [
@@ -381,11 +449,46 @@ import Testing
         return
     }
     #expect(replaced.rows.map(\.id) == ["row-2"])
+    #expect(replaced.olderCursor == "older-1")
+    #expect(replaced.hasOlder)
 
     guard case .needsSnapshotRefresh = replaced.applying(invalidSnapshot) else {
         Issue.record("Expected invalid snapshot patch to request refresh")
         return
     }
+}
+
+@Test func threadTimelineRequestsSnapshotForUnsupportedScopeAndThreadMismatch() {
+    let timeline = ThreadTimeline(
+        threadId: "t1",
+        liveState: .streaming,
+        viewRevision: 1,
+        rows: [TimelineRow(id: "row-1", kind: .message, displayOrder: 1, title: "Kodex", body: "old")]
+    )
+    let unsupported = GatewayThreadViewPatch(
+        threadId: "t1",
+        viewRevision: 2,
+        scope: .unsupported("future_scope"),
+        liveState: .streaming
+    )
+    let wrongThread = GatewayThreadViewPatch(
+        threadId: "other",
+        viewRevision: 2,
+        scope: .turn,
+        liveState: .streaming,
+        upsertRows: [TimelineRow(id: "row-2", kind: .message, displayOrder: 2, title: "Kodex", body: "new")]
+    )
+
+    guard case .needsSnapshotRefresh(let unsupportedReason) = timeline.applying(unsupported) else {
+        Issue.record("Expected unsupported scope to request snapshot refresh")
+        return
+    }
+    guard case .needsSnapshotRefresh(let mismatchReason) = timeline.applying(wrongThread) else {
+        Issue.record("Expected thread mismatch to request snapshot refresh")
+        return
+    }
+    #expect(unsupportedReason.contains("Unsupported patch scope"))
+    #expect(mismatchReason.contains("did not match"))
 }
 
 @Test func threadTimelineAppliesDuplicateRowIdsDeterministically() {
@@ -443,6 +546,59 @@ import Testing
         return
     }
     #expect(patch.upsertRows.first?.body == "hello")
+}
+
+@Test func gatewayLiveEventBatchDoesNotCoalesceRemovalPatches() {
+    let first = GatewayLiveEnvelope(seq: 10, event: .threadViewPatch(GatewayThreadViewPatch(
+        threadId: "t1",
+        viewRevision: 10,
+        scope: .turn,
+        liveState: .streaming,
+        activeTurnId: "turn-1",
+        upsertRows: [TimelineRow(id: "row-agent", kind: .message, displayOrder: 1, title: "Kodex", body: "old", turnId: "turn-1")]
+    )))
+    let removal = GatewayLiveEnvelope(seq: 11, event: .threadViewPatch(GatewayThreadViewPatch(
+        threadId: "t1",
+        viewRevision: 11,
+        scope: .turn,
+        liveState: .streaming,
+        activeTurnId: "turn-1",
+        upsertRows: [TimelineRow(id: "row-agent", kind: .message, displayOrder: 1, title: "Kodex", body: "new", turnId: "turn-1")],
+        removeRowIds: ["row-old"]
+    )))
+
+    let coalesced = GatewayLiveEventBatch.coalesce([removal, first])
+
+    #expect(coalesced.map(\.seq) == [10, 11])
+}
+
+@Test func gatewayLiveEventBatchPreservesLifecycleAndSnapshotOrderingAroundTurns() {
+    let turn = GatewayLiveEnvelope(seq: 10, event: .threadViewPatch(GatewayThreadViewPatch(
+        threadId: "t1",
+        viewRevision: 10,
+        scope: .turn,
+        liveState: .streaming,
+        activeTurnId: "turn-1",
+        upsertRows: [TimelineRow(id: "row-agent", kind: .message, displayOrder: 1, title: "Kodex", body: "stream", turnId: "turn-1")]
+    )))
+    let lifecycle = GatewayLiveEnvelope(seq: 11, event: .threadViewPatch(GatewayThreadViewPatch(
+        threadId: "t1",
+        viewRevision: 11,
+        scope: .lifecycle,
+        liveState: .idle,
+        activeTurnId: "turn-1"
+    )))
+    let snapshot = GatewayLiveEnvelope(seq: 12, event: .threadViewPatch(GatewayThreadViewPatch(
+        threadId: "t1",
+        viewRevision: 12,
+        scope: .fullSnapshot,
+        liveState: .idle,
+        rows: [TimelineRow(id: "row-final", kind: .message, displayOrder: 1, title: "Kodex", body: "final")]
+    )))
+
+    let coalesced = GatewayLiveEventBatch.coalesce([snapshot, lifecycle, turn])
+
+    #expect(coalesced.map(\.seq) == [10, 11, 12])
 }
 
 @Test func gatewayStreamCheckpointAdvancesCursorAndTracksReconnects() {

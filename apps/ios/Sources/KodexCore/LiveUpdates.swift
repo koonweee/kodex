@@ -162,22 +162,14 @@ public struct GatewayEventStream: Sendable {
                     var request = URLRequest(url: configuration.endpoint(.events(cursor: cursor, projectId: nil, threadId: threadId, excludeThreadId: excludeThreadId)))
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     let (bytes, response) = try await URLSession.shared.bytes(for: request)
-                    guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
-                        throw GatewayClientError.gateway(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0, message: "Live event stream failed.")
-                    }
-                    var dataLines: [String] = []
+                    try GatewayEventStreamResponseValidator.validate(response)
+                    var parser = GatewaySSELineParser(decoder: decoder)
                     for try await line in bytes.lines {
                         if Task.isCancelled {
                             break
                         }
-                        if line.hasPrefix("data:") {
-                            dataLines.append(String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces))
-                        } else if line.isEmpty, !dataLines.isEmpty {
-                            let payload = dataLines.joined(separator: "\n")
-                            dataLines.removeAll(keepingCapacity: true)
-                            if let data = payload.data(using: .utf8) {
-                                continuation.yield(try decoder.decodeEnvelope(data))
-                            }
+                        if let envelope = try parser.consume(line) {
+                            continuation.yield(envelope)
                         }
                     }
                     continuation.finish()
@@ -189,6 +181,41 @@ public struct GatewayEventStream: Sendable {
                 task.cancel()
             }
         }
+    }
+}
+
+public enum GatewayEventStreamResponseValidator {
+    public static func validate(_ response: URLResponse) throws {
+        guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
+            throw GatewayClientError.gateway(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0, message: "Live event stream failed.")
+        }
+    }
+}
+
+public struct GatewaySSELineParser: Sendable {
+    private var dataLines: [String] = []
+    private let decoder: GatewayLiveEventDecoder
+
+    public init(decoder: GatewayLiveEventDecoder = GatewayLiveEventDecoder()) {
+        self.decoder = decoder
+    }
+
+    public mutating func consume(_ line: String) throws -> GatewayLiveEnvelope? {
+        if line.hasPrefix("data:") {
+            dataLines.append(String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces))
+            return nil
+        }
+
+        guard line.isEmpty, !dataLines.isEmpty else {
+            return nil
+        }
+
+        let payload = dataLines.joined(separator: "\n")
+        dataLines.removeAll(keepingCapacity: true)
+        guard let data = payload.data(using: .utf8) else {
+            return nil
+        }
+        return try decoder.decodeEnvelope(data)
     }
 }
 

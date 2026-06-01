@@ -109,41 +109,6 @@ public struct LiveE2EReadiness: Equatable, Sendable {
     }
 }
 
-public struct SelectedThreadProjection: Equatable, Sendable {
-    public let detail: ThreadDetail?
-    public let needsRefresh: Bool
-
-    public init(detail: ThreadDetail?, needsRefresh: Bool = false) {
-        self.detail = detail
-        self.needsRefresh = needsRefresh
-    }
-
-    public func applying(_ event: LiveUpdateEvent) -> SelectedThreadProjection {
-        guard let detail else {
-            return self
-        }
-        switch event {
-        case .threadViewPatch(let threadId, let viewRevision) where threadId == detail.thread.id:
-            return SelectedThreadProjection(
-                detail: ThreadDetail(
-                    thread: detail.thread,
-                    timeline: ThreadTimeline(
-                        threadId: detail.timeline.threadId,
-                        liveState: detail.timeline.liveState,
-                        viewRevision: max(detail.timeline.viewRevision, viewRevision),
-                        rows: detail.timeline.rows
-                    )
-                ),
-                needsRefresh: false
-            )
-        case .refreshRequired(let threadId) where threadId == detail.thread.id:
-            return SelectedThreadProjection(detail: detail, needsRefresh: true)
-        default:
-            return self
-        }
-    }
-}
-
 public struct LiveGatewayService: Sendable {
     private let client: GatewayClient
     private let generatedClient: (any APIProtocol)?

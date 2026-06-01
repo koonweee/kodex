@@ -1,9 +1,13 @@
 /target/
+.DS_Store
+.derivedData/
+artifacts/
 node_modules/
 dist/
 apps/web/dist/
 apps/ios/.build/
 apps/ios/DerivedData/
+apps/ios/artifacts/
 apps/ios/KodexIOS.xcodeproj/
 *.tsbuildinfo
 playwright-report/

@@ -267,7 +267,7 @@ struct ConnectionView: View {
     @MainActor
     private func createChatThread() async {
         await runLiveAction {
-            let prompt = liveE2EEnabled ? "Say pong" : "Hello from Kodex iOS"
+            let prompt = liveE2EEnabled ? "Reply with the common four-letter response to ping." : "Hello from Kodex iOS"
             let live = try service()
             let thread = try await live.createChatThread(firstMessageText: prompt)
             showThreadDetail(thread.id)
@@ -593,10 +593,12 @@ struct ConnectionView: View {
         let result = currentDetail.timeline.applying(patch)
         switch result {
         case .applied(let timeline), .ignoredStale(let timeline):
+            let thread = currentDetail.thread.replacing(liveState: timeline.liveState)
+            let workspace = model.state.workspace.replacingThreadStatus(threadId: selectedThreadId, liveState: timeline.liveState)
             model.state = FixtureAppState(
                 connection: model.state.connection,
-                workspace: model.state.workspace,
-                selectedThread: ThreadDetail(thread: currentDetail.thread, timeline: timeline),
+                workspace: workspace,
+                selectedThread: ThreadDetail(thread: thread, timeline: timeline),
                 approvals: model.state.approvals
             )
         case .needsSnapshotRefresh:

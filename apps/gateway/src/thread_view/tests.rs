@@ -852,3 +852,95 @@ async fn completed_snapshot_prunes_missing_live_context_compaction_marker() {
     assert_eq!(timeline.live_state, ThreadLiveState::Idle);
     assert_eq!(timeline.active_turn_id, None);
 }
+
+#[tokio::test]
+async fn terminal_turn_patch_removes_missing_live_context_compaction_marker() {
+    let sessions = ThreadViewStore::default();
+    let compact_item = context_compaction_item("compact-1");
+    let compact_snapshot = ThreadItemSnapshot::from_payload(&compact_item).unwrap();
+    let upsert_patch = record_item_upsert(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        compact_item,
+        compact_snapshot,
+        Some("running"),
+        1,
+    )
+    .await
+    .unwrap();
+    assert_eq!(upsert_patch.upsert_rows.len(), 1);
+    assert_eq!(upsert_patch.upsert_rows[0].kind, "context_compaction");
+
+    let completed_turn = ThreadTurnSnapshot {
+        id: "turn-1".to_string(),
+        status: "completed".to_string(),
+        started_at: Some(1),
+        completed_at: Some(2),
+        raw_payload: json!({}),
+        items: vec![
+            ThreadItemSnapshot::from_payload(&user_message_item("user-1", "Hello")).unwrap(),
+            ThreadItemSnapshot::from_payload(&agent_message_item("agent-1", "Done")).unwrap(),
+        ],
+    };
+    let (_newly_terminal, status_patch) =
+        record_turn_status(&sessions, "thread-1", &completed_turn, 2)
+            .await
+            .unwrap();
+
+    assert_eq!(
+        status_patch.remove_row_ids,
+        vec!["item-projection-turn-1-compact-1"]
+    );
+    assert!(status_patch
+        .upsert_rows
+        .iter()
+        .all(|row| row.kind != "context_compaction"));
+    let patch = patch_for_thread(&sessions, "thread-1").await.unwrap();
+    assert!(patch.items.iter().all(|item| item.item_id != "compact-1"));
+}
+
+#[tokio::test]
+async fn recent_snapshot_prunes_live_context_compaction_when_source_turn_dropped() {
+    let sessions = ThreadViewStore::default();
+    let compact_item = context_compaction_item("compact-1");
+    let compact_snapshot = ThreadItemSnapshot::from_payload(&compact_item).unwrap();
+    record_item_upsert(
+        &sessions,
+        "thread-1",
+        "turn-compact",
+        compact_item,
+        compact_snapshot,
+        Some("running"),
+        1,
+    )
+    .await
+    .unwrap();
+
+    let later_turn = ThreadTurnSnapshot {
+        id: "turn-later".to_string(),
+        status: "completed".to_string(),
+        started_at: Some(10),
+        completed_at: Some(12),
+        raw_payload: json!({}),
+        items: vec![ThreadItemSnapshot::from_payload(&agent_message_item(
+            "agent-later",
+            "Later answer",
+        ))
+        .unwrap()],
+    };
+    let timeline = build_thread_timeline(&sessions, "thread-1", &[later_turn], 2)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        timeline
+            .items
+            .iter()
+            .map(|item| item.item_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["agent-later"]
+    );
+    assert_eq!(timeline.live_state, ThreadLiveState::Idle);
+    assert_eq!(timeline.active_turn_id, None);
+}

@@ -176,6 +176,22 @@ public struct WorkspaceThread: Identifiable, Codable, Equatable, Sendable {
         self.pinned = pinned
         self.notificationsEnabled = notificationsEnabled
     }
+
+    public func replacing(status: ThreadStatus) -> WorkspaceThread {
+        WorkspaceThread(
+            id: id,
+            title: title,
+            cwd: cwd,
+            status: status,
+            unread: unread,
+            pinned: pinned,
+            notificationsEnabled: notificationsEnabled
+        )
+    }
+
+    public func replacing(liveState: ThreadLiveState) -> WorkspaceThread {
+        replacing(status: ThreadStatus(liveState: liveState))
+    }
 }
 
 public struct WorkspaceProject: Identifiable, Codable, Equatable, Sendable {
@@ -189,6 +205,17 @@ public struct WorkspaceProject: Identifiable, Codable, Equatable, Sendable {
         self.name = name
         self.path = path
         self.threads = threads
+    }
+
+    public func replacingThreadStatus(threadId: String, liveState: ThreadLiveState) -> WorkspaceProject {
+        WorkspaceProject(
+            id: id,
+            name: name,
+            path: path,
+            threads: threads.map { thread in
+                thread.id == threadId ? thread.replacing(liveState: liveState) : thread
+            }
+        )
     }
 }
 
@@ -211,6 +238,18 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
         let projectThreads = projects.flatMap(\.threads)
         return (pinned + chats + projectThreads).first { $0.id == id }
     }
+
+    public func replacingThreadStatus(threadId: String, liveState: ThreadLiveState) -> WorkspaceSnapshot {
+        WorkspaceSnapshot(
+            projects: projects.map { $0.replacingThreadStatus(threadId: threadId, liveState: liveState) },
+            chats: chats.map { thread in
+                thread.id == threadId ? thread.replacing(liveState: liveState) : thread
+            },
+            pinned: pinned.map { thread in
+                thread.id == threadId ? thread.replacing(liveState: liveState) : thread
+            }
+        )
+    }
 }
 
 public enum ThreadLiveState: String, Codable, Sendable {
@@ -218,6 +257,19 @@ public enum ThreadLiveState: String, Codable, Sendable {
     case streaming
     case syncing
     case notLoaded
+}
+
+public extension ThreadStatus {
+    init(liveState: ThreadLiveState) {
+        switch liveState {
+        case .idle:
+            self = .idle
+        case .streaming, .syncing:
+            self = .active
+        case .notLoaded:
+            self = .notLoaded
+        }
+    }
 }
 
 public enum TimelineRowKind: String, Codable, Sendable {
