@@ -294,8 +294,8 @@ import Testing
         "scope": "turn",
         "liveState": "streaming",
         "activeTurnId": "turn-1",
-        "removeRowIds": ["old-row"],
-        "upsertRows": [
+        "affectedTurnIds": ["turn-1"],
+        "rows": [
           {
             "id": "row-user",
             "kind": "user_message",
@@ -362,16 +362,15 @@ import Testing
     #expect(patch.threadId == "t1")
     #expect(patch.viewRevision == 8)
     #expect(patch.scope == .turn)
-	    #expect(patch.liveState == .streaming)
-	    #expect(patch.activeTurnId == "turn-1")
-	    #expect(patch.removeRowIds == ["old-row"])
-	    #expect(patch.upsertRows.map(\.id) == ["row-user", "row-agent"])
-	    #expect(patch.upsertRows.first?.turnId == "turn-1")
-	    #expect(patch.upsertRows.first?.speaker == .user)
-	    #expect(patch.upsertRows.first?.body == "Say pong")
-	    #expect(patch.upsertRows.last?.speaker == .assistant)
-	    #expect(patch.upsertRows.last?.body == "partial assistant text")
-    #expect(patch.rows == nil)
+    #expect(patch.liveState == .streaming)
+    #expect(patch.activeTurnId == "turn-1")
+    #expect(patch.affectedTurnIds == ["turn-1"])
+    #expect(patch.rows?.map(\.id) == ["row-user", "row-agent"])
+    #expect(patch.rows?.first?.turnId == "turn-1")
+    #expect(patch.rows?.first?.speaker == .user)
+    #expect(patch.rows?.first?.body == "Say pong")
+    #expect(patch.rows?.last?.speaker == .assistant)
+    #expect(patch.rows?.last?.body == "partial assistant text")
     #expect(GatewayEventScope.selected(threadId: "t1").accepts(threadId: envelope.event.threadId))
 }
 
@@ -393,11 +392,10 @@ import Testing
         scope: .turn,
         liveState: .streaming,
         activeTurnId: "turn-1",
-        rows: nil,
-        upsertRows: [
+        rows: [
             TimelineRow(id: "row-agent", kind: .message, speaker: .assistant, displayOrder: 10, title: "Kodex", body: "new text", status: "streaming", turnId: "turn-1")
         ],
-        removeRowIds: ["old-row"]
+        affectedTurnIds: ["turn-1"]
     )
 
     let result = timeline.applying(patch)
@@ -408,7 +406,7 @@ import Testing
     }
     #expect(updated.viewRevision == 5)
     #expect(updated.liveState == .streaming)
-    #expect(updated.rows.map(\.id) == ["row-user", "row-agent"])
+    #expect(updated.rows.map(\.id) == ["row-agent"])
     #expect(updated.rows.last?.body == "new text")
     #expect(updated.olderCursor == "older-1")
     #expect(updated.hasOlder)
@@ -424,9 +422,9 @@ import Testing
         hasOlder: true
     )
 
-    let stale = GatewayThreadViewPatch(threadId: "t1", viewRevision: 4, scope: .turn, liveState: .streaming, upsertRows: [
+    let stale = GatewayThreadViewPatch(threadId: "t1", viewRevision: 4, scope: .turn, liveState: .streaming, rows: [
         TimelineRow(id: "row-1", kind: .message, displayOrder: 1, title: "Kodex", body: "stale")
-    ])
+    ], affectedTurnIds: ["turn-1"])
     let lifecycle = GatewayThreadViewPatch(threadId: "t1", viewRevision: 5, scope: .lifecycle, liveState: .idle)
     let fullSnapshot = GatewayThreadViewPatch(threadId: "t1", viewRevision: 6, scope: .fullSnapshot, liveState: .idle, rows: [
         TimelineRow(id: "row-2", kind: .message, displayOrder: 2, title: "Kodex", body: "snapshot")
@@ -478,7 +476,8 @@ import Testing
         viewRevision: 2,
         scope: .turn,
         liveState: .streaming,
-        upsertRows: [TimelineRow(id: "row-2", kind: .message, displayOrder: 2, title: "Kodex", body: "new")]
+        rows: [TimelineRow(id: "row-2", kind: .message, displayOrder: 2, title: "Kodex", body: "new", turnId: "turn-2")],
+        affectedTurnIds: ["turn-2"]
     )
 
     guard case .needsSnapshotRefresh(let unsupportedReason) = timeline.applying(unsupported) else {
@@ -499,8 +498,8 @@ import Testing
         liveState: .streaming,
         viewRevision: 1,
         rows: [
-            TimelineRow(id: "row-1", kind: .message, displayOrder: 1, title: "First", body: "first"),
-            TimelineRow(id: "row-1", kind: .message, displayOrder: 2, title: "Second", body: "second")
+            TimelineRow(id: "row-1", kind: .message, displayOrder: 1, title: "First", body: "first", turnId: "turn-1"),
+            TimelineRow(id: "row-1", kind: .message, displayOrder: 2, title: "Second", body: "second", turnId: "turn-1")
         ]
     )
     let patch = GatewayThreadViewPatch(
@@ -508,9 +507,10 @@ import Testing
         viewRevision: 2,
         scope: .turn,
         liveState: .streaming,
-        upsertRows: [
-            TimelineRow(id: "row-1", kind: .message, displayOrder: 3, title: "Latest", body: "latest")
-        ]
+        rows: [
+            TimelineRow(id: "row-1", kind: .message, displayOrder: 3, title: "Latest", body: "latest", turnId: "turn-1")
+        ],
+        affectedTurnIds: ["turn-1"]
     )
 
     guard case .applied(let updated) = timeline.applying(patch) else {
@@ -528,7 +528,8 @@ import Testing
         scope: .turn,
         liveState: .streaming,
         activeTurnId: "turn-1",
-        upsertRows: [TimelineRow(id: "row-agent", kind: .message, displayOrder: 1, title: "Kodex", body: "hel", turnId: "turn-1")]
+        rows: [TimelineRow(id: "row-agent", kind: .message, displayOrder: 1, title: "Kodex", body: "hel", turnId: "turn-1")],
+        affectedTurnIds: ["turn-1"]
     )))
     let latest = GatewayLiveEnvelope(seq: 11, event: .threadViewPatch(GatewayThreadViewPatch(
         threadId: "t1",
@@ -536,7 +537,8 @@ import Testing
         scope: .turn,
         liveState: .streaming,
         activeTurnId: "turn-1",
-        upsertRows: [TimelineRow(id: "row-agent", kind: .message, displayOrder: 1, title: "Kodex", body: "hello", turnId: "turn-1")]
+        rows: [TimelineRow(id: "row-agent", kind: .message, displayOrder: 1, title: "Kodex", body: "hello", turnId: "turn-1")],
+        affectedTurnIds: ["turn-1"]
     )))
     let refresh = GatewayLiveEnvelope(seq: 12, event: .refreshRequired(threadId: "t1"))
 
@@ -547,17 +549,18 @@ import Testing
         Issue.record("Expected latest patch to remain")
         return
     }
-    #expect(patch.upsertRows.first?.body == "hello")
+    #expect(patch.rows?.first?.body == "hello")
 }
 
-@Test func gatewayLiveEventBatchDoesNotCoalesceRemovalPatches() {
+@Test func gatewayLiveEventBatchCoalescesCompleteTurnReplacementPatches() {
     let first = GatewayLiveEnvelope(seq: 10, event: .threadViewPatch(GatewayThreadViewPatch(
         threadId: "t1",
         viewRevision: 10,
         scope: .turn,
         liveState: .streaming,
         activeTurnId: "turn-1",
-        upsertRows: [TimelineRow(id: "row-agent", kind: .message, displayOrder: 1, title: "Kodex", body: "old", turnId: "turn-1")]
+        rows: [TimelineRow(id: "row-agent", kind: .message, displayOrder: 1, title: "Kodex", body: "old", turnId: "turn-1")],
+        affectedTurnIds: ["turn-1"]
     )))
     let removal = GatewayLiveEnvelope(seq: 11, event: .threadViewPatch(GatewayThreadViewPatch(
         threadId: "t1",
@@ -565,13 +568,13 @@ import Testing
         scope: .turn,
         liveState: .streaming,
         activeTurnId: "turn-1",
-        upsertRows: [TimelineRow(id: "row-agent", kind: .message, displayOrder: 1, title: "Kodex", body: "new", turnId: "turn-1")],
-        removeRowIds: ["row-old"]
+        rows: [TimelineRow(id: "row-agent", kind: .message, displayOrder: 1, title: "Kodex", body: "new", turnId: "turn-1")],
+        affectedTurnIds: ["turn-1"]
     )))
 
     let coalesced = GatewayLiveEventBatch.coalesce([removal, first])
 
-    #expect(coalesced.map(\.seq) == [10, 11])
+    #expect(coalesced.map(\.seq) == [11])
 }
 
 @Test func gatewayLiveEventBatchPreservesLifecycleAndSnapshotOrderingAroundTurns() {
@@ -581,7 +584,8 @@ import Testing
         scope: .turn,
         liveState: .streaming,
         activeTurnId: "turn-1",
-        upsertRows: [TimelineRow(id: "row-agent", kind: .message, displayOrder: 1, title: "Kodex", body: "stream", turnId: "turn-1")]
+        rows: [TimelineRow(id: "row-agent", kind: .message, displayOrder: 1, title: "Kodex", body: "stream", turnId: "turn-1")],
+        affectedTurnIds: ["turn-1"]
     )))
     let lifecycle = GatewayLiveEnvelope(seq: 11, event: .threadViewPatch(GatewayThreadViewPatch(
         threadId: "t1",

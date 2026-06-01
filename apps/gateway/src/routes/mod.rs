@@ -2748,7 +2748,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "active".to_string(),
+                status: "syncing".to_string(),
                 active_turn_id: Some("turn-active".to_string()),
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,
@@ -2815,8 +2815,8 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "active".to_string(),
-                active_turn_id: Some("turn-active".to_string()),
+                status: "syncing".to_string(),
+                active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,
             })
@@ -4746,7 +4746,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thread_attach_noops_when_gateway_thread_view_is_live() {
+    async fn thread_attach_resumes_when_gateway_thread_view_is_stale_live() {
         let (state, app_server) = test_state().await;
         thread_view::record_thread_live_state(
             &state.thread_views,
@@ -4756,6 +4756,15 @@ mod tests {
         )
         .await
         .unwrap();
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"data": [], "nextCursor": null}),
+            json!({
+                "thread": thread_summary("thread-1"),
+                "cwd": "/workspace",
+                "model": "gpt-5.4",
+                "modelProvider": "openai"
+            }),
+        ]);
         let app = build_router(state);
 
         let response = app
@@ -4769,9 +4778,11 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["disposition"], "alreadyAttached");
-        assert!(body["thread"].is_null());
-        assert!(app_server.requests.lock().unwrap().is_empty());
+        assert_eq!(body["disposition"], "resumed");
+        assert_eq!(body["thread"]["id"], "thread-1");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/loaded/list");
+        assert_eq!(requests[1].0, "thread/resume");
     }
 
     #[tokio::test]
@@ -5341,8 +5352,8 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "active".to_string(),
-                active_turn_id: Some("active-turn".to_string()),
+                status: "starting".to_string(),
+                active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: Some(0),
             })
@@ -5401,14 +5412,13 @@ mod tests {
                 thread_id: Some("thread-1".to_string()),
                 turn_id: Some("turn-1".to_string()),
                 item_id: Some("item-stored-cmd".to_string()),
-                kind: "timeline.item_upsert".to_string(),
-                codex_method: Some("item/completed".to_string()),
+                kind: "thread_view.cursor".to_string(),
+                codex_method: Some("thread_view/cursor".to_string()),
                 payload: json!({
-                    "item": {
-                        "id": "item-stored-cmd",
-                        "type": "commandExecution",
-                        "command": "echo from gateway event store"
-                    }
+                    "threadId": "thread-1",
+                    "reason": "timeline_changed",
+                    "sourceKind": "thread_view.item_upsert_observed",
+                    "sourceMethod": "item/completed"
                 }),
             })
             .await
@@ -6225,7 +6235,7 @@ mod tests {
                     "threadId": "thread-1",
                     "turnId": "legacy-turn",
                     "reason": "agent_turn_completed",
-                    "sourceKind": "timeline.turn_completed",
+                    "sourceKind": "thread_view.turn_completed",
                     "sourceMethod": "turn/completed"
                 }),
             })
@@ -8040,7 +8050,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thread_input_trusts_idle_runtime_state_without_readback() {
+    async fn thread_input_readbacks_idle_runtime_state_before_start() {
         let (state, app_server) = test_state().await;
         state
             .store
@@ -8053,11 +8063,10 @@ mod tests {
             })
             .await
             .unwrap();
-        app_server
-            .queued_responses
-            .lock()
-            .unwrap()
-            .push(json!({"turnId": "turn-started"}));
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"thread": thread_summary("thread-1"), "turns": []}),
+            json!({"turnId": "turn-started"}),
+        ]);
         let app = build_router(state.clone());
 
         let response = app
@@ -8074,8 +8083,9 @@ mod tests {
         let body = response_json(response).await;
         assert_eq!(body["disposition"], "started");
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].0, "turn/start");
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[1].0, "turn/start");
     }
 
     #[tokio::test]
@@ -8092,13 +8102,13 @@ mod tests {
             })
             .await
             .unwrap();
-        app_server
-            .queued_errors
-            .lock()
-            .unwrap()
-            .push(ApiError::BadGateway(
-                "app-server error -32600: thread not found: thread-1".to_string(),
-            ));
+        app_server.queued_errors.lock().unwrap().extend([
+            ApiError::BadGateway(
+                "app-server error -32600: thread is not materialized yet before first user message"
+                    .to_string(),
+            ),
+            ApiError::BadGateway("app-server error -32600: thread not found: thread-1".to_string()),
+        ]);
         app_server.queued_responses.lock().unwrap().extend([
             json!({
                 "thread": thread_summary("thread-1"),
@@ -8124,13 +8134,14 @@ mod tests {
         let body = response_json(response).await;
         assert_eq!(body["disposition"], "started");
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 3);
-        assert_eq!(requests[0].0, "turn/start");
-        assert_eq!(requests[1].0, "thread/resume");
-        assert_eq!(requests[1].1["threadId"], "thread-1");
-        assert_eq!(requests[1].1["persistExtendedHistory"], true);
-        assert_eq!(requests[1].1["excludeTurns"], true);
-        assert_eq!(requests[2].0, "turn/start");
+        assert_eq!(requests.len(), 4);
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[1].0, "turn/start");
+        assert_eq!(requests[2].0, "thread/resume");
+        assert_eq!(requests[2].1["threadId"], "thread-1");
+        assert_eq!(requests[2].1["persistExtendedHistory"], true);
+        assert_eq!(requests[2].1["excludeTurns"], true);
+        assert_eq!(requests[3].0, "turn/start");
     }
 
     #[tokio::test]
@@ -8140,32 +8151,14 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "idle".to_string(),
+                status: "starting".to_string(),
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: Some(10),
             })
             .await
             .unwrap();
-        app_server
-            .queued_responses
-            .lock()
-            .unwrap()
-            .push(json!({"turnId": "turn-started"}));
         let app = build_router(state.clone());
-
-        let first = app
-            .clone()
-            .oneshot(
-                Request::post("/v1/threads/thread-1/input")
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"input":[{"type":"text","text":"first"}]}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(first.status(), StatusCode::OK);
-        assert_eq!(response_json(first).await["disposition"], "started");
 
         let second = app
             .oneshot(
@@ -8187,7 +8180,7 @@ mod tests {
                 .iter()
                 .filter(|(method, _)| method == "turn/start")
                 .count(),
-            1
+            0
         );
         assert!(requests.iter().all(|(method, _)| method != "thread/read"));
     }
@@ -8285,7 +8278,7 @@ mod tests {
         assert_eq!(second["queuedInput"]["input"][0]["text"], "second");
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert_eq!(app_server.turn_start_requests.load(Ordering::SeqCst), 1);
-        assert_eq!(app_server.thread_read_requests.load(Ordering::SeqCst), 0);
+        assert_eq!(app_server.thread_read_requests.load(Ordering::SeqCst), 1);
 
         app_server.release.notify_waiters();
         let first = first.await.unwrap();
@@ -8361,7 +8354,7 @@ mod tests {
         })
         .await
         .unwrap();
-        assert_eq!(app_server.thread_read_requests.load(Ordering::SeqCst), 1);
+        assert_eq!(app_server.thread_read_requests.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
@@ -8523,7 +8516,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thread_input_trusts_active_runtime_state_without_readback() {
+    async fn thread_input_readbacks_active_runtime_state_before_routing() {
         let (state, app_server) = test_state().await;
         state
             .store
@@ -8536,6 +8529,10 @@ mod tests {
             })
             .await
             .unwrap();
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({"thread": thread_summary("thread-1"), "turns": []}),
+            json!({"turnId": "turn-started"}),
+        ]);
         let app = build_router(state.clone());
 
         let response = app
@@ -8550,11 +8547,10 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["disposition"], "queued");
-        assert_eq!(body["queuedInput"]["input"][0]["text"], "queue");
+        assert_eq!(body["disposition"], "started");
         let requests = app_server.requests.lock().unwrap();
-        assert!(requests.iter().all(|(method, _)| method != "thread/read"));
-        assert!(requests.iter().all(|(method, _)| method != "turn/start"));
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[1].0, "turn/start");
     }
 
     #[tokio::test]
@@ -10000,7 +9996,7 @@ mod tests {
             loop {
                 let event = receiver.recv().await.unwrap();
                 if event.kind == thread_view::THREAD_VIEW_PATCH_EVENT_KIND
-                    && event.payload["upsertRows"].as_array().is_some_and(|rows| {
+                    && event.payload["rows"].as_array().is_some_and(|rows| {
                         rows.iter()
                             .any(|row| row["item"]["itemId"] == "item-user-1")
                     })
@@ -10458,7 +10454,7 @@ mod tests {
 
         let completed_cursor = persisted
             .iter()
-            .find(|event| event.payload["sourceKind"] == "timeline.turn_completed")
+            .find(|event| event.payload["sourceKind"] == "thread_view.turn_completed")
             .unwrap();
         assert_eq!(completed_cursor.kind, "thread_view.cursor");
         assert_eq!(completed_cursor.thread_id.as_deref(), Some("thread-1"));
@@ -11255,7 +11251,7 @@ mod tests {
                 payload: json!({
                     "threadId": "t1",
                     "reason": "timeline_changed",
-                    "sourceKind": "timeline.item_delta",
+                    "sourceKind": "thread_view.item_delta_observed",
                     "sourceMethod": "item/agentMessage/delta"
                 }),
             })
@@ -11423,7 +11419,7 @@ mod tests {
                 payload: json!({
                     "threadId": "t1",
                     "reason": "timeline_changed",
-                    "sourceKind": "timeline.item_delta",
+                    "sourceKind": "thread_view.item_delta_observed",
                     "sourceMethod": "item/agentMessage/delta"
                 }),
             })
@@ -11794,6 +11790,38 @@ mod tests {
                     "liveState": "streaming",
                     "pendingApprovalRequests": [],
                     "pendingUserInputRequests": [],
+                    "affectedTurnIds": ["turn-1"],
+                    "rows": [{
+                        "id": "row-item-1",
+                        "kind": "assistant_message",
+                        "displayOrder": 1,
+                        "status": "running",
+                        "turnId": "turn-1",
+                        "item": {
+                            "id": "projection-turn-1-item-1",
+                            "threadId": "t1",
+                            "turnId": "turn-1",
+                            "itemId": "item-1",
+                            "itemType": "agentMessage",
+                            "status": "running",
+                            "displayOrder": 1,
+                            "codexMethod": "item/agentMessage/delta",
+                            "payload": {
+                                "source": "gatewayStream",
+                                "turnId": "turn-1",
+                                "itemId": "item-1",
+                                "item": {"text": "hello"},
+                                "itemSnapshot": {
+                                    "id": "item-1",
+                                    "itemType": "agentMessage",
+                                    "rawPayload": {"id": "item-1", "type": "agentMessage", "text": "hello"}
+                                }
+                            }
+                        },
+                        "items": [],
+                        "fileChanges": [],
+                        "collapsedRows": []
+                    }],
                     "turns": [
                         {
                             "id": "turn-1",

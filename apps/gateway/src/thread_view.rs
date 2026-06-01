@@ -226,6 +226,8 @@ impl ThreadView {
     ) -> ThreadTimelineSnapshot {
         let existing_items = std::mem::take(&mut self.items);
         let existing_turns = std::mem::take(&mut self.turns);
+        let existing_active_turn_id = self.active_turn_id.clone();
+        let existing_live_state = self.live_state;
         let mut base_item_indexes = base
             .items
             .iter()
@@ -237,16 +239,17 @@ impl ThreadView {
             .iter()
             .map(|item| scoped_item_key(&item.turn_id, &item.item_id))
             .collect::<HashSet<_>>();
-        let mut base_text_counts = base
+        let base_pending_user_text_keys = base
             .items
             .iter()
-            .filter_map(text_key_for_snapshot_item)
-            .fold(HashMap::new(), |mut counts, key| {
-                *counts.entry(key).or_insert(0) += 1;
-                counts
-            });
-        let base_text_keys = base_text_counts.keys().cloned().collect::<HashSet<_>>();
-
+            .filter_map(materialized_user_text_key)
+            .collect::<HashSet<_>>();
+        let terminal_turn_ids = base
+            .turns
+            .iter()
+            .filter(|turn| is_terminal_turn_status(&turn.status))
+            .map(|turn| turn.id.clone())
+            .collect::<HashSet<_>>();
         let mut display_order = base
             .items
             .iter()
@@ -264,10 +267,12 @@ impl ThreadView {
                 }
                 continue;
             }
-            if text_key_for_snapshot_item(&item).is_some_and(|key| base_text_keys.contains(&key)) {
+            if pending_user_text_key(&item)
+                .is_some_and(|key| base_pending_user_text_keys.contains(&key))
+            {
                 continue;
             }
-            if consume_text_match(&item, &mut base_text_counts) {
+            if terminal_turn_ids.contains(&item.turn_id) {
                 continue;
             }
             if is_prunable_empty_reasoning(&item) {
@@ -280,7 +285,17 @@ impl ThreadView {
             ) {
                 continue;
             }
-            if is_live_status(&item.status) && base.active_turn_id.is_none() {
+            if is_live_status(&item.status)
+                && base.active_turn_id.is_none()
+                && (matches!(
+                    base.live_state,
+                    ThreadLiveState::Streaming | ThreadLiveState::Syncing
+                ) || (existing_active_turn_id.as_deref() == Some(item.turn_id.as_str())
+                    && matches!(
+                        existing_live_state,
+                        ThreadLiveState::Streaming | ThreadLiveState::Syncing
+                    )))
+            {
                 base.active_turn_id = Some(item.turn_id.clone());
                 base.live_state = ThreadLiveState::Streaming;
             }
@@ -421,11 +436,11 @@ impl ThreadView {
         }
     }
 
-    fn update_turn_status(&mut self, turn: &ThreadTurnSnapshot) -> (bool, Vec<String>) {
+    fn update_turn_status(&mut self, turn: &ThreadTurnSnapshot) -> bool {
         let terminal = is_terminal_turn_status(&turn.status);
         let newly_terminal = terminal && !self.terminal_turn_ids.contains(&turn.id);
         self.upsert_turn_from_snapshot(turn);
-        let remove_row_ids = self.prune_missing_context_compactions_for_turn(turn);
+        self.prune_missing_context_compactions_for_turn(turn);
         for item in &mut self.items {
             if item.turn_id == turn.id {
                 item.status = if terminal {
@@ -447,7 +462,7 @@ impl ThreadView {
         } else {
             self.terminal_turn_ids.remove(&turn.id);
         }
-        (newly_terminal, remove_row_ids)
+        newly_terminal
     }
 
     fn set_live_state(
@@ -586,12 +601,9 @@ impl ThreadView {
         replace_or_push_turn(&mut self.turns, next_turn);
     }
 
-    fn prune_missing_context_compactions_for_turn(
-        &mut self,
-        turn: &ThreadTurnSnapshot,
-    ) -> Vec<String> {
+    fn prune_missing_context_compactions_for_turn(&mut self, turn: &ThreadTurnSnapshot) {
         if !is_terminal_turn_status(&turn.status) {
-            return Vec::new();
+            return;
         }
         let snapshot_context_compaction_ids = turn
             .items
@@ -599,17 +611,12 @@ impl ThreadView {
             .filter(|item| is_context_compaction_type(&item.item_type))
             .map(|item| item.id.as_str())
             .collect::<HashSet<_>>();
-        let mut remove_row_ids = Vec::new();
         self.items.retain(|item| {
             let should_remove = item.turn_id == turn.id
                 && is_context_compaction_type(&item.item_type)
                 && !snapshot_context_compaction_ids.contains(item.item_id.as_str());
-            if should_remove {
-                remove_row_ids.push(format!("item-{}", item.id));
-            }
             !should_remove
         });
-        remove_row_ids
     }
 }
 
@@ -943,9 +950,8 @@ pub async fn record_turn_status(
 ) -> ApiResult<(bool, ThreadViewPatch)> {
     let (newly_terminal, patch) = sessions
         .with_thread_view(thread_id, updated_seq, |view| {
-            let (newly_terminal, remove_row_ids) = view.update_turn_status(turn);
-            let mut patch = view.turn_patch(&turn.id);
-            patch.remove_row_ids = remove_row_ids;
+            let newly_terminal = view.update_turn_status(turn);
+            let patch = view.turn_patch(&turn.id);
             (newly_terminal, patch)
         })
         .await;
@@ -1037,31 +1043,17 @@ fn remove_materialized_pending_match(
         if !item.item_id.starts_with("pending-user-") {
             return true;
         }
-        text_key_for_snapshot_item(item).is_none_or(|pending_key| pending_key != key)
+        pending_user_text_key(item).is_none_or(|pending_key| pending_key != key)
     });
-}
-
-fn consume_text_match(
-    item: &ThreadTimelineSnapshotItem,
-    base_text_counts: &mut HashMap<String, usize>,
-) -> bool {
-    let Some(key) = text_key_for_snapshot_item(item) else {
-        return false;
-    };
-    let Some(count) = base_text_counts.get_mut(&key) else {
-        return false;
-    };
-    if *count == 0 {
-        return false;
-    }
-    *count -= 1;
-    true
 }
 
 fn should_preserve_live_item_over_snapshot(
     live_item: &ThreadTimelineSnapshotItem,
     snapshot_item: &ThreadTimelineSnapshotItem,
 ) -> bool {
+    // Same app-server item identity only: a just-arrived live delta can be newer
+    // than a bounded snapshot read. Do not reconcile unrelated transcript rows by
+    // text here; materialized history remains app-server-owned.
     if !is_live_status(&live_item.status) || !is_live_status(&snapshot_item.status) {
         return false;
     }
@@ -1072,21 +1064,32 @@ fn should_preserve_live_item_over_snapshot(
     {
         return true;
     }
-    let Some(live_text) = text_for_timeline_item_match(live_item) else {
-        return false;
-    };
-    let Some(snapshot_text) = text_for_timeline_item_match(snapshot_item) else {
-        return !live_text.is_empty();
-    };
-    live_text.len() > snapshot_text.len() && live_text.starts_with(&snapshot_text)
+    false
 }
 
-fn text_key_for_snapshot_item(item: &ThreadTimelineSnapshotItem) -> Option<String> {
-    let text = text_for_timeline_item_match(item)?;
+fn pending_user_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+    if !item.item_id.starts_with("pending-user-")
+        || !item.item_type.eq_ignore_ascii_case("userMessage")
+    {
+        return None;
+    }
+    let text = text_for_pending_user_match(item)?;
     Some(scoped_text_key(&item.turn_id, &item.item_type, &text))
 }
 
-fn text_for_timeline_item_match(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+fn materialized_user_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+    if !item.item_type.eq_ignore_ascii_case("userMessage") {
+        return None;
+    }
+    materialized_item_text_key(item)
+}
+
+fn materialized_item_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+    let text = text_for_pending_user_match(item)?;
+    Some(scoped_text_key(&item.turn_id, &item.item_type, &text))
+}
+
+fn text_for_pending_user_match(item: &ThreadTimelineSnapshotItem) -> Option<String> {
     visible_text_from_thread_item(&item.payload.item_snapshot.raw_payload).or_else(|| {
         item.payload
             .item

@@ -117,9 +117,10 @@ async fn pending_user_input_returns_turn_scoped_patch() {
 
     assert_eq!(patch.scope, ThreadViewPatchScope::Turn);
     assert!(patch.validate_scope().is_ok());
-    assert!(patch.rows.is_none());
-    assert!(!patch.upsert_rows.is_empty());
-    assert!(patch.upsert_rows.len() < 3);
+    assert_eq!(patch.affected_turn_ids, vec!["turn-new"]);
+    let rows = patch.rows.as_ref().expect("turn patch rows");
+    assert!(!rows.is_empty());
+    assert!(rows.len() < 3);
     assert_eq!(patch.turns.len(), 1);
     assert_eq!(patch.turns[0].id, "turn-new");
     assert_eq!(patch.items.len(), 1);
@@ -183,6 +184,46 @@ async fn session_applies_live_delta_then_snapshot_without_duplicate() {
 }
 
 #[tokio::test]
+async fn completed_snapshot_drops_unmaterialized_live_items_for_terminal_turn() {
+    let sessions = ThreadViewStore::default();
+    record_item_delta(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        "agent-live",
+        "Draft answer",
+        1,
+    )
+    .await
+    .unwrap();
+
+    let completed_turn = ThreadTurnSnapshot {
+        id: "turn-1".to_string(),
+        status: "completed".to_string(),
+        started_at: Some(1),
+        completed_at: Some(2),
+        raw_payload: json!({}),
+        items: vec![ThreadItemSnapshot::from_payload(&agent_message_item(
+            "agent-final",
+            "Final answer",
+        ))
+        .unwrap()],
+    };
+    let timeline = build_thread_timeline(&sessions, "thread-1", &[completed_turn], 3)
+        .await
+        .unwrap();
+
+    assert_eq!(timeline.items.len(), 1);
+    assert_eq!(timeline.items[0].item_id, "agent-final");
+    assert_eq!(
+        timeline.items[0].payload.item.text.as_deref(),
+        Some("Final answer")
+    );
+    assert_eq!(timeline.active_turn_id, None);
+    assert_eq!(timeline.live_state, ThreadLiveState::Idle);
+}
+
+#[tokio::test]
 async fn item_delta_patch_upserts_only_affected_turn_rows() {
     let sessions = ThreadViewStore::default();
     build_thread_timeline(
@@ -209,9 +250,10 @@ async fn item_delta_patch_upserts_only_affected_turn_rows() {
 
     assert_eq!(patch.scope, ThreadViewPatchScope::Turn);
     assert!(patch.validate_scope().is_ok());
-    assert!(patch.rows.is_none());
-    assert_eq!(patch.upsert_rows.len(), 1);
-    assert_eq!(patch.upsert_rows[0].kind, "assistant_message");
+    assert_eq!(patch.affected_turn_ids, vec!["turn-1"]);
+    let turn_rows = patch.rows.as_ref().expect("turn patch rows");
+    assert_eq!(turn_rows.len(), 1);
+    assert_eq!(turn_rows[0].kind, "assistant_message");
     assert_eq!(patch.items.len(), 1);
     assert_eq!(patch.items[0].payload.item.text.as_deref(), Some("Hello"));
     let serialized_value = serde_json::to_value(&patch).unwrap();
@@ -231,7 +273,7 @@ async fn item_delta_patch_upserts_only_affected_turn_rows() {
         .as_ref()
         .expect("full patch rows")
         .iter()
-        .any(|row| row.id == patch.upsert_rows[0].id));
+        .any(|row| row.id == turn_rows[0].id));
 }
 
 #[tokio::test]
@@ -304,8 +346,7 @@ async fn lifecycle_patch_carries_no_timeline_payload() {
     assert_eq!(patch.scope, ThreadViewPatchScope::Lifecycle);
     assert!(patch.validate_scope().is_ok());
     assert!(patch.rows.is_none());
-    assert!(patch.upsert_rows.is_empty());
-    assert!(patch.remove_row_ids.is_empty());
+    assert!(patch.affected_turn_ids.is_empty());
     assert!(patch.turns.is_empty());
     assert!(patch.items.is_empty());
     let serialized = serde_json::to_vec(&patch).unwrap();
@@ -335,7 +376,11 @@ async fn item_upsert_and_turn_status_return_turn_scoped_patches() {
     .unwrap();
     assert_eq!(upsert_patch.scope, ThreadViewPatchScope::Turn);
     assert!(upsert_patch.validate_scope().is_ok());
-    assert!(upsert_patch.rows.is_none());
+    assert_eq!(upsert_patch.affected_turn_ids, vec!["turn-1"]);
+    assert!(upsert_patch
+        .rows
+        .as_ref()
+        .is_some_and(|rows| !rows.is_empty()));
 
     let completed_turn = ThreadTurnSnapshot {
         id: "turn-1".to_string(),
@@ -351,7 +396,10 @@ async fn item_upsert_and_turn_status_return_turn_scoped_patches() {
             .unwrap();
     assert_eq!(status_patch.scope, ThreadViewPatchScope::Turn);
     assert!(status_patch.validate_scope().is_ok());
-    assert!(status_patch.rows.is_none());
+    assert_eq!(status_patch.affected_turn_ids, vec!["turn-1"]);
+    assert!(status_patch.rows.as_ref().is_some_and(|rows| rows
+        .iter()
+        .all(|row| row.turn_id.as_deref() == Some("turn-1"))));
 }
 
 #[tokio::test]
@@ -869,8 +917,9 @@ async fn terminal_turn_patch_removes_missing_live_context_compaction_marker() {
     )
     .await
     .unwrap();
-    assert_eq!(upsert_patch.upsert_rows.len(), 1);
-    assert_eq!(upsert_patch.upsert_rows[0].kind, "context_compaction");
+    let turn_rows = upsert_patch.rows.as_ref().expect("turn patch rows");
+    assert_eq!(turn_rows.len(), 1);
+    assert_eq!(turn_rows[0].kind, "context_compaction");
 
     let completed_turn = ThreadTurnSnapshot {
         id: "turn-1".to_string(),
@@ -888,12 +937,11 @@ async fn terminal_turn_patch_removes_missing_live_context_compaction_marker() {
             .await
             .unwrap();
 
-    assert_eq!(
-        status_patch.remove_row_ids,
-        vec!["item-projection-turn-1-compact-1"]
-    );
+    assert_eq!(status_patch.affected_turn_ids, vec!["turn-1"]);
     assert!(status_patch
-        .upsert_rows
+        .rows
+        .as_ref()
+        .expect("turn patch rows")
         .iter()
         .all(|row| row.kind != "context_compaction"));
     let patch = patch_for_thread(&sessions, "thread-1").await.unwrap();

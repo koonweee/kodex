@@ -345,10 +345,6 @@
   padding-top: 4px;
 }
 
-.kodex-timeline-virtual-root[data-initial-bottom-aligned="false"] {
-  visibility: hidden;
-}
-
 .kodex-timeline-virtual-row {
   box-sizing: border-box;
   width: 100%;

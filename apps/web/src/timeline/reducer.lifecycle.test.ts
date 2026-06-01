@@ -333,8 +333,8 @@ function projectionPatchWithLiveState({
     activeTurnId,
     liveState,
     viewRevision,
-    rows: undefined,
-    upsertRows: [canonicalRow(item)],
+    affectedTurnIds: [turnId],
+    rows: [canonicalRow(item)],
     turns: [{ id: turnId, status }],
   };
 }

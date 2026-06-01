@@ -32,9 +32,7 @@ pub struct ThreadViewPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rows: Option<Vec<ThreadTimelineRow>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub upsert_rows: Vec<ThreadTimelineRow>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub remove_row_ids: Vec<String>,
+    pub affected_turn_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub turns: Vec<ThreadTimelineSnapshotTurn>,
     #[serde(default, skip_serializing)]
@@ -64,8 +62,7 @@ impl ThreadViewPatch {
             pending_approval_requests,
             pending_user_input_requests,
             rows: Some(rows),
-            upsert_rows: Vec::new(),
-            remove_row_ids: Vec::new(),
+            affected_turn_ids: Vec::new(),
             turns,
             items,
         }
@@ -78,8 +75,8 @@ impl ThreadViewPatch {
         live_state: ThreadLiveState,
         pending_approval_requests: Vec<PendingTimelineRequestSummary>,
         pending_user_input_requests: Vec<PendingTimelineRequestSummary>,
-        upsert_rows: Vec<ThreadTimelineRow>,
-        remove_row_ids: Vec<String>,
+        rows: Vec<ThreadTimelineRow>,
+        affected_turn_ids: Vec<String>,
         turns: Vec<ThreadTimelineSnapshotTurn>,
         items: Vec<ThreadTimelineSnapshotItem>,
     ) -> Self {
@@ -92,9 +89,8 @@ impl ThreadViewPatch {
             thread_status: None,
             pending_approval_requests,
             pending_user_input_requests,
-            rows: None,
-            upsert_rows,
-            remove_row_ids,
+            rows: Some(rows),
+            affected_turn_ids,
             turns,
             items,
         }
@@ -118,8 +114,7 @@ impl ThreadViewPatch {
             pending_approval_requests,
             pending_user_input_requests,
             rows: None,
-            upsert_rows: Vec::new(),
-            remove_row_ids: Vec::new(),
+            affected_turn_ids: Vec::new(),
             turns: Vec::new(),
             items: Vec::new(),
         }
@@ -128,22 +123,18 @@ impl ThreadViewPatch {
     pub fn validate_scope(&self) -> Result<(), &'static str> {
         match self.scope {
             ThreadViewPatchScope::FullSnapshot => {
-                if self.rows.is_none()
-                    || !self.upsert_rows.is_empty()
-                    || !self.remove_row_ids.is_empty()
-                {
-                    return Err("full_snapshot patches must carry rows and no upsert/remove rows");
+                if self.rows.is_none() || !self.affected_turn_ids.is_empty() {
+                    return Err("full_snapshot patches must carry rows and no affected turn ids");
                 }
             }
             ThreadViewPatchScope::Turn => {
-                if self.rows.is_some() {
-                    return Err("turn patches must not carry full rows");
+                if self.rows.is_none() || self.affected_turn_ids.is_empty() {
+                    return Err("turn patches must carry rows and affected turn ids");
                 }
             }
             ThreadViewPatchScope::Lifecycle => {
                 if self.rows.is_some()
-                    || !self.upsert_rows.is_empty()
-                    || !self.remove_row_ids.is_empty()
+                    || !self.affected_turn_ids.is_empty()
                     || !self.turns.is_empty()
                     || !self.items.is_empty()
                 {

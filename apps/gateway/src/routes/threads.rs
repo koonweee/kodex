@@ -1101,13 +1101,6 @@ pub async fn attach_thread(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
 ) -> ApiResult<Json<ThreadAttachResponse>> {
-    if thread_is_already_attached(&state, &thread_id).await {
-        return Ok(Json(ThreadAttachResponse {
-            disposition: ThreadAttachDisposition::AlreadyAttached,
-            thread: None,
-        }));
-    }
-
     let client = app_server_api::client(&state.app_server);
     let loaded = client.thread_loaded_list().await?;
     if loaded
@@ -1127,16 +1120,6 @@ pub async fn attach_thread(
         disposition: ThreadAttachDisposition::Resumed,
         thread: Some(response.thread),
     }))
-}
-
-async fn thread_is_already_attached(state: &AppState, thread_id: &str) -> bool {
-    if state.thread_views.active_turn_id(thread_id).await.is_some() {
-        return true;
-    }
-    matches!(
-        state.thread_views.live_state(thread_id).await,
-        Some(ThreadLiveState::Streaming | ThreadLiveState::Syncing)
-    )
 }
 
 #[utoipa::path(patch, path = "/v1/threads/{threadId}/name", request_body = RenameThreadRequest, responses((status = 200, body = RenameThreadResponse)))]

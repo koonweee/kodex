@@ -51,6 +51,73 @@ describe("timeline canonical snapshots and patches", () => {
     expect(state.viewRevision).toBe(2);
   });
 
+  it("replaces hidden diagnostic items on canonical full snapshot patches", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot({
+      viewRevision: 1,
+      items: [],
+      rows: [
+        canonicalRow(timelineItem({
+          id: "projection-turn-1-hook-1",
+          itemId: "hook-1",
+          itemType: "hookPrompt",
+          text: "",
+        })),
+      ],
+    }));
+    expect(state.hiddenItems.map((item) => item.id)).toEqual(["projection-turn-1-hook-1"]);
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
+      viewRevision: 2,
+      items: [timelineItem({ itemId: "agent-1", text: "Canonical answer" })],
+    }));
+
+    expect(state.items.map((item) => item.text)).toEqual(["Canonical answer"]);
+    expect(state.hiddenItems).toEqual([]);
+  });
+
+  it("replaces hidden diagnostic items for affected turn patches only", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot({
+      viewRevision: 1,
+      items: [],
+      rows: [
+        canonicalRow(timelineItem({
+          id: "projection-turn-1-hook-1",
+          itemId: "hook-1",
+          itemType: "hookPrompt",
+          text: "",
+          turnId: "turn-1",
+        })),
+        canonicalRow(timelineItem({
+          id: "projection-turn-2-hook-1",
+          itemId: "hook-2",
+          itemType: "hookPrompt",
+          text: "",
+          turnId: "turn-2",
+        })),
+      ],
+    }));
+    expect(state.hiddenItems.map((item) => item.id)).toEqual([
+      "projection-turn-1-hook-1",
+      "projection-turn-2-hook-1",
+    ]);
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
+      viewRevision: 2,
+      affectedTurnIds: ["turn-1"],
+      rows: [
+        canonicalRow(timelineItem({
+          id: "projection-turn-1-agent-1",
+          itemId: "agent-1",
+          text: "Turn one answer",
+          turnId: "turn-1",
+        })),
+      ],
+    }));
+
+    expect(state.items.map((item) => item.text)).toEqual(["Turn one answer"]);
+    expect(state.hiddenItems.map((item) => item.id)).toEqual(["projection-turn-2-hook-1"]);
+  });
+
   it("ignores unscoped canonical patch rows instead of inferring full snapshots from rows", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot({
       viewRevision: 1,
@@ -260,7 +327,7 @@ describe("timeline canonical snapshots and patches", () => {
     });
   });
 
-  it("applies partial row upserts without replacing the loaded timeline", () => {
+  it("applies complete turn rows without replacing the loaded timeline", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot({
       viewRevision: 1,
       items: [
@@ -273,8 +340,8 @@ describe("timeline canonical snapshots and patches", () => {
       viewRevision: 2,
       activeTurnId: "turn-2",
       liveState: "streaming",
-      rows: undefined,
-      upsertRows: [
+      affectedTurnIds: ["turn-2"],
+      rows: [
         canonicalRow(timelineItem({
           id: "projection-turn-2-agent-1",
           turnId: "turn-2",
@@ -294,7 +361,7 @@ describe("timeline canonical snapshots and patches", () => {
     expect(state.viewRevision).toBe(2);
   });
 
-  it("drops stale rows from the same turn when a partial patch reshapes that turn", () => {
+  it("drops stale rows from the same turn when a complete turn patch reshapes that turn", () => {
     const user = timelineItem({
       id: "projection-turn-1-user-1",
       turnId: "turn-1",
@@ -334,8 +401,8 @@ describe("timeline canonical snapshots and patches", () => {
       viewRevision: 2,
       activeTurnId: null,
       liveState: "idle",
-      rows: undefined,
-      upsertRows: [
+      affectedTurnIds: ["turn-1"],
+      rows: [
         canonicalRow(user),
         workRow({
           turnId: "turn-1",
@@ -362,61 +429,11 @@ describe("timeline canonical snapshots and patches", () => {
       viewRevision: 3,
       activeTurnId: null,
       liveState: "idle",
-      rows: undefined,
-      upsertRows: [canonicalRow(user)],
+      affectedTurnIds: ["turn-1"],
+      rows: [canonicalRow(user)],
     }));
 
     expect(state.rows.map((row) => row.key)).toEqual(["row-projection-turn-1-user-1"]);
-  });
-
-  it("dedupes repeated file changes rows with identical visible entries from live patches", () => {
-    const file = timelineItem({
-      id: "projection-turn-1-file-1",
-      turnId: "turn-1",
-      itemId: "file-1",
-      itemType: "fileChange",
-      text: "",
-      displayOrder: 2,
-    });
-    const duplicateFileRow = (id: string, displayOrder: number, additions = 1, diff = "+line") => ({
-      ...fileChangesRow(file, { displayOrder }),
-      id,
-      fileChanges: fileChangesRow(file, { displayOrder }).fileChanges.map((entry) => ({
-        ...entry,
-        additions,
-        diff,
-        id: `${id}-entry`,
-        itemIds: [],
-      })),
-    });
-    let state = applyTimelineSnapshot(createTimelineState(), snapshot({
-      viewRevision: 1,
-      activeTurnId: "turn-1",
-      liveState: "streaming",
-      items: [file],
-      rows: [duplicateFileRow("file-changes-turn-1-a", 200)],
-    }));
-
-    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
-      viewRevision: 2,
-      activeTurnId: "turn-1",
-      liveState: "streaming",
-      rows: undefined,
-      upsertRows: [duplicateFileRow("file-changes-turn-1-b", 201)],
-    }));
-    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
-      viewRevision: 3,
-      activeTurnId: "turn-1",
-      liveState: "streaming",
-      rows: undefined,
-      upsertRows: [duplicateFileRow("file-changes-turn-1-c", 202, 3, "+line\n+new\n+latest")],
-    }));
-
-    expect(state.rows.filter((row) => row.type === "file_changes")).toHaveLength(1);
-    expect(state.rows[0]).toMatchObject({
-      type: "file_changes",
-      entries: [{ path: "src/a.rs", action: "Modified", additions: 3, deletions: 0 }],
-    });
   });
 
   it("removes active-turn rows omitted from the canonical patch", () => {
@@ -528,11 +545,11 @@ function projectionPatchEvent(payload: {
   liveState?: string;
   items?: ReturnType<typeof timelineItem>[];
   rows?: CanonicalTestRow[] | undefined;
-  upsertRows?: CanonicalTestRow[];
-  removeRowIds?: string[];
+  affectedTurnIds?: string[];
   pendingApprovalRequests?: ReturnType<typeof pendingRequest>[];
   pendingUserInputRequests?: ReturnType<typeof pendingRequest>[];
 }): EventEnvelope {
+  const scope = payload.scope ?? (payload.affectedTurnIds !== undefined ? "turn" : "full_snapshot");
   const patchPayload: Record<string, unknown> = {
     threadId: "thread-1",
     activeTurnId: payload.activeTurnId ?? null,
@@ -544,16 +561,13 @@ function projectionPatchEvent(payload: {
     items: payload.items ?? [],
   };
   if (payload.scope !== null) {
-    patchPayload.scope = payload.scope ?? (payload.upsertRows !== undefined ? "turn" : "full_snapshot");
+    patchPayload.scope = scope;
   }
-  if (payload.rows !== undefined || payload.upsertRows === undefined) {
+  if (payload.rows !== undefined || scope === "full_snapshot") {
     patchPayload.rows = payload.rows ?? (payload.items ?? []).map((item) => canonicalRow(item));
   }
-  if (payload.upsertRows !== undefined) {
-    patchPayload.upsertRows = payload.upsertRows;
-  }
-  if (payload.removeRowIds !== undefined) {
-    patchPayload.removeRowIds = payload.removeRowIds;
+  if (payload.affectedTurnIds !== undefined) {
+    patchPayload.affectedTurnIds = payload.affectedTurnIds;
   }
   return {
     id: `patch-${payload.viewRevision}`,

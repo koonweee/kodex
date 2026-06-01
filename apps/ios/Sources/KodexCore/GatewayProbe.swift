@@ -445,8 +445,7 @@ public struct GatewayThreadViewPatch: Equatable, Sendable {
     public let liveState: ThreadLiveState
     public let activeTurnId: String?
     public let rows: [TimelineRow]?
-    public let upsertRows: [TimelineRow]
-    public let removeRowIds: [String]
+    public let affectedTurnIds: [String]
 
     public init(
         threadId: String,
@@ -455,8 +454,7 @@ public struct GatewayThreadViewPatch: Equatable, Sendable {
         liveState: ThreadLiveState,
         activeTurnId: String? = nil,
         rows: [TimelineRow]? = nil,
-        upsertRows: [TimelineRow] = [],
-        removeRowIds: [String] = []
+        affectedTurnIds: [String] = []
     ) {
         self.threadId = threadId
         self.viewRevision = viewRevision
@@ -464,8 +462,7 @@ public struct GatewayThreadViewPatch: Equatable, Sendable {
         self.liveState = liveState
         self.activeTurnId = activeTurnId
         self.rows = rows
-        self.upsertRows = upsertRows
-        self.removeRowIds = removeRowIds
+        self.affectedTurnIds = affectedTurnIds
     }
 }
 
@@ -494,10 +491,10 @@ public extension ThreadTimeline {
             }
             return .applied(replacing(rows: rows, liveState: patch.liveState, viewRevision: patch.viewRevision))
         case .turn:
-            guard patch.rows == nil else {
-                return .needsSnapshotRefresh(reason: "Turn patch unexpectedly included full rows.")
+            guard let rows = patch.rows, !patch.affectedTurnIds.isEmpty else {
+                return .needsSnapshotRefresh(reason: "Turn patch did not include complete affected rows.")
             }
-            return .applied(applyingTurnPatch(patch))
+            return .applied(applyingTurnPatch(patch, rows: rows))
         case .lifecycle:
             return .applied(replacing(rows: rows, liveState: patch.liveState, viewRevision: patch.viewRevision))
         case .unsupported:
@@ -505,16 +502,15 @@ public extension ThreadTimeline {
         }
     }
 
-    private func applyingTurnPatch(_ patch: GatewayThreadViewPatch) -> ThreadTimeline {
-        let removedIds = Set(patch.removeRowIds)
-        var rowsById: [String: TimelineRow] = [:]
-        for row in rows where !removedIds.contains(row.id) {
-            rowsById[row.id] = row
-        }
-        for row in patch.upsertRows {
-            rowsById[row.id] = row
-        }
-        return replacing(rows: Array(rowsById.values), liveState: patch.liveState, viewRevision: patch.viewRevision)
+    private func applyingTurnPatch(_ patch: GatewayThreadViewPatch, rows patchRows: [TimelineRow]) -> ThreadTimeline {
+        let affectedTurnIds = Set(patch.affectedTurnIds)
+        let rows = rows.filter { row in
+            guard let turnId = row.turnId else {
+                return true
+            }
+            return !affectedTurnIds.contains(turnId)
+        } + patchRows
+        return replacing(rows: rows, liveState: patch.liveState, viewRevision: patch.viewRevision)
     }
 
     private func replacing(rows: [TimelineRow], liveState: ThreadLiveState, viewRevision: Int64) -> ThreadTimeline {

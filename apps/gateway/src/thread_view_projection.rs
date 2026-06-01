@@ -27,7 +27,7 @@ impl ThreadView {
             self.pending_approval_requests.clone(),
             self.pending_user_input_requests.clone(),
             rows,
-            Vec::new(),
+            vec![turn_id.to_string()],
             turns,
             items,
         )

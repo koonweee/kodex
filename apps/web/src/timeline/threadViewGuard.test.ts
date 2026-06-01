@@ -14,6 +14,9 @@ const SOURCE_FILES = [
 
 const RAW_THREAD_EVENTS = [
   "timeline.item_delta",
+  "timeline.item_upsert",
+  "timeline.turn_upsert",
+  "timeline.thread_status",
   "timeline.projection_patch",
   "timeline.snapshot_required",
 ];

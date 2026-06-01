@@ -477,10 +477,8 @@ async fn thread_is_idle_for_queue(state: &AppState, thread_id: &str) -> ApiResul
     }
     if let Some(runtime) = state.store.get_thread_runtime_state(thread_id).await? {
         match runtime.status.as_str() {
-            "draining" | "starting" => return Ok(false),
-            "active" | "streaming" | "syncing" if runtime.active_turn_id.is_some() => {
-                return Ok(false);
-            }
+            "draining" | "starting" | "syncing" => return Ok(false),
+            "active" | "streaming" if runtime.active_turn_id.is_some() => return Ok(false),
             _ => {}
         }
     }

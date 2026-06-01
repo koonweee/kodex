@@ -57,6 +57,30 @@ fn subagent_thread_summary(
     })
 }
 
+fn thread_read_response_with_context_compaction(thread_id: &str) -> Value {
+    json!({
+        "thread": {
+            "id": thread_id,
+            "cliVersion": "0.135.0",
+            "cwd": "/workspace",
+            "ephemeral": false,
+            "modelProvider": "openai",
+            "source": "cli",
+            "status": {"type": "idle"},
+            "turns": [{
+                "id": "turn-compact",
+                "status": {"type": "completed"},
+                "items": [{
+                    "id": "compact-1",
+                    "type": "contextCompaction"
+                }]
+            }],
+            "createdAt": 1_767_225_600_i64,
+            "updatedAt": 1_767_225_600_i64
+        }
+    })
+}
+
 #[tokio::test]
 async fn notification_ingest_persists_thread_view_cursor_before_broadcast() {
     let state = test_state().await;
@@ -151,10 +175,73 @@ async fn turn_completed_reconciles_bounded_full_recent_head_without_replaying_hi
     }));
     assert!(persisted
         .iter()
-        .all(|event| event.kind != "timeline.item_upsert"));
+        .all(|event| event.kind != "thread_view.item_upsert_observed"));
     let persisted_json = serde_json::to_string(&persisted).unwrap();
     assert!(!persisted_json.contains("item-agent-1"));
     assert!(!persisted_json.contains("durable second"));
+}
+
+#[tokio::test]
+async fn thread_compacted_refetches_snapshot_and_clears_runtime() {
+    let (state, app_server) = test_state_with_app_server().await;
+    state
+        .store
+        .upsert_thread_runtime_state(ThreadRuntimeState {
+            thread_id: "thread-1".to_string(),
+            status: "syncing".to_string(),
+            active_turn_id: None,
+            updated_at: Utc::now(),
+            last_event_seq: Some(10),
+        })
+        .await
+        .unwrap();
+    app_server
+        .queued_responses
+        .lock()
+        .unwrap()
+        .push(thread_read_response_with_context_compaction("thread-1"));
+    let mut receiver = state.events.subscribe();
+
+    ingest_inbound(
+        InboundMessage::Notification {
+            method: "thread/compacted".to_string(),
+            params: json!({
+                "threadId": "thread-1",
+                "turnId": "turn-compact"
+            }),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+
+    let patch = timeout(Duration::from_secs(1), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
+    assert_eq!(patch.codex_method.as_deref(), Some("thread_view/patch"));
+    assert_eq!(patch.thread_id.as_deref(), Some("thread-1"));
+    assert_eq!(patch.payload["scope"], "full_snapshot");
+    assert_eq!(patch.payload["liveState"], "idle");
+    assert_eq!(patch.payload["rows"][0]["kind"], "context_compaction");
+
+    let runtime = state
+        .store
+        .get_thread_runtime_state("thread-1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(runtime.status, "idle");
+    assert_eq!(runtime.active_turn_id, None);
+
+    let requests = app_server.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].0, "thread/read");
+    assert_eq!(
+        requests[0].1,
+        json!({"threadId": "thread-1", "includeTurns": true})
+    );
 }
 
 #[tokio::test]
@@ -188,9 +275,9 @@ async fn notification_ingest_emits_thread_view_patch_for_timeline_delta() {
     assert_eq!(patch.payload["scope"], "turn");
     assert_eq!(patch.payload["activeTurnId"], "turn-1");
     assert_eq!(patch.payload["liveState"], "streaming");
-    assert!(patch.payload.get("rows").is_none());
+    assert_eq!(patch.payload["affectedTurnIds"], json!(["turn-1"]));
     assert_eq!(
-        patch.payload["upsertRows"][0]["item"]["payload"]["item"]["text"],
+        patch.payload["rows"][0]["item"]["payload"]["item"]["text"],
         "hello"
     );
     assert!(patch.payload.get("items").is_none());
@@ -244,7 +331,7 @@ async fn native_thread_status_changed_emits_exact_canonical_status_patch() {
         .unwrap();
     assert!(replay.iter().any(|event| {
         event.kind == THREAD_VIEW_CURSOR_KIND
-            && event.payload["sourceKind"] == "timeline.thread_status"
+            && event.payload["sourceKind"] == "thread_view.status_changed"
             && event.payload["sourceMethod"] == "thread/status/changed"
     }));
 }
@@ -658,7 +745,7 @@ async fn notification_ingest_commits_pending_skill_mentions_to_user_item() {
 
     let patch = receiver.recv().await.unwrap();
     assert_eq!(patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
-    let rows = patch.payload["upsertRows"].as_array().expect("patch rows");
+    let rows = patch.payload["rows"].as_array().expect("patch rows");
     assert_eq!(
         rows[0]["item"]["payload"]["itemSnapshot"]["skillMentions"],
         json!([{

@@ -1197,7 +1197,7 @@ impl Store {
                 codex_method in ('turn/completed', 'turn/upsert')
                 or (
                   kind = 'thread_view.cursor'
-                  and json_extract(payload_json, '$.sourceKind') = 'timeline.turn_completed'
+                  and json_extract(payload_json, '$.sourceKind') in ('thread_view.turn_completed', 'timeline.turn_completed')
                 )
               )
             "#,
@@ -1212,7 +1212,10 @@ impl Store {
             let method: Option<String> = row.try_get("codex_method")?;
             let source_kind = payload.get("sourceKind").and_then(Value::as_str);
             if method.as_deref() == Some("turn/upsert")
-                && source_kind != Some("timeline.turn_completed")
+                && !matches!(
+                    source_kind,
+                    Some("thread_view.turn_completed") | Some("timeline.turn_completed")
+                )
                 && !payload_has_terminal_turn_status(&payload)
             {
                 continue;
@@ -3252,7 +3255,7 @@ impl Store {
                 active_turn_id = null,
                 updated_at = ?
             where thread_id = ?
-              and status not in ('draining', 'starting')
+              and status not in ('draining', 'starting', 'syncing')
               and not (
                 status in ('active', 'streaming', 'syncing')
                 and active_turn_id is not null

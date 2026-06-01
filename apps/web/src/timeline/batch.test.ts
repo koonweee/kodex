@@ -28,7 +28,8 @@ function event(overrides: Partial<EventEnvelope> & { text?: string }): EventEnve
       threadId: "thread-1",
       activeTurnId: "turn-1",
       liveState: "streaming",
-      upsertRows: [canonicalRow(text)],
+      affectedTurnIds: ["turn-1"],
+      rows: [canonicalRow(text)],
       turns: [],
     },
     receivedAt: "2026-04-30T00:00:00Z",
@@ -99,7 +100,7 @@ describe("timeline event batching", () => {
     expect(state.viewRevision).toBe(100);
   });
 
-  it("does not re-index every large-thread row for one turn patch", () => {
+  it("replaces the complete affected turn while preserving other large-thread rows", () => {
     const fullSnapshot = event({
       id: "event-full-snapshot",
       seq: 1,
@@ -128,7 +129,8 @@ describe("timeline event batching", () => {
           threadId: "thread-1",
           activeTurnId: "turn-1000",
           liveState: "streaming",
-          upsertRows: [canonicalRow("updated row 1000", 1000)],
+          affectedTurnIds: ["turn-1000"],
+          rows: [canonicalRow("updated row 1000", 1000)],
           turns: [],
         },
       }),
@@ -136,7 +138,7 @@ describe("timeline event batching", () => {
 
     expect(next.items).toHaveLength(1000);
     expect(next.items.at(-1)).toMatchObject({ text: "updated row 1000" });
-    expect(getTimelineReducerInstrumentationForTest().turnPatchIndexedRows).toBeLessThanOrEqual(2);
+    expect(getTimelineReducerInstrumentationForTest().turnPatchIndexedRows).toBe(1000);
   });
 
   it("keeps the latest same-frame canonical row state after sequential patches", () => {

@@ -449,6 +449,9 @@ async fn normalized_timeline_events(
     events.extend(turn_upsert.events);
     drain_thread_ids.extend(turn_upsert.drain_thread_ids);
     events.extend(timeline_turn_completion_reconciliation_events(state, method, metadata).await?);
+    let compaction = timeline_thread_compacted_event(state, method, metadata).await?;
+    events.extend(compaction.events);
+    drain_thread_ids.extend(compaction.drain_thread_ids);
     if let Some(event) =
         timeline_thread_metadata_event(state, method, params, metadata, source).await?
     {
@@ -497,9 +500,13 @@ async fn timeline_item_delta_event(
     let Some(turn_id) = metadata.turn_id.clone() else {
         return Ok(Vec::new());
     };
-    let cursor =
-        append_timeline_changed_cursor(state, metadata, "timeline.item_delta", Some(method))
-            .await?;
+    let cursor = append_timeline_changed_cursor(
+        state,
+        metadata,
+        "thread_view.item_delta_observed",
+        Some(method),
+    )
+    .await?;
     let delta = string_field(params, &["delta", "text", "content"]).unwrap_or_default();
     let _phase = string_field(params, &["phase"]);
     let patch = thread_view::record_item_delta_patch(
@@ -551,7 +558,7 @@ async fn timeline_item_upsert_event(
     let cursor = append_timeline_changed_cursor(
         state,
         metadata,
-        "timeline.item_upsert",
+        "thread_view.item_upsert_observed",
         Some("item/upsert"),
     )
     .await?;
@@ -582,6 +589,65 @@ fn item_upsert_item_status(method: &str) -> Option<&'static str> {
     } else {
         None
     }
+}
+
+async fn timeline_thread_compacted_event(
+    state: &AppState,
+    method: &str,
+    metadata: &EventMetadata,
+) -> ApiResult<NormalizedTimelineEvents> {
+    if !method.eq_ignore_ascii_case("thread/compacted") {
+        return Ok(NormalizedTimelineEvents::default());
+    }
+    let Some(thread_id) = metadata.thread_id.as_deref() else {
+        return Ok(NormalizedTimelineEvents::default());
+    };
+    let cursor =
+        append_timeline_changed_cursor(state, metadata, "timeline.thread_compacted", Some(method))
+            .await?;
+    let snapshot = match app_server_api::client(&state.app_server)
+        .thread_read(thread_id.to_string())
+        .await
+    {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            tracing::warn!(%error, thread_id, "failed to reconcile compacted thread from app-server");
+            return Ok(NormalizedTimelineEvents {
+                events: vec![thread_view_refresh_required_event(
+                    cursor.seq,
+                    thread_id.to_string(),
+                    "thread_compacted_reconciliation_failed",
+                )?],
+                drain_thread_ids: Vec::new(),
+            });
+        }
+    };
+    let timeline = state
+        .thread_views
+        .refresh_from_turns(thread_id, &snapshot.turns, cursor.seq)
+        .await;
+    state
+        .store
+        .upsert_thread_runtime_state(ThreadRuntimeState {
+            thread_id: thread_id.to_string(),
+            status: if timeline.active_turn_id.is_some() {
+                "active".to_string()
+            } else {
+                "idle".to_string()
+            },
+            active_turn_id: timeline.active_turn_id.clone(),
+            updated_at: Utc::now(),
+            last_event_seq: Some(cursor.seq),
+        })
+        .await?;
+    Ok(NormalizedTimelineEvents {
+        events: vec![thread_view_full_snapshot_patch_event(state, thread_id).await?],
+        drain_thread_ids: if timeline.active_turn_id.is_none() {
+            vec![thread_id.to_string()]
+        } else {
+            Vec::new()
+        },
+    })
 }
 
 async fn timeline_turn_completion_reconciliation_events(
@@ -727,7 +793,7 @@ async fn timeline_turn_upsert_event(
     let cursor = append_timeline_changed_cursor(
         state,
         metadata,
-        "timeline.turn_upsert",
+        "thread_view.turn_changed",
         Some("turn/upsert"),
     )
     .await?;
@@ -1288,7 +1354,7 @@ async fn timeline_thread_status_event(
         return Ok(NormalizedTimelineEvents::default());
     };
     let cursor =
-        append_timeline_changed_cursor(state, metadata, "timeline.thread_status", Some(method))
+        append_timeline_changed_cursor(state, metadata, "thread_view.status_changed", Some(method))
             .await?;
     let mut events = Vec::new();
     let mut patch = thread_view::record_thread_live_state(
@@ -1417,7 +1483,7 @@ async fn append_completed_turn_cursor(
                 "threadId": metadata.thread_id.clone(),
                 "turnId": metadata.turn_id.clone(),
                 "reason": "agent_turn_completed",
-                "sourceKind": "timeline.turn_completed",
+                "sourceKind": "thread_view.turn_completed",
                 "sourceMethod": source_method,
             }),
         })
@@ -1427,7 +1493,9 @@ async fn append_completed_turn_cursor(
 fn is_transcript_timeline_event(kind: &str) -> bool {
     matches!(
         kind,
-        "timeline.item_upsert" | "timeline.turn_upsert" | "timeline.thread_status"
+        "thread_view.item_upsert_observed"
+            | "thread_view.turn_changed"
+            | "thread_view.status_changed"
     )
 }
 

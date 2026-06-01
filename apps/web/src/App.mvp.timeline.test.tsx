@@ -1062,7 +1062,8 @@ function terminalProjectionEvent({
       turns: [{ id: turnId, status: "completed" }],
       pendingApprovalRequests: [],
       pendingUserInputRequests: [],
-      upsertRows: canonicalRowsFromSnapshotItems([
+      affectedTurnIds: [turnId],
+      rows: canonicalRowsFromSnapshotItems([
         {
           id: `projection-${turnId}-${itemId}`,
           threadId,

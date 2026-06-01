@@ -24,27 +24,18 @@ import {
   createTimelineState,
   createTimelineStateFromDraft,
   indexesForState,
-  indexTimelineRow,
-  optimisticUserRowKeysByText,
   prepareTimelineIndexesForUpdate,
   timelineRowByKey,
-  timelineRowKeysByItemId,
-  timelineRowKeysByTurnId,
-  timelineRowItems,
-  timelineRows,
   timelineItemById,
   timelineItems,
   timelineTurnById,
-  unindexTimelineRow,
   type TimelineCollabAgent,
   type TimelineCollabAgentPresentation,
-  type TimelineFileChangesRow,
   type TimelineImage,
   type TimelineItem,
   type TimelineRow,
   type TimelineState,
   type TimelineTurn,
-  type TimelineFileChangeEntry,
   type WebSearchAction,
   type TimelineDraft,
 } from "./state";
@@ -166,23 +157,7 @@ export function addOptimisticUserMessage(
 }
 
 export function markOptimisticUserMessageSent(state: TimelineState, clientRequestId: string): TimelineState {
-  const id = optimisticUserMessageId(clientRequestId);
-  let changed = false;
-  const rows = state.rows.map((row) => {
-    if (row.type !== "item" || row.item.id !== id) {
-      return row;
-    }
-    changed = true;
-    return {
-      ...row,
-      item: {
-        ...row.item,
-        confirmationState: "sent" as const,
-        status: "completed" as const,
-      },
-    };
-  });
-  return changed ? rebuildTimelineRows(state, rows) : state;
+  return removeOptimisticUserMessage(state, clientRequestId);
 }
 
 export function removeOptimisticUserMessage(state: TimelineState, clientRequestId: string): TimelineState {
@@ -277,10 +252,10 @@ function canonicalTimelineRowsToViewRows(
   indexes = createEmptyTimelineIndexes(),
 ): { rows: TimelineRow[]; hiddenItems: TimelineItem[] } {
   const hiddenItems: TimelineItem[] = [];
-  const rows = normalizeTimelineRows([...canonicalRows]
+  const rows = [...canonicalRows]
     .sort((left, right) => left.displayOrder - right.displayOrder)
     .map((row) => canonicalTimelineRowToViewRow(threadId, row, indexes, hiddenItems))
-    .filter((row): row is TimelineRow => row !== null));
+    .filter((row): row is TimelineRow => row !== null);
   return { rows, hiddenItems };
 }
 
@@ -492,11 +467,11 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
   if (patch.scope === "full_snapshot" && !Array.isArray(patch.rows)) {
     return state;
   }
-  if (patch.scope === "turn" && Array.isArray(patch.rows)) {
+  if (patch.scope === "turn" && (!Array.isArray(patch.rows) || !Array.isArray(patch.affectedTurnIds) || patch.affectedTurnIds.length === 0)) {
     return state;
   }
   const fullRows = patch.rows;
-  if (Array.isArray(fullRows)) {
+  if (patch.scope === "full_snapshot" && Array.isArray(fullRows)) {
     const currentIndexes = createEmptyTimelineIndexes();
     const mapped = canonicalTimelineRowsToViewRows(threadId, fullRows, currentIndexes);
     const rows = preserveUnconfirmedOptimisticUserRows(state.rows, mapped.rows);
@@ -504,7 +479,7 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
     for (const row of rows) {
       addTimelineRowItemsToIndexes(row, indexes);
     }
-    indexes.hiddenItems.push(...state.hiddenItems, ...mapped.hiddenItems);
+    indexes.hiddenItems.push(...mapped.hiddenItems);
     return createTimelineStateFromDraft({
       ...timelineDraftFromState(state),
       indexes,
@@ -512,184 +487,26 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
     });
   }
 
-  const removedRowIds = new Set(patch.removeRowIds ?? []);
-  const upsertRows = patch.upsertRows ?? [];
-  if (removedRowIds.size === 0 && upsertRows.length === 0) {
-    return state;
+  const affectedTurnIds = new Set(patch.affectedTurnIds ?? []);
+  const mappedPatchRows = canonicalTimelineRowsToViewRows(threadId, patch.rows ?? [], createEmptyTimelineIndexes());
+  const rows = [
+    ...state.rows.filter((row) => !row.turnId || !affectedTurnIds.has(row.turnId)),
+    ...mappedPatchRows.rows,
+  ].sort((left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right));
+  reducerInstrumentation.turnPatchIndexedRows += rows.length;
+  const indexes = createEmptyTimelineIndexes();
+  for (const row of rows) {
+    addTimelineRowItemsToIndexes(row, indexes);
   }
-  const currentIndexes = prepareTimelineIndexesForUpdate(indexesForState(state));
-  const mappedUpserts = canonicalTimelineRowsToViewRows(
-    threadId,
-    upsertRows,
-    prepareTimelineIndexesForUpdate(indexesForState(state)),
+  indexes.hiddenItems.push(
+    ...state.hiddenItems.filter((item) => !item.turnId || !affectedTurnIds.has(item.turnId)),
+    ...mappedPatchRows.hiddenItems,
   );
-  const upsertsByKey = new Map(mappedUpserts.rows.map((row) => [row.key, row]));
-  const replacedItemIds = new Set(mappedUpserts.rows.flatMap(timelineRowCanonicalItemIds));
-  const replacedTurnIds = new Set(mappedUpserts.rows.map((row) => row.turnId).filter((turnId): turnId is string => Boolean(turnId)));
-  const canonicalUserTexts = canonicalUserMessageTexts(mappedUpserts.rows);
-  const affectedRowKeys = affectedTurnPatchRowKeys(
-    currentIndexes,
-    removedRowIds,
-    upsertsByKey,
-    replacedItemIds,
-    replacedTurnIds,
-    canonicalUserTexts,
-  );
-  const draft = timelineDraftFromState(state, { indexes: currentIndexes });
-  for (const rowKey of affectedRowKeys) {
-    const row = timelineRowByKey(currentIndexes, rowKey);
-    if (row) {
-      removeTimelineRowFromDraft(draft, row);
-    }
-  }
-  for (const row of mappedUpserts.rows) {
-    addTimelineRowToDraft(draft, row);
-  }
-  reducerInstrumentation.turnPatchIndexedRows += affectedRowKeys.size + mappedUpserts.rows.length;
-  currentIndexes.hiddenItems.push(...mappedUpserts.hiddenItems);
-  currentIndexes.rowKeys = [...currentIndexes.rowKeys].sort((left, right) => {
-    const leftRow = timelineRowByKey(currentIndexes, left);
-    const rightRow = timelineRowByKey(currentIndexes, right);
-    return (leftRow ? timelineRowDisplayOrder(leftRow) : 0) - (rightRow ? timelineRowDisplayOrder(rightRow) : 0);
-  });
-  const rows = timelineRows(currentIndexes);
   return createTimelineStateFromDraft({
     ...timelineDraftFromState(state),
-    indexes: currentIndexes,
+    indexes,
     rows,
-    rowsAreIndexed: true,
   });
-}
-
-function affectedTurnPatchRowKeys(
-  indexes: ReturnType<typeof indexesForState>,
-  removedRowIds: Set<string>,
-  upsertsByKey: Map<string, TimelineRow>,
-  replacedItemIds: Set<string>,
-  replacedTurnIds: Set<string>,
-  canonicalUserTexts: Set<string>,
-): Set<string> {
-  const affected = new Set<string>(removedRowIds);
-  for (const key of upsertsByKey.keys()) {
-    affected.add(key);
-  }
-  for (const itemId of replacedItemIds) {
-    for (const rowKey of timelineRowKeysByItemId(indexes, itemId)) {
-      affected.add(rowKey);
-    }
-  }
-  for (const turnId of replacedTurnIds) {
-    for (const rowKey of timelineRowKeysByTurnId(indexes, turnId)) {
-      affected.add(rowKey);
-    }
-  }
-  for (const text of canonicalUserTexts) {
-    for (const rowKey of optimisticUserRowKeysByText(indexes, text)) {
-      affected.add(rowKey);
-    }
-  }
-  return affected;
-}
-
-function removeTimelineRowFromDraft(draft: TimelineDraft, row: TimelineRow) {
-  unindexTimelineRow(draft.indexes, row);
-  draft.indexes.rowKeys = draft.indexes.rowKeys.filter((key) => key !== row.key);
-  draft.indexes.rowByKey.delete(row.key);
-  for (const item of timelineRowItems(row)) {
-    removeItem(draft, item.id);
-  }
-}
-
-function addTimelineRowToDraft(draft: TimelineDraft, row: TimelineRow) {
-  const existing = draft.indexes.rowByKey.get(row.key);
-  if (existing) {
-    unindexTimelineRow(draft.indexes, existing);
-  }
-  draft.indexes.rowByKey.set(row.key, row);
-  if (!draft.indexes.rowKeys.includes(row.key)) {
-    draft.indexes.rowKeys.push(row.key);
-  }
-  addTimelineRowItemsToIndexes(row, draft.indexes);
-  indexTimelineRow(draft.indexes, row);
-}
-
-type TimelineCollapsedRow = Exclude<TimelineRow, { type: "work" }>;
-
-function normalizeTimelineRows(rows: TimelineRow[]): TimelineRow[] {
-  const seenFileChangeRows = new Set<string>();
-  const normalizedRows: TimelineRow[] = [];
-  for (const row of rows) {
-    const normalizedRow = row.type === "work" ? normalizeWorkRow(row) : row;
-    if (normalizedRow.type === "file_changes") {
-      const signature = fileChangesRowSignature(normalizedRow);
-      if (seenFileChangeRows.has(signature)) {
-        replaceFileChangesRow(normalizedRows, signature, normalizedRow);
-        continue;
-      }
-      seenFileChangeRows.add(signature);
-    }
-    normalizedRows.push(normalizedRow);
-  }
-  return normalizedRows;
-}
-
-function normalizeWorkRow(row: Extract<TimelineRow, { type: "work" }>): Extract<TimelineRow, { type: "work" }> {
-  const collapsedRows = normalizeCollapsedTimelineRows(row.collapsedRows);
-  return collapsedRows === row.collapsedRows ? row : { ...row, collapsedRows };
-}
-
-function normalizeCollapsedTimelineRows(rows: TimelineCollapsedRow[]): TimelineCollapsedRow[] {
-  const seenFileChangeRows = new Set<string>();
-  let changed = false;
-  const normalizedRows: TimelineCollapsedRow[] = [];
-  for (const row of rows) {
-    if (row.type === "file_changes") {
-      const signature = fileChangesRowSignature(row);
-      if (seenFileChangeRows.has(signature)) {
-        replaceFileChangesRow(normalizedRows, signature, row);
-        changed = true;
-        continue;
-      }
-      seenFileChangeRows.add(signature);
-    }
-    normalizedRows.push(row);
-  }
-  return changed ? normalizedRows : rows;
-}
-
-function replaceFileChangesRow<TRow extends TimelineCollapsedRow | TimelineRow>(
-  rows: TRow[],
-  signature: string,
-  replacement: Extract<TRow, { type: "file_changes" }>,
-) {
-  const index = rows.findIndex((row) => row.type === "file_changes" && fileChangesRowSignature(row) === signature);
-  if (index !== -1) {
-    rows[index] = replacement;
-  }
-}
-
-function fileChangesRowSignature(row: TimelineFileChangesRow): string {
-  const entries = row.entries
-    .map((entry) => [
-      entry.path,
-      entry.action,
-    ].join("\u0001"))
-    .sort()
-    .join("\u0002");
-  return [row.turnId ?? "", entries].join("\u0003");
-}
-
-function timelineRowCanonicalItemIds(row: TimelineRow): string[] {
-  if (row.type === "item") {
-    return [row.item.id];
-  }
-  if (row.type === "activity") {
-    return row.items.map((item) => item.id);
-  }
-  if (row.type === "file_changes") {
-    return row.itemIds;
-  }
-  return row.collapsedRows.flatMap(timelineRowCanonicalItemIds);
 }
 
 function withSnapshotTurnMetadata(state: TimelineState, snapshot: ThreadViewResponse): TimelineState {
@@ -798,7 +615,7 @@ function optimisticDisplayOrder(state: TimelineState): number {
 }
 
 function rebuildTimelineRows(state: TimelineState, rows: TimelineRow[]): TimelineState {
-  const normalizedRows = normalizeTimelineRows([...rows].sort((left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right)));
+  const normalizedRows = [...rows].sort((left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right));
   const indexes = createEmptyTimelineIndexes();
   for (const row of normalizedRows) {
     addTimelineRowItemsToIndexes(row, indexes);
@@ -812,35 +629,10 @@ function rebuildTimelineRows(state: TimelineState, rows: TimelineRow[]): Timelin
 }
 
 function preserveUnconfirmedOptimisticUserRows(currentRows: TimelineRow[], canonicalRows: TimelineRow[]): TimelineRow[] {
-  const canonicalTexts = canonicalUserMessageTexts(canonicalRows);
   return [
     ...canonicalRows,
-    ...currentRows.filter((row) => optimisticUserRowMatches(row, canonicalTexts, { includeSent: false })),
+    ...currentRows.filter((row) => row.type === "item" && row.item.source === "optimistic" && row.item.confirmationState === "sending"),
   ];
-}
-
-function canonicalUserMessageTexts(rows: TimelineRow[]): Set<string> {
-  return new Set(
-    rows
-      .flatMap(timelineRowItems)
-      .filter((item) => item.kind === "user_message" && item.source !== "optimistic")
-      .map((item) => item.text)
-      .filter(Boolean),
-  );
-}
-
-function optimisticUserRowMatches(
-  row: TimelineRow,
-  canonicalUserTexts: Set<string>,
-  options: { includeSent?: boolean } = {},
-): boolean {
-  if (row.type !== "item" || row.item.source !== "optimistic" || row.item.kind !== "user_message") {
-    return false;
-  }
-  if (options.includeSent === false && row.item.confirmationState === "sent") {
-    return false;
-  }
-  return canonicalUserTexts.has(row.item.text);
 }
 
 function applyPresentedCanonicalItem(

@@ -128,7 +128,7 @@ describe("MVP composer input flows", () => {
       expect(screen.queryByRole("button", { name: /sending message/i })).not.toBeInTheDocument();
     });
     expect(screen.getByRole("button", { name: /send message/i })).toBeDisabled();
-    expect(within(timelineElement(container)).getByText("Ship it")).toBeInTheDocument();
+    expect(within(timelineElement(container)).queryByText("Ship it")).not.toBeInTheDocument();
     expect(within(timelineElement(container)).queryByText("Sending")).not.toBeInTheDocument();
 
     let selectedThreadStream: FakeEventSource | undefined;
@@ -750,7 +750,7 @@ describe("MVP composer input flows", () => {
       expect(screen.queryByText("Sending")).not.toBeInTheDocument();
     });
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
-    expect(within(timelineElement(container)).getByText("Retry text")).toBeInTheDocument();
+    expect(within(timelineElement(container)).queryByText("Retry text")).not.toBeInTheDocument();
     expect(within(timelineElement(container)).queryByText("Failed")).not.toBeInTheDocument();
   });
 

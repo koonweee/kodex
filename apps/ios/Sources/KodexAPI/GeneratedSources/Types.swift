@@ -8143,14 +8143,14 @@ public enum Components {
         public struct ThreadViewPatch: Codable, Hashable, Sendable {
             /// - Remark: Generated from `#/components/schemas/ThreadViewPatch/activeTurnId`.
             public var activeTurnId: Swift.String?
+            /// - Remark: Generated from `#/components/schemas/ThreadViewPatch/affectedTurnIds`.
+            public var affectedTurnIds: [Swift.String]?
             /// - Remark: Generated from `#/components/schemas/ThreadViewPatch/liveState`.
             public var liveState: Components.Schemas.ThreadLiveState
             /// - Remark: Generated from `#/components/schemas/ThreadViewPatch/pendingApprovalRequests`.
             public var pendingApprovalRequests: [Components.Schemas.PendingTimelineRequestSummary]
             /// - Remark: Generated from `#/components/schemas/ThreadViewPatch/pendingUserInputRequests`.
             public var pendingUserInputRequests: [Components.Schemas.PendingTimelineRequestSummary]
-            /// - Remark: Generated from `#/components/schemas/ThreadViewPatch/removeRowIds`.
-            public var removeRowIds: [Swift.String]?
             /// - Remark: Generated from `#/components/schemas/ThreadViewPatch/rows`.
             public var rows: [Components.Schemas.ThreadTimelineRow]?
             /// - Remark: Generated from `#/components/schemas/ThreadViewPatch/scope`.
@@ -8159,60 +8159,54 @@ public enum Components {
             public var threadId: Swift.String
             /// - Remark: Generated from `#/components/schemas/ThreadViewPatch/turns`.
             public var turns: [Components.Schemas.ThreadTimelineSnapshotTurn]?
-            /// - Remark: Generated from `#/components/schemas/ThreadViewPatch/upsertRows`.
-            public var upsertRows: [Components.Schemas.ThreadTimelineRow]?
             /// - Remark: Generated from `#/components/schemas/ThreadViewPatch/viewRevision`.
             public var viewRevision: Swift.Int64
             /// Creates a new `ThreadViewPatch`.
             ///
             /// - Parameters:
             ///   - activeTurnId:
+            ///   - affectedTurnIds:
             ///   - liveState:
             ///   - pendingApprovalRequests:
             ///   - pendingUserInputRequests:
-            ///   - removeRowIds:
             ///   - rows:
             ///   - scope:
             ///   - threadId:
             ///   - turns:
-            ///   - upsertRows:
             ///   - viewRevision:
             public init(
                 activeTurnId: Swift.String? = nil,
+                affectedTurnIds: [Swift.String]? = nil,
                 liveState: Components.Schemas.ThreadLiveState,
                 pendingApprovalRequests: [Components.Schemas.PendingTimelineRequestSummary],
                 pendingUserInputRequests: [Components.Schemas.PendingTimelineRequestSummary],
-                removeRowIds: [Swift.String]? = nil,
                 rows: [Components.Schemas.ThreadTimelineRow]? = nil,
                 scope: Components.Schemas.ThreadViewPatchScope,
                 threadId: Swift.String,
                 turns: [Components.Schemas.ThreadTimelineSnapshotTurn]? = nil,
-                upsertRows: [Components.Schemas.ThreadTimelineRow]? = nil,
                 viewRevision: Swift.Int64
             ) {
                 self.activeTurnId = activeTurnId
+                self.affectedTurnIds = affectedTurnIds
                 self.liveState = liveState
                 self.pendingApprovalRequests = pendingApprovalRequests
                 self.pendingUserInputRequests = pendingUserInputRequests
-                self.removeRowIds = removeRowIds
                 self.rows = rows
                 self.scope = scope
                 self.threadId = threadId
                 self.turns = turns
-                self.upsertRows = upsertRows
                 self.viewRevision = viewRevision
             }
             public enum CodingKeys: String, CodingKey {
                 case activeTurnId
+                case affectedTurnIds
                 case liveState
                 case pendingApprovalRequests
                 case pendingUserInputRequests
-                case removeRowIds
                 case rows
                 case scope
                 case threadId
                 case turns
-                case upsertRows
                 case viewRevision
             }
         }

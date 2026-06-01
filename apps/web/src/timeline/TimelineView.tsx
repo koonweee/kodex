@@ -164,7 +164,7 @@ export function TimelineView({
         defaultItemHeight={112}
         followOutput={followOutput}
         increaseViewportBy={{ top: 720, bottom: 720 }}
-        initialItemCount={virtuosoScrollParent ? undefined : rowCount}
+        initialItemCount={Math.min(rowCount, 30)}
         itemContent={(index, renderRow = visibleRows[index]) => renderRow ? (
           <Box className="kodex-timeline-virtual-row kodex-main-column" data-index={index}>
             <TimelineRowView
@@ -185,7 +185,6 @@ export function TimelineView({
           </Box>
         ) : null}
         ref={virtuosoRef}
-        {...(virtuosoScrollParent ? { initialTopMostItemIndex: { index: rowCount - 1, align: "end" } as const } : {})}
       />
       <HiddenDebugPanel
         hiddenItems={showDebug ? timeline.hiddenItems : []}

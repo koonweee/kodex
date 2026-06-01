@@ -249,18 +249,10 @@ public enum GatewayLiveEventBatch {
         guard case .threadViewPatch(let patch) = envelope.event else {
             return nil
         }
-        guard patch.scope == .turn, !patch.upsertRows.isEmpty, patch.removeRowIds.isEmpty else {
+        guard patch.scope == .turn, patch.rows?.isEmpty == false, !patch.affectedTurnIds.isEmpty else {
             return nil
         }
-        let rowIds = patch.upsertRows.map(\.id)
-        guard rowIds.count == Set(rowIds).count else {
-            return nil
-        }
-        let turnId = patch.activeTurnId ?? patch.upsertRows.first?.turnId
-        guard let turnId, !turnId.isEmpty else {
-            return nil
-        }
-        return "\(patch.threadId):\(turnId):\(rowIds.sorted().joined(separator: ","))"
+        return "\(patch.threadId):\(patch.affectedTurnIds.sorted().joined(separator: ","))"
     }
 }
 
@@ -278,8 +270,7 @@ private struct EventPayload: Decodable {
     let liveState: String?
     let activeTurnId: String?
     let rows: [EventTimelineRow]?
-    let upsertRows: [EventTimelineRow]?
-    let removeRowIds: [String]?
+    let affectedTurnIds: [String]?
 
     var threadViewPatch: GatewayThreadViewPatch {
         GatewayThreadViewPatch(
@@ -289,8 +280,7 @@ private struct EventPayload: Decodable {
             liveState: ThreadLiveState(rawValue: liveState ?? "") ?? .syncing,
             activeTurnId: activeTurnId,
             rows: rows?.map(\.timelineRow),
-            upsertRows: upsertRows?.map(\.timelineRow) ?? [],
-            removeRowIds: removeRowIds ?? []
+            affectedTurnIds: affectedTurnIds ?? []
         )
     }
 }

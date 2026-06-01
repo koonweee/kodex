@@ -19,7 +19,8 @@ describe("live diagnostics", () => {
       payload: {
         scope: "turn",
         threadId: "thread-1",
-        upsertRows: [{ id: "row-1", item: { payload: { item: { text: "secret prompt text" } } } }],
+        affectedTurnIds: ["turn-1"],
+        rows: [{ id: "row-1", item: { payload: { item: { text: "secret prompt text" } } } }],
       },
     }));
 

@@ -40,20 +40,18 @@ function turnPatchCoalesceKey(event: EventEnvelope): string | null {
   if (payload?.scope !== "turn") {
     return null;
   }
-  const rows = arrayPayload(payload.upsertRows);
-  if (rows.length === 0 || arrayPayload(payload.removeRowIds).length > 0) {
-    return null;
-  }
-  const rowIds = rows.map((row) => stringPayload(recordPayload(row)?.id)).filter((id): id is string => Boolean(id));
-  if (rowIds.length !== rows.length) {
+  const rows = arrayPayload(payload.rows);
+  const affectedTurnIds = arrayPayload(payload.affectedTurnIds)
+    .map(stringPayload)
+    .filter((turnId): turnId is string => Boolean(turnId));
+  if (rows.length === 0 || affectedTurnIds.length === 0) {
     return null;
   }
   const threadId = event.threadId ?? stringPayload(payload.threadId);
-  const turnId = event.turnId ?? stringPayload(payload.activeTurnId) ?? stringPayload(recordPayload(rows[0])?.turnId);
-  if (!threadId || !turnId) {
+  if (!threadId) {
     return null;
   }
-  return `${threadId}:${turnId}:${rowIds.sort().join(",")}`;
+  return `${threadId}:${affectedTurnIds.sort().join(",")}`;
 }
 
 function recordPayload(value: unknown): Record<string, unknown> | null {

@@ -90,7 +90,7 @@ pub async fn refreshed_active_turn_id(
 pub async fn routed_active_turn_id(state: &AppState, thread_id: &str) -> ApiResult<Option<String>> {
     if let Some(runtime) = state.store.get_thread_runtime_state(thread_id).await? {
         match runtime.status.as_str() {
-            "active" | "streaming" | "syncing" | "starting" | "draining" => {
+            "syncing" | "starting" | "draining" => {
                 return Ok(Some(
                     runtime
                         .active_turn_id
@@ -98,8 +98,7 @@ pub async fn routed_active_turn_id(state: &AppState, thread_id: &str) -> ApiResu
                 ));
             }
             "idle" => {
-                record_idle_after_missing_active_turn(state, thread_id).await?;
-                return Ok(None);
+                return refreshed_active_turn_id(state, thread_id).await;
             }
             _ => {}
         }
@@ -144,6 +143,19 @@ pub async fn record_turn_started(
             thread_id: thread_id.to_string(),
             status: "active".to_string(),
             active_turn_id: turn_id.map(str::to_string),
+            updated_at: chrono::Utc::now(),
+            last_event_seq: Some(state.store.latest_event_seq().await?),
+        })
+        .await
+}
+
+pub async fn record_compaction_starting(state: &AppState, thread_id: &str) -> ApiResult<()> {
+    state
+        .store
+        .upsert_thread_runtime_state(ThreadRuntimeState {
+            thread_id: thread_id.to_string(),
+            status: "syncing".to_string(),
+            active_turn_id: None,
             updated_at: chrono::Utc::now(),
             last_event_seq: Some(state.store.latest_event_seq().await?),
         })
