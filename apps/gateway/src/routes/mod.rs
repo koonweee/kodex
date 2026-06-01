@@ -1388,6 +1388,11 @@ mod tests {
         let capabilities_body = response_json(capabilities).await;
         assert_eq!(capabilities_body["gateway"]["sse"], true);
         assert_eq!(capabilities_body["appServer"]["ready"], false);
+        assert_eq!(capabilities_body["appServer"]["schemaVersion"], "0.135.0");
+        assert_eq!(
+            capabilities_body["appServer"]["detectedVersionMatchesSchema"],
+            Value::Null
+        );
 
         let docs = app
             .clone()

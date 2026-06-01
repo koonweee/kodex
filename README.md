@@ -376,7 +376,7 @@ The checked-in app-server JSON Schema is generated from the exact Codex binary v
 apps/gateway/scripts/generate-app-server-schema.sh
 ```
 
-The gateway validates outbound JSON-RPC client requests through the app-server adapter and validates the `initialized` notification against `apps/gateway/app-server-schema/0.130.0/json`. Thread start, resume, and fork requests always send `persistExtendedHistory: true`; selected-thread detail reads use bounded `thread/turns/list` pages with `itemsView: "full"` for rich completed history; `/readyz` reports an incompatibility message if the configured app-server rejects required experimental fields.
+The gateway validates outbound JSON-RPC client requests through the app-server adapter and validates the `initialized` notification against `apps/gateway/app-server-schema/0.135.0/json`. Thread start, resume, and fork requests always send `persistExtendedHistory: true`; selected-thread detail reads use bounded `thread/turns/list` pages with `itemsView: "full"` for rich completed history; `/readyz` reports an incompatibility message if the configured app-server rejects required experimental fields. `/v1/capabilities` reports the checked-in app-server schema version and, when detectable, the configured Codex CLI binary version so schema/binary mismatches are visible.
 
 ## Development Rules
 

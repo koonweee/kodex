@@ -2,7 +2,15 @@
 
 ## Status
 
-Proposed.
+Complete.
+
+## Completion Notes
+
+- Generated `apps/gateway/app-server-schema/0.135.0/json` from `codex-cli 0.135.0`.
+- Updated gateway schema validation to use `APP_SERVER_SCHEMA_VERSION` `0.135.0`.
+- Added capabilities diagnostics for checked-in schema version, detected Codex CLI version, and version/schema match status.
+- Confirmed the 0.135 schema includes the expected follow-up APIs: `thread/settings/update`, `thread/settings/updated`, `thread/status/changed`, `permissionProfile/list`, `activePermissionProfile`, and hook lifecycle events including `subagentStart`/`subagentStop`.
+- Regenerated frontend OpenAPI types for the public capabilities DTO change.
 
 ## Context
 

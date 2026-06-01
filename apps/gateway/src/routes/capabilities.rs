@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::api::AppState;
+use crate::schema::APP_SERVER_SCHEMA_VERSION;
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/v1/capabilities", get(capabilities))
@@ -30,10 +31,18 @@ pub struct GatewayCapabilities {
 pub struct AppServerCapabilities {
     pub ready: bool,
     pub experimental_api: bool,
+    pub schema_version: String,
+    pub detected_version: Option<String>,
+    pub detected_version_matches_schema: Option<bool>,
 }
 
 #[utoipa::path(get, path = "/v1/capabilities", responses((status = 200, body = CapabilitiesResponse)))]
 pub async fn capabilities(State(state): State<AppState>) -> Json<CapabilitiesResponse> {
+    let detected_version = state.app_server.detected_version();
+    let detected_version_matches_schema = detected_version
+        .as_ref()
+        .map(|version| version == APP_SERVER_SCHEMA_VERSION);
+
     Json(CapabilitiesResponse {
         gateway: GatewayCapabilities {
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -45,6 +54,9 @@ pub async fn capabilities(State(state): State<AppState>) -> Json<CapabilitiesRes
         app_server: AppServerCapabilities {
             ready: state.app_server.is_ready(),
             experimental_api: true,
+            schema_version: APP_SERVER_SCHEMA_VERSION.to_string(),
+            detected_version,
+            detected_version_matches_schema,
         },
     })
 }

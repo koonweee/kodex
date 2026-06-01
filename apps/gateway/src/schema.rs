@@ -5,47 +5,54 @@ use serde_json::{json, Value};
 
 use crate::error::{ApiError, ApiResult};
 
-pub const APP_SERVER_SCHEMA_VERSION: &str = "0.130.0";
+pub const APP_SERVER_SCHEMA_VERSION: &str = "0.135.0";
 
 static CLIENT_REQUEST_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.130.0/json/ClientRequest.json"
+        "../app-server-schema/0.135.0/json/ClientRequest.json"
     ))
 });
 
 static CLIENT_NOTIFICATION_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.130.0/json/ClientNotification.json"
+        "../app-server-schema/0.135.0/json/ClientNotification.json"
+    ))
+});
+
+#[cfg(test)]
+static SERVER_NOTIFICATION_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
+    compile_schema(include_str!(
+        "../app-server-schema/0.135.0/json/ServerNotification.json"
     ))
 });
 
 static COMMAND_APPROVAL_RESPONSE_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.130.0/json/CommandExecutionRequestApprovalResponse.json"
+        "../app-server-schema/0.135.0/json/CommandExecutionRequestApprovalResponse.json"
     ))
 });
 
 static FILE_CHANGE_APPROVAL_RESPONSE_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.130.0/json/FileChangeRequestApprovalResponse.json"
+        "../app-server-schema/0.135.0/json/FileChangeRequestApprovalResponse.json"
     ))
 });
 
 static PERMISSIONS_APPROVAL_RESPONSE_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.130.0/json/PermissionsRequestApprovalResponse.json"
+        "../app-server-schema/0.135.0/json/PermissionsRequestApprovalResponse.json"
     ))
 });
 
 static MCP_ELICITATION_RESPONSE_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.130.0/json/McpServerElicitationRequestResponse.json"
+        "../app-server-schema/0.135.0/json/McpServerElicitationRequestResponse.json"
     ))
 });
 
 static TOOL_USER_INPUT_RESPONSE_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.130.0/json/ToolRequestUserInputResponse.json"
+        "../app-server-schema/0.135.0/json/ToolRequestUserInputResponse.json"
     ))
 });
 
@@ -86,6 +93,11 @@ pub fn validate_required_experimental_fields() -> ApiResult<()> {
 
 pub fn validate_client_notification(message: &Value) -> ApiResult<()> {
     validate("client notification", &CLIENT_NOTIFICATION_SCHEMA, message)
+}
+
+#[cfg(test)]
+fn validate_server_notification(message: &Value) -> ApiResult<()> {
+    validate("server notification", &SERVER_NOTIFICATION_SCHEMA, message)
 }
 
 pub fn validate_approval_response(method: &str, response: &Value) -> ApiResult<()> {
@@ -192,6 +204,67 @@ mod tests {
     #[test]
     fn required_experimental_history_fields_are_supported() {
         validate_required_experimental_fields().unwrap();
+    }
+
+    #[test]
+    fn native_0135_requests_are_supported() {
+        validate_client_request(&client_request_message(
+            1,
+            "thread/settings/update",
+            json!({
+                "threadId": "thread-1",
+                "model": "gpt-5.4",
+                "serviceTier": null,
+            }),
+        ))
+        .unwrap();
+
+        validate_client_request(&client_request_message(
+            2,
+            "permissionProfile/list",
+            json!({
+                "cwd": "/workspace",
+                "limit": 25,
+                "cursor": null,
+            }),
+        ))
+        .unwrap();
+    }
+
+    #[test]
+    fn native_0135_notifications_are_supported() {
+        validate_server_notification(&json!({
+            "jsonrpc": "2.0",
+            "method": "thread/status/changed",
+            "params": {
+                "threadId": "thread-1",
+                "status": { "type": "idle" },
+            },
+        }))
+        .unwrap();
+
+        validate_server_notification(&json!({
+            "jsonrpc": "2.0",
+            "method": "thread/settings/updated",
+            "params": {
+                "threadId": "thread-1",
+                "threadSettings": {
+                    "activePermissionProfile": { "id": ":workspace" },
+                    "approvalPolicy": "on-request",
+                    "approvalsReviewer": "user",
+                    "collaborationMode": {
+                        "mode": "default",
+                        "settings": { "model": "gpt-5.4" }
+                    },
+                    "cwd": "/workspace",
+                    "model": "gpt-5.4",
+                    "modelProvider": "openai",
+                    "sandboxPolicy": { "type": "workspaceWrite" },
+                    "serviceTier": null,
+                },
+            },
+        }))
+        .unwrap();
     }
 
     #[test]

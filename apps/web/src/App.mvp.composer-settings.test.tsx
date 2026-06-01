@@ -48,6 +48,7 @@ function resetDateLabel(date: Date) {
 
 describe("MVP composer settings flows", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     FakeEventSource.instances = [];
@@ -271,6 +272,8 @@ describe("MVP composer settings flows", () => {
   });
 
   it("shows initial usage limits and updates them from account rate-limit notifications", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 4, 4, 12, 0, 0));
     vi.stubGlobal("EventSource", FakeEventSource);
     const initialPrimaryReset = rateLimitResetDate(0, 14, 14);
     const initialSecondaryReset = rateLimitResetDate(3, 9, 0);
@@ -324,6 +327,8 @@ describe("MVP composer settings flows", () => {
   });
 
   it("keeps live account rate-limit updates when the initial rate-limit snapshot resolves later", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 4, 4, 12, 0, 0));
     vi.stubGlobal("EventSource", FakeEventSource);
     const stalePrimaryReset = rateLimitResetDate(0, 14, 14);
     const staleSecondaryReset = rateLimitResetDate(3, 9, 0);

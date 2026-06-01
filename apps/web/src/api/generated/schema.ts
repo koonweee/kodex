@@ -1429,8 +1429,11 @@ export interface components {
             message: string;
         };
         AppServerCapabilities: {
+            detectedVersion?: string | null;
+            detectedVersionMatchesSchema?: boolean | null;
             experimentalApi: boolean;
             ready: boolean;
+            schemaVersion: string;
         };
         AppSummary: {
             description?: string | null;

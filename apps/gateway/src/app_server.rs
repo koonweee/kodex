@@ -15,7 +15,7 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::{Child, ChildStdin, Command},
     sync::{mpsc, oneshot, Mutex},
-    time::{sleep, Duration},
+    time::{sleep, timeout, Duration},
 };
 
 use crate::{
@@ -52,6 +52,9 @@ pub struct JsonRpcError {
 pub trait AppServer: Send + Sync {
     fn is_ready(&self) -> bool;
     fn readiness_error(&self) -> Option<String>;
+    fn detected_version(&self) -> Option<String> {
+        None
+    }
     async fn request(&self, method: &str, params: Value) -> ApiResult<Value>;
     async fn respond(&self, request_id: &str, result: Value) -> ApiResult<()>;
 }
@@ -70,6 +73,10 @@ impl AppServer for UnavailableAppServer {
         Some("Codex app-server is unavailable".to_string())
     }
 
+    fn detected_version(&self) -> Option<String> {
+        None
+    }
+
     async fn request(&self, _method: &str, _params: Value) -> ApiResult<Value> {
         Err(ApiError::AppServerUnavailable)
     }
@@ -86,6 +93,7 @@ pub struct JsonRpcAppServer {
     pending: Mutex<HashMap<u64, oneshot::Sender<Result<Value, JsonRpcError>>>>,
     ready: AtomicBool,
     readiness_error: StdMutex<Option<String>>,
+    detected_version: Option<String>,
 }
 
 impl JsonRpcAppServer {
@@ -93,6 +101,8 @@ impl JsonRpcAppServer {
         config: &CodexConfig,
         inbound: mpsc::Sender<InboundMessage>,
     ) -> ApiResult<Arc<Self>> {
+        let detected_version = detect_codex_cli_version(config).await;
+
         let mut child = Command::new(&config.binary)
             .args(&config.args)
             .stdin(Stdio::piped())
@@ -114,6 +124,7 @@ impl JsonRpcAppServer {
             pending: Mutex::new(HashMap::new()),
             ready: AtomicBool::new(false),
             readiness_error: StdMutex::new(None),
+            detected_version,
         });
 
         tokio::spawn(read_loop(
@@ -262,6 +273,10 @@ impl AppServer for JsonRpcAppServer {
         self.readiness_error.lock().unwrap().clone()
     }
 
+    fn detected_version(&self) -> Option<String> {
+        self.detected_version.clone()
+    }
+
     async fn request(&self, method: &str, params: Value) -> ApiResult<Value> {
         let started_at = Instant::now();
         if !self.is_ready() && method != "initialize" {
@@ -360,6 +375,30 @@ fn api_error_classification(error: &ApiError) -> &'static str {
         ApiError::Store(_) => "store_error",
         ApiError::Io(_) => "io_error",
         ApiError::Other(_) => "internal_error",
+    }
+}
+
+async fn detect_codex_cli_version(config: &CodexConfig) -> Option<String> {
+    let output = timeout(
+        Duration::from_secs(2),
+        Command::new(&config.binary).arg("--version").output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    parse_codex_cli_version(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn parse_codex_cli_version(output: &str) -> Option<String> {
+    let mut parts = output.split_whitespace();
+    match (parts.next(), parts.next()) {
+        (Some("codex-cli"), Some(version)) => Some(version.to_string()),
+        _ => None,
     }
 }
 
@@ -516,6 +555,15 @@ pub mod tests {
         let notification = initialized_notification_message();
         assert_eq!(notification["method"], "initialized");
         assert!(notification.get("params").is_none());
+    }
+
+    #[test]
+    fn parses_codex_cli_version_output() {
+        assert_eq!(
+            parse_codex_cli_version("codex-cli 0.135.0\n"),
+            Some("0.135.0".to_string())
+        );
+        assert_eq!(parse_codex_cli_version("GNU bash, version 5.2\n"), None);
     }
 
     #[test]
