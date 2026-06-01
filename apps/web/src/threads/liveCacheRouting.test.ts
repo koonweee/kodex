@@ -4,10 +4,9 @@ import type { EventEnvelope, ThreadSummary } from "../api/client";
 import { sidebarLiveCacheRoute } from "./liveCacheRouting";
 
 describe("thread live cache routing", () => {
-  it("invalidates all thread lists only when a selected patch has no cached location", () => {
+  it("ignores patches for threads that are not in sidebar caches", () => {
     expect(sidebarLiveCacheRoute(event({ kind: "thread_view.patch", threadId: "thread-1" }), null)).toEqual({
-      kind: "invalidateAllThreadLists",
-      reason: "missingThreadMetadata",
+      kind: "ignore",
     });
 
     expect(sidebarLiveCacheRoute(event({ kind: "timeline.thread_metadata", threadId: "thread-1" }), null)).toEqual({

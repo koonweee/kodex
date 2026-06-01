@@ -1408,13 +1408,6 @@ function KodexShell({
     if (route.kind === "ignore") {
       return;
     }
-    if (route.kind === "invalidateAllThreadLists") {
-      recordCacheInvalidation("projectThreadsRoot");
-      recordCacheInvalidation("chatThreads");
-      void queryClientForShell.invalidateQueries({ queryKey: queryKeys.projectThreadsRoot });
-      void queryClientForShell.invalidateQueries({ queryKey: queryKeys.chatThreads });
-      return;
-    }
     if (route.location.scope === "project") {
       recordCacheInvalidation("projectThreads");
       void queryClientForShell.invalidateQueries({ queryKey: queryKeys.projectThreads(route.location.projectId) });

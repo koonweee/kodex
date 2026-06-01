@@ -7,7 +7,6 @@ export type SidebarThreadLocation =
 
 export type SidebarLiveCacheRoute =
   | { kind: "ignore" }
-  | { kind: "invalidateAllThreadLists"; reason: "missingThreadMetadata" }
   | { kind: "invalidateKnownThreadList"; location: SidebarThreadLocation; reason: "missingDisplayTitle" };
 
 export function sidebarLiveCacheRoute(event: EventEnvelope, location: SidebarThreadLocation | null): SidebarLiveCacheRoute {
@@ -15,9 +14,7 @@ export function sidebarLiveCacheRoute(event: EventEnvelope, location: SidebarThr
     return { kind: "ignore" };
   }
   if (!location) {
-    return event.kind === "thread_view.patch"
-      ? { kind: "invalidateAllThreadLists", reason: "missingThreadMetadata" }
-      : { kind: "ignore" };
+    return { kind: "ignore" };
   }
   if (event.kind === "thread_view.patch" && !threadHasDisplayTitle(location.thread)) {
     return { kind: "invalidateKnownThreadList", location, reason: "missingDisplayTitle" };

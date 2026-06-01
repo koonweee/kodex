@@ -249,6 +249,33 @@ describe("subagent thread viewer", () => {
     expect(gateway.callsFor("GET", "/v1/threads/thread-1/subagents")).toHaveLength(1);
   });
 
+  it("does not refetch sidebar thread lists for background subagent timeline patches", async () => {
+    const gateway = mockGateway(baseRoutes());
+
+    render(<App />);
+
+    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
+    expect(gateway.callsFor("GET", "/v1/threads")).toHaveLength(0);
+    expect(gateway.callsFor("GET", "/v1/chats/threads")).toHaveLength(0);
+
+    const globalStream = FakeEventSource.instances.find((instance) => instance.url.includes("excludeThreadId=thread-1"));
+    act(() => {
+      globalStream?.emitNamed("thread_view.patch", projectionPatchEvent({
+        id: "background-subagent-patch",
+        seq: 10,
+        projectId: null,
+        threadId: "subagent-1",
+        turnId: "sub-turn-1",
+        itemId: "subagent-output",
+        text: "Background subagent output",
+      }));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(gateway.callsFor("GET", "/v1/threads")).toHaveLength(0);
+    expect(gateway.callsFor("GET", "/v1/chats/threads")).toHaveLength(0);
+  });
+
   it("falls back when the selected subagent disappears from the gateway list", async () => {
     const gateway = mockGateway(
       baseRoutes({
