@@ -19,6 +19,19 @@ async fn kodex_control_mcp_stdio_lists_tools() -> anyhow::Result<()> {
     let client = ().serve(transport).await?;
     let tools = client.list_all_tools().await?;
     assert!(tools.iter().any(|tool| tool.name == "get_status"));
+    let send_thread_input = tools
+        .iter()
+        .find(|tool| tool.name == "send_thread_input")
+        .expect("send_thread_input tool should be listed");
+    let required = send_thread_input
+        .input_schema
+        .get("required")
+        .and_then(serde_json::Value::as_array)
+        .expect("send_thread_input should advertise required parameters");
+    assert!(required
+        .iter()
+        .any(|value| value.as_str() == Some("threadId")));
+    assert!(required.iter().any(|value| value.as_str() == Some("input")));
     client.cancel().await?;
     Ok(())
 }

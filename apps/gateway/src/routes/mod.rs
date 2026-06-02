@@ -2819,6 +2819,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn self_control_thread_input_starts_when_thread_is_not_materialized_yet() {
+        let (state, app_server) = test_state().await;
+        app_server
+            .queued_errors
+            .lock()
+            .unwrap()
+            .push(ApiError::BadGateway(
+                "app-server error -32600: thread thread-1 is not materialized yet; includeTurns is unavailable before first user message".to_string(),
+            ));
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"turnId": "turn-started"}));
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/self-control/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "input": [{"type": "text", "text": "start now"}],
+                            "source": {"sourceToolCallId": "tool-start"}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["action"], "started");
+        assert!(body["queuedInput"].is_null());
+        assert_eq!(body["turn"]["payload"]["turnId"], "turn-started");
+        let queued = state.store.list_queued_inputs("thread-1").await.unwrap();
+        assert!(queued.is_empty());
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[1].0, "turn/start");
+        assert_eq!(requests[1].1["input"][0]["text"], "start now");
+    }
+
+    #[tokio::test]
     async fn self_control_thread_input_rejects_permissions_and_sandbox_conflict_before_queue() {
         let (state, app_server) = test_state().await;
         state

@@ -4,6 +4,7 @@ use rmcp::{
     schemars, tool, tool_handler, tool_router, ErrorData as McpError, RoleServer, ServerHandler,
     ServiceExt,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 #[derive(Clone)]
@@ -97,10 +98,162 @@ impl KodexControlMcp {
     }
 }
 
-#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct JsonToolParams {
-    #[serde(flatten)]
-    pub value: Map<String, Value>,
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewApplyToolParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub create_project: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dry_run: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub services: Vec<PreviewServiceToolParams>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub previews: Vec<PreviewToolParams>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<Value>,
+    #[serde(default, flatten, skip_serializing_if = "Map::is_empty")]
+    pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewServiceToolParams {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<String>,
+    pub local_port: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health_path: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewToolParams {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public_port: Option<i64>,
+    pub root_service_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub routes: Vec<PreviewRouteToolParams>,
+}
+
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewRouteToolParams {
+    pub path_pattern: String,
+    pub service_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strip_prefix: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort_order: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateThreadToolParams {
+    #[serde(alias = "project_id")]
+    pub project_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_tier: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval_policy: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approvals_reviewer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_self_control_depth: Option<u8>,
+    #[serde(default, flatten, skip_serializing_if = "Map::is_empty")]
+    pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SendThreadInputToolParams {
+    #[serde(alias = "thread_id")]
+    pub thread_id: String,
+    pub input: Vec<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_tier: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval_policy: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approvals_reviewer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox_policy: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_self_control_depth: Option<u8>,
+    #[serde(default, flatten, skip_serializing_if = "Map::is_empty")]
+    pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateAutomationToolParams {
+    pub name: String,
+    pub prompt: String,
+    pub target_thread_id: String,
+    pub schedule: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<Value>,
+    #[serde(default, flatten, skip_serializing_if = "Map::is_empty")]
+    pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAutomationToolParams {
+    #[serde(alias = "automation_id")]
+    pub automation_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_thread_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<Value>,
+    #[serde(default, flatten, skip_serializing_if = "Map::is_empty")]
+    pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationIdToolParams {
+    #[serde(alias = "automation_id")]
+    pub automation_id: String,
 }
 
 #[tool_router]
@@ -117,12 +270,12 @@ impl KodexControlMcp {
     )]
     async fn apply_project_preview_config(
         &self,
-        Parameters(params): Parameters<JsonToolParams>,
+        Parameters(params): Parameters<PreviewApplyToolParams>,
     ) -> Result<CallToolResult, McpError> {
         Ok(json_tool_result(
             self.post_json(
                 "/v1/self-control/project-previews/apply",
-                Value::Object(params.value),
+                serde_json::to_value(params).map_err(json_encode_error)?,
             )
             .await?,
         ))
@@ -131,33 +284,29 @@ impl KodexControlMcp {
     #[tool(description = "Create a project-scoped Kodex thread through self-control")]
     async fn create_thread(
         &self,
-        Parameters(params): Parameters<JsonToolParams>,
+        Parameters(params): Parameters<CreateThreadToolParams>,
     ) -> Result<CallToolResult, McpError> {
         Ok(json_tool_result(
-            self.post_json("/v1/self-control/threads", Value::Object(params.value))
-                .await?,
+            self.post_json(
+                "/v1/self-control/threads",
+                serde_json::to_value(params).map_err(json_encode_error)?,
+            )
+            .await?,
         ))
     }
 
     #[tool(description = "Send input to a Kodex thread through self-control queue routing")]
     async fn send_thread_input(
         &self,
-        Parameters(params): Parameters<JsonToolParams>,
+        Parameters(params): Parameters<SendThreadInputToolParams>,
     ) -> Result<CallToolResult, McpError> {
-        let mut params = params.value;
-        let thread_id = params
-            .remove("threadId")
-            .and_then(|value| value.as_str().map(str::to_string))
-            .ok_or_else(|| {
-                McpError::invalid_params(
-                    "threadId is required",
-                    Some(json!({ "field": "threadId" })),
-                )
-            })?;
+        let thread_id = params.thread_id.clone();
+        let mut body = json_object(params)?;
+        body.remove("threadId");
         Ok(json_tool_result(
             self.post_json(
                 &format!("/v1/self-control/threads/{thread_id}/input"),
-                Value::Object(params),
+                Value::Object(body),
             )
             .await?,
         ))
@@ -166,33 +315,29 @@ impl KodexControlMcp {
     #[tool(description = "Create a Kodex automation through self-control")]
     async fn create_automation(
         &self,
-        Parameters(params): Parameters<JsonToolParams>,
+        Parameters(params): Parameters<CreateAutomationToolParams>,
     ) -> Result<CallToolResult, McpError> {
         Ok(json_tool_result(
-            self.post_json("/v1/self-control/automations", Value::Object(params.value))
-                .await?,
+            self.post_json(
+                "/v1/self-control/automations",
+                serde_json::to_value(params).map_err(json_encode_error)?,
+            )
+            .await?,
         ))
     }
 
     #[tool(description = "Update a Kodex automation through self-control")]
     async fn update_automation(
         &self,
-        Parameters(params): Parameters<JsonToolParams>,
+        Parameters(params): Parameters<UpdateAutomationToolParams>,
     ) -> Result<CallToolResult, McpError> {
-        let mut params = params.value;
-        let automation_id = params
-            .remove("automationId")
-            .and_then(|value| value.as_str().map(str::to_string))
-            .ok_or_else(|| {
-                McpError::invalid_params(
-                    "automationId is required",
-                    Some(json!({ "field": "automationId" })),
-                )
-            })?;
+        let automation_id = params.automation_id.clone();
+        let mut body = json_object(params)?;
+        body.remove("automationId");
         Ok(json_tool_result(
             self.patch_json(
                 &format!("/v1/self-control/automations/{automation_id}"),
-                Value::Object(params),
+                Value::Object(body),
             )
             .await?,
         ))
@@ -201,9 +346,9 @@ impl KodexControlMcp {
     #[tool(description = "Pause a Kodex automation through self-control")]
     async fn pause_automation(
         &self,
-        Parameters(params): Parameters<JsonToolParams>,
+        Parameters(params): Parameters<AutomationIdToolParams>,
     ) -> Result<CallToolResult, McpError> {
-        let automation_id = required_id(params.value, "automationId")?;
+        let automation_id = params.automation_id;
         Ok(json_tool_result(
             self.post_json(
                 &format!("/v1/self-control/automations/{automation_id}/pause"),
@@ -216,9 +361,9 @@ impl KodexControlMcp {
     #[tool(description = "Resume a Kodex automation through self-control")]
     async fn resume_automation(
         &self,
-        Parameters(params): Parameters<JsonToolParams>,
+        Parameters(params): Parameters<AutomationIdToolParams>,
     ) -> Result<CallToolResult, McpError> {
-        let automation_id = required_id(params.value, "automationId")?;
+        let automation_id = params.automation_id;
         Ok(json_tool_result(
             self.post_json(
                 &format!("/v1/self-control/automations/{automation_id}/resume"),
@@ -361,16 +506,21 @@ fn is_loopback_host(host: &str) -> bool {
             .is_ok_and(|address| address.is_loopback())
 }
 
-fn required_id(mut params: Map<String, Value>, field: &str) -> Result<String, McpError> {
-    params
-        .remove(field)
-        .and_then(|value| value.as_str().map(str::to_string))
-        .ok_or_else(|| {
-            McpError::invalid_params(
-                format!("{field} is required"),
-                Some(json!({ "field": field })),
-            )
-        })
+fn json_object<T: Serialize>(value: T) -> Result<Map<String, Value>, McpError> {
+    match serde_json::to_value(value).map_err(json_encode_error)? {
+        Value::Object(object) => Ok(object),
+        _ => Err(McpError::internal_error(
+            "tool parameters did not encode to a JSON object",
+            None,
+        )),
+    }
+}
+
+fn json_encode_error(error: serde_json::Error) -> McpError {
+    McpError::internal_error(
+        "failed to encode tool parameters",
+        Some(json!({ "error": error.to_string() })),
+    )
 }
 
 fn json_tool_result(value: Value) -> CallToolResult {
@@ -381,7 +531,11 @@ fn json_tool_result(value: Value) -> CallToolResult {
 mod tests {
     use super::*;
     use crate::{
-        api::build_router, app_server::UnavailableAppServer, config::Config, store::Store,
+        api::build_router,
+        app_server::{tests::RecordingAppServer, UnavailableAppServer},
+        config::Config,
+        error::ApiError,
+        store::Store,
     };
     use serde_json::json;
     use std::sync::Arc;
@@ -431,6 +585,10 @@ mod tests {
 
         let tools = client.list_all_tools().await?;
         assert!(tools.iter().any(|tool| tool.name == "get_status"));
+        assert_tool_requires(&tools, "create_thread", &["projectId"]);
+        assert_tool_requires(&tools, "send_thread_input", &["threadId", "input"]);
+        assert_tool_requires(&tools, "pause_automation", &["automationId"]);
+        assert_tool_requires(&tools, "resume_automation", &["automationId"]);
         let status_resource = client
             .read_resource(ReadResourceRequestParams::new("kodex://status"))
             .await?;
@@ -465,5 +623,130 @@ mod tests {
         mcp_server.abort();
         server.abort();
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn mcp_thread_tools_create_and_start_new_unmaterialized_thread() -> anyhow::Result<()> {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let gateway_url = format!("http://{}", listener.local_addr()?);
+        let app_server = Arc::new(RecordingAppServer::default());
+        app_server
+            .ready
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"thread": test_mcp_thread("thread-1"), "cwd": "/workspace"}));
+        let state = crate::AppState::new(
+            Config::default(),
+            Store::in_memory().await?,
+            app_server.clone(),
+        );
+        let project = state
+            .store
+            .create_project("Kodex".to_string(), "/workspace".to_string())
+            .await?;
+        let router = build_router(state);
+        let server = tokio::spawn(async move { axum::serve(listener, router).await });
+        let service = KodexControlMcp::for_test(gateway_url);
+        let (server_transport, client_transport) = tokio::io::duplex(64 * 1024);
+        let mcp_server = tokio::spawn(async move {
+            let server = service.serve(server_transport).await?;
+            server.waiting().await?;
+            anyhow::Ok(())
+        });
+        let client = ().serve(client_transport).await?;
+
+        let mut create_args = JsonObject::new();
+        create_args.insert("projectId".to_string(), json!(project.id));
+        let created: Value = client
+            .call_tool(CallToolRequestParams::new("create_thread").with_arguments(create_args))
+            .await?
+            .into_typed()?;
+        assert_eq!(created["thread"]["id"], "thread-1");
+
+        app_server
+            .queued_errors
+            .lock()
+            .unwrap()
+            .push(ApiError::BadGateway(
+                "app-server error -32600: thread thread-1 is not materialized yet; includeTurns is unavailable before first user message".to_string(),
+            ));
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"turnId": "turn-started"}));
+        let mut input_args = JsonObject::new();
+        input_args.insert("threadId".to_string(), json!("thread-1"));
+        input_args.insert(
+            "input".to_string(),
+            json!([{"type": "text", "text": "start now"}]),
+        );
+        let started: Value = client
+            .call_tool(CallToolRequestParams::new("send_thread_input").with_arguments(input_args))
+            .await?
+            .into_typed()?;
+        assert_eq!(started["action"], "started");
+        assert!(started["queuedInput"].is_null());
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/start");
+        assert_eq!(requests[1].0, "thread/read");
+        assert_eq!(requests[2].0, "turn/start");
+        assert_eq!(requests[2].1["input"][0]["text"], "start now");
+
+        client.cancel().await?;
+        mcp_server.abort();
+        server.abort();
+        Ok(())
+    }
+
+    fn assert_tool_requires(tools: &[Tool], name: &str, required_fields: &[&str]) {
+        let tool = tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("missing tool {name}"));
+        let required = tool
+            .input_schema
+            .get("required")
+            .and_then(Value::as_array)
+            .unwrap_or_else(|| panic!("{name} tool schema missing required fields"));
+        for field in required_fields {
+            assert!(
+                required.iter().any(|value| value.as_str() == Some(field)),
+                "{name} tool schema should require {field}; schema: {:?}",
+                tool.input_schema
+            );
+        }
+        let properties = tool
+            .input_schema
+            .get("properties")
+            .and_then(Value::as_object)
+            .unwrap_or_else(|| panic!("{name} tool schema missing properties"));
+        for field in required_fields {
+            assert!(
+                properties.contains_key(*field),
+                "{name} tool schema should define {field}; schema: {:?}",
+                tool.input_schema
+            );
+        }
+    }
+
+    fn test_mcp_thread(id: &str) -> Value {
+        json!({
+            "id": id,
+            "cliVersion": "0.135.0",
+            "cwd": "/workspace",
+            "ephemeral": false,
+            "modelProvider": "openai",
+            "preview": "",
+            "source": "vscode",
+            "status": {"type": "idle"},
+            "turns": [],
+            "createdAt": 1_767_225_600_i64,
+            "updatedAt": 1_767_225_600_i64
+        })
     }
 }

@@ -48,7 +48,9 @@ pub async fn current_active_turn_id(
         .await
     {
         Ok(snapshot) => snapshot,
-        Err(error) if is_thread_not_materialized_before_first_user_message(&error) => {
+        Err(error)
+            if app_server_api::is_thread_not_materialized_before_first_user_message(&error) =>
+        {
             return Ok(None);
         }
         Err(error) => return Err(error),
@@ -112,7 +114,9 @@ pub async fn refreshed_active_turn_id(
         .await
     {
         Ok(snapshot) => snapshot,
-        Err(error) if is_thread_not_materialized_before_first_user_message(&error) => {
+        Err(error)
+            if app_server_api::is_thread_not_materialized_before_first_user_message(&error) =>
+        {
             return Ok(None);
         }
         Err(error) => return Err(error),
@@ -342,12 +346,4 @@ fn string_field(value: &serde_json::Value, key: &str) -> Option<String> {
         .and_then(serde_json::Value::as_str)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
-}
-
-fn is_thread_not_materialized_before_first_user_message(error: &ApiError) -> bool {
-    let ApiError::BadGateway(message) = error else {
-        return false;
-    };
-    let normalized = message.to_ascii_lowercase();
-    normalized.contains("not materialized yet") && normalized.contains("before first user message")
 }

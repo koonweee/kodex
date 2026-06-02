@@ -782,13 +782,25 @@ fn is_rollout_load_error(error: &ApiError) -> bool {
 }
 
 fn is_thread_history_not_materialized_error(error: &ApiError) -> bool {
-    let ApiError::BadGateway(message) = error else {
+    let Some(normalized) = normalized_bad_gateway_message(error) else {
         return false;
     };
-    let normalized = message.to_ascii_lowercase();
-    normalized.contains("not materialized yet")
+    is_thread_not_materialized_before_first_user_message(error)
         && normalized.contains("thread/turns/list")
-        && normalized.contains("before first user message")
+}
+
+pub(crate) fn is_thread_not_materialized_before_first_user_message(error: &ApiError) -> bool {
+    let Some(normalized) = normalized_bad_gateway_message(error) else {
+        return false;
+    };
+    normalized.contains("not materialized yet") && normalized.contains("before first user message")
+}
+
+fn normalized_bad_gateway_message(error: &ApiError) -> Option<String> {
+    let ApiError::BadGateway(message) = error else {
+        return None;
+    };
+    Some(message.to_ascii_lowercase())
 }
 
 pub fn client(app_server: &DynAppServer) -> CodexClient {

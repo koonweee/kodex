@@ -1233,9 +1233,18 @@ async fn should_queue_self_control_input(state: &AppState, thread_id: &str) -> A
         Some(ThreadLiveState::Idle) => return Ok(false),
         Some(ThreadLiveState::NotLoaded) | None => {}
     }
-    let snapshot = app_server_api::client(&state.app_server)
+    let snapshot = match app_server_api::client(&state.app_server)
         .thread_read(thread_id.to_string())
-        .await?;
+        .await
+    {
+        Ok(snapshot) => snapshot,
+        Err(error)
+            if app_server_api::is_thread_not_materialized_before_first_user_message(&error) =>
+        {
+            return Ok(false);
+        }
+        Err(error) => return Err(error),
+    };
     let revision = state.store.latest_event_seq().await?;
     let timeline = state
         .thread_views
