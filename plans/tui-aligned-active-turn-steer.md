@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+Complete as of implementation review loop.
 
 ## Context
 
@@ -271,17 +271,23 @@ Plan-time verification performed:
   - `apps/web/src/test/mvpAppHarness.tsx`
 - Checked the current upstream app-server README and TUI `thread_routing.rs` on GitHub for the active-turn steer sequencing reference.
 
-Implementation verification to run:
+Implementation verification performed:
 
 - `cargo fmt --check`
 - `cargo test -p kodex-gateway routes::tests::thread_input_ --lib`
 - `cargo test -p kodex-gateway routes::tests::queued_ --lib`
-- `cargo test -p kodex-gateway routes::tests::self_control --lib` or the nearest matching focused route tests
-- `cargo test`
+- `cargo test -p kodex-gateway routes::tests::self_control --lib`
+- `cargo test` (rerun outside the sandbox after the sandboxed run hit `Operation not permitted` in an MCP stdio test)
 - `cd apps/web && npm test -- src/App.mvp.composer-input.test.tsx`
 - `cd apps/web && npm test`
 - `cd apps/web && npm run build`
-- `$agent-browser` validation for the browser-observable flows in Milestone 6.
+- Independent review subagent pass found no major routing correctness issues.
+
+Additional validation notes:
+
+- The backend route tests cover the two-client state ownership contract at the gateway boundary: stale active state is resolved by the gateway/app-server, direct steers do not emit durable queue rows, and non-steerable steers persist a `rejectedSteer` queue row visible through both queue listing and replayed `turn_queue.item_upsert`.
+- Browser routing remains thin: the frontend still calls only the gateway-owned `/input` command for normal submits and only renders a queue card when the gateway response contains `queuedInput`.
+- `$agent-browser` manual validation was not run in this pass because active regular-turn and non-steerable app-server states are covered by deterministic gateway/frontend tests rather than a local live app-server fixture.
 
 ## Risks And Open Questions
 

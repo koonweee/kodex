@@ -253,6 +253,28 @@ pub async fn create_queued_input_with_source(
     Ok(queued_input)
 }
 
+pub async fn create_rejected_steer_input_with_source(
+    state: &AppState,
+    thread_id: &str,
+    input: Vec<UserInput>,
+    options: TurnStartOptions,
+    error: String,
+    source_type: Option<&str>,
+    source_id: Option<&str>,
+) -> ApiResult<QueuedInput> {
+    let queued_input = state
+        .store
+        .create_queued_input_with_source(thread_id, input, options, source_type, source_id)
+        .await?;
+    let queued_input = state
+        .store
+        .mark_queued_input_rejected_steer(thread_id, &queued_input.id, error)
+        .await?;
+    broadcast_queue_upsert(state, &queued_input).await?;
+    trigger_queue_drain(state.clone(), thread_id.to_string());
+    Ok(queued_input)
+}
+
 pub fn trigger_queue_drain(state: AppState, thread_id: String) {
     tokio::spawn(async move {
         if let Err(error) = drain_one_queued_input(&state, &thread_id).await {

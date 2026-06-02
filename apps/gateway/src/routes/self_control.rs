@@ -755,7 +755,7 @@ pub enum SelfControlThreadInputAction {
     post,
     path = "/v1/self-control/threads/{threadId}/input",
     summary = "Send input to a Kodex thread through self-control",
-    description = "Agent-facing guarded thread input endpoint. It uses composer-equivalent gateway routing: idle threads start a turn and active threads receive source-labeled queued input.",
+    description = "Agent-facing guarded thread input endpoint. Idle threads start a turn; active threads receive source-labeled queued input instead of steering the live user turn.",
     request_body = SelfControlThreadInputRequest,
     responses((status = 200, body = SelfControlThreadInputResponse))
 )]

@@ -939,7 +939,7 @@ export interface paths {
         put?: never;
         /**
          * Send input to a Kodex thread through self-control
-         * @description Agent-facing guarded thread input endpoint. It uses composer-equivalent gateway routing: idle threads start a turn and active threads receive source-labeled queued input.
+         * @description Agent-facing guarded thread input endpoint. Idle threads start a turn; active threads receive source-labeled queued input instead of steering the live user turn.
          */
         post: operations["send_self_control_thread_input"];
         delete?: never;

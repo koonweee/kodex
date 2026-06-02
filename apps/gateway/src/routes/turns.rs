@@ -107,24 +107,50 @@ pub async fn submit_thread_input(
     let options = request.options;
 
     let submit_guard = state.thread_input_locks.lock(&thread_id).await;
-    if turn_lifecycle::routed_active_turn_id(&state, &thread_id)
-        .await?
-        .is_some()
-    {
-        let queued_input = queue::create_queued_input_with_source(
+    match turn_lifecycle::route_for_thread_input(&state, &thread_id).await? {
+        turn_lifecycle::ThreadInputRoute::QueueBehindGatewayWork => {
+            let queued_input = queue::create_queued_input_with_source(
+                &state,
+                &thread_id,
+                resolved.input,
+                options,
+                None,
+                None,
+            )
+            .await?;
+            return Ok(Json(ThreadInputResponse {
+                disposition: ThreadInputDisposition::Queued,
+                queued_input: Some(queued_input),
+                raw_payload: None,
+            }));
+        }
+        turn_lifecycle::ThreadInputRoute::Active { turn_id } => match submit_thread_input_as_steer(
             &state,
             &thread_id,
-            resolved.input,
-            options,
-            None,
-            None,
+            &turn_id,
+            &resolved.input,
+            &resolved.skills,
         )
-        .await?;
-        return Ok(Json(ThreadInputResponse {
-            disposition: ThreadInputDisposition::Queued,
-            queued_input: Some(queued_input),
-            raw_payload: None,
-        }));
+        .await
+        {
+            Ok(Some(response)) => return Ok(response),
+            Ok(None) => {}
+            Err(error) if turn_lifecycle::is_expected_turn_mismatch_error(&error) => {
+                return Err(error);
+            }
+            Err(error) if turn_lifecycle::is_non_steerable_error(&error) => {
+                return queue_rejected_steer_input(
+                    &state,
+                    &thread_id,
+                    resolved.input,
+                    options,
+                    error,
+                )
+                .await;
+            }
+            Err(error) => return Err(error),
+        },
+        turn_lifecycle::ThreadInputRoute::Idle => {}
     }
 
     let pending_skill_mentions_id = turn_lifecycle::insert_pending_skill_mentions(
@@ -177,6 +203,127 @@ pub async fn submit_thread_input(
     }))
 }
 
+async fn submit_thread_input_as_steer(
+    state: &AppState,
+    thread_id: &str,
+    expected_turn_id: &str,
+    input: &[UserInput],
+    skills: &[app_server_api::SkillMetadata],
+) -> ApiResult<Option<Json<ThreadInputResponse>>> {
+    let pending_skill_mentions_id =
+        turn_lifecycle::insert_pending_skill_mentions(state, thread_id, input, skills).await?;
+    match steer_thread_input_with_one_retry(state, thread_id, expected_turn_id, input).await {
+        Ok((response, accepted_turn_id)) => {
+            let projection_turn_id = turn_lifecycle::pending_projection_turn_id(&response.payload)
+                .unwrap_or(accepted_turn_id);
+            turn_lifecycle::record_pending_user_projection(
+                state,
+                thread_id,
+                &projection_turn_id,
+                input,
+            )
+            .await?;
+            return Ok(Some(Json(ThreadInputResponse {
+                disposition: ThreadInputDisposition::Steered,
+                queued_input: None,
+                raw_payload: Some(response.payload),
+            })));
+        }
+        Err(error) if turn_lifecycle::is_no_active_turn_error(&error) => {
+            turn_lifecycle::delete_pending_skill_mentions(
+                state,
+                pending_skill_mentions_id.as_deref(),
+            )
+            .await?;
+            turn_lifecycle::record_idle_after_missing_active_turn(state, thread_id).await?;
+            Ok(None)
+        }
+        Err(error) if turn_lifecycle::is_expected_turn_mismatch_error(&error) => {
+            turn_lifecycle::delete_pending_skill_mentions(
+                state,
+                pending_skill_mentions_id.as_deref(),
+            )
+            .await?;
+            Err(error)
+        }
+        Err(error) if turn_lifecycle::is_non_steerable_error(&error) => {
+            turn_lifecycle::delete_pending_skill_mentions(
+                state,
+                pending_skill_mentions_id.as_deref(),
+            )
+            .await?;
+            Err(error)
+        }
+        Err(error) => {
+            turn_lifecycle::delete_pending_skill_mentions(
+                state,
+                pending_skill_mentions_id.as_deref(),
+            )
+            .await?;
+            Err(error)
+        }
+    }
+}
+
+async fn steer_thread_input_with_one_retry(
+    state: &AppState,
+    thread_id: &str,
+    expected_turn_id: &str,
+    input: &[UserInput],
+) -> ApiResult<(RawAppServerResponse, String)> {
+    let client = app_server_api::client(&state.app_server);
+    match client
+        .turn_steer(
+            thread_id.to_string(),
+            expected_turn_id.to_string(),
+            input.to_vec(),
+        )
+        .await
+    {
+        Ok(response) => Ok((response, expected_turn_id.to_string())),
+        Err(error) if turn_lifecycle::is_no_active_turn_error(&error) => Err(error),
+        Err(error) => {
+            let Some(actual_turn_id) =
+                turn_lifecycle::expected_turn_mismatch_actual_turn_id(&error)
+            else {
+                return Err(error);
+            };
+            turn_lifecycle::record_turn_started(state, thread_id, Some(&actual_turn_id)).await?;
+            client
+                .turn_steer(
+                    thread_id.to_string(),
+                    actual_turn_id.clone(),
+                    input.to_vec(),
+                )
+                .await
+                .map(|response| (response, actual_turn_id))
+        }
+    }
+}
+
+async fn queue_rejected_steer_input(
+    state: &AppState,
+    thread_id: &str,
+    input: Vec<UserInput>,
+    options: TurnStartOptions,
+    error: ApiError,
+) -> ApiResult<Json<ThreadInputResponse>> {
+    let queued_input = queue::create_rejected_steer_input_with_source(
+        state,
+        thread_id,
+        input,
+        options,
+        error.to_string(),
+        None,
+        None,
+    )
+    .await?;
+    Ok(Json(ThreadInputResponse {
+        disposition: ThreadInputDisposition::Queued,
+        queued_input: Some(queued_input),
+        raw_payload: None,
+    }))
+}
 #[utoipa::path(
     post,
     path = "/v1/threads/{threadId}/compact",

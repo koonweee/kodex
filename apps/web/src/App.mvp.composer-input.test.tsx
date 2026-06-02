@@ -44,6 +44,26 @@ function deferred<T>() {
   return { promise, reject, resolve };
 }
 
+async function queuedThreadInputResponse(request: Request, queueId: string, threadId = "thread-1") {
+  const body = (await request.json()) as { input?: Array<{ type: string; text?: string }> };
+  return {
+    disposition: "queued",
+    queuedInput: {
+      id: queueId,
+      threadId,
+      input: body.input ?? [],
+      options: {},
+      status: "queued",
+      priority: "normal",
+      attemptCount: 0,
+      lastError: null,
+      createdAt: "2026-05-05T00:00:00Z",
+      updatedAt: "2026-05-05T00:00:00Z",
+    },
+    rawPayload: null,
+  };
+}
+
 describe("MVP composer input flows", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -428,7 +448,7 @@ describe("MVP composer input flows", () => {
     turnStart.resolve({ payload: {} });
   });
 
-  it("queues active-turn composer messages through the gateway queue", async () => {
+  it("steers active-turn composer messages through gateway input", async () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [activeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
@@ -438,17 +458,16 @@ describe("MVP composer input flows", () => {
     render(<App />);
 
     expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Queued follow-up");
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Steered follow-up");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
-    expect(screen.getByLabelText(/queued steer messages/i)).toBeInTheDocument();
-    expect(screen.getByText("Queued follow-up")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/queued steer messages/i)).not.toBeInTheDocument();
     expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs")).toHaveLength(0);
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
     await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toMatchObject({
-      input: [{ type: "text", text: "Queued follow-up" }],
+      input: [{ type: "text", text: "Steered follow-up" }],
     });
   });
 
@@ -665,6 +684,7 @@ describe("MVP composer input flows", () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [activeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "POST /v1/threads/thread-1/input": (request: Request) => queuedThreadInputResponse(request, "queue-1"),
       }),
     );
 
@@ -1480,12 +1500,17 @@ describe("MVP composer input flows", () => {
 
   it("queues active-turn composer text, steers selected rows, and removes only successful rows", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
+    let queuedInputIndex = 0;
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [activeThread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         "GET /v1/events": (request: Request) => {
           const url = new URL(request.url);
           return url.searchParams.get("threadId") === "thread-2" ? { events: [] } : baseRoutes()["GET /v1/events"];
+        },
+        "POST /v1/threads/thread-1/input": (request: Request) => {
+          queuedInputIndex += 1;
+          return queuedThreadInputResponse(request, `queue-${queuedInputIndex}`);
         },
       }),
     );

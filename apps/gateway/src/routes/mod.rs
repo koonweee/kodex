@@ -104,6 +104,7 @@ mod tests {
         let app = build_router(state.clone());
 
         let response = app
+            .clone()
             .oneshot(
                 Request::get("/healthz")
                     .header("origin", "https://example.test")
@@ -2790,6 +2791,7 @@ mod tests {
         let requests = app_server.requests.lock().unwrap();
         assert!(requests.iter().any(|(method, _)| method == "thread/start"));
         assert!(requests.iter().any(|(method, _)| method == "turn/start"));
+        assert!(requests.iter().all(|(method, _)| method != "turn/steer"));
     }
 
     #[tokio::test]
@@ -5370,6 +5372,7 @@ mod tests {
         let app = build_router(state.clone());
 
         let response = app
+            .clone()
             .oneshot(
                 Request::post("/v1/threads/thread-1/input")
                     .header("content-type", "application/json")
@@ -7121,17 +7124,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn queued_thread_input_does_not_generate_thread_name() {
+    async fn active_steered_thread_input_does_not_generate_thread_name() {
         let (state, app_server) = test_state().await;
         let title_generator = Arc::new(RecordingTitleGenerator::new(Some("Should Not Run")));
         let state = state.with_title_generation_service(TitleGenerationService::with_generator(
             title_generator.clone(),
         ));
-        app_server
-            .queued_responses
-            .lock()
-            .unwrap()
-            .push(active_thread_read_response("thread-1", "turn-active"));
+        app_server.queued_responses.lock().unwrap().extend([
+            active_thread_read_response("thread-1", "turn-active"),
+            json!({"turnId": "turn-active"}),
+        ]);
         let app = build_router(state);
 
         let response = app
@@ -7147,7 +7149,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(response_json(response).await["disposition"], "queued");
+        assert_eq!(response_json(response).await["disposition"], "steered");
         assert_eq!(title_generator.requests.lock().unwrap().len(), 0);
         let requests = app_server.requests.lock().unwrap();
         assert!(requests
@@ -7316,6 +7318,7 @@ mod tests {
         let app = build_router(state.clone());
 
         let response = app
+            .clone()
             .oneshot(
                 Request::post("/v1/threads/thread-1/input")
                     .header("content-type", "application/json")
@@ -8527,22 +8530,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thread_input_queues_when_app_server_has_active_turn() {
+    async fn thread_input_steers_when_app_server_has_active_turn() {
         let (state, app_server) = test_state().await;
-        app_server
-            .queued_responses
-            .lock()
-            .unwrap()
-            .push(active_thread_read_response("thread-1", "turn-active"));
+        app_server.queued_responses.lock().unwrap().extend([
+            active_thread_read_response("thread-1", "turn-active"),
+            json!({"turnId": "turn-active"}),
+        ]);
         let app = build_router(state.clone());
-        let mut receiver = state.events.subscribe();
 
         let response = app
-            .clone()
             .oneshot(
                 Request::post("/v1/threads/thread-1/input")
                     .header("content-type", "application/json")
-                    .body(Body::from(r#"{"input":[{"type":"text","text":"queue"}]}"#))
+                    .body(Body::from(r#"{"input":[{"type":"text","text":"steer"}]}"#))
                     .unwrap(),
             )
             .await
@@ -8550,67 +8550,35 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["disposition"], "queued");
-        assert_eq!(body["queuedInput"]["input"][0]["text"], "queue");
-        let queue_id = body["queuedInput"]["id"].as_str().unwrap().to_string();
-        {
-            let requests = app_server.requests.lock().unwrap();
-            assert_eq!(requests[0].0, "thread/read");
-            assert!(requests.iter().all(|(method, _)| method != "turn/steer"));
-            assert!(requests.iter().all(|(method, _)| method != "turn/start"));
-        }
+        assert_eq!(body["disposition"], "steered");
+        assert!(body["queuedInput"].is_null());
+        assert_eq!(body["rawPayload"]["turnId"], "turn-active");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[1].0, "turn/steer");
+        assert_eq!(requests[1].1["expectedTurnId"], "turn-active");
+        assert_eq!(requests[1].1["input"][0]["text"], "steer");
+        assert!(requests.iter().all(|(method, _)| method != "turn/start"));
         let queued = state.store.list_queued_inputs("thread-1").await.unwrap();
-        assert_eq!(queued.len(), 1);
-        assert!(matches!(
-            &queued[0].input[0],
-            crate::app_server_api::UserInput::Text { text, .. } if text == "queue"
-        ));
-
-        timeout(Duration::from_secs(2), async {
-            loop {
-                let event = receiver.recv().await.unwrap();
-                if event.kind == queue::QUEUE_UPSERT_EVENT && event.payload["id"] == queue_id {
-                    break;
-                }
-            }
-        })
-        .await
-        .unwrap();
-
-        let listed = app
-            .clone()
-            .oneshot(
-                Request::get("/v1/threads/thread-1/queued-inputs")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+        assert!(queued.is_empty());
+        let events = state
+            .store
+            .replay_events(None, None, Some("thread-1".to_string()))
             .await
             .unwrap();
-        let listed = response_json(listed).await;
-        assert_eq!(listed["queuedInputs"][0]["id"], queue_id);
-
-        let replayed = app
-            .oneshot(
-                Request::get("/v1/events?threadId=thread-1")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let replayed = response_json(replayed).await;
-        assert!(replayed["events"].as_array().unwrap().iter().any(|event| {
-            event["kind"] == queue::QUEUE_UPSERT_EVENT && event["payload"]["id"] == queue_id
-        }));
+        assert!(events
+            .iter()
+            .all(|event| event.kind != queue::QUEUE_UPSERT_EVENT));
     }
 
     #[tokio::test]
-    async fn thread_input_queues_when_gateway_session_has_active_turn() {
+    async fn thread_input_steers_when_gateway_session_has_active_turn() {
         let (state, app_server) = test_state().await;
         app_server
             .queued_responses
             .lock()
             .unwrap()
-            .push(active_thread_read_response("thread-1", "turn-active"));
+            .push(json!({"turnId": "turn-active"}));
         thread_view::record_item_delta(
             &state.thread_views,
             "thread-1",
@@ -8624,10 +8592,11 @@ mod tests {
         let app = build_router(state.clone());
 
         let response = app
+            .clone()
             .oneshot(
                 Request::post("/v1/threads/thread-1/input")
                     .header("content-type", "application/json")
-                    .body(Body::from(r#"{"input":[{"type":"text","text":"queue"}]}"#))
+                    .body(Body::from(r#"{"input":[{"type":"text","text":"steer"}]}"#))
                     .unwrap(),
             )
             .await
@@ -8635,22 +8604,26 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["disposition"], "queued");
-        assert_eq!(body["queuedInput"]["input"][0]["text"], "queue");
+        assert_eq!(body["disposition"], "steered");
+        assert!(body["queuedInput"].is_null());
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[0].0, "thread/read");
-        assert!(requests.iter().all(|(method, _)| method != "turn/steer"));
+        assert_eq!(requests[0].0, "turn/steer");
+        assert_eq!(requests[0].1["expectedTurnId"], "turn-active");
         assert!(requests.iter().all(|(method, _)| method != "turn/start"));
         let queued = state.store.list_queued_inputs("thread-1").await.unwrap();
-        assert_eq!(queued.len(), 1);
-        assert!(matches!(
-            &queued[0].input[0],
-            crate::app_server_api::UserInput::Text { text, .. } if text == "queue"
-        ));
+        assert!(queued.is_empty());
+        let events = state
+            .store
+            .replay_events(None, None, Some("thread-1".to_string()))
+            .await
+            .unwrap();
+        assert!(events
+            .iter()
+            .all(|event| event.kind != queue::QUEUE_UPSERT_EVENT));
     }
 
     #[tokio::test]
-    async fn thread_input_readbacks_active_runtime_state_before_routing() {
+    async fn thread_input_clears_stale_active_runtime_state_and_starts() {
         let (state, app_server) = test_state().await;
         state
             .store
@@ -8663,10 +8636,18 @@ mod tests {
             })
             .await
             .unwrap();
-        app_server.queued_responses.lock().unwrap().extend([
-            json!({"thread": thread_summary("thread-1"), "turns": []}),
-            json!({"turnId": "turn-started"}),
-        ]);
+        app_server
+            .queued_errors
+            .lock()
+            .unwrap()
+            .push(ApiError::BadGateway(
+                "app-server error -32602: no active turn".to_string(),
+            ));
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"turnId": "turn-started"}));
         let app = build_router(state.clone());
 
         let response = app
@@ -8683,12 +8664,13 @@ mod tests {
         let body = response_json(response).await;
         assert_eq!(body["disposition"], "started");
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[0].0, "turn/steer");
+        assert_eq!(requests[0].1["expectedTurnId"], "turn-active");
         assert_eq!(requests[1].0, "turn/start");
     }
 
     #[tokio::test]
-    async fn thread_input_queues_resolved_skill_input_when_active() {
+    async fn thread_input_steers_resolved_skill_input_when_active() {
         let (state, app_server) = test_state().await;
         app_server.queued_responses.lock().unwrap().extend([
             json!({"thread": thread_summary("thread-1")}),
@@ -8698,6 +8680,7 @@ mod tests {
                 "/skills/review-fix/SKILL.md",
             ),
             active_thread_read_response("thread-1", "turn-active"),
+            json!({"turnId": "turn-active"}),
         ]);
         let app = build_router(state.clone());
 
@@ -8715,30 +8698,39 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["disposition"], "queued");
-        assert_eq!(
-            body["queuedInput"]["input"],
-            json!([
-                {"type": "text", "text": "Run selected skill"},
-                {"type": "skill", "name": "canonical-review", "path": "/skills/review-fix/SKILL.md"}
-            ])
-        );
+        assert_eq!(body["disposition"], "steered");
+        assert!(body["queuedInput"].is_null());
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "thread/read");
         assert_eq!(requests[0].1["includeTurns"], false);
         assert_eq!(requests[1].0, "skills/list");
         assert_eq!(requests[2].0, "thread/read");
-        assert!(requests.iter().all(|(method, _)| method != "turn/steer"));
+        assert_eq!(requests[3].0, "turn/steer");
+        assert_eq!(
+            requests[3].1["input"],
+            json!([
+                {"type": "text", "text": "Run selected skill"},
+                {"type": "skill", "name": "canonical-review", "path": "/skills/review-fix/SKILL.md"}
+            ])
+        );
         assert!(requests.iter().all(|(method, _)| method != "turn/start"));
     }
 
     #[tokio::test]
     async fn thread_input_clears_stale_active_turn_and_starts() {
         let (state, app_server) = test_state().await;
-        app_server.queued_responses.lock().unwrap().extend([
-            json!({"thread": thread_summary("thread-1")}),
-            json!({"turnId": "turn-started"}),
-        ]);
+        app_server
+            .queued_errors
+            .lock()
+            .unwrap()
+            .push(ApiError::BadGateway(
+                "app-server error -32602: no active turn".to_string(),
+            ));
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"turnId": "turn-started"}));
         thread_view::record_item_delta(
             &state.thread_views,
             "thread-1",
@@ -8767,9 +8759,187 @@ mod tests {
         let body = response_json(response).await;
         assert_eq!(body["disposition"], "started");
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[0].0, "turn/steer");
+        assert_eq!(requests[0].1["expectedTurnId"], "turn-stale");
         assert_eq!(requests[1].0, "turn/start");
-        assert!(requests.iter().all(|(method, _)| method != "turn/steer"));
+    }
+
+    #[tokio::test]
+    async fn thread_input_retries_expected_turn_mismatch_once() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "active".to_string(),
+                active_turn_id: Some("turn-stale".to_string()),
+                updated_at: chrono::Utc::now(),
+                last_event_seq: Some(10),
+            })
+            .await
+            .unwrap();
+        app_server
+            .queued_errors
+            .lock()
+            .unwrap()
+            .push(ApiError::BadGateway(
+                r#"app-server error -32602: expectedTurnId mismatch; data: {"actualTurnId":"turn-active"}"#
+                    .to_string(),
+            ));
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"turnId": "turn-active"}));
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"retry steer"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "steered");
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "turn/steer");
+        assert_eq!(requests[0].1["expectedTurnId"], "turn-stale");
+        assert_eq!(requests[1].0, "turn/steer");
+        assert_eq!(requests[1].1["expectedTurnId"], "turn-active");
+    }
+
+    #[tokio::test]
+    async fn thread_input_surfaces_second_expected_turn_mismatch() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "active".to_string(),
+                active_turn_id: Some("turn-stale".to_string()),
+                updated_at: chrono::Utc::now(),
+                last_event_seq: Some(10),
+            })
+            .await
+            .unwrap();
+        app_server.queued_errors.lock().unwrap().extend([
+            ApiError::BadGateway(
+                r#"app-server error -32602: expectedTurnId mismatch; data: {"actualTurnId":"turn-active"}"#
+                    .to_string(),
+            ),
+            ApiError::BadGateway(
+                r#"app-server error -32602: expectedTurnId mismatch; data: {"actualTurnId":"turn-newer"}"#
+                    .to_string(),
+            ),
+        ]);
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"retry steer"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|(method, _)| method == "turn/steer")
+                .count(),
+            2
+        );
+        assert!(state
+            .store
+            .list_queued_inputs("thread-1")
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn thread_input_queues_rejected_steer_when_active_turn_is_non_steerable() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_thread_runtime_state(ThreadRuntimeState {
+                thread_id: "thread-1".to_string(),
+                status: "active".to_string(),
+                active_turn_id: Some("turn-active".to_string()),
+                updated_at: chrono::Utc::now(),
+                last_event_seq: Some(10),
+            })
+            .await
+            .unwrap();
+        app_server
+            .queued_errors
+            .lock()
+            .unwrap()
+            .push(ApiError::BadGateway(
+                "app-server error -32602: ActiveTurnNotSteerable".to_string(),
+            ));
+        let app = build_router(state.clone());
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads/thread-1/input")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"input":[{"type":"text","text":"queue rejected"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["disposition"], "queued");
+        assert_eq!(body["queuedInput"]["priority"], "rejectedSteer");
+        assert_eq!(body["queuedInput"]["status"], "queued");
+        assert_eq!(body["queuedInput"]["input"][0]["text"], "queue rejected");
+        let queue_id = body["queuedInput"]["id"].as_str().unwrap().to_string();
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "turn/steer");
+        assert!(requests.iter().all(|(method, _)| method != "turn/start"));
+
+        let listed = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1/queued-inputs")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(listed.status(), StatusCode::OK);
+        let listed = response_json(listed).await;
+        assert_eq!(listed["queuedInputs"][0]["id"], queue_id);
+        assert_eq!(listed["queuedInputs"][0]["priority"], "rejectedSteer");
+
+        let replayed = state
+            .store
+            .replay_events(None, None, Some("thread-1".to_string()))
+            .await
+            .unwrap();
+        assert!(replayed.iter().any(|event| {
+            event.kind == queue::QUEUE_UPSERT_EVENT
+                && event.payload["id"] == queue_id
+                && event.payload["priority"] == "rejectedSteer"
+        }));
     }
 
     #[tokio::test]
