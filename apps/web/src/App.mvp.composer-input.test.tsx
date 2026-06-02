@@ -448,7 +448,7 @@ describe("MVP composer input flows", () => {
     turnStart.resolve({ payload: {} });
   });
 
-  it("steers active-turn composer messages through gateway input", async () => {
+  it("queues active-turn composer messages through the gateway queue", async () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [activeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
@@ -461,12 +461,12 @@ describe("MVP composer input flows", () => {
     await userEvent.type(screen.getByLabelText(/message composer/i), "Steered follow-up");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
-    expect(screen.queryByLabelText(/queued steer messages/i)).not.toBeInTheDocument();
-    expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs")).toHaveLength(0);
     await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs")).toHaveLength(1);
     });
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toMatchObject({
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(0);
+    expect(screen.getByRole("region", { name: /queued steer messages/i })).toHaveTextContent("Steered follow-up");
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs")[0])).resolves.toMatchObject({
       input: [{ type: "text", text: "Steered follow-up" }],
     });
   });
@@ -698,7 +698,8 @@ describe("MVP composer input flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs/queue-1/steer")).toHaveLength(1);
     });
-    expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/queued-inputs")).toHaveLength(1);
     await waitFor(() => {
       expect(screen.getByRole("region", { name: /queued steer messages/i })).toHaveTextContent("Steering...");
     });

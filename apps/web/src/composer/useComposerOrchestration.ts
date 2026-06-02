@@ -12,6 +12,7 @@ import { useMutation } from "@tanstack/react-query";
 
 import {
   compactThread,
+  createQueuedInput,
   deleteQueuedInput,
   interruptCurrentTurn,
   retryQueuedInput,
@@ -208,9 +209,19 @@ export function useComposerOrchestration({
     setIsComposerSubmitting(true);
     try {
       if (selectedThreadId) {
+        draftControls.clearText();
+        const input = await buildTurnInput(text, attachments, skillInputs, skillTextElements);
+        const options = selectedThreadComposerOverride ? composerTurnOptions(selectedThreadComposerOverride) : {};
+        if (activeSelectedTurnId) {
+          const queuedInput = await createQueuedInput(selectedThreadId, input, options);
+          onQueuedInputUpsert(queuedInput);
+          clearPendingAttachments();
+          setIsComposerSubmitting(false);
+          return;
+        }
+
         startedThreadId = selectedThreadId;
         onThreadTurnStarted(selectedThreadId);
-        draftControls.clearText();
         if (text && attachments.length === 0) {
           optimisticClientRequestId = onOptimisticUserMessageStarted?.({
             skillMentions,
@@ -218,12 +229,7 @@ export function useComposerOrchestration({
             threadId: selectedThreadId,
           }) ?? null;
         }
-        const input = await buildTurnInput(text, attachments, skillInputs, skillTextElements);
-        const response = await submitThreadInput(
-          selectedThreadId,
-          input,
-          selectedThreadComposerOverride ? composerTurnOptions(selectedThreadComposerOverride) : {},
-        );
+        const response = await submitThreadInput(selectedThreadId, input, options);
         if (response.queuedInput) {
           if (optimisticClientRequestId) {
             onOptimisticUserMessageRemoved?.(optimisticClientRequestId);
