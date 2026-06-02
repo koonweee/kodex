@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { EventEnvelope, ThreadViewResponse } from "../api/client";
-import { applyLiveTimelineUpdate, applyTimelineHistoryWindow, applyTimelineSnapshot, createTimelineState } from "./reducer";
+import { applyLiveTimelineUpdate, applyTimelineHistoryWindow, applyTimelineSnapshot, canApplyThreadViewItemDelta, createTimelineState } from "./reducer";
 
 describe("timeline canonical snapshots and patches", () => {
   it("renders canonical snapshot items in gateway display order", () => {
@@ -457,6 +457,255 @@ describe("timeline canonical snapshots and patches", () => {
     expect(state.items.map((item) => item.id)).toEqual(["projection-turn-1-user-1"]);
   });
 
+  it("applies row-delta patches by stable row id while preserving omitted same-turn rows", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot({
+      viewRevision: 1,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      items: [
+        timelineItem({
+          id: "projection-turn-1-user-1",
+          itemId: "user-1",
+          itemType: "userMessage",
+          text: "Question",
+          displayOrder: 1,
+        }),
+        timelineItem({
+          id: "projection-turn-1-agent-1",
+          itemId: "agent-1",
+          text: "Draft",
+          displayOrder: 2,
+          status: "running",
+        }),
+      ],
+    }));
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
+      scope: "row_delta",
+      viewRevision: 2,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      affectedTurnIds: ["turn-1"],
+      rows: [
+        canonicalRow(timelineItem({
+          id: "projection-turn-1-agent-1",
+          itemId: "agent-1",
+          text: "Draft plus work",
+          displayOrder: 2,
+          status: "running",
+        })),
+      ],
+    }));
+
+    expect(state.items.map((item) => item.text)).toEqual(["Question", "Draft plus work"]);
+    expect(state.rows.map((row) => row.key)).toEqual([
+      "row-projection-turn-1-user-1",
+      "row-projection-turn-1-agent-1",
+    ]);
+    expect(state.viewRevision).toBe(2);
+  });
+
+  it("ignores row-delta patches when the affected turn base is missing", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot({
+      viewRevision: 1,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      items: [timelineItem({ text: "Existing", status: "running" })],
+    }));
+
+    const orphanRowDelta = projectionPatchEvent({
+      scope: "row_delta",
+      viewRevision: 2,
+      activeTurnId: "turn-2",
+      liveState: "streaming",
+      affectedTurnIds: ["turn-2"],
+      rows: [
+        canonicalRow(timelineItem({
+          id: "projection-turn-2-agent-2",
+          turnId: "turn-2",
+          itemId: "agent-2",
+          text: "Orphan delta",
+          displayOrder: 2,
+          status: "running",
+        })),
+      ],
+    });
+
+    expect(canApplyThreadViewItemDelta(state, orphanRowDelta)).toBe(false);
+    state = applyLiveTimelineUpdate(state, orphanRowDelta);
+
+    expect(state.items.map((item) => item.text)).toEqual(["Existing"]);
+    expect(state.viewRevision).toBe(1);
+    expect(state.lastSeq).toBe(2);
+  });
+
+  it("ignores row-delta patches unless every affected turn has a compatible base", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot({
+      viewRevision: 1,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      items: [timelineItem({ text: "Existing", status: "running" })],
+    }));
+
+    const mixedBaseRowDelta = projectionPatchEvent({
+      scope: "row_delta",
+      viewRevision: 2,
+      activeTurnId: "turn-2",
+      liveState: "streaming",
+      affectedTurnIds: ["turn-1", "turn-2"],
+      rows: [
+        canonicalRow(timelineItem({
+          id: "projection-turn-1-agent-1",
+          turnId: "turn-1",
+          itemId: "agent-1",
+          text: "Existing updated",
+          displayOrder: 1,
+          status: "running",
+        })),
+        canonicalRow(timelineItem({
+          id: "projection-turn-2-agent-2",
+          turnId: "turn-2",
+          itemId: "agent-2",
+          text: "Missing base",
+          displayOrder: 2,
+          status: "running",
+        })),
+      ],
+    });
+
+    expect(canApplyThreadViewItemDelta(state, mixedBaseRowDelta)).toBe(false);
+    state = applyLiveTimelineUpdate(state, mixedBaseRowDelta);
+
+    expect(state.items.map((item) => item.text)).toEqual(["Existing"]);
+    expect(state.viewRevision).toBe(1);
+    expect(state.lastSeq).toBe(2);
+  });
+
+  it("removes only explicit row-delta removals", () => {
+    const user = timelineItem({
+      id: "projection-turn-1-user-1",
+      itemId: "user-1",
+      itemType: "userMessage",
+      text: "Question",
+      displayOrder: 1,
+    });
+    const agent = timelineItem({
+      id: "projection-turn-1-agent-1",
+      itemId: "agent-1",
+      text: "Draft",
+      displayOrder: 2,
+      status: "running",
+    });
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot({
+      viewRevision: 1,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      items: [user, agent],
+      rows: [
+        canonicalRow(user),
+        canonicalRow(agent),
+        workRow({ turnId: "turn-1", displayOrder: 3, state: "running" }),
+      ],
+    }));
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
+      scope: "row_delta",
+      viewRevision: 2,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      affectedTurnIds: ["turn-1"],
+      removedRowIds: ["row-projection-turn-1-agent-1"],
+    }));
+
+    expect(state.items.map((item) => item.id)).toEqual(["projection-turn-1-user-1"]);
+    expect(state.rows.map((row) => row.key)).toEqual(["row-projection-turn-1-user-1", "work-turn-1"]);
+  });
+
+  it("updates hidden diagnostic rows for row-delta changes and removals", () => {
+    const hiddenHook = timelineItem({
+      id: "projection-turn-1-hook-1",
+      itemId: "hook-1",
+      itemType: "hookPrompt",
+      text: "",
+      displayOrder: 1,
+    });
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot({
+      viewRevision: 1,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      items: [],
+      rows: [canonicalRow(hiddenHook)],
+    }));
+    expect(state.hiddenItems.map((item) => item.id)).toEqual(["projection-turn-1-hook-1"]);
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
+      scope: "row_delta",
+      viewRevision: 2,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      affectedTurnIds: ["turn-1"],
+      rows: [
+        canonicalRow(timelineItem({
+          id: "projection-turn-1-hook-1",
+          itemId: "hook-1",
+          text: "Now visible",
+          displayOrder: 1,
+          status: "running",
+        })),
+      ],
+    }));
+
+    expect(state.items.map((item) => item.id)).toEqual(["projection-turn-1-hook-1"]);
+    expect(state.hiddenItems).toEqual([]);
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
+      scope: "row_delta",
+      viewRevision: 3,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      affectedTurnIds: ["turn-1"],
+      rows: [canonicalRow(hiddenHook)],
+    }));
+
+    expect(state.items).toEqual([]);
+    expect(state.hiddenItems.map((item) => item.id)).toEqual(["projection-turn-1-hook-1"]);
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
+      scope: "row_delta",
+      viewRevision: 4,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      affectedTurnIds: ["turn-1"],
+      removedRowIds: ["row-projection-turn-1-hook-1"],
+    }));
+
+    expect(state.items).toEqual([]);
+    expect(state.hiddenItems).toEqual([]);
+  });
+
+  it("keeps existing stale-patch behavior for row-delta revisions", () => {
+    let state = applyTimelineSnapshot(createTimelineState(), snapshot({
+      viewRevision: 5,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      items: [timelineItem({ text: "Fresh", status: "running" })],
+    }));
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
+      scope: "row_delta",
+      viewRevision: 4,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      affectedTurnIds: ["turn-1"],
+      rows: [canonicalRow(timelineItem({ text: "Stale", status: "running" }))],
+      seq: 6,
+    }));
+
+    expect(state.items.map((item) => item.text)).toEqual(["Fresh"]);
+    expect(state.viewRevision).toBe(6);
+    expect(state.lastSeq).toBe(6);
+  });
+
   it("projects pending request summaries from snapshots and patches", () => {
     let state = applyTimelineSnapshot(createTimelineState(), snapshot({
       viewRevision: 1,
@@ -540,14 +789,16 @@ function snapshot({
 
 function projectionPatchEvent(payload: {
   viewRevision: number;
-  scope?: "full_snapshot" | "turn" | "lifecycle" | null;
+  scope?: "full_snapshot" | "turn" | "lifecycle" | "row_delta" | null;
   activeTurnId?: string | null;
   liveState?: string;
   items?: ReturnType<typeof timelineItem>[];
   rows?: CanonicalTestRow[] | undefined;
   affectedTurnIds?: string[];
+  removedRowIds?: string[];
   pendingApprovalRequests?: ReturnType<typeof pendingRequest>[];
   pendingUserInputRequests?: ReturnType<typeof pendingRequest>[];
+  seq?: number;
 }): EventEnvelope {
   const scope = payload.scope ?? (payload.affectedTurnIds !== undefined ? "turn" : "full_snapshot");
   const patchPayload: Record<string, unknown> = {
@@ -569,9 +820,13 @@ function projectionPatchEvent(payload: {
   if (payload.affectedTurnIds !== undefined) {
     patchPayload.affectedTurnIds = payload.affectedTurnIds;
   }
+  if (payload.removedRowIds !== undefined) {
+    patchPayload.removedRowIds = payload.removedRowIds;
+  }
+  const seq = payload.seq ?? payload.viewRevision;
   return {
     id: `patch-${payload.viewRevision}`,
-    seq: payload.viewRevision,
+    seq,
     kind: "thread_view.patch",
     codexMethod: "thread_view/patch",
     threadId: "thread-1",

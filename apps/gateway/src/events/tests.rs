@@ -426,6 +426,73 @@ async fn assistant_delta_events_stay_under_synthetic_byte_budget() {
 }
 
 #[tokio::test]
+async fn item_upsert_events_use_row_delta_when_live_turn_patch_would_resend_large_rows() {
+    let state = test_state().await;
+    let mut receiver = state.events.subscribe();
+    let large_text = "Large active assistant row ".repeat(500);
+
+    ingest_inbound(
+        InboundMessage::Notification {
+            method: "item/upsert".to_string(),
+            params: json!({
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "item": {
+                    "id": "agent-1",
+                    "type": "agentMessage",
+                    "text": large_text
+                }
+            }),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+    let seed_patch = timeout(Duration::from_secs(1), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(seed_patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
+
+    ingest_inbound(
+        InboundMessage::Notification {
+            method: "item/upsert".to_string(),
+            params: json!({
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "item": {
+                    "id": "command-1",
+                    "type": "commandExecution",
+                    "status": "running",
+                    "command": "cargo test",
+                    "output": "still running"
+                }
+            }),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+
+    let event = timeout(Duration::from_secs(1), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(event.kind, THREAD_VIEW_PATCH_EVENT_KIND);
+    assert_eq!(event.payload["scope"], "row_delta");
+    assert_eq!(event.payload["affectedTurnIds"], json!(["turn-1"]));
+    assert!(event.payload["removedRowIds"]
+        .as_array()
+        .is_none_or(Vec::is_empty));
+    let rows = event.payload["rows"].as_array().expect("row delta rows");
+    assert!(!rows.is_empty());
+    assert!(
+        !serde_json::to_string(&event).unwrap().contains(&large_text),
+        "row delta should not resend unchanged large assistant rows"
+    );
+}
+
+#[tokio::test]
 async fn native_thread_status_changed_emits_exact_canonical_status_patch() {
     let state = test_state().await;
     let mut receiver = state.events.subscribe();

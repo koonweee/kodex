@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+Complete. Implemented backend `row_delta` thread-view patches, generated web API types, web reducer and batch support, focused backend/frontend regression coverage, and a post-implementation live Codex profile.
 
 ## Context
 
@@ -197,3 +197,37 @@ Known risks:
 - Work rows can still be large. If repeated updates replace a single very large work row, this plan reduces cross-row duplication but may not fully solve work-row payload size. A narrower work-row delta would be a follow-up only if profiling still shows that hotspot.
 - A stale or missed base state can make an incremental patch unsafe. Reducers must converge by snapshot refresh rather than inventing durable browser state.
 - Live model profiles vary by prompt and model behavior, so automated synthetic byte-budget tests are the durable regression guard.
+
+## Completion Evidence
+
+Implemented changes:
+
+- Added `ThreadViewPatchScope::RowDelta` with `removedRowIds` and scope validation.
+- Added backend row diff emission for live item upserts and non-terminal turn status updates, with fallback to complete `turn` patches when the row delta is not smaller or terminal/final behavior requires full replacement.
+- Kept terminal turn finalization on complete turn patches.
+- Regenerated `apps/web/src/api/generated/schema.ts`.
+- Added web reducer support for row upserts and explicit row removals while preserving omitted rows.
+- Added web batch coalescing for compatible row-delta bursts without crossing item-delta, refresh, full-snapshot, or complete-turn boundaries.
+- Left native iOS out of scope by plan.
+
+Verification run:
+
+- `cargo fmt`
+- `cargo test -p kodex-gateway row_delta -- --nocapture`
+- `cargo test -p kodex-gateway thread_view::tests -- --nocapture` (`31` tests)
+- `cargo test -p kodex-gateway events::tests -- --nocapture`
+- `cargo test -p kodex-gateway sse_ -- --nocapture`
+- `cargo test -p kodex-gateway openapi -- --nocapture`
+- `cd apps/web && npm test -- --run src/events/stream.test.ts src/timeline/reducer.snapshot.test.ts src/timeline/batch.test.ts src/timeline/reducer.lifecycle.test.ts src/timeline/threadViewGuard.test.ts` (`64` tests)
+- `cd apps/web && npm run build`
+- `git diff --check`
+- Independent review/fix loop: three review passes; final reviewer result was `No major issues remain.`
+
+Post-implementation short live profile:
+
+- Command output: `/tmp/kodex-wire-profile-rowdelta-short.json`.
+- `1.03 MiB` total over the short actual-Codex prompt, down from the earlier `4.91 MiB` short baseline.
+- `579` events.
+- `thread_view.patch`: `58` events, `767,740` bytes, max `51,931` bytes, average `13,237` bytes.
+- Patch scopes: `row_delta: 54`, `turn: 2`, `lifecycle: 2`.
+- `thread_view.item_delta`: `514` events, `311,723` bytes, average `606` bytes.

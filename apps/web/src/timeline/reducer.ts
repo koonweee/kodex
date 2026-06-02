@@ -41,6 +41,13 @@ import {
   type TimelineDraft,
 } from "./state";
 
+type ThreadViewPatchScope = NonNullable<ThreadViewPatch["scope"]> | "row_delta";
+type ThreadViewPatchPayload = Omit<ThreadViewPatch, "scope" | "rows"> & {
+  removedRowIds?: string[];
+  rows?: ThreadTimelineRow[] | null;
+  scope?: ThreadViewPatchScope;
+};
+
 export { createTimelineState } from "./state";
 export type {
   TimelineConfirmationState,
@@ -81,7 +88,7 @@ export const applyTimelineEvent = applyLiveTimelineUpdate;
 
 export function canApplyThreadViewItemDelta(state: TimelineState, event: EventEnvelope): boolean {
   if (event.kind !== "thread_view.item_delta" || event.seq < state.lastSeq) {
-    return true;
+    return canApplyThreadViewRowDelta(state, event);
   }
   const payload = recordPayload(event.payload);
   const itemId = stringPayload(payload?.itemId) ?? event.itemId;
@@ -95,6 +102,25 @@ export function canApplyThreadViewItemDelta(state: TimelineState, event: EventEn
     const row = timelineRowByKey(indexes, rowKey);
     return row ? rowHasAppendableDeltaTarget(row, { itemId, turnId, delta }) : false;
   });
+}
+
+function canApplyThreadViewRowDelta(state: TimelineState, event: EventEnvelope): boolean {
+  if (event.kind !== "thread_view.patch" || event.seq < state.lastSeq) {
+    return true;
+  }
+  const patch = event.payload as ThreadViewPatchPayload;
+  if (patch.scope !== "row_delta") {
+    return true;
+  }
+  const affectedTurnIds = new Set(patch.affectedTurnIds ?? []);
+  if (affectedTurnIds.size === 0) {
+    return true;
+  }
+  return [...affectedTurnIds].every(
+    (turnId) =>
+      state.rows.some((row) => row.turnId === turnId) ||
+      state.hiddenItems.some((item) => item.turnId === turnId),
+  );
 }
 
 type TimelineReducerInstrumentation = {
@@ -459,7 +485,7 @@ function canonicalSnapshotItemReceivedAt(item: ThreadTimelineSnapshotItem): stri
 }
 
 function applyThreadViewPatch(state: TimelineState, event: EventEnvelope): TimelineState {
-  const patch = event.payload as ThreadViewPatch;
+  const patch = event.payload as ThreadViewPatchPayload;
   const revision = patch.viewRevision ?? 0;
   if (event.seq < state.lastSeq) {
     return state;
@@ -474,6 +500,9 @@ function applyThreadViewPatch(state: TimelineState, event: EventEnvelope): Timel
 
   if (!isThreadViewPatchScope(patch.scope)) {
     return withTimelineLastSeq(state, Math.max(event.seq, revision));
+  }
+  if (patch.scope === "row_delta" && !canApplyThreadViewRowDelta(state, event)) {
+    return withTimelineLastSeq(state, Math.max(state.lastSeq, event.seq));
   }
 
   let next = patch.scope === "lifecycle" ? state : applyCanonicalRowsPatch(state, threadId, patch);
@@ -609,16 +638,19 @@ function isAppendableDeltaTarget(item: TimelineItem, target: ItemDeltaTarget): b
   return true;
 }
 
-function isThreadViewPatchScope(scope: ThreadViewPatch["scope"] | undefined): scope is ThreadViewPatch["scope"] {
-  return scope === "full_snapshot" || scope === "turn" || scope === "lifecycle";
+function isThreadViewPatchScope(scope: unknown): scope is ThreadViewPatchScope {
+  return scope === "full_snapshot" || scope === "turn" || scope === "lifecycle" || scope === "row_delta";
 }
 
-function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: ThreadViewPatch): TimelineState {
+function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: ThreadViewPatchPayload): TimelineState {
   if (patch.scope === "full_snapshot" && !Array.isArray(patch.rows)) {
     return state;
   }
   if (patch.scope === "turn" && (!Array.isArray(patch.rows) || !Array.isArray(patch.affectedTurnIds) || patch.affectedTurnIds.length === 0)) {
     return state;
+  }
+  if (patch.scope === "row_delta") {
+    return applyCanonicalRowDeltaPatch(state, threadId, patch);
   }
   const fullRows = patch.rows;
   if (patch.scope === "full_snapshot" && Array.isArray(fullRows)) {
@@ -659,6 +691,92 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
   });
 }
 
+function applyCanonicalRowDeltaPatch(
+  state: TimelineState,
+  threadId: string,
+  patch: ThreadViewPatchPayload,
+): TimelineState {
+  const affectedTurnIds = new Set(patch.affectedTurnIds ?? []);
+  if (affectedTurnIds.size === 0) {
+    return state;
+  }
+
+  const rows = dedupeCanonicalRowsById(patch.rows ?? []);
+  const removedRowIds = new Set((patch.removedRowIds ?? []).filter((rowId) => typeof rowId === "string" && rowId.length > 0));
+  if (rows.length === 0 && removedRowIds.size === 0) {
+    return state;
+  }
+  if (rows.some((row) => !row.turnId || !affectedTurnIds.has(row.turnId))) {
+    return state;
+  }
+
+  const changedRowIds = new Set(rows.map((row) => row.id));
+  const hiddenItemIdsToReplace = new Set<string>();
+  for (const row of rows) {
+    for (const itemId of canonicalRowItemIds(row)) {
+      hiddenItemIdsToReplace.add(itemId);
+    }
+  }
+  for (const rowId of removedRowIds) {
+    hiddenItemIdsToReplace.add(rowId);
+    for (const itemId of likelyHiddenItemIdsForRemovedRowId(rowId)) {
+      hiddenItemIdsToReplace.add(itemId);
+    }
+  }
+
+  const mappedPatchRows = canonicalTimelineRowsToViewRows(threadId, rows, createEmptyTimelineIndexes());
+  const mergedRows = [
+    ...state.rows.filter((row) => !removedRowIds.has(row.key) && !changedRowIds.has(row.key)),
+    ...mappedPatchRows.rows,
+  ].sort((left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right));
+
+  const indexes = createEmptyTimelineIndexes();
+  for (const row of mergedRows) {
+    addTimelineRowItemsToIndexes(row, indexes);
+  }
+  indexes.hiddenItems.push(
+    ...state.hiddenItems.filter((item) => !hiddenItemIdsToReplace.has(item.id)),
+    ...mappedPatchRows.hiddenItems,
+  );
+  return createTimelineStateFromDraft({
+    ...timelineDraftFromState(state),
+    indexes,
+    rows: mergedRows,
+  });
+}
+
+function dedupeCanonicalRowsById(rows: ThreadTimelineRow[]): ThreadTimelineRow[] {
+  return [...new Map(rows.map((row) => [row.id, row])).values()];
+}
+
+function canonicalRowItemIds(row: ThreadTimelineRow | ThreadTimelineWorkDetailRow): string[] {
+  const itemIds: string[] = [];
+  if (row.item?.id) {
+    itemIds.push(row.item.id);
+  }
+  for (const item of row.items ?? []) {
+    if (item.id) {
+      itemIds.push(item.id);
+    }
+  }
+  if ("collapsedRows" in row) {
+    for (const collapsedRow of row.collapsedRows ?? []) {
+      itemIds.push(...canonicalRowItemIds(collapsedRow));
+    }
+  }
+  return itemIds;
+}
+
+function likelyHiddenItemIdsForRemovedRowId(rowId: string): string[] {
+  const ids = [rowId];
+  for (const prefix of ["item-", "row-"]) {
+    if (rowId.startsWith(prefix) && rowId.length > prefix.length) {
+      ids.push(rowId.slice(prefix.length));
+    }
+  }
+  return ids;
+}
+
 function withSnapshotTurnMetadata(state: TimelineState, snapshot: ThreadViewResponse): TimelineState {
   const next = timelineDraftFromState(state);
   for (const turn of snapshot.timeline.turns ?? []) {
@@ -691,7 +809,7 @@ function withCanonicalSnapshotLiveState(
   });
 }
 
-function withProjectionPatchLiveState(state: TimelineState, patch: ThreadViewPatch, eventSeq: number): TimelineState {
+function withProjectionPatchLiveState(state: TimelineState, patch: ThreadViewPatchPayload, eventSeq: number): TimelineState {
   const next = timelineDraftFromState(state);
   for (const turn of patch.turns ?? []) {
     upsertTimelineTurnSnapshot(next, {
@@ -720,7 +838,7 @@ function withProjectionPatchLiveState(state: TimelineState, patch: ThreadViewPat
 
 function withIgnoredProjectionPatchCursor(
   state: TimelineState,
-  patch: ThreadViewPatch,
+  patch: ThreadViewPatchPayload,
   eventSeq: number,
 ): TimelineState {
   return createTimelineStateFromDraft({

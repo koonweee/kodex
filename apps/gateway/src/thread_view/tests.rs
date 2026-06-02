@@ -36,6 +36,30 @@ fn command_execution_item(id: &str, command: &str, output: &str) -> Value {
     })
 }
 
+fn active_turn_with_large_assistant(large_text: &str) -> ThreadTurnSnapshot {
+    ThreadTurnSnapshot {
+        id: "turn-1".to_string(),
+        status: "inProgress".to_string(),
+        started_at: Some(1),
+        completed_at: None,
+        raw_payload: json!({}),
+        items: vec![
+            ThreadItemSnapshot::from_payload(&user_message_item(
+                "user-1",
+                "Run the command and report progress",
+            ))
+            .unwrap(),
+            ThreadItemSnapshot::from_payload(&agent_message_item("agent-1", large_text)).unwrap(),
+            ThreadItemSnapshot::from_payload(&command_execution_item(
+                "command-1",
+                "cargo test",
+                "initial",
+            ))
+            .unwrap(),
+        ],
+    }
+}
+
 fn only_work_row(timeline: &ThreadTimelineSnapshot) -> &ThreadTimelineRow {
     timeline
         .rows
@@ -397,9 +421,89 @@ async fn lifecycle_patch_carries_no_timeline_payload() {
 }
 
 #[tokio::test]
-async fn item_upsert_and_turn_status_return_turn_scoped_patches() {
+async fn row_delta_scope_validation_rejects_empty_or_cross_turn_payloads() {
     let sessions = ThreadViewStore::default();
-    let item = agent_message_item("agent-1", "Working");
+    let large_text = "Large active assistant row ".repeat(500);
+    build_thread_timeline(
+        &sessions,
+        "thread-1",
+        &[active_turn_with_large_assistant(&large_text)],
+        1,
+    )
+    .await
+    .unwrap();
+    let item = command_execution_item("command-1", "cargo test", "status update");
+    let item_snapshot = ThreadItemSnapshot::from_payload(&item).unwrap();
+    let patch = record_item_upsert(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        item,
+        item_snapshot,
+        Some("running"),
+        1,
+    )
+    .await
+    .unwrap();
+    assert_eq!(patch.scope, ThreadViewPatchScope::RowDelta);
+    assert!(patch.validate_scope().is_ok());
+
+    let mut empty = patch.clone();
+    empty.rows = Some(Vec::new());
+    empty.removed_row_ids = Vec::new();
+    assert_eq!(
+        empty.validate_scope(),
+        Err("row_delta patches must carry changed rows or removed row ids")
+    );
+
+    let mut valid_removal = patch.clone();
+    valid_removal.rows = Some(Vec::new());
+    valid_removal.removed_row_ids = vec!["work-turn-1".to_string()];
+    assert!(valid_removal.validate_scope().is_ok());
+
+    let mut cross_turn = patch.clone();
+    cross_turn.rows.as_mut().unwrap()[0].turn_id = Some("turn-2".to_string());
+    assert_eq!(
+        cross_turn.validate_scope(),
+        Err("row_delta rows must belong to affected turn ids")
+    );
+
+    let mut missing_turns = patch;
+    missing_turns.affected_turn_ids.clear();
+    assert_eq!(
+        missing_turns.validate_scope(),
+        Err("row_delta patches must carry affected turn ids")
+    );
+
+    let mut invalid_full_snapshot = valid_removal.clone();
+    invalid_full_snapshot.scope = ThreadViewPatchScope::FullSnapshot;
+    assert_eq!(
+        invalid_full_snapshot.validate_scope(),
+        Err("full_snapshot patches must carry rows and no affected turn or removed row ids")
+    );
+
+    let mut invalid_lifecycle = valid_removal;
+    invalid_lifecycle.scope = ThreadViewPatchScope::Lifecycle;
+    invalid_lifecycle.affected_turn_ids.clear();
+    assert_eq!(
+        invalid_lifecycle.validate_scope(),
+        Err("lifecycle patches must not carry row, turn, removed row, or item payloads")
+    );
+}
+
+#[tokio::test]
+async fn item_upsert_returns_row_delta_and_terminal_turn_status_returns_turn_patch() {
+    let sessions = ThreadViewStore::default();
+    let large_text = "Large active assistant row ".repeat(500);
+    build_thread_timeline(
+        &sessions,
+        "thread-1",
+        &[active_turn_with_large_assistant(&large_text)],
+        1,
+    )
+    .await
+    .unwrap();
+    let item = command_execution_item("command-1", "cargo test", "status update");
     let item_snapshot = ThreadItemSnapshot::from_payload(&item).unwrap();
 
     let upsert_patch = record_item_upsert(
@@ -413,9 +517,10 @@ async fn item_upsert_and_turn_status_return_turn_scoped_patches() {
     )
     .await
     .unwrap();
-    assert_eq!(upsert_patch.scope, ThreadViewPatchScope::Turn);
+    assert_eq!(upsert_patch.scope, ThreadViewPatchScope::RowDelta);
     assert!(upsert_patch.validate_scope().is_ok());
     assert_eq!(upsert_patch.affected_turn_ids, vec!["turn-1"]);
+    assert!(upsert_patch.removed_row_ids.is_empty());
     assert!(upsert_patch
         .rows
         .as_ref()
@@ -439,6 +544,85 @@ async fn item_upsert_and_turn_status_return_turn_scoped_patches() {
     assert!(status_patch.rows.as_ref().is_some_and(|rows| rows
         .iter()
         .all(|row| row.turn_id.as_deref() == Some("turn-1"))));
+}
+
+#[tokio::test]
+async fn first_live_item_upsert_without_base_falls_back_to_turn_patch() {
+    let sessions = ThreadViewStore::default();
+    let item = command_execution_item("command-1", "cargo test", "initial");
+    let item_snapshot = ThreadItemSnapshot::from_payload(&item).unwrap();
+
+    let patch = record_item_upsert(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        item,
+        item_snapshot,
+        Some("running"),
+        1,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(patch.scope, ThreadViewPatchScope::Turn);
+    assert!(patch.validate_scope().is_ok());
+}
+
+#[tokio::test]
+async fn repeated_live_item_upserts_emit_bounded_row_delta_patches() {
+    let sessions = ThreadViewStore::default();
+    let large_text = "Large active assistant row ".repeat(500);
+    build_thread_timeline(
+        &sessions,
+        "thread-1",
+        &[active_turn_with_large_assistant(&large_text)],
+        1,
+    )
+    .await
+    .unwrap();
+
+    let mut total_bytes = 0usize;
+    let mut max_bytes = 0usize;
+    for index in 0..100 {
+        let item =
+            command_execution_item("command-1", "cargo test", &format!("status update {index}"));
+        let item_snapshot = ThreadItemSnapshot::from_payload(&item).unwrap();
+        let patch = record_item_upsert(
+            &sessions,
+            "thread-1",
+            "turn-1",
+            item,
+            item_snapshot,
+            Some("running"),
+            index + 2,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(patch.scope, ThreadViewPatchScope::RowDelta);
+        assert!(patch.validate_scope().is_ok());
+        assert_eq!(patch.affected_turn_ids, vec!["turn-1"]);
+        assert!(patch
+            .rows
+            .as_ref()
+            .is_some_and(|rows| !rows.is_empty() && rows.len() < 3));
+        let serialized = serde_json::to_vec(&patch).unwrap();
+        assert!(
+            !String::from_utf8_lossy(&serialized).contains(&large_text),
+            "row delta should not resend unchanged large assistant rows"
+        );
+        total_bytes += serialized.len();
+        max_bytes = max_bytes.max(serialized.len());
+    }
+
+    assert!(
+        max_bytes < 16_000,
+        "single row-delta patch should stay bounded; max was {max_bytes} bytes"
+    );
+    assert!(
+        total_bytes < 512 * 1024,
+        "100 row-delta patches should stay bounded; total was {total_bytes} bytes"
+    );
 }
 
 #[tokio::test]

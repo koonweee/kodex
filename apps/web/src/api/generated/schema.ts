@@ -2787,6 +2787,7 @@ export interface components {
             liveState: components["schemas"]["ThreadLiveState"];
             pendingApprovalRequests: components["schemas"]["PendingTimelineRequestSummary"][];
             pendingUserInputRequests: components["schemas"]["PendingTimelineRequestSummary"][];
+            removedRowIds?: string[];
             rows?: components["schemas"]["ThreadTimelineRow"][] | null;
             scope: components["schemas"]["ThreadViewPatchScope"];
             threadId: string;
@@ -2796,7 +2797,7 @@ export interface components {
             viewRevision: number;
         };
         /** @enum {string} */
-        ThreadViewPatchScope: "full_snapshot" | "turn" | "lifecycle";
+        ThreadViewPatchScope: "full_snapshot" | "turn" | "row_delta" | "lifecycle";
         ThreadViewPresenceRequest: {
             clientId: string;
             visible: boolean;

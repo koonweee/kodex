@@ -868,6 +868,7 @@ pub async fn record_item_upsert(
     item_snapshot.raw_payload = item.clone();
     let patch = sessions
         .with_thread_view(thread_id, updated_seq, |view| {
+            let before_rows = view.rows_for_turn(turn_id);
             view.upsert_item(
                 thread_id,
                 turn_id,
@@ -876,7 +877,7 @@ pub async fn record_item_upsert(
                 turn_status,
                 Some(Utc::now().timestamp_millis()),
             );
-            view.turn_patch(turn_id)
+            view.row_delta_or_turn_patch(turn_id, before_rows)
         })
         .await;
     Ok(patch)
@@ -1005,8 +1006,13 @@ pub async fn record_turn_status(
 ) -> ApiResult<(bool, ThreadViewPatch)> {
     let (newly_terminal, patch) = sessions
         .with_thread_view(thread_id, updated_seq, |view| {
+            let before_rows = view.rows_for_turn(&turn.id);
             let newly_terminal = view.update_turn_status(turn);
-            let patch = view.turn_patch(&turn.id);
+            let patch = if is_terminal_turn_status(&turn.status) {
+                view.turn_patch(&turn.id)
+            } else {
+                view.row_delta_or_turn_patch(&turn.id, before_rows)
+            };
             (newly_terminal, patch)
         })
         .await;

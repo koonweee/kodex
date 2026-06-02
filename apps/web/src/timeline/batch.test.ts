@@ -205,6 +205,111 @@ describe("timeline event batching", () => {
     });
     expect(state.lastSeq).toBe(11);
   });
+
+  it("coalesces row-delta patches to latest row identity state", () => {
+    const events = [
+      event({ id: "event-1", seq: 1, text: "Initial" }),
+      rowDeltaEvent({ id: "event-2", seq: 2, row: canonicalRow("Partial") }),
+      rowDeltaEvent({ id: "event-3", seq: 3, row: canonicalRow("Latest") }),
+    ];
+    const coalesced = coalesceTimelineEventBatch(events);
+
+    expect(coalesced).toHaveLength(2);
+    expect(coalesced.at(-1)?.payload).toMatchObject({
+      scope: "row_delta",
+      viewRevision: 3,
+      rows: [expect.objectContaining({ id: "item-projection-turn-1-answer-1" })],
+    });
+
+    const state = applyTimelineEventBatch(createTimelineState(), events);
+
+    expect(state.items).toHaveLength(1);
+    expect(state.items[0]).toMatchObject({ text: "Latest" });
+    expect(state.lastSeq).toBe(3);
+    expect(state.viewRevision).toBe(3);
+  });
+
+  it("does not merge row-delta removals and upserts across affected turns", () => {
+    const initial = event({
+      id: "event-1",
+      seq: 1,
+      payload: {
+        scope: "full_snapshot",
+        viewRevision: 1,
+        threadId: "thread-1",
+        activeTurnId: "turn-1",
+        liveState: "streaming",
+        rows: [canonicalRow("First", 1), canonicalRow("Second", 2)],
+        turns: [],
+      },
+    });
+    const events = [
+      initial,
+      rowDeltaEvent({ id: "event-2", seq: 2, row: canonicalRow("First updated", 1) }),
+      rowDeltaEvent({
+        id: "event-3",
+        seq: 3,
+        affectedTurnIds: ["turn-2"],
+        removedRowIds: ["item-projection-turn-2-answer-2"],
+      }),
+    ];
+    const sequential = events.reduce(applyLiveTimelineUpdate, createTimelineState());
+    const batched = applyTimelineEventBatch(createTimelineState(), events);
+
+    const coalescedPatches = coalesceTimelineEventBatch(events).filter((queuedEvent) => queuedEvent.kind === "thread_view.patch");
+    expect(coalescedPatches).toHaveLength(3);
+    expect(
+      coalescedPatches.filter(
+        (queuedEvent) =>
+          (queuedEvent.payload as { scope?: unknown }).scope === "row_delta",
+      ),
+    ).toHaveLength(2);
+    expect(batched.items.map((item) => item.text)).toEqual(sequential.items.map((item) => item.text));
+    expect(batched.items.map((item) => item.id)).toEqual(["projection-turn-1-answer-1"]);
+  });
+
+  it("does not coalesce row-delta patches across item-delta or authoritative patch boundaries", () => {
+    const events = [
+      event({ id: "event-1", seq: 1, text: "A" }),
+      rowDeltaEvent({ id: "event-2", seq: 2, row: canonicalRow("B") }),
+      itemDeltaEvent({ id: "event-3", seq: 3, delta: "C" }),
+      rowDeltaEvent({ id: "event-4", seq: 4, row: canonicalRow("D") }),
+      {
+        ...event({ id: "event-5", seq: 5, text: "refresh" }),
+        kind: "thread_view.refresh_required",
+        codexMethod: "thread_view/refresh_required",
+        payload: { threadId: "thread-1", reason: "test" },
+      } as EventEnvelope,
+      rowDeltaEvent({ id: "event-6", seq: 6, row: canonicalRow("E") }),
+      event({ id: "event-7", seq: 7, text: "Turn patch" }),
+      rowDeltaEvent({ id: "event-8", seq: 8, row: canonicalRow("F") }),
+      event({
+        id: "event-9",
+        seq: 9,
+        payload: {
+          scope: "full_snapshot",
+          viewRevision: 9,
+          threadId: "thread-1",
+          activeTurnId: "turn-1",
+          liveState: "streaming",
+          rows: [canonicalRow("Snapshot")],
+          turns: [],
+        },
+      }),
+      rowDeltaEvent({ id: "event-10", seq: 10, row: canonicalRow("G") }),
+    ];
+    const coalesced = coalesceTimelineEventBatch(events);
+
+    expect(coalesced.filter((queuedEvent) => queuedEvent.kind === "thread_view.item_delta")).toHaveLength(1);
+    expect(
+      coalesced.filter(
+        (queuedEvent) =>
+          queuedEvent.kind === "thread_view.patch" &&
+          (queuedEvent.payload as { scope?: unknown }).scope === "row_delta",
+      ),
+    ).toHaveLength(5);
+    expect(applyTimelineEventBatch(createTimelineState(), events).items[0]).toMatchObject({ text: "G" });
+  });
 });
 
 function canonicalItem(text: string, index = 1) {
@@ -250,6 +355,40 @@ function itemDeltaEvent(overrides: { id: string; seq: number; delta: string; ite
       itemId,
       delta: overrides.delta,
       viewRevision: overrides.seq,
+    },
+    receivedAt: "2026-04-30T00:00:00Z",
+  };
+}
+
+function rowDeltaEvent(overrides: {
+  id: string;
+  seq: number;
+  row?: ReturnType<typeof canonicalRow>;
+  affectedTurnIds?: string[];
+  removedRowIds?: string[];
+  threadId?: string;
+}): EventEnvelope {
+  const threadId = overrides.threadId ?? "thread-1";
+  const rows = overrides.row ? [overrides.row] : [];
+  return {
+    id: overrides.id,
+    seq: overrides.seq,
+    kind: "thread_view.patch",
+    codexMethod: "thread_view/patch",
+    threadId,
+    turnId: "turn-1",
+    itemId: null,
+    projectId: "project-1",
+    payload: {
+      scope: "row_delta",
+      viewRevision: overrides.seq,
+      threadId,
+      activeTurnId: "turn-1",
+      liveState: "streaming",
+      affectedTurnIds: overrides.affectedTurnIds ?? [...new Set(rows.map((row) => row.turnId).filter(Boolean))],
+      rows,
+      removedRowIds: overrides.removedRowIds ?? [],
+      turns: [],
     },
     receivedAt: "2026-04-30T00:00:00Z",
   };
