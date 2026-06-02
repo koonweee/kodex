@@ -355,6 +355,7 @@ async fn event_stream(
         let mut high_water = replay_high_water;
         for event in replay {
             high_water = high_water.max(event.seq);
+            let event = event_for_sse_query(event, &query);
             if let Ok(sse_event) = event_to_sse(event) {
                 yield Ok(sse_event);
             }
@@ -369,6 +370,7 @@ async fn event_stream(
                         && is_sse_live_event_for_query(&event, &query) =>
                 {
                     high_water = high_water.max(event.seq);
+                    let event = event_for_sse_query(event, &query);
                     if let Ok(sse_event) = event_to_sse(event) {
                         yield Ok(sse_event);
                     }
@@ -388,6 +390,28 @@ async fn event_stream(
             }
         }
     })
+}
+
+fn event_for_sse_query(mut event: EventEnvelope, query: &EventsQuery) -> EventEnvelope {
+    if query.thread_id.is_none() && event.kind == THREAD_VIEW_PATCH_EVENT_KIND {
+        if let Ok(patch) =
+            serde_json::from_value::<thread_view::ThreadViewPatch>(event.payload.clone())
+        {
+            let mut lifecycle = thread_view::ThreadViewPatch::lifecycle(
+                patch.view_revision,
+                patch.thread_id,
+                patch.active_turn_id,
+                patch.live_state,
+                patch.pending_approval_requests,
+                patch.pending_user_input_requests,
+            );
+            lifecycle.thread_status = patch.thread_status;
+            if let Ok(payload) = serde_json::to_value(lifecycle) {
+                event.payload = payload;
+            }
+        }
+    }
+    event
 }
 
 fn is_sse_live_event_for_query(event: &EventEnvelope, query: &EventsQuery) -> bool {

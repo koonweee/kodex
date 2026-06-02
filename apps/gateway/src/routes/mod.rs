@@ -12487,6 +12487,97 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sse_global_stream_compacts_non_selected_thread_view_patches() {
+        let (state, _) = test_state().await;
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?excludeThreadId=thread-1")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "item/updated".to_string(),
+                params: json!({
+                    "threadId": "thread-2",
+                    "turnId": "turn-2",
+                    "item": {
+                        "id": "call-1",
+                        "type": "commandExecution",
+                        "command": "cat large-output.txt",
+                        "output": "large output that belongs only on the selected thread stream"
+                    }
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let mut body = response.into_body();
+        let first = next_sse_chunk(&mut body).await;
+        assert!(first.contains("thread_view.patch"));
+        assert!(first.contains("\"threadId\":\"thread-2\""));
+        assert!(first.contains("\"scope\":\"lifecycle\""));
+        assert!(first.contains("\"activeTurnId\":\"turn-2\""));
+        assert!(first.contains("\"liveState\":\"streaming\""));
+        assert!(!first.contains("\"rows\""));
+        assert!(!first.contains("\"affectedTurnIds\""));
+        assert!(!first.contains("large output that belongs only on the selected thread stream"));
+    }
+
+    #[tokio::test]
+    async fn sse_selected_thread_stream_keeps_thread_view_patch_rows() {
+        let (state, _) = test_state().await;
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?threadId=thread-2")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "item/updated".to_string(),
+                params: json!({
+                    "threadId": "thread-2",
+                    "turnId": "turn-2",
+                    "item": {
+                        "id": "call-1",
+                        "type": "commandExecution",
+                        "command": "cat selected-output.txt",
+                        "output": "selected thread output stays on the selected stream"
+                    }
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let mut body = response.into_body();
+        let first = next_sse_chunk(&mut body).await;
+        assert!(first.contains("thread_view.patch"));
+        assert!(first.contains("\"threadId\":\"thread-2\""));
+        assert!(first.contains("\"rows\""));
+        assert!(first.contains("selected thread output stays on the selected stream"));
+        assert!(!first.contains("\"scope\":\"lifecycle\""));
+    }
+
+    #[tokio::test]
     async fn sse_global_stream_excludes_selected_thread_when_requested() {
         let (state, _) = test_state().await;
         let app = build_router(state.clone());
