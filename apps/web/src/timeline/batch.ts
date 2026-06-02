@@ -13,8 +13,25 @@ export function coalesceTimelineEventBatch(events: EventEnvelope[]): EventEnvelo
   const sorted = [...events].sort((left, right) => left.seq - right.seq);
   const result: EventEnvelope[] = [];
   const turnPatchIndexes = new Map<string, number>();
+  const itemDeltaIndexes = new Map<string, number>();
 
   for (const event of sorted) {
+    if (event.kind === "thread_view.patch" || event.kind === "thread_view.refresh_required") {
+      itemDeltaIndexes.clear();
+    }
+    const deltaKey = itemDeltaCoalesceKey(event);
+    if (deltaKey) {
+      turnPatchIndexes.clear();
+      const existingIndex = itemDeltaIndexes.get(deltaKey);
+      if (existingIndex === undefined) {
+        itemDeltaIndexes.set(deltaKey, result.length);
+        result.push(event);
+        continue;
+      }
+      result[existingIndex] = mergeItemDeltaEvents(result[existingIndex], event);
+      continue;
+    }
+
     const key = turnPatchCoalesceKey(event);
     if (!key) {
       result.push(event);
@@ -30,6 +47,33 @@ export function coalesceTimelineEventBatch(events: EventEnvelope[]): EventEnvelo
   }
 
   return result.sort((left, right) => left.seq - right.seq);
+}
+
+function itemDeltaCoalesceKey(event: EventEnvelope): string | null {
+  if (event.kind !== "thread_view.item_delta") {
+    return null;
+  }
+  const payload = recordPayload(event.payload);
+  const threadId = event.threadId ?? stringPayload(payload?.threadId);
+  const turnId = event.turnId ?? stringPayload(payload?.turnId);
+  const itemId = event.itemId ?? stringPayload(payload?.itemId);
+  const delta = stringPayload(payload?.delta);
+  if (!threadId || !turnId || !itemId || delta === null) {
+    return null;
+  }
+  return `${threadId}:${turnId}:${itemId}`;
+}
+
+function mergeItemDeltaEvents(left: EventEnvelope, right: EventEnvelope): EventEnvelope {
+  const leftPayload = recordPayload(left.payload) ?? {};
+  const rightPayload = recordPayload(right.payload) ?? {};
+  return {
+    ...right,
+    payload: {
+      ...rightPayload,
+      delta: `${stringPayload(leftPayload.delta) ?? ""}${stringPayload(rightPayload.delta) ?? ""}`,
+    },
+  };
 }
 
 function turnPatchCoalesceKey(event: EventEnvelope): string | null {

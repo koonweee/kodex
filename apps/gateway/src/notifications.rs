@@ -483,6 +483,15 @@ async fn unread_agent_message_payload_if_still_unread(
         return Ok(None);
     }
 
+    if state.thread_presence.is_viewed(&thread_id) {
+        tracing::debug!(
+            thread_id,
+            reason = "foreground_viewer_present",
+            "skipped unread agent message push notification"
+        );
+        return Ok(None);
+    }
+
     let badge_count = unread_badge_count(&state, &thread_id)
         .await
         .unwrap_or(1)

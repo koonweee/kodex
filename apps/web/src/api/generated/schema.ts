@@ -1404,6 +1404,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads/{threadId}/view-presence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["update_thread_view_presence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/uploads/images": {
         parameters: {
             query?: never;
@@ -2781,6 +2797,15 @@ export interface components {
         };
         /** @enum {string} */
         ThreadViewPatchScope: "full_snapshot" | "turn" | "lifecycle";
+        ThreadViewPresenceRequest: {
+            clientId: string;
+            visible: boolean;
+        };
+        ThreadViewPresenceResponse: {
+            foregroundViewerCount: number;
+            threadId: string;
+            viewed: boolean;
+        };
         ThreadViewResponse: {
             historyPage?: null | components["schemas"]["ThreadTimelineWindowPage"];
             liveState: components["schemas"]["ThreadLiveState"];
@@ -5195,6 +5220,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RawAppServerResponse"];
+                };
+            };
+        };
+    };
+    update_thread_view_presence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadViewPresenceRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadViewPresenceResponse"];
                 };
             };
         };

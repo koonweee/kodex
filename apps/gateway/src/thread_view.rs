@@ -8,8 +8,8 @@ use serde_json::{json, Value};
 use tokio::sync::RwLock;
 
 pub use crate::thread_view_patch::{
-    ThreadViewPatch, ThreadViewPatchScope, THREAD_VIEW_PATCH_EVENT_KIND,
-    THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND,
+    ThreadViewItemDelta, ThreadViewPatch, ThreadViewPatchScope, THREAD_VIEW_ITEM_DELTA_EVENT_KIND,
+    THREAD_VIEW_PATCH_EVENT_KIND, THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND,
 };
 use crate::{
     app_server_api::{
@@ -26,8 +26,9 @@ use crate::{
 // ThreadView is the gateway-owned live projection of upstream app-server thread
 // state. The app-server remains the durable transcript owner; this reducer only
 // folds snapshots, live deltas, pending local input, and approvals into one
-// canonical view for the browser. Browser clients should render snapshots and
-// `thread_view.patch` rows from this module, not raw app-server item events.
+// canonical view for the browser. Browser clients should render snapshots,
+// `thread_view.patch`, and text-only `thread_view.item_delta` events from this
+// module, not raw app-server item events.
 #[derive(Debug, Clone, Default)]
 pub struct ThreadViewStore {
     sessions: Arc<RwLock<HashMap<String, ThreadView>>>,
@@ -200,6 +201,13 @@ impl ThreadViewStore {
         view.revision = view.revision.max(revision);
         update(view)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ItemDeltaApplyOutcome {
+    Appended,
+    Created,
+    Ignored,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -391,9 +399,15 @@ impl ThreadView {
         }
     }
 
-    fn append_delta(&mut self, thread_id: &str, turn_id: &str, item_id: &str, delta: &str) {
+    fn append_delta(
+        &mut self,
+        thread_id: &str,
+        turn_id: &str,
+        item_id: &str,
+        delta: &str,
+    ) -> ItemDeltaApplyOutcome {
         if self.terminal_turn_ids.contains(turn_id) {
-            return;
+            return ItemDeltaApplyOutcome::Ignored;
         }
         self.thread_id = thread_id.to_string();
         let key = scoped_item_key(turn_id, item_id);
@@ -402,8 +416,9 @@ impl ThreadView {
             .iter()
             .find(|item| scoped_item_key(&item.turn_id, &item.item_id) == key);
         if existing.is_some_and(|item| is_terminal_turn_status(&item.status)) {
-            return;
+            return ItemDeltaApplyOutcome::Ignored;
         }
+        let created = existing.is_none();
         let mut item = existing
             .and_then(|item| serde_json::to_value(&item.payload.item).ok())
             .unwrap_or_else(|| json!({"id": item_id, "type": "agentMessage", "text": ""}));
@@ -424,15 +439,21 @@ impl ThreadView {
                 Value::String(format!("{current}{delta}")),
             );
         }
-        if let Ok(item_snapshot) = ThreadItemSnapshot::from_payload(&item) {
-            self.upsert_item(
-                thread_id,
-                turn_id,
-                item,
-                item_snapshot,
-                Some("running"),
-                Some(Utc::now().timestamp_millis()),
-            );
+        let Ok(item_snapshot) = ThreadItemSnapshot::from_payload(&item) else {
+            return ItemDeltaApplyOutcome::Ignored;
+        };
+        self.upsert_item(
+            thread_id,
+            turn_id,
+            item,
+            item_snapshot,
+            Some("running"),
+            Some(Utc::now().timestamp_millis()),
+        );
+        if created {
+            ItemDeltaApplyOutcome::Created
+        } else {
+            ItemDeltaApplyOutcome::Appended
         }
     }
 
@@ -909,20 +930,20 @@ fn string_payload_field(payload: &Value, fields: &[&str]) -> Option<String> {
     })
 }
 
-pub async fn record_item_delta(
+pub(crate) async fn record_item_delta(
     sessions: &ThreadViewStore,
     thread_id: &str,
     turn_id: &str,
     item_id: &str,
     delta: &str,
     updated_seq: i64,
-) -> ApiResult<()> {
-    sessions
+) -> ApiResult<ItemDeltaApplyOutcome> {
+    let outcome = sessions
         .with_thread_view(thread_id, updated_seq, |view| {
-            view.append_delta(thread_id, turn_id, item_id, delta);
+            view.append_delta(thread_id, turn_id, item_id, delta)
         })
         .await;
-    Ok(())
+    Ok(outcome)
 }
 
 pub async fn record_item_delta_patch(
@@ -935,7 +956,7 @@ pub async fn record_item_delta_patch(
 ) -> ApiResult<ThreadViewPatch> {
     let patch = sessions
         .with_thread_view(thread_id, updated_seq, |view| {
-            view.append_delta(thread_id, turn_id, item_id, delta);
+            let _ = view.append_delta(thread_id, turn_id, item_id, delta);
             view.turn_patch(turn_id)
         })
         .await;

@@ -17,7 +17,10 @@ use crate::{
         THREAD_SUBAGENTS_CHANGED_EVENT, THREAD_SUBAGENT_STARTED_EVENT,
         THREAD_SUBAGENT_STOPPED_EVENT, THREAD_SUBAGENT_UPDATED_EVENT,
     },
-    thread_view::{self, THREAD_VIEW_PATCH_EVENT_KIND, THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND},
+    thread_view::{
+        self, THREAD_VIEW_ITEM_DELTA_EVENT_KIND, THREAD_VIEW_PATCH_EVENT_KIND,
+        THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND,
+    },
 };
 
 pub(crate) const THREAD_VIEW_CURSOR_KIND: &str = "thread_view.cursor";
@@ -98,6 +101,7 @@ pub(crate) fn is_normal_live_event(event: &EventEnvelope) -> bool {
         || matches!(
             event.kind.as_str(),
             THREAD_VIEW_PATCH_EVENT_KIND
+                | THREAD_VIEW_ITEM_DELTA_EVENT_KIND
                 | "timeline.thread_metadata"
                 | THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND
                 | ACCOUNT_RATE_LIMITS_UPDATED_EVENT

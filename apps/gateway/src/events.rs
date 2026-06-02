@@ -45,7 +45,7 @@ use crate::{
         THREAD_SUBAGENTS_CHANGED_EVENT, THREAD_SUBAGENT_STARTED_EVENT,
         THREAD_SUBAGENT_STOPPED_EVENT, THREAD_SUBAGENT_UPDATED_EVENT,
     },
-    thread_view::{self, THREAD_VIEW_PATCH_EVENT_KIND},
+    thread_view::{self, THREAD_VIEW_ITEM_DELTA_EVENT_KIND, THREAD_VIEW_PATCH_EVENT_KIND},
 };
 
 const SSE_REPLAY_PAGE_SIZE: i64 = 500;
@@ -366,7 +366,7 @@ async fn event_stream(
                 Ok(Ok(event))
                     if event.seq > high_water
                         && event_matches(&event, &query)
-                        && is_normal_live_event(&event) =>
+                        && is_sse_live_event_for_query(&event, &query) =>
                 {
                     high_water = high_water.max(event.seq);
                     if let Ok(sse_event) = event_to_sse(event) {
@@ -388,6 +388,16 @@ async fn event_stream(
             }
         }
     })
+}
+
+fn is_sse_live_event_for_query(event: &EventEnvelope, query: &EventsQuery) -> bool {
+    if event.kind == THREAD_VIEW_ITEM_DELTA_EVENT_KIND {
+        return query
+            .thread_id
+            .as_ref()
+            .is_some_and(|thread_id| event.thread_id.as_ref() == Some(thread_id));
+    }
+    is_normal_live_event(event)
 }
 
 async fn replay_operational_events(
@@ -509,7 +519,7 @@ async fn timeline_item_delta_event(
     .await?;
     let delta = string_field(params, &["delta", "text", "content"]).unwrap_or_default();
     let _phase = string_field(params, &["phase"]);
-    let patch = thread_view::record_item_delta_patch(
+    let outcome = thread_view::record_item_delta(
         &state.thread_views,
         &thread_id,
         &turn_id,
@@ -518,7 +528,27 @@ async fn timeline_item_delta_event(
         cursor.seq,
     )
     .await?;
-    Ok(vec![thread_view_patch_payload_event(state, patch).await?])
+    match outcome {
+        thread_view::ItemDeltaApplyOutcome::Ignored => return Ok(Vec::new()),
+        thread_view::ItemDeltaApplyOutcome::Created => {
+            let patch = thread_view::patch_for_thread(&state.thread_views, &thread_id).await?;
+            return Ok(vec![thread_view_patch_payload_event(state, patch).await?]);
+        }
+        thread_view::ItemDeltaApplyOutcome::Appended => {}
+    }
+    Ok(vec![
+        thread_view_item_delta_payload_event(
+            state,
+            thread_view::ThreadViewItemDelta {
+                thread_id,
+                turn_id,
+                item_id,
+                delta,
+                view_revision: cursor.seq,
+            },
+        )
+        .await?,
+    ])
 }
 
 fn is_assistant_message_delta_method(method: &str) -> bool {
@@ -933,6 +963,21 @@ pub(crate) async fn thread_view_patch_payload_event(
         THREAD_VIEW_PATCH_EVENT_KIND,
         Some("thread_view/patch"),
         patch,
+    )
+}
+
+async fn thread_view_item_delta_payload_event(
+    state: &AppState,
+    delta: thread_view::ThreadViewItemDelta,
+) -> ApiResult<EventEnvelope> {
+    synthetic_event(
+        state.store.latest_event_seq().await?,
+        Some(delta.thread_id.clone()),
+        Some(delta.turn_id.clone()),
+        Some(delta.item_id.clone()),
+        THREAD_VIEW_ITEM_DELTA_EVENT_KIND,
+        Some("thread_view/item_delta"),
+        delta,
     )
 }
 

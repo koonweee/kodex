@@ -7,7 +7,18 @@ use crate::app_server_api::{
 };
 
 pub const THREAD_VIEW_PATCH_EVENT_KIND: &str = "thread_view.patch";
+pub const THREAD_VIEW_ITEM_DELTA_EVENT_KIND: &str = "thread_view.item_delta";
 pub const THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND: &str = "thread_view.refresh_required";
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadViewItemDelta {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub item_id: String,
+    pub delta: String,
+    pub view_revision: i64,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]

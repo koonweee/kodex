@@ -11,6 +11,7 @@ import { idleTimelineEntry, type TimelineEntry } from "./entry";
 import {
   applyTimelineHistoryWindow,
   applyTimelineSnapshot,
+  canApplyThreadViewItemDelta,
   createTimelineState,
   setTimelineOlderHistoryLoading,
   type TimelineState,
@@ -55,6 +56,7 @@ export function useSelectedThreadTimeline({
   const timelineFlushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedThreadStreamToken = useRef(0);
   const olderHistoryRequest = useRef<{ threadId: string; cursor: string } | null>(null);
+  const requestTimelineRefresh = useRef<(() => void) | null>(null);
   const latestCallbacks = useRef({
     onApprovalEvent,
     onError,
@@ -123,9 +125,19 @@ export function useSelectedThreadTimeline({
     }
     setTimeline((current) => {
       const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
+      let shouldRefresh = false;
+      for (const event of events) {
+        if (!canApplyThreadViewItemDelta(current, event)) {
+          shouldRefresh = true;
+          break;
+        }
+      }
       const next = applyTimelineEventBatch(current, events);
       const finishedAt = typeof performance !== "undefined" ? performance.now() : startedAt;
       recordReducerBatch(events.length, finishedAt - startedAt);
+      if (shouldRefresh) {
+        requestTimelineRefresh.current?.();
+      }
       return next;
     });
   }
@@ -256,6 +268,7 @@ export function useSelectedThreadTimeline({
         });
       });
     };
+    requestTimelineRefresh.current = () => refetchSnapshot("refreshRequired");
 
     const connectSelectedThreadStream = (cursor: number) => {
       if (closeStream) {
@@ -344,6 +357,7 @@ export function useSelectedThreadTimeline({
       }
       closeStream?.();
       cancelQueuedTimelineEvents();
+      requestTimelineRefresh.current = null;
     };
   }, [isSelectedThreadSnapshotDeferred, selectedThreadId, setApprovals, setTimeline, setTimelineEntry]);
 
@@ -362,7 +376,7 @@ function isQueueEvent(event: EventEnvelope): boolean {
 }
 
 function isCanonicalTimelineRenderEvent(event: EventEnvelope): boolean {
-  return event.kind === "thread_view.patch" || event.kind === "gateway.warning" || event.kind === "gateway.error";
+  return event.kind === "thread_view.patch" || event.kind === "thread_view.item_delta" || event.kind === "gateway.warning" || event.kind === "gateway.error";
 }
 
 function isTransientThreadSnapshotLoadError(error: unknown): boolean {

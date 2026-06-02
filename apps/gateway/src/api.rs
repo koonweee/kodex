@@ -87,6 +87,7 @@ use crate::{
             SelfControlThreadInputResponse,
         },
         skills::{SkillIconQuery, SkillsQuery},
+        thread_presence::{ThreadViewPresenceRequest, ThreadViewPresenceResponse},
         threads::{
             ChatThreadListQuery, CreateChatThreadRequest, CreateThreadRequest,
             MarkThreadSeenRequest, RenameThreadRequest, RenameThreadResponse,
@@ -124,6 +125,7 @@ pub struct AppState {
     pub previews: crate::previews::PreviewManager,
     pub notifications: crate::notifications::NotificationService,
     pub subagents: SubagentProjection,
+    pub thread_presence: crate::thread_presence::ThreadPresence,
     pub thread_views: ThreadViewStore,
     pub title_generation: crate::title_generation::TitleGenerationService,
     pub chat_cwd_cache: crate::routes::threads::ChatCwdCache,
@@ -145,6 +147,7 @@ impl AppState {
             skills: crate::skills::SkillCatalogCache::default(),
             notifications,
             subagents: SubagentProjection::default(),
+            thread_presence: crate::thread_presence::ThreadPresence::default(),
             thread_views: ThreadViewStore::default(),
             title_generation: crate::title_generation::TitleGenerationService::default(),
             chat_cwd_cache: crate::routes::threads::ChatCwdCache::default(),
@@ -252,6 +255,7 @@ impl AppState {
         crate::routes::notifications::upsert_apns_device,
         crate::routes::notifications::delete_apns_device,
         crate::routes::notifications::test_apns_notification,
+        crate::routes::thread_presence::update_thread_view_presence,
         crate::routes::skills::list_skills,
         crate::routes::skills::preview_skill_icon,
         crate::routes::kodex_control_plugin::kodex_control_plugin_status,
@@ -420,6 +424,8 @@ impl AppState {
         CurrentPushSubscriptionQuery,
         CurrentPushSubscriptionResponse,
         TestNotificationResponse,
+        ThreadViewPresenceRequest,
+        ThreadViewPresenceResponse,
         SkillsQuery,
         SkillIconQuery,
         SkillsCatalogResponse,
@@ -500,6 +506,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::account::router())
         .merge(routes::models::router())
         .merge(routes::notifications::router())
+        .merge(routes::thread_presence::router())
         .merge(routes::permission_profiles::router())
         .merge(routes::skills::router())
         .merge(routes::kodex_control_plugin::router())

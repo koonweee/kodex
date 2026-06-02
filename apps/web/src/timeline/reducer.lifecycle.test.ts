@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { applyLiveTimelineUpdate, createTimelineState, replayTimeline } from "./reducer";
+import { applyLiveTimelineUpdate, canApplyThreadViewItemDelta, createTimelineState, replayTimeline } from "./reducer";
 import type { EventEnvelope } from "../api/client";
 
 describe("timeline reducer lifecycle", () => {
@@ -38,6 +38,73 @@ describe("timeline reducer lifecycle", () => {
     expect(state.lastSeq).toBe(10);
   });
 
+  it("appends canonical thread view item deltas to an existing assistant row", () => {
+    let state = applyLiveTimelineUpdate(createTimelineState(), event({
+      seq: 3,
+      kind: "thread_view.patch",
+      codexMethod: "thread_view/patch",
+      payload: projectionPatchWithLiveState({
+        viewRevision: 3,
+        activeTurnId: "turn-1",
+        liveState: "streaming",
+        status: "running",
+        text: "Hello",
+      }),
+    }));
+
+    state = applyLiveTimelineUpdate(state, itemDeltaEvent({
+      seq: 4,
+      delta: " world",
+    }));
+
+    expect(state.items).toHaveLength(1);
+    expect(state.items[0]).toMatchObject({
+      id: "projection-turn-1-item-1",
+      text: "Hello world",
+      status: "running",
+    });
+    expect(state.rows[0].type === "item" ? state.rows[0].item.text : "").toBe("Hello world");
+    expect(state.lastSeq).toBe(4);
+    expect(state.viewRevision).toBe(3);
+  });
+
+  it("does not create transcript rows for canonical deltas without a base row", () => {
+    const initial = createTimelineState();
+    const orphan = itemDeltaEvent({
+      seq: 4,
+      delta: "orphan",
+    });
+    const state = applyLiveTimelineUpdate(initial, orphan);
+
+    expect(canApplyThreadViewItemDelta(initial, orphan)).toBe(false);
+    expect(state.items).toEqual([]);
+    expect(state.rows).toEqual([]);
+    expect(state.lastSeq).toBe(4);
+    expect(state.viewRevision).toBe(0);
+  });
+
+  it("does not append canonical deltas to completed assistant rows", () => {
+    const initial = applyLiveTimelineUpdate(createTimelineState(), event({
+      seq: 3,
+      kind: "thread_view.patch",
+      codexMethod: "thread_view/patch",
+      payload: projectionPatch("Final"),
+    }));
+    const staleDelta = itemDeltaEvent({
+      seq: 4,
+      delta: " stale",
+    });
+    const state = applyLiveTimelineUpdate(initial, staleDelta);
+
+    expect(canApplyThreadViewItemDelta(initial, staleDelta)).toBe(false);
+    expect(state.items[0]).toMatchObject({
+      text: "Final",
+      status: "completed",
+    });
+    expect(state.lastSeq).toBe(4);
+    expect(state.viewRevision).toBe(3);
+  });
+
   it("lets canonical thread view patches replace older canonical text", () => {
     let state = applyLiveTimelineUpdate(createTimelineState(), event({
       seq: 3,
@@ -70,6 +137,44 @@ describe("timeline reducer lifecycle", () => {
       text: "Canonical final",
       status: "completed",
     });
+    expect(state.viewRevision).toBe(8);
+  });
+
+  it("lets final thread view patches reconcile text after live item deltas", () => {
+    let state = applyLiveTimelineUpdate(createTimelineState(), event({
+      seq: 3,
+      kind: "thread_view.patch",
+      codexMethod: "thread_view/patch",
+      payload: projectionPatchWithLiveState({
+        viewRevision: 3,
+        activeTurnId: "turn-1",
+        liveState: "streaming",
+        status: "running",
+        text: "Partial",
+      }),
+    }));
+    state = applyLiveTimelineUpdate(state, itemDeltaEvent({
+      seq: 4,
+      delta: " local",
+    }));
+    state = applyLiveTimelineUpdate(state, event({
+      seq: 8,
+      kind: "thread_view.patch",
+      codexMethod: "thread_view/patch",
+      payload: projectionPatchWithLiveState({
+        viewRevision: 8,
+        activeTurnId: null,
+        liveState: "idle",
+        status: "completed",
+        text: "Canonical final",
+      }),
+    }));
+
+    expect(state.items[0]).toMatchObject({
+      text: "Canonical final",
+      status: "completed",
+    });
+    expect(state.lastSeq).toBe(8);
     expect(state.viewRevision).toBe(8);
   });
 
@@ -249,6 +354,25 @@ function event(overrides: Partial<EventEnvelope>): EventEnvelope {
     payload: overrides.payload ?? {},
     receivedAt: overrides.receivedAt ?? "2026-05-17T00:00:00Z",
   };
+}
+
+function itemDeltaEvent(overrides: { seq: number; delta: string; turnId?: string; itemId?: string }): EventEnvelope {
+  const turnId = overrides.turnId ?? "turn-1";
+  const itemId = overrides.itemId ?? "item-1";
+  return event({
+    seq: overrides.seq,
+    kind: "thread_view.item_delta",
+    codexMethod: "thread_view/item_delta",
+    turnId,
+    itemId,
+    payload: {
+      threadId: "thread-1",
+      turnId,
+      itemId,
+      delta: overrides.delta,
+      viewRevision: overrides.seq,
+    },
+  });
 }
 
 function projectionPatch(text: string): Record<string, unknown> & { testItem: Record<string, unknown> & { id: string; turnId: string; displayOrder: number; status: string; timestampMs: number; payload: Record<string, unknown> } } {

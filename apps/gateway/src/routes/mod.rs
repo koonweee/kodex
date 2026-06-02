@@ -15,6 +15,7 @@ pub mod project_previews;
 pub mod projects;
 pub mod self_control;
 pub mod skills;
+pub mod thread_presence;
 pub mod threads;
 pub mod turns;
 pub mod uploads;
@@ -96,6 +97,45 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(openapi.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn thread_view_presence_route_tracks_visible_and_hidden_clients() {
+        let (state, _) = test_state().await;
+        let app = build_router(state.clone());
+
+        let visible = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads/thread-1/view-presence")
+                    .body(Body::from(
+                        json!({"clientId": "client-1", "visible": true}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(visible.status(), StatusCode::OK);
+        let body = to_bytes(visible.into_body(), usize::MAX).await.unwrap();
+        let payload: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload["threadId"], "thread-1");
+        assert_eq!(payload["foregroundViewerCount"], 1);
+        assert_eq!(payload["viewed"], true);
+
+        let hidden = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/view-presence")
+                    .body(Body::from(
+                        json!({"clientId": "client-1", "visible": false}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(hidden.status(), StatusCode::OK);
+        assert_eq!(state.thread_presence.foreground_viewer_count("thread-1"), 0);
     }
 
     #[tokio::test]
@@ -855,6 +895,106 @@ mod tests {
 
         process_due_deliveries(state.clone()).await.unwrap();
         assert!(sender.payloads.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn foreground_thread_view_presence_skips_unread_agent_message_delivery() {
+        let (mut state, app_server) = test_state().await;
+        Arc::make_mut(&mut state.config)
+            .notifications
+            .recheck_delay_ms = 0;
+        let sender = Arc::new(RecordingPushSender::new(PushDeliveryOutcome::Sent));
+        state = state.with_notification_sender(sender.clone());
+        state
+            .store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/sub-1".to_string(),
+                p256dh: "public".to_string(),
+                auth: "auth".to_string(),
+                user_agent: None,
+            })
+            .await
+            .unwrap();
+        state
+            .thread_presence
+            .record_view("client-1", "thread-1", true);
+        app_server.queued_responses.lock().unwrap().extend([
+            thread_read_response("thread-1", 1),
+            thread_read_response("thread-1", 1),
+        ]);
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "turn/upsert".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turn": {
+                        "id": "turn-1",
+                        "status": {"type": "completed"},
+                        "items": []
+                    }
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        process_due_deliveries(state.clone()).await.unwrap();
+        assert!(sender.payloads.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn expired_thread_view_presence_allows_unread_agent_message_delivery() {
+        let (mut state, app_server) = test_state().await;
+        Arc::make_mut(&mut state.config)
+            .notifications
+            .recheck_delay_ms = 0;
+        let sender = Arc::new(RecordingPushSender::new(PushDeliveryOutcome::Sent));
+        state = state.with_notification_sender(sender.clone());
+        state
+            .store
+            .upsert_push_subscription(NewPushSubscription {
+                endpoint: "https://push.example/sub-1".to_string(),
+                p256dh: "public".to_string(),
+                auth: "auth".to_string(),
+                user_agent: None,
+            })
+            .await
+            .unwrap();
+        state.thread_presence.record_view_at(
+            "client-1",
+            "thread-1",
+            true,
+            chrono::Utc::now()
+                - crate::thread_presence::thread_view_presence_ttl()
+                - chrono::Duration::milliseconds(1),
+        );
+        app_server.queued_responses.lock().unwrap().extend([
+            thread_read_response("thread-1", 1),
+            thread_read_response("thread-1", 1),
+            json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
+        ]);
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "turn/upsert".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turn": {
+                        "id": "turn-1",
+                        "status": {"type": "completed"},
+                        "items": []
+                    }
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        process_due_deliveries(state.clone()).await.unwrap();
+        assert_eq!(sender.payloads.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]
@@ -12223,7 +12363,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sse_allows_live_selected_thread_view_patches_without_replay() {
+    async fn sse_allows_live_selected_thread_view_item_deltas_without_replay() {
         let (state, _) = test_state().await;
         let app = build_router(state.clone());
 
@@ -12256,8 +12396,30 @@ mod tests {
         let mut body = response.into_body();
         let first = next_sse_chunk(&mut body).await;
         assert!(first.contains("thread_view.patch"));
-        assert!(first.contains("\"scope\":\"turn\""));
+        assert!(first.contains("\"scope\":\"full_snapshot\""));
         assert!(first.contains("\"text\":\"hello\""));
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "item/agentMessage/delta".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "item-1",
+                    "delta": " world"
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let second = next_sse_chunk(&mut body).await;
+        assert!(second.contains("thread_view.item_delta"));
+        assert!(second.contains("\"delta\":\" world\""));
+        assert!(second.contains("\"itemId\":\"item-1\""));
+        assert!(!second.contains("\"scope\":\"turn\""));
+        assert!(!second.contains("\"rows\""));
 
         let replayed = state
             .store
@@ -12269,7 +12431,59 @@ mod tests {
             .all(|event| event.kind != "timeline.item_delta"));
         assert!(replayed
             .iter()
+            .all(|event| event.kind != "thread_view.item_delta"));
+        assert!(replayed
+            .iter()
             .all(|event| event.kind != "thread_view.refresh_required"));
+    }
+
+    #[tokio::test]
+    async fn sse_global_stream_does_not_deliver_thread_view_item_deltas() {
+        let (state, _) = test_state().await;
+        thread_view::record_item_delta(
+            &state.thread_views,
+            "thread-1",
+            "turn-1",
+            "item-1",
+            "hello",
+            1,
+        )
+        .await
+        .unwrap();
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/events")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "item/agentMessage/delta".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "item-1",
+                    "delta": " world"
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let mut body = response.into_body();
+        let delivered = timeout(Duration::from_millis(50), next_sse_chunk(&mut body)).await;
+        assert!(
+            delivered.is_err(),
+            "global SSE stream should not receive thread_view.item_delta"
+        );
     }
 
     #[tokio::test]

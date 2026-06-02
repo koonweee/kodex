@@ -100,6 +100,40 @@ describe("timeline event batching", () => {
     expect(state.viewRevision).toBe(100);
   });
 
+  it("coalesces same-frame canonical item deltas by concatenating chunks", () => {
+    const events = [
+      event({ id: "event-1", seq: 1, text: "H" }),
+      itemDeltaEvent({ id: "event-2", seq: 2, delta: "e" }),
+      itemDeltaEvent({ id: "event-3", seq: 3, delta: "llo" }),
+    ];
+
+    expect(coalesceTimelineEventBatch(events)).toHaveLength(2);
+    const state = applyTimelineEventBatch(createTimelineState(), events);
+
+    expect(state.items).toHaveLength(1);
+    expect(state.items[0]).toMatchObject({ text: "Hello" });
+    expect(state.lastSeq).toBe(3);
+    expect(state.viewRevision).toBe(1);
+  });
+
+  it("does not coalesce item deltas across authoritative patches", () => {
+    const events = [
+      event({ id: "event-1", seq: 1, text: "A" }),
+      itemDeltaEvent({ id: "event-2", seq: 2, delta: "B" }),
+      event({ id: "event-3", seq: 3, text: "Canonical" }),
+      itemDeltaEvent({ id: "event-4", seq: 4, delta: "D" }),
+    ];
+    const coalesced = coalesceTimelineEventBatch(events);
+
+    expect(coalesced.filter((queuedEvent) => queuedEvent.kind === "thread_view.item_delta")).toHaveLength(2);
+    const state = applyTimelineEventBatch(createTimelineState(), events);
+
+    expect(state.items).toHaveLength(1);
+    expect(state.items[0]).toMatchObject({ text: "CanonicalD" });
+    expect(state.lastSeq).toBe(4);
+    expect(state.viewRevision).toBe(3);
+  });
+
   it("replaces the complete affected turn while preserving other large-thread rows", () => {
     const fullSnapshot = event({
       id: "event-full-snapshot",
@@ -195,6 +229,29 @@ function canonicalItem(text: string, index = 1) {
         rawPayload: { id: `answer-${index}`, type: "agentMessage", text },
       },
     },
+  };
+}
+
+function itemDeltaEvent(overrides: { id: string; seq: number; delta: string; itemId?: string; turnId?: string }): EventEnvelope {
+  const turnId = overrides.turnId ?? "turn-1";
+  const itemId = overrides.itemId ?? "answer-1";
+  return {
+    id: overrides.id,
+    seq: overrides.seq,
+    kind: "thread_view.item_delta",
+    codexMethod: "thread_view/item_delta",
+    threadId: "thread-1",
+    turnId,
+    itemId,
+    projectId: "project-1",
+    payload: {
+      threadId: "thread-1",
+      turnId,
+      itemId,
+      delta: overrides.delta,
+      viewRevision: overrides.seq,
+    },
+    receivedAt: "2026-04-30T00:00:00Z",
   };
 }
 

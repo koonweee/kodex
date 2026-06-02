@@ -6,7 +6,7 @@ import { isApprovalEvent } from "../approvals/state";
 import { createEventStreamClient } from "../events/stream";
 import { applyTimelineEventBatch } from "./batch";
 import { idleTimelineEntry, type TimelineEntry } from "./entry";
-import { applyTimelineSnapshot, createTimelineState, type TimelineState } from "./reducer";
+import { applyTimelineSnapshot, canApplyThreadViewItemDelta, createTimelineState, type TimelineState } from "./reducer";
 
 export function useReadonlyThreadTimeline({
   onError,
@@ -24,6 +24,7 @@ export function useReadonlyThreadTimeline({
   const timelineFlushFrame = useRef<number | null>(null);
   const timelineFlushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamToken = useRef(0);
+  const requestTimelineRefresh = useRef<(() => void) | null>(null);
   const latestCallbacks = useRef({ onError, onSnapshotThread });
   latestCallbacks.current = { onError, onSnapshotThread };
 
@@ -78,7 +79,14 @@ export function useReadonlyThreadTimeline({
     if (events.length === 0) {
       return;
     }
-    setTimeline((current) => applyTimelineEventBatch(current, events));
+    setTimeline((current) => {
+      const shouldRefresh = events.some((event) => !canApplyThreadViewItemDelta(current, event));
+      const next = applyTimelineEventBatch(current, events);
+      if (shouldRefresh) {
+        requestTimelineRefresh.current?.();
+      }
+      return next;
+    });
   }
 
   function cancelQueuedTimelineEvents() {
@@ -129,6 +137,7 @@ export function useReadonlyThreadTimeline({
         }
       });
     };
+    requestTimelineRefresh.current = refetchSnapshot;
 
     const connectStream = (cursor: number) => {
       const client = createEventStreamClient({
@@ -185,6 +194,7 @@ export function useReadonlyThreadTimeline({
       streamToken.current += 1;
       closeStream?.();
       cancelQueuedTimelineEvents();
+      requestTimelineRefresh.current = null;
     };
   }, [threadId]);
 
@@ -209,5 +219,5 @@ function isQueueEvent(event: EventEnvelope): boolean {
 }
 
 function isCanonicalTimelineRenderEvent(event: EventEnvelope): boolean {
-  return event.kind === "thread_view.patch";
+  return event.kind === "thread_view.patch" || event.kind === "thread_view.item_delta";
 }

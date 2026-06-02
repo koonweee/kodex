@@ -26,6 +26,7 @@ import {
   indexesForState,
   prepareTimelineIndexesForUpdate,
   timelineRowByKey,
+  timelineRowKeysByItemId,
   timelineItemById,
   timelineItems,
   timelineTurnById,
@@ -67,6 +68,9 @@ export function applyLiveTimelineUpdate(state: TimelineState, event: EventEnvelo
   if (event.kind === "thread_view.patch") {
     return applyThreadViewPatch(state, event);
   }
+  if (event.kind === "thread_view.item_delta") {
+    return applyThreadViewItemDelta(state, event);
+  }
   if (isWarningEvent(event) || isErrorEvent(event)) {
     return applyDebugEvent(state, event);
   }
@@ -74,6 +78,24 @@ export function applyLiveTimelineUpdate(state: TimelineState, event: EventEnvelo
 }
 
 export const applyTimelineEvent = applyLiveTimelineUpdate;
+
+export function canApplyThreadViewItemDelta(state: TimelineState, event: EventEnvelope): boolean {
+  if (event.kind !== "thread_view.item_delta" || event.seq < state.lastSeq) {
+    return true;
+  }
+  const payload = recordPayload(event.payload);
+  const itemId = stringPayload(payload?.itemId) ?? event.itemId;
+  const turnId = stringPayload(payload?.turnId) ?? event.turnId;
+  const delta = stringPayload(payload?.delta);
+  if (!itemId || !turnId || !delta) {
+    return true;
+  }
+  const indexes = indexesForState(state);
+  return timelineRowKeysByItemId(indexes, itemId).some((rowKey) => {
+    const row = timelineRowByKey(indexes, rowKey);
+    return row ? rowHasAppendableDeltaTarget(row, { itemId, turnId, delta }) : false;
+  });
+}
 
 type TimelineReducerInstrumentation = {
   turnPatchIndexedRows: number;
@@ -457,6 +479,134 @@ function applyThreadViewPatch(state: TimelineState, event: EventEnvelope): Timel
   let next = patch.scope === "lifecycle" ? state : applyCanonicalRowsPatch(state, threadId, patch);
   next = withProjectionPatchLiveState(next, patch, event.seq);
   return withTimelineLastSeq(next, Math.max(event.seq, revision));
+}
+
+function applyThreadViewItemDelta(state: TimelineState, event: EventEnvelope): TimelineState {
+  if (event.seq < state.lastSeq) {
+    return state;
+  }
+  const payload = recordPayload(event.payload);
+  const itemId = stringPayload(payload?.itemId) ?? event.itemId;
+  const turnId = stringPayload(payload?.turnId) ?? event.turnId;
+  const delta = stringPayload(payload?.delta);
+  if (!itemId || !turnId || !delta) {
+    return withTimelineLastSeq(state, Math.max(state.lastSeq, event.seq));
+  }
+
+  const indexes = indexesForState(state);
+  const rowKeys = timelineRowKeysByItemId(indexes, itemId);
+  if (rowKeys.length === 0) {
+    return applyThreadViewDeltaRefreshRequired(state, event);
+  }
+
+  let applied = false;
+  const target = { itemId, turnId, delta };
+  const rows = state.rows.map((row) =>
+    replaceDeltaTargetInRow(row, target, () => {
+      applied = true;
+    }),
+  );
+  if (!applied) {
+    return applyThreadViewDeltaRefreshRequired(state, event);
+  }
+  return withTimelineLastSeq(rebuildTimelineRows(state, rows), Math.max(state.lastSeq, event.seq));
+}
+
+function rowHasAppendableDeltaTarget(row: TimelineRow, target: ItemDeltaTarget): boolean {
+  if (row.type === "item") {
+    return isAppendableDeltaTarget(row.item, target);
+  }
+  if (row.type === "activity") {
+    return row.items.some((item) => isAppendableDeltaTarget(item, target));
+  }
+  if (row.type === "work") {
+    return row.collapsedRows.some((collapsedRow) => rowHasAppendableDeltaTarget(collapsedRow, target));
+  }
+  return false;
+}
+
+function applyThreadViewDeltaRefreshRequired(state: TimelineState, event: EventEnvelope): TimelineState {
+  return applyLiveTimelineUpdate(state, {
+    ...event,
+    kind: "thread_view.refresh_required",
+    codexMethod: "thread_view/refresh_required",
+    itemId: null,
+    payload: {
+      threadId: event.threadId,
+      reason: "item_delta_base_missing",
+    },
+  });
+}
+
+type ItemDeltaTarget = {
+  itemId: string;
+  turnId: string;
+  delta: string;
+};
+
+function replaceDeltaTargetInRow(row: TimelineRow, target: ItemDeltaTarget, onApplied: () => void): TimelineRow {
+  if (row.type === "item") {
+    const item = appendDeltaToItem(row.item, target);
+    if (item === row.item) {
+      return row;
+    }
+    onApplied();
+    return { ...row, item };
+  }
+  if (row.type === "activity") {
+    let changed = false;
+    const items = row.items.map((item) => {
+      const next = appendDeltaToItem(item, target);
+      changed ||= next !== item;
+      return next;
+    });
+    if (!changed) {
+      return row;
+    }
+    onApplied();
+    return { ...row, items };
+  }
+  if (row.type === "work") {
+    let changed = false;
+    const collapsedRows = row.collapsedRows.map((collapsedRow) => {
+      const next = replaceDeltaTargetInRow(collapsedRow, target, () => {
+        changed = true;
+      });
+      return next as typeof collapsedRow;
+    });
+    if (!changed) {
+      return row;
+    }
+    onApplied();
+    return { ...row, collapsedRows };
+  }
+  return row;
+}
+
+function appendDeltaToItem(item: TimelineItem, target: ItemDeltaTarget): TimelineItem {
+  if (!isAppendableDeltaTarget(item, target)) {
+    return item;
+  }
+  return {
+    ...item,
+    text: `${item.text}${target.delta}`,
+  };
+}
+
+function isAppendableDeltaTarget(item: TimelineItem, target: ItemDeltaTarget): boolean {
+  if (item.turnId !== target.turnId) {
+    return false;
+  }
+  if (item.id !== target.itemId && item.serverItemId !== target.itemId) {
+    return false;
+  }
+  if (item.kind !== "assistant_message" && item.kind !== "agent_message") {
+    return false;
+  }
+  if (item.status !== "running") {
+    return false;
+  }
+  return true;
 }
 
 function isThreadViewPatchScope(scope: ThreadViewPatch["scope"] | undefined): scope is ThreadViewPatch["scope"] {
@@ -901,6 +1051,14 @@ function timelineDraftFromState(
     viewRevision: state.viewRevision,
     ...overrides,
   };
+}
+
+function recordPayload(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function stringPayload(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function unixSecondsToMs(value: number | null | undefined): number | undefined {

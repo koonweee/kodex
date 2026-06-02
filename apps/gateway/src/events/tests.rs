@@ -2,8 +2,11 @@ use serde_json::json;
 use std::sync::{atomic::Ordering, Arc};
 
 use crate::{
-    api::AppState, app_server::tests::RecordingAppServer, config::Config, store::Store,
-    thread_view::THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND,
+    api::AppState,
+    app_server::tests::RecordingAppServer,
+    config::Config,
+    store::Store,
+    thread_view::{THREAD_VIEW_ITEM_DELTA_EVENT_KIND, THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND},
 };
 
 use super::*;
@@ -245,7 +248,7 @@ async fn thread_compacted_refetches_snapshot_and_clears_runtime() {
 }
 
 #[tokio::test]
-async fn notification_ingest_emits_thread_view_patch_for_timeline_delta() {
+async fn notification_ingest_emits_thread_view_item_delta_for_timeline_delta() {
     let state = test_state().await;
     let mut receiver = state.events.subscribe();
 
@@ -269,31 +272,157 @@ async fn notification_ingest_emits_thread_view_patch_for_timeline_delta() {
         .unwrap()
         .unwrap();
     assert_eq!(patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
-    assert_eq!(patch.codex_method.as_deref(), Some("thread_view/patch"));
-    assert_eq!(patch.thread_id.as_deref(), Some("thread-1"));
-    assert_eq!(patch.payload["threadId"], "thread-1");
-    assert_eq!(patch.payload["scope"], "turn");
-    assert_eq!(patch.payload["activeTurnId"], "turn-1");
-    assert_eq!(patch.payload["liveState"], "streaming");
-    assert_eq!(patch.payload["affectedTurnIds"], json!(["turn-1"]));
+    assert_eq!(patch.payload["scope"], "full_snapshot");
     assert_eq!(
         patch.payload["rows"][0]["item"]["payload"]["item"]["text"],
         "hello"
     );
     assert!(patch.payload.get("items").is_none());
 
+    ingest_inbound(
+        InboundMessage::Notification {
+            method: "item/agentMessage/delta".to_string(),
+            params: json!({
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "itemId": "item-1",
+                "delta": " world"
+            }),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+
+    let patch = timeout(Duration::from_secs(1), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(patch.kind, THREAD_VIEW_ITEM_DELTA_EVENT_KIND);
+    assert_eq!(
+        patch.codex_method.as_deref(),
+        Some("thread_view/item_delta")
+    );
+    assert_eq!(patch.thread_id.as_deref(), Some("thread-1"));
+    assert_eq!(patch.payload["threadId"], "thread-1");
+    assert_eq!(patch.payload["turnId"], "turn-1");
+    assert_eq!(patch.payload["itemId"], "item-1");
+    assert_eq!(patch.payload["delta"], " world");
+    assert_eq!(patch.payload["viewRevision"], patch.seq);
+    assert!(patch.payload.get("items").is_none());
+    assert!(patch.payload.get("rows").is_none());
+
     let replay = state
         .store
         .replay_events(None, None, Some("thread-1".to_string()))
         .await
         .unwrap();
-    assert_eq!(replay.len(), 1);
-    assert_eq!(replay[0].kind, THREAD_VIEW_CURSOR_KIND);
-    assert_eq!(replay[0].payload["sourceMethod"], "item/agentMessage/delta");
-    assert!(replay[0].payload.get("delta").is_none());
+    assert_eq!(replay.len(), 2);
+    assert!(replay.iter().all(|event| {
+        event.kind == THREAD_VIEW_CURSOR_KIND
+            && event.payload["sourceMethod"] == "item/agentMessage/delta"
+            && event.payload.get("delta").is_none()
+    }));
     assert!(replay
         .iter()
         .all(|event| event.kind != "thread_view.refresh_required"));
+}
+
+#[tokio::test]
+async fn late_assistant_delta_after_terminal_turn_does_not_emit_item_delta() {
+    let state = test_state().await;
+    let mut receiver = state.events.subscribe();
+
+    ingest_inbound(
+        InboundMessage::Notification {
+            method: "turn/completed".to_string(),
+            params: json!({
+                "threadId": "thread-1",
+                "turn": {
+                    "id": "turn-1",
+                    "status": {"type": "completed"},
+                    "items": [{"id": "item-1", "type": "agentMessage", "text": "Final"}]
+                }
+            }),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+    let terminal_patch = receiver.recv().await.unwrap();
+    assert_eq!(terminal_patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
+    while timeout(Duration::from_millis(10), receiver.recv())
+        .await
+        .is_ok()
+    {}
+
+    ingest_inbound(
+        InboundMessage::Notification {
+            method: "item/agentMessage/delta".to_string(),
+            params: json!({
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "itemId": "item-1",
+                "delta": " stale"
+            }),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+
+    let late_event = timeout(Duration::from_millis(50), receiver.recv()).await;
+    assert!(
+        late_event.is_err(),
+        "late terminal delta should not broadcast a live item delta"
+    );
+}
+
+#[tokio::test]
+async fn assistant_delta_events_stay_under_synthetic_byte_budget() {
+    let state = test_state().await;
+    let mut receiver = state.events.subscribe();
+    let mut total_bytes = 0usize;
+    let mut max_bytes = 0usize;
+
+    for index in 0..100 {
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "item/agentMessage/delta".to_string(),
+                params: json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "item-1",
+                    "delta": format!("chunk-{index};")
+                }),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+
+        let event = timeout(Duration::from_secs(1), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        if index == 0 {
+            assert_eq!(event.kind, THREAD_VIEW_PATCH_EVENT_KIND);
+            continue;
+        }
+        assert_eq!(event.kind, THREAD_VIEW_ITEM_DELTA_EVENT_KIND);
+        let bytes = serde_json::to_string(&event).unwrap().len();
+        total_bytes += bytes;
+        max_bytes = max_bytes.max(bytes);
+    }
+
+    assert!(
+        max_bytes < 1024,
+        "single assistant delta event should stay compact; max was {max_bytes} bytes"
+    );
+    assert!(
+        total_bytes < 64 * 1024,
+        "100 assistant delta events should stay compact; total was {total_bytes} bytes"
+    );
 }
 
 #[tokio::test]

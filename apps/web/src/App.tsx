@@ -136,6 +136,7 @@ import {
 import { useSidebarThreadsSnapshot } from "./threads/useSidebarThreadsSnapshot";
 import { useThreadMetadata } from "./threads/useThreadMetadata";
 import { useThreadReadState } from "./threads/useThreadReadState";
+import { useThreadViewPresence } from "./threads/useThreadViewPresence";
 import {
   addOptimisticUserMessage,
   createTimelineState,
@@ -540,6 +541,10 @@ function KodexShell({
     threadsByProjectId,
     pinnedThreads,
     updateThreadEverywhere: patchThreadEverywhere,
+  });
+  useThreadViewPresence({
+    enabled: selectedMainPane === "thread",
+    threadId: selectedThreadId,
   });
   useKodexNotifications({
     chatThreads,
