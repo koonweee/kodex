@@ -139,11 +139,19 @@ async fn resume_automation_target_thread(state: &AppState, thread_id: &str) -> A
 async fn latest_thread_options(state: &AppState, thread_id: &str) -> ApiResult<TurnStartOptions> {
     let settings = state
         .store
-        .thread_composer_settings(&[thread_id.to_string()])
+        .thread_local_settings_overlays(&[thread_id.to_string()])
         .await?;
     Ok(settings
         .get(thread_id)
-        .map(|settings| settings.to_turn_options())
+        .map(|settings| TurnStartOptions {
+            model: None,
+            effort: None,
+            service_tier: None,
+            approval_policy: settings.approval_policy.clone(),
+            approvals_reviewer: settings.approvals_reviewer.clone(),
+            permissions: settings.permissions.clone(),
+            sandbox_policy: settings.sandbox.clone(),
+        })
         .unwrap_or_default())
 }
 

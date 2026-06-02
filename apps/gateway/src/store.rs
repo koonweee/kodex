@@ -303,49 +303,19 @@ pub struct ThreadNotificationSetting {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct ThreadComposerSettings {
-    pub model: Option<String>,
-    pub reasoning_effort: Option<String>,
-    pub service_tier: Option<String>,
+pub struct ThreadLocalSettingsOverlay {
     pub approval_policy: Option<String>,
     pub approvals_reviewer: Option<String>,
     pub permissions: Option<String>,
     pub sandbox: Option<Value>,
 }
 
-impl ThreadComposerSettings {
+impl ThreadLocalSettingsOverlay {
     pub fn has_any_setting(&self) -> bool {
-        self.model.is_some()
-            || self.reasoning_effort.is_some()
-            || self.service_tier.is_some()
-            || self.approval_policy.is_some()
+        self.approval_policy.is_some()
             || self.approvals_reviewer.is_some()
             || self.permissions.is_some()
             || self.sandbox.is_some()
-    }
-
-    pub fn from_turn_options(options: &TurnStartOptions) -> Self {
-        Self {
-            model: options.model.clone(),
-            reasoning_effort: options.effort.clone(),
-            service_tier: options.service_tier.clone(),
-            approval_policy: options.approval_policy.clone(),
-            approvals_reviewer: options.approvals_reviewer.clone(),
-            permissions: options.permissions.clone(),
-            sandbox: options.sandbox_policy.clone(),
-        }
-    }
-
-    pub fn to_turn_options(&self) -> TurnStartOptions {
-        TurnStartOptions {
-            model: self.model.clone(),
-            effort: self.reasoning_effort.clone(),
-            service_tier: self.service_tier.clone(),
-            approval_policy: self.approval_policy.clone(),
-            approvals_reviewer: self.approvals_reviewer.clone(),
-            permissions: self.permissions.clone(),
-            sandbox_policy: self.sandbox.clone(),
-        }
     }
 }
 
@@ -722,26 +692,7 @@ impl Store {
         )
         .execute(&self.pool)
         .await?;
-        sqlx::query(
-            r#"
-            create table if not exists thread_composer_settings (
-                thread_id text primary key,
-                model text,
-                reasoning_effort text,
-                service_tier text,
-                approval_policy text,
-                approvals_reviewer text,
-                permissions text,
-                sandbox_json text,
-                created_at text not null,
-                updated_at text not null
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-        self.add_column_if_missing("thread_composer_settings", "permissions", "text")
-            .await?;
+        self.migrate_thread_local_settings_overlay().await?;
         sqlx::query(
             r#"
             create table if not exists thread_pins (
@@ -931,6 +882,56 @@ impl Store {
             sqlx::query(&statement).execute(&self.pool).await?;
         }
         Ok(())
+    }
+
+    async fn migrate_thread_local_settings_overlay(&self) -> ApiResult<()> {
+        sqlx::query(
+            r#"
+            create table if not exists thread_local_settings_overlays (
+                thread_id text primary key,
+                approval_policy text,
+                approvals_reviewer text,
+                permissions text,
+                sandbox_json text,
+                created_at text not null,
+                updated_at text not null
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        if self.table_exists("thread_composer_settings").await? {
+            self.add_column_if_missing("thread_composer_settings", "permissions", "text")
+                .await?;
+            sqlx::query(
+                r#"
+                insert or replace into thread_local_settings_overlays (
+                    thread_id, approval_policy, approvals_reviewer, permissions,
+                    sandbox_json, created_at, updated_at
+                )
+                select thread_id, approval_policy, approvals_reviewer, permissions,
+                    sandbox_json, created_at, updated_at
+                from thread_composer_settings
+                "#,
+            )
+            .execute(&self.pool)
+            .await?;
+            sqlx::query("drop table thread_composer_settings")
+                .execute(&self.pool)
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn table_exists(&self, table: &str) -> ApiResult<bool> {
+        let exists: Option<String> =
+            sqlx::query_scalar("select name from sqlite_master where type = 'table' and name = ?")
+                .bind(table)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(exists.is_some())
     }
 
     pub async fn assert_wal(&self) -> ApiResult<()> {
@@ -1842,10 +1843,10 @@ impl Store {
         Ok(states)
     }
 
-    pub async fn save_thread_composer_settings(
+    pub async fn save_thread_local_settings_overlay(
         &self,
         thread_id: &str,
-        settings: &ThreadComposerSettings,
+        settings: &ThreadLocalSettingsOverlay,
     ) -> ApiResult<()> {
         let now = Utc::now();
         let sandbox_json = settings
@@ -1855,15 +1856,12 @@ impl Store {
             .transpose()?;
         sqlx::query(
             r#"
-            insert into thread_composer_settings (
-                thread_id, model, reasoning_effort, service_tier, approval_policy,
-                approvals_reviewer, permissions, sandbox_json, created_at, updated_at
+            insert into thread_local_settings_overlays (
+                thread_id, approval_policy, approvals_reviewer, permissions,
+                sandbox_json, created_at, updated_at
             )
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            values (?, ?, ?, ?, ?, ?, ?)
             on conflict(thread_id) do update set
-                model = excluded.model,
-                reasoning_effort = excluded.reasoning_effort,
-                service_tier = excluded.service_tier,
                 approval_policy = excluded.approval_policy,
                 approvals_reviewer = excluded.approvals_reviewer,
                 permissions = excluded.permissions,
@@ -1872,9 +1870,6 @@ impl Store {
             "#,
         )
         .bind(thread_id)
-        .bind(&settings.model)
-        .bind(&settings.reasoning_effort)
-        .bind(&settings.service_tier)
         .bind(&settings.approval_policy)
         .bind(&settings.approvals_reviewer)
         .bind(&settings.permissions)
@@ -1887,46 +1882,16 @@ impl Store {
         Ok(())
     }
 
-    pub async fn save_thread_turn_options(
-        &self,
-        thread_id: &str,
-        options: &TurnStartOptions,
-    ) -> ApiResult<()> {
-        let thread_ids = [thread_id.to_string()];
-        let existing = self.thread_composer_settings(&thread_ids).await?;
-        let mut settings = ThreadComposerSettings::from_turn_options(options);
-        if let Some(existing) = existing.get(thread_id) {
-            settings.model = existing.model.clone().or(settings.model);
-            settings.reasoning_effort = existing
-                .reasoning_effort
-                .clone()
-                .or(settings.reasoning_effort);
-            settings.service_tier = existing.service_tier.clone().or(settings.service_tier);
-            settings.approval_policy = existing
-                .approval_policy
-                .clone()
-                .or(settings.approval_policy);
-            settings.approvals_reviewer = existing
-                .approvals_reviewer
-                .clone()
-                .or(settings.approvals_reviewer);
-            settings.permissions = existing.permissions.clone().or(settings.permissions);
-            settings.sandbox = existing.sandbox.clone().or(settings.sandbox);
-        }
-        self.save_thread_composer_settings(thread_id, &settings)
-            .await
-    }
-
-    pub async fn thread_composer_settings(
+    pub async fn thread_local_settings_overlays(
         &self,
         thread_ids: &[String],
-    ) -> ApiResult<HashMap<String, ThreadComposerSettings>> {
+    ) -> ApiResult<HashMap<String, ThreadLocalSettingsOverlay>> {
         if thread_ids.is_empty() {
             return Ok(HashMap::new());
         }
 
         let mut builder = QueryBuilder::<Sqlite>::new(
-            "select thread_id, model, reasoning_effort, service_tier, approval_policy, approvals_reviewer, permissions, sandbox_json from thread_composer_settings where thread_id in (",
+            "select thread_id, approval_policy, approvals_reviewer, permissions, sandbox_json from thread_local_settings_overlays where thread_id in (",
         );
         {
             let mut separated = builder.separated(", ");
@@ -1942,10 +1907,7 @@ impl Store {
             let sandbox_json: Option<String> = row.try_get("sandbox_json")?;
             settings.insert(
                 thread_id,
-                ThreadComposerSettings {
-                    model: row.try_get("model")?,
-                    reasoning_effort: row.try_get("reasoning_effort")?,
-                    service_tier: row.try_get("service_tier")?,
+                ThreadLocalSettingsOverlay {
                     approval_policy: row.try_get("approval_policy")?,
                     approvals_reviewer: row.try_get("approvals_reviewer")?,
                     permissions: row.try_get("permissions")?,
@@ -4262,7 +4224,7 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'project_preview_services', 'project_previews', 'project_preview_routes', 'approvals', 'thread_reads', 'push_subscriptions', 'apns_devices', 'notification_deliveries', 'thread_notification_settings', 'thread_composer_settings', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'project_preview_services', 'project_previews', 'project_preview_routes', 'approvals', 'thread_reads', 'push_subscriptions', 'apns_devices', 'notification_deliveries', 'thread_notification_settings', 'thread_local_settings_overlays', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
         )
         .fetch_all(store.pool())
         .await
@@ -4283,7 +4245,7 @@ mod tests {
                 "projects",
                 "push_subscriptions",
                 "queued_turn_inputs",
-                "thread_composer_settings",
+                "thread_local_settings_overlays",
                 "thread_notification_settings",
                 "thread_pins",
                 "thread_reads",
@@ -4814,15 +4776,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thread_composer_settings_round_trip_by_thread_id() {
+    async fn thread_local_settings_overlays_round_trip_by_thread_id() {
         let store = Store::in_memory().await.unwrap();
         store
-            .save_thread_composer_settings(
+            .save_thread_local_settings_overlay(
                 "thread-1",
-                &ThreadComposerSettings {
-                    model: Some("gpt-5.4-mini".to_string()),
-                    reasoning_effort: Some("high".to_string()),
-                    service_tier: Some("fast".to_string()),
+                &ThreadLocalSettingsOverlay {
                     approval_policy: Some("on-request".to_string()),
                     approvals_reviewer: Some("auto_review".to_string()),
                     permissions: Some("auto-review".to_string()),
@@ -4833,56 +4792,91 @@ mod tests {
             .unwrap();
 
         let thread_ids = vec!["thread-1".to_string(), "missing-thread".to_string()];
-        let settings = store.thread_composer_settings(&thread_ids).await.unwrap();
-        let settings = settings.get("thread-1").unwrap();
-
-        assert_eq!(settings.model.as_deref(), Some("gpt-5.4-mini"));
-        assert_eq!(settings.reasoning_effort.as_deref(), Some("high"));
-        assert_eq!(settings.service_tier.as_deref(), Some("fast"));
-        assert_eq!(settings.approval_policy.as_deref(), Some("on-request"));
-        assert_eq!(settings.approvals_reviewer.as_deref(), Some("auto_review"));
-        assert_eq!(settings.permissions.as_deref(), Some("auto-review"));
-        assert_eq!(settings.sandbox.as_ref(), Some(&json!("workspace-write")));
-
-        store
-            .save_thread_turn_options("thread-1", &TurnStartOptions::default())
-            .await
-            .unwrap();
-        let settings = store.thread_composer_settings(&thread_ids).await.unwrap();
-        let settings = settings.get("thread-1").unwrap();
-
-        assert_eq!(settings.model.as_deref(), Some("gpt-5.4-mini"));
-        assert_eq!(settings.reasoning_effort.as_deref(), Some("high"));
-        assert_eq!(settings.service_tier.as_deref(), Some("fast"));
-        assert_eq!(settings.approval_policy.as_deref(), Some("on-request"));
-        assert_eq!(settings.approvals_reviewer.as_deref(), Some("auto_review"));
-        assert_eq!(settings.permissions.as_deref(), Some("auto-review"));
-        assert_eq!(settings.sandbox.as_ref(), Some(&json!("workspace-write")));
-
-        store
-            .save_thread_turn_options(
-                "thread-2",
-                &TurnStartOptions {
-                    model: Some("gpt-5.4".to_string()),
-                    effort: None,
-                    service_tier: None,
-                    approval_policy: None,
-                    approvals_reviewer: None,
-                    permissions: None,
-                    sandbox_policy: None,
-                },
-            )
-            .await
-            .unwrap();
         let settings = store
-            .thread_composer_settings(&["thread-2".to_string()])
+            .thread_local_settings_overlays(&thread_ids)
             .await
             .unwrap();
+        let settings = settings.get("thread-1").unwrap();
+
+        assert_eq!(settings.approval_policy.as_deref(), Some("on-request"));
+        assert_eq!(settings.approvals_reviewer.as_deref(), Some("auto_review"));
+        assert_eq!(settings.permissions.as_deref(), Some("auto-review"));
+        assert_eq!(settings.sandbox.as_ref(), Some(&json!("workspace-write")));
+    }
+
+    #[tokio::test]
+    async fn migration_moves_legacy_thread_composer_settings_without_model_fields() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("gateway.db");
+        let url = format!("sqlite://{}?mode=rwc", path.display());
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await
+            .unwrap();
+        sqlx::query(
+            r#"
+            create table thread_composer_settings (
+                thread_id text primary key,
+                model text,
+                reasoning_effort text,
+                service_tier text,
+                approval_policy text,
+                approvals_reviewer text,
+                permissions text,
+                sandbox_json text,
+                created_at text not null,
+                updated_at text not null
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+            insert into thread_composer_settings (
+                thread_id, model, reasoning_effort, service_tier, approval_policy,
+                approvals_reviewer, permissions, sandbox_json, created_at, updated_at
+            )
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind("thread-1")
+        .bind("gpt-5.5")
+        .bind("xhigh")
+        .bind("fast")
+        .bind("on-request")
+        .bind("auto_review")
+        .bind("auto-review")
+        .bind(r#"{"type":"workspaceWrite"}"#)
+        .bind("2026-06-01T00:00:00Z")
+        .bind("2026-06-01T01:00:00Z")
+        .execute(&pool)
+        .await
+        .unwrap();
+        drop(pool);
+
+        let store = Store::connect(&path).await.unwrap();
+        assert!(!store
+            .table_exists("thread_composer_settings")
+            .await
+            .unwrap());
+        assert!(store
+            .table_exists("thread_local_settings_overlays")
+            .await
+            .unwrap());
+        let settings = store
+            .thread_local_settings_overlays(&["thread-1".to_string()])
+            .await
+            .unwrap();
+        let settings = settings.get("thread-1").unwrap();
+        assert_eq!(settings.approval_policy.as_deref(), Some("on-request"));
+        assert_eq!(settings.approvals_reviewer.as_deref(), Some("auto_review"));
+        assert_eq!(settings.permissions.as_deref(), Some("auto-review"));
         assert_eq!(
-            settings
-                .get("thread-2")
-                .and_then(|settings| settings.model.as_deref()),
-            Some("gpt-5.4")
+            settings.sandbox.as_ref(),
+            Some(&json!({"type": "workspaceWrite"}))
         );
     }
 

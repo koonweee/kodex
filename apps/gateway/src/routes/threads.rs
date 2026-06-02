@@ -28,7 +28,7 @@ use crate::{
     },
     error::{ApiError, ApiResult},
     store::{
-        EventEnvelope, NewEvent, Project, ThreadComposerSettings, ThreadNotificationSetting,
+        EventEnvelope, NewEvent, Project, ThreadLocalSettingsOverlay, ThreadNotificationSetting,
         ThreadRead,
     },
     thread_view,
@@ -726,10 +726,7 @@ pub(crate) async fn save_thread_creation_options(
     thread_id: &str,
     options: &ThreadCreationOptions,
 ) -> ApiResult<()> {
-    let settings = ThreadComposerSettings {
-        model: options.model.clone(),
-        reasoning_effort: options.effort.clone(),
-        service_tier: options.service_tier.clone(),
+    let settings = ThreadLocalSettingsOverlay {
         approval_policy: options.approval_policy.clone(),
         approvals_reviewer: options.approvals_reviewer.clone(),
         permissions: options.permissions.clone(),
@@ -744,7 +741,7 @@ pub(crate) async fn save_thread_creation_options(
 
     state
         .store
-        .save_thread_composer_settings(thread_id, &settings)
+        .save_thread_local_settings_overlay(thread_id, &settings)
         .await
 }
 
@@ -1171,7 +1168,7 @@ async fn save_thread_settings_permissions_patch(
 ) -> ApiResult<()> {
     let mut settings = state
         .store
-        .thread_composer_settings(&[thread_id.to_string()])
+        .thread_local_settings_overlays(&[thread_id.to_string()])
         .await?
         .remove(thread_id)
         .unwrap_or_default();
@@ -1181,7 +1178,7 @@ async fn save_thread_settings_permissions_patch(
     settings.sandbox = None;
     state
         .store
-        .save_thread_composer_settings(thread_id, &settings)
+        .save_thread_local_settings_overlay(thread_id, &settings)
         .await
 }
 
@@ -1298,7 +1295,7 @@ pub async fn fork_thread(
     let mut response = app_server_api::client(&state.app_server)
         .thread_fork(thread_id.clone(), payload)
         .await?;
-    save_forked_thread_composer_settings(&state, &thread_id, &response.thread.id).await?;
+    save_forked_thread_local_settings_overlay(&state, &thread_id, &response.thread.id).await?;
     apply_thread_command_response_state(&state, &mut response).await?;
     Ok(Json(response))
 }
@@ -1548,7 +1545,7 @@ pub(crate) async fn apply_thread_summary_state(
     threads: &mut [ThreadSummary],
 ) -> ApiResult<()> {
     apply_thread_pin_state(state, threads).await?;
-    apply_thread_composer_settings(state, threads).await?;
+    apply_thread_local_settings_overlays(state, threads).await?;
     apply_thread_notification_settings(state, threads).await?;
     apply_thread_read_state(state, threads).await?;
     for thread in threads {
@@ -1589,10 +1586,7 @@ fn sync_thread_command_response(response: &mut ThreadCommandResponse) {
     response.sandbox = response.thread.sandbox.clone();
 
     sync_raw_response_thread(&mut response.raw_payload, &response.thread);
-    let settings = ThreadComposerSettings {
-        model: response.thread.model.clone(),
-        reasoning_effort: response.thread.reasoning_effort.clone(),
-        service_tier: response.thread.service_tier.clone(),
+    let settings = ThreadLocalSettingsOverlay {
         approval_policy: response.thread.approval_policy.clone(),
         approvals_reviewer: response.thread.approvals_reviewer.clone(),
         permissions: response
@@ -1602,7 +1596,7 @@ fn sync_thread_command_response(response: &mut ThreadCommandResponse) {
             .map(|profile| profile.id.clone()),
         sandbox: response.thread.sandbox.clone(),
     };
-    sync_raw_thread_composer_settings(&mut response.raw_payload, &settings);
+    sync_raw_thread_local_settings_overlay(&mut response.raw_payload, &settings);
 }
 
 fn normalize_thread_name(name: &str) -> Option<String> {
@@ -1685,7 +1679,7 @@ fn sync_raw_thread_notifications_enabled(raw_payload: &mut Value, enabled: bool)
     raw_payload.insert("notificationsEnabled".to_string(), json!(enabled));
 }
 
-async fn apply_thread_composer_settings(
+async fn apply_thread_local_settings_overlays(
     state: &AppState,
     threads: &mut [ThreadSummary],
 ) -> ApiResult<()> {
@@ -1697,12 +1691,15 @@ async fn apply_thread_composer_settings(
         .iter()
         .map(|thread| thread.id.clone())
         .collect::<Vec<_>>();
-    let settings = state.store.thread_composer_settings(&thread_ids).await?;
+    let settings = state
+        .store
+        .thread_local_settings_overlays(&thread_ids)
+        .await?;
     for thread in threads {
         let Some(settings) = settings.get(&thread.id) else {
             continue;
         };
-        overlay_stored_thread_composer_settings(thread, settings);
+        overlay_stored_thread_local_settings(thread, settings);
     }
 
     Ok(())
@@ -1839,23 +1836,11 @@ async fn broadcast_thread_metadata_update(
     Ok(event)
 }
 
-fn overlay_stored_thread_composer_settings(
+fn overlay_stored_thread_local_settings(
     thread: &mut ThreadSummary,
-    settings: &ThreadComposerSettings,
+    settings: &ThreadLocalSettingsOverlay,
 ) {
-    let mut overlay = ThreadComposerSettings::default();
-    if thread.model.is_none() {
-        thread.model = settings.model.clone();
-        overlay.model = settings.model.clone();
-    }
-    if thread.reasoning_effort.is_none() {
-        thread.reasoning_effort = settings.reasoning_effort.clone();
-        overlay.reasoning_effort = settings.reasoning_effort.clone();
-    }
-    if thread.service_tier.is_none() {
-        thread.service_tier = settings.service_tier.clone();
-        overlay.service_tier = settings.service_tier.clone();
-    }
+    let mut overlay = ThreadLocalSettingsOverlay::default();
     if thread.approval_policy.is_none() {
         thread.approval_policy = settings.approval_policy.clone();
         overlay.approval_policy = settings.approval_policy.clone();
@@ -1877,20 +1862,17 @@ fn overlay_stored_thread_composer_settings(
         thread.sandbox = settings.sandbox.clone();
         overlay.sandbox = settings.sandbox.clone();
     }
-    sync_raw_thread_composer_settings_present(&mut thread.raw_payload, &overlay);
+    sync_raw_thread_local_settings_overlay_present(&mut thread.raw_payload, &overlay);
 }
 
-fn sync_raw_thread_composer_settings_present(
+fn sync_raw_thread_local_settings_overlay_present(
     raw_payload: &mut Value,
-    settings: &ThreadComposerSettings,
+    settings: &ThreadLocalSettingsOverlay,
 ) {
     let Some(raw_payload) = raw_payload.as_object_mut() else {
         return;
     };
 
-    sync_raw_optional_string_present(raw_payload, "model", &settings.model);
-    sync_raw_optional_string_present(raw_payload, "reasoningEffort", &settings.reasoning_effort);
-    sync_raw_optional_string_present(raw_payload, "serviceTier", &settings.service_tier);
     sync_raw_optional_string_present(raw_payload, "approvalPolicy", &settings.approval_policy);
     sync_raw_optional_string_present(
         raw_payload,
@@ -1908,14 +1890,14 @@ fn sync_raw_thread_composer_settings_present(
     }
 }
 
-fn sync_raw_thread_composer_settings(raw_payload: &mut Value, settings: &ThreadComposerSettings) {
+fn sync_raw_thread_local_settings_overlay(
+    raw_payload: &mut Value,
+    settings: &ThreadLocalSettingsOverlay,
+) {
     let Some(raw_payload) = raw_payload.as_object_mut() else {
         return;
     };
 
-    sync_raw_optional_string(raw_payload, "model", &settings.model);
-    sync_raw_optional_string(raw_payload, "reasoningEffort", &settings.reasoning_effort);
-    sync_raw_optional_string(raw_payload, "serviceTier", &settings.service_tier);
     sync_raw_optional_string(raw_payload, "approvalPolicy", &settings.approval_policy);
     sync_raw_optional_string(
         raw_payload,
@@ -1984,7 +1966,7 @@ fn message_mentions_missing_thread(message: &str) -> bool {
         || message.contains("no rollout found for thread id")
 }
 
-async fn save_forked_thread_composer_settings(
+async fn save_forked_thread_local_settings_overlay(
     state: &AppState,
     source_thread_id: &str,
     forked_thread_id: &str,
@@ -1996,13 +1978,13 @@ async fn save_forked_thread_composer_settings(
     let source_ids = vec![source_thread_id.to_string()];
     if let Some(settings) = state
         .store
-        .thread_composer_settings(&source_ids)
+        .thread_local_settings_overlays(&source_ids)
         .await?
         .remove(source_thread_id)
     {
         state
             .store
-            .save_thread_composer_settings(forked_thread_id, &settings)
+            .save_thread_local_settings_overlay(forked_thread_id, &settings)
             .await?;
     }
 

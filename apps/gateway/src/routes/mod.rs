@@ -59,7 +59,7 @@ mod tests {
         queue,
         store::{
             NewApproval, NewEvent, NewNotificationDelivery, NewPushSubscription,
-            NotificationDeliveryStatus, PushSubscription, Store, ThreadComposerSettings,
+            NotificationDeliveryStatus, PushSubscription, Store, ThreadLocalSettingsOverlay,
             ThreadRuntimeState,
         },
         thread_view,
@@ -3138,14 +3138,14 @@ mod tests {
         let (state, app_server) = test_state().await;
         state
             .store
-            .save_thread_composer_settings(
+            .save_thread_local_settings_overlay(
                 "thread-1",
-                &ThreadComposerSettings {
+                &ThreadLocalSettingsOverlay {
                     approval_policy: Some("on-request".to_string()),
                     approvals_reviewer: Some("auto_review".to_string()),
                     permissions: Some("old-profile".to_string()),
                     sandbox: Some(json!({"type": "dangerFullAccess"})),
-                    ..ThreadComposerSettings::default()
+                    ..ThreadLocalSettingsOverlay::default()
                 },
             )
             .await
@@ -3204,14 +3204,16 @@ mod tests {
         );
         let stored = state
             .store
-            .thread_composer_settings(&["thread-1".to_string()])
+            .thread_local_settings_overlays(&["thread-1".to_string()])
             .await
             .unwrap();
-        let selected_options = stored["thread-1"].to_turn_options();
-        assert_eq!(selected_options.permissions.as_deref(), Some("auto-review"));
-        assert!(selected_options.approval_policy.is_none());
-        assert!(selected_options.approvals_reviewer.is_none());
-        assert!(selected_options.sandbox_policy.is_none());
+        assert_eq!(
+            stored["thread-1"].permissions.as_deref(),
+            Some("auto-review")
+        );
+        assert!(stored["thread-1"].approval_policy.is_none());
+        assert!(stored["thread-1"].approvals_reviewer.is_none());
+        assert!(stored["thread-1"].sandbox.is_none());
 
         let clear = app
             .oneshot(
@@ -3231,7 +3233,7 @@ mod tests {
 
         let stored = state
             .store
-            .thread_composer_settings(&["thread-1".to_string()])
+            .thread_local_settings_overlays(&["thread-1".to_string()])
             .await
             .unwrap();
         assert!(stored["thread-1"].permissions.is_none());
@@ -3437,12 +3439,12 @@ mod tests {
             .unwrap();
         state
             .store
-            .save_thread_composer_settings(
+            .save_thread_local_settings_overlay(
                 "thread-1",
-                &ThreadComposerSettings {
-                    model: Some("fallback-model".to_string()),
-                    reasoning_effort: Some("medium".to_string()),
-                    ..ThreadComposerSettings::default()
+                &ThreadLocalSettingsOverlay {
+                    approval_policy: Some("on-request".to_string()),
+                    approvals_reviewer: Some("auto_review".to_string()),
+                    ..ThreadLocalSettingsOverlay::default()
                 },
             )
             .await
@@ -3478,8 +3480,16 @@ mod tests {
             event.payload["thread"]["notificationsEnabled"],
             json!(false)
         );
-        assert_eq!(event.payload["thread"]["model"], json!("fallback-model"));
-        assert_eq!(event.payload["thread"]["reasoningEffort"], json!("medium"));
+        assert!(event.payload["thread"]["model"].is_null());
+        assert!(event.payload["thread"]["reasoningEffort"].is_null());
+        assert_eq!(
+            event.payload["thread"]["approvalPolicy"],
+            json!("on-request")
+        );
+        assert_eq!(
+            event.payload["thread"]["approvalsReviewer"],
+            json!("auto_review")
+        );
     }
 
     #[tokio::test]
@@ -3487,11 +3497,11 @@ mod tests {
         let (state, app_server) = test_state().await;
         state
             .store
-            .save_thread_composer_settings(
+            .save_thread_local_settings_overlay(
                 "thread-1",
-                &ThreadComposerSettings {
+                &ThreadLocalSettingsOverlay {
                     permissions: Some("stale-profile".to_string()),
-                    ..ThreadComposerSettings::default()
+                    ..ThreadLocalSettingsOverlay::default()
                 },
             )
             .await
@@ -3530,7 +3540,7 @@ mod tests {
 
         let stored = state
             .store
-            .thread_composer_settings(&["thread-1".to_string()])
+            .thread_local_settings_overlays(&["thread-1".to_string()])
             .await
             .unwrap();
         assert!(stored["thread-1"].permissions.is_none());
@@ -3864,12 +3874,9 @@ mod tests {
         let pinned_thread = state.store.pin_thread("pinned-thread").await.unwrap();
         state
             .store
-            .save_thread_composer_settings(
+            .save_thread_local_settings_overlay(
                 "project-one-thread",
-                &ThreadComposerSettings {
-                    model: Some("gpt-5.4-mini".to_string()),
-                    reasoning_effort: Some("high".to_string()),
-                    service_tier: Some("fast".to_string()),
+                &ThreadLocalSettingsOverlay {
                     approval_policy: Some("on-request".to_string()),
                     approvals_reviewer: Some("auto_review".to_string()),
                     permissions: None,
@@ -3899,6 +3906,9 @@ mod tests {
         project_one_thread["cwd"] = json!(project_one_cwd.to_string_lossy().to_string());
         project_one_thread["preview"] = json!({"text": "Project one preview"});
         project_one_thread["status"] = json!({"type": "active"});
+        project_one_thread["model"] = json!("gpt-5.4-mini");
+        project_one_thread["reasoningEffort"] = json!("high");
+        project_one_thread["serviceTier"] = json!("fast");
         project_one_thread["gitInfo"] = json!({
             "branch": "feature/sidebar-trim",
             "originUrl": "https://example.test/kodex.git",
@@ -5248,16 +5258,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fork_thread_copies_gateway_owned_composer_settings() {
+    async fn fork_thread_copies_gateway_owned_local_settings_overlay() {
         let (state, app_server) = test_state().await;
         state
             .store
-            .save_thread_composer_settings(
+            .save_thread_local_settings_overlay(
                 "thread-1",
-                &ThreadComposerSettings {
-                    model: Some("gpt-5.4-mini".to_string()),
-                    reasoning_effort: Some("high".to_string()),
-                    service_tier: Some("fast".to_string()),
+                &ThreadLocalSettingsOverlay {
                     approval_policy: Some("on-request".to_string()),
                     approvals_reviewer: Some("auto_review".to_string()),
                     permissions: Some("auto-review".to_string()),
@@ -5293,9 +5300,9 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
         assert_eq!(body["thread"]["id"], "thread-fork");
-        assert_eq!(body["thread"]["model"], "gpt-5.4-mini");
-        assert_eq!(body["thread"]["reasoningEffort"], "high");
-        assert_eq!(body["thread"]["serviceTier"], "fast");
+        assert!(body["thread"]["model"].is_null());
+        assert!(body["thread"]["reasoningEffort"].is_null());
+        assert!(body["thread"]["serviceTier"].is_null());
         assert_eq!(body["thread"]["approvalPolicy"], "on-request");
         assert_eq!(body["thread"]["approvalsReviewer"], "auto_review");
         assert_eq!(
@@ -5322,9 +5329,9 @@ mod tests {
             .unwrap();
         assert_eq!(listed.status(), StatusCode::OK);
         let listed = response_json(listed).await;
-        assert_eq!(listed["threads"][0]["model"], "gpt-5.4-mini");
-        assert_eq!(listed["threads"][0]["reasoningEffort"], "high");
-        assert_eq!(listed["threads"][0]["serviceTier"], "fast");
+        assert!(listed["threads"][0]["model"].is_null());
+        assert!(listed["threads"][0]["reasoningEffort"].is_null());
+        assert!(listed["threads"][0]["serviceTier"].is_null());
         assert_eq!(listed["threads"][0]["approvalPolicy"], "on-request");
         assert_eq!(listed["threads"][0]["approvalsReviewer"], "auto_review");
         assert_eq!(
@@ -5334,18 +5341,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stored_thread_settings_fill_only_missing_app_server_fields() {
+    async fn stored_local_settings_do_not_fill_app_server_model_or_reasoning_fields() {
         let (state, app_server) = test_state().await;
         state
             .store
-            .save_thread_composer_settings(
+            .save_thread_local_settings_overlay(
                 "thread-1",
-                &ThreadComposerSettings {
-                    model: Some("stored-model".to_string()),
-                    reasoning_effort: Some("high".to_string()),
-                    service_tier: Some("fast".to_string()),
-                    approval_policy: None,
-                    approvals_reviewer: None,
+                &ThreadLocalSettingsOverlay {
+                    approval_policy: Some("on-request".to_string()),
+                    approvals_reviewer: Some("auto_review".to_string()),
                     permissions: None,
                     sandbox: None,
                 },
@@ -5377,25 +5381,27 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
         assert_eq!(body["threads"][0]["model"], "app-server-model");
-        assert_eq!(body["threads"][0]["reasoningEffort"], "high");
+        assert!(body["threads"][0]["reasoningEffort"].is_null());
+        assert!(body["threads"][0]["serviceTier"].is_null());
+        assert_eq!(body["threads"][0]["approvalPolicy"], "on-request");
+        assert_eq!(body["threads"][0]["approvalsReviewer"], "auto_review");
         assert_eq!(
             body["threads"][0]["rawPayload"]["model"],
             "app-server-model"
         );
-        assert_eq!(body["threads"][0]["rawPayload"]["reasoningEffort"], "high");
+        assert!(body["threads"][0]["rawPayload"]
+            .get("reasoningEffort")
+            .is_none());
     }
 
     #[tokio::test]
-    async fn existing_thread_input_options_do_not_overwrite_gateway_fallback_settings() {
+    async fn existing_thread_input_options_do_not_overwrite_local_settings_overlay() {
         let (state, _) = test_state().await;
         state
             .store
-            .save_thread_composer_settings(
+            .save_thread_local_settings_overlay(
                 "thread-1",
-                &ThreadComposerSettings {
-                    model: Some("fresh-model".to_string()),
-                    reasoning_effort: Some("high".to_string()),
-                    service_tier: Some("fast".to_string()),
+                &ThreadLocalSettingsOverlay {
                     approval_policy: Some("on-request".to_string()),
                     approvals_reviewer: Some("auto_review".to_string()),
                     permissions: None,
@@ -5441,13 +5447,10 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let settings = state
             .store
-            .thread_composer_settings(&["thread-1".to_string()])
+            .thread_local_settings_overlays(&["thread-1".to_string()])
             .await
             .unwrap();
         let settings = settings.get("thread-1").unwrap();
-        assert_eq!(settings.model.as_deref(), Some("fresh-model"));
-        assert_eq!(settings.reasoning_effort.as_deref(), Some("high"));
-        assert_eq!(settings.service_tier.as_deref(), Some("fast"));
         assert_eq!(settings.approval_policy.as_deref(), Some("on-request"));
         assert_eq!(settings.approvals_reviewer.as_deref(), Some("auto_review"));
         assert_eq!(
@@ -8091,7 +8094,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejected_turn_start_does_not_persist_thread_composer_settings() {
+    async fn rejected_turn_start_does_not_persist_local_settings_overlay() {
         let (state, app_server) = test_state().await;
         let app = build_router(state);
 
@@ -9724,16 +9727,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn due_automation_queues_source_labeled_input_with_latest_thread_options() {
+    async fn due_automation_queues_source_labeled_input_with_local_execution_overrides() {
         let (state, app_server) = test_state().await;
         state
             .store
-            .save_thread_composer_settings(
+            .save_thread_local_settings_overlay(
                 "thread-1",
-                &ThreadComposerSettings {
-                    model: Some("gpt-5.4".to_string()),
-                    reasoning_effort: Some("high".to_string()),
-                    service_tier: Some("fast".to_string()),
+                &ThreadLocalSettingsOverlay {
                     approval_policy: Some("on-request".to_string()),
                     approvals_reviewer: Some("auto_review".to_string()),
                     permissions: None,
@@ -9804,9 +9804,9 @@ mod tests {
             .unwrap();
         assert_eq!(turn_start.1["threadId"], "thread-1");
         assert_eq!(turn_start.1["input"][0]["text"], "Summarize status");
-        assert_eq!(turn_start.1["model"], "gpt-5.4");
-        assert_eq!(turn_start.1["effort"], "high");
-        assert_eq!(turn_start.1["serviceTier"], "fast");
+        assert!(turn_start.1.get("model").is_none());
+        assert!(turn_start.1.get("effort").is_none());
+        assert!(turn_start.1.get("serviceTier").is_none());
         assert_eq!(turn_start.1["approvalPolicy"], "on-request");
         assert_eq!(turn_start.1["approvalsReviewer"], "auto_review");
         assert_eq!(

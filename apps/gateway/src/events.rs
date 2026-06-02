@@ -1120,7 +1120,7 @@ async fn save_thread_settings_permissions_patch(
 ) -> ApiResult<()> {
     let mut settings = state
         .store
-        .thread_composer_settings(&[thread_id.to_string()])
+        .thread_local_settings_overlays(&[thread_id.to_string()])
         .await?
         .remove(thread_id)
         .unwrap_or_default();
@@ -1130,7 +1130,7 @@ async fn save_thread_settings_permissions_patch(
     settings.sandbox = None;
     state
         .store
-        .save_thread_composer_settings(thread_id, &settings)
+        .save_thread_local_settings_overlay(thread_id, &settings)
         .await
 }
 

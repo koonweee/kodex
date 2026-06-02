@@ -127,11 +127,47 @@ describe("MVP composer settings flows", () => {
     expect(turnBody).toMatchObject({
       input: [{ text: "Use the selected controls", type: "text" }],
     });
+    expect(turnBody).not.toHaveProperty("model");
+    expect(turnBody).not.toHaveProperty("effort");
+    expect(turnBody).not.toHaveProperty("serviceTier");
     expect(turnBody).not.toHaveProperty("permissions");
     const firstSettingsPatch = await requestJson(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")[0]);
     const secondSettingsPatch = await requestJson(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")[1]);
     expect(firstSettingsPatch).not.toHaveProperty("permissions");
     expect(secondSettingsPatch).not.toHaveProperty("permissions");
+  }, 20_000);
+
+  it("omits selected-thread turn options when the user has not changed settings in this tab", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const latestThread: Record<string, unknown> = {
+      ...thread,
+      model: "gpt-5.4",
+      rawPayload: { model: "gpt-5.4", reasoningEffort: "xhigh" },
+      reasoningEffort: "high",
+      serviceTier: null,
+    };
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
+        "GET /v1/threads": { threads: [latestThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads/thread-1/input": { payload: {} },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Use app-server thread defaults");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
+    });
+
+    const turnBody = await requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0]);
+    expect(turnBody).toEqual({
+      input: [{ text: "Use app-server thread defaults", type: "text" }],
+    });
   }, 20_000);
 
   it("hydrates and persists composer model effort and fast mode without browser storage or permission writes", async () => {
