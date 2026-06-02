@@ -2,6 +2,20 @@ import type { EventEnvelope } from "../api/client";
 import { asRecord, stringValue } from "../shared/values";
 
 export type LiveStreamName = "global" | "selected";
+export type SelectedThreadSnapshotRefreshReason = "initial" | "refreshRequired" | "streamReconnect" | "deltaMiss";
+export type SelectedThreadDeltaMissRelation = "patchEarlierInBatch" | "patchLaterInBatch" | "noPatchInBatch";
+export type SelectedThreadDeltaMissState = "notIndexed" | "indexedButNotAppendable";
+
+export type SelectedThreadDeltaMissSample = {
+  batchSize: number;
+  itemId: string | null;
+  relation: SelectedThreadDeltaMissRelation;
+  refreshInFlight: boolean;
+  seq: number;
+  state: SelectedThreadDeltaMissState;
+  threadId: string | null;
+  turnId: string | null;
+};
 
 export type LiveDiagnosticsSnapshot = {
   cacheInvalidationsByFamily: Record<string, number>;
@@ -13,6 +27,13 @@ export type LiveDiagnosticsSnapshot = {
   reducerEventCount: number;
   reducerTotalDurationMs: number;
   refreshRequiredCount: number;
+  selectedThreadSnapshotRefreshes: number;
+  selectedThreadSnapshotRefreshesByReason: Record<string, number>;
+  selectedThreadDeltaMisses: number;
+  selectedThreadDeltaMissesByRelation: Record<string, number>;
+  selectedThreadDeltaMissesByState: Record<string, number>;
+  selectedThreadDeltaMissesWhileRefreshInFlight: number;
+  selectedThreadRecentDeltaMisses: SelectedThreadDeltaMissSample[];
   longTaskCount: number;
   longTaskTotalDurationMs: number;
 };
@@ -27,6 +48,13 @@ const emptySnapshot = (): LiveDiagnosticsSnapshot => ({
   reducerEventCount: 0,
   reducerTotalDurationMs: 0,
   refreshRequiredCount: 0,
+  selectedThreadSnapshotRefreshes: 0,
+  selectedThreadSnapshotRefreshesByReason: {},
+  selectedThreadDeltaMisses: 0,
+  selectedThreadDeltaMissesByRelation: {},
+  selectedThreadDeltaMissesByState: {},
+  selectedThreadDeltaMissesWhileRefreshInFlight: 0,
+  selectedThreadRecentDeltaMisses: [],
   longTaskCount: 0,
   longTaskTotalDurationMs: 0,
 });
@@ -67,6 +95,29 @@ export function recordReducerBatch(eventCount: number, durationMs: number) {
   publishSnapshot();
 }
 
+export function recordSelectedThreadSnapshotRefresh(reason: SelectedThreadSnapshotRefreshReason) {
+  if (!liveDiagnosticsEnabled()) {
+    return;
+  }
+  snapshot.selectedThreadSnapshotRefreshes += 1;
+  increment(snapshot.selectedThreadSnapshotRefreshesByReason, reason);
+  publishSnapshot();
+}
+
+export function recordSelectedThreadDeltaMiss(sample: SelectedThreadDeltaMissSample) {
+  if (!liveDiagnosticsEnabled()) {
+    return;
+  }
+  snapshot.selectedThreadDeltaMisses += 1;
+  increment(snapshot.selectedThreadDeltaMissesByRelation, sample.relation);
+  increment(snapshot.selectedThreadDeltaMissesByState, sample.state);
+  if (sample.refreshInFlight) {
+    snapshot.selectedThreadDeltaMissesWhileRefreshInFlight += 1;
+  }
+  snapshot.selectedThreadRecentDeltaMisses = [...snapshot.selectedThreadRecentDeltaMisses, sample].slice(-20);
+  publishSnapshot();
+}
+
 export function recordCacheInvalidation(family: string) {
   if (!liveDiagnosticsEnabled()) {
     return;
@@ -104,7 +155,7 @@ export function resetLiveDiagnosticsForTest() {
 }
 
 function liveDiagnosticsEnabled() {
-  return import.meta.env.DEV;
+  return true;
 }
 
 function increment(target: Record<string, number>, key: string) {
@@ -130,6 +181,13 @@ function cloneSnapshot(value: LiveDiagnosticsSnapshot): LiveDiagnosticsSnapshot 
     reducerEventCount: value.reducerEventCount,
     reducerTotalDurationMs: value.reducerTotalDurationMs,
     refreshRequiredCount: value.refreshRequiredCount,
+    selectedThreadSnapshotRefreshes: value.selectedThreadSnapshotRefreshes,
+    selectedThreadSnapshotRefreshesByReason: { ...value.selectedThreadSnapshotRefreshesByReason },
+    selectedThreadDeltaMisses: value.selectedThreadDeltaMisses,
+    selectedThreadDeltaMissesByRelation: { ...value.selectedThreadDeltaMissesByRelation },
+    selectedThreadDeltaMissesByState: { ...value.selectedThreadDeltaMissesByState },
+    selectedThreadDeltaMissesWhileRefreshInFlight: value.selectedThreadDeltaMissesWhileRefreshInFlight,
+    selectedThreadRecentDeltaMisses: value.selectedThreadRecentDeltaMisses.map((sample) => ({ ...sample })),
     longTaskCount: value.longTaskCount,
     longTaskTotalDurationMs: value.longTaskTotalDurationMs,
   };
@@ -150,3 +208,5 @@ declare global {
     __KODEX_LIVE_DIAGNOSTICS__?: () => LiveDiagnosticsSnapshot;
   }
 }
+
+publishSnapshot();

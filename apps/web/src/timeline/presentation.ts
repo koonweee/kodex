@@ -49,7 +49,7 @@ export function createPresentationItem(
         messagePhase,
         text,
       },
-      hidden: !text,
+      hidden: !text && status !== "running",
       text: "Empty assistant message",
     };
   }

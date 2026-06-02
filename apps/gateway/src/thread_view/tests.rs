@@ -1,4 +1,5 @@
 use super::*;
+use crate::app_server_api::{ThreadTimelineRow, ThreadTimelineWorkDetailRow};
 
 fn agent_message_item(id: &str, text: &str) -> Value {
     json!({
@@ -23,6 +24,44 @@ fn user_message_item(id: &str, text: &str) -> Value {
         "type": "userMessage",
         "content": [{"type": "text", "text": text}],
     })
+}
+
+fn command_execution_item(id: &str, command: &str, output: &str) -> Value {
+    json!({
+        "id": id,
+        "type": "commandExecution",
+        "status": "completed",
+        "command": command,
+        "output": output,
+    })
+}
+
+fn only_work_row(timeline: &ThreadTimelineSnapshot) -> &ThreadTimelineRow {
+    timeline
+        .rows
+        .iter()
+        .find(|row| row.kind == "work")
+        .expect("work row")
+}
+
+fn only_activity_detail_row(work: &ThreadTimelineRow) -> &ThreadTimelineWorkDetailRow {
+    work.collapsed_rows
+        .iter()
+        .find(|row| row.kind == "activity")
+        .expect("activity row")
+}
+
+fn root_row_text(row: &ThreadTimelineRow) -> Option<String> {
+    row.item
+        .as_ref()
+        .and_then(|item| item.payload.item.text.as_deref())
+        .map(str::to_string)
+        .or_else(|| {
+            row.item
+                .as_ref()
+                .and_then(|item| item.payload.item.content.as_ref())
+                .map(|content| content.to_string())
+        })
 }
 
 fn file_change_item(id: &str, path: &str, diff: &str) -> Value {
@@ -476,6 +515,330 @@ async fn completed_turn_exposes_canonical_work_row_with_deduped_file_changes() {
 }
 
 #[tokio::test]
+async fn terminal_snapshot_preserves_unmaterialized_live_command_rows() {
+    let sessions = ThreadViewStore::default();
+    let command = command_execution_item(
+        "live-command",
+        "printf 'kodex-reconnect-command-test\\n'",
+        "kodex-reconnect-command-test\n",
+    );
+    let command_snapshot = ThreadItemSnapshot::from_payload(&command).unwrap();
+    record_item_upsert(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        command,
+        command_snapshot,
+        Some("completed"),
+        1,
+    )
+    .await
+    .unwrap();
+
+    let completed_turn = ThreadTurnSnapshot {
+        id: "turn-1".to_string(),
+        status: "completed".to_string(),
+        started_at: Some(10),
+        completed_at: Some(20),
+        raw_payload: json!({}),
+        items: vec![
+            ThreadItemSnapshot::from_payload(&user_message_item("user-1", "Run command")).unwrap(),
+            ThreadItemSnapshot::from_payload(&agent_message_item("agent-1", "I will run it"))
+                .unwrap(),
+            ThreadItemSnapshot::from_payload(&final_agent_message_item("agent-final", "Done"))
+                .unwrap(),
+        ],
+    };
+    let timeline = build_thread_timeline(&sessions, "thread-1", &[completed_turn], 2)
+        .await
+        .unwrap();
+
+    let activity = only_activity_detail_row(only_work_row(&timeline));
+    assert_eq!(activity.items.len(), 1);
+    assert_eq!(activity.items[0].item_id, "live-command");
+    assert_eq!(
+        activity.items[0].payload.item.command.as_deref(),
+        Some("printf 'kodex-reconnect-command-test\\n'")
+    );
+    assert_eq!(
+        activity.items[0].payload.item.output.as_deref(),
+        Some("kodex-reconnect-command-test\n")
+    );
+}
+
+#[tokio::test]
+async fn terminal_snapshot_preserves_unmaterialized_active_snapshot_command_rows() {
+    let sessions = ThreadViewStore::default();
+    let active_turn = ThreadTurnSnapshot {
+        id: "turn-1".to_string(),
+        status: "inProgress".to_string(),
+        started_at: Some(10),
+        completed_at: None,
+        raw_payload: json!({}),
+        items: vec![
+            ThreadItemSnapshot::from_payload(&user_message_item("user-1", "Run command")).unwrap(),
+            ThreadItemSnapshot::from_payload(&command_execution_item(
+                "snapshot-command-active",
+                "printf 'kodex-terminal-preserve-test\\n'",
+                "kodex-terminal-preserve-test\n",
+            ))
+            .unwrap(),
+            ThreadItemSnapshot::from_payload(&agent_message_item("agent-1", "Working")).unwrap(),
+        ],
+    };
+    build_thread_timeline(&sessions, "thread-1", &[active_turn], 1)
+        .await
+        .unwrap();
+
+    let completed_turn = ThreadTurnSnapshot {
+        id: "turn-1".to_string(),
+        status: "completed".to_string(),
+        started_at: Some(10),
+        completed_at: Some(20),
+        raw_payload: json!({}),
+        items: vec![
+            ThreadItemSnapshot::from_payload(&user_message_item("user-1", "Run command")).unwrap(),
+            ThreadItemSnapshot::from_payload(&agent_message_item("agent-1", "Working")).unwrap(),
+            ThreadItemSnapshot::from_payload(&final_agent_message_item("agent-final", "Done"))
+                .unwrap(),
+        ],
+    };
+    let timeline = build_thread_timeline(&sessions, "thread-1", &[completed_turn], 2)
+        .await
+        .unwrap();
+
+    let activity = only_activity_detail_row(only_work_row(&timeline));
+    assert_eq!(activity.items.len(), 1);
+    assert_eq!(activity.items[0].item_id, "snapshot-command-active");
+    assert_eq!(
+        activity.items[0].payload.item.command.as_deref(),
+        Some("printf 'kodex-terminal-preserve-test\\n'")
+    );
+    assert_eq!(
+        activity.items[0].payload.item.output.as_deref(),
+        Some("kodex-terminal-preserve-test\n")
+    );
+}
+
+#[tokio::test]
+async fn terminal_snapshot_preserves_unmaterialized_activity_interleaving() {
+    let sessions = ThreadViewStore::default();
+    let active_turn = ThreadTurnSnapshot {
+        id: "turn-1".to_string(),
+        status: "inProgress".to_string(),
+        started_at: Some(10),
+        completed_at: None,
+        raw_payload: json!({}),
+        items: vec![
+            ThreadItemSnapshot::from_payload(&user_message_item("user-1", "Run commands")).unwrap(),
+            ThreadItemSnapshot::from_payload(&agent_message_item("agent-1", "First command"))
+                .unwrap(),
+            ThreadItemSnapshot::from_payload(&command_execution_item(
+                "snapshot-command-1",
+                "printf 'kodex-two-command-test-1\\n'",
+                "kodex-two-command-test-1\n",
+            ))
+            .unwrap(),
+            ThreadItemSnapshot::from_payload(&agent_message_item("agent-2", "Second command"))
+                .unwrap(),
+            ThreadItemSnapshot::from_payload(&command_execution_item(
+                "snapshot-command-2",
+                "printf 'kodex-two-command-test-2\\n'",
+                "kodex-two-command-test-2\n",
+            ))
+            .unwrap(),
+        ],
+    };
+    build_thread_timeline(&sessions, "thread-1", &[active_turn], 1)
+        .await
+        .unwrap();
+
+    let completed_turn = ThreadTurnSnapshot {
+        id: "turn-1".to_string(),
+        status: "completed".to_string(),
+        started_at: Some(10),
+        completed_at: Some(20),
+        raw_payload: json!({}),
+        items: vec![
+            ThreadItemSnapshot::from_payload(&user_message_item("user-1", "Run commands")).unwrap(),
+            ThreadItemSnapshot::from_payload(&agent_message_item("agent-1", "First command"))
+                .unwrap(),
+            ThreadItemSnapshot::from_payload(&agent_message_item("agent-2", "Second command"))
+                .unwrap(),
+            ThreadItemSnapshot::from_payload(&final_agent_message_item("agent-final", "Done"))
+                .unwrap(),
+        ],
+    };
+    let timeline = build_thread_timeline(&sessions, "thread-1", &[completed_turn], 2)
+        .await
+        .unwrap();
+
+    let work = only_work_row(&timeline);
+    assert_eq!(
+        work.collapsed_rows
+            .iter()
+            .map(|row| (
+                row.kind.as_str(),
+                row.item
+                    .as_ref()
+                    .and_then(|item| item.payload.item.text.as_deref()),
+                row.items
+                    .iter()
+                    .map(|item| item.item_id.as_str())
+                    .collect::<Vec<_>>()
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("assistant_message", Some("First command"), vec![]),
+            ("activity", None, vec!["snapshot-command-1"]),
+            ("assistant_message", Some("Second command"), vec![]),
+            ("activity", None, vec!["snapshot-command-2"]),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn terminal_snapshot_keeps_final_answers_before_later_turns() {
+    let sessions = ThreadViewStore::default();
+    let active_command_turn = ThreadTurnSnapshot {
+        id: "turn-1".to_string(),
+        status: "inProgress".to_string(),
+        started_at: Some(10),
+        completed_at: None,
+        raw_payload: json!({}),
+        items: vec![
+            ThreadItemSnapshot::from_payload(&user_message_item("user-1", "test")).unwrap(),
+            ThreadItemSnapshot::from_payload(&command_execution_item(
+                "snapshot-command",
+                "printf 'kodex-persistence-test-command\\n'",
+                "kodex-persistence-test-command\n",
+            ))
+            .unwrap(),
+        ],
+    };
+    build_thread_timeline(&sessions, "thread-1", &[active_command_turn], 1)
+        .await
+        .unwrap();
+
+    let completed_command_turn = ThreadTurnSnapshot {
+        id: "turn-1".to_string(),
+        status: "completed".to_string(),
+        started_at: Some(10),
+        completed_at: Some(20),
+        raw_payload: json!({}),
+        items: vec![
+            ThreadItemSnapshot::from_payload(&user_message_item("user-1", "test")).unwrap(),
+            ThreadItemSnapshot::from_payload(&final_agent_message_item(
+                "agent-final-1",
+                "Ran:\n\n```text\nkodex-persistence-test-command\n```",
+            ))
+            .unwrap(),
+        ],
+    };
+    let completed_reply_turn_1 = ThreadTurnSnapshot {
+        id: "turn-2".to_string(),
+        status: "completed".to_string(),
+        started_at: Some(30),
+        completed_at: Some(35),
+        raw_payload: json!({}),
+        items: vec![
+            ThreadItemSnapshot::from_payload(&user_message_item("user-2", "message 1")).unwrap(),
+            ThreadItemSnapshot::from_payload(&final_agent_message_item("agent-final-2", "Reply 1"))
+                .unwrap(),
+        ],
+    };
+    let completed_reply_turn_2 = ThreadTurnSnapshot {
+        id: "turn-3".to_string(),
+        status: "completed".to_string(),
+        started_at: Some(40),
+        completed_at: Some(43),
+        raw_payload: json!({}),
+        items: vec![
+            ThreadItemSnapshot::from_payload(&user_message_item("user-3", "message 2")).unwrap(),
+            ThreadItemSnapshot::from_payload(&final_agent_message_item("agent-final-3", "Reply 2"))
+                .unwrap(),
+        ],
+    };
+    let timeline = build_thread_timeline(
+        &sessions,
+        "thread-1",
+        &[
+            completed_command_turn,
+            completed_reply_turn_1,
+            completed_reply_turn_2,
+        ],
+        2,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        timeline
+            .rows
+            .iter()
+            .filter_map(root_row_text)
+            .collect::<Vec<_>>(),
+        vec![
+            serde_json::to_string(&json!([{"text":"test","type":"text"}])).unwrap(),
+            "Ran:\n\n```text\nkodex-persistence-test-command\n```".to_string(),
+            serde_json::to_string(&json!([{"text":"message 1","type":"text"}])).unwrap(),
+            "Reply 1".to_string(),
+            serde_json::to_string(&json!([{"text":"message 2","type":"text"}])).unwrap(),
+            "Reply 2".to_string(),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn terminal_turn_patch_preserves_live_command_rows() {
+    let sessions = ThreadViewStore::default();
+    let command = command_execution_item(
+        "live-command",
+        "printf 'kodex-terminal-preserve-test\\n'",
+        "kodex-terminal-preserve-test\n",
+    );
+    let command_snapshot = ThreadItemSnapshot::from_payload(&command).unwrap();
+    record_item_upsert(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        command,
+        command_snapshot,
+        Some("running"),
+        1,
+    )
+    .await
+    .unwrap();
+
+    let completed_turn = ThreadTurnSnapshot {
+        id: "turn-1".to_string(),
+        status: "completed".to_string(),
+        started_at: Some(10),
+        completed_at: Some(20),
+        raw_payload: json!({}),
+        items: Vec::new(),
+    };
+    let (_newly_terminal, status_patch) =
+        record_turn_status(&sessions, "thread-1", &completed_turn, 2)
+            .await
+            .unwrap();
+
+    let activity = status_patch
+        .rows
+        .as_ref()
+        .expect("turn rows")
+        .iter()
+        .find(|row| row.kind == "activity")
+        .expect("activity row");
+    assert_eq!(activity.items.len(), 1);
+    assert_eq!(activity.items[0].item_id, "live-command");
+    assert_eq!(
+        activity.items[0].payload.item.command.as_deref(),
+        Some("printf 'kodex-terminal-preserve-test\\n'")
+    );
+}
+
+#[tokio::test]
 async fn live_item_activity_does_not_invent_turn_timestamps() {
     let sessions = ThreadViewStore::default();
     record_item_delta(&sessions, "thread-1", "turn-1", "agent-1", "Working", 1)
@@ -613,6 +976,147 @@ async fn active_snapshot_does_not_truncate_newer_live_text() {
     assert_eq!(timeline.turns[0].started_at, Some(1));
     assert_eq!(timeline.turns[0].completed_at, None);
     assert_eq!(timeline.active_turn_id.as_deref(), Some("turn-1"));
+}
+
+#[tokio::test]
+async fn active_snapshot_collapses_duplicate_live_assistant_text() {
+    let sessions = ThreadViewStore::default();
+    record_item_delta(&sessions, "thread-1", "turn-1", "delta-item", "Repeated", 1)
+        .await
+        .unwrap();
+
+    let active_turn = ThreadTurnSnapshot {
+        id: "turn-1".to_string(),
+        status: "inProgress".to_string(),
+        started_at: Some(1),
+        completed_at: None,
+        raw_payload: json!({}),
+        items: vec![ThreadItemSnapshot::from_payload(&agent_message_item(
+            "snapshot-item",
+            "Repeated",
+        ))
+        .unwrap()],
+    };
+    let timeline = build_thread_timeline(&sessions, "thread-1", &[active_turn], 2)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        timeline
+            .items
+            .iter()
+            .map(|item| (
+                item.item_id.as_str(),
+                item.payload.item.text.as_deref().unwrap_or("")
+            ))
+            .collect::<Vec<_>>(),
+        vec![("snapshot-item", "Repeated")]
+    );
+    let rows = timeline.rows;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].kind, "assistant_message");
+}
+
+#[tokio::test]
+async fn active_snapshot_collapses_equivalent_gateway_stream_user_item() {
+    let sessions = ThreadViewStore::default();
+    let live_user = user_message_item("live-user", "Same prompt");
+    let live_user_snapshot = ThreadItemSnapshot::from_payload(&live_user).unwrap();
+    record_item_upsert(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        live_user,
+        live_user_snapshot,
+        Some("completed"),
+        1,
+    )
+    .await
+    .unwrap();
+
+    let active_turn = ThreadTurnSnapshot {
+        id: "turn-1".to_string(),
+        status: "inProgress".to_string(),
+        started_at: Some(1),
+        completed_at: None,
+        raw_payload: json!({}),
+        items: vec![ThreadItemSnapshot::from_payload(&user_message_item(
+            "snapshot-user",
+            "Same prompt",
+        ))
+        .unwrap()],
+    };
+    let timeline = build_thread_timeline(&sessions, "thread-1", &[active_turn], 2)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        timeline
+            .items
+            .iter()
+            .map(|item| item.item_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["snapshot-user"]
+    );
+    assert_eq!(
+        timeline
+            .rows
+            .iter()
+            .filter(|row| row.kind == "user_message")
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn active_snapshot_collapses_equivalent_gateway_stream_assistant_item() {
+    let sessions = ThreadViewStore::default();
+    let live_assistant = agent_message_item("live-assistant", "Same update");
+    let live_assistant_snapshot = ThreadItemSnapshot::from_payload(&live_assistant).unwrap();
+    record_item_upsert(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        live_assistant,
+        live_assistant_snapshot,
+        Some("completed"),
+        1,
+    )
+    .await
+    .unwrap();
+
+    let active_turn = ThreadTurnSnapshot {
+        id: "turn-1".to_string(),
+        status: "inProgress".to_string(),
+        started_at: Some(1),
+        completed_at: None,
+        raw_payload: json!({}),
+        items: vec![ThreadItemSnapshot::from_payload(&agent_message_item(
+            "snapshot-assistant",
+            "Same update",
+        ))
+        .unwrap()],
+    };
+    let timeline = build_thread_timeline(&sessions, "thread-1", &[active_turn], 2)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        timeline
+            .items
+            .iter()
+            .map(|item| item.item_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["snapshot-assistant"]
+    );
+    assert_eq!(
+        timeline
+            .rows
+            .iter()
+            .filter(|row| row.kind == "assistant_message")
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]

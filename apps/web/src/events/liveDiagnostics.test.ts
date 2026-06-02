@@ -7,6 +7,8 @@ import {
   recordDuplicateSelectedGlobalDrop,
   recordLiveEvent,
   recordReducerBatch,
+  recordSelectedThreadDeltaMiss,
+  recordSelectedThreadSnapshotRefresh,
   resetLiveDiagnosticsForTest,
 } from "./liveDiagnostics";
 
@@ -35,11 +37,73 @@ describe("live diagnostics", () => {
     recordDuplicateSelectedGlobalDrop();
     recordLiveEvent("selected", event({ kind: "thread_view.refresh_required" }));
     recordReducerBatch(3, 2.5);
+    recordSelectedThreadSnapshotRefresh("initial");
+    recordSelectedThreadSnapshotRefresh("refreshRequired");
+    recordSelectedThreadSnapshotRefresh("refreshRequired");
+    recordSelectedThreadSnapshotRefresh("deltaMiss");
+    recordSelectedThreadDeltaMiss({
+      batchSize: 3,
+      itemId: "item-1",
+      relation: "patchEarlierInBatch",
+      refreshInFlight: false,
+      seq: 2,
+      state: "indexedButNotAppendable",
+      threadId: "thread-1",
+      turnId: "turn-1",
+    });
+    recordSelectedThreadDeltaMiss({
+      batchSize: 1,
+      itemId: "item-2",
+      relation: "noPatchInBatch",
+      refreshInFlight: true,
+      seq: 3,
+      state: "notIndexed",
+      threadId: "thread-1",
+      turnId: "turn-1",
+    });
     recordCacheInvalidation("projectThreads");
 
     expect(getLiveDiagnosticsSnapshot()).toMatchObject({
       duplicateSelectedGlobalDrops: 1,
       refreshRequiredCount: 1,
+      selectedThreadSnapshotRefreshes: 4,
+      selectedThreadSnapshotRefreshesByReason: {
+        initial: 1,
+        refreshRequired: 2,
+        deltaMiss: 1,
+      },
+      selectedThreadDeltaMisses: 2,
+      selectedThreadDeltaMissesByRelation: {
+        patchEarlierInBatch: 1,
+        noPatchInBatch: 1,
+      },
+      selectedThreadDeltaMissesByState: {
+        indexedButNotAppendable: 1,
+        notIndexed: 1,
+      },
+      selectedThreadDeltaMissesWhileRefreshInFlight: 1,
+      selectedThreadRecentDeltaMisses: [
+        {
+          batchSize: 3,
+          itemId: "item-1",
+          relation: "patchEarlierInBatch",
+          refreshInFlight: false,
+          seq: 2,
+          state: "indexedButNotAppendable",
+          threadId: "thread-1",
+          turnId: "turn-1",
+        },
+        {
+          batchSize: 1,
+          itemId: "item-2",
+          relation: "noPatchInBatch",
+          refreshInFlight: true,
+          seq: 3,
+          state: "notIndexed",
+          threadId: "thread-1",
+          turnId: "turn-1",
+        },
+      ],
       reducerBatchCount: 1,
       reducerEventCount: 3,
       reducerTotalDurationMs: 2.5,

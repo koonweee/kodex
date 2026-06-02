@@ -3,19 +3,31 @@ import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef } fr
 import type { Approval, EventEnvelope, ThreadSummary, ThreadViewThreadSummary } from "../api/client";
 import { getThreadDetail, getThreadTimelinePage } from "../api/client";
 import { isApprovalEvent } from "../approvals/state";
-import { recordLiveEvent, recordReducerBatch } from "../events/liveDiagnostics";
+import {
+  recordLiveEvent,
+  recordReducerBatch,
+  recordSelectedThreadDeltaMiss,
+  recordSelectedThreadSnapshotRefresh,
+  type SelectedThreadDeltaMissRelation,
+  type SelectedThreadSnapshotRefreshReason,
+} from "../events/liveDiagnostics";
 import { createEventStreamClient } from "../events/stream";
 import { errorMessageFrom } from "../shared/values";
-import { applyTimelineEventBatch } from "./batch";
+import { applyTimelineEventBatch, coalesceTimelineEventBatch } from "./batch";
 import { idleTimelineEntry, type TimelineEntry } from "./entry";
 import {
   applyTimelineHistoryWindow,
   applyTimelineSnapshot,
+  applyLiveTimelineUpdate,
   canApplyThreadViewItemDelta,
   createTimelineState,
   setTimelineOlderHistoryLoading,
   type TimelineState,
 } from "./reducer";
+import {
+  indexesForState,
+  timelineRowKeysByItemId,
+} from "./state";
 
 const MATERIALIZING_THREAD_SNAPSHOT_RETRY_MS = 250;
 
@@ -56,7 +68,8 @@ export function useSelectedThreadTimeline({
   const timelineFlushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedThreadStreamToken = useRef(0);
   const olderHistoryRequest = useRef<{ threadId: string; cursor: string } | null>(null);
-  const requestTimelineRefresh = useRef<(() => void) | null>(null);
+  const requestTimelineRefresh = useRef<((reason: SelectedThreadSnapshotRefreshReason) => void) | null>(null);
+  const snapshotRefreshInFlight = useRef<{ threadId: string; streamToken: number } | null>(null);
   const latestCallbacks = useRef({
     onApprovalEvent,
     onError,
@@ -126,17 +139,32 @@ export function useSelectedThreadTimeline({
     setTimeline((current) => {
       const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
       let shouldRefresh = false;
-      for (const event of events) {
-        if (!canApplyThreadViewItemDelta(current, event)) {
+      let validationState = current;
+      const coalescedEvents = coalesceTimelineEventBatch(events);
+      for (let index = 0; index < coalescedEvents.length; index += 1) {
+        const event = coalescedEvents[index];
+        if (!canApplyThreadViewItemDelta(validationState, event)) {
+          const target = deltaTargetFromEvent(event);
+          recordSelectedThreadDeltaMiss({
+            batchSize: coalescedEvents.length,
+            itemId: target.itemId,
+            relation: deltaMissRelation(coalescedEvents, index, target),
+            refreshInFlight: snapshotRefreshInFlight.current?.threadId === selectedThreadId,
+            seq: event.seq,
+            state: deltaMissStateRelation(validationState, target),
+            threadId: target.threadId,
+            turnId: target.turnId,
+          });
           shouldRefresh = true;
           break;
         }
+        validationState = applyLiveTimelineUpdate(validationState, event);
       }
-      const next = applyTimelineEventBatch(current, events);
+      const next = applyTimelineEventBatch(current, coalescedEvents);
       const finishedAt = typeof performance !== "undefined" ? performance.now() : startedAt;
       recordReducerBatch(events.length, finishedAt - startedAt);
       if (shouldRefresh) {
-        requestTimelineRefresh.current?.();
+        requestTimelineRefresh.current?.("deltaMiss");
       }
       return next;
     });
@@ -233,29 +261,46 @@ export function useSelectedThreadTimeline({
       latestCallbacks.current.onSyncNotice?.(notice);
     }
 
-    async function refreshSnapshot(phase: "loadingSnapshot" | "refreshingSnapshot") {
+    async function refreshSnapshot(
+      phase: "loadingSnapshot" | "refreshingSnapshot",
+      reason: SelectedThreadSnapshotRefreshReason,
+    ) {
+      if (snapshotRefreshInFlight.current?.threadId === threadId) {
+        return false;
+      }
+      snapshotRefreshInFlight.current = { threadId, streamToken };
       if (phase === "refreshingSnapshot") {
         markEntryRefreshing(threadId);
       }
-      const snapshot = await getThreadDetail(threadId);
-      if (cancelled || selectedThreadStreamToken.current !== streamToken) {
-        return false;
+      recordSelectedThreadSnapshotRefresh(reason);
+      try {
+        const snapshot = await getThreadDetail(threadId);
+        if (cancelled || selectedThreadStreamToken.current !== streamToken) {
+          return false;
+        }
+        setTimeline((current) => applyTimelineSnapshot(current, snapshot));
+        latestCallbacks.current.onSnapshotThread(threadViewSummaryToThreadSummary(snapshot.thread));
+        setSyncNotice(null);
+        markEntryStreaming(threadId);
+        return snapshot.timeline?.viewRevision ?? 0;
+      } finally {
+        if (
+          snapshotRefreshInFlight.current?.threadId === threadId &&
+          snapshotRefreshInFlight.current.streamToken === streamToken
+        ) {
+          snapshotRefreshInFlight.current = null;
+        }
       }
-      setTimeline((current) => applyTimelineSnapshot(current, snapshot));
-      latestCallbacks.current.onSnapshotThread(threadViewSummaryToThreadSummary(snapshot.thread));
-      setSyncNotice(null);
-      markEntryStreaming(threadId);
-      return snapshot.timeline?.viewRevision ?? 0;
     }
 
-    const refetchSnapshot = (reason: "refreshRequired" | "streamReconnect") => {
+    const refetchSnapshot = (reason: SelectedThreadSnapshotRefreshReason) => {
       if (reason === "streamReconnect") {
         setSyncNotice({
           message: "Selected thread stream disconnected. Reconnecting and retrying thread refresh.",
           tone: "warning",
         });
       }
-      void refreshSnapshot("refreshingSnapshot").catch((error) => {
+      void refreshSnapshot("refreshingSnapshot", reason).catch((error) => {
         if (cancelled) {
           return;
         }
@@ -263,12 +308,14 @@ export function useSelectedThreadTimeline({
           message:
             reason === "streamReconnect"
               ? `Selected thread stream disconnected. Reconnecting and retrying thread refresh: ${errorMessageFrom(error)}`
+              : reason === "deltaMiss"
+                ? `Selected thread delta could not be applied. Retrying thread refresh: ${errorMessageFrom(error)}`
               : `Selected thread refresh failed. Retrying on the next gateway update: ${errorMessageFrom(error)}`,
           tone: "warning",
         });
       });
     };
-    requestTimelineRefresh.current = () => refetchSnapshot("refreshRequired");
+    requestTimelineRefresh.current = refetchSnapshot;
 
     const connectSelectedThreadStream = (cursor: number) => {
       if (closeStream) {
@@ -318,7 +365,7 @@ export function useSelectedThreadTimeline({
     };
 
     const loadInitialSnapshot = () => {
-      void refreshSnapshot("loadingSnapshot")
+      void refreshSnapshot("loadingSnapshot", "initial")
         .then((revision) => {
           if (revision !== false && !cancelled) {
             connectSelectedThreadStream(revision);
@@ -358,6 +405,12 @@ export function useSelectedThreadTimeline({
       closeStream?.();
       cancelQueuedTimelineEvents();
       requestTimelineRefresh.current = null;
+      if (
+        snapshotRefreshInFlight.current?.threadId === threadId &&
+        snapshotRefreshInFlight.current.streamToken === streamToken
+      ) {
+        snapshotRefreshInFlight.current = null;
+      }
     };
   }, [isSelectedThreadSnapshotDeferred, selectedThreadId, setApprovals, setTimeline, setTimelineEntry]);
 
@@ -379,6 +432,65 @@ function isCanonicalTimelineRenderEvent(event: EventEnvelope): boolean {
   return event.kind === "thread_view.patch" || event.kind === "thread_view.item_delta" || event.kind === "gateway.warning" || event.kind === "gateway.error";
 }
 
+function deltaTargetFromEvent(event: EventEnvelope): { itemId: string | null; threadId: string | null; turnId: string | null } {
+  const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
+    ? event.payload as Record<string, unknown>
+    : {};
+  return {
+    itemId: stringValue(payload.itemId) ?? event.itemId ?? null,
+    threadId: stringValue(payload.threadId) ?? event.threadId ?? null,
+    turnId: stringValue(payload.turnId) ?? event.turnId ?? null,
+  };
+}
+
+function deltaMissRelation(
+  events: EventEnvelope[],
+  missIndex: number,
+  target: { itemId: string | null; turnId: string | null },
+): SelectedThreadDeltaMissRelation {
+  if (events.slice(0, missIndex).some((event) => patchMentionsDeltaTarget(event, target))) {
+    return "patchEarlierInBatch";
+  }
+  if (events.slice(missIndex + 1).some((event) => patchMentionsDeltaTarget(event, target))) {
+    return "patchLaterInBatch";
+  }
+  return "noPatchInBatch";
+}
+
+function deltaMissStateRelation(
+  state: TimelineState,
+  target: { itemId: string | null },
+): "notIndexed" | "indexedButNotAppendable" {
+  if (!target.itemId) {
+    return "notIndexed";
+  }
+  const indexes = indexesForState(state);
+  return timelineRowKeysByItemId(indexes, target.itemId).length === 0 ? "notIndexed" : "indexedButNotAppendable";
+}
+
+function patchMentionsDeltaTarget(event: EventEnvelope, target: { itemId: string | null; turnId: string | null }): boolean {
+  if (event.kind !== "thread_view.patch" || !target.itemId) {
+    return false;
+  }
+  return payloadMentionsTarget(event.payload, target);
+}
+
+function payloadMentionsTarget(value: unknown, target: { itemId: string | null; turnId: string | null }): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => payloadMentionsTarget(item, target));
+  }
+  const record = value as Record<string, unknown>;
+  const itemId = stringValue(record.itemId) ?? stringValue(record.id);
+  const turnId = stringValue(record.turnId);
+  if (itemId === target.itemId && (!target.turnId || !turnId || turnId === target.turnId)) {
+    return true;
+  }
+  return Object.values(record).some((item) => payloadMentionsTarget(item, target));
+}
+
 function isTransientThreadSnapshotLoadError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();
@@ -388,4 +500,8 @@ function isTransientThreadSnapshotLoadError(error: unknown): boolean {
     normalized.includes("failed to load thread history") ||
     (normalized.includes("rollout at") && normalized.includes(" is empty"))
   );
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }

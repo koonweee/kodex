@@ -242,15 +242,30 @@ impl ThreadView {
             .enumerate()
             .map(|(index, item)| (scoped_item_key(&item.turn_id, &item.item_id), index))
             .collect::<HashMap<_, _>>();
-        let mut base_keys = base
-            .items
+        let prior_item_orders = existing_items
             .iter()
-            .map(|item| scoped_item_key(&item.turn_id, &item.item_id))
-            .collect::<HashSet<_>>();
+            .map(|item| {
+                (
+                    scoped_item_key(&item.turn_id, &item.item_id),
+                    item.display_order,
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        let prior_turn_tail_orders = turn_max_display_orders(existing_items.iter());
         let base_pending_user_text_keys = base
             .items
             .iter()
             .filter_map(materialized_user_text_key)
+            .collect::<HashSet<_>>();
+        let base_message_content_keys = base
+            .items
+            .iter()
+            .filter_map(snapshot_message_content_key)
+            .collect::<HashSet<_>>();
+        let base_activity_content_keys = base
+            .items
+            .iter()
+            .filter_map(snapshot_activity_content_key)
             .collect::<HashSet<_>>();
         let terminal_turn_ids = base
             .turns
@@ -280,7 +295,18 @@ impl ThreadView {
             {
                 continue;
             }
-            if terminal_turn_ids.contains(&item.turn_id) {
+            if gateway_stream_message_content_key(&item)
+                .is_some_and(|key| base_message_content_keys.contains(&key))
+            {
+                continue;
+            }
+            if existing_activity_content_key(&item)
+                .is_some_and(|key| base_activity_content_keys.contains(&key))
+            {
+                continue;
+            }
+            let terminal_turn_item = terminal_turn_ids.contains(&item.turn_id);
+            if terminal_turn_item && !is_preservable_terminal_activity(&item) {
                 continue;
             }
             if is_prunable_empty_reasoning(&item) {
@@ -293,7 +319,8 @@ impl ThreadView {
             ) {
                 continue;
             }
-            if is_live_status(&item.status)
+            if !terminal_turn_item
+                && is_live_status(&item.status)
                 && base.active_turn_id.is_none()
                 && (matches!(
                     base.live_state,
@@ -307,11 +334,12 @@ impl ThreadView {
                 base.active_turn_id = Some(item.turn_id.clone());
                 base.live_state = ThreadLiveState::Streaming;
             }
-            display_order += 1;
             let mut item = item;
-            item.display_order = display_order;
+            if !terminal_turn_item {
+                display_order += 1;
+                item.display_order = display_order;
+            }
             let inserted_key = scoped_item_key(&item.turn_id, &item.item_id);
-            base_keys.insert(inserted_key.clone());
             base_item_indexes.insert(inserted_key, base.items.len());
             base.items.push(item);
         }
@@ -321,6 +349,12 @@ impl ThreadView {
         base.pending_user_input_requests = self.pending_user_input_requests.clone();
         merge_missing_turns(&mut base.turns, &existing_turns, &base.items);
         base.turns = ordered_turns_for_items(&base.turns, &base.items);
+        normalize_timeline_item_display_order(
+            &mut base.items,
+            &base.turns,
+            &prior_item_orders,
+            &prior_turn_tail_orders,
+        );
         base.rows = thread_timeline_rows_from_items(
             base.active_turn_id.as_deref(),
             base.live_state,
@@ -1108,6 +1142,199 @@ fn materialized_user_text_key(item: &ThreadTimelineSnapshotItem) -> Option<Strin
 fn materialized_item_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
     let text = text_for_pending_user_match(item)?;
     Some(scoped_text_key(&item.turn_id, &item.item_type, &text))
+}
+
+fn snapshot_message_content_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+    if item.payload.source != TimelineUpdateSource::AppServerSnapshot {
+        return None;
+    }
+    message_content_key(item)
+}
+
+fn gateway_stream_message_content_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+    if item.payload.source != TimelineUpdateSource::GatewayStream {
+        return None;
+    }
+    message_content_key(item)
+}
+
+fn message_content_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+    let kind = normalized_message_item_kind(&item.item_type)?;
+    let content = message_content_signature(item, kind)?;
+    Some(scoped_text_key(&item.turn_id, kind, &content))
+}
+
+fn normalized_message_item_kind(item_type: &str) -> Option<&'static str> {
+    match item_type.to_ascii_lowercase().as_str() {
+        "usermessage" | "user_message" => Some("user_message"),
+        "agentmessage" | "assistantmessage" | "assistant_message" | "agent_message" => {
+            Some("assistant_message")
+        }
+        _ => None,
+    }
+}
+
+fn message_content_signature(item: &ThreadTimelineSnapshotItem, kind: &str) -> Option<String> {
+    if kind == "user_message" {
+        return user_message_content_signature(item).or_else(|| text_for_pending_user_match(item));
+    }
+    text_for_pending_user_match(item)
+}
+
+fn user_message_content_signature(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+    item.payload
+        .item_snapshot
+        .raw_payload
+        .get("content")
+        .or(item.payload.item.content.as_ref())
+        .and_then(|content| serde_json::to_string(content).ok())
+        .filter(|content| !content.trim().is_empty())
+}
+
+fn snapshot_activity_content_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+    if item.payload.source != TimelineUpdateSource::AppServerSnapshot {
+        return None;
+    }
+    activity_content_key(item)
+}
+
+fn existing_activity_content_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+    activity_content_key(item)
+}
+
+fn activity_content_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+    let kind = normalized_activity_item_kind(&item.item_type)?;
+    let content = activity_content_signature(item)?;
+    Some(scoped_text_key(&item.turn_id, kind, &content))
+}
+
+fn is_preservable_terminal_activity(item: &ThreadTimelineSnapshotItem) -> bool {
+    normalized_activity_item_kind(&item.item_type).is_some()
+}
+
+fn is_final_response_snapshot_item(item: &ThreadTimelineSnapshotItem) -> bool {
+    normalized_message_item_kind(&item.item_type).is_some()
+        && item.payload.item.phase.as_deref() == Some("final_answer")
+}
+
+fn turn_max_display_orders<'a>(
+    items: impl Iterator<Item = &'a ThreadTimelineSnapshotItem>,
+) -> HashMap<String, i64> {
+    items.fold(HashMap::<String, i64>::new(), |mut acc, item| {
+        acc.entry(item.turn_id.clone())
+            .and_modify(|display_order| {
+                *display_order = (*display_order).max(item.display_order);
+            })
+            .or_insert(item.display_order);
+        acc
+    })
+}
+
+fn normalize_timeline_item_display_order(
+    items: &mut [ThreadTimelineSnapshotItem],
+    turns: &[ThreadTimelineSnapshotTurn],
+    prior_item_orders: &HashMap<String, i64>,
+    prior_turn_tail_orders: &HashMap<String, i64>,
+) {
+    // Prior live ordering is only a within-turn hint. Global order must come
+    // from the current turn list so completed rows cannot move below later turns.
+    let turn_order = turns
+        .iter()
+        .enumerate()
+        .map(|(index, turn)| (turn.id.as_str(), index))
+        .collect::<HashMap<_, _>>();
+    items.sort_by(|left, right| {
+        let left_key = scoped_item_key(&left.turn_id, &left.item_id);
+        let right_key = scoped_item_key(&right.turn_id, &right.item_id);
+        let left_turn_order = turn_order
+            .get(left.turn_id.as_str())
+            .copied()
+            .unwrap_or(usize::MAX);
+        let right_turn_order = turn_order
+            .get(right.turn_id.as_str())
+            .copied()
+            .unwrap_or(usize::MAX);
+        let left_item_order =
+            merged_item_order(left, &left_key, prior_item_orders, prior_turn_tail_orders);
+        let right_item_order =
+            merged_item_order(right, &right_key, prior_item_orders, prior_turn_tail_orders);
+        (
+            left_turn_order,
+            left_item_order,
+            merged_item_tie_priority(left),
+            left.display_order,
+            left.item_id.as_str(),
+        )
+            .cmp(&(
+                right_turn_order,
+                right_item_order,
+                merged_item_tie_priority(right),
+                right.display_order,
+                right.item_id.as_str(),
+            ))
+    });
+    for (index, item) in items.iter_mut().enumerate() {
+        item.display_order = i64::try_from(index + 1).unwrap_or(i64::MAX);
+    }
+}
+
+fn merged_item_tie_priority(item: &ThreadTimelineSnapshotItem) -> u8 {
+    if normalized_message_item_kind(&item.item_type) == Some("user_message") {
+        return 0;
+    }
+    if normalized_message_item_kind(&item.item_type).is_some() {
+        return 1;
+    }
+    if normalized_activity_item_kind(&item.item_type).is_some() {
+        return 2;
+    }
+    3
+}
+
+fn merged_item_order(
+    item: &ThreadTimelineSnapshotItem,
+    scoped_key: &str,
+    prior_item_orders: &HashMap<String, i64>,
+    prior_turn_tail_orders: &HashMap<String, i64>,
+) -> i64 {
+    prior_item_orders
+        .get(scoped_key)
+        .copied()
+        .unwrap_or_else(|| {
+            if is_final_response_snapshot_item(item) {
+                return prior_turn_tail_orders
+                    .get(&item.turn_id)
+                    .map(|display_order| display_order.saturating_add(1))
+                    .unwrap_or(item.display_order);
+            }
+            item.display_order
+        })
+}
+
+fn normalized_activity_item_kind(item_type: &str) -> Option<&'static str> {
+    match item_type
+        .to_ascii_lowercase()
+        .replace(['_', '-'], "")
+        .as_str()
+    {
+        "collabagenttoolcall" => Some("collab_agent_tool_call"),
+        "commandexecution" => Some("command_execution"),
+        "dynamictoolcall" => Some("dynamic_tool_call"),
+        "imageview" => Some("image_view"),
+        "mcptoolcall" => Some("mcp_tool_call"),
+        "websearch" => Some("web_search_group"),
+        _ => None,
+    }
+}
+
+fn activity_content_signature(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+    let mut raw_payload = item.payload.item_snapshot.raw_payload.clone();
+    if let Some(object) = raw_payload.as_object_mut() {
+        object.remove("id");
+    }
+    serde_json::to_string(&raw_payload)
+        .ok()
+        .filter(|signature| !signature.trim().is_empty() && signature != "null")
 }
 
 fn text_for_pending_user_match(item: &ThreadTimelineSnapshotItem) -> Option<String> {

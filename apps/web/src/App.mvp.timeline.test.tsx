@@ -28,6 +28,37 @@ function clickMenuItem(name: RegExp) {
   return clickMenuItemWithDeps(name, screen, waitFor, fireEvent);
 }
 
+function itemDeltaEvent({
+  seq,
+  delta,
+  itemId = "missing-agent",
+  turnId = "turn-missing",
+}: {
+  seq: number;
+  delta: string;
+  itemId?: string;
+  turnId?: string;
+}): EventEnvelope {
+  return {
+    id: `item-delta-${seq}`,
+    seq,
+    kind: "thread_view.item_delta",
+    codexMethod: "thread_view/item_delta",
+    projectId: project.id,
+    threadId: thread.id,
+    turnId,
+    itemId,
+    payload: {
+      threadId: thread.id,
+      turnId,
+      itemId,
+      delta,
+      viewRevision: seq,
+    },
+    receivedAt: "2026-04-30T00:00:02Z",
+  };
+}
+
 describe("MVP timeline flows", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -624,6 +655,145 @@ describe("MVP timeline flows", () => {
     expect(await screen.findByText(/recovered snapshot/i)).toBeInTheDocument();
     expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(2);
     expect(gateway.callsFor("GET", "/v1/events")).toHaveLength(0);
+  });
+
+  it("coalesces selected snapshot recovery while delta misses keep arriving", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let detailCall = 0;
+    const recoveryDetail = new Promise(() => undefined);
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads/thread-1": () => {
+          detailCall += 1;
+          if (detailCall > 1) {
+            return recoveryDetail;
+          }
+          return threadDetail(thread, [
+            snapshotTurn("turn-1", [
+              snapshotItem("item-1", "agentMessage", {
+                text: "Initial snapshot",
+              }),
+            ]),
+          ]);
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/initial snapshot/i)).toBeInTheDocument();
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    expect(selectedThreadStream).toBeDefined();
+
+    act(() => {
+      selectedThreadStream?.emitNamed("thread_view.item_delta", itemDeltaEvent({ seq: 2, delta: "First" }));
+    });
+    await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(2));
+
+    act(() => {
+      selectedThreadStream?.emitNamed("thread_view.item_delta", itemDeltaEvent({ seq: 3, delta: "Second" }));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    act(() => {
+      selectedThreadStream?.emitNamed("thread_view.item_delta", itemDeltaEvent({ seq: 4, delta: "Third" }));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(2);
+  });
+
+  it("does not recover when a patch creates the delta target in the same selected batch", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads/thread-1": threadDetail(thread, [
+          snapshotTurn("turn-1", [
+            snapshotItem("item-1", "agentMessage", {
+              text: "Initial snapshot",
+            }),
+          ]),
+        ]),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/initial snapshot/i)).toBeInTheDocument();
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    expect(selectedThreadStream).toBeDefined();
+
+    act(() => {
+      selectedThreadStream?.emitNamed(
+        "thread_view.patch",
+        projectionPatchEvent({
+          seq: 2,
+          turnId: "turn-live",
+          itemId: "agent-live",
+          text: "Live update",
+        }),
+      );
+      selectedThreadStream?.emitNamed(
+        "thread_view.item_delta",
+        itemDeltaEvent({
+          seq: 3,
+          turnId: "turn-live",
+          itemId: "agent-live",
+          delta: " continued",
+        }),
+      );
+    });
+
+    expect(await screen.findByText(/live update continued/i)).toBeInTheDocument();
+    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(1);
+  });
+
+  it("indexes empty running assistant patches so later deltas can append", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads/thread-1": threadDetail(thread, [
+          snapshotTurn("turn-1", [
+            snapshotItem("item-1", "agentMessage", {
+              text: "Initial snapshot",
+            }),
+          ]),
+        ]),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/initial snapshot/i)).toBeInTheDocument();
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    expect(selectedThreadStream).toBeDefined();
+
+    act(() => {
+      selectedThreadStream?.emitNamed(
+        "thread_view.patch",
+        projectionPatchEvent({
+          seq: 2,
+          turnId: "turn-live",
+          itemId: "agent-live",
+          text: "",
+        }),
+      );
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    act(() => {
+      selectedThreadStream?.emitNamed(
+        "thread_view.item_delta",
+        itemDeltaEvent({
+          seq: 3,
+          turnId: "turn-live",
+          itemId: "agent-live",
+          delta: "First streamed token",
+        }),
+      );
+    });
+
+    expect(await screen.findByText(/first streamed token/i)).toBeInTheDocument();
+    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(1);
   });
 
   it("applies selected-thread stream events even when their server timestamp predates snapshot completion", async () => {
