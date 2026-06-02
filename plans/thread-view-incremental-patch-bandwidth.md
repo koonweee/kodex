@@ -14,7 +14,7 @@ Live profile against a local gateway on `127.0.0.1:8791`:
 - Short prompt, completed at `47.404s`: `4.91 MiB`, `573` events, `thread_view.patch` was `4,839,953` bytes (`93.9%`), `60` patch events, average patch `80,666` bytes, max patch `158,251` bytes.
 - In both runs, `thread_view.item_delta` stayed compact at about `610` bytes per event and no `full_snapshot` patches were observed.
 
-The current hotspot is not SSE framing or terminal full snapshots. It is live `thread_view.patch` events with scope `turn`, especially activity, reasoning, work, and assistant row updates that resend every canonical row for the affected active turn. Frontend and iOS patch batching reduce render churn after bytes arrive, but they do not reduce wire size.
+The current hotspot is not SSE framing or terminal full snapshots. It is live `thread_view.patch` events with scope `turn`, especially activity, reasoning, work, and assistant row updates that resend every canonical row for the affected active turn. Frontend patch batching reduces render churn after bytes arrive, but it does not reduce wire size.
 
 ## Current State
 
@@ -23,8 +23,7 @@ The current hotspot is not SSE framing or terminal full snapshots. It is live `t
 - `apps/gateway/src/events.rs` validates and emits synthetic `thread_view.patch` events through `thread_view_patch_payload_event`.
 - `apps/web/src/timeline/reducer.ts` applies `turn` patches by removing every existing row whose `turnId` is in `affectedTurnIds`, then appending the patch rows.
 - `apps/web/src/timeline/batch.ts` coalesces complete turn patches within a browser batch. This is useful for UI work, but it cannot reduce network bytes.
-- `apps/ios/Sources/KodexCore/LiveUpdates.swift` and `apps/ios/Sources/KodexCore/GatewayProbe.swift` decode and reduce the same complete-turn patch contract.
-- Generated OpenAPI artifacts and generated web/iOS API types include the current three patch scopes, so any new scope must be added as a public contract change.
+- Generated OpenAPI artifacts and generated web API types include the current three patch scopes, so any new scope must be added as a public contract change.
 
 ## Recommendation
 
@@ -44,6 +43,11 @@ Backend emission should compute a before/after row diff for the affected turn an
 
 This is the recommended fix because it targets the measured hotspot directly while preserving the current convergence model: snapshots and complete turn patches remain canonical, and incremental patches are only a bandwidth optimization for live row changes.
 
+## Non-Goals
+
+- Do not update native iOS in this plan. Backend and web changes should not be blocked on iOS decoder, reducer, generated artifact, SwiftPM, simulator, or fixture work.
+- Do not attempt long-term compatibility for older clients that do not understand `row_delta`; this repository's active web client is the implementation target for this bandwidth pass.
+
 ## Milestones
 
 ### 1. Add Failing Regression Tests Before Refactoring
@@ -54,7 +58,6 @@ Scope:
 - `apps/gateway/src/events/tests.rs`
 - `apps/web/src/timeline/reducer.snapshot.test.ts`
 - `apps/web/src/timeline/batch.test.ts`
-- `apps/ios/Tests/KodexCoreTests/NativeMilestoneTests.swift`
 
 Work:
 
@@ -63,7 +66,6 @@ Work:
 - Add backend event tests proving terminal turn finalization still emits a complete `turn` patch or snapshot path, not a lossy row delta.
 - Add frontend reducer tests proving `row_delta` upserts only listed rows, preserves omitted same-turn rows, removes explicit `removedRowIds`, and requests recovery or ignores safely when the base state is not compatible.
 - Add frontend batch tests proving row deltas coalesce by thread/turn/row without crossing full snapshots, refresh-required events, or item-delta ordering boundaries.
-- Add iOS tests proving native decoding and reduction apply `row_delta`, preserve omitted rows, remove explicit row ids, and handle unsupported or missing-base cases without corrupting the timeline.
 
 Exit criteria:
 
@@ -77,15 +79,13 @@ Scope:
 - `apps/gateway/src/thread_view_patch.rs`
 - `apps/gateway/src/app_server_api.rs` if schema annotations or DTO references need updates
 - `apps/web/src/api/generated/schema.ts`
-- `apps/ios/openapi/openapi.json`
-- `apps/ios/Sources/KodexAPI/GeneratedSources`
 
 Work:
 
 - Add `ThreadViewPatchScope::RowDelta`.
 - Add `removed_row_ids` / `removedRowIds` to the patch payload.
 - Update validation so each scope has explicit allowed and required fields.
-- Regenerate OpenAPI and web/iOS generated API artifacts.
+- Regenerate OpenAPI and web generated API artifacts.
 - Keep the browser-visible event name as `thread_view.patch`; only the patch scope changes.
 
 Exit criteria:
@@ -141,28 +141,7 @@ Exit criteria:
 - Frontend tests pass.
 - The browser still treats gateway thread detail snapshots, `thread_view.patch`, and text-only `thread_view.item_delta` as the only visible timeline sources.
 
-### 5. Implement Native iOS Support
-
-Scope:
-
-- `apps/ios/Sources/KodexCore/LiveUpdates.swift`
-- `apps/ios/Sources/KodexCore/GatewayProbe.swift`
-- `apps/ios/Tests/KodexCoreTests/NativeMilestoneTests.swift`
-- generated iOS API artifacts
-
-Work:
-
-- Decode `row_delta` and `removedRowIds`.
-- Apply row upserts/removals by row id while preserving omitted rows.
-- Keep unsupported-scope and unsafe-base handling as a refresh/convergence path.
-- Update native coalescing so row deltas reduce UI churn without changing event ordering semantics.
-
-Exit criteria:
-
-- `cd apps/ios && swift test` passes.
-- Simulator build/test remains available through XcodeBuildMCP for the `KodexIOS` scheme after session defaults are verified.
-
-### 6. Reprofile And Document The Result
+### 5. Reprofile And Document The Result
 
 Scope:
 
@@ -184,7 +163,7 @@ Exit criteria:
 
 ## Regression Test Strategy
 
-The implementation must start with failing tests because the contract change is user-visible and affects web plus native clients.
+The implementation must start with failing tests because the contract change is user-visible for the web client.
 
 Minimum automated coverage:
 
@@ -192,7 +171,6 @@ Minimum automated coverage:
 - Backend selected-stream event tests proving safe live updates emit `row_delta` and terminal/final updates still emit complete `turn` patches.
 - Frontend reducer tests for row upsert, preservation, explicit removal, stale patch handling, and interaction with text-only item deltas.
 - Frontend batch tests for row-delta coalescing and ordering boundaries.
-- iOS decode/reducer tests for the same row upsert, preservation, explicit removal, and unsupported-scope recovery behavior.
 
 Manual/live coverage:
 
@@ -205,20 +183,17 @@ Manual/live coverage:
 - Focused gateway tests for `thread_view`, event ingestion, selected-thread SSE, and byte budgets.
 - `cd apps/web && npm test -- --run src/events/stream.test.ts src/timeline/reducer.snapshot.test.ts src/timeline/batch.test.ts src/timeline/reducer.lifecycle.test.ts src/timeline/threadViewGuard.test.ts`
 - `cd apps/web && npm run build`
-- `cd apps/ios && swift test`
-- XcodeBuildMCP simulator build/test for `apps/ios/KodexIOS.xcodeproj`, scheme `KodexIOS`, after `session_show_defaults`.
 - Browser validation of a live selected-thread stream and same-gateway second client convergence.
 - Independent review pass before marking the plan complete.
 
 ## Regression Risk
 
-Expected regression risk is manageable if web and iOS support ship in the same implementation chunk as the gateway contract change.
+Expected regression risk is manageable for the active web client if backend contract, generated web types, reducer support, and byte-budget tests ship in the same implementation chunk.
 
 Known risks:
 
-- Older clients that do not understand `row_delta` may request refreshes or ignore patches. This local app does not have a public compatibility promise, but web and native iOS must be updated together to avoid refetch storms.
+- Older clients that do not understand `row_delta` may request refreshes or ignore patches. Native iOS is explicitly out of scope for this plan, so any future native follow-up should decide whether to support `row_delta` or force snapshot refreshes.
 - Row id stability is now more important. If a live update changes grouping or row identity, the backend should emit a complete `turn` patch instead of a row delta.
 - Work rows can still be large. If repeated updates replace a single very large work row, this plan reduces cross-row duplication but may not fully solve work-row payload size. A narrower work-row delta would be a follow-up only if profiling still shows that hotspot.
-- A stale or missed base state can make an incremental patch unsafe. Reducers must converge by snapshot refresh rather than inventing durable browser or native state.
+- A stale or missed base state can make an incremental patch unsafe. Reducers must converge by snapshot refresh rather than inventing durable browser state.
 - Live model profiles vary by prompt and model behavior, so automated synthetic byte-budget tests are the durable regression guard.
-
