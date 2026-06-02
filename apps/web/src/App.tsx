@@ -91,7 +91,7 @@ import {
   optimisticThreadSummary,
   threadDisplayTitle,
   threadHasDisplayTitle,
-  withoutPinnedProjectThreads,
+  withPinnedProjectThreads,
   withoutPinnedThreads,
   type ThreadsByProjectId,
 } from "./threads/helpers";
@@ -1662,8 +1662,8 @@ function KodexShell({
     [chatThreads, pinnedStateIsTrusted],
   );
   const sidebarThreadsByProjectId = useMemo(
-    () => (pinnedStateIsTrusted ? withoutPinnedProjectThreads(threadsByProjectId) : threadsByProjectId),
-    [pinnedStateIsTrusted, threadsByProjectId],
+    () => withPinnedProjectThreads(threadsByProjectId, sidebarPinnedThreads, orderedProjects),
+    [orderedProjects, sidebarPinnedThreads, threadsByProjectId],
   );
   const sidebarDataState = useMemo(
     () => ({

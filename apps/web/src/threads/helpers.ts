@@ -1,4 +1,4 @@
-import type { Approval, ThreadSummary } from "../api/client";
+import type { Approval, Project, ThreadSummary } from "../api/client";
 import { asRecord, stringValue } from "../shared/values";
 
 const THREAD_TEXT = {
@@ -206,6 +206,14 @@ export function sortPinnedThreadsForSidebar(
   return [...threads].sort((left, right) => compareSidebarThreads(left, right, approvals, pendingTitleThreadIds, true));
 }
 
+export function sortProjectThreadsForSidebar(
+  threads: ThreadSummary[],
+  approvals: Approval[],
+  pendingTitleThreadIds: Set<string>,
+): ThreadSummary[] {
+  return [...threads].sort((left, right) => compareProjectSidebarThreads(left, right, approvals, pendingTitleThreadIds));
+}
+
 export function withoutPinnedThreads(threads: ThreadSummary[]): ThreadSummary[] {
   return threads.filter((thread) => !threadPinnedAt(thread));
 }
@@ -221,6 +229,39 @@ export function withoutPinnedProjectThreads(current: ThreadsByProjectId): Thread
   return changed ? next : current;
 }
 
+export function withPinnedProjectThreads(
+  current: ThreadsByProjectId,
+  pinnedThreads: ThreadSummary[],
+  projects: Project[],
+): ThreadsByProjectId {
+  let next: ThreadsByProjectId | null = null;
+  const projectIds = new Set(projects.map((project) => project.id));
+  const projectIdsByCwd = new Map(projects.map((project) => [project.cwd, project.id]));
+
+  for (const thread of pinnedThreads) {
+    if (!threadPinnedAt(thread)) {
+      continue;
+    }
+    const projectId = projectIdForPinnedThread(thread, projectIds, projectIdsByCwd);
+    if (!projectId) {
+      continue;
+    }
+    const currentMap: ThreadsByProjectId = next ?? current;
+    const threads: ThreadSummary[] = currentMap[projectId] ?? [];
+    const existingIndex = threads.findIndex((item) => item.id === thread.id);
+    const nextThreads =
+      existingIndex >= 0
+        ? threads.map((item, index) => (index === existingIndex ? { ...item, ...thread } : item))
+        : [thread, ...threads];
+    next = {
+      ...currentMap,
+      [projectId]: nextThreads,
+    };
+  }
+
+  return next ?? current;
+}
+
 function compareSidebarThreads(
   left: ThreadSummary,
   right: ThreadSummary,
@@ -231,6 +272,22 @@ function compareSidebarThreads(
   return (
     threadPriority(left, approvals, pendingTitleThreadIds) - threadPriority(right, approvals, pendingTitleThreadIds) ||
     (pinnedTieBreaker ? comparePinnedAt(left, right) : 0) ||
+    right.updatedAt - left.updatedAt ||
+    right.createdAt - left.createdAt ||
+    threadDisplayTitle(left).localeCompare(threadDisplayTitle(right)) ||
+    left.id.localeCompare(right.id)
+  );
+}
+
+function compareProjectSidebarThreads(
+  left: ThreadSummary,
+  right: ThreadSummary,
+  approvals: Approval[],
+  pendingTitleThreadIds: Set<string>,
+): number {
+  return (
+    comparePinnedAt(left, right) ||
+    threadPriority(left, approvals, pendingTitleThreadIds) - threadPriority(right, approvals, pendingTitleThreadIds) ||
     right.updatedAt - left.updatedAt ||
     right.createdAt - left.createdAt ||
     threadDisplayTitle(left).localeCompare(threadDisplayTitle(right)) ||
@@ -270,6 +327,18 @@ function comparePinnedAt(left: ThreadSummary, right: ThreadSummary): number {
 function threadPinnedAt(thread: ThreadSummary): string | null {
   const value = (thread as { pinnedAt?: unknown }).pinnedAt;
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function projectIdForPinnedThread(
+  thread: ThreadSummary,
+  projectIds: Set<string>,
+  projectIdsByCwd: Map<string, string>,
+): string | null {
+  const explicitProjectId = stringValue((thread as { projectId?: unknown }).projectId);
+  if (explicitProjectId && projectIds.has(explicitProjectId)) {
+    return explicitProjectId;
+  }
+  return projectIdsByCwd.get(thread.cwd) ?? null;
 }
 
 function threadStatusNeedsApproval(thread: ThreadSummary): boolean {

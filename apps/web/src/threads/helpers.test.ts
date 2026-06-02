@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import type { Approval, ThreadSummary } from "../api/client";
-import { sortPinnedThreadsForSidebar, sortThreadsForSidebar, threadDisplayTitle, withoutPinnedThreads } from "./helpers";
+import type { Approval, Project, ThreadSummary } from "../api/client";
+import {
+  sortPinnedThreadsForSidebar,
+  sortProjectThreadsForSidebar,
+  sortThreadsForSidebar,
+  threadDisplayTitle,
+  withPinnedProjectThreads,
+  withoutPinnedThreads,
+} from "./helpers";
 
 function threadSummary(
   id: string,
@@ -71,6 +78,34 @@ describe("sidebar thread ordering", () => {
     ).toEqual(["newer-pin", "same-pin-recent", "older-pin", "active-pin"]);
   });
 
+  it("sorts project threads by pin time before attention and recency", () => {
+    const approvals: Approval[] = [
+      {
+        createdAt: "2026-05-01T00:00:00Z",
+        id: "approval-1",
+        method: "command_execution",
+        payload: {},
+        requestId: "request-1",
+        status: "pending",
+        threadId: "approval",
+      },
+    ];
+
+    expect(
+      sortProjectThreadsForSidebar(
+        [
+          threadSummary("recent", { createdAt: 5, updatedAt: 50 }),
+          threadSummary("approval", { createdAt: 4, updatedAt: 10 }),
+          threadSummary("draft", { createdAt: 3, updatedAt: 40 }),
+          threadSummary("older-pin", { createdAt: 2, pinnedAt: "2026-05-05T00:00:00Z", updatedAt: 1 }),
+          threadSummary("newer-pin", { createdAt: 1, pinnedAt: "2026-05-06T00:00:00Z", updatedAt: 1 }),
+        ],
+        approvals,
+        new Set(["draft"]),
+      ).map((thread) => thread.id),
+    ).toEqual(["newer-pin", "older-pin", "draft", "approval", "recent"]);
+  });
+
   it("filters pinned threads out of normal sidebar lists", () => {
     expect(
       withoutPinnedThreads([
@@ -78,6 +113,21 @@ describe("sidebar thread ordering", () => {
         threadSummary("pinned", { pinnedAt: "2026-05-06T00:00:00Z" }),
       ]).map((thread) => thread.id),
     ).toEqual(["normal"]);
+  });
+
+  it("merges pinned project threads into their owning project lists", () => {
+    expect(
+      withPinnedProjectThreads(
+        {
+          "project-1": [threadSummary("normal", { cwd: "/workspace/project-1" })],
+        },
+        [
+          threadSummary("pinned-project", { cwd: "/workspace/project-1", pinnedAt: "2026-05-06T00:00:00Z" }),
+          threadSummary("pinned-chat", { cwd: "/workspace/chats/2026-05-06", pinnedAt: "2026-05-06T00:01:00Z" }),
+        ],
+        [projectSummary("project-1", "Project", "/workspace/project-1")],
+      )["project-1"].map((thread) => thread.id),
+    ).toEqual(["pinned-project", "normal"]);
   });
 });
 
@@ -93,3 +143,13 @@ describe("thread display titles", () => {
     ).toBe("New thread");
   });
 });
+
+function projectSummary(id: string, name: string, cwd: string): Project {
+  return {
+    createdAt: "2026-05-01T00:00:00Z",
+    cwd,
+    id,
+    name,
+    updatedAt: "2026-05-01T00:00:00Z",
+  };
+}

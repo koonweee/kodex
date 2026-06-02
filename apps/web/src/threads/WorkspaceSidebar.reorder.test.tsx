@@ -199,42 +199,40 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(onLoadMoreChatThreads).not.toHaveBeenCalled();
   });
 
-  it("renders pinned threads above projects with pin controls", () => {
+  it("renders pinned project threads inside their project with pin controls", () => {
     const onSelectPinnedThread = vi.fn();
+    const onSelectThread = vi.fn();
     const onUnpinThread = vi.fn();
-    const pinnedThread = threadSummary(1, { id: "thread-pinned", name: "Pinned thread", pinnedAt: "2026-05-06T12:00:00Z" });
+    const pinnedThread = threadSummary(1, {
+      id: "thread-pinned",
+      name: "Pinned thread",
+      pinnedAt: "2026-05-06T12:00:00Z",
+    });
     const { container } = renderSidebar({
       onSelectPinnedThread,
+      onSelectThread,
       onUnpinThread,
       pinnedThreads: [pinnedThread],
       projects: [projectSummary("project-1", "Project")],
       threadsByProjectId: {
-        "project-1": [threadSummary(2)],
+        "project-1": [threadSummary(2, { name: "Normal thread" }), pinnedThread],
       },
     });
 
-    const pinnedSection = container.querySelector(".kodex-pinned-section");
-    const projectsSection = container.querySelector(".kodex-projects-section-row");
-    expect(pinnedSection).toBeInTheDocument();
-    expect(projectsSection).toBeInTheDocument();
-    expect(pinnedSection!.compareDocumentPosition(projectsSection!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.querySelector(".kodex-pinned-section")).not.toBeInTheDocument();
+    expect(projectThreadOrder(container, "Project")).toEqual(["Pinned thread", "Normal thread"]);
     fireEvent.click(screen.getByRole("button", { name: "Pinned thread" }));
-    expect(onSelectPinnedThread).toHaveBeenCalledWith("thread-pinned");
+    expect(onSelectThread).toHaveBeenCalledWith("project-1", "thread-pinned");
+    expect(onSelectPinnedThread).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Unpin thread" }));
     expect(onUnpinThread).toHaveBeenCalledWith("thread-pinned");
   });
 
-  it("uses one projects/chats switch on desktop and filters pinned threads by scope", () => {
+  it("uses one projects/chats switch on desktop and keeps pinned chats in the pinned section", () => {
     renderSidebar({
       chatThreads: [threadSummary(3, { id: "chat-thread", name: "Chat thread", cwd: "/workspace/chats/2026-05-06" })],
       pinnedThreads: [
-        threadSummary(1, {
-          id: "project-pinned",
-          name: "Pinned project thread",
-          cwd: "/workspace/project-1",
-          pinnedAt: "2026-05-06T12:00:00Z",
-        }),
         threadSummary(2, {
           id: "chat-pinned",
           name: "Pinned chat thread",
@@ -244,7 +242,15 @@ describe("WorkspaceSidebar project reorder", () => {
       ],
       projects: [projectSummary("project-1", "Project")],
       threadsByProjectId: {
-        "project-1": [threadSummary(4, { id: "project-thread", name: "Project thread" })],
+        "project-1": [
+          threadSummary(1, {
+            id: "project-pinned",
+            name: "Pinned project thread",
+            cwd: "/workspace/project-1",
+            pinnedAt: "2026-05-06T12:00:00Z",
+          }),
+          threadSummary(4, { id: "project-thread", name: "Project thread" }),
+        ],
       },
     });
 
@@ -253,6 +259,7 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(screen.queryByRole("button", { name: "Pinned chat thread" })).not.toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Project" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Chat thread" })).not.toBeInTheDocument();
+    expect(document.querySelector(".kodex-pinned-section")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Chats" }));
 
@@ -261,6 +268,7 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(screen.queryByRole("button", { name: "Pinned project thread" })).not.toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Project" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Chat thread" })).toBeInTheDocument();
+    expect(document.querySelector(".kodex-pinned-section")).toBeInTheDocument();
   });
 
   it("opens automations from the sidebar settings menu", async () => {
@@ -300,6 +308,47 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(screen.getByRole("button", { name: "Thread 1" })).toBeInTheDocument();
   });
 
+  it("keeps pinned project threads visible when their project is collapsed", () => {
+    const onLoadMoreProjectThreads = vi.fn();
+    renderSidebar({
+      onLoadMoreProjectThreads,
+      projectThreadHasMoreById: { "project-1": true },
+      projects: [projectSummary("project-1", "Project")],
+      threadsByProjectId: {
+        "project-1": [
+          threadSummary(1, { id: "pinned", name: "Pinned thread", pinnedAt: "2026-05-06T12:00:00Z" }),
+          threadSummary(2, { id: "normal", name: "Normal thread" }),
+        ],
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Project" }));
+
+    expect(screen.getByRole("button", { name: "Pinned thread" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Normal thread" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Show more" })).not.toBeInTheDocument();
+    expect(onLoadMoreProjectThreads).not.toHaveBeenCalled();
+  });
+
+  it("searches pinned project threads within project groups", () => {
+    const { container } = renderSidebar({
+      projects: [projectSummary("project-1", "Project")],
+      threadsByProjectId: {
+        "project-1": [
+          threadSummary(1, { id: "pinned", name: "Pinned target", pinnedAt: "2026-05-06T12:00:00Z" }),
+          threadSummary(2, { id: "normal", name: "Normal thread" }),
+        ],
+      },
+    });
+
+    fireEvent.change(screen.getAllByLabelText("Search")[0], { target: { value: "target" } });
+
+    expect(screen.getByRole("group", { name: "Project" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pinned target" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Normal thread" })).not.toBeInTheDocument();
+    expect(container.querySelector(".kodex-pinned-section")).not.toBeInTheDocument();
+  });
+
   it("collapses and expands the Projects section from the section row", () => {
     renderSidebar({
       projects: [projectSummary("project-1", "Project")],
@@ -327,10 +376,18 @@ describe("WorkspaceSidebar project reorder", () => {
 
   it("collapses and expands the Pinned section from the section row", () => {
     renderSidebar({
-      pinnedThreads: [threadSummary(1, { id: "thread-pinned", name: "Pinned thread", pinnedAt: "2026-05-06T12:00:00Z" })],
+      pinnedThreads: [
+        threadSummary(1, {
+          cwd: "/workspace/chats/2026-05-06",
+          id: "thread-pinned",
+          name: "Pinned thread",
+          pinnedAt: "2026-05-06T12:00:00Z",
+        }),
+      ],
       projects: [projectSummary("project-1", "Project")],
     });
 
+    fireEvent.click(screen.getByRole("button", { name: "Chats" }));
     const pinnedToggle = screen.getByRole("button", { name: "Collapse Pinned section" });
     expect(screen.getByRole("button", { name: "Pinned thread" })).toBeInTheDocument();
 
@@ -577,6 +634,16 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
 
 function projectOrder(container: HTMLElement): Array<string | null> {
   return Array.from(container.querySelectorAll(".kodex-project-group")).map((element) => element.getAttribute("aria-label"));
+}
+
+function projectThreadOrder(container: HTMLElement, projectName: string): string[] {
+  const project = Array.from(container.querySelectorAll(".kodex-project-group")).find(
+    (element) => element.getAttribute("aria-label") === projectName,
+  );
+  expect(project).toBeInTheDocument();
+  return Array.from(project!.querySelectorAll(".kodex-thread-list-button")).map((element) =>
+    element.textContent?.trim() ?? "",
+  );
 }
 
 function rect({ top, height }: { top: number; height: number }): DOMRect {

@@ -47,6 +47,7 @@ import {
   threadInProgress,
   threadNeedsApproval,
   sortPinnedThreadsForSidebar,
+  sortProjectThreadsForSidebar,
   sortThreadsForSidebar,
   type ThreadsByProjectId,
 } from "./helpers";
@@ -235,9 +236,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   );
   const projectScopeLookup = useMemo(() => sidebarProjectScopeLookup(projects), [projects]);
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
-  const scopedPinnedThreads = sortedPinnedThreads.filter((thread) =>
-    pinnedThreadMatchesSidebarScope(thread, sidebarScope, projectScopeLookup),
-  );
+  const scopedPinnedThreads =
+    sidebarScope === "chats" ? sortedPinnedThreads.filter((thread) => !pinnedThreadBelongsToProject(thread, projectScopeLookup)) : [];
   const visiblePinnedThreads = normalizedSearchQuery
     ? scopedPinnedThreads.filter((thread) => threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds))
     : scopedPinnedThreads;
@@ -553,7 +553,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                     />
                   ) : projects.length > 0 ? (
                     displayedProjects.map((project) => {
-                      const projectThreads = sortThreadsForSidebar(
+                      const projectThreads = sortProjectThreadsForSidebar(
                         threadsByProjectId[project.id] ?? [],
                         approvals,
                         pendingTitleThreadIds,
@@ -633,7 +633,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                               className="kodex-project-thread-list"
                               expanded={projectCollapsed || showAllProjectThreads}
                               hoveredThreadActionId={hoveredThreadActionId}
-                              hasMore={projectThreadsHaveMore}
+                              hasMore={projectCollapsed ? false : projectThreadsHaveMore}
                               onArchiveThread={onArchiveThread}
                               onPinThread={onPinThread}
                               onSelectThread={(threadId) => onSelectThread(project.id, threadId)}
@@ -755,15 +755,6 @@ function sidebarProjectScopeLookup(projects: Project[]): { projectCwds: Set<stri
   };
 }
 
-function pinnedThreadMatchesSidebarScope(
-  thread: ThreadSummary,
-  scope: SidebarScope,
-  lookup: { projectCwds: Set<string>; projectIds: Set<string> },
-): boolean {
-  const isProjectThread = pinnedThreadBelongsToProject(thread, lookup);
-  return scope === "projects" ? isProjectThread : !isProjectThread;
-}
-
 function pinnedThreadBelongsToProject(
   thread: ThreadSummary,
   { projectCwds, projectIds }: { projectCwds: Set<string>; projectIds: Set<string> },
@@ -802,7 +793,7 @@ function threadMatchesSearch(thread: ThreadSummary, query: string, pendingTitleT
 }
 
 function threadSurfacesWhenProjectCollapsed(thread: ThreadSummary, selectedThreadId: string | null): boolean {
-  return thread.id === selectedThreadId || thread.unreadCompletedAgentTurn === true || threadInProgress(thread);
+  return Boolean(thread.pinnedAt) || thread.id === selectedThreadId || thread.unreadCompletedAgentTurn === true || threadInProgress(thread);
 }
 
 function threadDisplayTitleWithPending(thread: ThreadSummary, pendingTitleThreadIds: Set<string>): string {

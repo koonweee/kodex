@@ -657,12 +657,12 @@ describe("MVP shell flows", () => {
     ).toBeInTheDocument();
   });
 
-  it("loads pinned threads from the gateway and filters them out of normal project lists", async () => {
+  it("loads pinned project threads from the gateway and renders them in project lists", async () => {
     const pinnedThread = { ...thread, pinnedAt: "2026-05-06T12:00:00Z" };
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/sidebar/threads": missingSidebarThreadsRoute,
-        "GET /v1/threads": { threads: [pinnedThread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/threads": { threads: [secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         "GET /v1/threads/pinned": { threads: [pinnedThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
       }),
     );
@@ -671,10 +671,9 @@ describe("MVP shell flows", () => {
 
     await waitFor(() => expect(gateway.callsFor("GET", "/v1/sidebar/threads")).toHaveLength(1));
     await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/pinned")).toHaveLength(1));
-    expect(await screen.findByText("Pinned")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
-    expect(within(kodexGroup).queryByRole("button", { name: /implement frontend/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("Pinned")).not.toBeInTheDocument();
+    expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
     expect(within(kodexGroup).getByRole("button", { name: /second thread/i })).toBeInTheDocument();
   });
 
@@ -697,9 +696,8 @@ describe("MVP shell flows", () => {
 
     pinnedThreads.resolve({ threads: [pinnedThread], nextCursor: null, backwardsCursor: null, rawPayload: {} });
 
-    expect(await screen.findByText("Pinned")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
-    expect(within(kodexGroup).queryByRole("button", { name: /implement frontend/i })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("Pinned")).not.toBeInTheDocument());
+    expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
   });
 
   it("seeds the sidebar from the gateway snapshot endpoint", async () => {
@@ -726,9 +724,9 @@ describe("MVP shell flows", () => {
     render(<App />);
 
     await waitFor(() => expect(gateway.callsFor("GET", "/v1/sidebar/threads")).toHaveLength(1));
-    expect(await screen.findByText("Pinned")).toBeInTheDocument();
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
-    expect(within(kodexGroup).queryByRole("button", { name: /implement frontend/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("Pinned")).not.toBeInTheDocument();
+    expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
     expect(within(kodexGroup).getByRole("button", { name: /second thread/i })).toBeInTheDocument();
     expect(gateway.callsFor("GET", "/v1/sidebar/threads")).toHaveLength(1);
     expect(gateway.callsFor("GET", "/v1/threads")).toHaveLength(0);
@@ -966,17 +964,15 @@ describe("MVP shell flows", () => {
       });
     });
 
-    expect(await screen.findByText("Pinned")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
-    expect(within(kodexGroup).queryByRole("button", { name: /implement frontend/i })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("Pinned")).not.toBeInTheDocument());
+    expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
 
     await act(async () => {
       pinnedThreads.resolve({ threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} });
       await pinnedThreads.promise;
     });
-    expect(screen.getByText("Pinned")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
-    expect(within(kodexGroup).queryByRole("button", { name: /implement frontend/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("Pinned")).not.toBeInTheDocument();
+    expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
 
     act(() => {
       selectedThreadStream?.emitNamed("thread.pin_updated", {
@@ -1249,7 +1245,8 @@ describe("MVP shell flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/pin")).toHaveLength(1);
     });
-    expect(await screen.findByText("Pinned")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("Pinned")).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /thread actions/i }));
     await clickMenuItem(/unpin thread/i);
@@ -1257,9 +1254,7 @@ describe("MVP shell flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("DELETE", "/v1/threads/thread-1/pin")).toHaveLength(1);
     });
-    await waitFor(() => {
-      expect(screen.queryByText("Pinned")).not.toBeInTheDocument();
-    });
+    await waitFor(() => expect(screen.queryByText("Pinned")).not.toBeInTheDocument());
   });
 
   it("toggles selected thread notifications from the thread actions menu", async () => {
