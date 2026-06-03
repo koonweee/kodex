@@ -14,7 +14,7 @@ use crate::{
     skills,
     store::{
         EventEnvelope, NewEvent, QueuedInput, QueuedInputPriority, QueuedInputStatus,
-        ThreadRuntimeState,
+        ThreadRuntimeState, ThreadRuntimeStatus,
     },
     turn_lifecycle,
 };
@@ -476,9 +476,9 @@ pub(crate) async fn reconcile_thread_runtime_from_app_server(
     let runtime = ThreadRuntimeState {
         thread_id: thread_id.to_string(),
         status: if active_turn_id.is_some() {
-            "active".to_string()
+            ThreadRuntimeStatus::Active
         } else {
-            "idle".to_string()
+            ThreadRuntimeStatus::Idle
         },
         active_turn_id,
         updated_at: chrono::Utc::now(),
@@ -498,9 +498,15 @@ async fn thread_is_idle_for_queue(state: &AppState, thread_id: &str) -> ApiResul
         None => {}
     }
     if let Some(runtime) = state.store.get_thread_runtime_state(thread_id).await? {
-        match runtime.status.as_str() {
-            "draining" | "starting" | "syncing" => return Ok(false),
-            "active" | "streaming" if runtime.active_turn_id.is_some() => return Ok(false),
+        match runtime.status {
+            ThreadRuntimeStatus::Draining
+            | ThreadRuntimeStatus::Starting
+            | ThreadRuntimeStatus::Syncing => return Ok(false),
+            ThreadRuntimeStatus::Active | ThreadRuntimeStatus::Streaming
+                if runtime.active_turn_id.is_some() =>
+            {
+                return Ok(false);
+            }
             _ => {}
         }
     }

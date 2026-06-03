@@ -191,7 +191,7 @@ async fn thread_compacted_refetches_snapshot_and_clears_runtime() {
         .store
         .upsert_thread_runtime_state(ThreadRuntimeState {
             thread_id: "thread-1".to_string(),
-            status: "syncing".to_string(),
+            status: ThreadRuntimeStatus::Syncing,
             active_turn_id: None,
             updated_at: Utc::now(),
             last_event_seq: Some(10),
@@ -235,7 +235,7 @@ async fn thread_compacted_refetches_snapshot_and_clears_runtime() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(runtime.status, "idle");
+    assert_eq!(runtime.status, ThreadRuntimeStatus::Idle);
     assert_eq!(runtime.active_turn_id, None);
 
     let requests = app_server.requests.lock().unwrap();
@@ -745,7 +745,7 @@ async fn native_not_loaded_status_clears_active_runtime_routing() {
         .store
         .upsert_thread_runtime_state(ThreadRuntimeState {
             thread_id: "thread-1".to_string(),
-            status: "active".to_string(),
+            status: ThreadRuntimeStatus::Active,
             active_turn_id: Some("stale-turn".to_string()),
             updated_at: Utc::now(),
             last_event_seq: Some(10),
@@ -781,7 +781,7 @@ async fn native_not_loaded_status_clears_active_runtime_routing() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(runtime.status, "idle");
+    assert_eq!(runtime.status, ThreadRuntimeStatus::Idle);
     assert_eq!(runtime.active_turn_id, None);
     assert!(runtime.last_event_seq.is_some());
 

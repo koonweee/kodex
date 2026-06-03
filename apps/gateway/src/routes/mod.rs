@@ -61,7 +61,7 @@ mod tests {
         store::{
             NewApproval, NewAutomation, NewEvent, NewNotificationDelivery, NewPushSubscription,
             NotificationDeliveryStatus, PushSubscription, Store, ThreadLocalSettingsOverlay,
-            ThreadRuntimeState,
+            ThreadRuntimeState, ThreadRuntimeStatus,
         },
         thread_view,
         title_generation::{ThreadTitleGenerator, ThreadTitleRequest, TitleGenerationService},
@@ -2920,7 +2920,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "syncing".to_string(),
+                status: ThreadRuntimeStatus::Syncing,
                 active_turn_id: Some("turn-active".to_string()),
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,
@@ -3034,7 +3034,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "syncing".to_string(),
+                status: ThreadRuntimeStatus::Syncing,
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,
@@ -5532,7 +5532,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "idle".to_string(),
+                status: ThreadRuntimeStatus::Idle,
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,
@@ -6088,7 +6088,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "starting".to_string(),
+                status: ThreadRuntimeStatus::Starting,
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: Some(0),
@@ -7996,7 +7996,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "syncing".to_string(),
+                status: ThreadRuntimeStatus::Syncing,
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,
@@ -8031,7 +8031,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "syncing".to_string(),
+                status: ThreadRuntimeStatus::Syncing,
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: Some(10),
@@ -8068,7 +8068,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(runtime.status, "syncing");
+        assert_eq!(runtime.status, ThreadRuntimeStatus::Syncing);
         assert_eq!(runtime.active_turn_id, None);
     }
 
@@ -8916,7 +8916,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "idle".to_string(),
+                status: ThreadRuntimeStatus::Idle,
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: Some(10),
@@ -8955,7 +8955,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "idle".to_string(),
+                status: ThreadRuntimeStatus::Idle,
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: Some(10),
@@ -9011,7 +9011,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "starting".to_string(),
+                status: ThreadRuntimeStatus::Starting,
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: Some(10),
@@ -9052,7 +9052,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "draining".to_string(),
+                status: ThreadRuntimeStatus::Draining,
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: Some(10),
@@ -9090,7 +9090,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "idle".to_string(),
+                status: ThreadRuntimeStatus::Idle,
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: Some(10),
@@ -9155,7 +9155,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "idle".to_string(),
+                status: ThreadRuntimeStatus::Idle,
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: Some(10),
@@ -9352,7 +9352,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "active".to_string(),
+                status: ThreadRuntimeStatus::Active,
                 active_turn_id: Some("turn-active".to_string()),
                 updated_at: chrono::Utc::now(),
                 last_event_seq: Some(10),
@@ -9494,7 +9494,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "active".to_string(),
+                status: ThreadRuntimeStatus::Active,
                 active_turn_id: Some("turn-stale".to_string()),
                 updated_at: chrono::Utc::now(),
                 last_event_seq: Some(10),
@@ -9545,7 +9545,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "active".to_string(),
+                status: ThreadRuntimeStatus::Active,
                 active_turn_id: Some("turn-stale".to_string()),
                 updated_at: chrono::Utc::now(),
                 last_event_seq: Some(10),
@@ -9600,7 +9600,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "active".to_string(),
+                status: ThreadRuntimeStatus::Active,
                 active_turn_id: Some("turn-active".to_string()),
                 updated_at: chrono::Utc::now(),
                 last_event_seq: Some(10),
@@ -9672,7 +9672,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "active".to_string(),
+                status: ThreadRuntimeStatus::Active,
                 active_turn_id: Some("turn-1".to_string()),
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,
@@ -9746,7 +9746,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "idle".to_string(),
+                status: ThreadRuntimeStatus::Idle,
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,
@@ -9851,7 +9851,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "idle".to_string(),
+                status: ThreadRuntimeStatus::Idle,
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,
@@ -9916,7 +9916,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "idle".to_string(),
+                status: ThreadRuntimeStatus::Idle,
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,
@@ -9978,7 +9978,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "idle".to_string(),
+                status: ThreadRuntimeStatus::Idle,
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,
@@ -10023,7 +10023,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(runtime.status, "active");
+        assert_eq!(runtime.status, ThreadRuntimeStatus::Active);
     }
 
     #[tokio::test]
@@ -10038,7 +10038,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "idle".to_string(),
+                status: ThreadRuntimeStatus::Idle,
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,
@@ -10605,7 +10605,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "draining".to_string(),
+                status: ThreadRuntimeStatus::Draining,
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,
@@ -10622,7 +10622,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(runtime.status, "draining");
+        assert_eq!(runtime.status, ThreadRuntimeStatus::Draining);
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].0, "thread/read");
@@ -10635,7 +10635,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "active".to_string(),
+                status: ThreadRuntimeStatus::Active,
                 active_turn_id: None,
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,
@@ -10751,7 +10751,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "active".to_string(),
+                status: ThreadRuntimeStatus::Active,
                 active_turn_id: Some("turn-1".to_string()),
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,
@@ -10842,7 +10842,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "active".to_string(),
+                status: ThreadRuntimeStatus::Active,
                 active_turn_id: Some("turn-1".to_string()),
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,
@@ -10958,7 +10958,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "active".to_string(),
+                status: ThreadRuntimeStatus::Active,
                 active_turn_id: Some("turn-1".to_string()),
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,
@@ -11055,7 +11055,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "active".to_string(),
+                status: ThreadRuntimeStatus::Active,
                 active_turn_id: Some("turn-1".to_string()),
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,
@@ -11148,7 +11148,7 @@ mod tests {
             .store
             .upsert_thread_runtime_state(ThreadRuntimeState {
                 thread_id: "thread-1".to_string(),
-                status: "active".to_string(),
+                status: ThreadRuntimeStatus::Active,
                 active_turn_id: Some("turn-1".to_string()),
                 updated_at: chrono::Utc::now(),
                 last_event_seq: None,

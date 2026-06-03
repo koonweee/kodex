@@ -12,7 +12,7 @@ use crate::{
     },
     error::{ApiError, ApiResult},
     events,
-    store::ThreadRuntimeState,
+    store::{ThreadRuntimeState, ThreadRuntimeStatus},
     thread_view,
 };
 
@@ -81,12 +81,16 @@ pub async fn route_for_thread_input(
     }
 
     if let Some(runtime) = state.store.get_thread_runtime_state(thread_id).await? {
-        match runtime.status.as_str() {
-            "starting" | "draining" => return Ok(ThreadInputRoute::QueueBehindGatewayWork),
-            "syncing" if runtime.active_turn_id.is_none() => {
+        match runtime.status {
+            ThreadRuntimeStatus::Starting | ThreadRuntimeStatus::Draining => {
                 return Ok(ThreadInputRoute::QueueBehindGatewayWork);
             }
-            "active" | "streaming" | "syncing" => {
+            ThreadRuntimeStatus::Syncing if runtime.active_turn_id.is_none() => {
+                return Ok(ThreadInputRoute::QueueBehindGatewayWork);
+            }
+            ThreadRuntimeStatus::Active
+            | ThreadRuntimeStatus::Streaming
+            | ThreadRuntimeStatus::Syncing => {
                 if let Some(active_turn_id) = runtime.active_turn_id {
                     return Ok(ThreadInputRoute::Active {
                         turn_id: active_turn_id,
@@ -135,15 +139,17 @@ pub async fn refreshed_active_turn_id(
 
 pub async fn routed_active_turn_id(state: &AppState, thread_id: &str) -> ApiResult<Option<String>> {
     if let Some(runtime) = state.store.get_thread_runtime_state(thread_id).await? {
-        match runtime.status.as_str() {
-            "syncing" | "starting" | "draining" => {
+        match runtime.status {
+            ThreadRuntimeStatus::Syncing
+            | ThreadRuntimeStatus::Starting
+            | ThreadRuntimeStatus::Draining => {
                 return Ok(Some(
                     runtime
                         .active_turn_id
                         .unwrap_or_else(|| GATEWAY_PENDING_TURN_START_ID.to_string()),
                 ));
             }
-            "idle" => {
+            ThreadRuntimeStatus::Idle => {
                 return refreshed_active_turn_id(state, thread_id).await;
             }
             _ => {}
@@ -157,7 +163,7 @@ pub async fn record_turn_starting(state: &AppState, thread_id: &str) -> ApiResul
         .store
         .upsert_thread_runtime_state(ThreadRuntimeState {
             thread_id: thread_id.to_string(),
-            status: "starting".to_string(),
+            status: ThreadRuntimeStatus::Starting,
             active_turn_id: None,
             updated_at: chrono::Utc::now(),
             last_event_seq: Some(state.store.latest_event_seq().await?),
@@ -170,7 +176,7 @@ pub async fn record_turn_start_failed(state: &AppState, thread_id: &str) -> ApiR
         .store
         .upsert_thread_runtime_state(ThreadRuntimeState {
             thread_id: thread_id.to_string(),
-            status: "idle".to_string(),
+            status: ThreadRuntimeStatus::Idle,
             active_turn_id: None,
             updated_at: chrono::Utc::now(),
             last_event_seq: Some(state.store.latest_event_seq().await?),
@@ -187,7 +193,7 @@ pub async fn record_turn_started(
         .store
         .upsert_thread_runtime_state(ThreadRuntimeState {
             thread_id: thread_id.to_string(),
-            status: "active".to_string(),
+            status: ThreadRuntimeStatus::Active,
             active_turn_id: turn_id.map(str::to_string),
             updated_at: chrono::Utc::now(),
             last_event_seq: Some(state.store.latest_event_seq().await?),
@@ -200,7 +206,7 @@ pub async fn record_compaction_starting(state: &AppState, thread_id: &str) -> Ap
         .store
         .upsert_thread_runtime_state(ThreadRuntimeState {
             thread_id: thread_id.to_string(),
-            status: "syncing".to_string(),
+            status: ThreadRuntimeStatus::Syncing,
             active_turn_id: None,
             updated_at: chrono::Utc::now(),
             last_event_seq: Some(state.store.latest_event_seq().await?),

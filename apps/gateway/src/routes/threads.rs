@@ -31,6 +31,7 @@ use crate::{
         EventEnvelope, NewEvent, Project, ThreadLocalSettingsOverlay, ThreadNotificationSetting,
         ThreadRead,
     },
+    thread_settings_projection::{self, ActivePermissionProfilePatch},
     thread_view,
 };
 
@@ -1143,70 +1144,26 @@ pub async fn update_thread_settings(
     Json(request): Json<ThreadSettingsUpdateRequest>,
 ) -> ApiResult<Json<ThreadSettingsUpdateResponse>> {
     request.validate()?;
-    let permissions_patch = request.permissions.clone();
+    let permissions_patch =
+        ActivePermissionProfilePatch::from_permissions_update(&request.permissions);
     let client = app_server_api::client(&state.app_server);
     let raw_response = client
         .thread_update_settings(thread_id.clone(), request)
         .await?;
-    if let Some(permissions) = permissions_patch.clone() {
-        save_thread_settings_permissions_patch(&state, &thread_id, permissions).await?;
-    }
+    thread_settings_projection::save_permissions_overlay_patch(
+        &state,
+        &thread_id,
+        &permissions_patch,
+    )
+    .await?;
     let mut thread = client.thread_read_summary(thread_id).await?;
     apply_thread_summary_state(&state, std::slice::from_mut(&mut thread)).await?;
-    apply_thread_settings_permissions_patch(&mut thread, &permissions_patch);
+    permissions_patch.apply_to_thread_summary(&mut thread)?;
     broadcast_thread_metadata_update(&state, &thread).await?;
     Ok(Json(ThreadSettingsUpdateResponse {
         thread,
         raw_payload: raw_response.payload,
     }))
-}
-
-async fn save_thread_settings_permissions_patch(
-    state: &AppState,
-    thread_id: &str,
-    permissions: Option<String>,
-) -> ApiResult<()> {
-    let mut settings = state
-        .store
-        .thread_local_settings_overlays(&[thread_id.to_string()])
-        .await?
-        .remove(thread_id)
-        .unwrap_or_default();
-    settings.permissions = permissions;
-    settings.approval_policy = None;
-    settings.approvals_reviewer = None;
-    settings.sandbox = None;
-    state
-        .store
-        .save_thread_local_settings_overlay(thread_id, &settings)
-        .await
-}
-
-fn apply_thread_settings_permissions_patch(
-    thread: &mut ThreadSummary,
-    permissions_patch: &Option<Option<String>>,
-) {
-    match permissions_patch {
-        Some(Some(permissions)) => {
-            thread.active_permission_profile = Some(app_server_api::ActivePermissionProfile {
-                id: permissions.clone(),
-                extends: None,
-            });
-            if let Some(raw_payload) = thread.raw_payload.as_object_mut() {
-                raw_payload.insert(
-                    "activePermissionProfile".to_string(),
-                    json!({ "id": permissions }),
-                );
-            }
-        }
-        Some(None) => {
-            thread.active_permission_profile = None;
-            if let Some(raw_payload) = thread.raw_payload.as_object_mut() {
-                raw_payload.remove("activePermissionProfile");
-            }
-        }
-        None => {}
-    }
 }
 
 #[utoipa::path(patch, path = "/v1/threads/{threadId}/notifications", request_body = ThreadNotificationSettingsUpdateRequest, responses((status = 200, body = ThreadNotificationSettingsResponse)))]

@@ -39,12 +39,13 @@ use crate::{
     },
     schema::is_supported_approval_method,
     skills,
-    store::{EventEnvelope, NewApproval, NewEvent, ThreadRuntimeState},
+    store::{EventEnvelope, NewApproval, NewEvent, ThreadRuntimeState, ThreadRuntimeStatus},
     subagents::{
         SubagentProjectionChange, SubagentProjectionChangeKind, ThreadSubagentEventPayload,
         THREAD_SUBAGENTS_CHANGED_EVENT, THREAD_SUBAGENT_STARTED_EVENT,
         THREAD_SUBAGENT_STOPPED_EVENT, THREAD_SUBAGENT_UPDATED_EVENT,
     },
+    thread_settings_projection::{self, ActivePermissionProfilePatch},
     thread_view::{self, THREAD_VIEW_ITEM_DELTA_EVENT_KIND, THREAD_VIEW_PATCH_EVENT_KIND},
 };
 
@@ -685,9 +686,9 @@ async fn timeline_thread_compacted_event(
         .upsert_thread_runtime_state(ThreadRuntimeState {
             thread_id: thread_id.to_string(),
             status: if timeline.active_turn_id.is_some() {
-                "active".to_string()
+                ThreadRuntimeStatus::Active
             } else {
-                "idle".to_string()
+                ThreadRuntimeStatus::Idle
             },
             active_turn_id: timeline.active_turn_id.clone(),
             updated_at: Utc::now(),
@@ -898,7 +899,7 @@ async fn timeline_turn_upsert_event(
     let runtime = if terminal {
         ThreadRuntimeState {
             thread_id: metadata.thread_id.clone().unwrap_or_default(),
-            status: "idle".to_string(),
+            status: ThreadRuntimeStatus::Idle,
             active_turn_id: None,
             updated_at: Utc::now(),
             last_event_seq: Some(cursor.seq),
@@ -906,7 +907,7 @@ async fn timeline_turn_upsert_event(
     } else {
         ThreadRuntimeState {
             thread_id: metadata.thread_id.clone().unwrap_or_default(),
-            status: "active".to_string(),
+            status: ThreadRuntimeStatus::Active,
             active_turn_id: None,
             updated_at: Utc::now(),
             last_event_seq: Some(cursor.seq),
@@ -1123,14 +1124,14 @@ async fn normalized_thread_settings_event(
     let mut thread = app_server_api::client(&state.app_server)
         .thread_read_summary(thread_id)
         .await?;
-    let active_permission_profile_patch = params
-        .get("threadSettings")
-        .map(active_permission_profile_patch_from_settings)
-        .transpose()?
-        .unwrap_or(ActivePermissionProfilePatch::Missing);
-    if let Some(permissions) = active_permission_profile_patch.permissions() {
-        save_thread_settings_permissions_patch(state, &thread.id, permissions).await?;
-    }
+    let active_permission_profile_patch =
+        ActivePermissionProfilePatch::from_thread_settings_value(params.get("threadSettings"))?;
+    thread_settings_projection::save_permissions_overlay_patch(
+        state,
+        &thread.id,
+        &active_permission_profile_patch,
+    )
+    .await?;
     if let Some(settings) = params.get("threadSettings") {
         if let Some(profile) = active_permission_profile_from_value(settings)? {
             thread.active_permission_profile = Some(profile.clone());
@@ -1143,7 +1144,7 @@ async fn normalized_thread_settings_event(
         }
     }
     apply_thread_summary_state(state, std::slice::from_mut(&mut thread)).await?;
-    apply_active_permission_profile_patch(&mut thread, &active_permission_profile_patch)?;
+    active_permission_profile_patch.apply_to_thread_summary(&mut thread)?;
     let payload = TimelineThreadMetadataPayload {
         source: TimelineUpdateSource::GatewayStream,
         thread_id: thread.id.clone(),
@@ -1163,89 +1164,6 @@ async fn normalized_thread_settings_event(
         })
         .await
         .map(Some)
-}
-
-#[derive(Debug, Clone)]
-enum ActivePermissionProfilePatch {
-    Missing,
-    Clear,
-    Set(app_server_api::ActivePermissionProfile),
-}
-
-impl ActivePermissionProfilePatch {
-    fn permissions(&self) -> Option<Option<String>> {
-        match self {
-            Self::Missing => None,
-            Self::Clear => Some(None),
-            Self::Set(profile) => Some(Some(profile.id.clone())),
-        }
-    }
-}
-
-async fn save_thread_settings_permissions_patch(
-    state: &AppState,
-    thread_id: &str,
-    permissions: Option<String>,
-) -> ApiResult<()> {
-    let mut settings = state
-        .store
-        .thread_local_settings_overlays(&[thread_id.to_string()])
-        .await?
-        .remove(thread_id)
-        .unwrap_or_default();
-    settings.permissions = permissions;
-    settings.approval_policy = None;
-    settings.approvals_reviewer = None;
-    settings.sandbox = None;
-    state
-        .store
-        .save_thread_local_settings_overlay(thread_id, &settings)
-        .await
-}
-
-fn active_permission_profile_patch_from_settings(
-    settings: &Value,
-) -> ApiResult<ActivePermissionProfilePatch> {
-    let Some(settings) = settings.as_object() else {
-        return Ok(ActivePermissionProfilePatch::Missing);
-    };
-    let Some(profile) = settings.get("activePermissionProfile") else {
-        return Ok(ActivePermissionProfilePatch::Missing);
-    };
-    if profile.is_null() {
-        return Ok(ActivePermissionProfilePatch::Clear);
-    }
-    Ok(ActivePermissionProfilePatch::Set(
-        app_server_api::ActivePermissionProfile {
-            id: required_payload_string(profile, "id")?,
-            extends: string_field(profile, &["extends"]),
-        },
-    ))
-}
-
-fn apply_active_permission_profile_patch(
-    thread: &mut ThreadSummary,
-    patch: &ActivePermissionProfilePatch,
-) -> ApiResult<()> {
-    match patch {
-        ActivePermissionProfilePatch::Missing => {}
-        ActivePermissionProfilePatch::Clear => {
-            thread.active_permission_profile = None;
-            if let Some(raw_payload) = thread.raw_payload.as_object_mut() {
-                raw_payload.remove("activePermissionProfile");
-            }
-        }
-        ActivePermissionProfilePatch::Set(profile) => {
-            thread.active_permission_profile = Some(profile.clone());
-            if let Some(raw_payload) = thread.raw_payload.as_object_mut() {
-                raw_payload.insert(
-                    "activePermissionProfile".to_string(),
-                    serde_json::to_value(profile)?,
-                );
-            }
-        }
-    }
-    Ok(())
 }
 
 async fn normalized_subagent_events(
@@ -1441,7 +1359,7 @@ async fn timeline_thread_status_event(
                 .store
                 .upsert_thread_runtime_state(ThreadRuntimeState {
                     thread_id: thread_id.clone(),
-                    status: "idle".to_string(),
+                    status: ThreadRuntimeStatus::Idle,
                     active_turn_id: None,
                     updated_at: Utc::now(),
                     last_event_seq: Some(cursor.seq),
@@ -1461,7 +1379,7 @@ async fn timeline_thread_status_event(
                 .store
                 .upsert_thread_runtime_state(ThreadRuntimeState {
                     thread_id: thread_id.clone(),
-                    status: "active".to_string(),
+                    status: ThreadRuntimeStatus::Active,
                     active_turn_id: None,
                     updated_at: Utc::now(),
                     last_event_seq: Some(cursor.seq),
