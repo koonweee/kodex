@@ -59,7 +59,7 @@ mod tests {
         },
         queue,
         store::{
-            NewApproval, NewEvent, NewNotificationDelivery, NewPushSubscription,
+            NewApproval, NewAutomation, NewEvent, NewNotificationDelivery, NewPushSubscription,
             NotificationDeliveryStatus, PushSubscription, Store, ThreadLocalSettingsOverlay,
             ThreadRuntimeState,
         },
@@ -1628,13 +1628,38 @@ mod tests {
             "/v1/mcp/servers/{server}/oauth-login",
             "/v1/mcp/reload",
             "/v1/self-control/status",
+            "/v1/self-control/projects",
+            "/v1/self-control/projects/{projectId}",
+            "/v1/self-control/projects/{projectId}/previews",
             "/v1/self-control/project-previews/apply",
             "/v1/self-control/threads",
+            "/v1/self-control/sidebar/threads",
+            "/v1/self-control/threads/{threadId}",
+            "/v1/self-control/threads/{threadId}/timeline/pages",
+            "/v1/self-control/threads/{threadId}/subagents",
+            "/v1/self-control/threads/{threadId}/queued-inputs",
+            "/v1/self-control/threads/{threadId}/attach",
+            "/v1/self-control/threads/{threadId}/resume",
+            "/v1/self-control/threads/{threadId}/fork",
+            "/v1/self-control/threads/{threadId}/name",
+            "/v1/self-control/threads/{threadId}/settings",
+            "/v1/self-control/threads/{threadId}/archive",
+            "/v1/self-control/threads/{threadId}/pin",
+            "/v1/self-control/threads/{threadId}/seen",
+            "/v1/self-control/threads/{threadId}/compact",
+            "/v1/self-control/threads/{threadId}/interrupt-current",
             "/v1/self-control/threads/{threadId}/input",
+            "/v1/self-control/thread-spawns",
             "/v1/self-control/automations",
             "/v1/self-control/automations/{automationId}",
             "/v1/self-control/automations/{automationId}/pause",
             "/v1/self-control/automations/{automationId}/resume",
+            "/v1/self-control/automations/{automationId}/run-now",
+            "/v1/self-control/automations/validate",
+            "/v1/self-control/approvals",
+            "/v1/self-control/approvals/{approvalId}",
+            "/v1/self-control/approvals/{approvalId}/decision",
+            "/v1/self-control/events",
         ] {
             assert!(openapi["paths"].get(path).is_some(), "missing {path}");
         }
@@ -3078,6 +3103,517 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn self_control_read_discovery_routes_wrap_gateway_state() {
+        let (state, app_server) = test_state().await;
+        let project = state
+            .store
+            .create_project("Kodex".to_string(), "/workspace/kodex".to_string())
+            .await
+            .unwrap();
+        app_server
+            .thread_list_responses_by_cwd
+            .lock()
+            .unwrap()
+            .insert(
+                "/workspace/kodex".to_string(),
+                json!({
+                    "data": [thread_summary_with_cwd("thread-project", "/workspace/kodex")],
+                    "nextCursor": null,
+                    "backwardsCursor": null
+                }),
+            );
+        state
+            .store
+            .create_queued_input(
+                "thread-project",
+                vec![UserInput::Text {
+                    text: "queued".to_string(),
+                    text_elements: Vec::new(),
+                }],
+                Default::default(),
+            )
+            .await
+            .unwrap();
+        let app = build_router(state);
+
+        let projects = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/self-control/projects")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(projects.status(), StatusCode::OK);
+        let body = response_json(projects).await;
+        assert_eq!(body["projects"][0]["id"], project.id);
+
+        let project_read = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/v1/self-control/projects/{}", project.id))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(project_read.status(), StatusCode::OK);
+
+        let threads = app
+            .clone()
+            .oneshot(
+                Request::get(format!("/v1/self-control/threads?projectId={}", project.id))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(threads.status(), StatusCode::OK);
+        let body = response_json(threads).await;
+        assert_eq!(body["threads"][0]["id"], "thread-project");
+
+        let timeline_without_cursor = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/self-control/threads/thread-project/timeline/pages")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(timeline_without_cursor.status(), StatusCode::BAD_REQUEST);
+
+        let queued = app
+            .oneshot(
+                Request::get("/v1/self-control/threads/thread-project/queued-inputs")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(queued.status(), StatusCode::OK);
+        let body = response_json(queued).await;
+        assert_eq!(body["queuedInputs"][0]["input"][0]["text"], "queued");
+    }
+
+    #[tokio::test]
+    async fn self_control_thread_lifecycle_routes_append_audit_events() {
+        let (state, _) = test_state().await;
+        let app = build_router(state.clone());
+        let thread_id = "thread-1";
+        let source_value = json!({
+            "sourceThreadId": "source-thread",
+            "sourceTurnId": "source-turn",
+            "sourceToolCallId": "lifecycle-tool",
+            "requestedBy": "user",
+            "reason": "verify lifecycle provenance"
+        });
+        let source = json!({ "source": source_value.clone() });
+
+        for (method, path, body) in [
+            ("POST", "attach", source.clone()),
+            ("POST", "resume", source.clone()),
+            ("POST", "fork", source.clone()),
+            (
+                "PATCH",
+                "name",
+                json!({"name": "Lifecycle Thread", "source": source_value.clone()}),
+            ),
+            (
+                "PATCH",
+                "settings",
+                json!({"model": "gpt-test", "source": source_value.clone()}),
+            ),
+            ("POST", "archive", source.clone()),
+            ("POST", "pin", source.clone()),
+            ("DELETE", "pin", source.clone()),
+            (
+                "POST",
+                "seen",
+                json!({"seenCompletedAgentTurnSeq": 3, "source": source_value.clone()}),
+            ),
+            ("POST", "compact", source.clone()),
+            ("POST", "interrupt-current", source.clone()),
+        ] {
+            let uri = format!("/v1/self-control/threads/{thread_id}/{path}");
+            let request = match method {
+                "PATCH" => Request::patch(uri),
+                "DELETE" => Request::delete(uri),
+                _ => Request::post(uri),
+            }
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::OK,
+                "{method} /{path} should succeed"
+            );
+        }
+
+        let event_kinds = state
+            .store
+            .replay_events(None, None, Some(thread_id.to_string()))
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|event| (event.kind, event.payload))
+            .collect::<Vec<_>>();
+        for expected in [
+            "self_control.thread_attached",
+            "self_control.thread_resumed",
+            "self_control.thread_forked",
+            "self_control.thread_renamed",
+            "self_control.thread_settings_updated",
+            "self_control.thread_archived",
+            "self_control.thread_pinned",
+            "self_control.thread_unpinned",
+            "self_control.thread_seen",
+            "self_control.thread_compacted",
+            "self_control.thread_interrupted_current",
+        ] {
+            let Some((_, payload)) = event_kinds.iter().find(|(kind, _)| kind == expected) else {
+                panic!("missing audit event {expected}; saw {event_kinds:?}");
+            };
+            assert!(
+                payload["source"]["sourceThreadId"] == "source-thread"
+                    && payload["source"]["sourceTurnId"] == "source-turn"
+                    && payload["source"]["sourceToolCallId"] == "lifecycle-tool"
+                    && payload["source"]["requestedBy"] == "user"
+                    && payload["source"]["reason"] == "verify lifecycle provenance",
+                "audit event {expected} should preserve source provenance; payload: {payload:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn self_control_spawn_is_idempotent_and_enforces_depth() {
+        let (state, app_server) = test_state().await;
+        let project = state
+            .store
+            .create_project("Kodex".to_string(), "/workspace/kodex".to_string())
+            .await
+            .unwrap();
+        let app = build_router(state);
+        let request = json!({
+            "projectId": project.id,
+            "input": [{"type": "text", "text": "start spawned thread"}],
+            "idempotencyKey": "spawn-key-1",
+            "maxSelfControlDepth": 2,
+            "role": "reviewer",
+            "source": {"sourceToolCallId": "tool-spawn"}
+        });
+
+        let first = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/thread-spawns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(request.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+        let first_body = response_json(first).await;
+        assert_eq!(first_body["threadId"], "thread-1");
+        assert_eq!(first_body["input"]["action"], "started");
+        assert_eq!(first_body["remainingSelfControlDepth"], 1);
+        assert_eq!(first_body["idempotentReplay"], false);
+
+        let second = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/thread-spawns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(request.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(second.status(), StatusCode::OK);
+        let second_body = response_json(second).await;
+        assert_eq!(second_body["threadId"], "thread-1");
+        assert_eq!(second_body["idempotentReplay"], true);
+
+        let exhausted = app
+            .oneshot(
+                Request::post("/v1/self-control/thread-spawns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "projectId": first_body["thread"]["thread"]["id"],
+                            "input": [{"type": "text", "text": "nope"}],
+                            "maxSelfControlDepth": 0
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(exhausted.status(), StatusCode::BAD_REQUEST);
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|(method, _)| method == "thread/start")
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn self_control_spawn_retry_reuses_created_thread_after_input_failure() {
+        let store = Store::in_memory().await.unwrap();
+        let app_server = Arc::new(SpawnInputFailingAppServer::default());
+        let state = AppState::new(Config::default(), store, app_server.clone())
+            .with_title_generation_service(TitleGenerationService::disabled());
+        let project = state
+            .store
+            .create_project("Kodex".to_string(), "/workspace/kodex".to_string())
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+        let request = json!({
+            "projectId": project.id,
+            "input": [{"type": "text", "text": "start spawned thread"}],
+            "idempotencyKey": "spawn-key-partial",
+            "maxSelfControlDepth": 2
+        });
+
+        let failed = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/thread-spawns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(request.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(failed.status(), StatusCode::BAD_GATEWAY);
+        let events = state.store.replay_events(None, None, None).await.unwrap();
+        assert!(events
+            .iter()
+            .any(|event| event.kind == "self_control.thread_spawn_created"));
+        assert!(!events
+            .iter()
+            .any(|event| event.kind == "self_control.thread_spawned"));
+
+        let retried = app
+            .oneshot(
+                Request::post("/v1/self-control/thread-spawns")
+                    .header("content-type", "application/json")
+                    .body(Body::from(request.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(retried.status(), StatusCode::OK);
+        let body = response_json(retried).await;
+        assert_eq!(body["threadId"], "thread-spawned");
+        assert_eq!(body["input"]["action"], "started");
+        assert_eq!(body["idempotentReplay"], true);
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|(method, _)| method == "thread/start")
+                .count(),
+            1
+        );
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|(method, _)| method == "thread/read")
+                .count(),
+            2
+        );
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|(method, _)| method == "turn/start")
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn self_control_automation_run_now_queues_source_labeled_input() {
+        let (state, _) = test_state().await;
+        let start_at = chrono::Utc::now();
+        let automation = state
+            .store
+            .create_automation(NewAutomation {
+                name: "Now".to_string(),
+                prompt: "run this now".to_string(),
+                target_thread_id: "thread-1".to_string(),
+                start_at,
+                repeat_every_seconds: 60,
+                next_run_at: start_at,
+                status: crate::store::AutomationStatus::Active,
+                paused_reason: None,
+                provenance: None,
+            })
+            .await
+            .unwrap();
+        let app = build_router(state.clone());
+
+        let response = app
+            .oneshot(
+                Request::post(format!(
+                    "/v1/self-control/automations/{}/run-now",
+                    automation.id
+                ))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"source": {"sourceToolCallId": "tool-run-now"}}).to_string(),
+                ))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["queuedInput"]["sourceType"], "automation");
+        assert_eq!(body["queuedInput"]["sourceId"], "tool-run-now");
+        assert_eq!(body["queuedInput"]["input"][0]["text"], "run this now");
+    }
+
+    #[tokio::test]
+    async fn self_control_approval_policy_allows_denial_and_gates_approval() {
+        let (state, app_server) = test_state().await;
+        let deny = state
+            .store
+            .insert_approval(NewApproval {
+                request_id: "approval-deny".to_string(),
+                thread_id: Some("thread-1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                item_id: Some("item-1".to_string()),
+                method: "item/commandExecution/requestApproval".to_string(),
+                payload: json!({"threadId": "thread-1"}),
+            })
+            .await
+            .unwrap();
+        let approve = state
+            .store
+            .insert_approval(NewApproval {
+                request_id: "approval-accept".to_string(),
+                thread_id: Some("thread-1".to_string()),
+                turn_id: Some("turn-1".to_string()),
+                item_id: Some("item-2".to_string()),
+                method: "item/commandExecution/requestApproval".to_string(),
+                payload: json!({"threadId": "thread-1"}),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state);
+
+        let denied = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/self-control/approvals/{}/decision", deny.id))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"decision": {"decision": "decline"}}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(denied.status(), StatusCode::OK);
+
+        let blocked = app
+            .clone()
+            .oneshot(
+                Request::post(format!(
+                    "/v1/self-control/approvals/{}/decision",
+                    approve.id
+                ))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"decision": {"decision": "accept"}}).to_string(),
+                ))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(blocked.status(), StatusCode::BAD_REQUEST);
+
+        let accepted = app
+            .oneshot(
+                Request::post(format!(
+                    "/v1/self-control/approvals/{}/decision",
+                    approve.id
+                ))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "decision": {"decision": "accept"},
+                        "requestedBy": "user"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(accepted.status(), StatusCode::OK);
+
+        let responses = app_server.responses.lock().unwrap();
+        assert_eq!(responses.len(), 2);
+        assert_eq!(responses[0].0, "approval-deny");
+        assert_eq!(responses[1].0, "approval-accept");
+    }
+
+    #[tokio::test]
+    async fn self_control_events_replay_rejects_conflicting_thread_filters() {
+        let (state, _) = test_state().await;
+        state
+            .store
+            .append_event(NewEvent {
+                project_id: Some("project-1".to_string()),
+                thread_id: Some("thread-1".to_string()),
+                turn_id: None,
+                item_id: None,
+                kind: "custom".to_string(),
+                codex_method: None,
+                payload: json!({"ok": true}),
+            })
+            .await
+            .unwrap();
+        let app = build_router(state);
+
+        let replay = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/self-control/events?threadId=thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(replay.status(), StatusCode::OK);
+        let body = response_json(replay).await;
+        assert_eq!(body["events"][0]["threadId"], "thread-1");
+
+        let invalid = app
+            .oneshot(
+                Request::get("/v1/self-control/events?threadId=thread-1&excludeThreadId=thread-2")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
     async fn thread_start_forwards_initial_composer_settings() {
         let (state, app_server) = test_state().await;
         let project = state
@@ -3160,9 +3696,9 @@ mod tests {
             .unwrap();
         assert_eq!(listed.status(), StatusCode::OK);
         let listed = response_json(listed).await;
-        assert_eq!(listed["threads"][0]["model"], "gpt-5.4");
-        assert_eq!(listed["threads"][0]["reasoningEffort"], "high");
-        assert_eq!(listed["threads"][0]["serviceTier"], "fast");
+        assert_eq!(listed["threads"][0]["model"], Value::Null);
+        assert_eq!(listed["threads"][0]["reasoningEffort"], Value::Null);
+        assert_eq!(listed["threads"][0]["serviceTier"], Value::Null);
         assert_eq!(listed["threads"][0]["approvalPolicy"], "on-request");
         assert_eq!(listed["threads"][0]["approvalsReviewer"], "auto_review");
         assert_eq!(listed["threads"][0]["sandbox"], "workspace-write");
@@ -13239,6 +13775,53 @@ mod tests {
                     self.thread_read_requests.fetch_add(1, Ordering::SeqCst);
                     Ok(thread_read_response("thread-1", 0))
                 }
+                "thread/list" => {
+                    Ok(json!({"data": [], "nextCursor": null, "backwardsCursor": null}))
+                }
+                _ => Ok(json!({})),
+            }
+        }
+
+        async fn respond(&self, _request_id: &str, _result: Value) -> ApiResult<()> {
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct SpawnInputFailingAppServer {
+        requests: StdMutex<Vec<(String, Value)>>,
+        thread_read_requests: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl AppServer for SpawnInputFailingAppServer {
+        fn is_ready(&self) -> bool {
+            true
+        }
+
+        fn readiness_error(&self) -> Option<String> {
+            None
+        }
+
+        async fn request(&self, method: &str, params: Value) -> ApiResult<Value> {
+            self.requests
+                .lock()
+                .unwrap()
+                .push((method.to_string(), params));
+            match method {
+                "thread/start" => Ok(json!({
+                    "thread": thread_summary("thread-spawned"),
+                    "cwd": "/workspace/kodex"
+                })),
+                "thread/read" => {
+                    let request_index = self.thread_read_requests.fetch_add(1, Ordering::SeqCst);
+                    if request_index == 0 {
+                        Err(ApiError::BadGateway("thread read failed".to_string()))
+                    } else {
+                        Ok(thread_read_response("thread-spawned", 0))
+                    }
+                }
+                "turn/start" => Ok(json!({"turnId": "turn-started"})),
                 "thread/list" => {
                     Ok(json!({"data": [], "nextCursor": null, "backwardsCursor": null}))
                 }
