@@ -125,15 +125,15 @@ describe("project preview settings", () => {
 
     expect(window.location.pathname).toBe("/projects/project-1");
     const main = await screen.findByRole("main", { name: /project/i });
-    expect(within(main).getByRole("heading", { name: "Kodex" })).toBeInTheDocument();
-    expect(within(main).getByText("Preview subsystem")).toBeInTheDocument();
-    expect(within(main).getByText("Frontend")).toBeInTheDocument();
-    expect(within(main).getByText("Backend")).toBeInTheDocument();
-    expect(within(main).getByRole("link", { name: /open http:\/\/100\.64\.0\.10:13000/i })).toHaveAttribute(
+    expect(await within(main).findByRole("heading", { name: "Kodex" })).toBeInTheDocument();
+    expect(await within(main).findByText("Preview subsystem")).toBeInTheDocument();
+    expect(await within(main).findByText("Frontend")).toBeInTheDocument();
+    expect(await within(main).findByText("Backend")).toBeInTheDocument();
+    expect(await within(main).findByRole("link", { name: /open http:\/\/100\.64\.0\.10:13000/i })).toHaveAttribute(
       "href",
       "http://100.64.0.10:13000",
     );
-    expect(within(main).getByText("/api/*")).toBeInTheDocument();
+    expect(await within(main).findByText("/api/*")).toBeInTheDocument();
 
     await userEvent.type(screen.getAllByLabelText("Name")[0], "Worker");
     await userEvent.type(screen.getByLabelText(/local port/i), "5173");

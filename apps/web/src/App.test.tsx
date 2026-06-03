@@ -402,7 +402,7 @@ describe("App shell", () => {
 
     renderApp();
 
-    expect(screen.getByRole("main", { name: /theme workbench/i })).toBeInTheDocument();
+    expect(await screen.findByRole("main", { name: /theme workbench/i })).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: /workspace/i })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("radio", { name: /paper light/i }));
     await waitFor(() => {

@@ -1491,7 +1491,7 @@ describe("MVP composer input flows", () => {
     expect(screen.getByRole("button", { name: /remove pasted.png/i })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /open pasted.png/i }));
-    const dialog = screen.getByRole("dialog");
+    const dialog = await screen.findByRole("dialog");
     expect(dialog).toBeInTheDocument();
     expect(dialog.querySelector(".kodex-image-lightbox-img")).toHaveAttribute("src", "blob:pasted-preview");
 

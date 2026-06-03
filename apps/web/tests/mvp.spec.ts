@@ -59,33 +59,171 @@ function threadDetailBody(sourceThread: Record<string, unknown>, turns: TestTurn
 function timelineFromTurns(sourceThread: Record<string, unknown>, turns: TestTurn[], liveState: string) {
   let displayOrder = 0;
   const activeTurn = [...turns].reverse().find((turn) => !["completed", "failed", "cancelled"].includes(turn.status));
-  return {
-    revision: 1,
-    activeTurnId: activeTurn?.id ?? null,
-    liveState,
-    items: turns.flatMap((turn) =>
-      turn.items.map((item) => {
-        displayOrder += 1;
-        return {
-          id: `snapshot-${turn.id}-${item.id}`,
-          threadId: String(sourceThread.id),
+  const items = turns.flatMap((turn) =>
+    turn.items.map((item) => {
+      displayOrder += 1;
+      return {
+        id: `snapshot-${turn.id}-${item.id}`,
+        threadId: String(sourceThread.id),
+        turnId: turn.id,
+        itemId: item.id,
+        itemType: item.itemType,
+        status: turn.status === "completed" ? "completed" : turn.status,
+        displayOrder,
+        codexMethod: turn.status === "completed" ? "item/completed" : "item/upsert",
+        timestampMs: displayOrder,
+        payload: {
+          source: "appServerSnapshot",
           turnId: turn.id,
           itemId: item.id,
-          itemType: item.itemType,
-          status: turn.status === "completed" ? "completed" : turn.status,
-          displayOrder,
-          codexMethod: turn.status === "completed" ? "item/completed" : "item/upsert",
-          timestampMs: displayOrder,
-          payload: {
-            source: "appServerSnapshot",
-            turnId: turn.id,
-            itemId: item.id,
-            item: item.rawPayload,
-            itemSnapshot: item,
-          },
-        };
-      }),
-    ),
+          item: item.rawPayload,
+          itemSnapshot: item,
+        },
+      };
+    }),
+  );
+  return {
+    viewRevision: 1,
+    activeTurnId: activeTurn?.id ?? null,
+    liveState,
+    rows: canonicalRowsFromSnapshotItems(items),
+    items,
+  };
+}
+
+type TestTimelineItem = {
+  id: string;
+  threadId: string;
+  turnId: string;
+  itemId: string;
+  itemType: string;
+  status: string;
+  displayOrder: number;
+  timestampMs?: number;
+  payload: { item?: unknown };
+};
+
+function canonicalRowsFromSnapshotItems(items: TestTimelineItem[]) {
+  const rows: unknown[] = [];
+  let activityItems: TestTimelineItem[] = [];
+  let fileItems: TestTimelineItem[] = [];
+
+  const flushActivity = () => {
+    if (activityItems.length === 0) {
+      return;
+    }
+    const first = activityItems[0];
+    rows.push({
+      id: `activity-${first.id}`,
+      kind: "activity",
+      turnId: first.turnId,
+      displayOrder: first.displayOrder,
+      status: first.status,
+      timestampMs: first.timestampMs,
+      item: null,
+      items: activityItems,
+      fileChanges: [],
+      work: null,
+      collapsedRows: [],
+      dividerBefore: null,
+    });
+    activityItems = [];
+  };
+  const flushFiles = () => {
+    if (fileItems.length === 0) {
+      return;
+    }
+    const first = fileItems[0];
+    rows.push({
+      id: `file-changes-turn-${first.turnId}`,
+      kind: "file_changes",
+      turnId: first.turnId,
+      displayOrder: first.displayOrder,
+      status: first.status,
+      timestampMs: first.timestampMs,
+      item: null,
+      items: [],
+      fileChanges: fileItems.map(fileChangeEntryFromItem),
+      work: null,
+      collapsedRows: [],
+      dividerBefore: null,
+    });
+    fileItems = [];
+  };
+
+  for (const item of [...items].sort((left, right) => left.displayOrder - right.displayOrder)) {
+    const kind = canonicalKind(item.itemType);
+    if (kind === "file_change") {
+      flushActivity();
+      fileItems.push(item);
+      continue;
+    }
+    if (isActivityKind(kind)) {
+      flushFiles();
+      activityItems.push(item);
+      continue;
+    }
+    flushActivity();
+    flushFiles();
+    rows.push(canonicalItemRow(item, kind));
+  }
+  flushActivity();
+  flushFiles();
+  return rows;
+}
+
+function canonicalItemRow(item: TestTimelineItem, kind = canonicalKind(item.itemType)) {
+  return {
+    id: `item-${item.id}`,
+    kind,
+    turnId: item.turnId,
+    displayOrder: item.displayOrder,
+    status: item.status,
+    timestampMs: item.timestampMs,
+    item,
+    items: [],
+    fileChanges: [],
+    work: null,
+    collapsedRows: [],
+    dividerBefore: null,
+  };
+}
+
+function canonicalKind(itemType: string) {
+  const normalized = itemType.toLowerCase().replace(/[_-]/g, "");
+  const kinds: Record<string, string> = {
+    agentmessage: "assistant_message",
+    assistantmessage: "assistant_message",
+    collabagenttoolcall: "collab_agent_tool_call",
+    commandexecution: "command_execution",
+    dynamictoolcall: "dynamic_tool_call",
+    filechange: "file_change",
+    imageview: "image_view",
+    mcptoolcall: "mcp_tool_call",
+    usermessage: "user_message",
+    websearch: "web_search_group",
+  };
+  return kinds[normalized] ?? itemType;
+}
+
+function isActivityKind(kind: string) {
+  return ["collab_agent_tool_call", "command_execution", "dynamic_tool_call", "image_view", "mcp_tool_call", "web_search_group"].includes(kind);
+}
+
+function fileChangeEntryFromItem(item: TestTimelineItem) {
+  const payload = item.payload.item && typeof item.payload.item === "object" ? (item.payload.item as Record<string, unknown>) : {};
+  const changes = Array.isArray(payload.changes) ? payload.changes : [];
+  const first = changes[0] && typeof changes[0] === "object" ? (changes[0] as Record<string, unknown>) : payload;
+  const path = typeof first.path === "string" ? first.path : "unknown";
+  const diff = typeof first.diff === "string" ? first.diff : "";
+  return {
+    id: `file-change-${item.id}`,
+    path,
+    action: "Modified",
+    additions: diff.split("\n").filter((line) => line.startsWith("+") && !line.startsWith("+++")).length,
+    deletions: diff.split("\n").filter((line) => line.startsWith("-") && !line.startsWith("---")).length,
+    diff,
+    itemIds: [item.id],
   };
 }
 
@@ -136,29 +274,45 @@ test("keeps long timeline content inside the thread viewer", async ({ page }) =>
   const longWord = "supercalifragilistic".repeat(24);
   const longCommand = `node -e "console.log('${"wide-output".repeat(20)}')"`;
   const longOutput = "0123456789abcdef".repeat(80);
-  await page.route("**/v1/approvals**", async (route) => {
-    await route.fulfill({
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ approvals: [] }),
-    });
-  });
-  await page.route("**/v1/events**", async (route) => {
+  await page.unroute("**/v1/**");
+  await page.route("**/v1/**", async (route) => {
     const request = route.request();
-    if (request.headers().accept?.includes("text/event-stream")) {
+    const url = new URL(request.url());
+    const key = `${request.method()} ${url.pathname}`;
+
+    if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
       await route.fulfill({ status: 200, headers: { "Content-Type": "text/event-stream" }, body: "" });
       return;
     }
-    await route.fulfill({
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        events: [
-        ],
-      }),
-    });
-  });
-  await page.route("**/v1/threads/thread-1", async (route) => {
+
+    if (key === "GET /v1/events") {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ events: [] }),
+      });
+      return;
+    }
+
+    if (key === "GET /v1/approvals") {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approvals: [] }),
+      });
+      return;
+    }
+
+    if (key !== "GET /v1/threads/thread-1") {
+      const response = await responseFor(key, route);
+      await route.fulfill({
+        status: response.status ?? 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(response.body),
+      });
+      return;
+    }
+
     await route.fulfill({
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -223,7 +377,7 @@ test("keeps long timeline content inside the thread viewer", async ({ page }) =>
   expect(outputMetrics.scrollWidth).toBeGreaterThan(outputMetrics.clientWidth);
 });
 
-test("keeps growing file changes and following skill messages from overlapping", async ({ page }) => {
+test("keeps large file changes and following skill messages from overlapping", async ({ page }) => {
   const skillText = "$implement-review-loop continue after the files changed block";
   const skillMention = {
     start: 0,
@@ -339,6 +493,7 @@ test("keeps growing file changes and following skill messages from overlapping",
     timeline: {
       activeTurnId: null,
       liveState: "idle",
+      rows: canonicalRowsFromSnapshotItems(timelineItems(fileCount)),
       items: timelineItems(fileCount),
       pendingApprovalRequests: [],
       pendingUserInputRequests: [],
@@ -367,6 +522,7 @@ test("keeps growing file changes and following skill messages from overlapping",
         turnId: null,
         payload: {
           activeTurnId: null,
+          rows: canonicalRowsFromSnapshotItems(timelineItems(23)),
           items: timelineItems(23),
           liveState: "idle",
           pendingApprovalRequests: [],
@@ -390,7 +546,7 @@ test("keeps growing file changes and following skill messages from overlapping",
 
     const response =
       key === "GET /v1/threads/thread-1"
-        ? { body: threadBody(2) }
+        ? { body: threadBody(23) }
         : key === "GET /v1/approvals"
           ? { body: { approvals: [] } }
           : await responseFor(key, route);
@@ -406,9 +562,7 @@ test("keeps growing file changes and following skill messages from overlapping",
   await page.goto("/threads/thread-1");
 
   await expect(page.getByLabel("Implement Review Loop skill")).toBeVisible();
-  await page.getByText(/Worked for/).first().click();
-  await expect(page.getByText("12 files changed")).toBeVisible();
-  await expect(page.getByText("11 files changed")).toBeVisible();
+  await expect(page.getByText("23 files changed")).toBeVisible();
   await expect(page.getByLabel("Implement Review Loop skill")).toBeVisible();
   await expectNoRenderedTimelineOverlap(page);
 
@@ -499,6 +653,49 @@ test("lets thread titles use the expanded sidebar width before truncating", asyn
 });
 
 test("resolves a pending approval", async ({ page }) => {
+  let approvalPending = true;
+  await page.unroute("**/v1/**");
+  await page.route("**/v1/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const key = `${request.method()} ${url.pathname}`;
+
+    if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+        body: "",
+      });
+      return;
+    }
+
+    if (key === "GET /v1/approvals") {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approvals: approvalPending ? [approval] : [] }),
+      });
+      return;
+    }
+
+    if (key === "POST /v1/approvals/approval-1/decision") {
+      approvalPending = false;
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...approval, status: "resolved", response: { decision: "accept" } }),
+      });
+      return;
+    }
+
+    const response = await responseFor(key, route);
+    await route.fulfill({
+      status: response.status ?? 200,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(response.body),
+    });
+  });
+
   await page.goto("/threads/thread-1");
 
   const threadCard = page.getByRole("button", { name: /frontend mvp/i });
@@ -882,7 +1079,7 @@ async function responseFor(key: string, route: Route): Promise<{ status?: number
   if (key === "GET /v1/threads/thread-1") {
     return {
       body: threadDetailBody(
-        { ...thread, lastCompletedAgentTurnSeq: 1, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: true },
+        { ...thread, lastCompletedAgentTurnSeq: 1, seenCompletedAgentTurnSeq: 1, unreadCompletedAgentTurn: false },
         [
           {
             id: "turn-1",
@@ -914,7 +1111,7 @@ async function responseFor(key: string, route: Route): Promise<{ status?: number
     return { body: { events: [] } };
   }
   if (key === "GET /v1/approvals") {
-    return { body: { approvals: [approval] } };
+    return { body: { approvals: [] } };
   }
   if (key === "POST /v1/approvals/approval-1/decision") {
     return { body: { ...approval, status: "resolved", response: { decision: "accept" } } };
