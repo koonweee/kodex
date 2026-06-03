@@ -1,16 +1,19 @@
 import { ActionIcon, Badge, Box, Button, Group, Menu, Modal, Skeleton, Switch, Text, TextInput, Title, Tooltip } from "@mantine/core";
 import { AlertCircle, Archive, Bot, MoreHorizontal, PanelLeftOpen, PanelRightOpen, Pencil, Pin, PinOff } from "lucide-react";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import type { Approval, ApprovalResponse, ThreadSummary } from "../api/client";
 import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
 import { errorMessageFrom } from "../shared/values";
 import { EmptyPanel } from "../ui/EmptyPanel";
-import { TimelineView } from "../timeline/TimelineView";
 import type { TimelineEntry } from "../timeline/entry";
 import type { TimelineState } from "../timeline/reducer";
 import type { ThreadSyncNotice } from "../timeline/useSelectedThreadTimeline";
+
+const TimelineView = lazy(() =>
+  import("../timeline/TimelineView").then((module) => ({ default: module.TimelineView })),
+);
 
 const THREAD_PANEL_TEXT = {
   actions: "Thread actions",
@@ -320,20 +323,22 @@ export function ThreadPanel({
                 {isSelectedTimelineLoading ? (
                   <TimelineLoadingSkeleton />
                 ) : selectedThread ? (
-                  <TimelineView
-                    key={selectedThread.id}
-                    approvals={selectedThreadApprovals}
-                    onReady={onTimelineReady}
-                    onApprovalDecision={onApprovalDecision}
-                    onImageOpen={onImageOpen}
-                    onLoadOlderHistory={onLoadOlderHistory}
-                    onMarkdownOpen={onMarkdownOpen}
-                    imagePreviewUrlsByPath={imagePreviewUrlsByPath}
-                    scrollParentElement={scrollParentElement}
-                    showDebug={showDebugEvents}
-                    threadId={selectedThread.id}
-                    timeline={timeline}
-                  />
+                  <Suspense fallback={<TimelineLoadingSkeleton />}>
+                    <TimelineView
+                      key={selectedThread.id}
+                      approvals={selectedThreadApprovals}
+                      onReady={onTimelineReady}
+                      onApprovalDecision={onApprovalDecision}
+                      onImageOpen={onImageOpen}
+                      onLoadOlderHistory={onLoadOlderHistory}
+                      onMarkdownOpen={onMarkdownOpen}
+                      imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+                      scrollParentElement={scrollParentElement}
+                      showDebug={showDebugEvents}
+                      threadId={selectedThread.id}
+                      timeline={timeline}
+                    />
+                  </Suspense>
                 ) : null}
               </Box>
               {subagentViewer}

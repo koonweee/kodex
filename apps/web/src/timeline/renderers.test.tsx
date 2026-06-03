@@ -106,7 +106,7 @@ describe("timeline renderer registry", () => {
     expect(within(commandDetails as HTMLElement).queryByText(/success/i)).not.toBeInTheDocument();
   });
 
-  it("renders file change output as an inspectable unified diff", () => {
+  it("renders file change output as an inspectable unified diff", async () => {
     render(
       <MantineProvider>
         <TimelineItemRenderer
@@ -120,14 +120,14 @@ describe("timeline renderer registry", () => {
       </MantineProvider>,
     );
 
-    expect(screen.getByLabelText(/file diff for timeline-rendering-feedback\.md/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/file diff for timeline-rendering-feedback\.md/i)).toBeInTheDocument();
     expect(screen.queryByText("update")).not.toBeInTheDocument();
     expect(screen.queryByText("timeline-rendering-feedback.md")).not.toBeInTheDocument();
     expect(screen.getByText("old")).toBeInTheDocument();
     expect(screen.getByText("new")).toBeInTheDocument();
   });
 
-  it("defers activity item body rendering until the row is opened", () => {
+  it("defers activity item body rendering until the row is opened", async () => {
     const { container } = render(
       <MantineProvider>
         <TimelineActivityGroupRenderer
@@ -166,11 +166,11 @@ describe("timeline renderer registry", () => {
     const activityDetails = container.querySelector("details.kodex-activity-item") as HTMLDetailsElement;
     openDetails(activityDetails);
 
-    expect(screen.getByLabelText(/file diff for timeline-rendering-feedback\.md/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/file diff for timeline-rendering-feedback\.md/i)).toBeInTheDocument();
     expect(screen.getByText(/item\/completed/i)).toBeInTheDocument();
   });
 
-  it("renders aggregated file changes and expands diffs only for modified files", () => {
+  it("renders aggregated file changes and expands diffs only for modified files", async () => {
     const { container } = render(
       <MantineProvider>
         <TimelineFileChangesRenderer
@@ -221,7 +221,7 @@ describe("timeline renderer registry", () => {
 
     openDetails(container.querySelector("details.kodex-file-change-entry") as HTMLDetailsElement);
 
-    expect(screen.getByLabelText(/file diff for src\/app\.tsx/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/file diff for src\/app\.tsx/i)).toBeInTheDocument();
   });
 
   it("hides message headings, hides normal completed status, and keeps raw payloads out of the default view", () => {
@@ -743,7 +743,7 @@ describe("timeline renderer registry", () => {
     expect(container.querySelector(".kodex-timeline-item-header")).not.toBeInTheDocument();
   });
 
-  it("renders assistant messages as safe markdown", () => {
+  it("renders assistant messages as safe markdown", async () => {
     render(
       <MantineProvider>
         <TimelineItemRenderer
@@ -756,7 +756,7 @@ describe("timeline renderer registry", () => {
       </MantineProvider>,
     );
 
-    expect(screen.getByText("94123").tagName.toLowerCase()).toBe("code");
+    expect((await screen.findByText("94123")).tagName.toLowerCase()).toBe("code");
     expect(screen.getByRole("list")).toBeInTheDocument();
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
     expect(screen.getByRole("link", { name: /open-meteo/i })).toHaveAttribute(
@@ -767,7 +767,7 @@ describe("timeline renderer registry", () => {
     expect(screen.queryByText(/alert/i)).not.toBeInTheDocument();
   });
 
-  it("rewrites local markdown links to the thread file preview endpoint", () => {
+  it("rewrites local markdown links to the thread file preview endpoint", async () => {
     render(
       <MantineProvider>
         <TimelineItemRenderer
@@ -781,7 +781,7 @@ describe("timeline renderer registry", () => {
       </MantineProvider>,
     );
 
-    expect(screen.getByRole("link", { name: "notes" })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: "notes" })).toHaveAttribute(
       "href",
       "http://localhost:3000/v1/threads/thread-1/files/preview?path=%2FUsers%2Fexample%2Fkodex%2FNOTES.markdown",
     );
@@ -795,7 +795,7 @@ describe("timeline renderer registry", () => {
     expect(screen.queryByText(/NOTES\.markdown content/i)).not.toBeInTheDocument();
   });
 
-  it("rewrites line-suffixed local markdown links and keeps the source location for preview callbacks", () => {
+  it("rewrites line-suffixed local markdown links and keeps the source location for preview callbacks", async () => {
     const onMarkdownOpen = vi.fn<(request: MarkdownPreviewRequest) => void>();
     render(
       <MantineProvider>
@@ -811,7 +811,7 @@ describe("timeline renderer registry", () => {
       </MantineProvider>,
     );
 
-    expect(screen.getByRole("link", { name: "indexed" })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: "indexed" })).toHaveAttribute(
       "href",
       "http://localhost:3000/v1/threads/thread-1/files/preview?path=%2FUsers%2Fexample%2Fkodex%2Fplans%2Findex.md",
     );
@@ -833,7 +833,7 @@ describe("timeline renderer registry", () => {
     });
   });
 
-  it("opens local markdown links through the markdown preview callback on normal click", () => {
+  it("opens local markdown links through the markdown preview callback on normal click", async () => {
     const onMarkdownOpen = vi.fn<(request: MarkdownPreviewRequest) => void>();
     render(
       <MantineProvider>
@@ -848,7 +848,7 @@ describe("timeline renderer registry", () => {
       </MantineProvider>,
     );
 
-    const link = screen.getByRole("link", { name: "feedback" });
+    const link = await screen.findByRole("link", { name: "feedback" });
     fireEvent.click(link);
 
     expect(onMarkdownOpen).toHaveBeenCalledWith({
@@ -859,7 +859,7 @@ describe("timeline renderer registry", () => {
     });
   });
 
-  it("preserves browser-native modifier-click behavior for local markdown links", () => {
+  it("preserves browser-native modifier-click behavior for local markdown links", async () => {
     const onMarkdownOpen = vi.fn<(request: MarkdownPreviewRequest) => void>();
     render(
       <MantineProvider>
@@ -874,12 +874,12 @@ describe("timeline renderer registry", () => {
       </MantineProvider>,
     );
 
-    fireEvent.click(screen.getByRole("link", { name: "feedback" }), { metaKey: true });
+    fireEvent.click(await screen.findByRole("link", { name: "feedback" }), { metaKey: true });
 
     expect(onMarkdownOpen).not.toHaveBeenCalled();
   });
 
-  it("opens local assistant markdown image links in the image viewer through the thread file preview endpoint", () => {
+  it("opens local assistant markdown image links in the image viewer through the thread file preview endpoint", async () => {
     const onImageOpen = vi.fn();
     render(
       <MantineProvider>
@@ -897,7 +897,7 @@ describe("timeline renderer registry", () => {
 
     const expectedHref =
       "http://localhost:3000/v1/threads/thread-1/files/preview?path=%2FUsers%2Fexample%2Freference-project%2Fdogfood-output%2Ftransaction-review%2Fscreenshots%2F03-inline-review-toast.png";
-    const link = screen.getByRole("link", { name: "03-inline-review-toast.png" });
+    const link = await screen.findByRole("link", { name: "03-inline-review-toast.png" });
     expect(link).toHaveAttribute("href", expectedHref);
     expect(link).not.toHaveAttribute("download");
 
@@ -978,7 +978,7 @@ describe("timeline renderer registry", () => {
     expect(screen.queryByText("9:08:07 AM")).not.toBeInTheDocument();
   });
 
-  it("keeps assistant markdown output stable for links, code, lists, breaks, and skipped HTML", () => {
+  it("keeps assistant markdown output stable for links, code, lists, breaks, and skipped HTML", async () => {
     const { container, rerender } = render(
       <MantineProvider>
         <TimelineItemRenderer
@@ -990,6 +990,7 @@ describe("timeline renderer registry", () => {
         />
       </MantineProvider>,
     );
+    await screen.findByRole("link", { name: "docs" });
     const initialMarkup = container.querySelector(".kodex-assistant-markdown")?.innerHTML;
 
     expect(screen.getByRole("link", { name: "docs" })).toHaveAttribute("target", "_blank");
@@ -1016,7 +1017,7 @@ describe("timeline renderer registry", () => {
     expect(container.querySelector(".kodex-assistant-markdown")?.innerHTML).toBe(initialMarkup);
   });
 
-  it("renders assistant markdown tables in a scrollable themed shell with GFM alignment", () => {
+  it("renders assistant markdown tables in a scrollable themed shell with GFM alignment", async () => {
     const { container } = render(
       <MantineProvider theme={createKodexMantineTheme(getKodexColorScheme("oled-black"))}>
         <TimelineItemRenderer
@@ -1032,6 +1033,7 @@ describe("timeline renderer registry", () => {
       </MantineProvider>,
     );
 
+    await screen.findByRole("table");
     const tableShell = container.querySelector(".kodex-markdown-table-scroll");
     const table = within(tableShell as HTMLElement).getByRole("table");
     const headers = within(table).getAllByRole("columnheader");
@@ -1048,7 +1050,7 @@ describe("timeline renderer registry", () => {
     expect(cells[2]).toHaveStyle({ textAlign: "right" });
   });
 
-  it("renders unlabeled fenced code blocks as block code", () => {
+  it("renders unlabeled fenced code blocks as block code", async () => {
     const { container } = render(
       <MantineProvider>
         <TimelineItemRenderer
@@ -1060,6 +1062,7 @@ describe("timeline renderer registry", () => {
       </MantineProvider>,
     );
 
+    await screen.findByText("npm test");
     const codeBlock = container.querySelector(".kodex-timeline-code");
     expect(codeBlock).toHaveTextContent("npm test");
     expect(container.querySelector(".kodex-assistant-inline-code")).not.toBeInTheDocument();
@@ -1078,14 +1081,14 @@ describe("timeline renderer registry", () => {
       </MantineProvider>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /copy code/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /copy code/i }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("npm test"));
     expect(screen.getByRole("button", { name: /copied code/i })).toBeInTheDocument();
     expect(screen.getByText("inline").closest("button")).not.toBeInTheDocument();
   });
 
-  it("does not reparse completed assistant markdown on unrelated parent rerenders", () => {
+  it("does not reparse completed assistant markdown on unrelated parent rerenders", async () => {
     const completedItem = item({
       kind: "assistant_message",
       status: "completed",
@@ -1099,7 +1102,7 @@ describe("timeline renderer registry", () => {
     );
 
     const { rerender } = render(<CompletedHarness tick={0} />);
-    expect(reactMarkdownRenderSpy).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(reactMarkdownRenderSpy).toHaveBeenCalledTimes(1));
     reactMarkdownRenderSpy.mockClear();
 
     rerender(<CompletedHarness tick={1} />);
@@ -1109,7 +1112,7 @@ describe("timeline renderer registry", () => {
     expect(reactMarkdownRenderSpy).not.toHaveBeenCalled();
   });
 
-  it("updates streaming assistant markdown when message text changes", () => {
+  it("updates streaming assistant markdown when message text changes", async () => {
     const StreamingHarness = ({ text }: { text: string }) => (
       <MantineProvider>
         <TimelineItemRenderer
@@ -1125,17 +1128,19 @@ describe("timeline renderer registry", () => {
     const { container, rerender } = render(<StreamingHarness text="Checking..." />);
     expect(screen.getByText("Checking...")).toBeInTheDocument();
     expect(screen.queryByText("running")).not.toBeInTheDocument();
+    await waitFor(() => expect(container.querySelector(".kodex-assistant-markdown")).toBeInTheDocument());
     reactMarkdownRenderSpy.mockClear();
 
     rerender(<StreamingHarness text={"Checking...\nFound source."} />);
 
+    await waitFor(() => expect(container.querySelector(".kodex-assistant-markdown")).toHaveTextContent("Found source."));
     expect(container.querySelector(".kodex-assistant-markdown")).toHaveTextContent("Checking...");
     expect(container.querySelector(".kodex-assistant-markdown")).toHaveTextContent("Found source.");
     expect(container.querySelector(".kodex-assistant-markdown br")).toBeInTheDocument();
     expect(reactMarkdownRenderSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("preserves assistant markdown soft line breaks during streaming", () => {
+  it("preserves assistant markdown soft line breaks during streaming", async () => {
     const { container } = render(
       <MantineProvider>
         <TimelineItemRenderer
@@ -1148,7 +1153,7 @@ describe("timeline renderer registry", () => {
       </MantineProvider>,
     );
 
-    expect(container.querySelector(".kodex-assistant-markdown br")).toBeInTheDocument();
+    await waitFor(() => expect(container.querySelector(".kodex-assistant-markdown br")).toBeInTheDocument());
   });
 
   it("renders reasoning and web search as compact structured blocks", async () => {
@@ -1246,7 +1251,7 @@ describe("timeline renderer registry", () => {
     expect(screen.getAllByText("Shell")).not.toHaveLength(0);
   });
 
-  it("renders structured collaboration activity with Markdown result previews", () => {
+  it("renders structured collaboration activity with Markdown result previews", async () => {
     const { container } = render(
       <MantineProvider>
         <TimelineItemRenderer
@@ -1291,7 +1296,7 @@ describe("timeline renderer registry", () => {
     expect(screen.getByText("Inspect the renderer behavior and summarize the result.")).toBeInTheDocument();
     expect(screen.getAllByText("Lorentz [explorer]").length).toBeGreaterThan(0);
     expect(screen.getByText("Completed")).toBeInTheDocument();
-    expect(screen.getByText("Done")).toBeInTheDocument();
+    expect(await screen.findByText("Done")).toBeInTheDocument();
     expect(screen.getByText("renderers.tsx")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "plan" })).toHaveAttribute(
       "href",

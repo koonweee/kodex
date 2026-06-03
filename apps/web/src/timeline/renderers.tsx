@@ -1,6 +1,6 @@
 import { Badge, Box, Button, Code, Group, Stack, Text } from "@mantine/core";
 import { AlertTriangle, Bot, Check, ChevronRight, ClipboardList, Code2, Copy, FileDiff, Globe, ImageIcon, Info, Terminal, Wrench } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode, SyntheticEvent } from "react";
 
 import { filePreviewUrl } from "../api/client";
@@ -8,11 +8,17 @@ import { cssUrl, skillIconUrlIsSvg } from "../composer/skillMentions";
 import type { MarkdownPreviewRequest } from "../files/types";
 import { ImageThumbnail } from "../images/ImageThumbnail";
 import type { ImageLightboxImage } from "../images/types";
-import { MarkdownContent } from "../markdown/MarkdownContent";
+import type { MarkdownContentProps } from "../markdown/MarkdownContent";
 import { copyTextToClipboard } from "../shared/clipboard";
-import { FileDiffViewer } from "./FileDiffViewer";
 import { fileChangeActionIsModified, type FileChangeEntry } from "./presentationFile";
 import type { TimelineFileChangeEntry, TimelineImage, TimelineItem, TimelineWorkRow, WebSearchAction } from "./reducer";
+
+const FileDiffViewer = lazy(() =>
+  import("./FileDiffViewer").then((module) => ({ default: module.FileDiffViewer })),
+);
+const MarkdownContent = lazy(() =>
+  import("../markdown/MarkdownContent").then((module) => ({ default: module.MarkdownContent })),
+);
 
 type TimelineRendererOptions = {
   imagePreviewUrlsByPath: Record<string, string>;
@@ -653,8 +659,9 @@ const AssistantMessageMarkdown = memo(
   }) {
     return (
       <Box className="kodex-assistant-message-stack">
-        <MarkdownContent
+        <LazyMarkdownContent
           className="kodex-assistant-markdown"
+          fallbackText={text}
           onImageOpen={onImageOpen}
           onMarkdownOpen={onMarkdownOpen}
           text={text}
@@ -830,7 +837,9 @@ function FileChangeEntryRow({ entry }: { entry: FileChangeEntry }) {
       </summary>
       {isOpen ? (
         <Box className="kodex-file-change-diff">
-          <FileDiffViewer diff={entry.diff} path={entry.path} />
+          <Suspense fallback={<FileDiffFallback diff={entry.diff} />}>
+            <FileDiffViewer diff={entry.diff} path={entry.path} />
+          </Suspense>
         </Box>
       ) : null}
     </details>
@@ -964,12 +973,24 @@ function CommandBlock({ item }: { item: TimelineItem }) {
 function FileChangeBlock({ item }: { item: TimelineItem }) {
   const path = item.path || payloadValue(item.payload, "path");
   if (item.output && fileChangeActionIsModified(item.action)) {
-    return <FileDiffViewer diff={item.output} path={path || undefined} />;
+    return (
+      <Suspense fallback={<FileDiffFallback diff={item.output} />}>
+        <FileDiffViewer diff={item.output} path={path || undefined} />
+      </Suspense>
+    );
   }
   return (
     <Stack gap={6} className="kodex-file-change-block">
       <Text size="sm">{activityItemSummary(item)}</Text>
     </Stack>
+  );
+}
+
+function FileDiffFallback({ diff }: { diff: string }) {
+  return (
+    <Code block className="kodex-timeline-output">
+      {diff}
+    </Code>
   );
 }
 
@@ -1095,12 +1116,26 @@ function CollabAgentMarkdownPreview({
   threadId?: string;
 }) {
   return (
-    <MarkdownContent
+    <LazyMarkdownContent
       className="kodex-collab-agent-markdown kodex-assistant-markdown"
+      fallbackText={text}
       onMarkdownOpen={onMarkdownOpen}
       text={text}
       threadId={threadId}
     />
+  );
+}
+
+function LazyMarkdownContent({
+  fallbackText,
+  ...props
+}: MarkdownContentProps & {
+  fallbackText: string;
+}) {
+  return (
+    <Suspense fallback={<MessageText text={fallbackText} />}>
+      <MarkdownContent {...props} />
+    </Suspense>
   );
 }
 

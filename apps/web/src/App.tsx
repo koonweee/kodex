@@ -1,6 +1,8 @@
 import { MantineProvider } from "@mantine/core";
 import { QueryClientProvider, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -68,9 +70,7 @@ import {
 } from "./events/liveDiagnostics";
 import { routeSelectedThreadLiveEvent } from "./events/liveRouting";
 import { useGlobalLiveStream } from "./events/useGlobalLiveStream";
-import { MarkdownPreviewPane } from "./files/MarkdownPreviewPane";
 import type { MarkdownPreviewRequest } from "./files/types";
-import { ImageLightbox } from "./images/ImageLightbox";
 import type { ImageLightboxImage } from "./images/types";
 import { useKodexNotifications } from "./notifications/useKodexNotifications";
 import type { PreferenceSection } from "./PreferencesModal";
@@ -82,7 +82,6 @@ import {
   writeStoredKodexColorScheme,
   type KodexColorSchemeId,
 } from "./theme";
-import { ThemeWorkbench } from "./theme/ThemeWorkbench";
 import { idleTimelineEntry, type TimelineEntry } from "./timeline/entry";
 import { useSelectedThreadTimeline, type ThreadSyncNotice } from "./timeline/useSelectedThreadTimeline";
 import {
@@ -126,7 +125,6 @@ import {
   withThreadNotificationsEnabled,
   withThreadPinnedAt,
 } from "./threads/selection";
-import { SubagentThreadViewer } from "./threads/SubagentThreadViewer";
 import { useSelectedThreadAttach } from "./threads/useSelectedThreadAttach";
 import {
   applySidebarProjectOrder,
@@ -165,6 +163,19 @@ const NEW_THREAD_TITLE = "New thread";
 const DRAFT_COMPOSER_TRANSITION_MS = 280;
 type SidebarPaginationState = "idle" | "loading" | "error";
 
+const ImageLightbox = lazy(() =>
+  import("./images/ImageLightbox").then((module) => ({ default: module.ImageLightbox })),
+);
+const MarkdownPreviewPane = lazy(() =>
+  import("./files/MarkdownPreviewPane").then((module) => ({ default: module.MarkdownPreviewPane })),
+);
+const SubagentThreadViewer = lazy(() =>
+  import("./threads/SubagentThreadViewer").then((module) => ({ default: module.SubagentThreadViewer })),
+);
+const ThemeWorkbench = lazy(() =>
+  import("./theme/ThemeWorkbench").then((module) => ({ default: module.ThemeWorkbench })),
+);
+
 function useEventCallback<TArgs extends unknown[], TResult>(
   callback: (...args: TArgs) => TResult,
 ): (...args: TArgs) => TResult {
@@ -195,7 +206,9 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       <MantineProvider forceColorScheme={colorScheme.mode} theme={theme}>
         {isThemeWorkbench ? (
-          <ThemeWorkbench colorSchemeId={colorSchemeId} onColorSchemeChange={setColorSchemeId} />
+          <Suspense fallback={null}>
+            <ThemeWorkbench colorSchemeId={colorSchemeId} onColorSchemeChange={setColorSchemeId} />
+          </Suspense>
         ) : (
           <KodexShell colorSchemeId={colorSchemeId} onColorSchemeChange={setColorSchemeId} />
         )}
@@ -1693,16 +1706,18 @@ function KodexShell({
     selectedThreadSubagents.some((subagent) => subagent.id === selectedSubagentThreadId);
   const subagentViewer =
     subagentSidebarOpen && selectedSubagentStillAvailable ? (
-      <SubagentThreadViewer
-        imagePreviewUrlsByPath={imagePreviewUrlsByPath}
-        onError={reportError}
-        onImageOpen={setLightboxImage}
-        onMarkdownOpen={setMarkdownPreview}
-        onSelectSubagent={setSelectedSubagentThreadId}
-        selectedSubagentId={selectedSubagentThreadId}
-        showDebugEvents={showDebugEvents}
-        subagents={selectedThreadSubagents}
-      />
+      <Suspense fallback={null}>
+        <SubagentThreadViewer
+          imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+          onError={reportError}
+          onImageOpen={setLightboxImage}
+          onMarkdownOpen={setMarkdownPreview}
+          onSelectSubagent={setSelectedSubagentThreadId}
+          selectedSubagentId={selectedSubagentThreadId}
+          showDebugEvents={showDebugEvents}
+          subagents={selectedThreadSubagents}
+        />
+      </Suspense>
     ) : null;
 
   return (
@@ -1792,8 +1807,16 @@ function KodexShell({
           showDebugEvents, sidebarWidth, threadsByProjectId: sidebarThreadsByProjectId, usageLimitLines,
         }}
       />
-      <ImageLightbox image={lightboxImage} onClose={handleCloseLightbox} />
-      <MarkdownPreviewPane preview={markdownPreview} threadId={selectedThreadId ?? undefined} onClose={handleCloseMarkdownPreview} />
+      {lightboxImage ? (
+        <Suspense fallback={null}>
+          <ImageLightbox image={lightboxImage} onClose={handleCloseLightbox} />
+        </Suspense>
+      ) : null}
+      {markdownPreview ? (
+        <Suspense fallback={null}>
+          <MarkdownPreviewPane preview={markdownPreview} threadId={selectedThreadId ?? undefined} onClose={handleCloseMarkdownPreview} />
+        </Suspense>
+      ) : null}
     </>
   );
 }

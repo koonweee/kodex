@@ -440,7 +440,7 @@ describe("TimelineView debug rendering", () => {
 
     await user.click(screen.getByText("Modified"));
 
-    expect(screen.getByLabelText("File diff for src/file.ts")).toBeInTheDocument();
+    expect(await screen.findByLabelText("File diff for src/file.ts")).toBeInTheDocument();
     expect(screen.getByLabelText("Implement Review Loop skill")).toBeInTheDocument();
   });
 });

@@ -3,8 +3,8 @@ import { lazy, Suspense, type ComponentProps } from "react";
 
 import type { AutomationsPane as AutomationsPaneComponent } from "../automations/AutomationsPane";
 import { ComposerPanel } from "../composer/ComposerPanel";
-import { PreferencesModal } from "../PreferencesModal";
-import { ProjectPane } from "../projects/ProjectPane";
+import type { PreferencesModalProps } from "../PreferencesModal";
+import type { ProjectPane as ProjectPaneComponent } from "../projects/ProjectPane";
 import { ThreadPanel } from "../threads/ThreadPanel";
 import { WorkspaceSidebar } from "../threads/WorkspaceSidebar";
 
@@ -13,6 +13,12 @@ export type MobilePanel = "threads" | "chat";
 const AutomationsPane = lazy(() =>
   import("../automations/AutomationsPane").then((module) => ({ default: module.AutomationsPane })),
 );
+const PreferencesModal = lazy(() =>
+  import("../PreferencesModal").then((module) => ({ default: module.PreferencesModal })),
+);
+const ProjectPane = lazy(() =>
+  import("../projects/ProjectPane").then((module) => ({ default: module.ProjectPane })),
+);
 
 type KodexShellViewProps = {
   automationsPaneProps: ComponentProps<typeof AutomationsPaneComponent>;
@@ -20,8 +26,8 @@ type KodexShellViewProps = {
   isSidebarResizing: boolean;
   mainPane: "thread" | "automations" | "project";
   mobilePanel: MobilePanel;
-  preferencesProps: ComponentProps<typeof PreferencesModal>;
-  projectPaneProps: ComponentProps<typeof ProjectPane>;
+  preferencesProps: PreferencesModalProps;
+  projectPaneProps: ComponentProps<typeof ProjectPaneComponent>;
   sidebarWidth: number;
   threadPanelProps: ComponentProps<typeof ThreadPanel>;
   workspaceSidebarProps: ComponentProps<typeof WorkspaceSidebar>;
@@ -78,7 +84,9 @@ export function KodexShellView({
               <AutomationsPane {...automationsPaneProps} />
             </Suspense>
           ) : mainPane === "project" ? (
-            <ProjectPane {...projectPaneProps} />
+            <Suspense fallback={null}>
+              <ProjectPane {...projectPaneProps} />
+            </Suspense>
           ) : (
             <>
               <ThreadPanel {...threadPanelProps} />
@@ -87,7 +95,11 @@ export function KodexShellView({
           )}
         </Stack>
       </AppShell.Main>
-      <PreferencesModal {...preferencesProps} />
+      {preferencesProps.opened ? (
+        <Suspense fallback={null}>
+          <PreferencesModal {...preferencesProps} />
+        </Suspense>
+      ) : null}
     </AppShell>
   );
 }

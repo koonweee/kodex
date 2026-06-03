@@ -26,7 +26,7 @@ import { KODEX_COLOR_SCHEMES, type KodexColorSchemeId } from "./theme";
 
 export type PreferenceSection = "appearance" | "execution" | "notifications" | "plugins" | "mcp";
 
-type PreferencesModalProps = {
+export type PreferencesModalProps = {
   activeSection?: PreferenceSection;
   colorSchemeId: KodexColorSchemeId;
   onClose: () => void;
