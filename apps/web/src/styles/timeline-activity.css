@@ -1,0 +1,237 @@
+.kodex-work-header-divider {
+  margin: 8px 0 0;
+}
+
+.kodex-work-row {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 8px 0;
+}
+
+.kodex-work-row > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  width: 100%;
+  max-width: 100%;
+  cursor: pointer;
+  list-style: none;
+}
+
+.kodex-work-summary-content {
+  display: inline-grid;
+  grid-template-columns: minmax(0, auto) 16px;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.kodex-work-row > summary::-webkit-details-marker {
+  display: none;
+}
+
+.kodex-work-caret {
+  width: 16px;
+  height: 16px;
+  color: var(--kodex-text-muted);
+  transform-origin: center;
+  transition: transform 120ms ease;
+}
+
+.kodex-work-row[open] > summary .kodex-work-caret {
+  transform: rotate(90deg);
+}
+
+.kodex-activity-group {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 8px 0;
+}
+
+.kodex-activity-group > summary,
+.kodex-activity-item > summary {
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  cursor: pointer;
+  color: var(--kodex-text-secondary);
+  list-style: none;
+}
+
+.kodex-activity-group > summary::-webkit-details-marker,
+.kodex-activity-item > summary::-webkit-details-marker {
+  display: none;
+}
+
+.kodex-activity-caret {
+  width: 16px;
+  height: 16px;
+  color: var(--kodex-text-muted);
+  flex: 0 0 auto;
+  transform-origin: center;
+  transition: transform 120ms ease;
+}
+
+.kodex-activity-group[open] > summary .kodex-activity-caret,
+.kodex-activity-item[open] > summary .kodex-activity-caret {
+  transform: rotate(90deg);
+}
+
+.kodex-activity-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.kodex-activity-body {
+  min-width: 0;
+  padding-left: 23px;
+}
+
+.kodex-activity-heading {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.kodex-activity-heading > svg {
+  flex: 0 0 auto;
+}
+
+.kodex-activity-heading .kodex-mantine-badge-root {
+  flex: 0 0 auto;
+  min-width: max-content;
+}
+
+.kodex-activity-group-title,
+.kodex-activity-title,
+.kodex-activity-status {
+  overflow-wrap: anywhere;
+}
+
+.kodex-activity-group-title,
+.kodex-activity-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kodex-activity-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.kodex-activity-status[data-tone="danger"] {
+  color: var(--kodex-text-danger);
+}
+
+.kodex-activity-status[data-tone="warning"] {
+  color: var(--kodex-text-warning);
+}
+
+.kodex-activity-status[data-tone="success"] {
+  color: var(--kodex-text-success);
+}
+
+.kodex-command-panel {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--kodex-radius-md);
+  padding: 10px 12px;
+  background: var(--kodex-bg-command);
+}
+
+.kodex-command-shell {
+  color: var(--kodex-text-secondary);
+}
+
+.kodex-command-panel .kodex-timeline-code,
+.kodex-command-panel .kodex-timeline-output {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--kodex-text-primary);
+  white-space: pre;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overflow-wrap: normal;
+}
+
+.kodex-collab-agent-block,
+.kodex-collab-agent-list,
+.kodex-collab-agent-row {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.kodex-collab-agent-title,
+.kodex-collab-agent-name {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.kodex-collab-agent-preview {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.kodex-collab-agent-chips .kodex-mantine-badge-root,
+.kodex-collab-agent-status {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
+.kodex-collab-agent-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+
+.kodex-collab-agent-row-heading {
+  min-width: 0;
+}
+
+.kodex-collab-agent-markdown {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--kodex-text-secondary);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.kodex-collab-agent-markdown .kodex-assistant-markdown-paragraph,
+.kodex-collab-agent-markdown ul,
+.kodex-collab-agent-markdown ol {
+  margin-top: 0;
+  margin-bottom: 0;
+}

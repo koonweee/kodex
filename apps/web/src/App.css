@@ -10,5 +10,10 @@
 @import "./styles/projects.css";
 @import "./styles/approvals.css";
 @import "./styles/timeline.css";
+@import "./styles/timeline-activity.css";
+@import "./styles/timeline-files.css";
+@import "./styles/timeline-images.css";
+@import "./styles/timeline-messages.css";
+@import "./styles/timeline-debug.css";
 @import "./styles/images.css";
 @import "./styles/preferences.css";

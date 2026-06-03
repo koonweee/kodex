@@ -46,15 +46,12 @@ import {
   type EventEnvelope,
   type Project,
   type QueuedInput,
-  type RateLimitSnapshot,
   type ThreadSummary,
   type TimelineSkillMention,
 } from "./api/client";
-import { applyMcpLifecycleEvent } from "./api/mcpCache";
 import { queryClient } from "./api/queryClient";
 import { queryKeys } from "./api/queryKeys";
 import {
-  applyCachedAutomationEvent,
   deleteCachedAutomation,
   mergeAutomationData,
   upsertCachedAutomation,
@@ -63,12 +60,8 @@ import { automationThreadOptions } from "./automations/threadOptions";
 import { createThreadOptions } from "./composer/settings";
 import { useComposerSettingsState } from "./composer/useComposerSettingsState";
 import { useComposerOrchestration } from "./composer/useComposerOrchestration";
-import {
-  installLiveLongTaskObserver,
-  recordCacheInvalidation,
-  recordLiveEvent,
-} from "./events/liveDiagnostics";
-import { routeSelectedThreadLiveEvent } from "./events/liveRouting";
+import { installLiveLongTaskObserver } from "./events/liveDiagnostics";
+import { useLiveEventHandlers } from "./events/useLiveEventHandlers";
 import { useGlobalLiveStream } from "./events/useGlobalLiveStream";
 import type { MarkdownPreviewRequest } from "./files/types";
 import type { ImageLightboxImage } from "./images/types";
@@ -89,27 +82,18 @@ import {
   markThreadTitlePending,
   optimisticThreadSummary,
   threadDisplayTitle,
-  threadHasDisplayTitle,
   withPinnedProjectThreads,
   withoutPinnedThreads,
   type ThreadsByProjectId,
 } from "./threads/helpers";
-import { sidebarLiveCacheRoute, type SidebarThreadLocation } from "./threads/liveCacheRouting";
 import {
-  applyThreadPinState as applyThreadPinStateToCache,
-  applyThreadNotificationsState as applyThreadNotificationsStateToCache,
-  findCachedThread,
   mergeChatThreadData,
-  mergeSelectedThreadDetailIntoSidebarSummary,
   mergePinnedThreadData,
   mergeProjectThreadData,
   mergeProjectThreadSnapshot,
   pinnedTombstonesAddedDuringSnapshot,
   removeThreadEverywhere,
-  replaceThreadEverywhere,
-  updateThreadEverywhere,
   upsertChatThread,
-  upsertPinnedThread,
   upsertProjectThread,
 } from "./threads/cache";
 import {
@@ -117,15 +101,12 @@ import {
   mergeQueuedInputData,
   upsertCachedQueuedInput,
 } from "./queuedInputs/cache";
-import type { ThreadSubagentDiscoveryEvent, ThreadUpsert } from "./threads/events";
+import type { ThreadSubagentDiscoveryEvent } from "./threads/events";
 import {
   defaultSubagent,
-  findKnownThread as findKnownThreadInCaches,
-  findKnownThreadSelection as findKnownThreadSelectionInCaches,
-  withThreadNotificationsEnabled,
-  withThreadPinnedAt,
 } from "./threads/selection";
 import { useSelectedThreadAttach } from "./threads/useSelectedThreadAttach";
+import { useSidebarThreadCaches } from "./threads/useSidebarThreadCaches";
 import {
   applySidebarProjectOrder,
   loadSidebarProjectOrder,
@@ -145,18 +126,13 @@ import {
 import { errorMessageFrom } from "./shared/values";
 import { createClientRequestId } from "./shared/id";
 import { KodexShellView } from "./shell/KodexShellView";
-import type { MobilePanel } from "./shell/KodexShellView";
 import {
   currentKodexRoute,
-  historyState,
-  isMobileViewport,
-  pathForKodexRoute,
   pushKodexRoute,
-  replaceKodexRoute,
 } from "./shell/browserRouting";
-import type { KodexRoute, KodexMainPane } from "./shell/navigation";
 import { queryResultLoadState } from "./shell/queryResultLoadState";
 import { useSidebarResize } from "./shell/useSidebarResize";
+import { useShellSelection } from "./shell/useShellSelection";
 import "./App.css";
 
 const NEW_THREAD_TITLE = "New thread";
@@ -227,14 +203,6 @@ function KodexShell({
   const [initialRoute] = useState(() => currentKodexRoute());
   const queryClientForShell = useQueryClient();
   const [projectOrderIds, setProjectOrderIds] = useState<string[] | null>(() => loadSidebarProjectOrder());
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(initialRoute.projectId ?? null);
-  const [selectedMainPane, setSelectedMainPane] = useState<KodexMainPane>(initialRoute.view ?? "thread");
-  const [selectedProjectPaneId, setSelectedProjectPaneId] = useState<string | null>(initialRoute.projectId ?? null);
-  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(initialRoute.threadId);
-  const [routeSelectedThread, setRouteSelectedThread] = useState<ThreadSummary | null>(null);
-  const [unavailableThreadId, setUnavailableThreadId] = useState<string | null>(null);
-  const [draftChatThreadSelected, setDraftChatThreadSelected] = useState(initialRoute.threadId === null);
-  const [draftThreadProjectId, setDraftThreadProjectId] = useState<string | null>(null);
   const [pendingTitleThreadIds, setPendingTitleThreadIds] = useState<Set<string>>(new Set());
   const [materializingThreadIds, setMaterializingThreadIds] = useState<Set<string>>(new Set());
   const [timeline, setTimeline] = useState<TimelineState>(createTimelineState());
@@ -247,7 +215,6 @@ function KodexShell({
   const [showDebugEvents, setShowDebugEvents] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [threadSyncNotice, setThreadSyncNotice] = useState<ThreadSyncNotice | null>(null);
-  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(initialRoute.panel ?? "chat");
   const [lightboxImage, setLightboxImage] = useState<ImageLightboxImage | null>(null);
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownPreviewRequest | null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
@@ -258,20 +225,20 @@ function KodexShell({
   const [selectedSubagentThreadId, setSelectedSubagentThreadId] = useState<string | null>(null);
   const [composerResetToken, setComposerResetToken] = useState(0);
   const [skillsInvalidationGeneration, setSkillsInvalidationGeneration] = useState(0);
-  const selectedProjectIdRef = useRef<string | null>(null);
-  const selectedThreadIdRef = useRef<string | null>(selectedThreadId);
   const globalEventCursorRef = useRef<number | undefined>(undefined);
   const approvalsRef = useRef<Approval[]>([]);
   const attachingThreadIdsRef = useRef<Set<string>>(new Set());
   const chatThreadsRef = useRef<ThreadSummary[]>([]);
   const pinnedThreadsRef = useRef<ThreadSummary[]>([]);
-  const routeSelectedThreadRef = useRef<ThreadSummary | null>(null);
   const pendingTitleThreadIdsRef = useRef<Set<string>>(new Set());
   const threadsByProjectIdRef = useRef<ThreadsByProjectId>({});
+  const composerDefaultsRef = useRef({
+    draftComposerEditedRef: { current: false },
+    hydrateComposerDefaults: (_projectId: string | null) => undefined as void | Promise<unknown>,
+  });
   const chatThreadsLoadingCursorRef = useRef<string | null>(null);
   const projectThreadLoadingCursorsRef = useRef<Record<string, string>>({});
   const composerShellRef = useRef<HTMLDivElement | null>(null);
-  const directMobileDeepLinkSeededRef = useRef(false);
   const draftComposerTransitionOriginRef = useRef<DOMRect | null>(null);
   const liveUsageLimitSnapshotReceivedRef = useRef(false);
   const [draftComposerTransitionToken, setDraftComposerTransitionToken] = useState(0);
@@ -281,6 +248,46 @@ function KodexShell({
   const [projectThreadNextCursors, setProjectThreadNextCursors] = useState<Record<string, string | null>>({});
   const [chatThreadsPaginationState, setChatThreadsPaginationState] = useState<SidebarPaginationState>("idle");
   const [projectThreadPaginationStateById, setProjectThreadPaginationStateById] = useState<Record<string, SidebarPaginationState>>({});
+
+  const {
+    clearSelectionToDraft,
+    draftChatThreadSelected,
+    draftThreadProjectId,
+    handleCreateChat,
+    handleCreateThread,
+    handleDraftProjectChange,
+    handleSelectAutomations,
+    handleSelectChatThread,
+    handleSelectPinnedThread,
+    handleSelectProjectSettings,
+    handleSelectThread,
+    mobilePanel,
+    routeSelectedThread,
+    routeSelectedThreadRef,
+    selectMaterializedThread,
+    selectProject,
+    selectedMainPane,
+    selectedProjectId,
+    selectedProjectIdRef,
+    selectedProjectPaneId,
+    selectedThreadId,
+    selectedThreadIdRef,
+    setMobilePanel,
+    setRouteSelectedThreadState,
+    setSelectedProjectId,
+    setUnavailableThreadId,
+    unavailableThreadId,
+  } = useShellSelection({
+    beginMaterializingTimelineEntry,
+    beginTimelineEntry,
+    chatThreadsRef,
+    clearTimelineEntry,
+    composerDefaultsRef,
+    initialRoute,
+    pinnedThreadsRef,
+    resetComposerDraft,
+    threadsByProjectIdRef,
+  });
 
   const {
     cachedSidebarSnapshotData,
@@ -533,6 +540,24 @@ function KodexShell({
     loginState,
   } = useAccountSession({ onError: reportError });
   const {
+    applyThreadNotificationsState,
+    applyThreadPinState,
+    applyThreadUpsert,
+    patchThreadEverywhere,
+    refreshSidebarThreadsForLiveEvent,
+    replaceThread,
+  } = useSidebarThreadCaches({
+    chatThreadsRef,
+    onPinnedStateTrusted: () => setPinnedStateTrusted(true),
+    pinnedThreadsRef,
+    queryClient: queryClientForShell,
+    routeSelectedThreadRef,
+    selectedThreadIdRef,
+    setPendingTitleThreadIds,
+    setRouteSelectedThreadState,
+    threadsByProjectIdRef,
+  });
+  const {
     composerSettings,
     composerSettingsError,
     draftComposerEditedRef,
@@ -547,6 +572,7 @@ function KodexShell({
     selectedProjectId,
     selectedThread,
   });
+  composerDefaultsRef.current = { draftComposerEditedRef, hydrateComposerDefaults };
   const { applyCompletedAgentTurnEvent, applyThreadReadStateEvent, markCompletedAgentTurnSeen } = useThreadReadState({
     chatThreads,
     onError: reportError,
@@ -676,37 +702,6 @@ function KodexShell({
   }, [hydrateComposerDefaults, threadsByProjectId]);
 
   useEffect(() => {
-    function handlePopState() {
-      applyBrowserRoute(currentKodexRoute());
-    }
-
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, []);
-
-  useEffect(() => {
-    if (directMobileDeepLinkSeededRef.current) {
-      return;
-    }
-    directMobileDeepLinkSeededRef.current = true;
-    const route = currentKodexRoute();
-    if (!route.threadId || route.panel !== null || !isMobileViewport()) {
-      return;
-    }
-    const state = historyState();
-    if (state.kodexDirectMobileDeepLinkSeeded === true) {
-      return;
-    }
-    const nextState = { ...state, kodexDirectMobileDeepLinkSeeded: true };
-    window.history.replaceState(nextState, "", pathForKodexRoute({ threadId: route.threadId, panel: "threads" }));
-    window.history.pushState(nextState, "", pathForKodexRoute({ threadId: route.threadId, panel: null }));
-  }, []);
-
-  useEffect(() => {
-    selectedThreadIdRef.current = selectedThreadId;
-  }, [selectedThreadId]);
-
-  useEffect(() => {
     setSubagentSidebarOpen(false);
     setSelectedSubagentThreadId(null);
   }, [selectedThreadId]);
@@ -724,10 +719,6 @@ function KodexShell({
       return defaultSubagent(selectedThreadSubagents)?.id ?? null;
     });
   }, [selectedThreadSubagents]);
-
-  useEffect(() => {
-    routeSelectedThreadRef.current = routeSelectedThread;
-  }, [routeSelectedThread]);
 
   useLayoutEffect(() => {
     if (draftComposerTransitionToken === 0) {
@@ -788,23 +779,23 @@ function KodexShell({
     };
   }, [draftComposerTransitionToken]);
 
-  const liveRouteHandlers = {
-    applyAutomationStreamEvent,
-    applyQueuedInputUpsert: upsertQueuedInput,
-    applyQueuedInputDeleted: removeQueuedInput,
-    applyThreadPinState,
-    applyThreadUpsert,
-    applyThreadMetadataEvent,
+  const { applySelectedThreadStreamEvent, liveRouteHandlers } = useLiveEventHandlers({
+    applyApprovalEventWithTombstone,
     applyCompletedAgentTurnEvent,
-    applyThreadReadStateEvent,
-    applyThreadNotificationsState,
-    refreshSidebarThreadsForLiveEvent,
+    applyQueuedInputDeleted: removeQueuedInput,
+    applyQueuedInputUpsert: upsertQueuedInput,
     applySubagentDiscoveryEvent,
-    applyUsageLimitSnapshot,
-    applyApprovalEvent,
-    applySkillsChangedEvent,
-    applyMcpLifecycleEvent: applyMcpLifecycleStreamEvent,
-  };
+    applyThreadMetadataEvent,
+    applyThreadNotificationsState,
+    applyThreadPinState,
+    applyThreadReadStateEvent,
+    applyThreadUpsert,
+    liveUsageLimitSnapshotReceivedRef,
+    queryClient: queryClientForShell,
+    refreshSidebarThreadsForLiveEvent,
+    setApprovals,
+    setSkillsInvalidationGeneration,
+  });
 
   useGlobalLiveStream({
     cursorRef: globalEventCursorRef,
@@ -846,27 +837,6 @@ function KodexShell({
 
   function clearTimelineEntryForThread(threadId: string) {
     setTimelineEntry((current) => (current.threadId === threadId ? idleTimelineEntry : current));
-  }
-
-  function applySelectedThreadStreamEvent(event: EventEnvelope) {
-    routeSelectedThreadLiveEvent(event, liveRouteHandlers);
-  }
-
-  function applyUsageLimitSnapshot(nextUsageLimitSnapshot: RateLimitSnapshot) {
-    liveUsageLimitSnapshotReceivedRef.current = true;
-    queryClientForShell.setQueryData(queryKeys.rateLimits, nextUsageLimitSnapshot);
-  }
-
-  function applyApprovalEvent(event: EventEnvelope) {
-    setApprovals((current) => applyApprovalEventWithTombstone(current, event));
-  }
-
-  function applySkillsChangedEvent() {
-    setSkillsInvalidationGeneration((current) => current + 1);
-  }
-
-  function applyMcpLifecycleStreamEvent(event: EventEnvelope) {
-    applyMcpLifecycleEvent(queryClientForShell, event);
   }
 
   function beginTimelineEntry(threadId: string) {
@@ -916,92 +886,6 @@ function KodexShell({
     saveSidebarProjectOrder(nextProjectIds);
   }
 
-  function selectProject(projectId: string) {
-    setSelectedMainPane("thread");
-    setSelectedProjectPaneId(null);
-    selectedProjectIdRef.current = projectId;
-    if (!draftComposerEditedRef.current) {
-      void hydrateComposerDefaults(projectId);
-    }
-    setSelectedProjectId(projectId);
-    selectedThreadIdRef.current = null;
-    setSelectedThreadId(null);
-    setRouteSelectedThreadState(null);
-    setUnavailableThreadId(null);
-    setDraftChatThreadSelected(false);
-    setDraftThreadProjectId(projectId);
-    clearTimelineEntry();
-  }
-
-  function handleCreateThread(projectId: string) {
-    setSelectedMainPane("thread");
-    setSelectedProjectPaneId(null);
-    pushKodexRoute({ panel: null, threadId: null });
-    setMobilePanel("chat");
-    selectedProjectIdRef.current = projectId;
-    setSelectedProjectId(projectId);
-    setDraftChatThreadSelected(false);
-    setDraftThreadProjectId(projectId);
-    selectedThreadIdRef.current = null;
-    setSelectedThreadId(null);
-    setRouteSelectedThreadState(null);
-    setUnavailableThreadId(null);
-    clearTimelineEntry();
-    resetComposerDraft();
-  }
-
-  function handleCreateChat() {
-    setSelectedMainPane("thread");
-    setSelectedProjectPaneId(null);
-    pushKodexRoute({ panel: null, threadId: null });
-    setMobilePanel("chat");
-    draftComposerEditedRef.current = false;
-    if (!draftComposerEditedRef.current) {
-      void hydrateComposerDefaults(null);
-    }
-    selectedProjectIdRef.current = null;
-    setSelectedProjectId(null);
-    setDraftChatThreadSelected(true);
-    setDraftThreadProjectId(null);
-    selectedThreadIdRef.current = null;
-    setSelectedThreadId(null);
-    setRouteSelectedThreadState(null);
-    setUnavailableThreadId(null);
-    clearTimelineEntry();
-    resetComposerDraft();
-  }
-
-  function handleDraftProjectChange(projectId: string | null) {
-    setSelectedMainPane("thread");
-    setSelectedProjectPaneId(null);
-    pushKodexRoute({ panel: null, threadId: null });
-    setMobilePanel("chat");
-    selectedThreadIdRef.current = null;
-    setSelectedThreadId(null);
-    setRouteSelectedThreadState(null);
-    setUnavailableThreadId(null);
-    clearTimelineEntry();
-
-    if (projectId === null) {
-      selectedProjectIdRef.current = null;
-      setSelectedProjectId(null);
-      setDraftChatThreadSelected(true);
-      setDraftThreadProjectId(null);
-      if (!draftComposerEditedRef.current) {
-        void hydrateComposerDefaults(null);
-      }
-      return;
-    }
-
-    selectedProjectIdRef.current = projectId;
-    setSelectedProjectId(projectId);
-    setDraftChatThreadSelected(false);
-    setDraftThreadProjectId(projectId);
-    if (!draftComposerEditedRef.current) {
-      void hydrateComposerDefaults(projectId);
-    }
-  }
-
   async function createDraftThreadFromComposer({
     firstMessageText,
     projectId,
@@ -1032,16 +916,7 @@ function KodexShell({
       return next;
     });
     setIsDraftComposerTransitioning(draftComposerTransitionOriginRef.current !== null);
-    setDraftChatThreadSelected(false);
-    setDraftThreadProjectId(null);
-    selectedProjectIdRef.current = projectId ?? null;
-    setSelectedProjectId(projectId ?? null);
-    selectedThreadIdRef.current = thread.id;
-    setUnavailableThreadId(null);
-    setRouteSelectedThreadState(thread);
-    beginMaterializingTimelineEntry(thread.id);
-    setSelectedThreadId(thread.id);
-    pushKodexRoute({ panel: null, threadId: thread.id });
+    selectMaterializedThread({ projectId: projectId ?? null, thread });
     setDraftComposerTransitionToken((current) => current + 1);
     return { threadId: thread.id, composerSettings: threadSettings };
   }
@@ -1099,115 +974,6 @@ function KodexShell({
     setTimeline((current) => removeOptimisticUserMessage(current, clientRequestId));
   }
 
-  function handleSelectThread(projectId: string, threadId: string) {
-    pushKodexRoute({ panel: null, threadId });
-    selectKnownProjectThread(projectId, threadId);
-  }
-
-  function handleSelectChatThread(threadId: string) {
-    pushKodexRoute({ panel: null, threadId });
-    selectKnownChatThread(threadId);
-  }
-
-  function handleSelectPinnedThread(threadId: string) {
-    pushKodexRoute({ panel: null, threadId });
-    selectKnownPinnedThread(threadId);
-  }
-
-  function selectKnownProjectThread(projectId: string, threadId: string) {
-    setSelectedMainPane("thread");
-    setSelectedProjectPaneId(null);
-    setMobilePanel("chat");
-    if (projectId === selectedProjectIdRef.current && threadId === selectedThreadIdRef.current) {
-      return;
-    }
-    selectedProjectIdRef.current = projectId;
-    setSelectedProjectId(projectId);
-    setDraftChatThreadSelected(false);
-    setDraftThreadProjectId(null);
-    setUnavailableThreadId(null);
-    setRouteSelectedThreadState(null);
-    selectedThreadIdRef.current = threadId;
-    beginTimelineEntry(threadId);
-    setSelectedThreadId(threadId);
-  }
-
-  function selectKnownChatThread(threadId: string) {
-    setSelectedMainPane("thread");
-    setSelectedProjectPaneId(null);
-    setMobilePanel("chat");
-    if (selectedProjectIdRef.current === null && threadId === selectedThreadIdRef.current) {
-      return;
-    }
-    draftComposerEditedRef.current = false;
-    if (!draftComposerEditedRef.current) {
-      void hydrateComposerDefaults(null);
-    }
-    selectedProjectIdRef.current = null;
-    setSelectedProjectId(null);
-    setDraftChatThreadSelected(false);
-    setDraftThreadProjectId(null);
-    setUnavailableThreadId(null);
-    setRouteSelectedThreadState(null);
-    selectedThreadIdRef.current = threadId;
-    beginTimelineEntry(threadId);
-    setSelectedThreadId(threadId);
-  }
-
-  function selectKnownPinnedThread(threadId: string) {
-    setSelectedMainPane("thread");
-    setSelectedProjectPaneId(null);
-    setMobilePanel("chat");
-    if (selectedProjectIdRef.current === null && threadId === selectedThreadIdRef.current) {
-      return;
-    }
-    selectedProjectIdRef.current = null;
-    setSelectedProjectId(null);
-    setDraftChatThreadSelected(false);
-    setDraftThreadProjectId(null);
-    setUnavailableThreadId(null);
-    setRouteSelectedThreadState(null);
-    selectedThreadIdRef.current = threadId;
-    beginTimelineEntry(threadId);
-    setSelectedThreadId(threadId);
-  }
-
-  function selectRouteThread(threadId: string) {
-    setSelectedMainPane("thread");
-    setSelectedProjectPaneId(null);
-    const knownSelection = findKnownThreadSelectionInCaches(
-      threadId,
-      threadsByProjectIdRef.current,
-      chatThreadsRef.current,
-      pinnedThreadsRef.current,
-    );
-    if (knownSelection?.kind === "project") {
-      selectKnownProjectThread(knownSelection.projectId, threadId);
-      return;
-    }
-    if (knownSelection?.kind === "chat") {
-      selectKnownChatThread(threadId);
-      return;
-    }
-    if (knownSelection?.kind === "pinned") {
-      selectKnownPinnedThread(threadId);
-      return;
-    }
-    setMobilePanel("chat");
-    if (threadId === selectedThreadIdRef.current && selectedProjectIdRef.current === null) {
-      return;
-    }
-    selectedProjectIdRef.current = null;
-    setSelectedProjectId(null);
-    setDraftChatThreadSelected(false);
-    setDraftThreadProjectId(null);
-    setUnavailableThreadId(null);
-    setRouteSelectedThreadState(null);
-    selectedThreadIdRef.current = threadId;
-    beginTimelineEntry(threadId);
-    setSelectedThreadId(threadId);
-  }
-
   async function handleArchiveThread(threadId = selectedThreadIdRef.current) {
     if (!threadId) {
       return;
@@ -1222,58 +988,7 @@ function KodexShell({
       shouldSelectDraftAfterArchive &&
       (selectedThreadIdRef.current === archivedSelectedThreadId || selectedThreadIdRef.current === null)
     ) {
-      clearTimelineEntry();
-      selectedThreadIdRef.current = null;
-      setSelectedThreadId(null);
-      setRouteSelectedThreadState(null);
-      setUnavailableThreadId(null);
-      if (draftProjectId) {
-        setDraftChatThreadSelected(false);
-        setDraftThreadProjectId(draftProjectId);
-        if (!draftComposerEditedRef.current) {
-          void hydrateComposerDefaults(draftProjectId);
-        }
-      } else {
-        draftComposerEditedRef.current = false;
-        setDraftChatThreadSelected(true);
-        setDraftThreadProjectId(null);
-        void hydrateComposerDefaults(null);
-      }
-      replaceKodexRoute({ panel: null, threadId: null });
-    }
-  }
-
-  function handleSelectAutomations() {
-    pushKodexRoute({ panel: null, threadId: null, view: "automations" });
-    setMobilePanel("chat");
-    setSelectedMainPane("automations");
-    setSelectedProjectPaneId(null);
-  }
-
-  function handleSelectProjectSettings(projectId: string) {
-    pushKodexRoute({ panel: null, projectId, threadId: null, view: "project" });
-    setMobilePanel("chat");
-    setSelectedMainPane("project");
-    setSelectedProjectPaneId(projectId);
-    selectedProjectIdRef.current = projectId;
-    setSelectedProjectId(projectId);
-    selectedThreadIdRef.current = null;
-    setSelectedThreadId(null);
-    setRouteSelectedThreadState(null);
-    setUnavailableThreadId(null);
-    setDraftChatThreadSelected(false);
-    setDraftThreadProjectId(null);
-    clearTimelineEntry();
-  }
-
-  function applyAutomationStreamEvent(event: EventEnvelope) {
-    const automationQueryState = queryClientForShell.getQueryState(queryKeys.automations);
-    if (automationQueryState?.data === undefined && automationQueryState?.fetchStatus !== "fetching") {
-      return;
-    }
-    applyCachedAutomationEvent(queryClientForShell, event);
-    if (automationQueryState.fetchStatus === "fetching") {
-      void queryClientForShell.invalidateQueries({ queryKey: queryKeys.automations });
+      clearSelectionToDraft({ projectId: draftProjectId, replaceRoute: true });
     }
   }
 
@@ -1318,51 +1033,6 @@ function KodexShell({
     setUnavailableThreadId(threadId);
   }
 
-  function setRouteSelectedThreadState(thread: ThreadSummary | null) {
-    routeSelectedThreadRef.current = thread;
-    setRouteSelectedThread(thread);
-  }
-
-  function patchThreadEverywhere(
-    threadId: string,
-    patcher: (thread: ThreadSummary) => ThreadSummary,
-  ) {
-    updateThreadEverywhere(queryClientForShell, threadId, patcher);
-    if (routeSelectedThreadRef.current?.id === threadId) {
-      setRouteSelectedThreadState(patcher(routeSelectedThreadRef.current));
-    }
-  }
-
-  function replaceThread(thread: ThreadSummary) {
-    if (thread.id === selectedThreadIdRef.current) {
-      setRouteSelectedThreadState(thread);
-    }
-    const cachedThread = findKnownThreadInCaches(
-      thread.id,
-      threadsByProjectIdRef.current,
-      chatThreadsRef.current,
-      pinnedThreadsRef.current,
-      routeSelectedThreadRef.current,
-    );
-    const sidebarThread = cachedThread ? mergeSelectedThreadDetailIntoSidebarSummary(cachedThread, thread) : thread;
-    replaceThreadEverywhere(queryClientForShell, thread);
-    if (sidebarThread.pinnedAt) {
-      upsertPinnedThread(queryClientForShell, sidebarThread);
-    } else {
-      removeThreadEverywhere(queryClientForShell, thread.id, { pinnedOnly: true });
-    }
-    if (threadHasDisplayTitle(thread)) {
-      setPendingTitleThreadIds((current) => {
-        if (!current.has(thread.id)) {
-          return current;
-        }
-        const next = new Set(current);
-        next.delete(thread.id);
-        return next;
-      });
-    }
-  }
-
   async function handlePinThread(threadId: string) {
     try {
       const pinnedAt = await pinThreadMutation.mutateAsync(threadId);
@@ -1392,88 +1062,6 @@ function KodexShell({
     } catch (error) {
       reportError(error);
     }
-  }
-
-  function applyThreadUpsert(update: ThreadUpsert) {
-    if (update.scope === "project") {
-      upsertProjectThread(queryClientForShell, update.projectId, update.thread);
-      void queryClientForShell.invalidateQueries({ queryKey: queryKeys.projectThreads(update.projectId) });
-    } else {
-      upsertChatThread(queryClientForShell, update.thread);
-      void queryClientForShell.invalidateQueries({ queryKey: queryKeys.chatThreads });
-    }
-
-    if (update.thread.pinnedAt) {
-      upsertPinnedThread(queryClientForShell, update.thread);
-    } else {
-      removeThreadEverywhere(queryClientForShell, update.thread.id, { pinnedOnly: true });
-    }
-
-    if (threadHasDisplayTitle(update.thread)) {
-      setPendingTitleThreadIds((current) => {
-        if (!current.has(update.thread.id)) {
-          return current;
-        }
-        const next = new Set(current);
-        next.delete(update.thread.id);
-        return next;
-      });
-    }
-  }
-
-  function refreshSidebarThreadsForLiveEvent(event: EventEnvelope) {
-    const route = sidebarLiveCacheRoute(event, event.threadId ? findThreadSidebarLocation(event.threadId) : null);
-    if (route.kind === "ignore") {
-      return;
-    }
-    if (route.location.scope === "project") {
-      recordCacheInvalidation("projectThreads");
-      void queryClientForShell.invalidateQueries({ queryKey: queryKeys.projectThreads(route.location.projectId) });
-    } else {
-      recordCacheInvalidation("chatThreads");
-      void queryClientForShell.invalidateQueries({ queryKey: queryKeys.chatThreads });
-    }
-  }
-
-  function findThreadSidebarLocation(threadId: string): SidebarThreadLocation | null {
-    for (const [projectId, threads] of Object.entries(threadsByProjectIdRef.current)) {
-      const thread = threads.find((item) => item.id === threadId);
-      if (thread) {
-        return { scope: "project", projectId, thread };
-      }
-    }
-    const chatThread = chatThreadsRef.current.find((thread) => thread.id === threadId);
-    return chatThread ? { scope: "chat", thread: chatThread } : null;
-  }
-
-  function applyThreadPinState(threadId: string, pinnedAt: string | null) {
-    setPinnedStateTrusted(true);
-    const knownThread = findKnownThreadInCaches(
-      threadId,
-      threadsByProjectIdRef.current,
-      chatThreadsRef.current,
-      pinnedThreadsRef.current,
-      routeSelectedThreadRef.current,
-    );
-    setRouteSelectedThreadState(
-      routeSelectedThreadRef.current?.id === threadId
-        ? withThreadPinnedAt(routeSelectedThreadRef.current, pinnedAt)
-        : routeSelectedThreadRef.current,
-    );
-    applyThreadPinStateToCache(queryClientForShell, threadId, pinnedAt, knownThread);
-    if (pinnedAt && !knownThread) {
-      void queryClientForShell.invalidateQueries({ queryKey: queryKeys.pinnedThreads });
-      return;
-    }
-  }
-
-  function applyThreadNotificationsState(threadId: string, notificationsEnabled: boolean) {
-    setRouteSelectedThreadState(
-      routeSelectedThreadRef.current?.id === threadId
-        ? withThreadNotificationsEnabled(routeSelectedThreadRef.current, notificationsEnabled)
-        : routeSelectedThreadRef.current,
-    );
-    applyThreadNotificationsStateToCache(queryClientForShell, threadId, notificationsEnabled);
   }
 
   function applySubagentDiscoveryEvent(event: ThreadSubagentDiscoveryEvent) {
@@ -1520,51 +1108,6 @@ function KodexShell({
 
   function resetComposerDraft() {
     setComposerResetToken((current) => current + 1);
-  }
-
-  function applyBrowserRoute(route: KodexRoute) {
-    if (route.view === "automations") {
-      setMobilePanel(route.panel ?? "chat");
-      setSelectedMainPane("automations");
-      setSelectedProjectPaneId(null);
-      return;
-    }
-    if (route.view === "project" && route.projectId) {
-      setMobilePanel(route.panel ?? "chat");
-      setSelectedMainPane("project");
-      setSelectedProjectPaneId(route.projectId);
-      selectedProjectIdRef.current = route.projectId;
-      setSelectedProjectId(route.projectId);
-      selectedThreadIdRef.current = null;
-      setSelectedThreadId(null);
-      setRouteSelectedThreadState(null);
-      setUnavailableThreadId(null);
-      setDraftChatThreadSelected(false);
-      setDraftThreadProjectId(null);
-      clearTimelineEntry();
-      return;
-    }
-    setSelectedMainPane("thread");
-    setSelectedProjectPaneId(null);
-    if (!route.threadId) {
-      setMobilePanel(route.panel ?? "chat");
-      selectedProjectIdRef.current = null;
-      selectedThreadIdRef.current = null;
-      setSelectedProjectId(null);
-      setSelectedThreadId(null);
-      setRouteSelectedThreadState(null);
-      setUnavailableThreadId(null);
-      setDraftChatThreadSelected(true);
-      setDraftThreadProjectId(null);
-      clearTimelineEntry();
-      return;
-    }
-    if (route.threadId === selectedThreadIdRef.current) {
-      setMobilePanel(route.panel ?? "chat");
-      return;
-    }
-    selectRouteThread(route.threadId);
-    setMobilePanel(route.panel ?? "chat");
   }
 
   const handleArchiveSelectedThread = useEventCallback(() => void handleArchiveThread());

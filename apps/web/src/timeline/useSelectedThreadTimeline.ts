@@ -1,6 +1,6 @@
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef } from "react";
 
-import type { Approval, EventEnvelope, ThreadSummary, ThreadViewThreadSummary } from "../api/client";
+import type { Approval, EventEnvelope, ThreadSummary } from "../api/client";
 import { getThreadDetail, getThreadTimelinePage } from "../api/client";
 import { isApprovalEvent } from "../approvals/state";
 import {
@@ -28,6 +28,12 @@ import {
   indexesForState,
   timelineRowKeysByItemId,
 } from "./state";
+import {
+  isCanonicalThreadViewRenderEvent,
+  isThreadViewQueueEvent,
+  threadViewSummaryToThreadSummary,
+} from "./threadViewEvents";
+import { useTimelineEventQueue } from "./useTimelineEventQueue";
 
 const MATERIALIZING_THREAD_SNAPSHOT_RETRY_MS = 250;
 
@@ -63,9 +69,6 @@ export function useSelectedThreadTimeline({
   setTimeline: Dispatch<SetStateAction<TimelineState>>;
   setTimelineEntry: Dispatch<SetStateAction<TimelineEntry>>;
 }) {
-  const queuedTimelineEvents = useRef<EventEnvelope[]>([]);
-  const timelineFlushFrame = useRef<number | null>(null);
-  const timelineFlushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedThreadStreamToken = useRef(0);
   const olderHistoryRequest = useRef<{ threadId: string; cursor: string } | null>(null);
   const requestTimelineRefresh = useRef<((reason: SelectedThreadSnapshotRefreshReason) => void) | null>(null);
@@ -111,76 +114,46 @@ export function useSelectedThreadTimeline({
     setTimelineEntry((current) => (current.threadId === threadId ? { phase: "error", threadId } : current));
   }
 
-  function scheduleQueuedTimelineFlush() {
-    if (timelineFlushFrame.current !== null || timelineFlushTimer.current !== null) {
-      return;
-    }
-
-    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
-      timelineFlushFrame.current = window.requestAnimationFrame(flushQueuedTimelineEvents);
-      return;
-    }
-
-    timelineFlushTimer.current = setTimeout(flushQueuedTimelineEvents, 16);
-  }
-
-  function flushQueuedTimelineEvents() {
-    if (timelineFlushFrame.current !== null) {
-      timelineFlushFrame.current = null;
-    }
-    if (timelineFlushTimer.current !== null) {
-      timelineFlushTimer.current = null;
-    }
-    const events = queuedTimelineEvents.current;
-    queuedTimelineEvents.current = [];
+  function reduceQueuedTimelineEvents(current: TimelineState, events: EventEnvelope[]) {
     if (events.length === 0) {
-      return;
+      return current;
     }
-    setTimeline((current) => {
-      const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
-      let shouldRefresh = false;
-      let validationState = current;
-      const coalescedEvents = coalesceTimelineEventBatch(events);
-      for (let index = 0; index < coalescedEvents.length; index += 1) {
-        const event = coalescedEvents[index];
-        if (!canApplyThreadViewItemDelta(validationState, event)) {
-          const target = deltaTargetFromEvent(event);
-          recordSelectedThreadDeltaMiss({
-            batchSize: coalescedEvents.length,
-            itemId: target.itemId,
-            relation: deltaMissRelation(coalescedEvents, index, target),
-            refreshInFlight: snapshotRefreshInFlight.current?.threadId === selectedThreadId,
-            seq: event.seq,
-            state: deltaMissStateRelation(validationState, target),
-            threadId: target.threadId,
-            turnId: target.turnId,
-          });
-          shouldRefresh = true;
-          break;
-        }
-        validationState = applyLiveTimelineUpdate(validationState, event);
+    const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
+    let shouldRefresh = false;
+    let validationState = current;
+    const coalescedEvents = coalesceTimelineEventBatch(events);
+    for (let index = 0; index < coalescedEvents.length; index += 1) {
+      const event = coalescedEvents[index];
+      if (!canApplyThreadViewItemDelta(validationState, event)) {
+        const target = deltaTargetFromEvent(event);
+        recordSelectedThreadDeltaMiss({
+          batchSize: coalescedEvents.length,
+          itemId: target.itemId,
+          relation: deltaMissRelation(coalescedEvents, index, target),
+          refreshInFlight: snapshotRefreshInFlight.current?.threadId === selectedThreadId,
+          seq: event.seq,
+          state: deltaMissStateRelation(validationState, target),
+          threadId: target.threadId,
+          turnId: target.turnId,
+        });
+        shouldRefresh = true;
+        break;
       }
-      const next = applyTimelineEventBatch(current, coalescedEvents);
-      const finishedAt = typeof performance !== "undefined" ? performance.now() : startedAt;
-      recordReducerBatch(events.length, finishedAt - startedAt);
-      if (shouldRefresh) {
-        requestTimelineRefresh.current?.("deltaMiss");
-      }
-      return next;
-    });
+      validationState = applyLiveTimelineUpdate(validationState, event);
+    }
+    const next = applyTimelineEventBatch(current, coalescedEvents);
+    const finishedAt = typeof performance !== "undefined" ? performance.now() : startedAt;
+    recordReducerBatch(events.length, finishedAt - startedAt);
+    if (shouldRefresh) {
+      requestTimelineRefresh.current?.("deltaMiss");
+    }
+    return next;
   }
 
-  function cancelQueuedTimelineEvents() {
-    if (timelineFlushFrame.current !== null) {
-      window.cancelAnimationFrame(timelineFlushFrame.current);
-      timelineFlushFrame.current = null;
-    }
-    if (timelineFlushTimer.current !== null) {
-      clearTimeout(timelineFlushTimer.current);
-      timelineFlushTimer.current = null;
-    }
-    queuedTimelineEvents.current = [];
-  }
+  const { cancelQueuedTimelineEvents, enqueueTimelineEvent } = useTimelineEventQueue({
+    reduceEvents: reduceQueuedTimelineEvents,
+    setTimeline,
+  });
 
   const loadOlderHistory = useCallback(() => {
     const threadId = selectedThreadId;
@@ -348,16 +321,15 @@ export function useSelectedThreadTimeline({
             setApprovals((current) => latestCallbacks.current.onApprovalEvent(current, event));
             return;
           }
-          if (isQueueEvent(event)) {
+          if (isThreadViewQueueEvent(event)) {
             latestCallbacks.current.onQueueEvent(event);
             return;
           }
-          if (!isCanonicalTimelineRenderEvent(event)) {
+          if (!isCanonicalThreadViewRenderEvent(event, { includeGatewayDiagnostics: true })) {
             return;
           }
           setSyncNotice(null);
-          queuedTimelineEvents.current.push(event);
-          scheduleQueuedTimelineFlush();
+          enqueueTimelineEvent(event);
         },
       });
       client.connect();
@@ -412,24 +384,17 @@ export function useSelectedThreadTimeline({
         snapshotRefreshInFlight.current = null;
       }
     };
-  }, [isSelectedThreadSnapshotDeferred, selectedThreadId, setApprovals, setTimeline, setTimelineEntry]);
+  }, [
+    cancelQueuedTimelineEvents,
+    enqueueTimelineEvent,
+    isSelectedThreadSnapshotDeferred,
+    selectedThreadId,
+    setApprovals,
+    setTimeline,
+    setTimelineEntry,
+  ]);
 
   return { loadOlderHistory };
-}
-
-function threadViewSummaryToThreadSummary(thread: ThreadViewThreadSummary): ThreadSummary {
-  return {
-    ...thread,
-    rawPayload: {},
-  };
-}
-
-function isQueueEvent(event: EventEnvelope): boolean {
-  return event.kind === "turn_queue.item_upsert" || event.kind === "turn_queue.item_deleted";
-}
-
-function isCanonicalTimelineRenderEvent(event: EventEnvelope): boolean {
-  return event.kind === "thread_view.patch" || event.kind === "thread_view.item_delta" || event.kind === "gateway.warning" || event.kind === "gateway.error";
 }
 
 function deltaTargetFromEvent(event: EventEnvelope): { itemId: string | null; threadId: string | null; turnId: string | null } {

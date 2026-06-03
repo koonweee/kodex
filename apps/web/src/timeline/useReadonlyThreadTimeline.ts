@@ -1,12 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { EventEnvelope, ThreadSummary, ThreadViewThreadSummary } from "../api/client";
+import type { EventEnvelope, ThreadSummary } from "../api/client";
 import { getThreadDetail } from "../api/client";
 import { isApprovalEvent } from "../approvals/state";
 import { createEventStreamClient } from "../events/stream";
 import { applyTimelineEventBatch } from "./batch";
 import { idleTimelineEntry, type TimelineEntry } from "./entry";
 import { applyTimelineSnapshot, canApplyThreadViewItemDelta, createTimelineState, type TimelineState } from "./reducer";
+import {
+  isCanonicalThreadViewRenderEvent,
+  isThreadViewQueueEvent,
+  threadViewSummaryToThreadSummary,
+} from "./threadViewEvents";
+import { useTimelineEventQueue } from "./useTimelineEventQueue";
 
 export function useReadonlyThreadTimeline({
   onError,
@@ -20,9 +26,6 @@ export function useReadonlyThreadTimeline({
   const [timeline, setTimeline] = useState<TimelineState>(() => createTimelineState());
   const [timelineEntry, setTimelineEntry] = useState<TimelineEntry>(idleTimelineEntry);
   const [scrollParentElement, setScrollParentElement] = useState<HTMLDivElement | null>(null);
-  const queuedTimelineEvents = useRef<EventEnvelope[]>([]);
-  const timelineFlushFrame = useRef<number | null>(null);
-  const timelineFlushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamToken = useRef(0);
   const requestTimelineRefresh = useRef<(() => void) | null>(null);
   const latestCallbacks = useRef({ onError, onSnapshotThread });
@@ -56,50 +59,22 @@ export function useReadonlyThreadTimeline({
     );
   }
 
-  function scheduleQueuedTimelineFlush() {
-    if (timelineFlushFrame.current !== null || timelineFlushTimer.current !== null) {
-      return;
-    }
-    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
-      timelineFlushFrame.current = window.requestAnimationFrame(flushQueuedTimelineEvents);
-      return;
-    }
-    timelineFlushTimer.current = setTimeout(flushQueuedTimelineEvents, 16);
-  }
-
-  function flushQueuedTimelineEvents() {
-    if (timelineFlushFrame.current !== null) {
-      timelineFlushFrame.current = null;
-    }
-    if (timelineFlushTimer.current !== null) {
-      timelineFlushTimer.current = null;
-    }
-    const events = queuedTimelineEvents.current;
-    queuedTimelineEvents.current = [];
+  function reduceQueuedTimelineEvents(current: TimelineState, events: EventEnvelope[]) {
     if (events.length === 0) {
-      return;
+      return current;
     }
-    setTimeline((current) => {
-      const shouldRefresh = events.some((event) => !canApplyThreadViewItemDelta(current, event));
-      const next = applyTimelineEventBatch(current, events);
-      if (shouldRefresh) {
-        requestTimelineRefresh.current?.();
-      }
-      return next;
-    });
+    const shouldRefresh = events.some((event) => !canApplyThreadViewItemDelta(current, event));
+    const next = applyTimelineEventBatch(current, events);
+    if (shouldRefresh) {
+      requestTimelineRefresh.current?.();
+    }
+    return next;
   }
 
-  function cancelQueuedTimelineEvents() {
-    if (timelineFlushFrame.current !== null) {
-      window.cancelAnimationFrame(timelineFlushFrame.current);
-      timelineFlushFrame.current = null;
-    }
-    if (timelineFlushTimer.current !== null) {
-      clearTimeout(timelineFlushTimer.current);
-      timelineFlushTimer.current = null;
-    }
-    queuedTimelineEvents.current = [];
-  }
+  const { cancelQueuedTimelineEvents, enqueueTimelineEvent } = useTimelineEventQueue({
+    reduceEvents: reduceQueuedTimelineEvents,
+    setTimeline,
+  });
 
   useEffect(() => {
     if (!threadId) {
@@ -161,14 +136,13 @@ export function useReadonlyThreadTimeline({
             refetchSnapshot();
             return;
           }
-          if (isApprovalEvent(event) || isQueueEvent(event)) {
+          if (isApprovalEvent(event) || isThreadViewQueueEvent(event)) {
             return;
           }
-          if (!isCanonicalTimelineRenderEvent(event)) {
+          if (!isCanonicalThreadViewRenderEvent(event)) {
             return;
           }
-          queuedTimelineEvents.current.push(event);
-          scheduleQueuedTimelineFlush();
+          enqueueTimelineEvent(event);
         },
       });
       client.connect();
@@ -196,7 +170,7 @@ export function useReadonlyThreadTimeline({
       cancelQueuedTimelineEvents();
       requestTimelineRefresh.current = null;
     };
-  }, [threadId]);
+  }, [cancelQueuedTimelineEvents, enqueueTimelineEvent, threadId]);
 
   return {
     isLoading: timelineEntry.phase === "loadingSnapshot",
@@ -205,19 +179,4 @@ export function useReadonlyThreadTimeline({
     timeline,
     timelineEntry,
   };
-}
-
-function threadViewSummaryToThreadSummary(thread: ThreadViewThreadSummary): ThreadSummary {
-  return {
-    ...thread,
-    rawPayload: {},
-  };
-}
-
-function isQueueEvent(event: EventEnvelope): boolean {
-  return event.kind === "turn_queue.item_upsert" || event.kind === "turn_queue.item_deleted";
-}
-
-function isCanonicalTimelineRenderEvent(event: EventEnvelope): boolean {
-  return event.kind === "thread_view.patch" || event.kind === "thread_view.item_delta";
 }

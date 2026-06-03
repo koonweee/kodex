@@ -1,0 +1,44 @@
+.kodex-activity-image-preview {
+  width: 96px;
+  height: 96px;
+}
+
+.kodex-activity-image-preview img {
+  width: 96px;
+  aspect-ratio: 1;
+  border: 1px solid var(--kodex-border-strong);
+  border-radius: var(--kodex-radius-md);
+  object-fit: cover;
+  background: var(--kodex-bg-shell);
+}
+
+.kodex-image-activity-details {
+  min-width: 0;
+}
+
+.kodex-image-activity-details > summary {
+  display: inline-grid;
+  grid-template-columns: minmax(0, auto) 14px;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  cursor: pointer;
+  list-style: none;
+}
+
+.kodex-image-activity-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.kodex-image-activity-details-caret {
+  width: 14px;
+  height: 14px;
+  color: var(--kodex-text-muted);
+  transform-origin: center;
+  transition: transform 120ms ease;
+}
+
+.kodex-image-activity-details[open] > summary .kodex-image-activity-details-caret {
+  transform: rotate(90deg);
+}
