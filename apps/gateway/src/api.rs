@@ -94,7 +94,7 @@ use crate::{
             SelfControlThreadSpawnRequest, SelfControlThreadSpawnResponse,
         },
         skills::{SkillIconQuery, SkillsQuery},
-        thread_presence::{ThreadViewPresenceRequest, ThreadViewPresenceResponse},
+        thread_presence::ThreadViewPresenceRequest,
         threads::{
             ChatThreadListQuery, CreateChatThreadRequest, CreateThreadRequest,
             MarkThreadSeenRequest, RenameThreadRequest, RenameThreadResponse,
@@ -462,7 +462,6 @@ impl AppState {
         CurrentPushSubscriptionResponse,
         TestNotificationResponse,
         ThreadViewPresenceRequest,
-        ThreadViewPresenceResponse,
         SkillsQuery,
         SkillIconQuery,
         SkillsCatalogResponse,

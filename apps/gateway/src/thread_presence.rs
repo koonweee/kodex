@@ -5,7 +5,7 @@ use std::{
 
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 
-pub const THREAD_VIEW_PRESENCE_TTL_SECONDS: i64 = 15;
+pub const THREAD_VIEW_PRESENCE_TTL_SECONDS: i64 = 30;
 
 pub fn thread_view_presence_ttl() -> ChronoDuration {
     ChronoDuration::seconds(THREAD_VIEW_PRESENCE_TTL_SECONDS)

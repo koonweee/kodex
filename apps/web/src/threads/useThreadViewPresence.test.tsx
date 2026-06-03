@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useThreadViewPresence } from "./useThreadViewPresence";
 
 const HEARTBEAT_MS = 5_000;
+const DEFAULT_HEARTBEAT_MS = 10_000;
 
 let visibilityState = "visible";
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -20,18 +21,8 @@ describe("useThreadViewPresence", () => {
     });
     fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init);
-      const body = await request.clone().json().catch(() => ({}));
-      return new Response(
-        JSON.stringify({
-          foregroundViewerCount: body.visible ? 1 : 0,
-          threadId: "thread-1",
-          viewed: Boolean(body.visible),
-        }),
-        {
-          headers: { "Content-Type": "application/json" },
-          status: 200,
-        },
-      );
+      await request.clone().json().catch(() => ({}));
+      return new Response(null, { status: 204 });
     });
     vi.stubGlobal("fetch", fetchMock);
   });
@@ -58,6 +49,26 @@ describe("useThreadViewPresence", () => {
       await Promise.resolve();
     });
 
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await expect(lastPresenceRequest()).resolves.toMatchObject({ visible: true });
+  });
+
+  it("uses a ten second heartbeat by default", async () => {
+    renderHook(() => useThreadViewPresence({ enabled: true, threadId: "thread-1" }));
+
+    await flushEffects();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(DEFAULT_HEARTBEAT_MS - 1);
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+      await Promise.resolve();
+    });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     await expect(lastPresenceRequest()).resolves.toMatchObject({ visible: true });
   });

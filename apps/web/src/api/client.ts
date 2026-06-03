@@ -53,7 +53,6 @@ export type ThreadSettingsUpdateRequest = components["schemas"]["ThreadSettingsU
 export type ThreadSettingsUpdateResponse = components["schemas"]["ThreadSettingsUpdateResponse"];
 export type ThreadNotificationSettingsResponse = components["schemas"]["ThreadNotificationSettingsResponse"];
 export type ThreadViewPresenceRequest = components["schemas"]["ThreadViewPresenceRequest"];
-export type ThreadViewPresenceResponse = components["schemas"]["ThreadViewPresenceResponse"];
 export type ThreadAttachResponse = components["schemas"]["ThreadAttachResponse"];
 export type ThreadListResponse = components["schemas"]["ThreadListResponse"];
 export type SidebarThreadSummary = components["schemas"]["SidebarThreadSummary"];
@@ -419,8 +418,8 @@ export async function markThreadSeen(threadId: string, seenCompletedAgentTurnSeq
 export async function updateThreadViewPresence(
   threadId: string,
   request: ThreadViewPresenceRequest,
-): Promise<ThreadViewPresenceResponse> {
-  return unwrap(
+): Promise<void> {
+  await unwrapNoContent(
     api.POST("/v1/threads/{threadId}/view-presence", {
       params: { path: { threadId } },
       body: request,
@@ -775,6 +774,13 @@ async function unwrap<T>(request: Promise<{ data?: T; error?: unknown }>): Promi
     throw new Error(gatewayErrorMessage(error));
   }
   return data;
+}
+
+async function unwrapNoContent(request: Promise<{ error?: unknown }>): Promise<void> {
+  const { error } = await request;
+  if (error) {
+    throw new Error(gatewayErrorMessage(error));
+  }
 }
 
 function gatewayErrorMessage(error: unknown): string {

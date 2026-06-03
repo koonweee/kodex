@@ -7,7 +7,7 @@ import {
 } from "../api/client";
 
 const THREAD_VIEW_PRESENCE_CLIENT_ID_KEY = "kodex.threadViewPresenceClientId";
-const DEFAULT_THREAD_VIEW_PRESENCE_HEARTBEAT_MS = 5_000;
+const DEFAULT_THREAD_VIEW_PRESENCE_HEARTBEAT_MS = 10_000;
 
 let fallbackClientId: string | null = null;
 

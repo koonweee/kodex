@@ -2802,11 +2802,6 @@ export interface components {
             clientId: string;
             visible: boolean;
         };
-        ThreadViewPresenceResponse: {
-            foregroundViewerCount: number;
-            threadId: string;
-            viewed: boolean;
-        };
         ThreadViewResponse: {
             historyPage?: null | components["schemas"]["ThreadTimelineWindowPage"];
             liveState: components["schemas"]["ThreadLiveState"];
@@ -5240,13 +5235,12 @@ export interface operations {
             };
         };
         responses: {
-            200: {
+            /** @description Thread view presence updated */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["ThreadViewPresenceResponse"];
-                };
+                content?: never;
             };
         };
     };

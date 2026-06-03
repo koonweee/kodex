@@ -116,12 +116,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(visible.status(), StatusCode::OK);
+        assert_eq!(visible.status(), StatusCode::NO_CONTENT);
         let body = to_bytes(visible.into_body(), usize::MAX).await.unwrap();
-        let payload: Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(payload["threadId"], "thread-1");
-        assert_eq!(payload["foregroundViewerCount"], 1);
-        assert_eq!(payload["viewed"], true);
+        assert!(body.is_empty());
+        assert_eq!(state.thread_presence.foreground_viewer_count("thread-1"), 1);
 
         let hidden = app
             .oneshot(
@@ -134,7 +132,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(hidden.status(), StatusCode::OK);
+        assert_eq!(hidden.status(), StatusCode::NO_CONTENT);
         assert_eq!(state.thread_presence.foreground_viewer_count("thread-1"), 0);
     }
 
