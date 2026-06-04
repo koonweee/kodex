@@ -19,6 +19,7 @@ pub mod skills;
 pub mod static_assets;
 pub mod store;
 pub mod subagents;
+pub mod terminal;
 pub mod thread_presence;
 mod thread_settings_projection;
 pub mod thread_view;

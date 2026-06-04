@@ -1420,6 +1420,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/terminals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_terminals"];
+        put?: never;
+        post: operations["create_terminal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/terminals/{terminalId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_terminal"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/threads": {
         parameters: {
             query?: never;
@@ -2138,6 +2170,11 @@ export interface components {
             cwd: string;
             name?: string | null;
         };
+        CreateTerminalSession: {
+            command?: string | null;
+            cwd?: string | null;
+            title?: string | null;
+        };
         CreateThreadRequest: {
             approvalPolicy?: string | null;
             approvalsReviewer?: string | null;
@@ -2192,6 +2229,7 @@ export interface components {
             approvals: boolean;
             gatewayAuth: boolean;
             sse: boolean;
+            terminals: components["schemas"]["TerminalCapabilities"];
             trustedNetworkOnly: boolean;
             version: string;
         };
@@ -3089,6 +3127,30 @@ export interface components {
             cwd?: string | null;
             forceReload?: boolean;
         };
+        TerminalCapabilities: {
+            enabled: boolean;
+        };
+        TerminalDeleteResponse: {
+            id: string;
+        };
+        TerminalSessionInfo: {
+            command: string;
+            createdAt: string;
+            cwd: string;
+            /** Format: int64 */
+            historySizeBytes: number;
+            id: string;
+            status: components["schemas"]["TerminalSessionStatus"];
+            title: string;
+        };
+        TerminalSessionListResponse: {
+            terminals: components["schemas"]["TerminalSessionInfo"][];
+        };
+        TerminalSessionResponse: {
+            terminal: components["schemas"]["TerminalSessionInfo"];
+        };
+        /** @enum {string} */
+        TerminalSessionStatus: "running" | "exited";
         TestNotificationResponse: {
             activeSubscriptionCount: number;
             configured: boolean;
@@ -5882,6 +5944,69 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_terminals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerminalSessionListResponse"];
+                };
+            };
+        };
+    };
+    create_terminal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTerminalSession"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerminalSessionResponse"];
+                };
+            };
+        };
+    };
+    delete_terminal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                terminalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerminalDeleteResponse"];
+                };
             };
         };
     };

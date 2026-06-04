@@ -1774,8 +1774,33 @@ describe("MVP shell flows", () => {
     expect(appCss).toMatch(/\.kodex-shell\s*\{[^}]*height:\s*100dvh;[^}]*overflow:\s*hidden;/s);
     expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-main\s*\{[^}]*overflow:\s*hidden;/s);
     expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-thread-sidebar-button\s*\{[^}]*display:\s*inline-flex;/s);
-    expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-sidebar-mobile-header\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*44px\s*44px;/s);
+    expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-sidebar-mobile-header\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*auto\s*44px;/s);
     expect(appCss).toMatch(/\.kodex-sidebar-scope-switch\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(0,\s*1fr\);/s);
+  });
+
+  it("renders when an older gateway capability response omits terminal support", async () => {
+    mockGateway(
+      baseRoutes({
+        "GET /v1/capabilities": {
+          gateway: {
+            version: "0.1.0",
+            sse: true,
+            approvals: true,
+            gatewayAuth: false,
+            trustedNetworkOnly: true,
+          },
+          appServer: {
+            ready: true,
+            experimentalApi: true,
+          },
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /open terminal/i }).length).toBeGreaterThan(0);
   });
 
   it("keeps a sidebar escape hatch on the root draft chat pane", async () => {

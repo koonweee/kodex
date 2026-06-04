@@ -1,0 +1,146 @@
+.kodex-terminal-host {
+  position: fixed;
+  inset-inline: 12px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 260;
+  display: flex;
+  flex-direction: column;
+  height: min(48dvh, 460px);
+  min-height: 280px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--kodex-border-color) 88%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--kodex-surface-0) 96%, black);
+  box-shadow: 0 22px 72px color-mix(in srgb, black 34%, transparent);
+}
+
+.kodex-terminal-header {
+  min-height: 44px;
+  padding: 8px 10px 8px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--kodex-border-color) 72%, transparent);
+}
+
+.kodex-terminal-heading {
+  min-width: 0;
+}
+
+.kodex-terminal-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.88rem;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kodex-terminal-status {
+  flex: 0 0 auto;
+  text-transform: capitalize;
+}
+
+.kodex-terminal-cwd {
+  max-width: min(72vw, 980px);
+  overflow: hidden;
+  color: var(--kodex-text-muted);
+  font-family: var(--kodex-monospace-font);
+  font-size: 0.72rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kodex-terminal-error {
+  margin: 8px 10px 0;
+}
+
+.kodex-terminal-accessory-row {
+  min-width: 0;
+  overflow-x: auto;
+  border-bottom: 1px solid color-mix(in srgb, var(--kodex-border-color) 64%, transparent);
+  padding: 6px 10px;
+  scrollbar-width: none;
+}
+
+.kodex-terminal-accessory-row::-webkit-scrollbar {
+  display: none;
+}
+
+.kodex-terminal-accessory-key {
+  flex: 0 0 auto;
+  min-width: 34px;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--kodex-border-color) 76%, transparent);
+  border-radius: 6px;
+  padding: 0 8px;
+  background: color-mix(in srgb, var(--kodex-surface-1) 92%, transparent);
+  color: var(--kodex-text-secondary);
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.kodex-terminal-accessory-key:hover {
+  background: var(--kodex-bg-button-hover);
+  color: var(--kodex-text-primary);
+}
+
+.kodex-terminal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: #11151f;
+}
+
+.kodex-terminal-loading {
+  height: 100%;
+  color: var(--kodex-text-muted);
+  font-size: 0.84rem;
+}
+
+.kodex-terminal-viewport {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: pan-y;
+}
+
+.kodex-terminal-viewport .xterm {
+  height: 100%;
+  padding: 8px 10px;
+}
+
+.kodex-terminal-viewport .xterm-viewport {
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 900px) {
+  .kodex-terminal-host {
+    inset-inline: 0;
+    bottom: 0;
+    height: min(85dvh, 760px);
+    min-height: 320px;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 8px 8px 0 0;
+  }
+
+  .kodex-terminal-cwd {
+    max-width: 58vw;
+  }
+
+  .kodex-terminal-viewport .xterm {
+    font-size: 16px;
+  }
+}
+
+@media (pointer: coarse), (any-pointer: coarse) {
+  .kodex-terminal-accessory-key {
+    min-width: 44px;
+    height: 44px;
+    padding: 0 10px;
+    font-size: 0.82rem;
+  }
+}

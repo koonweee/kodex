@@ -98,6 +98,11 @@ export type PushSubscriptionDeleteResponse = components["schemas"]["PushSubscrip
 export type PushSubscriptionUpsertResponse = components["schemas"]["PushSubscriptionUpsertResponse"];
 export type CurrentPushSubscriptionStatusResponse = components["schemas"]["CurrentPushSubscriptionResponse"];
 export type TestNotificationResponse = components["schemas"]["TestNotificationResponse"];
+export type CreateTerminalSession = components["schemas"]["CreateTerminalSession"];
+export type TerminalDeleteResponse = components["schemas"]["TerminalDeleteResponse"];
+export type TerminalSessionInfo = components["schemas"]["TerminalSessionInfo"];
+export type TerminalSessionListResponse = components["schemas"]["TerminalSessionListResponse"];
+export type TerminalSessionResponse = components["schemas"]["TerminalSessionResponse"];
 
 type GatewayErrorBody = {
   message?: unknown;
@@ -108,7 +113,7 @@ const api = createClient<paths>({
   fetch: (request) => globalThis.fetch(request),
 });
 
-function getApiBaseUrl(): string {
+export function getApiBaseUrl(): string {
   if (import.meta.env.VITE_KODEX_API_BASE_URL) {
     return import.meta.env.VITE_KODEX_API_BASE_URL;
   }
@@ -118,6 +123,14 @@ function getApiBaseUrl(): string {
   }
 
   return "";
+}
+
+export function terminalWebSocketUrl(terminalId: string): string {
+  const route = `/v1/terminals/${encodeURIComponent(terminalId)}/ws`;
+  const baseUrl = getApiBaseUrl();
+  const url = new URL(route, baseUrl || window.location.origin);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
 }
 
 export function filePreviewUrl(threadId: string, path: string): string {
@@ -142,6 +155,20 @@ export async function fetchThreadFilePreview(threadId: string, path: string): Pr
 
 export async function getCapabilities(): Promise<Capabilities> {
   return unwrap(api.GET("/v1/capabilities"));
+}
+
+export async function listTerminalSessions(): Promise<TerminalSessionInfo[]> {
+  const response = await unwrap(api.GET("/v1/terminals"));
+  return response.terminals;
+}
+
+export async function createTerminalSession(request: CreateTerminalSession = {}): Promise<TerminalSessionInfo> {
+  const response = await unwrap(api.POST("/v1/terminals", { body: request }));
+  return response.terminal;
+}
+
+export async function deleteTerminalSession(terminalId: string): Promise<TerminalDeleteResponse> {
+  return unwrap(api.DELETE("/v1/terminals/{terminalId}", { params: { path: { terminalId } } }));
 }
 
 export async function listProjects(): Promise<Project[]> {

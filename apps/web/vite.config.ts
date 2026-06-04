@@ -81,7 +81,10 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     proxy: {
-      "/v1": gatewayProxyTarget,
+      "/v1": {
+        target: gatewayProxyTarget,
+        ws: true,
+      },
       "/openapi.json": gatewayProxyTarget,
     },
   },

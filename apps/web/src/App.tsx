@@ -24,6 +24,7 @@ import {
   createProject,
   createThread,
   deleteAutomation,
+  getCapabilities,
   getThreadGeneratedUi,
   getRateLimits,
   listAutomations,
@@ -138,6 +139,7 @@ import {
 import { queryResultLoadState } from "./shell/queryResultLoadState";
 import { useSidebarResize } from "./shell/useSidebarResize";
 import { useShellSelection } from "./shell/useShellSelection";
+import { GatewayTerminalHost } from "./terminal/GatewayTerminalHost";
 import "./App.css";
 
 const NEW_THREAD_TITLE = "New thread";
@@ -224,6 +226,7 @@ function KodexShell({
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownPreviewRequest | null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesSection, setPreferencesSection] = useState<PreferenceSection>("appearance");
+  const [terminalOpen, setTerminalOpen] = useState(false);
   const [hoveredThreadActionId, setHoveredThreadActionId] = useState<string | null>(null);
   const [timelineScrollElement, setTimelineScrollElement] = useState<HTMLDivElement | null>(null);
   const [subagentSidebarOpen, setSubagentSidebarOpen] = useState(false);
@@ -321,6 +324,11 @@ function KodexShell({
       }
       return listProjects();
     },
+  });
+  const capabilitiesQuery = useQuery({
+    queryKey: queryKeys.capabilities,
+    queryFn: getCapabilities,
+    staleTime: Infinity,
   });
   const projects = projectsQuery.data ?? [];
   const orderedProjects = useMemo(() => applySidebarProjectOrder(projects, projectOrderIds), [projectOrderIds, projects]);
@@ -1297,6 +1305,7 @@ function KodexShell({
   const generatedUiAvailable = selectedGeneratedUiSession !== null;
   const generatedUiHidden = generatedUiAvailable && hiddenGeneratedUiKey === selectedGeneratedUiKey;
   const generatedUiVisible = generatedUiAvailable && !generatedUiHidden;
+  const gatewayTerminalAvailable = capabilitiesQuery.data?.gateway.terminals?.enabled ?? true;
 
   const handleHideGeneratedUi = useCallback(() => {
     if (selectedGeneratedUiKey) {
@@ -1407,6 +1416,7 @@ function KodexShell({
           project: selectedProjectPane,
         }}
         sidebarWidth={sidebarWidth}
+        terminalHost={gatewayTerminalAvailable && terminalOpen ? <GatewayTerminalHost opened onClose={() => setTerminalOpen(false)} /> : null}
         threadPanelProps={{
           errorMessage, generatedUiAvailable, generatedUiHidden, imagePreviewUrlsByPath, isDraftThreadSelected, isSelectedTimelineLoading,
           onArchiveThread: handleArchiveSelectedThread, onApprovalDecision: handleApprovalDecision, onImageOpen: setLightboxImage,
@@ -1437,7 +1447,7 @@ function KodexShell({
           onCreateChat: stableHandleCreateChat, onCreateProject: stableHandleCreateProject, onCreateThread: stableHandleCreateThread, onLogin: handleLogin, onLogout: handleLogout,
           onLoadMoreChatThreads: handleLoadMoreChatThreads, onLoadMoreProjectThreads: handleLoadMoreProjectThreads,
           onPinThread: stableHandlePinThread,
-          onOpenPreferences: handleOpenPreferences, onProjectCwdChange: handleProjectCwdChange, onProjectDirectoryCreateCancel: () => setProjectDirectoryCreateCwd(null),
+          onOpenPreferences: handleOpenPreferences, onOpenTerminal: gatewayTerminalAvailable ? () => setTerminalOpen(true) : undefined, onProjectCwdChange: handleProjectCwdChange, onProjectDirectoryCreateCancel: () => setProjectDirectoryCreateCwd(null),
           onProjectFormOpenChange: setProjectFormOpen, onReorderProjects: handleReorderProjects, onSelectChatThread: stableHandleSelectChatThread,
           onSelectAutomations: stableHandleSelectAutomations, onSelectPinnedThread: stableHandleSelectPinnedThread, onSelectProjectSettings: stableHandleSelectProjectSettings, onSelectThread: stableHandleSelectThread, onUnpinThread: stableHandleUnpinThread,
           onShowThread: handleShowMobileThread, onShowDebugEventsChange: setShowDebugEvents, onSidebarResizeKeyDown: handleSidebarResizeKeyDown,

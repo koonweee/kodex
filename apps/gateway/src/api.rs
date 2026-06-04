@@ -49,7 +49,9 @@ use crate::{
             AutomationListResponse, AutomationRepeatEvery, AutomationRepeatUnit,
             AutomationResponse, AutomationSchedule, AutomationUpdateRequest,
         },
-        capabilities::{AppServerCapabilities, CapabilitiesResponse, GatewayCapabilities},
+        capabilities::{
+            AppServerCapabilities, CapabilitiesResponse, GatewayCapabilities, TerminalCapabilities,
+        },
         composer_settings::ComposerSettingsQuery,
         events::EventListResponse,
         file_preview::FilePreviewQuery,
@@ -97,6 +99,7 @@ use crate::{
             SelfControlThreadSpawnResponse,
         },
         skills::{SkillIconQuery, SkillsQuery},
+        terminals::TerminalDeleteResponse,
         thread_presence::ThreadViewPresenceRequest,
         threads::{
             ChatThreadListQuery, CreateChatThreadRequest, CreateThreadRequest,
@@ -125,6 +128,10 @@ use crate::{
         QueuedInputPriority, QueuedInputStatus, Store, ThreadRead,
     },
     subagents::{SubagentProjection, ThreadSubagentEventPayload},
+    terminal::{
+        CreateTerminalSession, TerminalSessionInfo, TerminalSessionListResponse,
+        TerminalSessionResponse, TerminalSessionStatus,
+    },
     thread_view::{ThreadViewPatch, ThreadViewStore},
 };
 
@@ -143,6 +150,7 @@ pub struct AppState {
     pub title_generation: crate::title_generation::TitleGenerationService,
     pub chat_cwd_cache: crate::routes::threads::ChatCwdCache,
     pub thread_input_locks: crate::turn_lifecycle::ThreadInputLocks,
+    pub terminals: crate::terminal::TerminalManager,
 }
 
 impl AppState {
@@ -151,6 +159,7 @@ impl AppState {
         let notifications =
             crate::notifications::NotificationService::from_config(&config.notifications);
         let config = Arc::new(config);
+        let terminals = crate::terminal::TerminalManager::new(config.projects.home_dir.clone());
         Self {
             previews: crate::previews::PreviewManager::new(config.clone()),
             config,
@@ -165,6 +174,7 @@ impl AppState {
             title_generation: crate::title_generation::TitleGenerationService::default(),
             chat_cwd_cache: crate::routes::threads::ChatCwdCache::default(),
             thread_input_locks: crate::turn_lifecycle::ThreadInputLocks::default(),
+            terminals,
         }
     }
 
@@ -191,6 +201,9 @@ impl AppState {
         crate::routes::health::healthz,
         crate::routes::health::readyz,
         crate::routes::capabilities::capabilities,
+        crate::routes::terminals::list_terminals,
+        crate::routes::terminals::create_terminal,
+        crate::routes::terminals::delete_terminal,
         crate::routes::composer_settings::read_composer_settings,
         crate::routes::composer_settings::update_composer_settings,
         crate::routes::permission_profiles::list_permission_profiles,
@@ -330,7 +343,14 @@ impl AppState {
         ReadyResponse,
         CapabilitiesResponse,
         GatewayCapabilities,
+        TerminalCapabilities,
         AppServerCapabilities,
+        CreateTerminalSession,
+        TerminalDeleteResponse,
+        TerminalSessionInfo,
+        TerminalSessionListResponse,
+        TerminalSessionResponse,
+        TerminalSessionStatus,
         ComposerSettingsQuery,
         ComposerSettingsResponse,
         ComposerSettingsUpdateRequest,
@@ -556,6 +576,7 @@ pub fn build_router(state: AppState) -> Router {
     let mut router = Router::new()
         .merge(routes::health::router())
         .merge(routes::capabilities::router())
+        .merge(routes::terminals::router())
         .merge(routes::composer_settings::router())
         .merge(routes::events::router())
         .merge(routes::projects::router())

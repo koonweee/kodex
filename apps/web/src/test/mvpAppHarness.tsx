@@ -35,6 +35,7 @@ const capabilities = {
     version: "0.1.0",
     sse: true,
     approvals: true,
+    terminals: { enabled: true },
     gatewayAuth: false,
     trustedNetworkOnly: true,
   },

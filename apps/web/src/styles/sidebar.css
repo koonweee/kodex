@@ -46,6 +46,10 @@
   flex: 0 0 auto;
 }
 
+.kodex-sidebar-header-actions {
+  flex: 0 0 auto;
+}
+
 .kodex-sidebar-mobile-header {
   flex: 0 0 auto;
   display: none;
@@ -570,7 +574,7 @@
 
   .kodex-sidebar-mobile-header {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 44px 44px;
+    grid-template-columns: minmax(0, 1fr) auto 44px;
     gap: 4px;
     align-items: center;
     min-height: 44px;
@@ -621,6 +625,7 @@
 }
 
 @media (pointer: coarse), (any-pointer: coarse) {
+  .kodex-terminal-launcher,
   .kodex-sidebar-mobile-action {
     width: 44px;
     height: 44px;

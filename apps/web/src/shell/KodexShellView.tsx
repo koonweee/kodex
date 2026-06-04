@@ -32,6 +32,7 @@ type KodexShellViewProps = {
   preferencesProps: PreferencesModalProps;
   projectPaneProps: ComponentProps<typeof ProjectPaneComponent>;
   sidebarWidth: number;
+  terminalHost?: ReactNode;
   threadPanelProps: ComponentProps<typeof ThreadPanel>;
   workspaceSidebarProps: ComponentProps<typeof WorkspaceSidebar>;
 };
@@ -63,6 +64,7 @@ export function KodexShellView({
   preferencesProps,
   projectPaneProps,
   sidebarWidth,
+  terminalHost,
   threadPanelProps,
   workspaceSidebarProps,
 }: KodexShellViewProps) {
@@ -140,6 +142,7 @@ export function KodexShellView({
           <PreferencesModal {...preferencesProps} />
         </Suspense>
       ) : null}
+      {terminalHost}
     </AppShell>
   );
 }

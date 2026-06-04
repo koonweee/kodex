@@ -16,6 +16,7 @@ pub mod project_previews;
 pub mod projects;
 pub mod self_control;
 pub mod skills;
+pub mod terminals;
 pub mod thread_presence;
 pub mod threads;
 pub mod turns;

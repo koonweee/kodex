@@ -41,6 +41,7 @@ import type { AccountResponse, Approval, Project, ThreadSummary } from "../api/c
 import type { UsageLimitLines } from "../account/rateLimits";
 import { SidebarAccountFooter, type LoginState } from "../account/SidebarAccountFooter";
 import { useInputCapabilities } from "../shared/inputCapabilities";
+import { GatewayTerminalLauncher } from "../terminal/GatewayTerminalLauncher";
 import { EmptyPanel } from "../ui/EmptyPanel";
 import {
   threadDisplayTitle,
@@ -69,6 +70,7 @@ const SIDEBAR_TEXT = {
   newThread: "New thread",
   noProjectsText: "Create a project to begin.",
   noProjectsTitle: "No projects",
+  openTerminal: "Open terminal",
   pinned: "Pinned",
   pinThread: "Pin thread",
   projects: "Projects",
@@ -126,6 +128,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onLoadMoreChatThreads,
   onLoadMoreProjectThreads,
   onOpenPreferences,
+  onOpenTerminal,
   onPinThread,
   onProjectCwdChange,
   onProjectDirectoryCreateCancel,
@@ -177,6 +180,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onLoadMoreChatThreads?: () => void;
   onLoadMoreProjectThreads?: (projectId: string) => void;
   onOpenPreferences: () => void;
+  onOpenTerminal?: () => void;
   onPinThread: (threadId: string) => void;
   onProjectCwdChange: (value: string) => void;
   onProjectDirectoryCreateCancel: () => void;
@@ -384,19 +388,22 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             value={searchQuery}
             variant="unstyled"
           />
-          <Tooltip label={SIDEBAR_TEXT.newChat}>
-            <ActionIcon
-              aria-label={SIDEBAR_TEXT.startNewChatDesktop}
-              className="kodex-sidebar-desktop-action"
-              color="gray"
-              onClick={handleHeaderCreateChat}
-              size="xs"
-              type="button"
-              variant="subtle"
-            >
-              <SquarePen size={14} />
-            </ActionIcon>
-          </Tooltip>
+          <Group className="kodex-sidebar-header-actions" gap={2} wrap="nowrap">
+            {onOpenTerminal ? <GatewayTerminalLauncher onOpen={onOpenTerminal} size="xs" /> : null}
+            <Tooltip label={SIDEBAR_TEXT.newChat}>
+              <ActionIcon
+                aria-label={SIDEBAR_TEXT.startNewChatDesktop}
+                className="kodex-sidebar-desktop-action"
+                color="gray"
+                onClick={handleHeaderCreateChat}
+                size="xs"
+                type="button"
+                variant="subtle"
+              >
+                <SquarePen size={14} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
         </Box>
         <Box className="kodex-sidebar-mobile-header">
           <TextInput
@@ -410,19 +417,22 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
             value={searchQuery}
             variant="unstyled"
           />
-          <Tooltip label={SIDEBAR_TEXT.newChat}>
-            <ActionIcon
-              aria-label={SIDEBAR_TEXT.startNewChatMobile}
-              className="kodex-sidebar-mobile-action"
-              color="gray"
-              onClick={handleHeaderCreateChat}
-              size="md"
-              type="button"
-              variant="subtle"
-            >
-              <SquarePen size={17} />
-            </ActionIcon>
-          </Tooltip>
+          <Group className="kodex-sidebar-header-actions" gap={2} wrap="nowrap">
+            {onOpenTerminal ? <GatewayTerminalLauncher onOpen={onOpenTerminal} size="md" /> : null}
+            <Tooltip label={SIDEBAR_TEXT.newChat}>
+              <ActionIcon
+                aria-label={SIDEBAR_TEXT.startNewChatMobile}
+                className="kodex-sidebar-mobile-action"
+                color="gray"
+                onClick={handleHeaderCreateChat}
+                size="md"
+                type="button"
+                variant="subtle"
+              >
+                <SquarePen size={17} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
           <Tooltip label={SIDEBAR_TEXT.showThread}>
             <ActionIcon
               aria-label={SIDEBAR_TEXT.showThread}
