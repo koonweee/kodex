@@ -143,7 +143,7 @@ describe("MVP composer settings flows", () => {
       ...thread,
       model: "gpt-5.4",
       rawPayload: { model: "gpt-5.4", reasoningEffort: "xhigh" },
-      reasoningEffort: "high",
+      reasoningEffort: "xhigh",
       serviceTier: null,
     };
     const gateway = mockGateway(
@@ -157,7 +157,7 @@ describe("MVP composer settings flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /model: gpt-5\.4, xhigh/i })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/message composer/i), "Use app-server thread defaults");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
     await waitFor(() => {

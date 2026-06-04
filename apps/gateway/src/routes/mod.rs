@@ -3581,6 +3581,90 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn thread_settings_update_preserves_selected_xhigh_after_lossy_readback() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({}),
+            json!({
+                "thread": {
+                    "id": "thread-1",
+                    "cwd": "/workspace",
+                    "status": {"type": "idle"},
+                    "source": "cli",
+                    "preview": "hello",
+                    "model": "gpt-5.4",
+                    "reasoningEffort": "high",
+                    "serviceTier": null,
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_601_i64
+                }
+            }),
+            json!({
+                "data": [{
+                    "id": "thread-1",
+                    "cwd": "/workspace",
+                    "status": {"type": "idle"},
+                    "source": "cli",
+                    "preview": "hello",
+                    "model": "gpt-5.4",
+                    "reasoningEffort": "high",
+                    "serviceTier": null,
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_601_i64
+                }],
+                "nextCursor": null,
+                "backwardsCursor": null
+            }),
+        ]);
+        let app = build_router(state);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::patch("/v1/threads/thread-1/settings")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "model": "gpt-5.4",
+                            "effort": "xhigh"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body["thread"]["model"], "gpt-5.4");
+        assert_eq!(body["thread"]["reasoningEffort"], "xhigh");
+        assert_eq!(body["thread"]["rawPayload"]["reasoningEffort"], "xhigh");
+
+        let listed = app
+            .oneshot(Request::get("/v1/threads").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(listed.status(), StatusCode::OK);
+        let listed = response_json(listed).await;
+        assert_eq!(listed["threads"][0]["model"], "gpt-5.4");
+        assert_eq!(listed["threads"][0]["reasoningEffort"], "xhigh");
+        assert_eq!(
+            listed["threads"][0]["rawPayload"]["reasoningEffort"],
+            "xhigh"
+        );
+        assert_eq!(listed["rawPayload"]["data"][0]["reasoningEffort"], "xhigh");
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/settings/update");
+        assert_eq!(requests[0].1["threadId"], "thread-1");
+        assert_eq!(requests[0].1["model"], "gpt-5.4");
+        assert_eq!(requests[0].1["effort"], "xhigh");
+        assert_eq!(requests[1].0, "thread/read");
+        assert_eq!(requests[2].0, "thread/list");
+    }
+
+    #[tokio::test]
     async fn thread_settings_update_rejects_permissions_and_sandbox_conflict() {
         let (state, app_server) = test_state().await;
         let app = build_router(state);
@@ -4357,6 +4441,7 @@ mod tests {
                         "networkAccess": false,
                         "writableRoots": ["/workspace"]
                     })),
+                    ..ThreadLocalSettingsOverlay::default()
                 },
             )
             .await
@@ -5741,6 +5826,7 @@ mod tests {
                     approvals_reviewer: Some("auto_review".to_string()),
                     permissions: Some("auto-review".to_string()),
                     sandbox: Some(json!({"type": "workspaceWrite", "networkAccess": false, "writableRoots": []})),
+                    ..ThreadLocalSettingsOverlay::default()
                 },
             )
             .await
@@ -5824,6 +5910,7 @@ mod tests {
                     approvals_reviewer: Some("auto_review".to_string()),
                     permissions: None,
                     sandbox: None,
+                    ..ThreadLocalSettingsOverlay::default()
                 },
             )
             .await
@@ -5878,6 +5965,7 @@ mod tests {
                     approvals_reviewer: Some("auto_review".to_string()),
                     permissions: None,
                     sandbox: Some(json!({"type": "workspaceWrite", "networkAccess": false, "writableRoots": []})),
+                    ..ThreadLocalSettingsOverlay::default()
                 },
             )
             .await
@@ -10210,6 +10298,7 @@ mod tests {
                     approvals_reviewer: Some("auto_review".to_string()),
                     permissions: None,
                     sandbox: Some(json!({"type": "workspaceWrite"})),
+                    ..ThreadLocalSettingsOverlay::default()
                 },
             )
             .await

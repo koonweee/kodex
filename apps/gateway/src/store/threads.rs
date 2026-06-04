@@ -57,11 +57,15 @@ impl Store {
         sqlx::query(
             r#"
             insert into thread_local_settings_overlays (
-                thread_id, approval_policy, approvals_reviewer, permissions,
-                sandbox_json, created_at, updated_at
+                thread_id, model, reasoning_effort, service_tier,
+                approval_policy, approvals_reviewer, permissions, sandbox_json,
+                created_at, updated_at
             )
-            values (?, ?, ?, ?, ?, ?, ?)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             on conflict(thread_id) do update set
+                model = excluded.model,
+                reasoning_effort = excluded.reasoning_effort,
+                service_tier = excluded.service_tier,
                 approval_policy = excluded.approval_policy,
                 approvals_reviewer = excluded.approvals_reviewer,
                 permissions = excluded.permissions,
@@ -70,6 +74,9 @@ impl Store {
             "#,
         )
         .bind(thread_id)
+        .bind(&settings.model)
+        .bind(&settings.reasoning_effort)
+        .bind(&settings.service_tier)
         .bind(&settings.approval_policy)
         .bind(&settings.approvals_reviewer)
         .bind(&settings.permissions)
@@ -91,7 +98,7 @@ impl Store {
         }
 
         let mut builder = QueryBuilder::<Sqlite>::new(
-            "select thread_id, approval_policy, approvals_reviewer, permissions, sandbox_json from thread_local_settings_overlays where thread_id in (",
+            "select thread_id, model, reasoning_effort, service_tier, approval_policy, approvals_reviewer, permissions, sandbox_json from thread_local_settings_overlays where thread_id in (",
         );
         {
             let mut separated = builder.separated(", ");
@@ -108,6 +115,9 @@ impl Store {
             settings.insert(
                 thread_id,
                 ThreadLocalSettingsOverlay {
+                    model: row.try_get("model")?,
+                    reasoning_effort: row.try_get("reasoning_effort")?,
+                    service_tier: row.try_get("service_tier")?,
                     approval_policy: row.try_get("approval_policy")?,
                     approvals_reviewer: row.try_get("approvals_reviewer")?,
                     permissions: row.try_get("permissions")?,
@@ -254,6 +264,9 @@ mod tests {
             .save_thread_local_settings_overlay(
                 "thread-1",
                 &ThreadLocalSettingsOverlay {
+                    model: Some("gpt-5.5".to_string()),
+                    reasoning_effort: Some("xhigh".to_string()),
+                    service_tier: Some("fast".to_string()),
                     approval_policy: Some("on-request".to_string()),
                     approvals_reviewer: Some("auto_review".to_string()),
                     permissions: Some("auto-review".to_string()),
@@ -270,6 +283,9 @@ mod tests {
             .unwrap();
         let settings = settings.get("thread-1").unwrap();
 
+        assert_eq!(settings.model.as_deref(), Some("gpt-5.5"));
+        assert_eq!(settings.reasoning_effort.as_deref(), Some("xhigh"));
+        assert_eq!(settings.service_tier.as_deref(), Some("fast"));
         assert_eq!(settings.approval_policy.as_deref(), Some("on-request"));
         assert_eq!(settings.approvals_reviewer.as_deref(), Some("auto_review"));
         assert_eq!(settings.permissions.as_deref(), Some("auto-review"));

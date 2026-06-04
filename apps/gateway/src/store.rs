@@ -289,6 +289,9 @@ pub struct ThreadNotificationSetting {
 
 #[derive(Debug, Clone, Default)]
 pub struct ThreadLocalSettingsOverlay {
+    pub model: Option<String>,
+    pub reasoning_effort: Option<String>,
+    pub service_tier: Option<String>,
     pub approval_policy: Option<String>,
     pub approvals_reviewer: Option<String>,
     pub permissions: Option<String>,
@@ -297,7 +300,10 @@ pub struct ThreadLocalSettingsOverlay {
 
 impl ThreadLocalSettingsOverlay {
     pub fn has_any_setting(&self) -> bool {
-        self.approval_policy.is_some()
+        self.model.is_some()
+            || self.reasoning_effort.is_some()
+            || self.service_tier.is_some()
+            || self.approval_policy.is_some()
             || self.approvals_reviewer.is_some()
             || self.permissions.is_some()
             || self.sandbox.is_some()

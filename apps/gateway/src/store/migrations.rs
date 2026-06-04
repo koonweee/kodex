@@ -370,6 +370,9 @@ impl Store {
             r#"
             create table if not exists thread_local_settings_overlays (
                 thread_id text primary key,
+                model text,
+                reasoning_effort text,
+                service_tier text,
                 approval_policy text,
                 approvals_reviewer text,
                 permissions text,
@@ -381,6 +384,13 @@ impl Store {
         )
         .execute(&self.pool)
         .await?;
+
+        self.add_column_if_missing("thread_local_settings_overlays", "model", "text")
+            .await?;
+        self.add_column_if_missing("thread_local_settings_overlays", "reasoning_effort", "text")
+            .await?;
+        self.add_column_if_missing("thread_local_settings_overlays", "service_tier", "text")
+            .await?;
 
         if self.table_exists("thread_composer_settings").await? {
             self.add_column_if_missing("thread_composer_settings", "permissions", "text")
@@ -575,6 +585,9 @@ mod tests {
             .await
             .unwrap();
         let settings = settings.get("thread-1").unwrap();
+        assert!(settings.model.is_none());
+        assert!(settings.reasoning_effort.is_none());
+        assert!(settings.service_tier.is_none());
         assert_eq!(settings.approval_policy.as_deref(), Some("on-request"));
         assert_eq!(settings.approvals_reviewer.as_deref(), Some("auto_review"));
         assert_eq!(settings.permissions.as_deref(), Some("auto-review"));

@@ -735,6 +735,7 @@ pub(crate) async fn save_thread_creation_options(
             .sandbox
             .as_ref()
             .map(|sandbox| Value::String(sandbox.clone())),
+        ..ThreadLocalSettingsOverlay::default()
     };
     if !settings.has_any_setting() {
         return Ok(());
@@ -1148,11 +1149,12 @@ pub async fn update_thread_settings(
         ActivePermissionProfilePatch::from_permissions_update(&request.permissions);
     let client = app_server_api::client(&state.app_server);
     let raw_response = client
-        .thread_update_settings(thread_id.clone(), request)
+        .thread_update_settings(thread_id.clone(), request.clone())
         .await?;
-    thread_settings_projection::save_permissions_overlay_patch(
+    thread_settings_projection::save_thread_settings_overlay_patch(
         &state,
         &thread_id,
+        &request,
         &permissions_patch,
     )
     .await?;
@@ -1544,6 +1546,9 @@ fn sync_thread_command_response(response: &mut ThreadCommandResponse) {
 
     sync_raw_response_thread(&mut response.raw_payload, &response.thread);
     let settings = ThreadLocalSettingsOverlay {
+        model: response.thread.model.clone(),
+        reasoning_effort: response.thread.reasoning_effort.clone(),
+        service_tier: response.thread.service_tier.clone(),
         approval_policy: response.thread.approval_policy.clone(),
         approvals_reviewer: response.thread.approvals_reviewer.clone(),
         permissions: response
@@ -1798,6 +1803,18 @@ fn overlay_stored_thread_local_settings(
     settings: &ThreadLocalSettingsOverlay,
 ) {
     let mut overlay = ThreadLocalSettingsOverlay::default();
+    if settings.model.is_some() {
+        thread.model = settings.model.clone();
+        overlay.model = settings.model.clone();
+    }
+    if settings.reasoning_effort.is_some() {
+        thread.reasoning_effort = settings.reasoning_effort.clone();
+        overlay.reasoning_effort = settings.reasoning_effort.clone();
+    }
+    if settings.service_tier.is_some() {
+        thread.service_tier = settings.service_tier.clone();
+        overlay.service_tier = settings.service_tier.clone();
+    }
     if thread.approval_policy.is_none() {
         thread.approval_policy = settings.approval_policy.clone();
         overlay.approval_policy = settings.approval_policy.clone();
@@ -1830,6 +1847,9 @@ fn sync_raw_thread_local_settings_overlay_present(
         return;
     };
 
+    sync_raw_optional_string_present(raw_payload, "model", &settings.model);
+    sync_raw_optional_string_present(raw_payload, "reasoningEffort", &settings.reasoning_effort);
+    sync_raw_optional_string_present(raw_payload, "serviceTier", &settings.service_tier);
     sync_raw_optional_string_present(raw_payload, "approvalPolicy", &settings.approval_policy);
     sync_raw_optional_string_present(
         raw_payload,
@@ -1855,6 +1875,9 @@ fn sync_raw_thread_local_settings_overlay(
         return;
     };
 
+    sync_raw_optional_string(raw_payload, "model", &settings.model);
+    sync_raw_optional_string(raw_payload, "reasoningEffort", &settings.reasoning_effort);
+    sync_raw_optional_string(raw_payload, "serviceTier", &settings.service_tier);
     sync_raw_optional_string(raw_payload, "approvalPolicy", &settings.approval_policy);
     sync_raw_optional_string(
         raw_payload,

@@ -2,7 +2,7 @@ use serde_json::Value;
 
 use crate::{
     api::AppState,
-    app_server_api::{ActivePermissionProfile, ThreadSummary},
+    app_server_api::{ActivePermissionProfile, ThreadSettingsUpdateRequest, ThreadSummary},
     error::{ApiError, ApiResult},
 };
 
@@ -90,6 +90,45 @@ pub(crate) async fn save_permissions_overlay_patch(
     settings.approval_policy = None;
     settings.approvals_reviewer = None;
     settings.sandbox = None;
+    state
+        .store
+        .save_thread_local_settings_overlay(thread_id, &settings)
+        .await
+}
+
+pub(crate) async fn save_thread_settings_overlay_patch(
+    state: &AppState,
+    thread_id: &str,
+    request: &ThreadSettingsUpdateRequest,
+    permissions_patch: &ActivePermissionProfilePatch,
+) -> ApiResult<()> {
+    let has_composer_patch =
+        request.model.is_some() || request.effort.is_some() || request.service_tier.is_some();
+    if !has_composer_patch && matches!(permissions_patch, ActivePermissionProfilePatch::Missing) {
+        return Ok(());
+    }
+
+    let mut settings = state
+        .store
+        .thread_local_settings_overlays(&[thread_id.to_string()])
+        .await?
+        .remove(thread_id)
+        .unwrap_or_default();
+    if let Some(model) = request.model.as_ref() {
+        settings.model = model.clone();
+    }
+    if let Some(effort) = request.effort.as_ref() {
+        settings.reasoning_effort = effort.clone();
+    }
+    if let Some(service_tier) = request.service_tier.as_ref() {
+        settings.service_tier = service_tier.clone();
+    }
+    if let Some(permissions) = permissions_patch.permissions_overlay() {
+        settings.permissions = permissions;
+        settings.approval_policy = None;
+        settings.approvals_reviewer = None;
+        settings.sandbox = None;
+    }
     state
         .store
         .save_thread_local_settings_overlay(thread_id, &settings)
