@@ -5,6 +5,7 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { filePreviewUrl } from "../api/client";
 import { cssUrl, skillIconUrlIsSvg } from "../composer/skillMentions";
+import { fileExtension, filePreviewAction } from "../files/filePreviewActions";
 import type { MarkdownPreviewRequest } from "../files/types";
 import { ImageThumbnail } from "../images/ImageThumbnail";
 import type { ImageLightboxImage } from "../images/types";
@@ -16,16 +17,19 @@ export function UserMessageBubble({
   imagePreviewUrlsByPath,
   item,
   onImageOpen,
+  onMarkdownOpen,
   threadId,
   toolbarTimestampMs,
 }: {
   imagePreviewUrlsByPath: Record<string, string>;
   item: TimelineItem;
   onImageOpen?: (image: ImageLightboxImage) => void;
+  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
   threadId?: string;
   toolbarTimestampMs?: number;
 }) {
   const images = item.images ?? [];
+  const fileAttachments = item.fileAttachments ?? [];
   return (
     <Box className="kodex-user-message-row">
       <Box className="kodex-user-message-stack">
@@ -45,6 +49,18 @@ export function UserMessageBubble({
             })}
           </Box>
         ) : null}
+        {fileAttachments.length > 0 ? (
+          <Box className="kodex-user-file-grid">
+            {fileAttachments.map((attachment) => (
+              <UserFileAttachmentTile
+                attachment={attachment}
+                key={attachment.id}
+                onMarkdownOpen={onMarkdownOpen}
+                threadId={threadId}
+              />
+            ))}
+          </Box>
+        ) : null}
         {item.text ? (
           <Text size="sm" className="kodex-user-message-bubble">
             <InlineSkillMentionText text={item.text} skillMentions={item.skillMentions} />
@@ -59,6 +75,80 @@ export function UserMessageBubble({
       </Box>
     </Box>
   );
+}
+
+function UserFileAttachmentTile({
+  attachment,
+  onMarkdownOpen,
+  threadId,
+}: {
+  attachment: NonNullable<TimelineItem["fileAttachments"]>[number];
+  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
+  threadId?: string;
+}) {
+  const content = (
+    <>
+      <Text component="span" className="kodex-file-attachment-extension">
+        {fileExtensionLabel(attachment)}
+      </Text>
+      <Text component="span" className="kodex-file-attachment-name">
+        {attachment.fileName}
+      </Text>
+    </>
+  );
+  const className = "kodex-file-attachment-tile kodex-user-file-tile kodex-file-attachment-action";
+  if (!threadId) {
+    return (
+      <Box className="kodex-file-attachment-tile kodex-user-file-tile" title={attachment.fileName}>
+        {content}
+      </Box>
+    );
+  }
+  const action = filePreviewAction(threadId, attachment);
+  if (action.kind === "markdown" && onMarkdownOpen) {
+    return (
+      <button
+        aria-label={`Preview ${attachment.fileName}`}
+        className={className}
+        onClick={() => onMarkdownOpen(action.request)}
+        title={attachment.fileName}
+        type="button"
+      >
+        {content}
+      </button>
+    );
+  }
+  if (action.kind === "pdf") {
+    return (
+      <a
+        aria-label={`Open ${attachment.fileName}`}
+        className={className}
+        href={action.href}
+        rel="noreferrer"
+        target="_blank"
+        title={attachment.fileName}
+      >
+        {content}
+      </a>
+    );
+  }
+  const href = action.kind === "download" ? action.href : action.request.href;
+  const fileName = action.kind === "download" ? action.fileName : attachment.fileName;
+  return (
+    <a
+      aria-label={`Download ${attachment.fileName}`}
+      className={className}
+      download={fileName}
+      href={href}
+      title={attachment.fileName}
+    >
+      {content}
+    </a>
+  );
+}
+
+function fileExtensionLabel(attachment: NonNullable<TimelineItem["fileAttachments"]>[number]): string {
+  return (fileExtension(attachment) || "FILE").slice(0, 5).toUpperCase();
 }
 
 export const AssistantMessageMarkdown = memo(

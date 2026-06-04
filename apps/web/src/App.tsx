@@ -24,6 +24,7 @@ import {
   createProject,
   createThread,
   deleteAutomation,
+  getThreadGeneratedUi,
   getRateLimits,
   listAutomations,
   listChatThreadsPage,
@@ -37,6 +38,7 @@ import {
   renameThread,
   resumeAutomation,
   setThreadNotificationsEnabled,
+  submitGeneratedUiSession,
   unpinThread,
   updateAutomation,
   type Approval,
@@ -44,6 +46,8 @@ import {
   type AutomationCreateRequest,
   type AutomationUpdateRequest,
   type EventEnvelope,
+  type GeneratedUiSubmitRequest,
+  type GeneratedUiSubmitResponse,
   type Project,
   type QueuedInput,
   type ThreadSummary,
@@ -64,6 +68,7 @@ import { installLiveLongTaskObserver } from "./events/liveDiagnostics";
 import { useLiveEventHandlers } from "./events/useLiveEventHandlers";
 import { useGlobalLiveStream } from "./events/useGlobalLiveStream";
 import type { MarkdownPreviewRequest } from "./files/types";
+import { GeneratedUiPane } from "./generatedUi/GeneratedUiPane";
 import type { ImageLightboxImage } from "./images/types";
 import { useKodexNotifications } from "./notifications/useKodexNotifications";
 import type { PreferenceSection } from "./PreferencesModal";
@@ -224,6 +229,7 @@ function KodexShell({
   const [subagentSidebarOpen, setSubagentSidebarOpen] = useState(false);
   const [selectedSubagentThreadId, setSelectedSubagentThreadId] = useState<string | null>(null);
   const [composerResetToken, setComposerResetToken] = useState(0);
+  const [hiddenGeneratedUiKey, setHiddenGeneratedUiKey] = useState<string | null>(null);
   const [skillsInvalidationGeneration, setSkillsInvalidationGeneration] = useState(0);
   const globalEventCursorRef = useRef<number | undefined>(undefined);
   const approvalsRef = useRef<Approval[]>([]);
@@ -477,6 +483,18 @@ function KodexShell({
     mutationFn: ({ threadId, enabled }: { threadId: string; enabled: boolean }) =>
       setThreadNotificationsEnabled(threadId, enabled),
   });
+  const submitGeneratedUiMutation = useMutation({
+    mutationFn: ({
+      request,
+      sessionId,
+    }: {
+      request: GeneratedUiSubmitRequest;
+      sessionId: string;
+    }) => submitGeneratedUiSession(sessionId, request),
+    onSuccess: (response) => {
+      queryClientForShell.setQueryData(queryKeys.generatedUi(response.session.threadId), response.session);
+    },
+  });
   const chatThreads = chatThreadsQuery.data ?? [];
   const pinnedThreads = pinnedThreadsQuery.data ?? [];
   const selectedProjectThreads = selectedProjectId ? threadsByProjectId[selectedProjectId] ?? [] : [];
@@ -498,6 +516,18 @@ function KodexShell({
   const isSelectedTimelineLoading = selectedTimelineEntry.phase === "loadingSnapshot";
   const isSelectedTimelineReady =
     selectedTimelineEntry.phase === "streamingLive" || selectedTimelineEntry.phase === "refreshingSnapshot";
+  const isDraftThreadSelected =
+    draftChatThreadSelected || (draftThreadProjectId !== null && draftThreadProjectId === selectedProjectId);
+  const selectedGeneratedUiThreadId =
+    selectedMainPane === "thread" && selectedThreadId && !isDraftThreadSelected ? selectedThreadId : null;
+  const selectedGeneratedUiQuery = useQuery({
+    enabled: selectedGeneratedUiThreadId !== null,
+    queryKey: selectedGeneratedUiThreadId ? queryKeys.generatedUi(selectedGeneratedUiThreadId) : ["threads", "none", "generated-ui"],
+    queryFn: async () => {
+      const threadId = selectedGeneratedUiThreadId;
+      return threadId ? getThreadGeneratedUi(threadId) : null;
+    },
+  });
   const selectedThreadSubagentsQuery = useQuery({
     enabled: selectedMainPane === "thread" && selectedThread !== null && isSelectedTimelineReady,
     queryKey: selectedThread ? queryKeys.threadSubagents(selectedThread.id) : ["threads", "none", "subagents"],
@@ -607,8 +637,6 @@ function KodexShell({
     sidebarWidth,
   } = useSidebarResize();
   const activeSelectedTurnId = selectedThread !== null ? timeline.activeTurnId : null;
-  const isDraftThreadSelected =
-    draftChatThreadSelected || (draftThreadProjectId !== null && draftThreadProjectId === selectedProjectId);
   const composerDraftKey =
     selectedThreadId ??
     (draftChatThreadSelected
@@ -1262,6 +1290,74 @@ function KodexShell({
         />
       </Suspense>
     ) : null;
+  const selectedGeneratedUiSession = selectedGeneratedUiQuery.data ?? null;
+  const selectedGeneratedUiKey = selectedGeneratedUiSession
+    ? `${selectedGeneratedUiSession.id}:${selectedGeneratedUiSession.revision}`
+    : null;
+  const generatedUiAvailable = selectedGeneratedUiSession !== null;
+  const generatedUiHidden = generatedUiAvailable && hiddenGeneratedUiKey === selectedGeneratedUiKey;
+  const generatedUiVisible = generatedUiAvailable && !generatedUiHidden;
+
+  const handleHideGeneratedUi = useCallback(() => {
+    if (selectedGeneratedUiKey) {
+      setHiddenGeneratedUiKey(selectedGeneratedUiKey);
+    }
+  }, [selectedGeneratedUiKey]);
+
+  const handleShowGeneratedUi = useCallback(() => {
+    setHiddenGeneratedUiKey(null);
+  }, []);
+
+  const handleGeneratedUiSubmit = useEventCallback(
+    async (request: GeneratedUiSubmitRequest): Promise<GeneratedUiSubmitResponse> => {
+      const session = selectedGeneratedUiSession;
+      if (!session) {
+        return Promise.reject(new Error("No generated UI session is available."));
+      }
+      const threadId = session.threadId;
+      let optimisticClientRequestId: string | null = null;
+      markThreadActive(threadId);
+      optimisticClientRequestId = addOptimisticTimelineUserMessage({
+        skillMentions: [],
+        text: request.message,
+        threadId,
+      });
+      try {
+        const response = await submitGeneratedUiMutation.mutateAsync({
+          request,
+          sessionId: session.id,
+        });
+        if (response.input.queuedInput) {
+          if (optimisticClientRequestId) {
+            removeOptimisticTimelineUserMessage(optimisticClientRequestId);
+          }
+          upsertQueuedInput(response.input.queuedInput);
+          return response;
+        }
+        if (optimisticClientRequestId) {
+          markOptimisticTimelineUserMessageSent(optimisticClientRequestId);
+        }
+        markThreadMaterialized(threadId);
+        return response;
+      } catch (error) {
+        if (optimisticClientRequestId) {
+          removeOptimisticTimelineUserMessage(optimisticClientRequestId);
+        }
+        markThreadIdle(threadId);
+        throw error;
+      }
+    },
+  );
+  const generatedUiPane =
+    selectedGeneratedUiSession && generatedUiVisible ? (
+      <GeneratedUiPane
+        colorSchemeId={colorSchemeId}
+        isSubmitting={submitGeneratedUiMutation.isPending}
+        onHide={handleHideGeneratedUi}
+        onSubmit={handleGeneratedUiSubmit}
+        session={selectedGeneratedUiSession}
+      />
+    ) : null;
 
   return (
     <>
@@ -1297,6 +1393,8 @@ function KodexShell({
           onSubmitQueuedSteer: handleSubmitQueuedSteer, onSubmitTurn: handleSubmitTurn, pendingAttachments, queuedSteerRows,
           selectedThreadPresent: selectedThread !== null || isSelectedTimelineLoading,
         }}
+        generatedUiOpen={generatedUiVisible}
+        generatedUiPane={generatedUiPane}
         isSidebarResizing={isSidebarResizing}
         mainPane={selectedMainPane}
         mobilePanel={mobilePanel}
@@ -1310,8 +1408,10 @@ function KodexShell({
         }}
         sidebarWidth={sidebarWidth}
         threadPanelProps={{
-          errorMessage, imagePreviewUrlsByPath, isDraftThreadSelected, isSelectedTimelineLoading,
+          errorMessage, generatedUiAvailable, generatedUiHidden, imagePreviewUrlsByPath, isDraftThreadSelected, isSelectedTimelineLoading,
           onArchiveThread: handleArchiveSelectedThread, onApprovalDecision: handleApprovalDecision, onImageOpen: setLightboxImage,
+          onGeneratedUiHide: handleHideGeneratedUi,
+          onGeneratedUiShow: handleShowGeneratedUi,
           onMarkdownOpen: setMarkdownPreview,
           onPinThread: stableHandlePinThread,
           onRenameThread: stableHandleRenameThread,

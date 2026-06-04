@@ -1,26 +1,36 @@
-use std::path::PathBuf;
+use std::{
+    io::ErrorKind,
+    path::{Component, Path as StdPath, PathBuf},
+};
 
 use axum::{
-    extract::{DefaultBodyLimit, Multipart, State},
+    extract::{DefaultBodyLimit, Multipart, Path, State},
     routing::post,
     Json, Router,
 };
 use crc32fast::Hasher;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
+use tokio::io::AsyncWriteExt;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::{
     api::AppState,
+    app_server_api::{self, TimelineFileAttachment},
     error::{ApiError, ApiResult},
 };
 
 const MAX_IMAGE_BYTES: usize = 25 * 1024 * 1024;
+const MAX_FILE_BYTES: usize = 25 * 1024 * 1024;
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/v1/uploads/images", post(upload_images))
+        .route(
+            "/v1/threads/{thread_id}/uploads/files",
+            post(upload_thread_files),
+        )
         .layer(DefaultBodyLimit::max(MAX_IMAGE_BYTES * 8))
 }
 
@@ -44,6 +54,18 @@ pub struct ImageUpload {
     pub mime_type: String,
     pub size_bytes: u64,
     pub path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FileUploadResponse {
+    pub files: Vec<TimelineFileAttachment>,
+}
+
+#[derive(Debug, ToSchema)]
+pub struct FileUploadRequest {
+    #[schema(value_type = Vec<String>, format = Binary)]
+    pub files: Vec<String>,
 }
 
 #[utoipa::path(
@@ -108,6 +130,100 @@ pub async fn upload_images(
     }
 
     Ok(Json(ImageUploadResponse { images }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/threads/{threadId}/uploads/files",
+    request_body(content = FileUploadRequest, content_type = "multipart/form-data"),
+    responses((status = 200, body = FileUploadResponse))
+)]
+pub async fn upload_thread_files(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+    mut multipart: Multipart,
+) -> ApiResult<Json<FileUploadResponse>> {
+    let thread = app_server_api::client(&state.app_server)
+        .thread_read_summary(thread_id.clone())
+        .await?;
+    let cwd = PathBuf::from(thread.cwd);
+    if !cwd.is_absolute() {
+        return Err(ApiError::BadGateway(format!(
+            "thread {thread_id} has relative cwd"
+        )));
+    }
+    let cwd = fs::canonicalize(cwd).await?;
+    let relative_upload_dir = PathBuf::from(".kodex")
+        .join("uploads")
+        .join(sanitize_path_component(&thread_id));
+    let upload_dir = ensure_child_dir_without_symlinks(&cwd, &relative_upload_dir).await?;
+
+    let mut files = Vec::new();
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|error| ApiError::BadRequest(format!("invalid multipart upload: {error}")))?
+    {
+        if field.name() != Some("files") {
+            continue;
+        }
+
+        let original_file_name = field.file_name().unwrap_or("file").to_string();
+        let mime_type = field.content_type().map(str::to_string);
+        if mime_type
+            .as_deref()
+            .is_some_and(|value| value.starts_with("image/"))
+        {
+            return Err(ApiError::BadRequest(
+                "use the image upload endpoint for images".to_string(),
+            ));
+        }
+        let bytes = field
+            .bytes()
+            .await
+            .map_err(|error| ApiError::BadRequest(format!("invalid multipart field: {error}")))?;
+        if bytes.is_empty() {
+            return Err(ApiError::BadRequest("file upload was empty".to_string()));
+        }
+        if bytes.len() > MAX_FILE_BYTES {
+            return Err(ApiError::BadRequest(format!(
+                "file upload exceeds {} bytes",
+                MAX_FILE_BYTES
+            )));
+        }
+
+        let id = Uuid::new_v4().to_string();
+        let file_name = display_file_name(&original_file_name);
+        let extension = file_extension(&file_name);
+        let stored_file_name = sanitize_path_component(&file_name);
+        let file_dir = upload_dir.join(&id);
+        fs::create_dir(&file_dir).await?;
+        let absolute_path = file_dir.join(&stored_file_name);
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&absolute_path)
+            .await?;
+        file.write_all(&bytes).await?;
+        let relative_path = relative_upload_dir.join(&id).join(stored_file_name);
+        files.push(TimelineFileAttachment {
+            id,
+            file_name,
+            extension,
+            relative_path: path_to_slash_string(&relative_path),
+            absolute_path: Some(absolute_path.display().to_string()),
+            mime_type,
+            size_bytes: bytes.len() as u64,
+        });
+    }
+
+    if files.is_empty() {
+        return Err(ApiError::BadRequest(
+            "multipart upload did not include files".to_string(),
+        ));
+    }
+
+    Ok(Json(FileUploadResponse { files }))
 }
 
 fn image_extension(mime_type: &str) -> Option<&'static str> {
@@ -211,4 +327,83 @@ fn absolute_upload_dir(path: PathBuf) -> ApiResult<PathBuf> {
         return Ok(path);
     }
     Ok(std::env::current_dir()?.join(path))
+}
+
+async fn ensure_child_dir_without_symlinks(
+    root: &StdPath,
+    relative: &StdPath,
+) -> ApiResult<PathBuf> {
+    let mut current = root.to_path_buf();
+    for component in relative.components() {
+        let Component::Normal(name) = component else {
+            return Err(ApiError::BadRequest(
+                "invalid upload directory path".to_string(),
+            ));
+        };
+        current.push(name);
+        match fs::symlink_metadata(&current).await {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                    return Err(ApiError::BadRequest(
+                        "upload directory contains an unsafe path component".to_string(),
+                    ));
+                }
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                fs::create_dir(&current).await?;
+                let metadata = fs::symlink_metadata(&current).await?;
+                if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                    return Err(ApiError::BadRequest(
+                        "upload directory contains an unsafe path component".to_string(),
+                    ));
+                }
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(current)
+}
+
+fn display_file_name(file_name: &str) -> String {
+    StdPath::new(file_name)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("file")
+        .to_string()
+}
+
+fn file_extension(file_name: &str) -> String {
+    StdPath::new(file_name)
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+}
+
+fn sanitize_path_component(value: &str) -> String {
+    let sanitized = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('.')
+        .to_string();
+    if sanitized.is_empty() {
+        "file".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn path_to_slash_string(path: &StdPath) -> String {
+    path.components()
+        .filter_map(|component| component.as_os_str().to_str())
+        .collect::<Vec<_>>()
+        .join("/")
 }

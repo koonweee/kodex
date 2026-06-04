@@ -70,6 +70,7 @@ const rendererRegistry: Record<string, TimelineRenderer> = {
       item={item}
       imagePreviewUrlsByPath={options.imagePreviewUrlsByPath}
       onImageOpen={options.onImageOpen}
+      onMarkdownOpen={options.onMarkdownOpen}
       threadId={options.threadId}
       toolbarTimestampMs={options.toolbarTimestampMs}
     />

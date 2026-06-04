@@ -2,22 +2,22 @@ import type { UserInput } from "../api/client";
 import type { TimelineImage } from "../timeline/reducer";
 import type { PendingAttachment } from "./types";
 
-export function hasImageFiles(dataTransfer: DataTransfer) {
-  return imageFilesFromDataTransfer(dataTransfer).length > 0;
+export function hasFiles(dataTransfer: DataTransfer) {
+  return filesFromDataTransfer(dataTransfer).length > 0;
 }
 
-export function imageFilesFromDataTransfer(dataTransfer: DataTransfer): File[] {
+export function filesFromDataTransfer(dataTransfer: DataTransfer): File[] {
   const items = Array.from(dataTransfer.items);
   if (items.length > 0) {
     const itemFiles = items
-      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .filter((item) => item.kind === "file")
       .map((item) => (typeof item.getAsFile === "function" ? item.getAsFile() : null))
       .filter((file): file is File => file !== null);
     if (itemFiles.length > 0) {
       return itemFiles;
     }
   }
-  return Array.from(dataTransfer.files).filter((file) => file.type.startsWith("image/"));
+  return Array.from(dataTransfer.files);
 }
 
 export function createObjectUrl(file: File) {
@@ -31,7 +31,13 @@ export function revokeObjectUrl(objectUrl: string) {
 }
 
 export function attachmentPreviewImages(attachments: PendingAttachment[]): TimelineImage[] {
-  return attachments.map((attachment) => ({ url: attachment.objectUrl }));
+  const images: TimelineImage[] = [];
+  for (const attachment of attachments) {
+    if (attachment.kind === "image" && attachment.objectUrl) {
+      images.push({ url: attachment.objectUrl });
+    }
+  }
+  return images;
 }
 
 export function userInputImages(input: UserInput[]): TimelineImage[] {

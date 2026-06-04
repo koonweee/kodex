@@ -23,6 +23,7 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - Keep each commit focused on one sensible unit of work.
 - Do not mix unrelated changes in a commit.
 - Do not commit generated output, user-owned changes, or unrelated workspace changes unless they are part of the current task.
+- When changing `plugins/kodex-control`, update `.codex-plugin/plugin.json` with a Codex cachebuster version suffix before reinstalling so the installed plugin cache refreshes. Prefer `python3 /Users/example/.codex/skills/.system/plugin-creator/scripts/update_plugin_cachebuster.py plugins/kodex-control`, which preserves the base version and rewrites only the `+codex...` suffix.
 - Before pushing, check `target` size with `du -sh target 2>/dev/null`; if it is over 6 GB, run `cargo clean` before pushing.
 - Do not mark a milestone complete until its exit conditions are met.
 

@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 
 use crate::{
     api::AppState,
-    app_server_api::{self, ThreadLiveState, TurnStartOptions, UserInput},
+    app_server_api::{self, ThreadLiveState, TimelineFileAttachment, TurnStartOptions, UserInput},
     error::{ApiError, ApiResult},
     skills,
     store::{
@@ -26,6 +26,8 @@ pub const QUEUE_DELETE_EVENT: &str = "turn_queue.item_deleted";
 #[serde(rename_all = "camelCase")]
 pub struct QueuedInputCreateRequest {
     pub input: Vec<UserInput>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<TimelineFileAttachment>,
     #[serde(flatten)]
     pub options: TurnStartOptions,
 }
@@ -85,10 +87,13 @@ pub async fn create_queued_input(
     Json(request): Json<QueuedInputCreateRequest>,
 ) -> ApiResult<Json<QueuedInputResponse>> {
     request.options.validate()?;
-    let input = skills::resolve_turn_input_for_thread(&state, &thread_id, request.input).await?;
+    let attachments =
+        app_server_api::validate_file_attachments_for_thread(&thread_id, request.attachments)?;
+    let input = app_server_api::append_file_attachment_envelope(request.input, &attachments);
+    let input = skills::resolve_turn_input_for_thread(&state, &thread_id, input).await?;
     let queued_input = state
         .store
-        .create_queued_input(&thread_id, input, request.options)
+        .create_queued_input_with_attachments(&thread_id, input, attachments, request.options)
         .await?;
     broadcast_queue_upsert(&state, &queued_input).await?;
     trigger_queue_drain(state.clone(), thread_id);
@@ -164,6 +169,7 @@ pub async fn steer_queued_input(
                 &thread_id,
                 &active_turn_id,
                 &resolved.input,
+                &queued_input.attachments,
             )
             .await?;
             let queued_input = state
@@ -244,9 +250,37 @@ pub async fn create_queued_input_with_source(
     source_type: Option<&str>,
     source_id: Option<&str>,
 ) -> ApiResult<QueuedInput> {
+    create_queued_input_with_source_and_attachments(
+        state,
+        thread_id,
+        input,
+        Vec::new(),
+        options,
+        source_type,
+        source_id,
+    )
+    .await
+}
+
+pub async fn create_queued_input_with_source_and_attachments(
+    state: &AppState,
+    thread_id: &str,
+    input: Vec<UserInput>,
+    attachments: Vec<TimelineFileAttachment>,
+    options: TurnStartOptions,
+    source_type: Option<&str>,
+    source_id: Option<&str>,
+) -> ApiResult<QueuedInput> {
     let queued_input = state
         .store
-        .create_queued_input_with_source(thread_id, input, options, source_type, source_id)
+        .create_queued_input_with_source_and_attachments(
+            thread_id,
+            input,
+            attachments,
+            options,
+            source_type,
+            source_id,
+        )
         .await?;
     broadcast_queue_upsert(state, &queued_input).await?;
     trigger_queue_drain(state.clone(), thread_id.to_string());
@@ -262,9 +296,39 @@ pub async fn create_rejected_steer_input_with_source(
     source_type: Option<&str>,
     source_id: Option<&str>,
 ) -> ApiResult<QueuedInput> {
+    create_rejected_steer_input_with_source_and_attachments(
+        state,
+        thread_id,
+        input,
+        Vec::new(),
+        options,
+        error,
+        source_type,
+        source_id,
+    )
+    .await
+}
+
+pub async fn create_rejected_steer_input_with_source_and_attachments(
+    state: &AppState,
+    thread_id: &str,
+    input: Vec<UserInput>,
+    attachments: Vec<TimelineFileAttachment>,
+    options: TurnStartOptions,
+    error: String,
+    source_type: Option<&str>,
+    source_id: Option<&str>,
+) -> ApiResult<QueuedInput> {
     let queued_input = state
         .store
-        .create_queued_input_with_source(thread_id, input, options, source_type, source_id)
+        .create_queued_input_with_source_and_attachments(
+            thread_id,
+            input,
+            attachments,
+            options,
+            source_type,
+            source_id,
+        )
         .await?;
     let queued_input = state
         .store
@@ -431,6 +495,7 @@ async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<
                     thread_id,
                     &turn_id,
                     &resolved.input,
+                    &queued_input.attachments,
                 )
                 .await?;
             }

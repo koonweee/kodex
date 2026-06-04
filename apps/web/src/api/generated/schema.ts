@@ -308,6 +308,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/generated-ui/sessions/{sessionId}/document": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["generated_ui_document"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/generated-ui/sessions/{sessionId}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["submit_generated_ui"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/kodex-control-plugin": {
         parameters: {
             query?: never;
@@ -1140,6 +1172,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/self-control/threads/{threadId}/generated-ui": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the latest generated UI for a thread through self-control */
+        get: operations["get_self_control_generated_ui"];
+        put?: never;
+        /**
+         * Open or replace a thread generated UI pane through self-control
+         * @description Agent-facing generated UI endpoint. The HTML is stored as the latest per-thread revision and served in a sandboxed iframe with self-contained CSP. Tools should use generated UI only when it creates a richer experience than chat alone, pair it with a short assistant message, and intentionally choose local UI interactions for embedded-data behavior or conversational submissions for actions that need Codex, tools, external data, persistence, workflow continuation, or an explicit user decision. Conversational submissions should include a standalone human-readable message plus optional compact JSON metadata.
+         */
+        post: operations["upsert_self_control_generated_ui"];
+        /** Archive the latest generated UI for a thread through self-control */
+        delete: operations["archive_self_control_generated_ui"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/self-control/threads/{threadId}/input": {
         parameters: {
             query?: never;
@@ -1470,8 +1524,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Preview a local image or Markdown file
-         * @description Serves supported readable local files for localhost or trusted VPN deployments; this endpoint is not a public-safe filesystem authorization model.
+         * Preview or download a local thread file
+         * @description Serves readable local files for localhost or trusted VPN deployments; this endpoint is not a public-safe filesystem authorization model.
          */
         get: operations["preview_thread_file"];
         put?: never;
@@ -1492,6 +1546,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["fork_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/threads/{threadId}/generated-ui": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_thread_generated_ui"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1764,6 +1834,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["steer_turn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/threads/{threadId}/uploads/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["upload_thread_files"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2096,12 +2182,84 @@ export interface components {
         FilePreviewQuery: {
             path: string;
         };
+        FileUploadRequest: {
+            files: string[];
+        };
+        FileUploadResponse: {
+            files: components["schemas"]["TimelineFileAttachment"][];
+        };
         GatewayCapabilities: {
             approvals: boolean;
             gatewayAuth: boolean;
             sse: boolean;
             trustedNetworkOnly: boolean;
             version: string;
+        };
+        GeneratedUiDocumentQuery: {
+            /** Format: int64 */
+            revision: number;
+        };
+        GeneratedUiSession: {
+            /** Format: date-time */
+            archivedAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            html: string;
+            id: string;
+            /** Format: int64 */
+            revision: number;
+            status: components["schemas"]["GeneratedUiSessionStatus"];
+            /** Format: date-time */
+            submittedAt?: string | null;
+            submittedMessage?: string | null;
+            submittedMetadata?: unknown;
+            /** Format: int64 */
+            submittedRevision?: number | null;
+            threadId: string;
+            title: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        GeneratedUiSessionDto: {
+            /** Format: date-time */
+            archivedAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            documentUrl: string;
+            id: string;
+            networkPolicy: string;
+            /** Format: int64 */
+            revision: number;
+            status: components["schemas"]["GeneratedUiSessionStatus"];
+            submitAvailable: boolean;
+            /** Format: date-time */
+            submittedAt?: string | null;
+            submittedMessage?: string | null;
+            submittedMetadata?: unknown;
+            /** Format: int64 */
+            submittedRevision?: number | null;
+            threadId: string;
+            title: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        GeneratedUiSessionReadResponse: {
+            session?: null | components["schemas"]["GeneratedUiSessionDto"];
+        };
+        GeneratedUiSessionResponse: {
+            session: components["schemas"]["GeneratedUiSessionDto"];
+        };
+        /** @enum {string} */
+        GeneratedUiSessionStatus: "interactive" | "submitting" | "submitted" | "archived";
+        GeneratedUiSubmitRequest: {
+            message: string;
+            metadata?: unknown;
+            /** Format: int64 */
+            revision: number;
+        };
+        GeneratedUiSubmitResponse: {
+            input: components["schemas"]["ThreadInputResponse"];
+            session: components["schemas"]["GeneratedUiSessionDto"];
         };
         GitInfo: {
             branch?: string | null;
@@ -2561,6 +2719,7 @@ export interface components {
             /** Format: int64 */
             acceptedEventSeq?: number | null;
             acceptedTurnId?: string | null;
+            attachments?: components["schemas"]["TimelineFileAttachment"][];
             /** Format: int64 */
             attemptCount: number;
             /** Format: date-time */
@@ -2578,6 +2737,7 @@ export interface components {
             updatedAt: string;
         };
         QueuedInputCreateRequest: components["schemas"]["TurnStartOptions"] & {
+            attachments?: components["schemas"]["TimelineFileAttachment"][];
             input: components["schemas"]["UserInput"][];
         };
         QueuedInputDeleteResponse: {
@@ -2693,6 +2853,7 @@ export interface components {
         };
         SelfControlCapabilities: {
             automations: boolean;
+            generatedUi: boolean;
             mcpResources: boolean;
             projectPreviewApply: boolean;
             threads: boolean;
@@ -2732,6 +2893,13 @@ export interface components {
             localPort: number;
             name: string;
             protocol?: string | null;
+        };
+        SelfControlGeneratedUiUpsertRequest: {
+            html: string;
+            /** Format: int32 */
+            maxSelfControlDepth?: number | null;
+            source?: components["schemas"]["SelfControlSource"];
+            title: string;
         };
         SelfControlMarkThreadSeenRequest: {
             /** Format: int64 */
@@ -2971,6 +3139,7 @@ export interface components {
             rawPayload?: unknown;
         };
         ThreadItemSnapshot: {
+            fileAttachments?: components["schemas"]["TimelineFileAttachment"][];
             id: string;
             itemType: string;
             skillMentions?: components["schemas"]["TimelineSkillMention"][];
@@ -3259,6 +3428,7 @@ export interface components {
             content?: unknown;
             cwd?: string | null;
             diff?: string | null;
+            fileAttachments?: components["schemas"]["TimelineFileAttachment"][];
             id?: string | null;
             message?: string | null;
             model?: string | null;
@@ -3284,6 +3454,16 @@ export interface components {
             tool?: string | null;
             toolName?: string | null;
             type?: string | null;
+        };
+        TimelineFileAttachment: {
+            absolutePath?: string | null;
+            extension: string;
+            fileName: string;
+            id: string;
+            mimeType?: string | null;
+            relativePath: string;
+            /** Format: int64 */
+            sizeBytes: number;
         };
         TimelineItemDeltaPayload: {
             delta: string;
@@ -3339,6 +3519,7 @@ export interface components {
             serviceTier?: string | null;
         };
         TurnStartRequest: components["schemas"]["TurnStartOptions"] & {
+            attachments?: components["schemas"]["TimelineFileAttachment"][];
             input: components["schemas"]["UserInput"][];
         };
         TurnSteerRequest: {
@@ -3891,6 +4072,62 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EventListResponse"];
+                };
+            };
+        };
+    };
+    generated_ui_document: {
+        parameters: {
+            query: {
+                revision: number;
+            };
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": unknown;
+                };
+            };
+        };
+    };
+    submit_generated_ui: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GeneratedUiSubmitRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneratedUiSubmitResponse"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorBody"];
                 };
             };
         };
@@ -5236,6 +5473,77 @@ export interface operations {
             };
         };
     };
+    get_self_control_generated_ui: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneratedUiSessionReadResponse"];
+                };
+            };
+        };
+    };
+    upsert_self_control_generated_ui: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlGeneratedUiUpsertRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneratedUiSessionResponse"];
+                };
+            };
+        };
+    };
+    archive_self_control_generated_ui: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlMutationRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneratedUiSessionReadResponse"];
+                };
+            };
+        };
+    };
     send_self_control_thread_input: {
         parameters: {
             query?: never;
@@ -5748,7 +6056,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Local image or Markdown preview bytes */
+            /** @description Local file preview or download bytes */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5792,6 +6100,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadCommandResponse"];
+                };
+            };
+        };
+    };
+    get_thread_generated_ui: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneratedUiSessionReadResponse"];
                 };
             };
         };
@@ -6235,6 +6564,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RawAppServerResponse"];
+                };
+            };
+        };
+    };
+    upload_thread_files: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["FileUploadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileUploadResponse"];
                 };
             };
         };

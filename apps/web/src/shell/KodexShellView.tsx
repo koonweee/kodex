@@ -1,5 +1,5 @@
 import { AppShell, Button, Group, Stack, Title } from "@mantine/core";
-import { lazy, Suspense, type ComponentProps } from "react";
+import { lazy, Suspense, type ComponentProps, type CSSProperties, type ReactNode } from "react";
 
 import type { AutomationsPane as AutomationsPaneComponent } from "../automations/AutomationsPane";
 import { ComposerPanel } from "../composer/ComposerPanel";
@@ -7,6 +7,7 @@ import type { PreferencesModalProps } from "../PreferencesModal";
 import type { ProjectPane as ProjectPaneComponent } from "../projects/ProjectPane";
 import { ThreadPanel } from "../threads/ThreadPanel";
 import { WorkspaceSidebar } from "../threads/WorkspaceSidebar";
+import { useGeneratedUiResize } from "./useGeneratedUiResize";
 
 export type MobilePanel = "threads" | "chat";
 
@@ -23,6 +24,8 @@ const ProjectPane = lazy(() =>
 type KodexShellViewProps = {
   automationsPaneProps: ComponentProps<typeof AutomationsPaneComponent>;
   composerPanelProps: ComponentProps<typeof ComposerPanel>;
+  generatedUiOpen?: boolean;
+  generatedUiPane?: ReactNode;
   isSidebarResizing: boolean;
   mainPane: "thread" | "automations" | "project";
   mobilePanel: MobilePanel;
@@ -52,6 +55,8 @@ function AutomationsPaneFallback() {
 export function KodexShellView({
   automationsPaneProps,
   composerPanelProps,
+  generatedUiOpen,
+  generatedUiPane,
   isSidebarResizing,
   mainPane,
   mobilePanel,
@@ -62,6 +67,16 @@ export function KodexShellView({
   workspaceSidebarProps,
 }: KodexShellViewProps) {
   const mainLabel = mainPane === "automations" ? "Automations" : mainPane === "project" ? "Project" : "Thread";
+  const {
+    generatedUiMaxWidth,
+    generatedUiMinWidth,
+    generatedUiWidth,
+    handleGeneratedUiResizeKeyDown,
+    handleGeneratedUiResizePointerDown,
+    isGeneratedUiResizing,
+    setGeneratedUiWorkspaceElement,
+  } = useGeneratedUiResize();
+  const generatedUiVisible = mainPane === "thread" && generatedUiOpen && generatedUiPane;
 
   return (
     <AppShell
@@ -69,6 +84,7 @@ export function KodexShellView({
       padding="md"
       className="kodex-shell"
       data-mobile-panel={mobilePanel}
+      data-generated-ui-resizing={isGeneratedUiResizing ? "true" : undefined}
       data-sidebar-resizing={isSidebarResizing ? "true" : undefined}
     >
       <WorkspaceSidebar {...workspaceSidebarProps} />
@@ -88,10 +104,34 @@ export function KodexShellView({
               <ProjectPane {...projectPaneProps} />
             </Suspense>
           ) : (
-            <>
-              <ThreadPanel {...threadPanelProps} />
-              <ComposerPanel {...composerPanelProps} />
-            </>
+            <div
+              className="kodex-thread-workspace"
+              data-generated-ui={generatedUiVisible ? "open" : "closed"}
+              ref={setGeneratedUiWorkspaceElement}
+              style={{ "--kodex-generated-ui-width": `${generatedUiWidth}px` } as CSSProperties}
+            >
+              <div className="kodex-thread-chat-column">
+                <ThreadPanel {...threadPanelProps} />
+                <ComposerPanel {...composerPanelProps} />
+              </div>
+              {generatedUiVisible ? (
+                <>
+                  <button
+                    aria-label="Resize generated UI pane"
+                    aria-orientation="vertical"
+                    aria-valuemax={generatedUiMaxWidth}
+                    aria-valuemin={generatedUiMinWidth}
+                    aria-valuenow={generatedUiWidth}
+                    className="kodex-generated-ui-resize-handle"
+                    onKeyDown={handleGeneratedUiResizeKeyDown}
+                    onPointerDown={handleGeneratedUiResizePointerDown}
+                    role="separator"
+                    type="button"
+                  />
+                  <div className="kodex-generated-ui-surface">{generatedUiPane}</div>
+                </>
+              ) : null}
+            </div>
           )}
         </Stack>
       </AppShell.Main>

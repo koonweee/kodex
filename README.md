@@ -10,9 +10,9 @@ The MVP target is a Rust gateway that supervises an external `codex app-server` 
 
 ## Current Status
 
-The first Rust gateway implementation exists under `apps/gateway`. It includes the backend scaffold, SQLite project/approval/read-marker/queue/pin/automation/preview storage, diagnostic event replay, a stdio JSON-RPC app-server supervisor, HTTP/SSE API routes, approval brokering, OpenAPI generation, an app-server adapter layer, product-shaped frontend response DTOs, optional Caddy-backed project previews, focused first-party plugin install endpoints, app-server MCP inventory/resource/auth/config endpoints, a Kodex Control MCP stdio subcommand, and optional static frontend serving.
+The first Rust gateway implementation exists under `apps/gateway`. It includes the backend scaffold, SQLite project/approval/read-marker/queue/pin/automation/preview/generated-UI storage, diagnostic event replay, a stdio JSON-RPC app-server supervisor, HTTP/SSE API routes, approval brokering, OpenAPI generation, an app-server adapter layer, product-shaped frontend response DTOs, optional Caddy-backed project previews, focused first-party plugin install endpoints, app-server MCP inventory/resource/auth/config endpoints, a Kodex Control MCP stdio subcommand, and optional static frontend serving.
 
-The first React web client exists under `apps/web`. It includes the Vite/Mantine scaffold, generated OpenAPI TypeScript types, a typed fetch client, project/thread navigation, pinned threads, stable draggable project ordering, attention-sorted threads, snapshot-first timeline rendering, gateway-backed queued composer follow-ups, composer controls, pending approval decisions, Preferences > Plugins for Kodex Control installation, Preferences > MCP for app-server MCP inventory/auth/resource inspection plus global MCP add/remove/enable/disable/replace, and account/model surfaces.
+The first React web client exists under `apps/web`. It includes the Vite/Mantine scaffold, generated OpenAPI TypeScript types, a typed fetch client, project/thread navigation, pinned threads, stable draggable project ordering, attention-sorted threads, snapshot-first timeline rendering, gateway-backed queued composer follow-ups, generated UI split/sheet rendering, composer controls, pending approval decisions, Preferences > Plugins for Kodex Control installation, Preferences > MCP for app-server MCP inventory/auth/resource inspection plus global MCP add/remove/enable/disable/replace, and account/model surfaces.
 
 The native iOS app and its APNs scaffold were removed from this repository.[^ios-removal]
 
@@ -138,6 +138,7 @@ Local routes:
 - `GET /v1/threads/{threadId}` for selected-thread metadata plus the recent canonical timeline window. The gateway reads one bounded app-server `thread/turns/list` page with `itemsView: "full"` and returns `historyPage` cursors when older durable history is available.
 - `GET /v1/threads/{threadId}/timeline/pages?cursor=...` for loading older selected-thread history into the gateway-owned canonical timeline window without rendering raw app-server lifecycle events.
 - `GET /v1/threads/{threadId}/files/preview?path=...` for local/VPN-only image and Markdown previews of supported readable regular files.
+- `GET /v1/threads/{threadId}/generated-ui`, `GET /v1/generated-ui/sessions/{sessionId}/document?revision=...`, and `POST /v1/generated-ui/sessions/{sessionId}/submit` for thread-bound generated UI panes. Generated UI documents are self-contained HTML served in a sandboxed iframe with CSP that blocks external network access in v1; submit sends one visible normal thread message plus optional compact metadata, and duplicate submits are rejected per revision.
 - `POST /v1/threads/{threadId}/input` for browser composer submits. The gateway owns the routing decision: active threads create a durable shared queue row by default, stale active state is cleared when app-server readback shows no active turn, and idle or not-yet-materialized threads start a new turn. Explicit steering remains available through queued-row and turn steer routes.
 - `GET /v1/threads/{threadId}/queued-inputs`, `POST /v1/threads/{threadId}/queued-inputs`, `POST /v1/threads/{threadId}/queued-inputs/{queueId}/retry`, `POST /v1/threads/{threadId}/queued-inputs/{queueId}/steer`, and `DELETE /v1/threads/{threadId}/queued-inputs/{queueId}` for the same-gateway persisted composer queue. Queue rows may include nullable `sourceType` and `sourceId` fields for gateway-originated work such as automations.
 - `GET /v1/automations`, `POST /v1/automations`, `GET/PATCH/DELETE /v1/automations/{automationId}`, and `POST /v1/automations/{automationId}/pause|resume` for gateway-owned recurring prompts into a target thread. Automations have a 30-second minimum interval, coalesce missed due slots, use latest stored thread composer settings, and enqueue source-labeled input for the next idle turn rather than auto-steering active turns.
@@ -146,7 +147,7 @@ Local routes:
 - `GET /v1/skills` for the gateway skill catalog and `GET /v1/skills/icon?path=...` for localhost/trusted-VPN skill icon previews used by enriched inline skill badges.
 - `GET /v1/kodex-control-plugin` and `POST /v1/kodex-control-plugin/install` for the transitional first-party Kodex Control plugin install surface. This focused endpoint automatically adds the bundled marketplace and installs `kodex-control`; it should be replaced by generic `/v1/plugins` APIs when generic plugin management is built.
 - `GET /v1/mcp/servers`, `GET /v1/mcp/configured-servers`, `POST /v1/mcp/servers`, `POST /v1/mcp/servers/{server}/replace`, `PATCH /v1/mcp/servers/{server}/enabled`, `DELETE /v1/mcp/servers/{server}`, `GET /v1/mcp/servers/{server}/resources/read`, `POST /v1/mcp/servers/{server}/oauth-login`, and `POST /v1/mcp/reload` for app-server MCP runtime inventory, global MCP config management, listed-resource reads, explicit OAuth login URL generation, and runtime MCP reload. These routes do not call MCP tools.
-- `GET /v1/self-control/status`, `POST /v1/self-control/project-previews/apply`, `POST /v1/self-control/threads`, `POST /v1/self-control/threads/{threadId}/input`, and self-control automation routes under `/v1/self-control/automations` for guarded agent-facing Kodex Control mutations. MCP tools should use these routes instead of raw CRUD routes so provenance and safety policy stay gateway-owned.
+- `GET /v1/self-control/status`, `POST /v1/self-control/project-previews/apply`, `POST /v1/self-control/threads`, `POST /v1/self-control/threads/{threadId}/input`, self-control generated UI routes under `/v1/self-control/threads/{threadId}/generated-ui`, and self-control automation routes under `/v1/self-control/automations` for guarded agent-facing Kodex Control mutations. MCP tools should use these routes instead of raw CRUD routes so provenance and safety policy stay gateway-owned.
 - `GET /v1/projects/{projectId}/previews`, preview service/preview/route CRUD routes under `/v1/projects/{projectId}`, and `POST /v1/project-previews/reload` for gateway-owned project preview configuration and Caddy repair.
 - Frontend-critical Codex routes such as `GET /v1/threads`, `GET /v1/threads/{threadId}`, `GET /v1/models`, `GET /v1/account`, `GET /v1/account/rate-limits`, and `POST /v1/account/login` expose typed gateway DTOs with `rawPayload` retained only as an escape hatch for volatile app-server fields. `GET /v1/threads/{threadId}` reads durable thread metadata plus a bounded recent history window from app-server and populates selected-thread timeline history through native `thread/turns/list` with `itemsView: "full"`. Older history is loaded on demand through `GET /v1/threads/{threadId}/timeline/pages`. The gateway keeps only an in-memory TUI-like `ThreadView` for live selected-thread projection, canonical `thread_view.patch` and text-only `thread_view.item_delta` events, loaded scrollback windows, and provisional user rows; app-server remains the durable transcript owner. Selected-thread SSE is a live overlay; reconnects or uncertain stream continuity trigger another bounded snapshot read instead of replaying persisted timeline rows.
 
@@ -195,18 +196,20 @@ Example for a project with a Vite frontend on `3000` and NestJS backend on `4000
 
 ## Kodex Control Plugin
 
-This repo includes a first-party Codex plugin at `plugins/kodex-control`. The plugin packages the canonical `kodex-proxy-evaluation` skill and exposes a gateway-hosted MCP server for guarded self-control tools and read-only resources.
+This repo includes a first-party Codex plugin at `plugins/kodex-control`. The plugin packages the canonical `kodex-proxy-evaluation` and `generative-ui` skills and exposes a gateway-hosted MCP server for guarded self-control tools and read-only resources.
 
 Install it from the web client:
 
 1. Start the gateway with a ready Codex app-server.
 2. Open the web client.
 3. Open Preferences > Plugins.
-4. Select Install on Kodex Control.
+4. Select Install on Kodex Control. If Kodex Control is already installed, select Reinstall to refresh the installed plugin bundle from the current marketplace source.
 
-The install button uses the focused gateway endpoint to add `.agents/plugins/marketplace.json`, install `kodex-control`, and emit `skills.changed`. If the app-server is unavailable, install is blocked with a degraded status. Missing Caddy does not block plugin installation.
+The install/reinstall button uses the focused gateway endpoint to add `.agents/plugins/marketplace.json`, install `kodex-control`, and emit `skills.changed`. If the app-server is unavailable, install is blocked with a degraded status. Missing Caddy does not block plugin installation.
 
 For non-web development, the bundled marketplace can be overridden with `KODEX_KODEX_CONTROL_MARKETPLACE_PATH`. The default is this checkout's `.agents/plugins/marketplace.json` when running from the repo.
+
+When changing files under `plugins/kodex-control`, update `.codex-plugin/plugin.json` with a Codex cachebuster version suffix before reinstalling, for example `0.1.0+codex.local-20260604-143000`. The installed plugin cache is keyed by version, so reinstalling with the same version can leave Codex using a stale cached bundle. The helper `python3 /Users/example/.codex/skills/.system/plugin-creator/scripts/update_plugin_cachebuster.py plugins/kodex-control` rewrites only the `+codex...` suffix while preserving the base version.
 
 The plugin MCP server is hosted by the gateway binary:
 
@@ -214,7 +217,9 @@ The plugin MCP server is hosted by the gateway binary:
 kodex-gateway mcp kodex-control
 ```
 
-The MCP subcommand reads `KODEX_GATEWAY_URL`, defaulting to `http://127.0.0.1:8787`, and refuses non-loopback gateway URLs unless `KODEX_ALLOW_REMOTE_SELF_CONTROL=1` is set. It exposes tools for status, preview apply, thread input, and automation management, plus resources such as `kodex://status`, `kodex://projects`, and `kodex://automations`.
+The MCP subcommand reads `KODEX_GATEWAY_URL`, defaulting to `http://127.0.0.1:8787`, and refuses non-loopback gateway URLs unless `KODEX_ALLOW_REMOTE_SELF_CONTROL=1` is set. It exposes tools for status, preview apply, thread input, generated UI panes, and automation management, plus resources such as `kodex://status`, `kodex://projects`, `kodex://threads/{threadId}/generated-ui`, and `kodex://automations`.
+
+Generated UI tools let Codex open or update a temporary thread-bound HTML pane when direct interaction is clearer than chat. V1 generated UI must be self-contained and responsive for desktop split and mobile full-height sheet. Buttons are not inherently prompts: use local UI interactions for embedded-data behavior such as modals, tabs, filters, drilldowns, chart toggles, unit switches, and view changes; submit to the thread only when an action needs Codex, tools, external data, persistence, workflow continuation, or an explicit user decision. Thread submissions should send one standalone human-readable message plus optional compact metadata. External scripts/assets/fetch/forms/frames are blocked by the iframe CSP unless a future allowlist or approval policy is added.
 
 After installation, invoke the skill from another repo with a prompt such as:
 

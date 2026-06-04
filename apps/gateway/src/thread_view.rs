@@ -17,7 +17,8 @@ use crate::{
         timeline_skill_mentions_from_user_input, visible_text_from_thread_item,
         PendingTimelineRequestSummary, ThreadItemSnapshot, ThreadLiveState, ThreadTimelineSnapshot,
         ThreadTimelineSnapshotItem, ThreadTimelineSnapshotTurn, ThreadTimelineWindowPage,
-        ThreadTurnSnapshot, TimelineItemUpsertPayload, TimelineUpdateSource, UserInput,
+        ThreadTurnSnapshot, TimelineFileAttachment, TimelineItemUpsertPayload,
+        TimelineUpdateSource, UserInput,
     },
     error::ApiResult,
     store::Approval,
@@ -1039,11 +1040,12 @@ pub async fn record_pending_user_input(
     thread_id: &str,
     turn_id: &str,
     input: &[UserInput],
+    attachments: &[TimelineFileAttachment],
     updated_seq: i64,
 ) -> ApiResult<Option<ThreadViewPatch>> {
-    let Some((text, _mentions)) = timeline_skill_mentions_from_user_input(input, &[]) else {
+    if attachments.is_empty() && timeline_skill_mentions_from_user_input(input, &[]).is_none() {
         return Ok(None);
-    };
+    }
     let Ok(content) = serde_json::to_value(input) else {
         return Ok(None);
     };
@@ -1052,6 +1054,7 @@ pub async fn record_pending_user_input(
         "id": item_id,
         "type": "userMessage",
         "content": content,
+        "fileAttachments": attachments,
     });
     let mut item_snapshot = ThreadItemSnapshot::from_payload(&item)?;
     item_snapshot.raw_payload = item.clone();
@@ -1068,7 +1071,6 @@ pub async fn record_pending_user_input(
             view.turn_patch(turn_id)
         })
         .await;
-    let _ = text;
     Ok(Some(patch))
 }
 
@@ -1096,10 +1098,18 @@ fn remove_materialized_pending_match(
     if !item_snapshot.item_type.eq_ignore_ascii_case("userMessage") {
         return;
     }
-    let Some(text) = visible_text_from_thread_item(raw_item) else {
+    let key = visible_text_from_thread_item(raw_item)
+        .map(|text| scoped_text_key(turn_id, &item_snapshot.item_type, &text))
+        .or_else(|| {
+            file_attachment_match_key(
+                turn_id,
+                &item_snapshot.item_type,
+                &item_snapshot.file_attachments,
+            )
+        });
+    let Some(key) = key else {
         return;
     };
-    let key = scoped_text_key(turn_id, &item_snapshot.item_type, &text);
     items.retain(|item| {
         if !item.item_id.starts_with("pending-user-") {
             return true;
@@ -1134,8 +1144,15 @@ fn pending_user_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
     {
         return None;
     }
-    let text = text_for_pending_user_match(item)?;
-    Some(scoped_text_key(&item.turn_id, &item.item_type, &text))
+    text_for_pending_user_match(item)
+        .map(|text| scoped_text_key(&item.turn_id, &item.item_type, &text))
+        .or_else(|| {
+            file_attachment_match_key(
+                &item.turn_id,
+                &item.item_type,
+                &item.payload.item_snapshot.file_attachments,
+            )
+        })
 }
 
 fn materialized_user_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
@@ -1146,8 +1163,15 @@ fn materialized_user_text_key(item: &ThreadTimelineSnapshotItem) -> Option<Strin
 }
 
 fn materialized_item_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
-    let text = text_for_pending_user_match(item)?;
-    Some(scoped_text_key(&item.turn_id, &item.item_type, &text))
+    text_for_pending_user_match(item)
+        .map(|text| scoped_text_key(&item.turn_id, &item.item_type, &text))
+        .or_else(|| {
+            file_attachment_match_key(
+                &item.turn_id,
+                &item.item_type,
+                &item.payload.item_snapshot.file_attachments,
+            )
+        })
 }
 
 fn snapshot_message_content_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
@@ -1364,6 +1388,25 @@ fn scoped_text_key(turn_id: &str, item_type: &str, text: &str) -> String {
         item_type.to_ascii_lowercase(),
         text.trim()
     )
+}
+
+fn file_attachment_match_key(
+    turn_id: &str,
+    item_type: &str,
+    attachments: &[crate::app_server_api::TimelineFileAttachment],
+) -> Option<String> {
+    if attachments.is_empty() {
+        return None;
+    }
+    let paths = attachments
+        .iter()
+        .map(|attachment| attachment.relative_path.as_str())
+        .collect::<Vec<_>>()
+        .join("\0");
+    Some(format!(
+        "{turn_id}\0{}\0files\0{paths}",
+        item_type.to_ascii_lowercase()
+    ))
 }
 
 fn next_display_order(items: &[ThreadTimelineSnapshotItem]) -> i64 {

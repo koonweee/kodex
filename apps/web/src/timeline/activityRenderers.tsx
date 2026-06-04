@@ -406,6 +406,7 @@ function renderActivityItemBody(
         item={item}
         imagePreviewUrlsByPath={options.imagePreviewUrlsByPath}
         onImageOpen={options.onImageOpen}
+        onMarkdownOpen={options.onMarkdownOpen}
         threadId={options.threadId}
       />
     );

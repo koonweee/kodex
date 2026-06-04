@@ -188,7 +188,6 @@ export function InlineComposerPanel({
           aria-label={COMPOSER_TEXT.addAttachment}
           className="kodex-attachment-input"
           type="file"
-          accept="image/*"
           multiple
           disabled={isComposerControlsDisabled}
           onChange={onAttachmentInputChange}

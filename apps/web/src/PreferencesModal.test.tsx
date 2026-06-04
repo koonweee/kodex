@@ -178,7 +178,7 @@ describe("PreferencesModal plugins tab", () => {
       plugin: null,
       pluginName: "kodex-control",
       setupError: null,
-      skills: ["kodex-proxy-evaluation"],
+      skills: ["kodex-proxy-evaluation", "generative-ui"],
       status: "notInstalled",
     });
     apiMocks.installKodexControlPlugin.mockResolvedValue({ status: {}, marketplace: null, install: null });
@@ -188,7 +188,7 @@ describe("PreferencesModal plugins tab", () => {
 
     expect(await screen.findByText("Kodex Control")).toBeInTheDocument();
     expect(await screen.findByText("Available")).toBeInTheDocument();
-    expect(await screen.findByText("1 skills · 1 MCP servers")).toBeInTheDocument();
+    expect(await screen.findByText("2 skills · 1 MCP servers")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /^install$/i }));
 
@@ -212,7 +212,7 @@ describe("PreferencesModal plugins tab", () => {
     expect(await screen.findByText("status fetch failed")).toBeInTheDocument();
   });
 
-  it("shows installed state without an install action", async () => {
+  it("shows installed state with a reinstall action", async () => {
     apiMocks.getKodexControlPluginStatus.mockResolvedValue({
       appServerReady: true,
       appsNeedingAuth: [],
@@ -223,14 +223,23 @@ describe("PreferencesModal plugins tab", () => {
       plugin: { installed: true, enabled: true },
       pluginName: "kodex-control",
       setupError: null,
-      skills: ["kodex-proxy-evaluation"],
+      skills: ["kodex-proxy-evaluation", "generative-ui"],
       status: "installed",
     });
+    apiMocks.installKodexControlPlugin.mockResolvedValue({ status: {}, marketplace: null, install: null });
 
-    renderPreferences();
+    const { queryClient } = renderPreferences();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
-    expect(await screen.findByRole("button", { name: /^installed$/i })).toBeDisabled();
-    expect(screen.getAllByText("Installed")).toHaveLength(2);
+    expect(await screen.findAllByText("Installed")).toHaveLength(1);
+    const reinstallButton = await screen.findByRole("button", { name: /^reinstall$/i });
+    expect(reinstallButton).toBeEnabled();
+
+    await userEvent.click(reinstallButton);
+
+    await waitFor(() => expect(apiMocks.installKodexControlPlugin).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.kodexControlPlugin }));
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["skills"] });
   });
 
   it("surfaces app-server setup errors without enabling install", async () => {

@@ -1,5 +1,16 @@
 import { ActionIcon, Badge, Box, Button, Group, Menu, Modal, Skeleton, Switch, Text, TextInput, Title, Tooltip } from "@mantine/core";
-import { AlertCircle, Archive, Bot, MoreHorizontal, PanelLeftOpen, PanelRightOpen, Pencil, Pin, PinOff } from "lucide-react";
+import {
+  AlertCircle,
+  Archive,
+  Bot,
+  MoreHorizontal,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  Pencil,
+  Pin,
+  PinOff,
+} from "lucide-react";
 import { lazy, Suspense, useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import type { Approval, ApprovalResponse, ThreadSummary } from "../api/client";
@@ -27,6 +38,8 @@ const THREAD_PANEL_TEXT = {
   renameSubmit: "Rename",
   notifications: "Notifications",
   pin: "Pin thread",
+  hideGeneratedUi: "Hide generated UI",
+  showGeneratedUi: "Show generated UI",
   showSidebar: "Show sidebar",
   threadUnavailableText: "This thread could not be loaded. It may have been archived, deleted, or unavailable from this gateway.",
   threadUnavailableTitle: "Thread not found or unavailable",
@@ -38,6 +51,8 @@ const THREAD_SYNC_TOAST_VISIBLE_MS = 4500;
 
 export function ThreadPanel({
   errorMessage,
+  generatedUiAvailable,
+  generatedUiHidden,
   imagePreviewUrlsByPath,
   isDraftThreadSelected,
   isSelectedTimelineLoading,
@@ -45,7 +60,9 @@ export function ThreadPanel({
   onApprovalDecision,
   onImageOpen,
   onLoadOlderHistory,
+  onGeneratedUiHide,
   onMarkdownOpen,
+  onGeneratedUiShow,
   onPinThread,
   onRenameThread,
   onSetThreadNotificationsEnabled,
@@ -69,6 +86,8 @@ export function ThreadPanel({
   timeline,
 }: {
   errorMessage: string | null;
+  generatedUiAvailable?: boolean;
+  generatedUiHidden?: boolean;
   imagePreviewUrlsByPath: Record<string, string>;
   isDraftThreadSelected: boolean;
   isSelectedTimelineLoading: boolean;
@@ -76,7 +95,9 @@ export function ThreadPanel({
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
   onImageOpen: (image: ImageLightboxImage) => void;
   onLoadOlderHistory?: () => void;
+  onGeneratedUiHide?: () => void;
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
+  onGeneratedUiShow?: () => void;
   onPinThread: (threadId: string) => void;
   onRenameThread: (threadId: string, name: string) => Promise<void>;
   onSetThreadNotificationsEnabled: (threadId: string, enabled: boolean) => void;
@@ -107,6 +128,25 @@ export function ThreadPanel({
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renamePending, setRenamePending] = useState(false);
   const [visibleThreadSyncNotice, setVisibleThreadSyncNotice] = useState<ThreadSyncNotice | null>(null);
+  const generatedUiAction = generatedUiAvailable
+    ? generatedUiHidden
+      ? onGeneratedUiShow
+        ? {
+            icon: <PanelRightOpen size={17} />,
+            label: THREAD_PANEL_TEXT.showGeneratedUi,
+            onClick: onGeneratedUiShow,
+            pressed: false,
+          }
+        : null
+      : onGeneratedUiHide
+        ? {
+            icon: <PanelRightClose size={17} />,
+            label: THREAD_PANEL_TEXT.hideGeneratedUi,
+            onClick: onGeneratedUiHide,
+            pressed: true,
+          }
+        : null
+    : null;
 
   useEffect(() => {
     if (!renameModalOpen || !selectedThread) {
@@ -260,6 +300,18 @@ export function ThreadPanel({
                       variant={subagentSidebarOpen ? "light" : "subtle"}
                     >
                       <Bot size={17} />
+                    </ActionIcon>
+                  </Tooltip>
+                ) : null}
+                {generatedUiAction ? (
+                  <Tooltip label={generatedUiAction.label}>
+                    <ActionIcon
+                      aria-label={generatedUiAction.label}
+                      aria-pressed={generatedUiAction.pressed ? "true" : "false"}
+                      onClick={generatedUiAction.onClick}
+                      variant={generatedUiAction.pressed ? "light" : "subtle"}
+                    >
+                      {generatedUiAction.icon}
                     </ActionIcon>
                   </Tooltip>
                 ) : null}

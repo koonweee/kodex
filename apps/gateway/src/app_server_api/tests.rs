@@ -553,6 +553,56 @@ fn skill_mention_enrichment_requires_enabled_name_and_path_match() {
     assert!(enriched[0].icon_small_url.is_none());
 }
 
+#[test]
+fn user_message_snapshot_recovers_file_attachments_from_path_envelope() {
+    let snapshot = ThreadItemSnapshot::from_payload(&json!({
+        "id": "user-1",
+        "type": "userMessage",
+        "content": [
+            {
+                "type": "text",
+                "text": "Review this\n\n```kodex-attachments\n- .kodex/uploads/thread-1/upload-1/notes.md\n```"
+            }
+        ]
+    }))
+    .unwrap();
+
+    assert_eq!(snapshot.file_attachments.len(), 1);
+    assert_eq!(snapshot.file_attachments[0].file_name, "notes.md");
+    assert_eq!(snapshot.file_attachments[0].extension, "md");
+    assert_eq!(
+        snapshot.file_attachments[0].relative_path,
+        ".kodex/uploads/thread-1/upload-1/notes.md"
+    );
+}
+
+#[test]
+fn file_attachment_validation_rejects_forged_or_unsafe_paths() {
+    let valid = TimelineFileAttachment {
+        id: "file-1".to_string(),
+        file_name: "notes.md".to_string(),
+        extension: "wrong".to_string(),
+        relative_path: ".kodex/uploads/thread-1/file-1/notes.md".to_string(),
+        absolute_path: Some("/tmp/forged".to_string()),
+        mime_type: Some("text/markdown".to_string()),
+        size_bytes: 7,
+    };
+    let normalized = validate_file_attachments_for_thread("thread-1", vec![valid.clone()]).unwrap();
+    assert_eq!(normalized[0].extension, "md");
+    assert!(normalized[0].absolute_path.is_none());
+
+    for relative_path in [
+        "/etc/passwd",
+        ".kodex/uploads/thread-1/file-1/../../secret.txt",
+        ".kodex/uploads/thread-2/file-1/notes.md",
+        ".kodex/uploads/thread-1/file-1/notes.md\n```",
+    ] {
+        let mut attachment = valid.clone();
+        attachment.relative_path = relative_path.to_string();
+        assert!(validate_file_attachments_for_thread("thread-1", vec![attachment]).is_err());
+    }
+}
+
 #[tokio::test]
 async fn adapter_maps_account_login_rate_limit_and_model_methods() {
     let server = Arc::new(RecordingServer {

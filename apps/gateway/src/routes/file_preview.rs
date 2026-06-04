@@ -1,4 +1,4 @@
-use std::path::{Path as FsPath, PathBuf};
+use std::path::{Component, Path as FsPath, PathBuf};
 
 use axum::{
     body::Body,
@@ -23,6 +23,8 @@ use crate::{
 
 const MAX_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
 const MAX_MARKDOWN_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_PDF_BYTES: u64 = 50 * 1024 * 1024;
+const MAX_DOWNLOAD_BYTES: u64 = 100 * 1024 * 1024;
 
 pub fn router() -> Router<AppState> {
     Router::new().route(
@@ -39,14 +41,14 @@ pub struct FilePreviewQuery {
 #[utoipa::path(
     get,
     path = "/v1/threads/{threadId}/files/preview",
-    summary = "Preview a local image or Markdown file",
-    description = "Serves supported readable local files for localhost or trusted VPN deployments; this endpoint is not a public-safe filesystem authorization model.",
+    summary = "Preview or download a local thread file",
+    description = "Serves readable local files for localhost or trusted VPN deployments; this endpoint is not a public-safe filesystem authorization model.",
     params(
         ("threadId" = String, Path, description = "Thread id that owns the preview context"),
         FilePreviewQuery
     ),
     responses(
-        (status = 200, description = "Local image or Markdown preview bytes"),
+        (status = 200, description = "Local file preview or download bytes"),
         (status = 404, description = "Thread or preview path was not found"),
         (status = 415, description = "Preview path exists but is not a supported preview type")
     )
@@ -56,8 +58,8 @@ pub async fn preview_thread_file(
     Path(thread_id): Path<String>,
     Query(query): Query<FilePreviewQuery>,
 ) -> ApiResult<Response<Body>> {
-    ensure_thread_exists(&state, &thread_id).await?;
-    let path = canonical_preview_path(&query.path).await?;
+    let thread = read_preview_thread(&state, &thread_id).await?;
+    let path = canonical_thread_preview_path(&query.path, FsPath::new(&thread.cwd)).await?;
     let metadata = fs::metadata(&path).await.map_err(|_| preview_not_found())?;
     if !metadata.is_file() {
         return Err(preview_not_found());
@@ -70,7 +72,7 @@ pub async fn preview_thread_file(
 }
 
 pub async fn preview_local_image_file(path: &str) -> ApiResult<Response<Body>> {
-    let path = canonical_preview_path(path).await?;
+    let path = canonical_local_preview_path(path).await?;
     let metadata = fs::metadata(&path).await.map_err(|_| preview_not_found())?;
     if !metadata.is_file() {
         return Err(preview_not_found());
@@ -87,7 +89,10 @@ pub async fn preview_local_image_file(path: &str) -> ApiResult<Response<Body>> {
     preview_response(kind, path.as_path(), bytes)
 }
 
-async fn ensure_thread_exists(state: &AppState, thread_id: &str) -> ApiResult<()> {
+async fn read_preview_thread(
+    state: &AppState,
+    thread_id: &str,
+) -> ApiResult<app_server_api::ThreadSummary> {
     let response = match app_server_api::client(&state.app_server)
         .thread_read(thread_id.to_string())
         .await
@@ -101,16 +106,57 @@ async fn ensure_thread_exists(state: &AppState, thread_id: &str) -> ApiResult<()
     if response.thread.id != thread_id {
         return Err(preview_not_found());
     }
-    Ok(())
+    Ok(response.thread)
 }
 
-async fn canonical_preview_path(path: &str) -> ApiResult<PathBuf> {
+async fn canonical_thread_preview_path(path: &str, thread_cwd: &FsPath) -> ApiResult<PathBuf> {
+    if path.trim().is_empty() {
+        return Err(preview_not_found());
+    }
+    let preview_path = FsPath::new(path);
+    if preview_path.is_absolute() {
+        return canonical_absolute_preview_path(path).await;
+    }
+    if !safe_relative_path(preview_path) {
+        return Err(preview_not_found());
+    }
+    let cwd = fs::canonicalize(thread_cwd)
+        .await
+        .map_err(|_| preview_not_found())?;
+    let path = fs::canonicalize(cwd.join(preview_path))
+        .await
+        .map_err(|_| preview_not_found())?;
+    if !path.starts_with(&cwd) {
+        return Err(preview_not_found());
+    }
+    Ok(path)
+}
+
+async fn canonical_absolute_preview_path(path: &str) -> ApiResult<PathBuf> {
+    if path.trim().is_empty() {
+        return Err(preview_not_found());
+    }
+    let preview_path = FsPath::new(path);
+    if !preview_path.is_absolute() {
+        return Err(preview_not_found());
+    }
+    fs::canonicalize(preview_path)
+        .await
+        .map_err(|_| preview_not_found())
+}
+
+async fn canonical_local_preview_path(path: &str) -> ApiResult<PathBuf> {
     if path.trim().is_empty() {
         return Err(preview_not_found());
     }
     fs::canonicalize(path)
         .await
         .map_err(|_| preview_not_found())
+}
+
+fn safe_relative_path(path: &FsPath) -> bool {
+    path.components()
+        .all(|component| matches!(component, Component::Normal(_)))
 }
 
 async fn classify_preview_file(path: &FsPath, size_bytes: u64) -> ApiResult<PreviewKind> {
@@ -133,9 +179,21 @@ async fn classify_preview_file(path: &FsPath, size_bytes: u64) -> ApiResult<Prev
         return Ok(PreviewKind::Markdown);
     }
 
-    Err(ApiError::UnsupportedMediaType(
-        "unsupported preview type".to_string(),
-    ))
+    if pdf_extension(path) {
+        if size_bytes > MAX_PDF_BYTES {
+            return Err(ApiError::UnsupportedMediaType(
+                "unsupported preview type".to_string(),
+            ));
+        }
+        return Ok(PreviewKind::Pdf);
+    }
+
+    if size_bytes > MAX_DOWNLOAD_BYTES {
+        return Err(ApiError::UnsupportedMediaType(
+            "unsupported preview type".to_string(),
+        ));
+    }
+    Ok(PreviewKind::Download)
 }
 
 async fn read_header(path: &FsPath) -> ApiResult<Vec<u8>> {
@@ -186,6 +244,12 @@ fn markdown_extension(path: &FsPath) -> bool {
         })
 }
 
+fn pdf_extension(path: &FsPath) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
+}
+
 fn preview_response(kind: PreviewKind, path: &FsPath, bytes: Vec<u8>) -> ApiResult<Response<Body>> {
     let content_length = HeaderValue::from_str(&bytes.len().to_string())
         .map_err(|error| ApiError::Other(anyhow::Error::new(error)))?;
@@ -193,21 +257,21 @@ fn preview_response(kind: PreviewKind, path: &FsPath, bytes: Vec<u8>) -> ApiResu
         .header(CONTENT_TYPE, kind.content_type())
         .header(CACHE_CONTROL, "private")
         .header(CONTENT_LENGTH, content_length);
-    if matches!(kind, PreviewKind::Markdown) {
-        builder = builder.header(CONTENT_DISPOSITION, markdown_content_disposition(path));
+    if let Some(content_disposition) = kind.content_disposition(path) {
+        builder = builder.header(CONTENT_DISPOSITION, content_disposition);
     }
     builder
         .body(Body::from(bytes))
         .map_err(|error| ApiError::Other(anyhow::Error::new(error)))
 }
 
-fn markdown_content_disposition(path: &FsPath) -> String {
+fn content_disposition(disposition: &str, path: &FsPath, fallback_file_name: &str) -> String {
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or("preview.md");
+        .unwrap_or(fallback_file_name);
     format!(
-        "attachment; filename=\"{}\"",
+        "{disposition}; filename=\"{}\"",
         file_name.replace(['\\', '"'], "_")
     )
 }
@@ -230,6 +294,8 @@ fn message_mentions_missing_thread(message: &str) -> bool {
 enum PreviewKind {
     Image(ImagePreviewType),
     Markdown,
+    Pdf,
+    Download,
 }
 
 impl PreviewKind {
@@ -237,6 +303,17 @@ impl PreviewKind {
         match self {
             Self::Image(image) => image.content_type(),
             Self::Markdown => "text/markdown; charset=utf-8",
+            Self::Pdf => "application/pdf",
+            Self::Download => "application/octet-stream",
+        }
+    }
+
+    fn content_disposition(self, path: &FsPath) -> Option<String> {
+        match self {
+            Self::Image(_) => None,
+            Self::Markdown => Some(content_disposition("attachment", path, "preview.md")),
+            Self::Pdf => Some(content_disposition("inline", path, "preview.pdf")),
+            Self::Download => Some(content_disposition("attachment", path, "download")),
         }
     }
 
@@ -254,6 +331,16 @@ impl PreviewKind {
             Self::Markdown => std::str::from_utf8(bytes).map(|_| ()).map_err(|_| {
                 ApiError::UnsupportedMediaType("unsupported preview type".to_string())
             }),
+            Self::Pdf => {
+                if bytes.starts_with(b"%PDF-") {
+                    Ok(())
+                } else {
+                    Err(ApiError::UnsupportedMediaType(
+                        "unsupported preview type".to_string(),
+                    ))
+                }
+            }
+            Self::Download => Ok(()),
         }
     }
 }

@@ -257,6 +257,191 @@ test("renders selected thread snapshot output", async ({ page }) => {
   await expect(page.getByText(/snapshot assistant output/i)).toBeVisible();
 });
 
+test("renders generated UI as a desktop split and narrow bottom sheet", async ({ page }) => {
+  const interactiveSession = {
+    archivedAt: null,
+    createdAt: "2026-04-30T00:00:00Z",
+    documentUrl: "/v1/generated-ui/sessions/session-1/document?revision=1",
+    id: "session-1",
+    networkPolicy: "self_contained",
+    revision: 1,
+    status: "interactive",
+    submitAvailable: true,
+    submittedAt: null,
+    submittedMessage: null,
+    submittedMetadata: null,
+    submittedRevision: null,
+    threadId: thread.id,
+    title: "Mockup chooser",
+    updatedAt: "2026-04-30T00:00:00Z",
+  };
+  let generatedUiSubmitted = false;
+  await page.unroute("**/v1/**");
+  await page.route("**/v1/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const key = `${request.method()} ${url.pathname}`;
+
+    if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
+      await route.fulfill({ status: 200, headers: { "Content-Type": "text/event-stream" }, body: "" });
+      return;
+    }
+
+    if (key === "GET /v1/threads/thread-1/generated-ui") {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session: generatedUiSubmitted
+            ? {
+                ...interactiveSession,
+                status: "submitted",
+                submitAvailable: false,
+                submittedAt: "2026-04-30T00:00:05Z",
+                submittedMessage: "Pick mockup A",
+                submittedMetadata: { choice: "a" },
+                submittedRevision: 1,
+              }
+            : interactiveSession,
+        }),
+      });
+      return;
+    }
+
+    if (key === "GET /v1/generated-ui/sessions/session-1/document") {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+        body: `<!doctype html>
+          <html>
+            <body style="font-family: system-ui; margin: 0; padding: 16px">
+              <h1>Mockup chooser</h1>
+              <p>Compare two responsive concepts.</p>
+              <button onclick="parent.postMessage({type:'kodex.ui.submit', sessionId:'session-1', revision:1, message:'Pick mockup A', metadata:{choice:'a'}}, '*')">Choose A</button>
+            </body>
+          </html>`,
+      });
+      return;
+    }
+
+    if (key === "POST /v1/generated-ui/sessions/session-1/submit") {
+      generatedUiSubmitted = true;
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          input: { disposition: "started", queuedInput: null, rawPayload: { turnId: "turn-generated-ui" } },
+          session: {
+            ...interactiveSession,
+            status: "submitted",
+            submitAvailable: false,
+            submittedAt: "2026-04-30T00:00:05Z",
+            submittedMessage: "Pick mockup A",
+            submittedMetadata: { choice: "a" },
+            submittedRevision: 1,
+          },
+        }),
+      });
+      return;
+    }
+
+    const response = await responseFor(key, route);
+    await route.fulfill({
+      status: response.status ?? 200,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(response.body),
+    });
+  });
+
+  await page.setViewportSize({ width: 1800, height: 820 });
+  await page.goto("/threads/thread-1");
+
+  const surface = page.locator(".kodex-generated-ui-surface");
+  const resizeHandle = page.getByRole("separator", { name: /resize generated ui pane/i });
+  const workspace = page.locator(".kodex-thread-workspace");
+  await expect(page.getByTitle(/generated ui: mockup chooser/i)).toBeVisible();
+  await expect(resizeHandle).toBeVisible();
+  await expect(resizeHandle).toHaveCSS("width", "4px");
+  await expect(surface).toHaveCSS("position", "static");
+  await expect(surface).toHaveCSS("width", "520px");
+  await expect
+    .poll(async () => Number(await resizeHandle.getAttribute("aria-valuemax")))
+    .toBeGreaterThan(720);
+  const threadHeaderButtonLabels = await page.locator(".kodex-thread-header button").evaluateAll((buttons) =>
+    buttons.map((button) => button.getAttribute("aria-label")),
+  );
+  expect(threadHeaderButtonLabels).toEqual([
+    "Show sidebar",
+    "Hide generated UI",
+    "Thread actions",
+  ]);
+  await expect(page.locator(".kodex-generated-ui-pane").getByRole("button", { name: /hide generated ui/i })).toHaveCount(0);
+  const desktopFrameLayout = await page.locator(".kodex-generated-ui-pane").evaluate((pane) => {
+    const header = pane.querySelector(".kodex-generated-ui-header");
+    const frame = pane.querySelector(".kodex-generated-ui-frame-wrap");
+    if (!header || !frame) {
+      throw new Error("Missing generated UI layout nodes");
+    }
+    const paneBox = pane.getBoundingClientRect();
+    const headerBox = header.getBoundingClientRect();
+    const frameBox = frame.getBoundingClientRect();
+    return {
+      frameBottom: frameBox.bottom,
+      frameHeight: frameBox.height,
+      headerHeight: headerBox.height,
+      paneBottom: paneBox.bottom,
+      paneHeight: paneBox.height,
+    };
+  });
+  expect(desktopFrameLayout.paneBottom - desktopFrameLayout.frameBottom).toBeLessThanOrEqual(2);
+  expect(desktopFrameLayout.frameHeight).toBeGreaterThan(
+    desktopFrameLayout.paneHeight - desktopFrameLayout.headerHeight - 16,
+  );
+
+  const handleBox = await resizeHandle.boundingBox();
+  expect(handleBox).not.toBeNull();
+  await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handleBox!.x - 1200, handleBox!.y + handleBox!.height / 2);
+  await page.mouse.up();
+  const workspaceBox = await workspace.boundingBox();
+  const resizedSurfaceBox = await surface.boundingBox();
+  expect(workspaceBox).not.toBeNull();
+  expect(resizedSurfaceBox).not.toBeNull();
+  const expectedMaxWidth = Math.floor(Math.min(workspaceBox!.width * 0.75, workspaceBox!.width - 320 - 4));
+  expect(Math.round(resizedSurfaceBox!.width)).toBe(expectedMaxWidth);
+  expect(resizedSurfaceBox!.width).toBeGreaterThan(720);
+  expect(resizedSurfaceBox!.width / workspaceBox!.width).toBeLessThanOrEqual(0.751);
+
+  await page.getByRole("button", { name: /hide generated ui/i }).click();
+  await expect(surface).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /show generated ui/i })).toBeVisible();
+  await page.getByRole("button", { name: /show generated ui/i }).click();
+  await expect(page.getByTitle(/generated ui: mockup chooser/i)).toBeVisible();
+
+  const frameSubmit = page.frameLocator('iframe[title="Generated UI: Mockup chooser"]').getByRole("button", { name: "Choose A" });
+  await frameSubmit.click();
+  await expect(page.getByText(/submitted/i)).toBeVisible();
+
+  await page.setViewportSize({ width: 430, height: 760 });
+  await expect(surface).toHaveCSS("position", "fixed");
+  await page.waitForTimeout(250);
+  await expect(page.locator(".kodex-generated-ui-pane").getByRole("button", { name: /hide generated ui/i })).toBeVisible();
+  const mobileBox = await surface.boundingBox();
+  const mobilePaneBox = await page.locator(".kodex-generated-ui-pane").boundingBox();
+  const mobileFrameBox = await page.locator(".kodex-generated-ui-frame-wrap").boundingBox();
+  expect(mobileBox).not.toBeNull();
+  expect(mobilePaneBox).not.toBeNull();
+  expect(mobileFrameBox).not.toBeNull();
+  expect(Math.round(mobileBox!.x)).toBe(0);
+  expect(Math.round(mobileBox!.y)).toBe(0);
+  expect(Math.round(mobileBox!.width)).toBe(430);
+  expect(Math.round(mobileBox!.height)).toBe(760);
+  const mobilePaneBottom = mobilePaneBox!.y + mobilePaneBox!.height;
+  const mobileFrameBottom = mobileFrameBox!.y + mobileFrameBox!.height;
+  expect(Math.round(mobilePaneBottom - mobileFrameBottom)).toBeGreaterThanOrEqual(28);
+});
+
 test("opens idle historical snapshots without unread or stop state after refresh interval", async ({ page }) => {
   await page.goto("/threads/thread-1");
 
@@ -1098,6 +1283,9 @@ async function responseFor(key: string, route: Route): Promise<{ status?: number
         ],
       ),
     };
+  }
+  if (key === "GET /v1/threads/thread-1/generated-ui") {
+    return { body: { session: null } };
   }
   if (key === "POST /v1/threads") {
     return {

@@ -18,9 +18,11 @@ import {
   retryQueuedInput,
   steerQueuedInput,
   submitThreadInput,
+  uploadFiles,
   uploadImages,
   type ImageUpload,
   type TextElement,
+  type TimelineFileAttachment,
   type TimelineSkillMention,
   type UserInput,
 } from "../api/client";
@@ -30,8 +32,8 @@ import { composerTurnOptions, sameComposerContext, type ComposerContext } from "
 import { slashCommandFromSubmittedText } from "./slashCommands";
 import {
   createObjectUrl,
-  hasImageFiles,
-  imageFilesFromDataTransfer,
+  filesFromDataTransfer,
+  hasFiles,
   revokeObjectUrl,
 } from "./attachmentUtils";
 import type { ComposerDraftControls } from "./ComposerPanel";
@@ -210,10 +212,10 @@ export function useComposerOrchestration({
     try {
       if (selectedThreadId) {
         draftControls.clearText();
-        const input = await buildTurnInput(text, attachments, skillInputs, skillTextElements);
+        const payload = await buildTurnPayload(selectedThreadId, text, attachments, skillInputs, skillTextElements);
         const options = selectedThreadComposerOverride ? composerTurnOptions(selectedThreadComposerOverride) : {};
         if (activeSelectedTurnId) {
-          const queuedInput = await createQueuedInput(selectedThreadId, input, options);
+          const queuedInput = await createQueuedInput(selectedThreadId, payload.input, payload.attachments, options);
           onQueuedInputUpsert(queuedInput);
           clearPendingAttachments();
           setIsComposerSubmitting(false);
@@ -229,7 +231,7 @@ export function useComposerOrchestration({
             threadId: selectedThreadId,
           }) ?? null;
         }
-        const response = await submitThreadInput(selectedThreadId, input, options);
+        const response = await submitThreadInput(selectedThreadId, payload.input, payload.attachments, options);
         if (response.queuedInput) {
           if (optimisticClientRequestId) {
             onOptimisticUserMessageRemoved?.(optimisticClientRequestId);
@@ -270,8 +272,13 @@ export function useComposerOrchestration({
       startedThreadId = threadId;
       onThreadTurnStarted(threadId);
       draftControls.clearText();
-      const input = await buildTurnInput(text, attachments, skillInputs, skillTextElements);
-      const response = await submitThreadInput(threadId, input, composerTurnOptions(createdThread.composerSettings));
+      const payload = await buildTurnPayload(threadId, text, attachments, skillInputs, skillTextElements);
+      const response = await submitThreadInput(
+        threadId,
+        payload.input,
+        payload.attachments,
+        composerTurnOptions(createdThread.composerSettings),
+      );
       if (response.queuedInput) {
         onQueuedInputUpsert(response.queuedInput);
         clearPendingAttachments();
@@ -338,7 +345,7 @@ export function useComposerOrchestration({
       event.currentTarget.value = "";
       return;
     }
-    appendImageFiles(event.currentTarget.files);
+    appendFiles(event.currentTarget.files);
     event.currentTarget.value = "";
   }
 
@@ -356,7 +363,7 @@ export function useComposerOrchestration({
   }
 
   function handleComposerDragOver(event: ReactDragEvent<HTMLElement>) {
-    if (!canCompose || isComposerSubmitting || !hasImageFiles(event.dataTransfer)) {
+    if (!canCompose || isComposerSubmitting || !hasFiles(event.dataTransfer)) {
       return;
     }
     event.preventDefault();
@@ -370,20 +377,20 @@ export function useComposerOrchestration({
   }
 
   function handleComposerDrop(event: ReactDragEvent<HTMLElement>) {
-    if (!canCompose || isComposerSubmitting || !hasImageFiles(event.dataTransfer)) {
+    if (!canCompose || isComposerSubmitting || !hasFiles(event.dataTransfer)) {
       return;
     }
     event.preventDefault();
     setIsComposerDragActive(false);
-    appendImageFiles(imageFilesFromDataTransfer(event.dataTransfer));
+    appendFiles(filesFromDataTransfer(event.dataTransfer));
   }
 
   function handleComposerPaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
-    if (!canCompose || isComposerSubmitting || !hasImageFiles(event.clipboardData)) {
+    if (!canCompose || isComposerSubmitting || !hasFiles(event.clipboardData)) {
       return;
     }
     event.preventDefault();
-    appendImageFiles(imageFilesFromDataTransfer(event.clipboardData));
+    appendFiles(filesFromDataTransfer(event.clipboardData));
   }
 
   function handleComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
@@ -398,19 +405,27 @@ export function useComposerOrchestration({
     event.currentTarget.form?.requestSubmit();
   }
 
-  async function buildTurnInput(
+  async function buildTurnPayload(
+    threadId: string,
     text: string,
     attachments: PendingAttachment[],
     skillInputs: UserInput[] = [],
     skillTextElements: TextElement[] = [],
-  ): Promise<UserInput[]> {
+  ): Promise<{ input: UserInput[]; attachments: TimelineFileAttachment[] }> {
     const input: UserInput[] = [];
+    const fileAttachments: TimelineFileAttachment[] = [];
     if (text) {
       input.push({ type: "text", text, ...(skillTextElements.length > 0 ? { text_elements: skillTextElements } : {}) });
     }
     input.push(...skillInputs);
     if (attachments.length > 0) {
-      const attachmentsToUpload = attachments.filter((attachment) => !attachment.uploaded);
+      const imageAttachmentsToUpload = attachments.filter(
+        (attachment) => attachment.kind === "image" && !attachment.uploaded,
+      );
+      const fileAttachmentsToUpload = attachments.filter(
+        (attachment) => attachment.kind === "file" && !attachment.uploadedFile,
+      );
+      const attachmentsToUpload = [...imageAttachmentsToUpload, ...fileAttachmentsToUpload];
       updateAttachments(
         new Map(
           attachmentsToUpload.map((attachment) => [
@@ -420,12 +435,17 @@ export function useComposerOrchestration({
         ),
       );
       let uploads: ImageUpload[] = [];
+      let fileUploads: TimelineFileAttachment[] = [];
       try {
         uploads =
-          attachmentsToUpload.length > 0
-            ? await uploadImages(attachmentsToUpload.map((attachment) => attachment.file))
+          imageAttachmentsToUpload.length > 0
+            ? await uploadImages(imageAttachmentsToUpload.map((attachment) => attachment.file))
             : [];
-        if (uploads.length !== attachmentsToUpload.length) {
+        fileUploads =
+          fileAttachmentsToUpload.length > 0
+            ? await uploadFiles(threadId, fileAttachmentsToUpload.map((attachment) => attachment.file))
+            : [];
+        if (uploads.length !== imageAttachmentsToUpload.length || fileUploads.length !== fileAttachmentsToUpload.length) {
           throw new Error("Gateway upload response did not match selected attachments");
         }
       } catch (error) {
@@ -443,40 +463,60 @@ export function useComposerOrchestration({
 
       const previewUrls: Record<string, string> = {};
       const uploadedByAttachmentId = new Map<string, ImageUpload>();
+      const uploadedFileByAttachmentId = new Map<string, TimelineFileAttachment>();
       for (const [index, upload] of uploads.entries()) {
-        const attachment = attachmentsToUpload[index];
+        const attachment = imageAttachmentsToUpload[index];
         if (attachment) {
           uploadedByAttachmentId.set(attachment.id, upload);
-          previewUrls[upload.path] = attachment.objectUrl;
+          if (attachment.objectUrl) {
+            previewUrls[upload.path] = attachment.objectUrl;
+          }
+        }
+      }
+      for (const [index, upload] of fileUploads.entries()) {
+        const attachment = fileAttachmentsToUpload[index];
+        if (attachment) {
+          uploadedFileByAttachmentId.set(attachment.id, upload);
         }
       }
       updateAttachments(
         new Map(
           attachmentsToUpload.map((attachment) => [
             attachment.id,
-            { status: "uploaded" as const, uploaded: uploadedByAttachmentId.get(attachment.id), error: undefined },
+            {
+              status: "uploaded" as const,
+              uploaded: uploadedByAttachmentId.get(attachment.id),
+              uploadedFile: uploadedFileByAttachmentId.get(attachment.id),
+              error: undefined,
+            },
           ]),
         ),
       );
       for (const attachment of attachments) {
-        const upload = attachment.uploaded ?? uploadedByAttachmentId.get(attachment.id);
-        if (!upload) {
-          continue;
+        if (attachment.kind === "image") {
+          const upload = attachment.uploaded ?? uploadedByAttachmentId.get(attachment.id);
+          if (upload) {
+            input.push({ type: "localImage", path: upload.path });
+          }
+        } else {
+          const upload = attachment.uploadedFile ?? uploadedFileByAttachmentId.get(attachment.id);
+          if (upload) {
+            fileAttachments.push(upload);
+          }
         }
-        input.push({ type: "localImage", path: upload.path });
       }
       if (Object.keys(previewUrls).length > 0) {
         rememberImagePreviewUrls(previewUrls);
       }
     }
-    return input;
+    return { input, attachments: fileAttachments };
   }
 
-  function appendImageFiles(fileList: FileList | File[] | null) {
+  function appendFiles(fileList: FileList | File[] | null) {
     if (!fileList || isComposerSubmitting) {
       return;
     }
-    const files = Array.from(fileList).filter((file) => file.type.startsWith("image/"));
+    const files = Array.from(fileList);
     if (files.length === 0) {
       return;
     }
@@ -484,10 +524,12 @@ export function useComposerOrchestration({
       ...current,
       ...files.map((file) => {
         nextAttachmentId.current += 1;
+        const kind: PendingAttachment["kind"] = isImageFile(file) ? "image" : "file";
         return {
           id: `attachment-${nextAttachmentId.current}`,
           file,
-          objectUrl: createObjectUrl(file),
+          kind,
+          objectUrl: kind === "image" ? createObjectUrl(file) : undefined,
           status: "pending" as const,
         };
       }),
@@ -521,7 +563,7 @@ export function useComposerOrchestration({
   }
 
   function releaseAttachmentObjectUrl(attachment: PendingAttachment) {
-    if (Object.values(imagePreviewUrlsByPathRef.current).includes(attachment.objectUrl)) {
+    if (!attachment.objectUrl || Object.values(imagePreviewUrlsByPathRef.current).includes(attachment.objectUrl)) {
       return;
     }
     revokeObjectUrl(attachment.objectUrl);
@@ -551,4 +593,8 @@ export function useComposerOrchestration({
 
 function usesMobileComposerInput(): boolean {
   return isTouchInputDevice();
+}
+
+function isImageFile(file: File): boolean {
+  return file.type.startsWith("image/");
 }

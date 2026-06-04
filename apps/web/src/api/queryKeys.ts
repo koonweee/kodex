@@ -5,6 +5,7 @@ export const queryKeys = {
   chatThreads: ["threads", "chat"] as const,
   composerSettingsRoot: ["composer-settings"] as const,
   composerSettings: (projectId: string | null) => ["composer-settings", projectId ?? "global"] as const,
+  generatedUi: (threadId: string) => ["threads", threadId, "generated-ui"] as const,
   kodexControlPlugin: ["plugins", "kodex-control"] as const,
   models: ["models"] as const,
   mcpConfiguredServers: ["mcp", "configured-servers"] as const,

@@ -12,6 +12,10 @@ export type Capabilities = components["schemas"]["CapabilitiesResponse"];
 export type ComposerSettingsResponse = components["schemas"]["ComposerSettingsResponse"];
 export type ComposerSettingsUpdateRequest = components["schemas"]["ComposerSettingsUpdateRequest"];
 export type EventEnvelope = components["schemas"]["EventEnvelope"];
+export type GeneratedUiSession = components["schemas"]["GeneratedUiSessionDto"];
+export type GeneratedUiSessionReadResponse = components["schemas"]["GeneratedUiSessionReadResponse"];
+export type GeneratedUiSubmitRequest = components["schemas"]["GeneratedUiSubmitRequest"];
+export type GeneratedUiSubmitResponse = components["schemas"]["GeneratedUiSubmitResponse"];
 export type LoginStartResponse = components["schemas"]["LoginStartResponse"];
 export type KodexControlPluginInstallResponse = components["schemas"]["KodexControlPluginInstallResponse"];
 export type KodexControlPluginStatusResponse = components["schemas"]["KodexControlPluginStatusResponse"];
@@ -86,8 +90,9 @@ export type TimelineTurnUpsertPayload = components["schemas"]["TimelineTurnUpser
 export type TimelineUpdateSource = components["schemas"]["TimelineUpdateSource"];
 export type UserInput = components["schemas"]["UserInput"];
 export type ImageUpload = components["schemas"]["ImageUpload"];
+export type TimelineFileAttachment = components["schemas"]["TimelineFileAttachment"];
 export type CreateThreadOptions = Omit<components["schemas"]["CreateThreadRequest"], "payload" | "projectId">;
-export type TurnStartOptions = Omit<components["schemas"]["TurnStartRequest"], "input">;
+export type TurnStartOptions = Omit<components["schemas"]["TurnStartRequest"], "input" | "attachments">;
 export type NotificationStatusResponse = components["schemas"]["NotificationStatusResponse"];
 export type PushSubscriptionDeleteResponse = components["schemas"]["PushSubscriptionDeleteResponse"];
 export type PushSubscriptionUpsertResponse = components["schemas"]["PushSubscriptionUpsertResponse"];
@@ -360,6 +365,25 @@ export async function listThreadSubagents(threadId: string): Promise<ThreadSubag
   return response.subagents;
 }
 
+export async function getThreadGeneratedUi(threadId: string): Promise<GeneratedUiSession | null> {
+  const response = await unwrap(
+    api.GET("/v1/threads/{threadId}/generated-ui", { params: { path: { threadId } } }),
+  );
+  return response.session ?? null;
+}
+
+export async function submitGeneratedUiSession(
+  sessionId: string,
+  request: GeneratedUiSubmitRequest,
+): Promise<GeneratedUiSubmitResponse> {
+  return unwrap(
+    api.POST("/v1/generated-ui/sessions/{sessionId}/submit", {
+      params: { path: { sessionId } },
+      body: request,
+    }),
+  );
+}
+
 export async function archiveThread(threadId: string): Promise<void> {
   await unwrap(api.POST("/v1/threads/{threadId}/archive", { params: { path: { threadId } } }));
 }
@@ -495,12 +519,13 @@ export async function sendTestNotification(): Promise<TestNotificationResponse> 
 export async function submitThreadInput(
   threadId: string,
   input: UserInput[],
+  attachments: TimelineFileAttachment[] = [],
   options: TurnStartOptions = {},
 ): Promise<ThreadInputResponse> {
   return unwrap(
     api.POST("/v1/threads/{threadId}/input", {
       params: { path: { threadId } },
-      body: { input, ...options },
+      body: { input, ...(attachments.length > 0 ? { attachments } : {}), ...options },
     }),
   );
 }
@@ -523,12 +548,13 @@ export async function listQueuedInputs(threadId: string): Promise<QueuedInput[]>
 export async function createQueuedInput(
   threadId: string,
   input: UserInput[],
+  attachments: TimelineFileAttachment[] = [],
   options: TurnStartOptions = {},
 ): Promise<QueuedInput> {
   const response = await unwrap(
     api.POST("/v1/threads/{threadId}/queued-inputs", {
       params: { path: { threadId } },
-      body: { input, ...options },
+      body: { input, ...(attachments.length > 0 ? { attachments } : {}), ...options },
     }),
   );
   return response.queuedInput;
@@ -639,6 +665,22 @@ export async function uploadImages(files: File[]): Promise<ImageUpload[]> {
   }
   const body = (await response.json()) as components["schemas"]["ImageUploadResponse"];
   return body.images;
+}
+
+export async function uploadFiles(threadId: string, files: File[]): Promise<TimelineFileAttachment[]> {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append("files", file);
+  }
+  const response = await fetch(`${getApiBaseUrl()}/v1/threads/${encodeURIComponent(threadId)}/uploads/files`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) {
+    throw new Error(await responseErrorMessage(response));
+  }
+  const body = (await response.json()) as components["schemas"]["FileUploadResponse"];
+  return body.files;
 }
 
 export async function listPendingApprovals(): Promise<Approval[]> {

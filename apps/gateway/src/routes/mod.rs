@@ -5,6 +5,7 @@ pub mod capabilities;
 pub mod composer_settings;
 pub mod events;
 pub mod file_preview;
+pub mod generated_ui;
 pub mod health;
 pub mod kodex_control_plugin;
 pub mod mcp;
@@ -33,7 +34,10 @@ mod tests {
     use axum::{
         body::{to_bytes, Body},
         http::{
-            header::{ACCEPT_ENCODING, CACHE_CONTROL, CONTENT_ENCODING, CONTENT_TYPE},
+            header::{
+                ACCEPT_ENCODING, CACHE_CONTROL, CONTENT_ENCODING, CONTENT_SECURITY_POLICY,
+                CONTENT_TYPE,
+            },
             Request, StatusCode,
         },
     };
@@ -59,9 +63,10 @@ mod tests {
         },
         queue,
         store::{
-            NewApproval, NewAutomation, NewEvent, NewNotificationDelivery, NewPushSubscription,
-            NotificationDeliveryStatus, PushSubscription, Store, ThreadLocalSettingsOverlay,
-            ThreadRuntimeState, ThreadRuntimeStatus,
+            EventEnvelope, GeneratedUiSessionUpsert, NewApproval, NewAutomation, NewEvent,
+            NewNotificationDelivery, NewPushSubscription, NotificationDeliveryStatus,
+            PushSubscription, Store, ThreadLocalSettingsOverlay, ThreadRuntimeState,
+            ThreadRuntimeStatus,
         },
         thread_view,
         title_generation::{ThreadTitleGenerator, ThreadTitleRequest, TitleGenerationService},
@@ -1187,6 +1192,7 @@ mod tests {
         assert_eq!(body["status"], "notInstalled");
         assert_eq!(body["plugin"]["installed"], false);
         assert_eq!(body["skills"][0], "kodex-proxy-evaluation");
+        assert_eq!(body["skills"][1], "generative-ui");
     }
 
     #[tokio::test]
@@ -1269,6 +1275,7 @@ mod tests {
         let body = response_json(response).await;
         assert_eq!(body["status"]["status"], "installed");
         assert_eq!(body["status"]["skills"][0], "kodex-proxy-evaluation");
+        assert_eq!(body["status"]["skills"][1], "generative-ui");
         assert_eq!(body["status"]["mcpServers"][0], "kodex-control");
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "marketplace/add");
@@ -1403,6 +1410,7 @@ mod tests {
             "/v1/threads/{threadId}/queued-inputs/{queueId}/retry",
             "/v1/threads/{threadId}/queued-inputs/{queueId}/steer",
             "/v1/threads/{threadId}/files/preview",
+            "/v1/threads/{threadId}/uploads/files",
             "/v1/uploads/images",
             "/v1/approvals",
             "/v1/approvals/{approvalId}",
@@ -1476,6 +1484,8 @@ mod tests {
             "PermissionProfileSummary",
             "ThreadSettingsUpdateRequest",
             "ThreadSettingsUpdateResponse",
+            "TimelineFileAttachment",
+            "FileUploadResponse",
             "ThreadCompactDisposition",
             "ThreadCompactResponse",
         ] {
@@ -1515,6 +1525,31 @@ mod tests {
         assert!(upload_request_schema["required"]
             .as_array()
             .is_some_and(|required| required.iter().any(|value| value == "images")));
+        let file_upload_request_schema = &openapi["paths"]["/v1/threads/{threadId}/uploads/files"]
+            ["post"]["requestBody"]["content"]["multipart/form-data"]["schema"];
+        let file_upload_request_schema =
+            if let Some(reference) = file_upload_request_schema["$ref"].as_str() {
+                let schema_name = reference.trim_start_matches("#/components/schemas/");
+                &openapi["components"]["schemas"][schema_name]
+            } else {
+                file_upload_request_schema
+            };
+        assert_eq!(file_upload_request_schema["type"], "object");
+        assert_eq!(
+            file_upload_request_schema["properties"]["files"]["type"],
+            "array"
+        );
+        assert_eq!(
+            file_upload_request_schema["properties"]["files"]["items"]["type"],
+            "string"
+        );
+        assert_eq!(
+            file_upload_request_schema["properties"]["files"]["items"]["format"],
+            "binary"
+        );
+        assert!(file_upload_request_schema["required"]
+            .as_array()
+            .is_some_and(|required| required.iter().any(|value| value == "files")));
         assert!(
             openapi["components"]["schemas"]["QueuedInputStatus"]["enum"]
                 .as_array()
@@ -6600,6 +6635,7 @@ mod tests {
                 text: "Search Google for OpenAI news".to_string(),
                 text_elements: Vec::new(),
             }],
+            &[],
             pending.seq,
         )
         .await
@@ -7296,7 +7332,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn file_preview_serves_sniffed_images_and_markdown() {
+    async fn file_preview_serves_sniffed_images_markdown_pdfs_and_downloads() {
         let (state, app_server) = test_state().await;
         let dir = tempdir().unwrap();
         let images = [
@@ -7333,6 +7369,10 @@ mod tests {
         std::fs::write(&markdown, "# Notes\n\nhello").unwrap();
         let markdown_long = dir.path().join("notes.markdown");
         std::fs::write(&markdown_long, "## More\n\nworld").unwrap();
+        let pdf = dir.path().join("report.pdf");
+        std::fs::write(&pdf, b"%PDF-1.7\npreview pdf").unwrap();
+        let download = dir.path().join("data.csv");
+        std::fs::write(&download, b"alpha,beta\n1,2\n").unwrap();
         let app = build_router(state);
 
         for (path, bytes, content_type) in &images {
@@ -7381,6 +7421,7 @@ mod tests {
         assert_eq!(response_text(response).await, "# Notes\n\nhello");
 
         let response = app
+            .clone()
             .oneshot(
                 Request::get(file_preview_url("thread-1", &markdown_long))
                     .body(Body::empty())
@@ -7394,8 +7435,82 @@ mod tests {
             "text/markdown; charset=utf-8"
         );
 
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get(file_preview_url("thread-1", &pdf))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "application/pdf"
+        );
+        assert_eq!(
+            response.headers().get("content-disposition").unwrap(),
+            "inline; filename=\"report.pdf\""
+        );
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(&body[..], b"%PDF-1.7\npreview pdf");
+
+        let response = app
+            .oneshot(
+                Request::get(file_preview_url("thread-1", &download))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "application/octet-stream"
+        );
+        assert_eq!(
+            response.headers().get("content-disposition").unwrap(),
+            "attachment; filename=\"data.csv\""
+        );
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(&body[..], b"alpha,beta\n1,2\n");
+
         let requests = app_server.requests.lock().unwrap();
         assert!(requests.iter().all(|(method, _)| method == "thread/read"));
+    }
+
+    #[tokio::test]
+    async fn file_preview_resolves_relative_paths_from_thread_cwd() {
+        let (state, app_server) = test_state().await;
+        let dir = tempdir().unwrap();
+        let upload = dir
+            .path()
+            .join(".kodex")
+            .join("uploads")
+            .join("thread-1")
+            .join("file-1")
+            .join("notes.md");
+        std::fs::create_dir_all(upload.parent().unwrap()).unwrap();
+        std::fs::write(&upload, "# Uploaded\n").unwrap();
+        let mut thread = thread_read_response("thread-1", 0);
+        thread["thread"]["cwd"] = json!(dir.path().display().to_string());
+        app_server.queued_responses.lock().unwrap().push(thread);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::get(
+                    "/v1/threads/thread-1/files/preview?path=.kodex/uploads/thread-1/file-1/notes.md",
+                )
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response_text(response).await, "# Uploaded\n");
     }
 
     #[tokio::test]
@@ -7455,16 +7570,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn file_preview_rejects_unknown_unavailable_and_unsupported_targets() {
+    async fn file_preview_rejects_unavailable_and_invalid_preview_targets() {
         let (state, _app_server) = test_state().await;
         let dir = tempdir().unwrap();
         let image = dir.path().join("preview.local");
         std::fs::write(&image, b"\x89PNG\r\n\x1a\npreview image").unwrap();
         let missing = dir.path().join("missing.png");
-        let unsupported = dir.path().join("notes.txt");
-        std::fs::write(&unsupported, "plain text").unwrap();
         let invalid_markdown = dir.path().join("bad.md");
         std::fs::write(&invalid_markdown, b"\xff\xfe\xfd").unwrap();
+        let invalid_pdf = dir.path().join("bad.pdf");
+        std::fs::write(&invalid_pdf, b"not a pdf").unwrap();
         let app = build_router(state);
 
         for (thread_id, path, expected_status) in [
@@ -7473,12 +7588,12 @@ mod tests {
             ("thread-1", dir.path(), StatusCode::NOT_FOUND),
             (
                 "thread-1",
-                unsupported.as_path(),
+                invalid_markdown.as_path(),
                 StatusCode::UNSUPPORTED_MEDIA_TYPE,
             ),
             (
                 "thread-1",
-                invalid_markdown.as_path(),
+                invalid_pdf.as_path(),
                 StatusCode::UNSUPPORTED_MEDIA_TYPE,
             ),
         ] {
@@ -7576,6 +7691,384 @@ mod tests {
             requests[2].1,
             json!({"threadId": "thread-1", "turnId": "turn-1"})
         );
+    }
+
+    #[tokio::test]
+    async fn generated_ui_upsert_read_document_update_and_archive() {
+        let (state, _app_server) = test_state().await;
+        let mut events = state.events.subscribe();
+        let app = build_router(state.clone());
+        let source_value = json!({
+            "sourceThreadId": "source-thread",
+            "sourceTurnId": "source-turn",
+            "sourceToolCallId": "generated-ui-tool",
+            "requestedBy": "agent",
+            "reason": "verify generated UI provenance"
+        });
+
+        let first = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/threads/thread-1/generated-ui")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "title": "Mockup chooser",
+                            "html": "<!doctype html><button>Choose A</button><script>window.parent.postMessage({type:'kodex.generatedUi.submit'}, '*')</script>",
+                            "source": source_value.clone()
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+        let first = response_json(first).await;
+        assert_eq!(first["session"]["title"], "Mockup chooser");
+        assert_eq!(first["session"]["revision"], 1);
+        assert_eq!(first["session"]["status"], "interactive");
+        assert_eq!(first["session"]["networkPolicy"], "self_contained");
+        assert!(first["session"]["html"].is_null());
+        let session_id = first["session"]["id"].as_str().unwrap().to_string();
+        let document_url = first["session"]["documentUrl"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let upsert_event = timeout(Duration::from_secs(2), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(upsert_event.kind, "generated_ui.session_upserted");
+        assert_eq!(upsert_event.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(upsert_event.payload["id"], session_id);
+        assert!(upsert_event.payload["html"].is_null());
+
+        let events_replay = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/events?threadId=thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(events_replay.status(), StatusCode::OK);
+        let events_replay = response_json(events_replay).await;
+        let replayed_kinds = events_replay["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|event| event["kind"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert!(replayed_kinds.contains(&"generated_ui.session_upserted"));
+
+        let read = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/threads/thread-1/generated-ui")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(read.status(), StatusCode::OK);
+        let read = response_json(read).await;
+        assert_eq!(read["session"]["id"], session_id);
+        assert!(read["session"]["html"].is_null());
+
+        let document = app
+            .clone()
+            .oneshot(Request::get(&document_url).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(document.status(), StatusCode::OK);
+        assert!(document
+            .headers()
+            .get(CONTENT_SECURITY_POLICY)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("connect-src 'none'"));
+        assert!(document
+            .headers()
+            .get(CONTENT_SECURITY_POLICY)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("navigate-to 'none'"));
+        let document_body = to_bytes(document.into_body(), usize::MAX).await.unwrap();
+        assert!(std::str::from_utf8(&document_body)
+            .unwrap()
+            .contains("<button>Choose A</button>"));
+
+        let second = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/threads/thread-1/generated-ui")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "title": "Revised mockup chooser",
+                            "html": "<!doctype html><button>Choose B</button>"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(second.status(), StatusCode::OK);
+        let second = response_json(second).await;
+        assert_eq!(second["session"]["id"], session_id);
+        assert_eq!(second["session"]["revision"], 2);
+        assert_eq!(second["session"]["submittedRevision"], Value::Null);
+        assert_eq!(second["session"]["status"], "interactive");
+
+        let archived = app
+            .clone()
+            .oneshot(
+                Request::delete("/v1/self-control/threads/thread-1/generated-ui")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"source": source_value.clone()}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(archived.status(), StatusCode::OK);
+        let archived = response_json(archived).await;
+        assert_eq!(archived["session"]["status"], "archived");
+
+        let public_read_after_archive = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1/generated-ui")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(public_read_after_archive.status(), StatusCode::OK);
+        let public_read_after_archive = response_json(public_read_after_archive).await;
+        assert_eq!(public_read_after_archive["session"], Value::Null);
+
+        let audit_events = state
+            .store
+            .replay_events(None, None, Some("thread-1".to_string()))
+            .await
+            .unwrap();
+        for expected in [
+            "self_control.generated_ui_upserted",
+            "self_control.generated_ui_archived",
+        ] {
+            let Some(event) = audit_events.iter().find(|event| event.kind == expected) else {
+                panic!("missing audit event {expected}; saw {audit_events:?}");
+            };
+            assert_eq!(event.payload["source"]["sourceThreadId"], "source-thread");
+            assert_eq!(event.payload["source"]["sourceTurnId"], "source-turn");
+            assert_eq!(
+                event.payload["source"]["sourceToolCallId"],
+                "generated-ui-tool"
+            );
+            assert_eq!(event.payload["source"]["requestedBy"], "agent");
+            assert_eq!(
+                event.payload["source"]["reason"],
+                "verify generated UI provenance"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn generated_ui_submit_starts_idle_thread_and_rejects_duplicate_revision() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            thread_read_response("thread-1", 0),
+            json!({"turnId": "turn-generated"}),
+        ]);
+        let mut events = state.events.subscribe();
+        let app = build_router(state.clone());
+
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/threads/thread-1/generated-ui")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"title": "Questionnaire", "html": "<form></form>"}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let created = response_json(created).await;
+        let session_id = created["session"]["id"].as_str().unwrap();
+        let submit_url = format!("/v1/generated-ui/sessions/{session_id}/submit");
+        let _ = timeout(Duration::from_secs(2), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let submitted = app
+            .clone()
+            .oneshot(
+                Request::post(&submit_url)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "revision": 1,
+                            "message": "I pick mockup A",
+                            "metadata": {"choice": "a"}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(submitted.status(), StatusCode::OK);
+        let submitted = response_json(submitted).await;
+        assert_eq!(submitted["session"]["status"], "submitted");
+        assert_eq!(submitted["session"]["submitAvailable"], false);
+        assert_eq!(submitted["session"]["submittedRevision"], 1);
+        assert_eq!(submitted["input"]["disposition"], "started");
+
+        let submitted_event = recv_event_kind(&mut events, "generated_ui.session_submitted").await;
+        assert_eq!(submitted_event.kind, "generated_ui.session_submitted");
+        assert_eq!(
+            submitted_event.payload["submittedMetadata"],
+            json!({"choice": "a"})
+        );
+
+        let duplicate = app
+            .oneshot(
+                Request::post(&submit_url)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"revision": 1, "message": "submit twice"}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(duplicate.status(), StatusCode::CONFLICT);
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[1].0, "turn/start");
+        assert_eq!(requests[1].1["input"][0]["text"], "I pick mockup A");
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|(method, _)| method == "turn/start")
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn generated_ui_submit_claim_blocks_duplicate_claim_and_update() {
+        let (state, _app_server) = test_state().await;
+        let session = state
+            .store
+            .upsert_generated_ui_session(GeneratedUiSessionUpsert {
+                thread_id: "thread-1".to_string(),
+                title: "Questionnaire".to_string(),
+                html: "<form></form>".to_string(),
+            })
+            .await
+            .unwrap();
+
+        let claimed = state
+            .store
+            .claim_generated_ui_submit(&session.id, session.revision)
+            .await
+            .unwrap();
+        assert_eq!(claimed.status.as_str(), "submitting");
+
+        assert!(state
+            .store
+            .claim_generated_ui_submit(&session.id, session.revision)
+            .await
+            .is_err());
+        assert!(state
+            .store
+            .upsert_generated_ui_session(GeneratedUiSessionUpsert {
+                thread_id: "thread-1".to_string(),
+                title: "Updated questionnaire".to_string(),
+                html: "<form><button>Submit</button></form>".to_string(),
+            })
+            .await
+            .is_err());
+        assert!(state
+            .store
+            .archive_latest_generated_ui_session("thread-1")
+            .await
+            .is_err());
+
+        state
+            .store
+            .reset_generated_ui_submit(&session.id, session.revision)
+            .await
+            .unwrap();
+        let updated = state
+            .store
+            .upsert_generated_ui_session(GeneratedUiSessionUpsert {
+                thread_id: "thread-1".to_string(),
+                title: "Updated questionnaire".to_string(),
+                html: "<form><button>Submit</button></form>".to_string(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(updated.revision, session.revision + 1);
+    }
+
+    #[tokio::test]
+    async fn generated_ui_submit_steers_active_thread_through_composer_route() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            active_thread_read_response("thread-1", "turn-active"),
+            json!({"turnId": "turn-active"}),
+        ]);
+        let app = build_router(state);
+
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/threads/thread-1/generated-ui")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"title": "Follow-up", "html": "<button>Send</button>"}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let created = response_json(created).await;
+        let session_id = created["session"]["id"].as_str().unwrap();
+
+        let submitted = app
+            .oneshot(
+                Request::post(format!("/v1/generated-ui/sessions/{session_id}/submit"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"revision": 1, "message": "Use option B"}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(submitted.status(), StatusCode::OK);
+        let submitted = response_json(submitted).await;
+        assert_eq!(submitted["input"]["disposition"], "steered");
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "thread/read");
+        assert_eq!(requests[1].0, "turn/steer");
+        assert_eq!(requests[1].1["expectedTurnId"], "turn-active");
+        assert_eq!(requests[1].1["input"][0]["text"], "Use option B");
+        assert!(requests.iter().all(|(method, _)| method != "turn/start"));
     }
 
     #[tokio::test]
@@ -11255,6 +11748,113 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn file_upload_writes_to_thread_cwd_and_rejects_images() {
+        let (state, app_server) = test_state().await;
+        let dir = tempdir().unwrap();
+        let cwd = dir.path().to_path_buf();
+        let mut thread = thread_read_response("thread-1", 0);
+        thread["thread"]["cwd"] = json!(cwd.display().to_string());
+        let mut image_thread = thread_read_response("thread-1", 0);
+        image_thread["thread"]["cwd"] = json!(cwd.display().to_string());
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .extend([thread, image_thread]);
+        let app = build_router(state);
+
+        let accepted = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/threads/thread-1/uploads/files")
+                    .header(
+                        "content-type",
+                        "multipart/form-data; boundary=kodexboundary",
+                    )
+                    .body(Body::from(multipart_body_with_field(
+                        "files",
+                        "../notes.md",
+                        "text/markdown",
+                        b"# notes",
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(accepted.status(), StatusCode::OK);
+        let accepted = response_json(accepted).await;
+        let files = accepted["files"].as_array().unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0]["fileName"], "notes.md");
+        assert_eq!(files[0]["extension"], "md");
+        let relative_path = files[0]["relativePath"].as_str().unwrap();
+        assert!(relative_path.starts_with(".kodex/uploads/thread-1/"));
+        assert!(relative_path.ends_with("/notes.md"));
+        let absolute_path = files[0]["absolutePath"].as_str().unwrap();
+        assert!(std::path::Path::new(absolute_path).exists());
+        let canonical_cwd = std::fs::canonicalize(&cwd).unwrap();
+        assert!(std::path::Path::new(absolute_path)
+            .starts_with(canonical_cwd.join(".kodex/uploads/thread-1")));
+
+        let rejected = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/uploads/files")
+                    .header(
+                        "content-type",
+                        "multipart/form-data; boundary=kodexboundary",
+                    )
+                    .body(Body::from(multipart_body_with_field(
+                        "files",
+                        "image.png",
+                        "image/png",
+                        VALID_1X1_PNG,
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn file_upload_rejects_symlinked_upload_directory() {
+        let (state, app_server) = test_state().await;
+        let dir = tempdir().unwrap();
+        let cwd = dir.path().join("workspace");
+        let escaped = dir.path().join("escaped");
+        std::fs::create_dir_all(&cwd).unwrap();
+        std::fs::create_dir_all(&escaped).unwrap();
+        std::os::unix::fs::symlink(&escaped, cwd.join(".kodex")).unwrap();
+
+        let mut thread = thread_read_response("thread-1", 0);
+        thread["thread"]["cwd"] = json!(cwd.display().to_string());
+        app_server.queued_responses.lock().unwrap().push(thread);
+        let app = build_router(state);
+
+        let response = app
+            .oneshot(
+                Request::post("/v1/threads/thread-1/uploads/files")
+                    .header(
+                        "content-type",
+                        "multipart/form-data; boundary=kodexboundary",
+                    )
+                    .body(Body::from(multipart_body_with_field(
+                        "files",
+                        "notes.md",
+                        "text/markdown",
+                        b"# notes",
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(!escaped.join("uploads").exists());
+    }
+
+    #[tokio::test]
     async fn image_upload_rejects_corrupt_pngs() {
         let (mut state, _) = test_state().await;
         let dir = tempdir().unwrap();
@@ -13495,6 +14095,22 @@ mod tests {
         })
     }
 
+    async fn recv_event_kind(
+        receiver: &mut tokio::sync::broadcast::Receiver<EventEnvelope>,
+        expected_kind: &str,
+    ) -> EventEnvelope {
+        timeout(Duration::from_secs(2), async {
+            loop {
+                let event = receiver.recv().await.unwrap();
+                if event.kind == expected_kind {
+                    return event;
+                }
+            }
+        })
+        .await
+        .unwrap()
+    }
+
     async fn wait_for_app_server_method(app_server: &RecordingAppServer, expected_method: &str) {
         wait_for_app_server_request_count(app_server, expected_method, 1).await;
     }
@@ -13817,9 +14433,12 @@ mod tests {
         marketplace_path: &std::path::Path,
         plugin_root: Option<&std::path::Path>,
     ) -> Value {
-        let skill_path = plugin_root
+        let proxy_skill_path = plugin_root
             .map(|root| root.join("skills/kodex-proxy-evaluation/SKILL.md"))
             .unwrap_or_else(|| "/tmp/kodex-proxy-evaluation/SKILL.md".into());
+        let generative_ui_skill_path = plugin_root
+            .map(|root| root.join("skills/generative-ui/SKILL.md"))
+            .unwrap_or_else(|| "/tmp/generative-ui/SKILL.md".into());
         json!({
             "plugin": {
                 "summary": {
@@ -13838,13 +14457,22 @@ mod tests {
                 },
                 "marketplaceName": "kodex-local",
                 "marketplacePath": marketplace_path.display().to_string(),
-                "skills": [{
-                    "name": "kodex-proxy-evaluation",
-                    "path": skill_path.display().to_string(),
-                    "description": "Evaluate repository preview proxy compatibility.",
-                    "enabled": true,
-                    "scope": "plugin"
-                }],
+                "skills": [
+                    {
+                        "name": "kodex-proxy-evaluation",
+                        "path": proxy_skill_path.display().to_string(),
+                        "description": "Evaluate repository preview proxy compatibility.",
+                        "enabled": true,
+                        "scope": "plugin"
+                    },
+                    {
+                        "name": "generative-ui",
+                        "path": generative_ui_skill_path.display().to_string(),
+                        "description": "Open interactive generated UI panes.",
+                        "enabled": true,
+                        "scope": "plugin"
+                    }
+                ],
                 "mcpServers": ["kodex-control"],
                 "apps": [],
                 "description": null
@@ -13986,11 +14614,20 @@ mod tests {
     ];
 
     fn multipart_body(file_name: &str, content_type: &str, bytes: &[u8]) -> Vec<u8> {
+        multipart_body_with_field("images", file_name, content_type, bytes)
+    }
+
+    fn multipart_body_with_field(
+        field_name: &str,
+        file_name: &str,
+        content_type: &str,
+        bytes: &[u8],
+    ) -> Vec<u8> {
         let mut body = Vec::new();
         body.extend_from_slice(b"--kodexboundary\r\n");
         body.extend_from_slice(
             format!(
-                "Content-Disposition: form-data; name=\"images\"; filename=\"{file_name}\"\r\n"
+                "Content-Disposition: form-data; name=\"{field_name}\"; filename=\"{file_name}\"\r\n"
             )
             .as_bytes(),
         );

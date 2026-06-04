@@ -118,6 +118,7 @@ async fn session_reconciles_pending_user_input_when_snapshot_materializes_item()
             text: "Hello".to_string(),
             text_elements: Vec::new(),
         }],
+        &[],
         1,
     )
     .await
@@ -172,6 +173,7 @@ async fn pending_user_input_returns_turn_scoped_patch() {
             text: "New prompt".to_string(),
             text_elements: Vec::new(),
         }],
+        &[],
         2,
     )
     .await

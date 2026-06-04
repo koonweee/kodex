@@ -7,13 +7,14 @@ use sqlx::{sqlite::SqlitePoolOptions, Pool, Row, Sqlite};
 use utoipa::ToSchema;
 
 use crate::{
-    app_server_api::{TurnStartOptions, UserInput},
+    app_server_api::{TimelineFileAttachment, TurnStartOptions, UserInput},
     error::{ApiError, ApiResult},
 };
 
 mod approvals;
 mod automations;
 mod events;
+mod generated_ui;
 mod migrations;
 mod notifications;
 mod projects;
@@ -152,6 +153,63 @@ pub struct ProjectPreviewRouteUpdate {
     pub service_id: Option<String>,
     pub strip_prefix: Option<bool>,
     pub sort_order: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum GeneratedUiSessionStatus {
+    Interactive,
+    Submitting,
+    Submitted,
+    Archived,
+}
+
+impl GeneratedUiSessionStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Interactive => "interactive",
+            Self::Submitting => "submitting",
+            Self::Submitted => "submitted",
+            Self::Archived => "archived",
+        }
+    }
+
+    fn from_str(value: &str) -> ApiResult<Self> {
+        match value {
+            "interactive" => Ok(Self::Interactive),
+            "submitting" => Ok(Self::Submitting),
+            "submitted" => Ok(Self::Submitted),
+            "archived" => Ok(Self::Archived),
+            _ => Err(ApiError::Other(anyhow::anyhow!(
+                "unknown generated UI session status {value}"
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneratedUiSession {
+    pub id: String,
+    pub thread_id: String,
+    pub title: String,
+    pub html: String,
+    pub revision: i64,
+    pub status: GeneratedUiSessionStatus,
+    pub submitted_revision: Option<i64>,
+    pub submitted_message: Option<String>,
+    pub submitted_metadata: Option<Value>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub submitted_at: Option<DateTime<Utc>>,
+    pub archived_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GeneratedUiSessionUpsert {
+    pub thread_id: String,
+    pub title: String,
+    pub html: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -354,6 +412,8 @@ pub struct QueuedInput {
     pub id: String,
     pub thread_id: String,
     pub input: Vec<UserInput>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<TimelineFileAttachment>,
     pub options: TurnStartOptions,
     pub source_type: Option<String>,
     pub source_id: Option<String>,
@@ -601,6 +661,27 @@ fn row_to_project_preview_route(row: sqlx::sqlite::SqliteRow) -> ApiResult<Proje
     })
 }
 
+fn row_to_generated_ui_session(row: sqlx::sqlite::SqliteRow) -> ApiResult<GeneratedUiSession> {
+    let submitted_metadata_json: Option<String> = row.try_get("submitted_metadata_json")?;
+    Ok(GeneratedUiSession {
+        id: row.try_get("id")?,
+        thread_id: row.try_get("thread_id")?,
+        title: row.try_get("title")?,
+        html: row.try_get("html")?,
+        revision: row.try_get("revision")?,
+        status: GeneratedUiSessionStatus::from_str(&row.try_get::<String, _>("status")?)?,
+        submitted_revision: row.try_get("submitted_revision")?,
+        submitted_message: row.try_get("submitted_message")?,
+        submitted_metadata: submitted_metadata_json
+            .map(|value| serde_json::from_str(&value))
+            .transpose()?,
+        created_at: row.try_get("created_at")?,
+        updated_at: row.try_get("updated_at")?,
+        submitted_at: row.try_get("submitted_at")?,
+        archived_at: row.try_get("archived_at")?,
+    })
+}
+
 fn row_to_automation(row: sqlx::sqlite::SqliteRow) -> ApiResult<Automation> {
     let status: String = row.try_get("status")?;
     let provenance_json: Option<String> = row.try_get("provenance")?;
@@ -643,6 +724,9 @@ fn row_to_automation_run(row: sqlx::sqlite::SqliteRow) -> ApiResult<AutomationRu
 
 fn row_to_queued_input(row: sqlx::sqlite::SqliteRow) -> ApiResult<QueuedInput> {
     let input_json: String = row.try_get("input_json")?;
+    let attachments_json: String = row
+        .try_get::<Option<String>, _>("attachments_json")?
+        .unwrap_or_else(|| "[]".to_string());
     let options_json: String = row.try_get("options_json")?;
     let status: String = row.try_get("status")?;
     let priority: String = row.try_get("priority")?;
@@ -651,6 +735,7 @@ fn row_to_queued_input(row: sqlx::sqlite::SqliteRow) -> ApiResult<QueuedInput> {
         id: row.try_get("id")?,
         thread_id: row.try_get("thread_id")?,
         input: serde_json::from_str(&input_json)?,
+        attachments: serde_json::from_str(&attachments_json)?,
         options: serde_json::from_str(&options_json)?,
         source_type: row.try_get("source_type")?,
         source_id: row.try_get("source_id")?,

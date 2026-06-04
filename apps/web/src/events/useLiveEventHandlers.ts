@@ -5,6 +5,7 @@ import type { Approval, EventEnvelope, QueuedInput, RateLimitSnapshot } from "..
 import { applyMcpLifecycleEvent } from "../api/mcpCache";
 import { queryKeys } from "../api/queryKeys";
 import { applyCachedAutomationEvent } from "../automations/cache";
+import { applyGeneratedUiEvent } from "../generatedUi/cache";
 import type { ThreadSubagentDiscoveryEvent, ThreadUpsert } from "../threads/events";
 import { routeSelectedThreadLiveEvent, type LiveEventRouteHandlers } from "./liveRouting";
 
@@ -69,6 +70,10 @@ export function useLiveEventHandlers({
       applyMcpLifecycleEvent(queryClient, event);
     }
 
+    function applyGeneratedUiStreamEvent(event: EventEnvelope) {
+      applyGeneratedUiEvent(queryClient, event);
+    }
+
     function applyLiveUsageLimitSnapshot(nextUsageLimitSnapshot: RateLimitSnapshot) {
       liveUsageLimitSnapshotReceivedRef.current = true;
       if (applyUsageLimitSnapshot) {
@@ -92,6 +97,7 @@ export function useLiveEventHandlers({
       applySubagentDiscoveryEvent,
       applyUsageLimitSnapshot: applyLiveUsageLimitSnapshot,
       applyApprovalEvent,
+      applyGeneratedUiEvent: applyGeneratedUiStreamEvent,
       applySkillsChangedEvent,
       applyMcpLifecycleEvent: applyMcpLifecycleStreamEvent,
     };

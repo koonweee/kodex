@@ -1,4 +1,4 @@
-import type { EventEnvelope, TimelineSkillMention } from "../api/client";
+import type { EventEnvelope, TimelineFileAttachment, TimelineSkillMention } from "../api/client";
 import type { TimelineItem } from "./state";
 import {
   collabAgentArgsSummary,
@@ -56,15 +56,17 @@ export function createPresentationItem(
 
   if (itemType === "user_message") {
     const images = payloadImages(event.payload);
+    const fileAttachments = payloadFileAttachments(event.payload);
     const skillMentions = payloadSkillMentions(event.payload, text);
     return {
       item: {
         ...base,
+        fileAttachments,
         images,
         skillMentions,
         text,
       },
-      hidden: !text && images.length === 0,
+      hidden: !text && images.length === 0 && fileAttachments.length === 0,
       text: "Empty user message",
     };
   }
@@ -310,6 +312,34 @@ function payloadSkillMentions(payload: unknown, text: string): TimelineSkillMent
     );
   });
   return valid.length > 0 ? valid : undefined;
+}
+
+function payloadFileAttachments(payload: unknown): TimelineFileAttachment[] {
+  const record = payloadRecord(payload);
+  const item = payloadRecord(record?.item);
+  const itemSnapshot = payloadRecord(record?.itemSnapshot);
+  const attachments = Array.isArray(item?.fileAttachments)
+    ? item.fileAttachments
+    : Array.isArray(itemSnapshot?.fileAttachments)
+      ? itemSnapshot.fileAttachments
+      : Array.isArray(record?.fileAttachments)
+        ? record.fileAttachments
+        : undefined;
+  if (!attachments) {
+    return [];
+  }
+  return attachments.filter((attachment): attachment is TimelineFileAttachment => {
+    const record = payloadRecord(attachment);
+    if (!record) {
+      return false;
+    }
+    return (
+      typeof record.id === "string" &&
+      typeof record.fileName === "string" &&
+      typeof record.extension === "string" &&
+      typeof record.relativePath === "string"
+    );
+  });
 }
 
 function imageDataUrl(result: string): string {

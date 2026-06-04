@@ -8,7 +8,8 @@ use tokio::sync::{Mutex, OwnedMutexGuard};
 use crate::{
     api::AppState,
     app_server_api::{
-        self, timeline_skill_mentions_from_user_input, SkillMetadata, ThreadLiveState, UserInput,
+        self, timeline_skill_mentions_from_user_input, SkillMetadata, ThreadLiveState,
+        TimelineFileAttachment, UserInput,
     },
     error::{ApiError, ApiResult},
     events,
@@ -233,6 +234,7 @@ pub async fn record_pending_user_projection(
     thread_id: &str,
     turn_id: &str,
     input: &[UserInput],
+    attachments: &[TimelineFileAttachment],
 ) -> ApiResult<()> {
     let event = state
         .store
@@ -251,6 +253,7 @@ pub async fn record_pending_user_projection(
         thread_id,
         turn_id,
         input,
+        attachments,
         event.seq,
     )
     .await?

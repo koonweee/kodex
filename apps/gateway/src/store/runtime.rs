@@ -155,7 +155,7 @@ impl Store {
         let now = Utc::now();
         let rows = sqlx::query(
             r#"
-            select id, thread_id, input_json, options_json, source_type, source_id, status, priority,
+            select id, thread_id, input_json, attachments_json, options_json, source_type, source_id, status, priority,
                    attempt_count, last_error, accepted_turn_id, accepted_at,
                    accepted_event_seq, created_at, updated_at
             from queued_turn_inputs

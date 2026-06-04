@@ -1,4 +1,10 @@
-import type { EventEnvelope, PendingTimelineRequestSummary, ThreadTimelineFileChangeEntry, TimelineSkillMention } from "../api/client";
+import type {
+  EventEnvelope,
+  PendingTimelineRequestSummary,
+  ThreadTimelineFileChangeEntry,
+  TimelineFileAttachment,
+  TimelineSkillMention,
+} from "../api/client";
 
 export type TimelineStatus = "running" | "completed" | "failed" | "waiting" | "cancelled" | "approval_required";
 export type TimelineItemSource = "app_server" | "optimistic";
@@ -51,6 +57,7 @@ export type TimelineItem = {
   summary?: string;
   toolName?: string;
   images?: TimelineImage[];
+  fileAttachments?: TimelineFileAttachment[];
   skillMentions?: TimelineSkillMention[];
   source?: TimelineItemSource;
   clientRequestId?: string;

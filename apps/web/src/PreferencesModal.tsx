@@ -747,14 +747,14 @@ function PluginsPreferencesPanel({
           ) : null}
         </Stack>
         <Button
-          disabled={installed || blocked || statusLoading}
-          leftSection={installed ? <Check size={15} /> : undefined}
+          disabled={blocked || statusLoading}
+          leftSection={installed ? <RefreshCw size={15} /> : undefined}
           loading={installing}
           onClick={onInstall}
           type="button"
           variant={installed ? "light" : "filled"}
         >
-          {installed ? "Installed" : "Install"}
+          {installed ? "Reinstall" : "Install"}
         </Button>
       </Box>
     </Stack>

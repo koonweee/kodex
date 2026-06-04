@@ -181,6 +181,36 @@ describe("timeline message markdown renderers", () => {
     });
   });
 
+  it("opens relative uploaded markdown links through the markdown preview callback", async () => {
+    const onMarkdownOpen = vi.fn<(request: MarkdownPreviewRequest) => void>();
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          onMarkdownOpen={onMarkdownOpen}
+          threadId="thread-1"
+          item={item({
+            kind: "assistant_message",
+            text: "Read [uploaded](.kodex/uploads/thread-1/file-1/notes.md).",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    const link = await screen.findByRole("link", { name: "uploaded" });
+    expect(link).toHaveAttribute(
+      "href",
+      "http://localhost:3000/v1/threads/thread-1/files/preview?path=.kodex%2Fuploads%2Fthread-1%2Ffile-1%2Fnotes.md",
+    );
+    fireEvent.click(link);
+
+    expect(onMarkdownOpen).toHaveBeenCalledWith({
+      fragment: "",
+      href: "http://localhost:3000/v1/threads/thread-1/files/preview?path=.kodex%2Fuploads%2Fthread-1%2Ffile-1%2Fnotes.md",
+      path: ".kodex/uploads/thread-1/file-1/notes.md",
+      title: "notes.md",
+    });
+  });
+
   it("preserves browser-native modifier-click behavior for local markdown links", async () => {
     const onMarkdownOpen = vi.fn<(request: MarkdownPreviewRequest) => void>();
     render(
@@ -231,6 +261,66 @@ describe("timeline message markdown renderers", () => {
       title:
         "/Users/example/reference-project/dogfood-output/transaction-review/screenshots/03-inline-review-toast.png",
     });
+  });
+
+  it("opens inline pdf links through the thread file preview endpoint in a new tab", async () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          threadId="thread-1"
+          item={item({
+            kind: "assistant_message",
+            text:
+              "Read [report](/Users/example/kodex/report.pdf#page=2) and [uploaded](.kodex/uploads/thread-1/file-1/report.pdf).",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    const report = await screen.findByRole("link", { name: "report" });
+    expect(report).toHaveAttribute(
+      "href",
+      "http://localhost:3000/v1/threads/thread-1/files/preview?path=%2FUsers%2Fexample%2Fkodex%2Freport.pdf#page=2",
+    );
+    expect(report).toHaveAttribute("target", "_blank");
+    expect(report).not.toHaveAttribute("download");
+
+    const uploaded = screen.getByRole("link", { name: "uploaded" });
+    expect(uploaded).toHaveAttribute(
+      "href",
+      "http://localhost:3000/v1/threads/thread-1/files/preview?path=.kodex%2Fuploads%2Fthread-1%2Ffile-1%2Freport.pdf",
+    );
+    expect(uploaded).toHaveAttribute("target", "_blank");
+    expect(uploaded).not.toHaveAttribute("download");
+  });
+
+  it("downloads other inline file links through the thread file preview endpoint", async () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          threadId="thread-1"
+          item={item({
+            kind: "assistant_message",
+            text:
+              "Open [data](/Users/example/kodex/data.csv) and [archive](.kodex/uploads/thread-1/file-1/archive.zip).",
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    const data = await screen.findByRole("link", { name: "data" });
+    expect(data).toHaveAttribute(
+      "href",
+      "http://localhost:3000/v1/threads/thread-1/files/preview?path=%2FUsers%2Fexample%2Fkodex%2Fdata.csv",
+    );
+    expect(data).toHaveAttribute("download", "data.csv");
+
+    const archive = screen.getByRole("link", { name: "archive" });
+    expect(archive).toHaveAttribute(
+      "href",
+      "http://localhost:3000/v1/threads/thread-1/files/preview?path=.kodex%2Fuploads%2Fthread-1%2Ffile-1%2Farchive.zip",
+    );
+    expect(archive).toHaveAttribute("download", "archive.zip");
   });
 
   it("keeps assistant markdown output stable for links, code, lists, breaks, and skipped HTML", async () => {

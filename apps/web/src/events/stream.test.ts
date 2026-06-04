@@ -201,6 +201,43 @@ describe("event stream client", () => {
     client.close();
   });
 
+  it("receives generated UI SSE events emitted by the gateway", () => {
+    const received: string[] = [];
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      threadId: "thread-1",
+      onEvent: (event) => received.push(event.kind),
+    });
+
+    client.connect();
+    FakeEventSource.instances[0].emitNamed("generated_ui.session_upserted", {
+      id: "event-9",
+      seq: 9,
+      kind: "generated_ui.session_upserted",
+      codexMethod: null,
+      itemId: null,
+      threadId: "thread-1",
+      turnId: null,
+      projectId: null,
+      payload: {
+        id: "session-1",
+        threadId: "thread-1",
+        title: "Mockups",
+        revision: 1,
+        status: "interactive",
+        documentUrl: "/v1/generated-ui/sessions/session-1/document?revision=1",
+        submitAvailable: true,
+        networkPolicy: "self_contained",
+        createdAt: "2026-04-30T00:00:00Z",
+        updatedAt: "2026-04-30T00:00:00Z",
+      },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(received).toEqual(["generated_ui.session_upserted"]);
+    client.close();
+  });
+
   it("receives parent-scoped subagent SSE events emitted by the gateway", () => {
     const received: string[] = [];
     const client = createEventStreamClient({

@@ -196,6 +196,7 @@ describe("Mobile composer panel", () => {
         {
           file: new File(["image"], "preview.png", { type: "image/png" }),
           id: "attachment-1",
+          kind: "image",
           objectUrl: "blob:kodex-preview",
           status: "pending",
         },

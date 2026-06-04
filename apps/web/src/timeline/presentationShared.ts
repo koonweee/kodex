@@ -105,7 +105,7 @@ export function contentArrayText(value: unknown): string {
   if (!Array.isArray(value)) {
     return "";
   }
-  return value
+  const text = value
     .map((entry) => {
       if (typeof entry === "string") {
         return entry;
@@ -119,6 +119,21 @@ export function contentArrayText(value: unknown): string {
     })
     .filter(Boolean)
     .join("\n");
+  return stripAttachmentEnvelope(text);
+}
+
+function stripAttachmentEnvelope(text: string): string {
+  const trimmed = text.trimEnd();
+  const start = trimmed.lastIndexOf("```kodex-attachments\n");
+  if (start === -1 || !trimmed.endsWith("\n```")) {
+    return text;
+  }
+  const body = trimmed.slice(start + "```kodex-attachments\n".length, -"\n```".length);
+  const lines = body.split("\n").filter((line) => line.trim());
+  if (lines.length === 0 || lines.some((line) => !line.startsWith("- "))) {
+    return text;
+  }
+  return trimmed.slice(0, start).trimEnd();
 }
 
 export function truncateSummary(value: string, maxLength: number): string {

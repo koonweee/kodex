@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use tokio::time::{sleep, Duration, Instant};
 
+const MCP_TOOL_THREAD_ID_META_KEY: &str = "threadId";
+
 #[derive(Clone)]
 pub struct KodexControlMcp {
     gateway_url: String,
@@ -66,18 +68,29 @@ impl KodexControlMcp {
             )
         })?;
         let status = response.status();
-        let value = response.json::<Value>().await.map_err(|error| {
+        let body = response.text().await.map_err(|error| {
             McpError::internal_error(
-                "gateway returned invalid JSON",
+                "failed to read gateway response body",
                 Some(json!({ "error": error.to_string() })),
             )
         })?;
         if !status.is_success() {
+            let body = serde_json::from_str::<Value>(&body).unwrap_or(Value::String(body));
             return Err(McpError::internal_error(
                 "gateway returned an error",
-                Some(json!({ "status": status.as_u16(), "body": value })),
+                Some(json!({ "status": status.as_u16(), "body": body })),
             ));
         }
+        let value = serde_json::from_str::<Value>(&body).map_err(|error| {
+            McpError::internal_error(
+                "gateway returned invalid JSON",
+                Some(json!({
+                    "status": status.as_u16(),
+                    "body": body,
+                    "error": error.to_string()
+                })),
+            )
+        })?;
         Ok(value)
     }
 
@@ -312,6 +325,37 @@ pub struct ThreadIdToolParams {
 pub struct ThreadMutationToolParams {
     #[serde(alias = "thread_id")]
     pub thread_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneratedUiToolParams {
+    #[serde(default, alias = "thread_id", skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+    pub title: String,
+    pub html: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_self_control_depth: Option<u8>,
+    #[serde(default, flatten, skip_serializing_if = "Map::is_empty")]
+    pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneratedUiThreadToolParams {
+    #[serde(default, alias = "thread_id", skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneratedUiMutationToolParams {
+    #[serde(default, alias = "thread_id", skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<Value>,
 }
@@ -686,6 +730,69 @@ impl KodexControlMcp {
                     path_segment(&thread_id)
                 ),
                 Value::Object(body),
+            )
+            .await?,
+        ))
+    }
+
+    #[tool(
+        description = "Open a generated UI pane for the invoking Kodex thread by default, or for an explicit threadId override when intentionally targeting another thread. Use only when it creates a richer experience than chat alone through visual grouping, branching choices, comparison, preview, direct manipulation, progressive disclosure, or repeated actions. Generated UI may include both local UI interactions and conversational actions. Buttons are not inherently prompts: prefer local UI interactions when behavior can be handled inside the HTML with already-available data, such as modals, row expansion, tabs, chart filters or toggles, unit switches, breakdowns, or visualization views; these should not submit messages. Use conversational actions when interaction requires Codex, tools, external data, persistence, workflow continuation, or an explicit user decision, such as questionnaire answers, plan approval, investigation, visualization regeneration, automation updates, or follow-up artifacts. When an action is intended to involve Codex again, submit a standalone human-readable message plus optional compact JSON metadata. Pair every open with a short assistant message. Strongly prefer a theme-native UI unless the user explicitly asks for a distinct visual style: use Kodex semantic CSS variables for body, surfaces, cards, text, borders, buttons, charts, status colors, shadows, focus rings, and radii; avoid inventing custom palettes, gradients, stock dashboard chrome, or hard-coded color schemes for ordinary generated UIs. Keep the UI responsive, and keep HTML self-contained because v1 blocks external network by default."
+    )]
+    async fn open_generated_ui(
+        &self,
+        Parameters(params): Parameters<GeneratedUiToolParams>,
+        meta: Meta,
+    ) -> Result<CallToolResult, McpError> {
+        upsert_generated_ui_tool(self, params, meta).await
+    }
+
+    #[tool(
+        description = "Replace the latest generated UI pane revision for the invoking Kodex thread by default, or for an explicit threadId override when intentionally targeting another thread. Use this after a local UI view needs new embedded data, the user submits a conversational action, asks a follow-up, requests a revised mockup, or needs the next step of a workflow. Generated UI may include both local UI interactions and conversational actions. Buttons are not inherently prompts: prefer local UI interactions for embedded-data behavior such as modals, tabs, filters, chart toggles, unit switches, drilldowns, or progressive disclosure; these should not submit messages. Use conversational actions when interaction requires Codex, tools, external data, persistence, workflow continuation, or an explicit user decision, such as submitting answers, approving a plan, investigating, regenerating a visualization, updating automation, or creating a follow-up artifact. When an action is intended to involve Codex again, submit a standalone human-readable message plus optional compact JSON metadata. Strongly prefer a theme-native UI unless the user explicitly asks for a distinct visual style: use Kodex semantic CSS variables for body, surfaces, cards, text, borders, buttons, charts, status colors, shadows, focus rings, and radii; avoid inventing custom palettes, gradients, stock dashboard chrome, or hard-coded color schemes for ordinary generated UIs. Keep HTML self-contained, responsive, and bounded."
+    )]
+    async fn update_generated_ui(
+        &self,
+        Parameters(params): Parameters<GeneratedUiToolParams>,
+        meta: Meta,
+    ) -> Result<CallToolResult, McpError> {
+        upsert_generated_ui_tool(self, params, meta).await
+    }
+
+    #[tool(
+        description = "Read the latest generated UI pane metadata for the invoking Kodex thread by default, or for an explicit threadId override"
+    )]
+    async fn get_generated_ui(
+        &self,
+        Parameters(params): Parameters<GeneratedUiThreadToolParams>,
+        meta: Meta,
+    ) -> Result<CallToolResult, McpError> {
+        let thread_id = resolve_generated_ui_thread_id(params.thread_id, &meta)?;
+        Ok(json_tool_result(
+            self.get_json(&format!(
+                "/v1/self-control/threads/{}/generated-ui",
+                path_segment(&thread_id)
+            ))
+            .await?,
+        ))
+    }
+
+    #[tool(
+        description = "Archive the latest generated UI pane for the invoking Kodex thread by default, or for an explicit threadId override"
+    )]
+    async fn archive_generated_ui(
+        &self,
+        Parameters(params): Parameters<GeneratedUiMutationToolParams>,
+        meta: Meta,
+    ) -> Result<CallToolResult, McpError> {
+        let thread_id = resolve_generated_ui_thread_id(params.thread_id.clone(), &meta)?;
+        let mut body = json_object(params)?;
+        body.remove("threadId");
+        Ok(json_tool_result(
+            self.delete_json(
+                &format!(
+                    "/v1/self-control/threads/{}/generated-ui",
+                    path_segment(&thread_id)
+                ),
+                Some(Value::Object(body)),
             )
             .await?,
         ))
@@ -1388,6 +1495,16 @@ impl ServerHandler for KodexControlMcp {
                 ))
                 .await?
             }
+            uri if uri.starts_with("kodex://threads/") && uri.ends_with("/generated-ui") => {
+                let thread_id = uri
+                    .trim_start_matches("kodex://threads/")
+                    .trim_end_matches("/generated-ui");
+                self.get_json(&format!(
+                    "/v1/self-control/threads/{}/generated-ui",
+                    path_segment(thread_id)
+                ))
+                .await?
+            }
             uri if uri.starts_with("kodex://threads/") => {
                 let thread_id = uri.trim_start_matches("kodex://threads/");
                 self.get_json(&format!(
@@ -1453,6 +1570,10 @@ impl ServerHandler for KodexControlMcp {
                 Self::template(
                     "kodex://threads/{threadId}/queued-inputs",
                     "Kodex queued thread inputs",
+                ),
+                Self::template(
+                    "kodex://threads/{threadId}/generated-ui",
+                    "Kodex generated UI pane",
                 ),
                 Self::template("kodex://automations/{automationId}", "Kodex automation"),
                 Self::template("kodex://approvals/{approvalId}", "Kodex approval"),
@@ -1522,6 +1643,91 @@ fn spawn_thread_body(params: SpawnThreadToolParams) -> Result<Map<String, Value>
         }
     }
     Ok(body)
+}
+
+async fn upsert_generated_ui_tool(
+    service: &KodexControlMcp,
+    params: GeneratedUiToolParams,
+    meta: Meta,
+) -> Result<CallToolResult, McpError> {
+    let thread_id = resolve_generated_ui_thread_id(params.thread_id.clone(), &meta)?;
+    let mut body = json_object(params)?;
+    body.remove("threadId");
+    normalize_self_control_source_shorthand(&mut body)?;
+    Ok(json_tool_result(
+        service
+            .post_json(
+                &format!(
+                    "/v1/self-control/threads/{}/generated-ui",
+                    path_segment(&thread_id)
+                ),
+                Value::Object(body),
+            )
+            .await?,
+    ))
+}
+
+fn resolve_generated_ui_thread_id(
+    explicit_thread_id: Option<String>,
+    meta: &Meta,
+) -> Result<String, McpError> {
+    if let Some(thread_id) = explicit_thread_id {
+        return validate_generated_ui_thread_id(thread_id, "threadId");
+    }
+
+    match meta.0.get(MCP_TOOL_THREAD_ID_META_KEY) {
+        Some(Value::String(thread_id)) => {
+            validate_generated_ui_thread_id(thread_id.clone(), "_meta.threadId")
+        }
+        Some(_) => Err(McpError::invalid_params(
+            "MCP _meta.threadId must be a string",
+            Some(json!({ "field": "_meta.threadId" })),
+        )),
+        None => Err(McpError::invalid_params(
+            "threadId is required when MCP _meta.threadId is unavailable",
+            Some(json!({ "field": "threadId" })),
+        )),
+    }
+}
+
+fn validate_generated_ui_thread_id(
+    thread_id: String,
+    field: &'static str,
+) -> Result<String, McpError> {
+    if thread_id.trim().is_empty() {
+        return Err(McpError::invalid_params(
+            format!("{field} must not be empty"),
+            Some(json!({ "field": field })),
+        ));
+    }
+    Ok(thread_id)
+}
+
+fn normalize_self_control_source_shorthand(body: &mut Map<String, Value>) -> Result<(), McpError> {
+    let Some(source) = body.get_mut("source") else {
+        return Ok(());
+    };
+    match source {
+        Value::String(source_id) => {
+            let source_id = source_id.trim();
+            if source_id.is_empty() {
+                return Err(McpError::invalid_params(
+                    "source string must not be empty",
+                    Some(json!({ "field": "source" })),
+                ));
+            }
+            *source = json!({
+                "sourceType": "kodex_control",
+                "sourceToolCallId": source_id
+            });
+            Ok(())
+        }
+        Value::Object(_) => Ok(()),
+        _ => Err(McpError::invalid_params(
+            "source must be a string shorthand or self-control provenance object",
+            Some(json!({ "field": "source" })),
+        )),
+    }
 }
 
 fn json_encode_error(error: serde_json::Error) -> McpError {
@@ -1757,7 +1963,7 @@ mod tests {
                 std::env::current_dir()?.display().to_string(),
             )
             .await?;
-        let router = build_router(state);
+        let router = build_router(state.clone());
         let server = tokio::spawn(async move { axum::serve(listener, router).await });
         let service = KodexControlMcp::for_test(gateway_url);
         let (server_transport, client_transport) = tokio::io::duplex(64 * 1024);
@@ -1772,6 +1978,34 @@ mod tests {
         assert!(tools.iter().any(|tool| tool.name == "get_status"));
         assert_tool_requires(&tools, "create_thread", &["projectId"]);
         assert_tool_requires(&tools, "send_thread_input", &["threadId", "input"]);
+        assert_tool_requires(&tools, "open_generated_ui", &["title", "html"]);
+        assert_tool_does_not_require(&tools, "open_generated_ui", "threadId");
+        assert_tool_description_contains(
+            &tools,
+            "open_generated_ui",
+            &[
+                "Buttons are not inherently prompts",
+                "local UI interactions",
+                "conversational actions",
+                "standalone human-readable message",
+                "Strongly prefer a theme-native UI",
+                "Kodex semantic CSS variables",
+                "avoid inventing custom palettes",
+            ],
+        );
+        assert_tool_description_contains(
+            &tools,
+            "update_generated_ui",
+            &[
+                "Buttons are not inherently prompts",
+                "local UI interactions",
+                "conversational actions",
+                "standalone human-readable message",
+                "Strongly prefer a theme-native UI",
+                "Kodex semantic CSS variables",
+                "avoid inventing custom palettes",
+            ],
+        );
         assert_tool_requires(&tools, "pause_automation", &["automationId"]);
         assert_tool_requires(&tools, "resume_automation", &["automationId"]);
         let status_resource = client
@@ -1804,8 +2038,69 @@ mod tests {
         assert_eq!(value["dryRun"], true);
         assert_eq!(value["diff"][0]["action"], "created");
 
+        let mut generated_ui_args = JsonObject::new();
+        generated_ui_args.insert("title".to_string(), json!("Mockups"));
+        generated_ui_args.insert("source".to_string(), json!("codex"));
+        generated_ui_args.insert(
+            "html".to_string(),
+            json!("<!doctype html><button>Choose</button>"),
+        );
+        let mut generated_ui_meta = JsonObject::new();
+        generated_ui_meta.insert("threadId".to_string(), json!("thread-1"));
+        let mut generated_ui_call =
+            CallToolRequestParams::new("open_generated_ui").with_arguments(generated_ui_args);
+        generated_ui_call.set_meta(Meta(generated_ui_meta));
+        let opened: Value = client.call_tool(generated_ui_call).await?.into_typed()?;
+        assert_eq!(opened["session"]["threadId"], "thread-1");
+        assert_eq!(opened["session"]["revision"], 1);
+        assert!(opened["session"].get("html").is_none());
+        let audit_events = state
+            .store
+            .replay_events(None, None, Some("thread-1".to_string()))
+            .await?;
+        let generated_ui_audit = audit_events
+            .iter()
+            .find(|event| event.kind == "self_control.generated_ui_upserted")
+            .expect("generated UI audit event");
+        assert_eq!(
+            generated_ui_audit.payload["source"]["sourceToolCallId"],
+            "codex"
+        );
+
+        let read_generated_ui_args = JsonObject::new();
+        let mut read_generated_ui_meta = JsonObject::new();
+        read_generated_ui_meta.insert("threadId".to_string(), json!("thread-1"));
+        let mut read_generated_ui_call =
+            CallToolRequestParams::new("get_generated_ui").with_arguments(read_generated_ui_args);
+        read_generated_ui_call.set_meta(Meta(read_generated_ui_meta));
+        let read: Value = client
+            .call_tool(read_generated_ui_call)
+            .await?
+            .into_typed()?;
+        assert_eq!(read["session"]["title"], "Mockups");
+
         client.cancel().await?;
         mcp_server.abort();
+        server.abort();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn mcp_gateway_errors_include_non_json_status_and_body() -> anyhow::Result<()> {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let gateway_url = format!("http://{}", listener.local_addr()?);
+        let router = axum::Router::new().route(
+            "/plain-error",
+            axum::routing::get(|| async { (axum::http::StatusCode::BAD_GATEWAY, "upstream down") }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, router).await });
+        let service = KodexControlMcp::for_test(gateway_url);
+
+        let error = service.get_json("/plain-error").await.unwrap_err();
+
+        assert_eq!(error.message, "gateway returned an error");
+        assert_eq!(error.data.as_ref().unwrap()["status"], 502);
+        assert_eq!(error.data.as_ref().unwrap()["body"], "upstream down");
         server.abort();
         Ok(())
     }
@@ -1915,6 +2210,40 @@ mod tests {
                 properties.contains_key(*field),
                 "{name} tool schema should define {field}; schema: {:?}",
                 tool.input_schema
+            );
+        }
+    }
+
+    fn assert_tool_does_not_require(tools: &[Tool], name: &str, field: &str) {
+        let tool = tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("missing tool {name}"));
+        let required = tool
+            .input_schema
+            .get("required")
+            .and_then(Value::as_array)
+            .unwrap_or_else(|| panic!("{name} tool schema missing required fields"));
+        assert!(
+            !required.iter().any(|value| value.as_str() == Some(field)),
+            "{name} tool schema should not require {field}; schema: {:?}",
+            tool.input_schema
+        );
+    }
+
+    fn assert_tool_description_contains(tools: &[Tool], name: &str, expected: &[&str]) {
+        let tool = tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("missing tool {name}"));
+        let description = tool
+            .description
+            .as_deref()
+            .unwrap_or_else(|| panic!("{name} tool missing description"));
+        for text in expected {
+            assert!(
+                description.contains(text),
+                "{name} tool description should contain {text:?}; description: {description:?}",
             );
         }
     }

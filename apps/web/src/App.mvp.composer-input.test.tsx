@@ -977,6 +977,48 @@ describe("MVP composer input flows", () => {
     });
   });
 
+  it("attaches file uploads and posts attachment metadata without local image inputs", async () => {
+    const fileAttachment = {
+      id: "file-upload-1",
+      fileName: "notes.md",
+      extension: "md",
+      relativePath: ".kodex/uploads/thread-1/file-upload-1/notes.md",
+      absolutePath: "/workspace/.kodex/uploads/thread-1/file-upload-1/notes.md",
+      mimeType: "text/markdown",
+      sizeBytes: 7,
+    };
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/events": { events: [] },
+        "POST /v1/threads/thread-1/uploads/files": { files: [fileAttachment] },
+        "POST /v1/threads/thread-1/input": { payload: {} },
+      }),
+    );
+
+    const { container } = render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+
+    await userEvent.upload(input!, new File(["# notes"], "notes.md", { type: "text/markdown" }));
+
+    expect(screen.getByRole("button", { name: /remove notes.md/i })).toBeInTheDocument();
+    expect(screen.getByText("MD")).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Review this");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/uploads/files")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
+    });
+    expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(0);
+    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({
+      input: [{ type: "text", text: "Review this" }],
+      attachments: [fileAttachment],
+    });
+  });
+
   it("keeps image sends local while upload is pending", async () => {
     let resolveUpload: (value: unknown) => void = () => undefined;
     const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:pending-diagram");

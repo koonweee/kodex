@@ -17,6 +17,7 @@ vi.mock("react-markdown", async (importOriginal) => {
 });
 
 import { TimelineActivityGroupRenderer, TimelineFileChangesRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
+import { filePreviewUrl } from "../api/client";
 import type { MarkdownPreviewRequest } from "../files/types";
 import { createKodexMantineTheme, getKodexColorScheme } from "../theme";
 import type { TimelineItem } from "./reducer";
@@ -124,6 +125,120 @@ describe("timeline message renderers", () => {
       src: "blob:kodex-test",
       title: "/tmp/diagram.png",
     });
+  });
+
+  it("renders user file attachments above the message bubble", () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          item={item({
+            kind: "user_message",
+            text: "Review this",
+            fileAttachments: [
+              {
+                id: "file-1",
+                fileName: "notes.md",
+                extension: "md",
+                relativePath: ".kodex/uploads/thread-1/file-1-notes.md",
+                sizeBytes: 7,
+              },
+            ],
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("MD")).toBeInTheDocument();
+    expect(screen.getByText("notes.md")).toBeInTheDocument();
+    expect(screen.getByText("Review this")).toBeInTheDocument();
+  });
+
+  it("opens markdown user file attachments in the preview pane", () => {
+    const onMarkdownOpen = vi.fn();
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          threadId="thread-1"
+          onMarkdownOpen={onMarkdownOpen}
+          item={item({
+            kind: "user_message",
+            text: "Review this",
+            fileAttachments: [
+              {
+                id: "file-1",
+                fileName: "notes.md",
+                extension: "md",
+                relativePath: ".kodex/uploads/thread-1/file-1/notes.md",
+                sizeBytes: 7,
+              },
+            ],
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /preview notes\.md/i }));
+
+    expect(onMarkdownOpen).toHaveBeenCalledWith({
+      href: filePreviewUrl("thread-1", ".kodex/uploads/thread-1/file-1/notes.md"),
+      path: ".kodex/uploads/thread-1/file-1/notes.md",
+      title: "notes.md",
+    });
+  });
+
+  it("opens pdf user file attachments in a new tab", () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          threadId="thread-1"
+          item={item({
+            kind: "user_message",
+            text: "Review this",
+            fileAttachments: [
+              {
+                id: "file-1",
+                fileName: "report.pdf",
+                extension: "pdf",
+                relativePath: ".kodex/uploads/thread-1/file-1/report.pdf",
+                sizeBytes: 42,
+              },
+            ],
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    const link = screen.getByRole("link", { name: /open report\.pdf/i });
+    expect(link).toHaveAttribute("href", filePreviewUrl("thread-1", ".kodex/uploads/thread-1/file-1/report.pdf"));
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noreferrer");
+  });
+
+  it("downloads other user file attachments", () => {
+    render(
+      <MantineProvider>
+        <TimelineItemRenderer
+          threadId="thread-1"
+          item={item({
+            kind: "user_message",
+            text: "Review this",
+            fileAttachments: [
+              {
+                id: "file-1",
+                fileName: "data.csv",
+                extension: "csv",
+                relativePath: ".kodex/uploads/thread-1/file-1/data.csv",
+                sizeBytes: 42,
+              },
+            ],
+          })}
+        />
+      </MantineProvider>,
+    );
+
+    const link = screen.getByRole("link", { name: /download data\.csv/i });
+    expect(link).toHaveAttribute("href", filePreviewUrl("thread-1", ".kodex/uploads/thread-1/file-1/data.csv"));
+    expect(link).toHaveAttribute("download", "data.csv");
   });
 
   it("falls back to the file preview endpoint for reloaded user message images", () => {

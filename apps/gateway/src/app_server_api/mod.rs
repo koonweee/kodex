@@ -993,6 +993,20 @@ pub enum UserInput {
     },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineFileAttachment {
+    pub id: String,
+    pub file_name: String,
+    pub extension: String,
+    pub relative_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub absolute_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    pub size_bytes: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TextElement {
@@ -1510,6 +1524,8 @@ pub struct ThreadItemSnapshot {
     pub item_type: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skill_mentions: Vec<TimelineSkillMention>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub file_attachments: Vec<TimelineFileAttachment>,
     #[schema(ignore)]
     #[serde(default, skip_serializing)]
     pub raw_payload: Value,
@@ -1521,6 +1537,7 @@ impl ThreadItemSnapshot {
             id: required_string(payload, "id")?,
             item_type: required_string(payload, "type")?,
             skill_mentions: skill_mentions_from_thread_item(payload),
+            file_attachments: file_attachments_from_thread_item(payload),
             raw_payload: payload.clone(),
         })
     }
@@ -1542,6 +1559,140 @@ pub(crate) fn visible_text_from_thread_item(item: &Value) -> Option<String> {
     }
     let content = item.get("content").and_then(Value::as_array)?;
     visible_text_from_user_content(content)
+}
+
+pub(crate) fn append_file_attachment_envelope(
+    mut input: Vec<UserInput>,
+    attachments: &[TimelineFileAttachment],
+) -> Vec<UserInput> {
+    if attachments.is_empty() {
+        return input;
+    }
+
+    let envelope = file_attachment_envelope(attachments);
+    if let Some(UserInput::Text { text, .. }) = input
+        .iter_mut()
+        .rev()
+        .find(|input| matches!(input, UserInput::Text { .. }))
+    {
+        if text.is_empty() {
+            *text = envelope;
+        } else {
+            text.push_str("\n\n");
+            text.push_str(&envelope);
+        }
+    } else {
+        input.push(UserInput::Text {
+            text: envelope,
+            text_elements: Vec::new(),
+        });
+    }
+    input
+}
+
+pub(crate) fn validate_file_attachments_for_thread(
+    thread_id: &str,
+    attachments: Vec<TimelineFileAttachment>,
+) -> ApiResult<Vec<TimelineFileAttachment>> {
+    let thread_component = safe_path_component(thread_id);
+    let expected_prefix = format!(".kodex/uploads/{thread_component}/");
+    attachments
+        .into_iter()
+        .map(|attachment| validate_file_attachment(&expected_prefix, attachment))
+        .collect()
+}
+
+fn validate_file_attachment(
+    expected_prefix: &str,
+    mut attachment: TimelineFileAttachment,
+) -> ApiResult<TimelineFileAttachment> {
+    let path = attachment.relative_path.trim();
+    if path != attachment.relative_path
+        || path.contains('\\')
+        || path.contains('\n')
+        || path.contains('\r')
+        || path.contains('\0')
+        || path.contains("```")
+        || path.starts_with('/')
+        || !path.starts_with(expected_prefix)
+        || path
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return Err(ApiError::BadRequest(
+            "invalid file attachment path".to_string(),
+        ));
+    }
+    if attachment.file_name.trim().is_empty()
+        || attachment.file_name.contains('/')
+        || attachment.file_name.contains('\\')
+        || attachment.file_name.contains('\n')
+        || attachment.file_name.contains('\r')
+        || attachment.file_name.contains('\0')
+    {
+        return Err(ApiError::BadRequest(
+            "invalid file attachment name".to_string(),
+        ));
+    }
+    attachment.absolute_path = None;
+    attachment.extension = attachment
+        .file_name
+        .rsplit_once('.')
+        .map(|(_, extension)| extension.to_ascii_lowercase())
+        .unwrap_or_default();
+    Ok(attachment)
+}
+
+pub(crate) fn strip_file_attachment_envelope(text: &str) -> String {
+    let trimmed = text.trim_end();
+    let Some(start) = trimmed.rfind("```kodex-attachments\n") else {
+        return text.to_string();
+    };
+    let block = &trimmed[start..];
+    if !block.ends_with("\n```") {
+        return text.to_string();
+    }
+    let body = &block["```kodex-attachments\n".len()..block.len() - "\n```".len()];
+    if body
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .all(|line| line.starts_with("- "))
+    {
+        trimmed[..start].trim_end_matches('\n').to_string()
+    } else {
+        text.to_string()
+    }
+}
+
+fn safe_path_component(value: &str) -> String {
+    let sanitized = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('.')
+        .to_string();
+    if sanitized.is_empty() {
+        "file".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn file_attachment_envelope(attachments: &[TimelineFileAttachment]) -> String {
+    let mut block = String::from("```kodex-attachments\n");
+    for attachment in attachments {
+        block.push_str("- ");
+        block.push_str(&attachment.relative_path);
+        block.push('\n');
+    }
+    block.push_str("```");
+    block
 }
 
 pub(crate) fn timeline_skill_mentions_from_text(
@@ -1606,6 +1757,92 @@ fn skill_mentions_from_thread_item(item: &Value) -> Vec<TimelineSkillMention> {
     skill_mentions_from_user_content(content, &[])
 }
 
+fn file_attachments_from_thread_item(item: &Value) -> Vec<TimelineFileAttachment> {
+    let explicit: Vec<TimelineFileAttachment> = item
+        .get("fileAttachments")
+        .cloned()
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_default();
+    if !explicit.is_empty() {
+        return explicit;
+    }
+    if item.get("type").and_then(Value::as_str) != Some("userMessage") {
+        return Vec::new();
+    }
+    let Some(content) = item.get("content").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    file_attachments_from_user_content(content)
+}
+
+fn file_attachments_from_user_content(content: &[Value]) -> Vec<TimelineFileAttachment> {
+    let parts = content
+        .iter()
+        .filter_map(|input| {
+            if input.get("type").and_then(Value::as_str) != Some("text") {
+                return None;
+            }
+            input
+                .get("text")
+                .and_then(Value::as_str)
+                .filter(|text| !text.is_empty())
+        })
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        return Vec::new();
+    }
+    file_attachment_paths_from_text(&parts.join("\n"))
+        .into_iter()
+        .map(file_attachment_from_path)
+        .collect()
+}
+
+fn file_attachment_paths_from_text(text: &str) -> Vec<String> {
+    let trimmed = text.trim_end();
+    let Some(start) = trimmed.rfind("```kodex-attachments\n") else {
+        return Vec::new();
+    };
+    let block = &trimmed[start..];
+    if !block.ends_with("\n```") {
+        return Vec::new();
+    }
+    let body = &block["```kodex-attachments\n".len()..block.len() - "\n```".len()];
+    let lines = body
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect::<Vec<_>>();
+    if lines.is_empty() || !lines.iter().all(|line| line.starts_with("- ")) {
+        return Vec::new();
+    }
+    lines
+        .into_iter()
+        .map(|line| line.trim_start_matches("- ").trim().to_string())
+        .filter(|path| !path.is_empty())
+        .collect()
+}
+
+fn file_attachment_from_path(path: String) -> TimelineFileAttachment {
+    let file_name = path
+        .rsplit('/')
+        .next()
+        .filter(|value| !value.is_empty())
+        .unwrap_or("file")
+        .to_string();
+    let extension = file_name
+        .rsplit_once('.')
+        .map(|(_, extension)| extension.to_ascii_lowercase())
+        .unwrap_or_default();
+    TimelineFileAttachment {
+        id: path.clone(),
+        file_name,
+        extension,
+        relative_path: path,
+        absolute_path: None,
+        mime_type: None,
+        size_bytes: 0,
+    }
+}
+
 fn unambiguous_enabled_catalog_skills_by_name(
     catalog: &[SkillMetadata],
 ) -> HashMap<String, &SkillMetadata> {
@@ -1649,7 +1886,13 @@ fn visible_text_from_user_content(content: &[Value]) -> Option<String> {
     if parts.is_empty() {
         None
     } else {
-        Some(parts.join("\n"))
+        let text = parts.join("\n");
+        let text = strip_file_attachment_envelope(&text);
+        if text.is_empty() {
+            None
+        } else {
+            Some(text)
+        }
     }
 }
 

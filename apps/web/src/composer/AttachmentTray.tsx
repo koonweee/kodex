@@ -1,4 +1,4 @@
-import { ActionIcon, Box, Tooltip } from "@mantine/core";
+import { ActionIcon, Box, Text, Tooltip } from "@mantine/core";
 import { X } from "lucide-react";
 
 import { ImageThumbnail } from "../images/ImageThumbnail";
@@ -21,12 +21,19 @@ export function AttachmentTray({
       {attachments.map((attachment) => (
         <Tooltip label={attachment.file.name} key={attachment.id}>
           <Box className="kodex-attachment-thumb">
-            <ImageThumbnail
-              alt=""
-              src={attachment.objectUrl}
-              title={attachment.file.name}
-              onOpen={onImageOpen}
-            />
+            {attachment.kind === "image" && attachment.objectUrl ? (
+              <ImageThumbnail
+                alt=""
+                src={attachment.objectUrl}
+                title={attachment.file.name}
+                onOpen={onImageOpen}
+              />
+            ) : (
+              <Box className="kodex-file-attachment-tile">
+                <Text className="kodex-file-attachment-extension">{fileExtensionLabel(attachment.file.name)}</Text>
+                <Text className="kodex-file-attachment-name">{attachment.file.name}</Text>
+              </Box>
+            )}
             {attachment.status === "uploading" ? <Box className="kodex-attachment-status">Uploading</Box> : null}
             {attachment.status === "error" ? <Box className="kodex-attachment-status">Failed</Box> : null}
             <ActionIcon
@@ -44,4 +51,9 @@ export function AttachmentTray({
       ))}
     </Box>
   );
+}
+
+function fileExtensionLabel(fileName: string): string {
+  const extension = fileName.split(".").pop();
+  return extension && extension !== fileName ? extension.slice(0, 5).toUpperCase() : "FILE";
 }

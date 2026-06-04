@@ -1,0 +1,221 @@
+.kodex-thread-workspace {
+  --kodex-generated-ui-width: 520px;
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  gap: 0;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.kodex-thread-chat-column {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--mantine-spacing-md);
+  min-width: min(320px, 100%);
+  min-height: 0;
+}
+
+.kodex-generated-ui-surface {
+  box-sizing: border-box;
+  flex: 0 0 var(--kodex-generated-ui-width);
+  width: var(--kodex-generated-ui-width);
+  min-width: 0;
+  min-height: 0;
+  padding-left: 8px;
+}
+
+.kodex-generated-ui-resize-handle {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 4px;
+  width: 4px;
+  margin: -12px 0 -16px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.kodex-generated-ui-resize-handle::after {
+  position: absolute;
+  top: 12px;
+  right: 1px;
+  bottom: 16px;
+  width: 1px;
+  background: var(--kodex-border-subtle);
+  content: "";
+}
+
+.kodex-generated-ui-resize-handle:focus-visible {
+  outline: 1px solid var(--kodex-border-accent);
+  outline-offset: -2px;
+}
+
+.kodex-shell[data-generated-ui-resizing="true"],
+.kodex-shell[data-generated-ui-resizing="true"] * {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.kodex-generated-ui-pane {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding-left: 0;
+  background: var(--kodex-bg-panel);
+}
+
+.kodex-generated-ui-header {
+  grid-row: 1;
+  min-width: 0;
+  min-height: 38px;
+  padding-bottom: 8px;
+}
+
+.kodex-generated-ui-heading {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.kodex-generated-ui-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--kodex-text-primary);
+  font-size: var(--mantine-font-size-md);
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kodex-generated-ui-status {
+  flex: 0 0 auto;
+}
+
+.kodex-generated-ui-status svg[data-lucide="loader-2"] {
+  animation: kodex-generated-ui-spin 900ms linear infinite;
+}
+
+.kodex-generated-ui-close {
+  display: none;
+}
+
+.kodex-generated-ui-error {
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 8px;
+  border: 1px solid var(--kodex-border-warning);
+  border-radius: var(--kodex-radius-md);
+  padding: 7px 9px;
+  background: var(--kodex-bg-warning);
+  color: var(--kodex-text-warning);
+}
+
+.kodex-generated-ui-error span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kodex-generated-ui-frame-wrap {
+  grid-row: 3;
+  align-self: stretch;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  border-radius: var(--kodex-radius-md);
+  background: transparent;
+  overflow: hidden;
+}
+
+.kodex-generated-ui-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+}
+
+@keyframes kodex-generated-ui-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 900px) {
+  .kodex-thread-workspace {
+    display: block;
+  }
+
+  .kodex-thread-chat-column {
+    height: 100%;
+    min-width: 0;
+  }
+
+  .kodex-generated-ui-resize-handle {
+    display: none;
+  }
+
+  .kodex-generated-ui-surface {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: block;
+    width: 100vw;
+    height: 100dvh;
+    padding: env(safe-area-inset-top) 0 0;
+    background: var(--kodex-bg-shell);
+    animation: kodex-generated-ui-sheet-in 180ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .kodex-generated-ui-pane {
+    grid-template-rows: auto auto minmax(0, 1fr);
+    width: 100%;
+    height: calc(100dvh - env(safe-area-inset-top));
+    border-left: 0;
+    padding: 0;
+    background: var(--kodex-bg-shell);
+  }
+
+  .kodex-generated-ui-header {
+    min-height: 54px;
+    border-bottom: 1px solid var(--kodex-border-subtle);
+    padding: 7px 10px;
+  }
+
+  .kodex-generated-ui-title {
+    font-size: var(--mantine-font-size-md);
+  }
+
+  .kodex-generated-ui-close {
+    display: inline-flex;
+  }
+
+  .kodex-generated-ui-error {
+    margin: 8px 10px 0;
+  }
+
+  .kodex-generated-ui-frame-wrap {
+    height: auto;
+    margin: 10px 10px calc(28px + env(safe-area-inset-bottom));
+    border-radius: var(--kodex-radius-md);
+  }
+}
+
+@keyframes kodex-generated-ui-sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}

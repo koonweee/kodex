@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -107,6 +107,60 @@ describe("ThreadPanel", () => {
 
     expect(onSetThreadNotificationsEnabled).toHaveBeenCalledWith("thread-1", false);
     expect(screen.getByRole("button", { name: /thread actions/i })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("keeps the generated UI toggle grouped next to the thread actions menu", async () => {
+    const onGeneratedUiHide = vi.fn();
+    render(
+      <MantineProvider>
+        <ThreadPanel
+          errorMessage={null}
+          generatedUiAvailable
+          generatedUiHidden={false}
+          imagePreviewUrlsByPath={{}}
+          isDraftThreadSelected={false}
+          isSelectedTimelineLoading={false}
+          onArchiveThread={() => undefined}
+          onApprovalDecision={() => undefined}
+          onGeneratedUiHide={onGeneratedUiHide}
+          onImageOpen={() => undefined}
+          onPinThread={() => undefined}
+          onRenameThread={async () => undefined}
+          onSetThreadNotificationsEnabled={() => undefined}
+          onShowMobileSidebar={() => undefined}
+          onTimelineReady={() => undefined}
+          onUnpinThread={() => undefined}
+          pendingTitleThreadIds={new Set()}
+          scrollParentElement={null}
+          selectedThread={thread("thread-1")}
+          selectedThreadApprovals={[]}
+          selectedThreadTitle="Thread one"
+          selectedTimelineEntry={idleTimelineEntry}
+          setTimelineScrollElement={() => undefined}
+          showDebugEvents={false}
+          threadSyncNotice={null}
+          timeline={createTimelineState()}
+        />
+      </MantineProvider>,
+    );
+
+    const header = document.querySelector(".kodex-thread-header");
+    expect(header).not.toBeNull();
+    const headerButtonLabels = within(header as HTMLElement)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label"));
+    expect(headerButtonLabels).toEqual([
+      "Show sidebar",
+      "Hide generated UI",
+      "Thread actions",
+    ]);
+
+    const generatedUiToggle = screen.getByRole("button", { name: /hide generated ui/i });
+    expect(generatedUiToggle).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(generatedUiToggle);
+
+    expect(onGeneratedUiHide).toHaveBeenCalledTimes(1);
   });
 });
 

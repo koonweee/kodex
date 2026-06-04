@@ -3,7 +3,7 @@ use sqlx::{QueryBuilder, Sqlite};
 use uuid::Uuid;
 
 use crate::{
-    app_server_api::{TurnStartOptions, UserInput},
+    app_server_api::{TimelineFileAttachment, TurnStartOptions, UserInput},
     error::{ApiError, ApiResult},
 };
 
@@ -16,8 +16,26 @@ impl Store {
         input: Vec<UserInput>,
         options: TurnStartOptions,
     ) -> ApiResult<QueuedInput> {
-        self.create_queued_input_with_source(thread_id, input, options, None, None)
+        self.create_queued_input_with_attachments(thread_id, input, Vec::new(), options)
             .await
+    }
+
+    pub async fn create_queued_input_with_attachments(
+        &self,
+        thread_id: &str,
+        input: Vec<UserInput>,
+        attachments: Vec<TimelineFileAttachment>,
+        options: TurnStartOptions,
+    ) -> ApiResult<QueuedInput> {
+        self.create_queued_input_with_source_and_attachments(
+            thread_id,
+            input,
+            attachments,
+            options,
+            None,
+            None,
+        )
+        .await
     }
 
     pub async fn create_queued_input_with_source(
@@ -28,22 +46,44 @@ impl Store {
         source_type: Option<&str>,
         source_id: Option<&str>,
     ) -> ApiResult<QueuedInput> {
+        self.create_queued_input_with_source_and_attachments(
+            thread_id,
+            input,
+            Vec::new(),
+            options,
+            source_type,
+            source_id,
+        )
+        .await
+    }
+
+    pub async fn create_queued_input_with_source_and_attachments(
+        &self,
+        thread_id: &str,
+        input: Vec<UserInput>,
+        attachments: Vec<TimelineFileAttachment>,
+        options: TurnStartOptions,
+        source_type: Option<&str>,
+        source_id: Option<&str>,
+    ) -> ApiResult<QueuedInput> {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
         let input_json = serde_json::to_string(&input)?;
+        let attachments_json = serde_json::to_string(&attachments)?;
         let options_json = serde_json::to_string(&options)?;
         sqlx::query(
             r#"
             insert into queued_turn_inputs (
-                id, thread_id, input_json, options_json, status, priority,
+                id, thread_id, input_json, attachments_json, options_json, status, priority,
                 attempt_count, source_type, source_id, created_at, updated_at
             )
-            values (?, ?, ?, ?, 'queued', 'normal', 0, ?, ?, ?, ?)
+            values (?, ?, ?, ?, ?, 'queued', 'normal', 0, ?, ?, ?, ?)
             "#,
         )
         .bind(&id)
         .bind(thread_id)
         .bind(input_json)
+        .bind(attachments_json)
         .bind(options_json)
         .bind(source_type)
         .bind(source_id)
@@ -57,7 +97,7 @@ impl Store {
     pub async fn list_queued_inputs(&self, thread_id: &str) -> ApiResult<Vec<QueuedInput>> {
         let rows = sqlx::query(
             r#"
-            select id, thread_id, input_json, options_json, source_type, source_id, status, priority,
+            select id, thread_id, input_json, attachments_json, options_json, source_type, source_id, status, priority,
                    attempt_count, last_error, accepted_turn_id, accepted_at,
                    accepted_event_seq, created_at, updated_at
             from queued_turn_inputs
@@ -86,7 +126,7 @@ impl Store {
     pub async fn get_queued_input(&self, thread_id: &str, id: &str) -> ApiResult<QueuedInput> {
         let row = sqlx::query(
             r#"
-            select id, thread_id, input_json, options_json, source_type, source_id, status, priority,
+            select id, thread_id, input_json, attachments_json, options_json, source_type, source_id, status, priority,
                    attempt_count, last_error, accepted_turn_id, accepted_at,
                    accepted_event_seq, created_at, updated_at
             from queued_turn_inputs
@@ -109,7 +149,7 @@ impl Store {
     ) -> ApiResult<Option<QueuedInput>> {
         let row = sqlx::query(
             r#"
-            select id, thread_id, input_json, options_json, source_type, source_id, status, priority,
+            select id, thread_id, input_json, attachments_json, options_json, source_type, source_id, status, priority,
                    attempt_count, last_error, accepted_turn_id, accepted_at,
                    accepted_event_seq, created_at, updated_at
             from queued_turn_inputs
@@ -308,7 +348,7 @@ impl Store {
     ) -> ApiResult<Option<QueuedInput>> {
         let row = sqlx::query(
             r#"
-            select id, thread_id, input_json, options_json, source_type, source_id, status, priority,
+            select id, thread_id, input_json, attachments_json, options_json, source_type, source_id, status, priority,
                    attempt_count, last_error, accepted_turn_id, accepted_at,
                    accepted_event_seq, created_at, updated_at
             from queued_turn_inputs
@@ -358,7 +398,7 @@ impl Store {
     ) -> ApiResult<Vec<QueuedInput>> {
         let select = format!(
             r#"
-            select id, thread_id, input_json, options_json, source_type, source_id, status, priority,
+            select id, thread_id, input_json, attachments_json, options_json, source_type, source_id, status, priority,
                    attempt_count, last_error, accepted_turn_id, accepted_at,
                    accepted_event_seq, created_at, updated_at
             from queued_turn_inputs

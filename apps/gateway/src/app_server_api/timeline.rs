@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 
 use super::{
     is_terminal_turn_status, ThreadItemSnapshot, ThreadLiveState, ThreadTurnSnapshot,
-    TimelineItemUpsertPayload, TimelineUpdateSource,
+    TimelineFileAttachment, TimelineItemUpsertPayload, TimelineUpdateSource,
 };
 
 pub(crate) const TIMELINE_PREVIEW_STRING_LIMIT: usize = 16_384;
@@ -792,6 +792,8 @@ pub struct TimelineDisplayItemPayload {
     pub message: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub file_attachments: Vec<TimelineFileAttachment>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -886,6 +888,9 @@ pub(crate) fn compact_timeline_item_payload(item: &Value) -> TimelineDisplayItem
         text: display_string(object, "text"),
         message: display_string(object, "message"),
         content: display_value(object, "content"),
+        file_attachments: display_value(object, "fileAttachments")
+            .and_then(|value| serde_json::from_value(value).ok())
+            .unwrap_or_default(),
         summary: display_value(object, "summary"),
         review: display_string(object, "review"),
         command: display_string(object, "command"),

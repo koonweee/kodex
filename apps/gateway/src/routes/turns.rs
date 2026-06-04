@@ -9,7 +9,8 @@ use utoipa::ToSchema;
 use crate::{
     api::AppState,
     app_server_api::{
-        self, CodexClient, RawAppServerResponse, ThreadLiveState, TurnStartOptions, UserInput,
+        self, CodexClient, RawAppServerResponse, ThreadLiveState, TimelineFileAttachment,
+        TurnStartOptions, UserInput,
     },
     error::{ApiError, ApiResult},
     events, queue, skills, thread_view, turn_lifecycle,
@@ -38,6 +39,8 @@ pub fn router() -> Router<AppState> {
 #[serde(rename_all = "camelCase")]
 pub struct TurnStartRequest {
     pub input: Vec<UserInput>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<TimelineFileAttachment>,
     #[serde(flatten)]
     pub options: TurnStartOptions,
 }
@@ -101,18 +104,21 @@ pub async fn submit_thread_input(
     Json(request): Json<ThreadInputRequest>,
 ) -> ApiResult<Json<ThreadInputResponse>> {
     request.options.validate()?;
+    let attachments =
+        app_server_api::validate_file_attachments_for_thread(&thread_id, request.attachments)?;
+    let input = app_server_api::append_file_attachment_envelope(request.input, &attachments);
     let resolved =
-        skills::resolve_turn_input_with_skills_for_thread(&state, &thread_id, request.input)
-            .await?;
+        skills::resolve_turn_input_with_skills_for_thread(&state, &thread_id, input).await?;
     let options = request.options;
 
     let submit_guard = state.thread_input_locks.lock(&thread_id).await;
     match turn_lifecycle::route_for_thread_input(&state, &thread_id).await? {
         turn_lifecycle::ThreadInputRoute::QueueBehindGatewayWork => {
-            let queued_input = queue::create_queued_input_with_source(
+            let queued_input = queue::create_queued_input_with_source_and_attachments(
                 &state,
                 &thread_id,
                 resolved.input,
+                attachments,
                 options,
                 None,
                 None,
@@ -130,6 +136,7 @@ pub async fn submit_thread_input(
             &turn_id,
             &resolved.input,
             &resolved.skills,
+            &attachments,
         )
         .await
         {
@@ -143,6 +150,7 @@ pub async fn submit_thread_input(
                     &state,
                     &thread_id,
                     resolved.input,
+                    attachments,
                     options,
                     error,
                 )
@@ -190,6 +198,7 @@ pub async fn submit_thread_input(
             &thread_id,
             &turn_id,
             &resolved.input,
+            &attachments,
         )
         .await?;
     }
@@ -209,6 +218,7 @@ async fn submit_thread_input_as_steer(
     expected_turn_id: &str,
     input: &[UserInput],
     skills: &[app_server_api::SkillMetadata],
+    attachments: &[TimelineFileAttachment],
 ) -> ApiResult<Option<Json<ThreadInputResponse>>> {
     let pending_skill_mentions_id =
         turn_lifecycle::insert_pending_skill_mentions(state, thread_id, input, skills).await?;
@@ -221,6 +231,7 @@ async fn submit_thread_input_as_steer(
                 thread_id,
                 &projection_turn_id,
                 input,
+                attachments,
             )
             .await?;
             return Ok(Some(Json(ThreadInputResponse {
@@ -305,13 +316,15 @@ async fn queue_rejected_steer_input(
     state: &AppState,
     thread_id: &str,
     input: Vec<UserInput>,
+    attachments: Vec<TimelineFileAttachment>,
     options: TurnStartOptions,
     error: ApiError,
 ) -> ApiResult<Json<ThreadInputResponse>> {
-    let queued_input = queue::create_rejected_steer_input_with_source(
+    let queued_input = queue::create_rejected_steer_input_with_source_and_attachments(
         state,
         thread_id,
         input,
+        attachments,
         options,
         error.to_string(),
         None,
@@ -444,9 +457,11 @@ pub async fn start_turn(
     Json(request): Json<TurnStartRequest>,
 ) -> ApiResult<Json<RawAppServerResponse>> {
     request.options.validate()?;
+    let attachments =
+        app_server_api::validate_file_attachments_for_thread(&thread_id, request.attachments)?;
+    let input = app_server_api::append_file_attachment_envelope(request.input, &attachments);
     let resolved =
-        skills::resolve_turn_input_with_skills_for_thread(&state, &thread_id, request.input)
-            .await?;
+        skills::resolve_turn_input_with_skills_for_thread(&state, &thread_id, input).await?;
     let pending_skill_mentions_id = turn_lifecycle::insert_pending_skill_mentions(
         &state,
         &thread_id,
@@ -478,6 +493,7 @@ pub async fn start_turn(
             &thread_id,
             &turn_id,
             &resolved.input,
+            &attachments,
         )
         .await?;
     }
@@ -517,8 +533,14 @@ pub async fn steer_turn(
             return Err(error);
         }
     };
-    turn_lifecycle::record_pending_user_projection(&state, &thread_id, &turn_id, &resolved.input)
-        .await?;
+    turn_lifecycle::record_pending_user_projection(
+        &state,
+        &thread_id,
+        &turn_id,
+        &resolved.input,
+        &[],
+    )
+    .await?;
     Ok(Json(response))
 }
 

@@ -1,7 +1,7 @@
 import { ActionIcon, Box, Button, Text, Tooltip } from "@mantine/core";
 import { X } from "lucide-react";
 
-import { queuedInputImageCount, queuedInputText, type QueuedSteerRow } from "./types";
+import { queuedInputFileCount, queuedInputImageCount, queuedInputText, type QueuedSteerRow } from "./types";
 
 const QUEUE_LABEL = "Queued steer messages";
 const QUEUE_ROW_LABEL = "Queued steer message";
@@ -32,6 +32,7 @@ export function QueuedSteerCard({
       {visibleRows.map((row) => {
         const isPendingCommit = row.status === "pendingCommit";
         const isBusy = row.status === "submitting" || row.status === "steering" || isPendingCommit;
+        const fileCount = queuedInputFileCount(row);
         const imageCount = queuedInputImageCount(row);
         const text = queuedInputText(row);
         const submitLabel = row.status === "failed" ? RETRY_BUTTON_LABEL : STEER_BUTTON_LABEL;
@@ -47,7 +48,7 @@ export function QueuedSteerCard({
           >
             <Box className="kodex-queued-steer-content">
               <Text className="kodex-queued-steer-text" size="sm">
-                {text || `${imageCount} image${imageCount === 1 ? "" : "s"}`}
+                {text || attachmentCountLabel(imageCount, fileCount)}
               </Text>
               {row.lastError ? (
                 <Text c="var(--kodex-color-danger-text)" size="xs">
@@ -88,4 +89,12 @@ export function QueuedSteerCard({
       })}
     </Box>
   );
+}
+
+function attachmentCountLabel(imageCount: number, fileCount: number): string {
+  const parts = [
+    imageCount > 0 ? `${imageCount} image${imageCount === 1 ? "" : "s"}` : null,
+    fileCount > 0 ? `${fileCount} file${fileCount === 1 ? "" : "s"}` : null,
+  ].filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? parts.join(", ") : "Queued message";
 }

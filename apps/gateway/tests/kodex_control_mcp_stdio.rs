@@ -13,7 +13,9 @@ use axum::{
     Json, Router,
 };
 use rmcp::{
-    model::{CallToolRequestParams, JsonObject, ReadResourceRequestParams, Tool},
+    model::{
+        CallToolRequestParams, JsonObject, Meta, ReadResourceRequestParams, RequestParamsMeta, Tool,
+    },
     transport::{ConfigureCommandExt, TokioChildProcess},
     ServiceExt,
 };
@@ -38,6 +40,8 @@ async fn kodex_control_mcp_stdio_lists_tools() -> anyhow::Result<()> {
     assert_tool_requires(&tools, "spawn_thread", &["projectId", "input"]);
     assert_tool_requires(&tools, "rename_thread", &["threadId", "name"]);
     assert_tool_requires(&tools, "update_thread_settings", &["threadId", "settings"]);
+    assert_tool_requires(&tools, "open_generated_ui", &["title", "html"]);
+    assert_tool_does_not_require(&tools, "open_generated_ui", "threadId");
     assert_tool_requires(&tools, "deny_approval", &["approvalId"]);
     assert_tool_requires(
         &tools,
@@ -136,6 +140,17 @@ async fn kodex_control_mcp_smokes_new_tools_against_fake_gateway() -> anyhow::Re
         .into_typed()?;
     assert_eq!(settings["thread"]["model"], "gpt-test-2");
 
+    let mut generated_ui_args = JsonObject::new();
+    generated_ui_args.insert("title".to_string(), json!("Thread UI"));
+    generated_ui_args.insert("html".to_string(), json!("<!doctype html><main>UI</main>"));
+    let mut generated_ui_meta = JsonObject::new();
+    generated_ui_meta.insert("threadId".to_string(), json!("thread-spawned"));
+    let mut generated_ui_call =
+        CallToolRequestParams::new("open_generated_ui").with_arguments(generated_ui_args);
+    generated_ui_call.set_meta(Meta(generated_ui_meta));
+    let generated_ui: Value = client.call_tool(generated_ui_call).await?.into_typed()?;
+    assert_eq!(generated_ui["session"]["threadId"], "thread-spawned");
+
     let mut deny_args = JsonObject::new();
     deny_args.insert("approvalId".to_string(), json!("approval-1"));
     let denied: Value = client
@@ -195,6 +210,12 @@ async fn kodex_control_mcp_smokes_new_tools_against_fake_gateway() -> anyhow::Re
     }));
     assert!(requests.iter().any(|request| {
         request.method == Method::POST
+            && request.path == "/v1/self-control/threads/thread-spawned/generated-ui"
+            && request.body["title"] == "Thread UI"
+            && request.body.get("threadId").is_none()
+    }));
+    assert!(requests.iter().any(|request| {
+        request.method == Method::POST
             && request.path == "/v1/self-control/approvals/approval-1/decision"
             && request.body["decision"]["decision"] == "decline"
             && request.body.get("source").is_none()
@@ -229,6 +250,23 @@ fn assert_tool_requires(tools: &[Tool], name: &str, required_fields: &[&str]) {
             tool.input_schema
         );
     }
+}
+
+fn assert_tool_does_not_require(tools: &[Tool], name: &str, field: &str) {
+    let tool = tools
+        .iter()
+        .find(|tool| tool.name == name)
+        .unwrap_or_else(|| panic!("missing tool {name}"));
+    let required = tool
+        .input_schema
+        .get("required")
+        .and_then(Value::as_array)
+        .unwrap_or_else(|| panic!("{name} tool schema missing required fields"));
+    assert!(
+        !required.iter().any(|value| value.as_str() == Some(field)),
+        "{name} tool schema should not require {field}; schema: {:?}",
+        tool.input_schema
+    );
 }
 
 #[derive(Clone, Default)]
@@ -270,6 +308,9 @@ async fn fake_gateway_handler(
         }
         (Method::PATCH, "/v1/self-control/threads/thread-spawned/settings") => {
             json!({"thread": {"id": "thread-spawned", "model": request_body["model"]}})
+        }
+        (Method::POST, "/v1/self-control/threads/thread-spawned/generated-ui") => {
+            json!({"session": {"threadId": "thread-spawned", "title": request_body["title"]}})
         }
         (Method::POST, "/v1/self-control/approvals/approval-1/decision") => {
             json!({"approvalId": "approval-1", "policy": {"allowed": true}})

@@ -7,6 +7,7 @@ import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
 import { filePreviewUrl } from "../api/client";
+import { fileNameFromPath, filePreviewActionForTarget, type FilePreviewAction } from "../files/filePreviewActions";
 import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
 import { copyTextToClipboard } from "../shared/clipboard";
@@ -44,7 +45,7 @@ function markdownComponents(
   return {
     a: ({ children, href, title }) => {
       const imagePreview = localImagePreviewHref(threadId, href);
-      const markdownPreview = localMarkdownPreviewHref(threadId, href);
+      const filePreview = localFilePreviewHref(threadId, href);
       if (imagePreview) {
         return (
           <a
@@ -63,25 +64,20 @@ function markdownComponents(
           </a>
         );
       }
+      const linkHref = filePreviewHref(filePreview) ?? href;
+      const download = filePreviewDownload(filePreview, onMarkdownOpen);
       return (
         <a
-          href={markdownPreview?.href ?? href}
+          href={linkHref}
           target="_blank"
           rel="noreferrer"
-          download={onMarkdownOpen ? undefined : markdownPreview?.download}
+          download={download}
           onClick={(event) => {
-            if (!markdownPreview || !onMarkdownOpen || shouldUseNativeLinkClick(event)) {
+            if (filePreview?.kind !== "markdown" || !onMarkdownOpen || shouldUseNativeLinkClick(event)) {
               return;
             }
             event.preventDefault();
-            onMarkdownOpen({
-              fragment: markdownPreview.fragment,
-              href: markdownPreview.href,
-              column: markdownPreview.column,
-              line: markdownPreview.line,
-              path: markdownPreview.path,
-              title: title ?? markdownPreview.title,
-            });
+            onMarkdownOpen({ ...filePreview.request, title: title ?? filePreview.request.title });
           }}
         >
           {children}
@@ -201,32 +197,12 @@ function reactNodeText(children: ReactNode): string {
     .join("");
 }
 
-function localMarkdownPreviewHref(
-  threadId?: string,
-  href?: string,
-): {
-  column?: number;
-  download: string;
-  fragment: string;
-  href: string;
-  line?: number;
-  path: string;
-  title: string;
-} | null {
-  const target = href ? localMarkdownPreviewTarget(href) : null;
+function localFilePreviewHref(threadId?: string, href?: string): FilePreviewAction | null {
+  const target = href ? localFilePreviewActionTarget(href) : null;
   if (!threadId || !target) {
     return null;
   }
-  const download = markdownFileName(target.path);
-  return {
-    column: target.column,
-    download,
-    fragment: target.fragment,
-    href: `${filePreviewUrl(threadId, target.path)}${target.fragment}`,
-    line: target.line,
-    path: target.path,
-    title: markdownLocationTitle(download, target.line, target.column),
-  };
+  return filePreviewActionForTarget(threadId, target);
 }
 
 function localImagePreviewHref(threadId?: string, href?: string): { href: string; path: string } | null {
@@ -240,13 +216,33 @@ function localImagePreviewHref(threadId?: string, href?: string): { href: string
   };
 }
 
-function localMarkdownPreviewTarget(href: string): { column?: number; fragment: string; line?: number; path: string } | null {
+function localFilePreviewActionTarget(href: string): {
+  column?: number;
+  fileName: string;
+  fragment: string;
+  line?: number;
+  path: string;
+  title?: string;
+} | null {
   const { fragment, path } = localFilePreviewTarget(href);
-  const target = localMarkdownPathWithLocation(path);
-  if (!target) {
+  const markdownTarget = localMarkdownPathWithLocation(path);
+  if (markdownTarget) {
+    const fileName = fileNameFromPath(markdownTarget.path);
+    return {
+      ...markdownTarget,
+      fileName,
+      fragment,
+      title: markdownLocationTitle(fileName, markdownTarget.line, markdownTarget.column),
+    };
+  }
+  if (!isLocalFilePath(path) || !fileNameHasExtension(path)) {
     return null;
   }
-  return { ...target, fragment };
+  return {
+    fileName: fileNameFromPath(path),
+    fragment,
+    path,
+  };
 }
 
 function localImagePreviewTarget(href: string): { path: string } | null {
@@ -267,7 +263,7 @@ function localFilePreviewTarget(href: string): { fragment: string; path: string 
 }
 
 function isLocalMarkdownPath(path: string): boolean {
-  return isLocalAbsolutePath(path) && /\.(?:md|markdown)$/i.test(path);
+  return isLocalFilePath(path) && /\.(?:md|markdown)$/i.test(path);
 }
 
 function localMarkdownPathWithLocation(path: string): { column?: number; line?: number; path: string } | null {
@@ -286,7 +282,21 @@ function localMarkdownPathWithLocation(path: string): { column?: number; line?: 
 }
 
 function isLocalImagePath(path: string): boolean {
-  return isLocalAbsolutePath(path) && /\.(?:png|jpe?g|gif|webp)$/i.test(path);
+  return isLocalFilePath(path) && /\.(?:png|jpe?g|gif|webp)$/i.test(path);
+}
+
+function isLocalFilePath(path: string): boolean {
+  return isLocalAbsolutePath(path) || isSafeRelativeLocalPath(path);
+}
+
+function isSafeRelativeLocalPath(path: string): boolean {
+  if (!path || path.startsWith("/") || path.startsWith("\\") || path.startsWith("#") || path.startsWith("?")) {
+    return false;
+  }
+  if (path.startsWith("//") || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(path)) {
+    return false;
+  }
+  return path.split(/[\\/]+/).every((part) => part && part !== "." && part !== "..");
 }
 
 function isLocalAbsolutePath(path: string): boolean {
@@ -298,8 +308,7 @@ function shouldUseNativeLinkClick(event: MouseEvent<HTMLAnchorElement>) {
 }
 
 function markdownFileName(path: string): string {
-  const parts = path.split(/[\\/]/);
-  return parts[parts.length - 1] || "Markdown preview";
+  return fileNameFromPath(path) || "Markdown preview";
 }
 
 function markdownLocationTitle(fileName: string, line?: number, column?: number): string {
@@ -307,4 +316,31 @@ function markdownLocationTitle(fileName: string, line?: number, column?: number)
     return fileName;
   }
   return column ? `${fileName}:${line}:${column}` : `${fileName}:${line}`;
+}
+
+function filePreviewHref(filePreview: FilePreviewAction | null): string | undefined {
+  if (!filePreview) {
+    return undefined;
+  }
+  return filePreview.kind === "markdown" ? filePreview.request.href : filePreview.href;
+}
+
+function filePreviewDownload(
+  filePreview: FilePreviewAction | null,
+  onMarkdownOpen?: (request: MarkdownPreviewRequest) => void,
+): string | undefined {
+  if (!filePreview) {
+    return undefined;
+  }
+  if (filePreview.kind === "download") {
+    return filePreview.fileName;
+  }
+  if (filePreview.kind === "markdown" && !onMarkdownOpen) {
+    return markdownFileName(filePreview.request.path);
+  }
+  return undefined;
+}
+
+function fileNameHasExtension(path: string): boolean {
+  return /\.[A-Za-z0-9]{1,16}$/.test(fileNameFromPath(path));
 }
