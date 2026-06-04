@@ -347,4 +347,4 @@ The gateway validates outbound JSON-RPC client requests through the app-server a
 - [MVP frontend implementation plan](plans/mvp-frontend.md)
 - [Future extensions overview](plans/future-extensions.md)
 
-[^ios-removal]: Recovery reference: [the single removal commit titled "Remove native iOS app and APNs surface"](https://github.com/jtkw-kirbot/kodex/commits/main/?q=Remove+native+iOS+app+and+APNs+surface). A commit cannot contain a literal link to its own final hash without changing that hash; use the linked commit title search after push, or the exact hash reported by Git locally, to recover the deleted tree.
+[^ios-removal]: Recovery reference: [commit `eecd6a58142b2ab360dbdf7737ebe57c47046c67`](https://github.com/jtkw-kirbot/kodex/commit/eecd6a58142b2ab360dbdf7737ebe57c47046c67), which removed the native iOS app and APNs surface.
