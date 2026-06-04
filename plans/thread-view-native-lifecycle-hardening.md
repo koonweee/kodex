@@ -59,7 +59,7 @@ Existing tests already protect important invariants:
 ## Non-Goals
 
 - Do not implement the separate normal-submit steer-routing change here. Active submit behavior belongs in the steer plan.
-- Do not redesign timeline visual presentation, work-row layout, collaboration rendering, file preview rendering, or mobile/native iOS UI.
+- Do not redesign timeline visual presentation, work-row layout, collaboration rendering, file preview rendering, or mobile web UI.
 - Do not remove approval, queued-input, automation, read-state, pin, or notification persistence; those are coordination state, not transcript history.
 - Do not pursue the archived performance-overhaul compact DTO/detail-hydration scope unless a cleanup step exposes a small required DTO change.
 - Do not add a gateway durable transcript cache for performance or reconnect recovery.

@@ -14,6 +14,8 @@ The first Rust gateway implementation exists under `apps/gateway`. It includes t
 
 The first React web client exists under `apps/web`. It includes the Vite/Mantine scaffold, generated OpenAPI TypeScript types, a typed fetch client, project/thread navigation, pinned threads, stable draggable project ordering, attention-sorted threads, snapshot-first timeline rendering, gateway-backed queued composer follow-ups, composer controls, pending approval decisions, Preferences > Plugins for Kodex Control installation, Preferences > MCP for app-server MCP inventory/auth/resource inspection plus global MCP add/remove/enable/disable/replace, and account/model surfaces.
 
+The native iOS app and its APNs scaffold were removed from this repository.[^ios-removal]
+
 See [plans/index.md](plans/index.md) for the plan directory and status table.
 
 ## MVP Assumptions
@@ -153,53 +155,6 @@ The gateway has no MVP auth and is intended only for localhost or a trusted VPN.
 Preferences > MCP can write global Codex MCP config. Inline stdio environment values and HTTP header values are stored in local Codex config, not gateway SQLite, and Kodex masks them on readback; this is a usability guard, not a secure secret manager. Local-command MCP servers run their configured command when Codex loads the server. Removing a configured server removes its inline config values but does not delete app-server-owned OAuth credentials unless upstream adds and documents a supported MCP credential removal API.
 
 Image uploads default to the system temp directory so Codex app-server can read `localImage` paths from its sandbox. If you override `KODEX_UPLOADS_DIR`, choose a path that app-server can read from the active sandbox profile, such as a project root or `/tmp`.
-
-## Native iOS Development
-
-The native iOS client lives in `apps/ios`. It is a SwiftUI companion app over the existing gateway, not a wrapped React client. The simulator default gateway URL is `http://127.0.0.1:8787`; physical devices need a reachable trusted LAN, VPN, or tailnet gateway URL. Kodex still has no MVP gateway auth, so do not expose the gateway directly to the public internet.
-
-Prerequisites:
-
-- Full Xcode selected with `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
-- At least one iOS Simulator runtime installed in Xcode Settings > Platforms.
-- Homebrew helpers: `brew install xcodegen xcbeautify`.
-- For Codex-driven simulator verification, use the Build iOS Apps plugin / XcodeBuildMCP tools with `apps/ios/KodexIOS.xcodeproj`, scheme `KodexIOS`, and an available iPhone simulator.
-
-Commands:
-
-```bash
-apps/ios/scripts/doctor.sh
-KODEX_GATEWAY_URL=http://127.0.0.1:8787 apps/ios/scripts/generate-api.sh
-cd apps/ios && xcodegen generate
-cd apps/ios && swift test
-```
-
-`generate-api.sh` fetches the gateway OpenAPI contract, refreshes checked-in Swift OpenAPI `Client`/`Types` sources under `apps/ios/Sources/KodexAPI/GeneratedSources`, and updates generated operation metadata. The iOS generator uses defensive naming to avoid schema key collisions; narrow manual bridges remain for OpenAPI `null`, multipart, and free-form JSON gaps.
-
-After generating the project, build and test on a simulator either through the Build iOS Apps plugin or with:
-
-```bash
-xcodebuild build -project apps/ios/KodexIOS.xcodeproj -scheme KodexIOS -destination 'platform=iOS Simulator,name=<doctor-selected-iPhone>' | xcbeautify
-xcodebuild test -project apps/ios/KodexIOS.xcodeproj -scheme KodexIOS -destination 'platform=iOS Simulator,name=<doctor-selected-iPhone>' | xcbeautify
-```
-
-For a live smoke against a running gateway and authenticated app-server account:
-
-```bash
-KODEX_GATEWAY_URL=http://127.0.0.1:8787 apps/ios/scripts/run-live-e2e.sh
-```
-
-The live smoke skips with exit code `77` when the gateway, simulator, app-server readiness, or Codex/OpenAI auth prerequisites are not satisfied.
-
-The Xcode project is generated from `apps/ios/project.yml`; do not edit or commit `apps/ios/KodexIOS.xcodeproj` unless the iOS workflow deliberately changes away from XcodeGen.
-
-Native APNs support uses separate gateway registration/status routes from browser Web Push. The local scaffold can register and manage APNs device metadata and parse simulator notification payloads, but real APNs delivery requires Apple developer credentials and gateway provider configuration before it should be considered enabled:
-
-```bash
-KODEX_APNS_TEAM_ID=ABCDE12345
-KODEX_APNS_KEY_ID=ABC123DEFG
-KODEX_APNS_PRIVATE_KEY_PATH=/path/to/AuthKey_ABC123DEFG.p8
-```
 
 ## Project Previews
 
@@ -391,3 +346,5 @@ The gateway validates outbound JSON-RPC client requests through the app-server a
 - [MVP backend implementation plan](plans/mvp-backend.md)
 - [MVP frontend implementation plan](plans/mvp-frontend.md)
 - [Future extensions overview](plans/future-extensions.md)
+
+[^ios-removal]: Recovery reference: [the single removal commit titled "Remove native iOS app and APNs surface"](https://github.com/jtkw-kirbot/kodex/commits/main/?q=Remove+native+iOS+app+and+APNs+surface). A commit cannot contain a literal link to its own final hash without changing that hash; use the linked commit title search after push, or the exact hash reported by Git locally, to recover the deleted tree.

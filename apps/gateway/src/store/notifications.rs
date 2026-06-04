@@ -8,10 +8,10 @@ use uuid::Uuid;
 use crate::error::{ApiError, ApiResult};
 
 use super::{
-    apns_device_select_sql, bool_to_i64, notification_delivery_select_sql, row_to_apns_device,
-    row_to_notification_delivery, row_to_push_subscription, row_to_thread_notification_setting,
-    ApnsDevice, NewApnsDevice, NewNotificationDelivery, NewPushSubscription, NotificationDelivery,
-    PushSubscription, PushSubscriptionStatus, Store, ThreadNotificationSetting,
+    bool_to_i64, notification_delivery_select_sql, row_to_notification_delivery,
+    row_to_push_subscription, row_to_thread_notification_setting, NewNotificationDelivery,
+    NewPushSubscription, NotificationDelivery, PushSubscription, PushSubscriptionStatus, Store,
+    ThreadNotificationSetting,
 };
 
 impl Store {
@@ -259,87 +259,6 @@ impl Store {
         row.map(row_to_push_subscription).transpose()
     }
 
-    pub async fn upsert_apns_device(&self, device: NewApnsDevice) -> ApiResult<ApnsDevice> {
-        let now = Utc::now();
-        let id = Uuid::new_v4().to_string();
-        sqlx::query(
-            r#"
-            insert into apns_devices (
-                id, device_token, bundle_id, environment, device_name, enabled, created_at, updated_at
-            )
-            values (?, ?, ?, ?, ?, 1, ?, ?)
-            on conflict(device_token, bundle_id, environment) do update set
-                device_name = excluded.device_name,
-                enabled = 1,
-                updated_at = excluded.updated_at
-            "#,
-        )
-        .bind(id)
-        .bind(&device.device_token)
-        .bind(&device.bundle_id)
-        .bind(&device.environment)
-        .bind(&device.device_name)
-        .bind(now)
-        .bind(now)
-        .execute(&self.pool)
-        .await?;
-
-        self.get_apns_device_by_token_bundle_environment(
-            &device.device_token,
-            &device.bundle_id,
-            &device.environment,
-        )
-        .await
-    }
-
-    pub async fn get_apns_device_by_token_bundle_environment(
-        &self,
-        device_token: &str,
-        bundle_id: &str,
-        environment: &str,
-    ) -> ApiResult<ApnsDevice> {
-        let query =
-            apns_device_select_sql("where device_token = ? and bundle_id = ? and environment = ?");
-        let row = sqlx::query(&query)
-            .bind(device_token)
-            .bind(bundle_id)
-            .bind(environment)
-            .fetch_optional(&self.pool)
-            .await?;
-
-        row.map(row_to_apns_device)
-            .transpose()?
-            .ok_or_else(|| ApiError::NotFound("APNs device".to_string()))
-    }
-
-    pub async fn list_enabled_apns_devices(&self) -> ApiResult<Vec<ApnsDevice>> {
-        let query = apns_device_select_sql("where enabled = 1 order by updated_at desc, id");
-        let rows = sqlx::query(&query).fetch_all(&self.pool).await?;
-        rows.into_iter().map(row_to_apns_device).collect()
-    }
-
-    pub async fn disable_apns_device(&self, id: &str) -> ApiResult<Option<ApnsDevice>> {
-        let now = Utc::now();
-        sqlx::query(
-            r#"
-            update apns_devices
-            set enabled = 0, updated_at = ?
-            where id = ?
-            "#,
-        )
-        .bind(now)
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
-
-        let query = apns_device_select_sql("where id = ?");
-        let row = sqlx::query(&query)
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await?;
-        row.map(row_to_apns_device).transpose()
-    }
-
     pub async fn create_notification_delivery(
         &self,
         delivery: NewNotificationDelivery,
@@ -558,8 +477,7 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::store::{
-        NewApnsDevice, NewNotificationDelivery, NewPushSubscription, NotificationDeliveryStatus,
-        Store,
+        NewNotificationDelivery, NewPushSubscription, NotificationDeliveryStatus, Store,
     };
 
     #[tokio::test]
@@ -740,72 +658,6 @@ mod tests {
                 .unwrap()
                 .subscribed
         );
-    }
-
-    #[tokio::test]
-    async fn apns_device_upsert_is_idempotent_by_token_bundle_and_environment() {
-        let store = Store::in_memory().await.unwrap();
-        let first = store
-            .upsert_apns_device(NewApnsDevice {
-                device_token: "token-1".to_string(),
-                bundle_id: "com.example.Kodex".to_string(),
-                environment: "sandbox".to_string(),
-                device_name: Some("First iPhone".to_string()),
-            })
-            .await
-            .unwrap();
-        let second = store
-            .upsert_apns_device(NewApnsDevice {
-                device_token: "token-1".to_string(),
-                bundle_id: "com.example.Kodex".to_string(),
-                environment: "sandbox".to_string(),
-                device_name: Some("Renamed iPhone".to_string()),
-            })
-            .await
-            .unwrap();
-
-        assert_eq!(second.id, first.id);
-        assert_eq!(second.device_token, "token-1");
-        assert_eq!(second.bundle_id, "com.example.Kodex");
-        assert_eq!(second.environment, "sandbox");
-        assert_eq!(second.device_name.as_deref(), Some("Renamed iPhone"));
-        assert!(second.enabled);
-        assert_eq!(store.list_enabled_apns_devices().await.unwrap().len(), 1);
-    }
-
-    #[tokio::test]
-    async fn disabled_apns_device_is_removed_from_enabled_lookup_and_can_reenable() {
-        let store = Store::in_memory().await.unwrap();
-        let device = store
-            .upsert_apns_device(NewApnsDevice {
-                device_token: "token-2".to_string(),
-                bundle_id: "com.example.Kodex".to_string(),
-                environment: "production".to_string(),
-                device_name: None,
-            })
-            .await
-            .unwrap();
-
-        let disabled = store
-            .disable_apns_device(&device.id)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(!disabled.enabled);
-        assert!(store.list_enabled_apns_devices().await.unwrap().is_empty());
-
-        let reenabled = store
-            .upsert_apns_device(NewApnsDevice {
-                device_token: "token-2".to_string(),
-                bundle_id: "com.example.Kodex".to_string(),
-                environment: "production".to_string(),
-                device_name: Some("Work phone".to_string()),
-            })
-            .await
-            .unwrap();
-        assert_eq!(reenabled.id, device.id);
-        assert!(reenabled.enabled);
-        assert_eq!(store.list_enabled_apns_devices().await.unwrap().len(), 1);
     }
 
     #[tokio::test]

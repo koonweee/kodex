@@ -29,7 +29,6 @@ Verification completed:
 - `cd apps/web && npm test -- src/App.mvp.timeline.test.tsx src/App.mvp.composer-input.test.tsx src/App.subagents.test.tsx`
 - `cd apps/web && npm test -- src/App.test.tsx src/timeline/TimelineView.render.test.tsx`
 - `cd apps/web && npm run build`
-- `cd apps/ios && swift test`
 - `$agent-browser` smoke against `http://127.0.0.1:5173/threads/019e8532-c009-7cf3-b8e7-14cfd569ee86`: fresh session loaded canonical selected-thread detail, attach, selected/global SSE streams, rendered 30 virtualized timeline rows from the canonical snapshot, and had no console errors beyond Vite/React dev info.
 
 ## Context
@@ -287,7 +286,7 @@ Exit criteria:
 
 - Some active live item deltas may arrive before app-server materializes item ids in full history. The gateway still needs an in-memory live overlay; the simplification should constrain that overlay, not delete it.
 - Pending user-input reconciliation may need a durable client request id to avoid exact-text matching entirely. If app-server does not echo such an id, keep the text fallback only for gateway-created pending user rows and document it as a pending-overlay rule.
-- Removing `upsertRows`/`removeRowIds` changes public OpenAPI and native iOS generated clients. Coordinate generated TypeScript and Swift API updates if the implementation touches native clients.
+- Removing `upsertRows`/`removeRowIds` changes public OpenAPI. Coordinate generated TypeScript updates if the implementation touches web clients.
 - Runtime-state cleanup overlaps with the proposed active-turn steer plan. Avoid changing `/input` product behavior here unless that plan is also active and explicitly in scope.
 - `thread/turns/items/list` exists in schema but upstream README says it is reserved/unsupported. Do not build detail hydration on it unless upstream support changes and the checked-in schema/README are updated.
 

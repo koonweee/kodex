@@ -64,17 +64,6 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - Keep fine-pointer hover affordances behind hover-capable media queries or explicit pointer handling, and make sure touch users have a non-hover path to the same actions.
 - When changing responsive UI behavior, test at least desktop fine pointer, narrow fine pointer, and narrow touch/mobile shapes if the feature has both layout and input-modality behavior.
 
-## Native iOS UI Organization
-
-- Build new native SwiftUI UI under `apps/ios/Sources/KodexIOS` from the shared tokens and primitives in `apps/ios/Sources/KodexIOS/UI` first.
-- Extend the iOS primitive layer when a control, surface, row, chip, badge, card, composer element, status treatment, or glass/material treatment is repeated or defines product-wide chrome.
-- Keep semantic feature components under their surface or domain directory, such as `Surfaces/Workspace` or `Surfaces/Thread`, while delegating repeated visual chrome to `UI` primitives.
-- Centralize iOS 26 Liquid Glass usage in primitives. Every use of iOS 26-only APIs such as `glassEffect` and `GlassEffectContainer` must be availability-gated and keep an iOS 17 fallback.
-- Avoid inline one-off colors, radii, hairline overlays, and button sizing in feature surfaces when a `KodexTheme` token or shared primitive exists.
-- Generated contact sheets and screenshots are design references, not runtime app assets or pixel-perfect specs.
-- Preserve gateway-owned state boundaries in native UI work. Do not move shared lifecycle, thread, composer, approval, notification, or queue truth into SwiftUI-only state.
-- When changing visible iOS primitives or shared surface chrome, update fixture UI tests and capture simulator screenshots for the affected drawer, thread, composer, approval, or empty-state surfaces.
-
 ## Multi-Client State Ownership
 
 - Design the web client as a thin projection of gateway-owned state. Any state that must be correct across two browser tabs, reloads, reconnects, or future clients must live in the gateway or upstream app-server, not only in React state.

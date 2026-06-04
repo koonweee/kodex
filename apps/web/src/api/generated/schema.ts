@@ -484,70 +484,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/notifications/apns/devices": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["upsert_apns_device"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/notifications/apns/devices/{deviceId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["delete_apns_device"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/notifications/apns/test": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["test_apns_notification"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/notifications/native/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["native_notification_status"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/notifications/status": {
         parameters: {
             query?: never;
@@ -788,7 +724,41 @@ export interface paths {
         patch: operations["update_preview_route"];
         trace?: never;
     };
-    "/v1/self-control/automations": {
+    "/v1/self-control/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List approvals through self-control */
+        get: operations["list_self_control_approvals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/approvals/{approvalId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an approval through self-control */
+        get: operations["get_self_control_approval"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/approvals/{approvalId}/decision": {
         parameters: {
             query?: never;
             header?: never;
@@ -797,11 +767,46 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Apply a policy-checked approval decision through self-control */
+        post: operations["decide_self_control_approval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/automations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List automations through self-control */
+        get: operations["list_self_control_automations"];
+        put?: never;
         /**
          * Create a Kodex automation through self-control
          * @description Agent-facing guarded automation creation endpoint. New self-control automations default to paused unless explicitly enabled, and provenance is stored durably.
          */
         post: operations["create_self_control_automation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/automations/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate automation input through self-control */
+        post: operations["validate_self_control_automation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -815,10 +820,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Read an automation through self-control */
+        get: operations["get_self_control_automation"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete an automation through self-control */
+        delete: operations["delete_self_control_automation"];
         options?: never;
         head?: never;
         /**
@@ -868,6 +875,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/self-control/automations/{automationId}/run-now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue an automation immediately through self-control */
+        post: operations["run_self_control_automation_now"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Replay gateway events through self-control */
+        get: operations["list_self_control_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/self-control/project-previews/apply": {
         parameters: {
             query?: never;
@@ -882,6 +923,74 @@ export interface paths {
          * @description Agent-facing guarded preview apply endpoint. It reconciles desired preview services, previews, and routes through gateway-owned policy and provenance instead of exposing raw preview CRUD semantics to MCP tools.
          */
         post: operations["apply_project_preview_config"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List projects through self-control */
+        get: operations["list_self_control_projects"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/projects/{projectId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a project through self-control */
+        get: operations["get_self_control_project"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/projects/{projectId}/previews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List project previews through self-control */
+        get: operations["list_self_control_project_previews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/sidebar/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read sidebar thread lists through self-control */
+        get: operations["get_self_control_sidebar_threads"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -908,7 +1017,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/self-control/threads": {
+    "/v1/self-control/thread-spawns": {
         parameters: {
             query?: never;
             header?: never;
@@ -917,11 +1026,114 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Create a thread and submit its first input through self-control */
+        post: operations["spawn_self_control_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List project threads through self-control */
+        get: operations["list_self_control_threads"];
+        put?: never;
         /**
          * Create a Kodex thread through self-control
          * @description Agent-facing guarded thread creation endpoint. It reuses gateway-owned thread creation policy, settings overlays, broadcasts, and provenance instead of raw app-server access.
          */
         post: operations["create_self_control_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/threads/{threadId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a thread detail view through self-control */
+        get: operations["get_self_control_thread"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/threads/{threadId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive a thread through self-control */
+        post: operations["archive_self_control_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/threads/{threadId}/attach": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Attach or resume a thread through self-control */
+        post: operations["attach_self_control_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/threads/{threadId}/compact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Compact a thread through self-control */
+        post: operations["compact_self_control_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/threads/{threadId}/fork": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fork a thread through self-control */
+        post: operations["fork_self_control_thread"];
         delete?: never;
         options?: never;
         head?: never;
@@ -942,6 +1154,160 @@ export interface paths {
          * @description Agent-facing guarded thread input endpoint. Idle threads start a turn; active threads receive source-labeled queued input instead of steering the live user turn.
          */
         post: operations["send_self_control_thread_input"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/threads/{threadId}/interrupt-current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Interrupt the current turn through self-control */
+        post: operations["interrupt_current_self_control_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/threads/{threadId}/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Rename a thread through self-control */
+        patch: operations["rename_self_control_thread"];
+        trace?: never;
+    };
+    "/v1/self-control/threads/{threadId}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pin a thread through self-control */
+        post: operations["pin_self_control_thread"];
+        /** Unpin a thread through self-control */
+        delete: operations["unpin_self_control_thread"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/threads/{threadId}/queued-inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List queued inputs through self-control */
+        get: operations["list_self_control_queued_inputs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/threads/{threadId}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume a thread through self-control */
+        post: operations["resume_self_control_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/threads/{threadId}/seen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark a thread seen through self-control */
+        post: operations["mark_self_control_thread_seen"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/threads/{threadId}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update thread settings through self-control */
+        patch: operations["update_self_control_thread_settings"];
+        trace?: never;
+    };
+    "/v1/self-control/threads/{threadId}/subagents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List subagents through self-control */
+        get: operations["list_self_control_subagents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/self-control/threads/{threadId}/timeline/pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a thread timeline page through self-control */
+        get: operations["get_self_control_thread_timeline_page"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1463,39 +1829,6 @@ export interface components {
             message: string;
             retryable: boolean;
         };
-        ApnsDeviceDeleteResponse: {
-            device?: null | components["schemas"]["ApnsDeviceResponse"];
-        };
-        ApnsDeviceResponse: {
-            bundleId: string;
-            /** Format: date-time */
-            createdAt: string;
-            deviceName?: string | null;
-            enabled: boolean;
-            environment: string;
-            id: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        ApnsDeviceUpsertRequest: {
-            bundleId: string;
-            deviceName?: string | null;
-            deviceToken: string;
-            environment: components["schemas"]["ApnsEnvironment"];
-        };
-        ApnsDeviceUpsertResponse: {
-            device: components["schemas"]["ApnsDeviceResponse"];
-        };
-        /** @enum {string} */
-        ApnsEnvironment: "sandbox" | "production";
-        ApnsTestNotificationResponse: {
-            activeDeviceCount: number;
-            configured: boolean;
-            deliveryIds: string[];
-            deliverySupported: boolean;
-            enqueued: boolean;
-            message: string;
-        };
         AppServerCapabilities: {
             detectedVersion?: string | null;
             detectedVersionMatchesSchema?: boolean | null;
@@ -1973,12 +2306,6 @@ export interface components {
         ModelsQuery: {
             includeHidden?: boolean;
         };
-        NativeNotificationStatusResponse: {
-            activeDeviceCount: number;
-            apnsConfigured: boolean;
-            apnsDeliverySupported: boolean;
-            gatewayScope: string;
-        };
         NotificationStatusResponse: {
             configured: boolean;
             subscriptionsEnabled: boolean;
@@ -2316,6 +2643,20 @@ export interface components {
             name: string;
             resource: string;
         };
+        SelfControlApprovalDecisionRequest: {
+            decision: unknown;
+            policyToken?: string | null;
+            requestedBy?: null | components["schemas"]["SelfControlRequestedBy"];
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlApprovalDecisionResponse: {
+            approval: components["schemas"]["Approval"];
+            policy: components["schemas"]["SelfControlApprovalPolicyResult"];
+        };
+        SelfControlApprovalPolicyResult: {
+            allowed: boolean;
+            reason: string;
+        };
         SelfControlAutomationCreateRequest: {
             enabled?: boolean | null;
             name: string;
@@ -2328,9 +2669,27 @@ export interface components {
             automation: components["schemas"]["AutomationDto"];
             pausedByDefault: boolean;
         };
+        SelfControlAutomationRunNowRequest: {
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlAutomationRunNowResponse: {
+            automation: components["schemas"]["AutomationDto"];
+            queuedInput: components["schemas"]["QueuedInput"];
+        };
         SelfControlAutomationUpdateRequest: components["schemas"]["AutomationUpdateRequest"] & {
             enabled?: boolean | null;
             source?: null | components["schemas"]["SelfControlSource"];
+        };
+        SelfControlAutomationValidateRequest: {
+            name: string;
+            prompt: string;
+            schedule: components["schemas"]["AutomationSchedule"];
+            targetThreadId: string;
+        };
+        SelfControlAutomationValidateResponse: {
+            /** Format: int64 */
+            repeatEverySeconds: number;
+            valid: boolean;
         };
         SelfControlCapabilities: {
             automations: boolean;
@@ -2374,6 +2733,14 @@ export interface components {
             name: string;
             protocol?: string | null;
         };
+        SelfControlMarkThreadSeenRequest: {
+            /** Format: int64 */
+            seenCompletedAgentTurnSeq?: number | null;
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlMutationRequest: {
+            source?: components["schemas"]["SelfControlSource"];
+        };
         SelfControlPreviewApplyRequest: {
             createProject?: boolean;
             dryRun?: boolean;
@@ -2389,6 +2756,10 @@ export interface components {
             dryRun: boolean;
             previews: components["schemas"]["PreviewListResponse"];
             project: components["schemas"]["Project"];
+        };
+        SelfControlRenameThreadRequest: {
+            name: string;
+            source?: components["schemas"]["SelfControlSource"];
         };
         /** @enum {string} */
         SelfControlRequestedBy: "user" | "agent";
@@ -2437,6 +2808,41 @@ export interface components {
             action: components["schemas"]["SelfControlThreadInputAction"];
             queuedInput?: null | components["schemas"]["QueuedInput"];
             turn?: null | components["schemas"]["RawAppServerResponse"];
+        };
+        SelfControlThreadPayloadMutationRequest: {
+            payload?: unknown;
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlThreadSettingsUpdateRequest: components["schemas"]["ThreadSettingsUpdateRequest"] & {
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlThreadSpawnRequest: {
+            approvalPolicy?: string | null;
+            approvalsReviewer?: string | null;
+            effort?: string | null;
+            goal?: string | null;
+            idempotencyKey?: string | null;
+            input: components["schemas"]["UserInput"][];
+            /** Format: int32 */
+            maxSelfControlDepth?: number | null;
+            model?: string | null;
+            nickname?: string | null;
+            payload?: unknown;
+            permissions?: string | null;
+            projectId: string;
+            role?: string | null;
+            sandbox?: string | null;
+            serviceTier?: string | null;
+            source?: components["schemas"]["SelfControlSource"];
+        };
+        SelfControlThreadSpawnResponse: {
+            idempotencyKey?: string | null;
+            idempotentReplay?: boolean;
+            input: components["schemas"]["SelfControlThreadInputResponse"];
+            /** Format: int32 */
+            remainingSelfControlDepth: number;
+            thread: components["schemas"]["ThreadCommandResponse"];
+            threadId: string;
         };
         SidebarThreadListResponse: {
             backwardsCursor?: string | null;
@@ -3755,88 +4161,6 @@ export interface operations {
             };
         };
     };
-    upsert_apns_device: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ApnsDeviceUpsertRequest"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApnsDeviceUpsertResponse"];
-                };
-            };
-        };
-    };
-    delete_apns_device: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                deviceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApnsDeviceDeleteResponse"];
-                };
-            };
-        };
-    };
-    test_apns_notification: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApnsTestNotificationResponse"];
-                };
-            };
-        };
-    };
-    native_notification_status: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NativeNotificationStatusResponse"];
-                };
-            };
-        };
-    };
     notification_status: {
         parameters: {
             query?: never;
@@ -4303,6 +4627,95 @@ export interface operations {
             };
         };
     };
+    list_self_control_approvals: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                threadId?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalListResponse"];
+                };
+            };
+        };
+    };
+    get_self_control_approval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                approvalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Approval"];
+                };
+            };
+        };
+    };
+    decide_self_control_approval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                approvalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlApprovalDecisionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfControlApprovalDecisionResponse"];
+                };
+            };
+        };
+    };
+    list_self_control_automations: {
+        parameters: {
+            query?: {
+                threadId?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationListResponse"];
+                };
+            };
+        };
+    };
     create_self_control_automation: {
         parameters: {
             query?: never;
@@ -4322,6 +4735,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SelfControlAutomationResponse"];
+                };
+            };
+        };
+    };
+    validate_self_control_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlAutomationValidateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfControlAutomationValidateResponse"];
+                };
+            };
+        };
+    };
+    get_self_control_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationResponse"];
+                };
+            };
+        };
+    };
+    delete_self_control_automation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlMutationRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationDeleteResponse"];
                 };
             };
         };
@@ -4393,6 +4875,55 @@ export interface operations {
             };
         };
     };
+    run_self_control_automation_now: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlAutomationRunNowRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfControlAutomationRunNowResponse"];
+                };
+            };
+        };
+    };
+    list_self_control_events: {
+        parameters: {
+            query?: {
+                cursor?: number | null;
+                projectId?: string | null;
+                threadId?: string | null;
+                excludeThreadId?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventListResponse"];
+                };
+            };
+        };
+    };
     apply_project_preview_config: {
         parameters: {
             query?: never;
@@ -4416,6 +4947,86 @@ export interface operations {
             };
         };
     };
+    list_self_control_projects: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectListResponse"];
+                };
+            };
+        };
+    };
+    get_self_control_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project"];
+                };
+            };
+        };
+    };
+    list_self_control_project_previews: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewListResponse"];
+                };
+            };
+        };
+    };
+    get_self_control_sidebar_threads: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SidebarThreadsResponse"];
+                };
+            };
+        };
+    };
     self_control_status: {
         parameters: {
             query?: never;
@@ -4435,6 +5046,52 @@ export interface operations {
             };
         };
     };
+    spawn_self_control_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlThreadSpawnRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfControlThreadSpawnResponse"];
+                };
+            };
+        };
+    };
+    list_self_control_threads: {
+        parameters: {
+            query?: {
+                projectId?: string | null;
+                cursor?: string | null;
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadListResponse"];
+                };
+            };
+        };
+    };
     create_self_control_thread: {
         parameters: {
             query?: never;
@@ -4445,6 +5102,127 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SelfControlCreateThreadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadCommandResponse"];
+                };
+            };
+        };
+    };
+    get_self_control_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadViewResponse"];
+                };
+            };
+        };
+    };
+    archive_self_control_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlMutationRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RawAppServerResponse"];
+                };
+            };
+        };
+    };
+    attach_self_control_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlMutationRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadAttachResponse"];
+                };
+            };
+        };
+    };
+    compact_self_control_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlMutationRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadCompactResponse"];
+                };
+            };
+        };
+    };
+    fork_self_control_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlThreadPayloadMutationRequest"];
             };
         };
         responses: {
@@ -4479,6 +5257,247 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SelfControlThreadInputResponse"];
+                };
+            };
+        };
+    };
+    interrupt_current_self_control_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlMutationRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadInterruptCurrentResponse"];
+                };
+            };
+        };
+    };
+    rename_self_control_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlRenameThreadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenameThreadResponse"];
+                };
+            };
+        };
+    };
+    pin_self_control_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlMutationRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadPinResponse"];
+                };
+            };
+        };
+    };
+    unpin_self_control_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlMutationRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadPinResponse"];
+                };
+            };
+        };
+    };
+    list_self_control_queued_inputs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueuedInputListResponse"];
+                };
+            };
+        };
+    };
+    resume_self_control_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlThreadPayloadMutationRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadCommandResponse"];
+                };
+            };
+        };
+    };
+    mark_self_control_thread_seen: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlMarkThreadSeenRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadRead"];
+                };
+            };
+        };
+    };
+    update_self_control_thread_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlThreadSettingsUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadSettingsUpdateResponse"];
+                };
+            };
+        };
+    };
+    list_self_control_subagents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadSubagentListResponse"];
+                };
+            };
+        };
+    };
+    get_self_control_thread_timeline_page: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number | null;
+            };
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadViewResponse"];
                 };
             };
         };

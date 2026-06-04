@@ -11,16 +11,12 @@ use utoipa::{IntoParams, ToSchema};
 use crate::{
     api::AppState,
     error::{ApiError, ApiResult},
-    store::{ApnsDevice, NewApnsDevice, NewPushSubscription, PushSubscription},
+    store::{NewPushSubscription, PushSubscription},
 };
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/v1/notifications/status", get(notification_status))
-        .route(
-            "/v1/notifications/native/status",
-            get(native_notification_status),
-        )
         .route(
             "/v1/notifications/subscriptions",
             post(upsert_push_subscription),
@@ -34,12 +30,6 @@ pub fn router() -> Router<AppState> {
             get(current_push_subscription).delete(delete_current_push_subscription),
         )
         .route("/v1/notifications/test", post(test_notification))
-        .route("/v1/notifications/apns/devices", post(upsert_apns_device))
-        .route(
-            "/v1/notifications/apns/devices/{device_id}",
-            delete(delete_apns_device),
-        )
-        .route("/v1/notifications/apns/test", post(test_apns_notification))
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -48,89 +38,6 @@ pub struct NotificationStatusResponse {
     pub configured: bool,
     pub vapid_public_key: Option<String>,
     pub subscriptions_enabled: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct NativeNotificationStatusResponse {
-    pub apns_configured: bool,
-    pub apns_delivery_supported: bool,
-    pub active_device_count: usize,
-    pub gateway_scope: String,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub enum ApnsEnvironment {
-    Sandbox,
-    Production,
-}
-
-impl ApnsEnvironment {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Sandbox => "sandbox",
-            Self::Production => "production",
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ApnsDeviceUpsertRequest {
-    pub device_token: String,
-    pub bundle_id: String,
-    pub environment: ApnsEnvironment,
-    pub device_name: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ApnsDeviceResponse {
-    pub id: String,
-    pub bundle_id: String,
-    pub environment: String,
-    pub device_name: Option<String>,
-    pub enabled: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-impl From<ApnsDevice> for ApnsDeviceResponse {
-    fn from(device: ApnsDevice) -> Self {
-        Self {
-            id: device.id,
-            bundle_id: device.bundle_id,
-            environment: device.environment,
-            device_name: device.device_name,
-            enabled: device.enabled,
-            created_at: device.created_at,
-            updated_at: device.updated_at,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ApnsDeviceUpsertResponse {
-    pub device: ApnsDeviceResponse,
-}
-
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ApnsDeviceDeleteResponse {
-    pub device: Option<ApnsDeviceResponse>,
-}
-
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ApnsTestNotificationResponse {
-    pub configured: bool,
-    pub active_device_count: usize,
-    pub delivery_supported: bool,
-    pub enqueued: bool,
-    pub delivery_ids: Vec<String>,
-    pub message: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -217,19 +124,6 @@ pub async fn notification_status(
         configured,
         vapid_public_key,
         subscriptions_enabled: configured,
-    }))
-}
-
-#[utoipa::path(get, path = "/v1/notifications/native/status", responses((status = 200, body = NativeNotificationStatusResponse)))]
-pub async fn native_notification_status(
-    State(state): State<AppState>,
-) -> ApiResult<Json<NativeNotificationStatusResponse>> {
-    let active_device_count = state.store.list_enabled_apns_devices().await?.len();
-    Ok(Json(NativeNotificationStatusResponse {
-        apns_configured: apns_configured(&state),
-        apns_delivery_supported: false,
-        active_device_count,
-        gateway_scope: "localhostOrTrustedNetworkOnly".to_string(),
     }))
 }
 
@@ -348,65 +242,6 @@ pub async fn test_notification(
     }))
 }
 
-#[utoipa::path(post, path = "/v1/notifications/apns/devices", request_body = ApnsDeviceUpsertRequest, responses((status = 201, body = ApnsDeviceUpsertResponse)))]
-pub async fn upsert_apns_device(
-    State(state): State<AppState>,
-    Json(request): Json<ApnsDeviceUpsertRequest>,
-) -> ApiResult<(StatusCode, Json<ApnsDeviceUpsertResponse>)> {
-    let device_token = validate_non_empty(request.device_token, "deviceToken")?;
-    let bundle_id = validate_non_empty(request.bundle_id, "bundleId")?;
-    let device_name = request.device_name.and_then(|name| {
-        let trimmed = name.trim().to_string();
-        (!trimmed.is_empty()).then_some(trimmed)
-    });
-    let device = state
-        .store
-        .upsert_apns_device(NewApnsDevice {
-            device_token,
-            bundle_id,
-            environment: request.environment.as_str().to_string(),
-            device_name,
-        })
-        .await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(ApnsDeviceUpsertResponse {
-            device: device.into(),
-        }),
-    ))
-}
-
-#[utoipa::path(delete, path = "/v1/notifications/apns/devices/{deviceId}", responses((status = 200, body = ApnsDeviceDeleteResponse)))]
-pub async fn delete_apns_device(
-    State(state): State<AppState>,
-    Path(device_id): Path<String>,
-) -> ApiResult<Json<ApnsDeviceDeleteResponse>> {
-    let device = state.store.disable_apns_device(&device_id).await?;
-    Ok(Json(ApnsDeviceDeleteResponse {
-        device: device.map(Into::into),
-    }))
-}
-
-#[utoipa::path(post, path = "/v1/notifications/apns/test", responses((status = 200, body = ApnsTestNotificationResponse)))]
-pub async fn test_apns_notification(
-    State(state): State<AppState>,
-) -> ApiResult<Json<ApnsTestNotificationResponse>> {
-    let configured = apns_configured(&state);
-    let active_device_count = state.store.list_enabled_apns_devices().await?.len();
-    Ok(Json(ApnsTestNotificationResponse {
-        configured,
-        active_device_count,
-        delivery_supported: false,
-        enqueued: false,
-        delivery_ids: Vec::new(),
-        message: if configured {
-            "APNs provider configuration is present, but APNs network delivery is not implemented in this gateway build.".to_string()
-        } else {
-            "APNs provider configuration is missing; the gateway remains intended for localhost or trusted VPN/LAN use only.".to_string()
-        },
-    }))
-}
-
 fn validate_endpoint(endpoint: String) -> ApiResult<String> {
     validate_non_empty(endpoint, "endpoint")
 }
@@ -423,10 +258,4 @@ fn notifications_configured(state: &AppState) -> bool {
     state.config.notifications.vapid_public_key.is_some()
         && state.config.notifications.vapid_private_key.is_some()
         && state.config.notifications.vapid_subject.is_some()
-}
-
-fn apns_configured(state: &AppState) -> bool {
-    state.config.notifications.apns_team_id.is_some()
-        && state.config.notifications.apns_key_id.is_some()
-        && state.config.notifications.apns_private_key_path.is_some()
 }

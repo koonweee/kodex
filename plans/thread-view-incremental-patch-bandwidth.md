@@ -45,7 +45,7 @@ This is the recommended fix because it targets the measured hotspot directly whi
 
 ## Non-Goals
 
-- Do not update native iOS in this plan. Backend and web changes should not be blocked on iOS decoder, reducer, generated artifact, SwiftPM, simulator, or fixture work.
+- Do not expand beyond backend and web in this plan.
 - Do not attempt long-term compatibility for older clients that do not understand `row_delta`; this repository's active web client is the implementation target for this bandwidth pass.
 
 ## Milestones
@@ -192,7 +192,7 @@ Expected regression risk is manageable for the active web client if backend cont
 
 Known risks:
 
-- Older clients that do not understand `row_delta` may request refreshes or ignore patches. Native iOS is explicitly out of scope for this plan, so any future native follow-up should decide whether to support `row_delta` or force snapshot refreshes.
+- Older clients that do not understand `row_delta` may request refreshes or ignore patches.
 - Row id stability is now more important. If a live update changes grouping or row identity, the backend should emit a complete `turn` patch instead of a row delta.
 - Work rows can still be large. If repeated updates replace a single very large work row, this plan reduces cross-row duplication but may not fully solve work-row payload size. A narrower work-row delta would be a follow-up only if profiling still shows that hotspot.
 - A stale or missed base state can make an incremental patch unsafe. Reducers must converge by snapshot refresh rather than inventing durable browser state.
@@ -208,7 +208,7 @@ Implemented changes:
 - Regenerated `apps/web/src/api/generated/schema.ts`.
 - Added web reducer support for row upserts and explicit row removals while preserving omitted rows.
 - Added web batch coalescing for compatible row-delta bursts without crossing item-delta, refresh, full-snapshot, or complete-turn boundaries.
-- Left native iOS out of scope by plan.
+- Kept the implementation scoped to backend and web.
 
 Verification run:
 

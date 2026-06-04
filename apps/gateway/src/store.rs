@@ -209,27 +209,6 @@ pub struct NewPushSubscription {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ApnsDevice {
-    pub id: String,
-    pub device_token: String,
-    pub bundle_id: String,
-    pub environment: String,
-    pub device_name: Option<String>,
-    pub enabled: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone)]
-pub struct NewApnsDevice {
-    pub device_token: String,
-    pub bundle_id: String,
-    pub environment: String,
-    pub device_name: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct PushSubscriptionStatus {
     pub subscription: Option<PushSubscription>,
     pub subscribed: bool,
@@ -774,29 +753,6 @@ fn row_to_push_subscription(row: sqlx::sqlite::SqliteRow) -> ApiResult<PushSubsc
         p256dh: row.try_get("p256dh")?,
         auth: row.try_get("auth")?,
         user_agent: row.try_get("user_agent")?,
-        enabled: row.try_get::<i64, _>("enabled")? != 0,
-        created_at: row.try_get("created_at")?,
-        updated_at: row.try_get("updated_at")?,
-    })
-}
-
-fn apns_device_select_sql(suffix: &str) -> String {
-    format!(
-        r#"
-        select id, device_token, bundle_id, environment, device_name, enabled, created_at, updated_at
-        from apns_devices
-        {suffix}
-        "#
-    )
-}
-
-fn row_to_apns_device(row: sqlx::sqlite::SqliteRow) -> ApiResult<ApnsDevice> {
-    Ok(ApnsDevice {
-        id: row.try_get("id")?,
-        device_token: row.try_get("device_token")?,
-        bundle_id: row.try_get("bundle_id")?,
-        environment: row.try_get("environment")?,
-        device_name: row.try_get("device_name")?,
         enabled: row.try_get::<i64, _>("enabled")? != 0,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,

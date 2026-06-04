@@ -3,8 +3,8 @@
 ## Context
 
 - Goal: suppress unread-agent-message push notifications when any web/PWA client is actively viewing the target thread.
-- The signal must be gateway-owned because multi-tab and future multi-client correctness cannot depend on one React tree's local state.
-- Scope for this plan is web/PWA client reporting only. The gateway API should be reusable by future native clients, but SwiftUI/iOS reporting is not part of this plan.
+- The signal must be gateway-owned because multi-tab correctness cannot depend on one React tree's local state.
+- Scope for this plan is web/PWA client reporting only.
 - Notification delivery already runs through a durable delayed recheck in `apps/gateway/src/notifications.rs`, so suppression can happen at delivery time rather than at terminal-turn event ingestion time.
 
 ## Current State
@@ -99,5 +99,4 @@
 - Presence TTL creates an intentional grace window. If a PWA is backgrounded and JavaScript is frozen before cleanup, notifications can be suppressed until TTL expiry. Keep the TTL short enough that this is acceptable.
 - Gateway restart drops all presence, so notifications may send immediately after restart even if a browser is still open. This is acceptable for ephemeral local/VPN-only gateway state.
 - `sendBeacon` may not include normal fetch headers and can fail silently. The gateway route should accept a plain JSON body without requiring custom headers, and the client should rely on TTL for cleanup authority.
-- This plan intentionally does not add native iOS reporting. If APNS delivery becomes active, add SwiftUI `scenePhase`-based reporting to the same gateway endpoint in a separate plan or milestone.
 - Suppression is for push notifications only. Read/unread state remains gateway-owned through `thread.read_updated` and `/v1/threads/{threadId}/seen`.
