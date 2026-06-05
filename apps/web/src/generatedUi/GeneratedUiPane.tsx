@@ -26,6 +26,7 @@ type GeneratedUiPaneProps = {
 
 type GeneratedUiSubmitMessage = {
   type?: unknown;
+  requestId?: unknown;
   sessionId?: unknown;
   revision?: unknown;
   message?: unknown;
@@ -33,6 +34,11 @@ type GeneratedUiSubmitMessage = {
   text?: unknown;
   metadata?: unknown;
   json?: unknown;
+};
+
+type GeneratedUiSubmitEnvelope = {
+  request: GeneratedUiSubmitRequest;
+  requestId?: string;
 };
 
 export function GeneratedUiPane({ colorSchemeId, isSubmitting, onHide, onSubmit, session }: GeneratedUiPaneProps) {
@@ -92,20 +98,41 @@ export function GeneratedUiPane({ colorSchemeId, isSubmitting, onHide, onSubmit,
       if (event.source !== iframeRef.current?.contentWindow) {
         return;
       }
-      const request = submitRequestFromMessage(event.data, session.id, session.revision);
-      if (!request) {
+      const submit = submitRequestFromMessage(event.data, session.id, session.revision);
+      if (!submit) {
+        const unrecognizedKodexType = unrecognizedGeneratedUiEventTypeFromMessage(event.data);
+        if (unrecognizedKodexType) {
+          postGeneratedUiIgnoredResult(
+            iframeRef.current?.contentWindow ?? null,
+            requestIdFromMessage(event.data),
+            `Unrecognized generated UI event type: ${unrecognizedKodexType}`,
+          );
+        }
         return;
       }
+      const { request, requestId } = submit;
       if (!submitAvailable || isSubmitting) {
         setLocalError("This UI revision has already been submitted.");
+        postGeneratedUiIgnoredResult(
+          iframeRef.current?.contentWindow ?? null,
+          requestId,
+          "This UI revision has already been submitted.",
+          "submit_unavailable",
+        );
         return;
       }
       setLocalError(null);
       setLocalSubmittedRevision(request.revision);
-      void onSubmit(request).catch((error) => {
-        setLocalSubmittedRevision(null);
-        setLocalError(errorMessageFrom(error));
-      });
+      void onSubmit(request)
+        .then((response) => {
+          postGeneratedUiSubmitResult(iframeRef.current?.contentWindow ?? null, requestId, response);
+        })
+        .catch((error) => {
+          const message = errorMessageFrom(error);
+          setLocalSubmittedRevision(null);
+          setLocalError(message);
+          postGeneratedUiErrorResult(iframeRef.current?.contentWindow ?? null, requestId, message);
+        });
     }
 
     window.addEventListener("message", handleMessage);
@@ -165,7 +192,95 @@ export function GeneratedUiPane({ colorSchemeId, isSubmitting, onHide, onSubmit,
   );
 }
 
-function submitRequestFromMessage(data: unknown, currentSessionId: string, currentRevision: number): GeneratedUiSubmitRequest | null {
+function postGeneratedUiSubmitResult(
+  target: Window | null,
+  requestId: string | undefined,
+  response: GeneratedUiSubmitResponse,
+) {
+  if (!target || !requestId) {
+    return;
+  }
+  target.postMessage(
+    {
+      type: "kodex.generatedUi.submit.result",
+      requestId,
+      ok: true,
+      status: "submitted",
+      result: response.input,
+    },
+    "*",
+  );
+}
+
+function postGeneratedUiErrorResult(target: Window | null, requestId: string | undefined, message: string) {
+  if (!target || !requestId) {
+    return;
+  }
+  target.postMessage(
+    {
+      type: "kodex.generatedUi.submit.result",
+      requestId,
+      ok: false,
+      status: "error",
+      error: {
+        code: "submit_failed",
+        message,
+      },
+    },
+    "*",
+  );
+}
+
+function postGeneratedUiIgnoredResult(
+  target: Window | null,
+  requestId: unknown,
+  message: string,
+  code = "unrecognized_event_type",
+) {
+  if (!target || typeof requestId !== "string") {
+    return;
+  }
+  target.postMessage(
+    {
+      type: "kodex.generatedUi.submit.result",
+      requestId,
+      ok: false,
+      status: "ignored",
+      error: {
+        code,
+        message,
+      },
+    },
+    "*",
+  );
+}
+
+function requestIdFromMessage(data: unknown): unknown {
+  if (!data || typeof data !== "object") {
+    return undefined;
+  }
+  return (data as { requestId?: unknown }).requestId;
+}
+
+function unrecognizedGeneratedUiEventTypeFromMessage(data: unknown): string | null {
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+  const type = (data as { type?: unknown }).type;
+  if (typeof type !== "string" || !type.startsWith("kodex")) {
+    return null;
+  }
+  if (
+    type === "kodex.generatedUi.submit" ||
+    type === "kodex:generated-ui:submit" ||
+    type === "kodex.ui.submit"
+  ) {
+    return null;
+  }
+  return type;
+}
+
+function submitRequestFromMessage(data: unknown, currentSessionId: string, currentRevision: number): GeneratedUiSubmitEnvelope | null {
   if (!data || typeof data !== "object") {
     return null;
   }
@@ -197,9 +312,12 @@ function submitRequestFromMessage(data: unknown, currentSessionId: string, curre
     return null;
   }
   return {
-    revision,
-    message: trimmedMessage,
-    metadata: message.metadata ?? message.json,
+    request: {
+      revision,
+      message: trimmedMessage,
+      metadata: message.metadata ?? message.json,
+    },
+    requestId: typeof message.requestId === "string" ? message.requestId : undefined,
   };
 }
 

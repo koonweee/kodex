@@ -1,6 +1,6 @@
 ---
 name: generative-ui
-description: Open or update a temporary thread-bound interactive HTML pane when visual structure, direct manipulation, forms, comparisons, previews, branching choices, or repeated actions are clearer than chat alone; use the Kodex Control generated UI MCP tools rather than duplicating their schema.
+description: Open or update a temporary thread-bound interactive app-surface pane when visual structure, direct manipulation, forms, comparisons, previews, branching choices, or repeated actions are clearer than chat alone; use the Kodex Control app-surface MCP tools rather than duplicating their schema.
 ---
 
 # Generative UI
@@ -11,10 +11,11 @@ Generated UI should justify its presence. Use it when layout, visual grouping, d
 
 ## Workflow
 
-- Use `open_generated_ui` to create the pane.
-- Use `update_generated_ui` when the user asks for a revision, follows a generated UI action, or needs the pane to reflect new data.
-- Use `get_generated_ui` only when you need to inspect the current pane metadata.
-- Use `archive_generated_ui` when the user asks to dismiss or remove the generated UI.
+- Use `open_app_surface` to create the pane.
+- Use `update_app_surface` when the user asks for a revision, follows a generated UI action, or needs the pane to reflect new data.
+- Use `get_app_surface` only when you need to inspect the current pane metadata.
+- Use `archive_app_surface` when the user asks to dismiss or remove the generated UI.
+- Treat `open_generated_ui`, `update_generated_ui`, `get_generated_ui`, and `archive_generated_ui` as compatibility aliases.
 - Pair every open or update with a short assistant message that says what the pane is for.
 - Treat the MCP tool schemas and validation errors as the source of truth for required fields and limits. Do not restate or invent a parallel schema in the skill.
 
@@ -25,7 +26,8 @@ Generated UI should justify its presence. Use it when layout, visual grouping, d
 
 ## UI Requirements
 
-- Keep the UI self-contained HTML/CSS/JS. V1 generated UI is served in a sandboxed iframe and blocks external network access by default.
+- Keep the UI self-contained HTML/CSS/JS unless the tool grants and CSP explicitly allow otherwise. Generated app surfaces are served in a sandboxed iframe and external network access is denied by default.
+- MCP tool/resource bridge access is gateway-mediated by stored grants. Generated-provider MCP tool calls require user approval before execution, so design controls to handle an approval-required response and let the user retry after approval when needed.
 - Strongly prefer a theme-native UI unless the user explicitly asks for a distinct visual style. Use injected Kodex semantic CSS variables for the document body, surfaces, cards, text, borders, buttons, chart marks, status colors, focus rings, shadows, and radii.
 - Avoid inventing custom palettes, gradients, stock dashboard chrome, or hard-coded color schemes for ordinary generated UIs.
 - Use raw color literals only as fallback values inside `var(--kodex-..., fallback)` declarations, for small data-visualization distinctions that still harmonize with Kodex tokens, or when the user explicitly asks for branded/custom styling.
@@ -44,7 +46,28 @@ Generated UI should justify its presence. Use it when layout, visual grouping, d
 - Review dashboard: each finding can expose conversational actions such as `Fix`, `Explain`, or `Defer`.
 - Plan view: each milestone can expose conversational actions such as `Implement`, `Review`, or `Split smaller`.
 
-For conversational actions, submit a concise human-readable `message` that stands alone as the next user instruction. Use optional `metadata` only for compact structured details such as `source`, `section`, `action`, `selectedId`, or `selectedLabel`. Do not auto-submit on load; submit only from explicit UI controls.
+For conversational actions, prefer the host-injected helper. It submits a concise human-readable `message` that stands alone as the next user instruction and returns a Promise that resolves or rejects from the host ack/error response:
+
+```html
+<button onclick="window.kodex.submitMessage('hi', { source: 'generated-ui', action: 'hi' })">
+  Hi
+</button>
+<button onclick="window.kodex.submitMessage('bye', { source: 'generated-ui', action: 'bye' })">
+  Bye
+</button>
+```
+
+If you must use raw `postMessage`, use exactly this event shape:
+
+```js
+window.parent.postMessage({
+  type: "kodex.generatedUi.submit",
+  message: "human-readable message",
+  metadata: { source: "...", action: "..." }
+}, "*");
+```
+
+The host sends `kodex.generatedUi.submit.result` ack/error events back to the iframe. The intentionally supported legacy submit aliases are `kodex:generated-ui:submit` and `kodex.ui.submit`; do not invent other `kodex...` event names. Use optional metadata only for compact structured details such as `source`, `section`, `action`, `selectedId`, or `selectedLabel`. Do not auto-submit on load; submit only from explicit UI controls.
 
 Before opening or updating generated UI, check:
 

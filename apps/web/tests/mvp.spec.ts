@@ -257,15 +257,23 @@ test("renders selected thread snapshot output", async ({ page }) => {
   await expect(page.getByText(/snapshot assistant output/i)).toBeVisible();
 });
 
-test("renders generated UI as a desktop split and narrow bottom sheet", async ({ page }) => {
+test("renders an app surface as a desktop split and narrow bottom sheet", async ({ page }) => {
   const interactiveSession = {
     archivedAt: null,
     createdAt: "2026-04-30T00:00:00Z",
-    documentUrl: "/v1/generated-ui/sessions/session-1/document?revision=1",
+    csp: { connectDomains: [], resourceDomains: [] },
+    displayModes: ["pane"],
+    documentUrl: "/v1/app-surfaces/session-1/document?revision=1",
+    fallbackContent: "Mockup chooser",
+    grants: { canOpenLinks: false, canSendMessage: true, canUpdateModelContext: false, resources: [], tools: [] },
+    bridgeToken: "bridge-token-1",
     id: "session-1",
-    networkPolicy: "self_contained",
+    provenance: { source: "test" },
+    provider: "generated",
+    resourceMimeType: "text/html",
+    resourceUri: "ui://kodex/generated/session-1",
     revision: 1,
-    status: "interactive",
+    status: "active",
     submitAvailable: true,
     submittedAt: null,
     submittedMessage: null,
@@ -287,7 +295,7 @@ test("renders generated UI as a desktop split and narrow bottom sheet", async ({
       return;
     }
 
-    if (key === "GET /v1/threads/thread-1/generated-ui") {
+    if (key === "GET /v1/threads/thread-1/app-surface") {
       await route.fulfill({
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -308,7 +316,7 @@ test("renders generated UI as a desktop split and narrow bottom sheet", async ({
       return;
     }
 
-    if (key === "GET /v1/generated-ui/sessions/session-1/document") {
+    if (key === "GET /v1/app-surfaces/session-1/document") {
       await route.fulfill({
         status: 200,
         headers: { "Content-Type": "text/html; charset=utf-8" },
@@ -324,22 +332,14 @@ test("renders generated UI as a desktop split and narrow bottom sheet", async ({
       return;
     }
 
-    if (key === "POST /v1/generated-ui/sessions/session-1/submit") {
+    if (key === "POST /v1/app-surfaces/session-1/bridge") {
       generatedUiSubmitted = true;
       await route.fulfill({
         status: 200,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          input: { disposition: "started", queuedInput: null, rawPayload: { turnId: "turn-generated-ui" } },
-          session: {
-            ...interactiveSession,
-            status: "submitted",
-            submitAvailable: false,
-            submittedAt: "2026-04-30T00:00:05Z",
-            submittedMessage: "Pick mockup A",
-            submittedMetadata: { choice: "a" },
-            submittedRevision: 1,
-          },
+          id: "legacy-submit:session-1:1",
+          result: { input: { disposition: "started", queuedInput: null, rawPayload: { turnId: "turn-generated-ui" } } },
         }),
       });
       return;
@@ -359,7 +359,7 @@ test("renders generated UI as a desktop split and narrow bottom sheet", async ({
   const surface = page.locator(".kodex-generated-ui-surface");
   const resizeHandle = page.getByRole("separator", { name: /resize generated ui pane/i });
   const workspace = page.locator(".kodex-thread-workspace");
-  await expect(page.getByTitle(/generated ui: mockup chooser/i)).toBeVisible();
+  await expect(page.getByTitle(/app surface: mockup chooser/i)).toBeVisible();
   await expect(resizeHandle).toBeVisible();
   await expect(resizeHandle).toHaveCSS("width", "4px");
   await expect(surface).toHaveCSS("position", "static");
@@ -372,10 +372,10 @@ test("renders generated UI as a desktop split and narrow bottom sheet", async ({
   );
   expect(threadHeaderButtonLabels).toEqual([
     "Show sidebar",
-    "Hide generated UI",
+    "Hide app surface",
     "Thread actions",
   ]);
-  await expect(page.locator(".kodex-generated-ui-pane").getByRole("button", { name: /hide generated ui/i })).toHaveCount(0);
+  await expect(page.locator(".kodex-generated-ui-pane").getByRole("button", { name: /hide app surface/i })).toHaveCount(0);
   const desktopFrameLayout = await page.locator(".kodex-generated-ui-pane").evaluate((pane) => {
     const header = pane.querySelector(".kodex-generated-ui-header");
     const frame = pane.querySelector(".kodex-generated-ui-frame-wrap");
@@ -413,20 +413,20 @@ test("renders generated UI as a desktop split and narrow bottom sheet", async ({
   expect(resizedSurfaceBox!.width).toBeGreaterThan(720);
   expect(resizedSurfaceBox!.width / workspaceBox!.width).toBeLessThanOrEqual(0.751);
 
-  await page.getByRole("button", { name: /hide generated ui/i }).click();
+  await page.getByRole("button", { name: /hide app surface/i }).click();
   await expect(surface).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /show generated ui/i })).toBeVisible();
-  await page.getByRole("button", { name: /show generated ui/i }).click();
-  await expect(page.getByTitle(/generated ui: mockup chooser/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: /show app surface/i })).toBeVisible();
+  await page.getByRole("button", { name: /show app surface/i }).click();
+  await expect(page.getByTitle(/app surface: mockup chooser/i)).toBeVisible();
 
-  const frameSubmit = page.frameLocator('iframe[title="Generated UI: Mockup chooser"]').getByRole("button", { name: "Choose A" });
+  const frameSubmit = page.frameLocator('iframe[title="App surface: Mockup chooser"]').getByRole("button", { name: "Choose A" });
   await frameSubmit.click();
   await expect(page.getByText(/submitted/i)).toBeVisible();
 
   await page.setViewportSize({ width: 430, height: 760 });
   await expect(surface).toHaveCSS("position", "fixed");
   await page.waitForTimeout(250);
-  await expect(page.locator(".kodex-generated-ui-pane").getByRole("button", { name: /hide generated ui/i })).toBeVisible();
+  await expect(page.locator(".kodex-generated-ui-pane").getByRole("button", { name: /hide app surface/i })).toBeVisible();
   const mobileBox = await surface.boundingBox();
   const mobilePaneBox = await page.locator(".kodex-generated-ui-pane").boundingBox();
   const mobileFrameBox = await page.locator(".kodex-generated-ui-frame-wrap").boundingBox();
@@ -1284,7 +1284,7 @@ async function responseFor(key: string, route: Route): Promise<{ status?: number
       ),
     };
   }
-  if (key === "GET /v1/threads/thread-1/generated-ui") {
+  if (key === "GET /v1/threads/thread-1/app-surface") {
     return { body: { session: null } };
   }
   if (key === "POST /v1/threads") {

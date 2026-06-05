@@ -26,7 +26,9 @@ use crate::{
         ThreadSettingsUpdateRequest, ThreadStatus, ThreadSummary, ThreadViewResponse,
         TimelineSkillMention, TimelineThreadMetadataPayload, TimelineUpdateSource,
     },
+    app_surfaces,
     error::{ApiError, ApiResult},
+    routes::app_surfaces::{broadcast_app_surface_event, APP_SURFACE_UPSERTED_EVENT},
     store::{
         EventEnvelope, NewEvent, Project, ThreadLocalSettingsOverlay, ThreadNotificationSetting,
         ThreadRead,
@@ -1354,6 +1356,9 @@ async fn apply_thread_detail_response_state_with_merge(
 ) -> ApiResult<()> {
     apply_thread_summary_state(state, std::slice::from_mut(&mut response.thread)).await?;
     apply_thread_detail_skill_mentions(state, response).await?;
+    let app_surface_sessions =
+        app_surfaces::sync_mcp_app_surfaces_for_turns(state, &response.thread.id, &response.turns)
+            .await?;
     let timeline = match merge_mode {
         ThreadTimelineMergeMode::ReplaceWindow => {
             thread_view::build_thread_timeline_window(
@@ -1392,6 +1397,9 @@ async fn apply_thread_detail_response_state_with_merge(
     .await?;
     if let Some(history_page) = &mut response.history_page {
         history_page.loaded_turn_count = response.timeline.turns.len() as u32;
+    }
+    for session in app_surface_sessions {
+        broadcast_app_surface_event(state, APP_SURFACE_UPSERTED_EVENT, &session).await?;
     }
     response.live_state = response.timeline.live_state;
     sync_raw_response_thread(&mut response.raw_payload, &response.thread);

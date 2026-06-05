@@ -1,6 +1,7 @@
 pub mod api;
 pub mod app_server;
 pub mod app_server_api;
+pub mod app_surfaces;
 pub mod approvals;
 pub mod automations;
 pub mod config;

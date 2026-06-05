@@ -159,6 +159,8 @@ function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
   routes["POST /v1/threads/thread-2/resume"] ??= () => threadCommandFromList(routes, secondThread);
   routes["GET /v1/threads/thread-1/queued-inputs"] ??= { queuedInputs: [] };
   routes["GET /v1/threads/thread-2/queued-inputs"] ??= { queuedInputs: [] };
+  routes["GET /v1/threads/thread-1/app-surface"] ??= { session: null };
+  routes["GET /v1/threads/thread-2/app-surface"] ??= { session: null };
   routes["POST /v1/threads/thread-1/queued-inputs"] ??= (request: Request) => {
     nextQueueIndex += 1;
     return queuedInputFromRequest(request, "thread-1", `queue-${nextQueueIndex}`);

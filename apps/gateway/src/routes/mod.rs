@@ -1,4 +1,5 @@
 pub mod account;
+pub mod app_surfaces;
 pub mod approvals;
 pub mod automations;
 pub mod capabilities;
@@ -64,10 +65,10 @@ mod tests {
         },
         queue,
         store::{
-            EventEnvelope, GeneratedUiSessionUpsert, NewApproval, NewAutomation, NewEvent,
-            NewNotificationDelivery, NewPushSubscription, NotificationDeliveryStatus,
-            PushSubscription, Store, ThreadLocalSettingsOverlay, ThreadRuntimeState,
-            ThreadRuntimeStatus,
+            AppSurfaceCsp, AppSurfaceGrants, AppSurfaceProvider, AppSurfaceSessionUpsert,
+            EventEnvelope, NewApproval, NewAutomation, NewEvent, NewNotificationDelivery,
+            NewPushSubscription, NotificationDeliveryStatus, PushSubscription, Store,
+            ThreadLocalSettingsOverlay, ThreadRuntimeState, ThreadRuntimeStatus,
         },
         thread_view,
         title_generation::{ThreadTitleGenerator, ThreadTitleRequest, TitleGenerationService},
@@ -7736,12 +7737,28 @@ mod tests {
             .as_str()
             .unwrap()
             .to_string();
+        assert!(state
+            .store
+            .latest_generated_ui_session("thread-1")
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            state
+                .store
+                .latest_app_surface_session("thread-1")
+                .await
+                .unwrap()
+                .unwrap()
+                .id,
+            session_id
+        );
 
         let upsert_event = timeout(Duration::from_secs(2), events.recv())
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(upsert_event.kind, "generated_ui.session_upserted");
+        assert_eq!(upsert_event.kind, "app_surface.session_upserted");
         assert_eq!(upsert_event.thread_id.as_deref(), Some("thread-1"));
         assert_eq!(upsert_event.payload["id"], session_id);
         assert!(upsert_event.payload["html"].is_null());
@@ -7763,7 +7780,7 @@ mod tests {
             .iter()
             .map(|event| event["kind"].as_str().unwrap())
             .collect::<Vec<_>>();
-        assert!(replayed_kinds.contains(&"generated_ui.session_upserted"));
+        assert!(replayed_kinds.contains(&"app_surface.session_upserted"));
 
         let read = app
             .clone()
@@ -7861,8 +7878,8 @@ mod tests {
             .await
             .unwrap();
         for expected in [
-            "self_control.generated_ui_upserted",
-            "self_control.generated_ui_archived",
+            "self_control.app_surface_upserted",
+            "self_control.app_surface_archived",
         ] {
             let Some(event) = audit_events.iter().find(|event| event.kind == expected) else {
                 panic!("missing audit event {expected}; saw {audit_events:?}");
@@ -7879,6 +7896,670 @@ mod tests {
                 "verify generated UI provenance"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn app_surface_upsert_read_document_bridge_and_archive() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({
+                "content": [{"type": "text", "text": "lookup complete"}],
+                "structuredContent": {"answer": 42},
+                "isError": false,
+                "_meta": {"trace": "tool-call-1"}
+            }),
+            thread_read_response("thread-1", 0),
+            json!({"turnId": "turn-app-surface"}),
+        ]);
+        let mut events = state.events.subscribe();
+        let app = build_router(state.clone());
+
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/threads/thread-1/app-surface")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "title": "MCP-style dashboard",
+                            "html": "<!doctype html><button id=\"send\">Send</button>",
+                            "fallbackContent": "Dashboard fallback",
+                            "displayModes": ["inline"],
+                            "csp": {
+                                "connectDomains": [],
+                                "resourceDomains": ["data:"]
+                            },
+                            "grants": {
+                                "tools": [{"server": "docs", "tool": "lookup"}],
+                                "resources": [{"server": "docs", "uri": "ui://docs/extra"}],
+                                "canSendMessage": true,
+                                "canUpdateModelContext": true
+                            },
+                            "provenance": {"source": "route-test"},
+                            "source": {
+                                "sourceThreadId": "source-thread",
+                                "sourceTurnId": "source-turn",
+                                "sourceToolCallId": "app-surface-tool",
+                                "requestedBy": "agent",
+                                "reason": "verify app surface routes"
+                            }
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.status(), StatusCode::OK);
+        let created = response_json(created).await;
+        assert_eq!(created["session"]["provider"], "generated");
+        assert_eq!(created["session"]["title"], "MCP-style dashboard");
+        assert_eq!(created["session"]["fallbackContent"], "Dashboard fallback");
+        assert_eq!(created["session"]["revision"], 1);
+        assert_eq!(created["session"]["status"], "active");
+        assert_eq!(created["session"]["displayModes"], json!(["inline"]));
+        assert_eq!(created["session"]["grants"]["canSendMessage"], true);
+        assert!(created["session"]["documentUrl"]
+            .as_str()
+            .unwrap()
+            .starts_with("/v1/app-surfaces/"));
+        let session_id = created["session"]["id"].as_str().unwrap().to_string();
+        let bridge_token = created["session"]["bridgeToken"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let document_url = created["session"]["documentUrl"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let resource_uri = created["session"]["resourceUri"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let upsert_event = recv_event_kind(&mut events, "app_surface.session_upserted").await;
+        assert_eq!(upsert_event.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(upsert_event.payload["id"], session_id);
+        assert_eq!(upsert_event.payload["provider"], "generated");
+        assert!(upsert_event.payload.get("html").is_none());
+
+        let read = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/threads/thread-1/app-surface")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(read.status(), StatusCode::OK);
+        assert_eq!(response_json(read).await["session"]["id"], session_id);
+
+        let document = app
+            .clone()
+            .oneshot(Request::get(&document_url).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(document.status(), StatusCode::OK);
+        let csp = document
+            .headers()
+            .get(CONTENT_SECURITY_POLICY)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(csp.contains("connect-src 'none'"));
+        assert!(csp.contains("navigate-to 'none'"));
+        assert!(csp.contains("img-src data:"));
+        let document_body = to_bytes(document.into_body(), usize::MAX).await.unwrap();
+        assert!(std::str::from_utf8(&document_body)
+            .unwrap()
+            .contains("id=\"send\""));
+
+        let missing_token = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/app-surfaces/{session_id}/bridge"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": "missing-token",
+                            "revision": 1,
+                            "method": "resources/read",
+                            "params": {"uri": resource_uri}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing_token.status(), StatusCode::OK);
+        let missing_token = response_json(missing_token).await;
+        assert_eq!(missing_token["error"]["code"], -32004);
+
+        let bridge_read = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/app-surfaces/{session_id}/bridge"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": 1,
+                            "bridgeToken": bridge_token.as_str(),
+                            "revision": 1,
+                            "method": "resources/read",
+                            "params": {"uri": resource_uri}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(bridge_read.status(), StatusCode::OK);
+        let bridge_read = response_json(bridge_read).await;
+        assert_eq!(bridge_read["id"], 1);
+        assert!(bridge_read["error"].is_null());
+        assert_eq!(
+            bridge_read["result"]["contents"][0]["mimeType"],
+            "text/html;profile=mcp-app"
+        );
+        assert!(bridge_read["result"]["contents"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("id=\"send\""));
+
+        let bridge_initialize = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/app-surfaces/{session_id}/bridge"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": "init-1",
+                            "bridgeToken": bridge_token.as_str(),
+                            "revision": 1,
+                            "method": "ui/initialize",
+                            "params": {"protocolVersion": "2025-11-21"}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(bridge_initialize.status(), StatusCode::OK);
+        let bridge_initialize = response_json(bridge_initialize).await;
+        assert_eq!(bridge_initialize["id"], "init-1");
+        assert!(bridge_initialize["error"].is_null());
+        assert_eq!(bridge_initialize["result"]["protocolVersion"], "2025-11-21");
+        assert_eq!(bridge_initialize["result"]["hostInfo"]["name"], "Kodex");
+        assert_eq!(
+            bridge_initialize["result"]["hostCapabilities"]["serverTools"],
+            json!({})
+        );
+        assert_eq!(
+            bridge_initialize["result"]["hostCapabilities"]["serverResources"],
+            json!({})
+        );
+        assert_eq!(
+            bridge_initialize["result"]["hostContext"]["resourceUri"],
+            resource_uri
+        );
+        assert_eq!(
+            bridge_initialize["result"]["hostContext"]["displayMode"],
+            "inline"
+        );
+        assert_eq!(
+            bridge_initialize["result"]["hostContext"]["availableDisplayModes"],
+            json!(["inline"])
+        );
+        assert_eq!(bridge_initialize["result"]["sessionId"], session_id);
+        assert_eq!(bridge_initialize["result"]["revision"], 1);
+        assert_eq!(bridge_initialize["result"]["provider"], "generated");
+        assert_eq!(bridge_initialize["result"]["displayMode"], "pane");
+        assert_eq!(
+            bridge_initialize["result"]["capabilities"]["methods"],
+            json!([
+                "ui/initialize",
+                "tools/call",
+                "resources/read",
+                "ui/message",
+                "ui/update-model-context"
+            ])
+        );
+
+        let bridge_tool = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/app-surfaces/{session_id}/bridge"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": "tool-1",
+                            "bridgeToken": bridge_token.as_str(),
+                            "revision": 1,
+                            "method": "tools/call",
+                            "params": {
+                                "server": "docs",
+                                "tool": "lookup",
+                                "arguments": {"query": "answer"},
+                                "_meta": {"source": "iframe"}
+                            }
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(bridge_tool.status(), StatusCode::OK);
+        let bridge_tool = response_json(bridge_tool).await;
+        assert_eq!(bridge_tool["id"], "tool-1");
+        assert!(bridge_tool["error"].is_null());
+        assert_eq!(bridge_tool["result"]["approvalRequired"], true);
+        let approval_id = bridge_tool["result"]["approvalId"].as_str().unwrap();
+        let approval_event = recv_event_kind(&mut events, "approval.created").await;
+        assert_eq!(approval_event.payload["id"], approval_id);
+        assert_eq!(
+            approval_event.payload["method"],
+            "appSurface/bridge/requestApproval"
+        );
+        assert_eq!(approval_event.payload["payload"]["server"], "docs");
+        assert_eq!(approval_event.payload["payload"]["tool"], "lookup");
+
+        let approved = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/approvals/{approval_id}/decision"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "decision": {"decision": "accept"}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(approved.status(), StatusCode::OK);
+        let approved = response_json(approved).await;
+        assert_eq!(approved["status"], "resolved");
+        assert_eq!(approved["response"], json!({"decision": "accept"}));
+        let resolved_event = recv_event_kind(&mut events, "approval.resolved").await;
+        assert_eq!(resolved_event.payload["id"], approval_id);
+
+        let bridge_tool = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/app-surfaces/{session_id}/bridge"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": "tool-1-retry",
+                            "bridgeToken": bridge_token.as_str(),
+                            "revision": 1,
+                            "method": "tools/call",
+                            "params": {
+                                "server": "docs",
+                                "tool": "lookup",
+                                "arguments": {"query": "answer"},
+                                "_meta": {"source": "iframe"},
+                                "approvalId": approval_id
+                            }
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(bridge_tool.status(), StatusCode::OK);
+        let bridge_tool = response_json(bridge_tool).await;
+        assert_eq!(bridge_tool["id"], "tool-1-retry");
+        assert!(bridge_tool["error"].is_null());
+        assert_eq!(
+            bridge_tool["result"]["structuredContent"],
+            json!({"answer": 42})
+        );
+        assert_eq!(bridge_tool["result"]["_meta"]["trace"], "tool-call-1");
+
+        let denied_tool = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/app-surfaces/{session_id}/bridge"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": "tool-denied",
+                            "bridgeToken": bridge_token.as_str(),
+                            "revision": 1,
+                            "method": "tools/call",
+                            "params": {
+                                "server": "docs",
+                                "tool": "delete_everything"
+                            }
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(denied_tool.status(), StatusCode::OK);
+        let denied_tool = response_json(denied_tool).await;
+        assert_eq!(denied_tool["id"], "tool-denied");
+        assert!(denied_tool["result"].is_null());
+        assert_eq!(denied_tool["error"]["code"], -32000);
+        assert!(denied_tool["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("not granted"));
+
+        let denied_link = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/app-surfaces/{session_id}/bridge"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": "link-denied",
+                            "bridgeToken": bridge_token.as_str(),
+                            "revision": 1,
+                            "method": "ui/open-link",
+                            "params": {"url": "https://example.test/doc"}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(denied_link.status(), StatusCode::OK);
+        let denied_link = response_json(denied_link).await;
+        assert_eq!(denied_link["id"], "link-denied");
+        assert_eq!(denied_link["error"]["code"], -32000);
+        assert!(denied_link["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("ui/open-link"));
+
+        let updated_context = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/app-surfaces/{session_id}/bridge"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": "context-1",
+                            "bridgeToken": bridge_token.as_str(),
+                            "revision": 1,
+                            "method": "ui/update-model-context",
+                            "params": {"summary": "Use compact mode"}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(updated_context.status(), StatusCode::OK);
+        let updated_context = response_json(updated_context).await;
+        assert_eq!(updated_context["id"], "context-1");
+        assert!(updated_context["error"].is_null());
+        assert_eq!(updated_context["result"]["updated"], true);
+        let context_event = recv_event_kind(&mut events, "app_surface.model_context_updated").await;
+        assert_eq!(context_event.payload["sessionId"], session_id);
+        assert_eq!(
+            context_event.payload["context"],
+            json!({"summary": "Use compact mode"})
+        );
+
+        let bridge_message = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/app-surfaces/{session_id}/bridge"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": "send-1",
+                            "bridgeToken": bridge_token.as_str(),
+                            "revision": 1,
+                            "method": "ui/message",
+                            "params": {
+                                "message": "Use the dashboard choice",
+                                "metadata": {"choice": "dashboard"}
+                            }
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(bridge_message.status(), StatusCode::OK);
+        let bridge_message = response_json(bridge_message).await;
+        assert_eq!(bridge_message["id"], "send-1");
+        assert!(bridge_message["error"].is_null());
+        assert_eq!(bridge_message["result"]["input"]["disposition"], "started");
+
+        let submitted_event = recv_event_kind(&mut events, "app_surface.session_submitted").await;
+        assert_eq!(submitted_event.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(submitted_event.payload["id"], session_id);
+        assert_eq!(submitted_event.payload["status"], "submitted");
+        assert_eq!(
+            submitted_event.payload["submittedMessage"],
+            "Use the dashboard choice"
+        );
+        assert_eq!(
+            submitted_event.payload["submittedMetadata"],
+            json!({"choice": "dashboard"})
+        );
+
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "mcpServer/tool/call");
+        assert_eq!(requests[0].1["server"], "docs");
+        assert_eq!(requests[0].1["threadId"], "thread-1");
+        assert_eq!(requests[0].1["tool"], "lookup");
+        assert_eq!(requests[0].1["arguments"], json!({"query": "answer"}));
+        assert_eq!(requests[0].1["_meta"], json!({"source": "iframe"}));
+        assert_eq!(requests[1].0, "thread/read");
+        assert_eq!(requests[2].0, "turn/start");
+        assert_eq!(
+            requests[2].1["input"][0]["text"],
+            "Use the dashboard choice"
+        );
+        drop(requests);
+
+        let archived = app
+            .clone()
+            .oneshot(
+                Request::delete("/v1/self-control/threads/thread-1/app-surface")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "source": {
+                                "sourceThreadId": "source-thread",
+                                "sourceTurnId": "source-turn",
+                                "sourceToolCallId": "app-surface-tool",
+                                "requestedBy": "agent",
+                                "reason": "verify app surface archive"
+                            }
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(archived.status(), StatusCode::OK);
+        assert_eq!(
+            response_json(archived).await["session"]["status"],
+            "archived"
+        );
+
+        let public_read_after_archive = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1/app-surface")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(public_read_after_archive.status(), StatusCode::OK);
+        assert_eq!(
+            response_json(public_read_after_archive).await["session"],
+            Value::Null
+        );
+
+        let audit_events = state
+            .store
+            .replay_events(None, None, Some("thread-1".to_string()))
+            .await
+            .unwrap();
+        assert!(audit_events
+            .iter()
+            .any(|event| event.kind == "self_control.app_surface_upserted"));
+        assert!(audit_events
+            .iter()
+            .any(|event| event.kind == "self_control.app_surface_archived"));
+        assert!(audit_events.iter().any(|event| {
+            event.kind == "app_surface.bridge_call"
+                && event.payload["method"] == "ui/message"
+                && event.payload["status"] == "ok"
+        }));
+        assert!(audit_events.iter().any(|event| {
+            event.kind == "app_surface.bridge_call"
+                && event.payload["method"] == "tools/call"
+                && event.payload["status"] == "error"
+        }));
+    }
+
+    #[tokio::test]
+    async fn thread_detail_syncs_mcp_app_surface_without_revision_churn() {
+        let (state, app_server) = test_state().await;
+        app_server.queued_responses.lock().unwrap().extend([
+            thread_read_response("thread-1", 0),
+            json!({
+                "data": [mcp_app_turn()],
+                "nextCursor": null,
+                "backwardsCursor": null
+            }),
+            json!({
+                "data": [{"id": "turn-mcp", "status": {"type": "completed"}}],
+                "nextCursor": null,
+                "backwardsCursor": null
+            }),
+            json!({
+                "contents": [{
+                    "uri": "ui://docs/dashboard",
+                    "mimeType": "text/html;profile=mcp-app",
+                    "text": "<!doctype html><h1>Docs dashboard</h1>"
+                }]
+            }),
+            json!({
+                "data": [mcp_server_status_with_visibility()],
+                "nextCursor": null
+            }),
+            thread_read_response("thread-1", 0),
+            json!({
+                "data": [mcp_app_turn()],
+                "nextCursor": null,
+                "backwardsCursor": null
+            }),
+            json!({
+                "data": [{"id": "turn-mcp", "status": {"type": "completed"}}],
+                "nextCursor": null,
+                "backwardsCursor": null
+            }),
+        ]);
+        let mut events = state.events.subscribe();
+        let app = build_router(state.clone());
+
+        let first = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/threads/thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+        let first_surface_event =
+            recv_event_kind(&mut events, "app_surface.session_upserted").await;
+        let session_id = first_surface_event.payload["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(first_surface_event.payload["revision"], 1);
+
+        let first_surface = state
+            .store
+            .latest_app_surface_session("thread-1")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(first_surface.id, session_id);
+        assert_eq!(first_surface.revision, 1);
+        assert_eq!(first_surface.provider.as_str(), "mcp");
+
+        let second = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/threads/thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(second.status(), StatusCode::OK);
+        let second_surface = state
+            .store
+            .latest_app_surface_session("thread-1")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(second_surface.id, session_id);
+        assert_eq!(second_surface.revision, 1);
+
+        let read = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1/app-surface")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(read.status(), StatusCode::OK);
+        let read = response_json(read).await;
+        assert_eq!(read["session"]["id"], session_id);
+        assert_eq!(read["session"]["revision"], 1);
+        assert_eq!(read["session"]["provider"], "mcp");
+        assert_eq!(
+            read["session"]["grants"]["tools"],
+            json!([{"server": "docs", "tool": "lookup"}])
+        );
+
+        let requests = app_server.requests.lock().unwrap();
+        let methods = requests
+            .iter()
+            .map(|(method, _)| method.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            methods,
+            vec![
+                "thread/read",
+                "thread/turns/list",
+                "thread/turns/list",
+                "mcpServer/resource/read",
+                "mcpServerStatus/list",
+                "thread/read",
+                "thread/turns/list",
+                "thread/turns/list",
+            ]
+        );
     }
 
     #[tokio::test]
@@ -7935,8 +8616,8 @@ mod tests {
         assert_eq!(submitted["session"]["submittedRevision"], 1);
         assert_eq!(submitted["input"]["disposition"], "started");
 
-        let submitted_event = recv_event_kind(&mut events, "generated_ui.session_submitted").await;
-        assert_eq!(submitted_event.kind, "generated_ui.session_submitted");
+        let submitted_event = recv_event_kind(&mut events, "app_surface.session_submitted").await;
+        assert_eq!(submitted_event.kind, "app_surface.session_submitted");
         assert_eq!(
             submitted_event.payload["submittedMetadata"],
             json!({"choice": "a"})
@@ -7969,56 +8650,63 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn generated_ui_submit_claim_blocks_duplicate_claim_and_update() {
+    async fn generated_ui_alias_uses_app_surface_submit_state_for_update_guardrails() {
         let (state, _app_server) = test_state().await;
         let session = state
             .store
-            .upsert_generated_ui_session(GeneratedUiSessionUpsert {
+            .upsert_app_surface_session(AppSurfaceSessionUpsert {
                 thread_id: "thread-1".to_string(),
+                provider: AppSurfaceProvider::Generated,
                 title: "Questionnaire".to_string(),
+                resource_uri: None,
+                resource_mime_type: "text/html;profile=mcp-app".to_string(),
                 html: "<form></form>".to_string(),
+                fallback_content: "Interactive generated UI: Questionnaire".to_string(),
+                display_modes: vec!["inline".to_string(), "fullscreen".to_string()],
+                csp: AppSurfaceCsp::default(),
+                grants: AppSurfaceGrants {
+                    can_send_message: true,
+                    ..Default::default()
+                },
+                provenance: json!({"generated": {"compatAlias": "generated-ui"}}),
             })
             .await
             .unwrap();
 
-        let claimed = state
+        let submitted = state
             .store
-            .claim_generated_ui_submit(&session.id, session.revision)
+            .submit_app_surface_session(
+                &session.id,
+                session.revision,
+                "I pick mockup A",
+                Some(json!({"choice": "a"})),
+            )
             .await
             .unwrap();
-        assert_eq!(claimed.status.as_str(), "submitting");
+        assert_eq!(submitted.status.as_str(), "submitted");
 
         assert!(state
             .store
-            .claim_generated_ui_submit(&session.id, session.revision)
+            .submit_app_surface_session(&session.id, session.revision, "duplicate", None)
             .await
             .is_err());
-        assert!(state
-            .store
-            .upsert_generated_ui_session(GeneratedUiSessionUpsert {
-                thread_id: "thread-1".to_string(),
-                title: "Updated questionnaire".to_string(),
-                html: "<form><button>Submit</button></form>".to_string(),
-            })
-            .await
-            .is_err());
-        assert!(state
-            .store
-            .archive_latest_generated_ui_session("thread-1")
-            .await
-            .is_err());
-
-        state
-            .store
-            .reset_generated_ui_submit(&session.id, session.revision)
-            .await
-            .unwrap();
         let updated = state
             .store
-            .upsert_generated_ui_session(GeneratedUiSessionUpsert {
+            .upsert_app_surface_session(AppSurfaceSessionUpsert {
                 thread_id: "thread-1".to_string(),
+                provider: AppSurfaceProvider::Generated,
                 title: "Updated questionnaire".to_string(),
+                resource_uri: None,
+                resource_mime_type: "text/html;profile=mcp-app".to_string(),
                 html: "<form><button>Submit</button></form>".to_string(),
+                fallback_content: "Interactive generated UI: Updated questionnaire".to_string(),
+                display_modes: vec!["inline".to_string(), "fullscreen".to_string()],
+                csp: AppSurfaceCsp::default(),
+                grants: AppSurfaceGrants {
+                    can_send_message: true,
+                    ..Default::default()
+                },
+                provenance: json!({"generated": {"compatAlias": "generated-ui"}}),
             })
             .await
             .unwrap();
@@ -14504,6 +15192,55 @@ mod tests {
                 "uriTemplate": "file:///docs/{id}",
                 "mimeType": "text/plain"
             }]
+        })
+    }
+
+    fn mcp_server_status_with_visibility() -> Value {
+        json!({
+            "name": "docs",
+            "authStatus": "unsupported",
+            "tools": {
+                "lookup": {
+                    "name": "lookup",
+                    "description": "Lookup docs",
+                    "inputSchema": {},
+                    "_meta": {"ui": {"visibility": ["app"]}}
+                },
+                "model_only": {
+                    "name": "model_only",
+                    "description": "Model-only docs",
+                    "inputSchema": {},
+                    "_meta": {"ui": {"visibility": ["model"]}}
+                }
+            },
+            "resources": [],
+            "resourceTemplates": []
+        })
+    }
+
+    fn mcp_app_turn() -> Value {
+        json!({
+            "id": "turn-mcp",
+            "status": {"type": "completed"},
+            "items": [mcp_app_tool_item()]
+        })
+    }
+
+    fn mcp_app_tool_item() -> Value {
+        json!({
+            "id": "item-mcp-app",
+            "type": "mcpToolCall",
+            "server": "docs",
+            "tool": "lookup",
+            "arguments": {"query": "widgets"},
+            "status": "completed",
+            "mcpAppResourceUri": "ui://docs/dashboard",
+            "result": {
+                "content": [{"type": "text", "text": "Dashboard ready"}],
+                "structuredContent": {"count": 3},
+                "_meta": {"trace": "mcp-result-1"}
+            },
+            "error": null
         })
     }
 

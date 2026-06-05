@@ -201,7 +201,7 @@ describe("event stream client", () => {
     client.close();
   });
 
-  it("receives generated UI SSE events emitted by the gateway", () => {
+  it("receives app surface SSE events emitted by the gateway", () => {
     const received: string[] = [];
     const client = createEventStreamClient({
       EventSourceCtor: FakeEventSource,
@@ -210,10 +210,10 @@ describe("event stream client", () => {
     });
 
     client.connect();
-    FakeEventSource.instances[0].emitNamed("generated_ui.session_upserted", {
+    FakeEventSource.instances[0].emitNamed("app_surface.session_upserted", {
       id: "event-9",
       seq: 9,
-      kind: "generated_ui.session_upserted",
+      kind: "app_surface.session_upserted",
       codexMethod: null,
       itemId: null,
       threadId: "thread-1",
@@ -224,17 +224,25 @@ describe("event stream client", () => {
         threadId: "thread-1",
         title: "Mockups",
         revision: 1,
-        status: "interactive",
-        documentUrl: "/v1/generated-ui/sessions/session-1/document?revision=1",
+        status: "active",
+        documentUrl: "/v1/app-surfaces/session-1/document?revision=1",
         submitAvailable: true,
-        networkPolicy: "self_contained",
+        csp: { connectDomains: [], resourceDomains: [] },
+        displayModes: ["pane"],
+        fallbackContent: "Mockups",
+        grants: { canOpenLinks: false, canSendMessage: true, canUpdateModelContext: false, resources: [], tools: [] },
+        bridgeToken: "bridge-token-1",
+        provenance: { source: "test" },
+        provider: "generated",
+        resourceMimeType: "text/html",
+        resourceUri: "ui://kodex/generated/session-1",
         createdAt: "2026-04-30T00:00:00Z",
         updatedAt: "2026-04-30T00:00:00Z",
       },
       receivedAt: "2026-04-30T00:00:00Z",
     });
 
-    expect(received).toEqual(["generated_ui.session_upserted"]);
+    expect(received).toEqual(["app_surface.session_upserted"]);
     client.close();
   });
 

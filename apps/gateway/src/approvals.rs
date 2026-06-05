@@ -26,6 +26,19 @@ pub async fn decide_approval(
         .store
         .claim_approval_resolution(approval_id, decision)
         .await?;
+    if claimed.method == crate::routes::app_surfaces::APP_SURFACE_BRIDGE_APPROVAL_METHOD {
+        let resolved = state.store.finish_approval_resolution(approval_id).await?;
+        emit_resolved_approval(state, resolved).await
+    } else {
+        resolve_app_server_approval(state, approval_id, claimed).await
+    }
+}
+
+async fn resolve_app_server_approval(
+    state: &AppState,
+    approval_id: &str,
+    claimed: Approval,
+) -> ApiResult<Approval> {
     let decision = claimed.response.clone().unwrap_or(Value::Null);
     if let Err(error) = state
         .app_server
@@ -36,6 +49,10 @@ pub async fn decide_approval(
         return Err(error);
     }
     let resolved = state.store.finish_approval_resolution(approval_id).await?;
+    emit_resolved_approval(state, resolved).await
+}
+
+async fn emit_resolved_approval(state: &AppState, resolved: Approval) -> ApiResult<Approval> {
     let event = state
         .store
         .append_event(NewEvent {

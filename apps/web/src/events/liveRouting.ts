@@ -24,6 +24,7 @@ export type LiveEventRouteHandlers = {
   applySubagentDiscoveryEvent: (event: ThreadSubagentDiscoveryEvent) => void;
   applyUsageLimitSnapshot: (snapshot: RateLimitSnapshot) => void;
   applyApprovalEvent: (event: EventEnvelope) => void;
+  applyAppSurfaceEvent: (event: EventEnvelope) => void;
   applyGeneratedUiEvent: (event: EventEnvelope) => void;
   applySkillsChangedEvent: () => void;
   applyMcpLifecycleEvent: (event: EventEnvelope) => void;
@@ -61,6 +62,9 @@ function routeSharedLiveEvent(event: EventEnvelope, handlers: SelectedThreadLive
   }
   if (event.kind.startsWith("generated_ui.")) {
     handlers.applyGeneratedUiEvent(event);
+  }
+  if (event.kind.startsWith("app_surface.")) {
+    handlers.applyAppSurfaceEvent(event);
   }
   const queueUpsert = queuedInputUpsertFromEvent(event);
   if (queueUpsert) {

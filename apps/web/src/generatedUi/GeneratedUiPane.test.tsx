@@ -26,9 +26,16 @@ describe("GeneratedUiPane", () => {
     }) as unknown as GeneratedUiPaneSubmit;
 
     renderPane(session, { onSubmit });
+    const iframe = screen.getByTitle(/generated ui:/i) as HTMLIFrameElement;
+    const postMessage = vi.fn();
+    Object.defineProperty(iframe.contentWindow, "postMessage", {
+      configurable: true,
+      value: postMessage,
+    });
 
     postFromFrame({
       type: "kodex.ui.submit",
+      requestId: "submit-request-1",
       sessionId: "session-1",
       revision: 3,
       message: "  Choose the compact layout  ",
@@ -41,7 +48,49 @@ describe("GeneratedUiPane", () => {
         message: "Choose the compact layout",
         metadata: { selected: "compact" },
       });
+      expect(postMessage).toHaveBeenCalledWith(
+        {
+          type: "kodex.generatedUi.submit.result",
+          requestId: "submit-request-1",
+          ok: true,
+          status: "submitted",
+          result: { disposition: "started", queuedInput: null, rawPayload: { turnId: "turn-1" } },
+        },
+        "*",
+      );
     });
+  });
+
+  it("reports unrecognized kodex postMessage event types back to the iframe", async () => {
+    const onSubmit = vi.fn() as unknown as GeneratedUiPaneSubmit;
+    renderPane(generatedUiSession({ revision: 3 }), { onSubmit });
+    const iframe = screen.getByTitle(/generated ui:/i) as HTMLIFrameElement;
+    const postMessage = vi.fn();
+    Object.defineProperty(iframe.contentWindow, "postMessage", {
+      configurable: true,
+      value: postMessage,
+    });
+
+    postFromFrame({
+      type: "kodex:submit-message",
+      requestId: "wrong-submit-1",
+      message: "Hi",
+    });
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(postMessage).toHaveBeenCalledWith(
+      {
+        type: "kodex.generatedUi.submit.result",
+        requestId: "wrong-submit-1",
+        ok: false,
+        status: "ignored",
+        error: {
+          code: "unrecognized_event_type",
+          message: "Unrecognized generated UI event type: kodex:submit-message",
+        },
+      },
+      "*",
+    );
   });
 
   it("loads the generated document into a themed iframe srcDoc", async () => {

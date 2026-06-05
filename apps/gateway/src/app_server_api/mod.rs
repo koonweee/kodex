@@ -298,6 +298,37 @@ impl McpResourceReadResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct McpServerToolCallRequest {
+    pub server: String,
+    pub thread_id: String,
+    pub tool: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arguments: Option<Value>,
+    #[serde(default, rename = "_meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerToolCallResponse {
+    pub content: Vec<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structured_content: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_error: Option<bool>,
+    #[serde(default, rename = "_meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<Value>,
+}
+
+impl McpServerToolCallResponse {
+    fn from_payload(payload: Value) -> ApiResult<Self> {
+        serde_json::from_value(payload)
+            .map_err(|error| bad_gateway(format!("mcpServer/tool/call response: {error}")))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct McpOAuthLoginRequest {
     #[serde(default)]
     pub scopes: Option<Vec<String>>,

@@ -101,6 +101,9 @@ fn validate_server_notification(message: &Value) -> ApiResult<()> {
 }
 
 pub fn validate_approval_response(method: &str, response: &Value) -> ApiResult<()> {
+    if method == crate::routes::app_surfaces::APP_SURFACE_BRIDGE_APPROVAL_METHOD {
+        return validate_app_surface_bridge_approval_response(response);
+    }
     let Some(schema) = approval_response_schema(method) else {
         return Err(ApiError::BadRequest(format!(
             "unsupported approval method {method}"
@@ -111,7 +114,18 @@ pub fn validate_approval_response(method: &str, response: &Value) -> ApiResult<(
 }
 
 pub fn is_supported_approval_method(method: &str) -> bool {
-    approval_response_schema(method).is_some()
+    method == crate::routes::app_surfaces::APP_SURFACE_BRIDGE_APPROVAL_METHOD
+        || approval_response_schema(method).is_some()
+}
+
+fn validate_app_surface_bridge_approval_response(response: &Value) -> ApiResult<()> {
+    match response.get("decision").and_then(Value::as_str) {
+        Some("accept" | "decline" | "cancel") => Ok(()),
+        _ => Err(ApiError::BadRequest(
+            "app surface bridge approval response must include decision accept, decline, or cancel"
+                .to_string(),
+        )),
+    }
 }
 
 fn approval_response_schema(method: &str) -> Option<&'static JSONSchema> {

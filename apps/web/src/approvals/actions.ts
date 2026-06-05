@@ -26,6 +26,9 @@ export function approvalActionSpecs(approval: Approval): ApprovalActionSpec[] {
   if (method === "mcp_elicitation") {
     return mcpElicitationApprovalActions();
   }
+  if (method === "app_surface_bridge") {
+    return appSurfaceBridgeApprovalActions();
+  }
   if (method === "tool_user_input") {
     return [
       {
@@ -43,6 +46,25 @@ export function approvalActionSpecs(approval: Approval): ApprovalActionSpec[] {
     return fileChangeApprovalActions();
   }
   return [];
+}
+
+function appSurfaceBridgeApprovalActions(): ApprovalActionSpec[] {
+  return [
+    {
+      ariaLabel: "Yes, allow this tool call",
+      icon: "check",
+      label: "Yes, allow this tool call",
+      response: { decision: "accept" },
+    },
+    {
+      ariaLabel: "No, block this tool call",
+      color: "red",
+      icon: "x",
+      label: "No, block this tool call",
+      response: { decision: "decline" },
+      variant: "light",
+    },
+  ];
 }
 
 function commandApprovalActions(approval: Approval): ApprovalActionSpec[] {

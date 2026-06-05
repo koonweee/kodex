@@ -40,8 +40,13 @@ async fn kodex_control_mcp_stdio_lists_tools() -> anyhow::Result<()> {
     assert_tool_requires(&tools, "spawn_thread", &["projectId", "input"]);
     assert_tool_requires(&tools, "rename_thread", &["threadId", "name"]);
     assert_tool_requires(&tools, "update_thread_settings", &["threadId", "settings"]);
+    assert_tool_requires(
+        &tools,
+        "open_app_surface",
+        &["title", "html", "fallbackContent"],
+    );
+    assert_tool_does_not_require(&tools, "open_app_surface", "threadId");
     assert_tool_requires(&tools, "open_generated_ui", &["title", "html"]);
-    assert_tool_does_not_require(&tools, "open_generated_ui", "threadId");
     assert_tool_requires(&tools, "deny_approval", &["approvalId"]);
     assert_tool_requires(
         &tools,
@@ -140,16 +145,17 @@ async fn kodex_control_mcp_smokes_new_tools_against_fake_gateway() -> anyhow::Re
         .into_typed()?;
     assert_eq!(settings["thread"]["model"], "gpt-test-2");
 
-    let mut generated_ui_args = JsonObject::new();
-    generated_ui_args.insert("title".to_string(), json!("Thread UI"));
-    generated_ui_args.insert("html".to_string(), json!("<!doctype html><main>UI</main>"));
-    let mut generated_ui_meta = JsonObject::new();
-    generated_ui_meta.insert("threadId".to_string(), json!("thread-spawned"));
-    let mut generated_ui_call =
-        CallToolRequestParams::new("open_generated_ui").with_arguments(generated_ui_args);
-    generated_ui_call.set_meta(Meta(generated_ui_meta));
-    let generated_ui: Value = client.call_tool(generated_ui_call).await?.into_typed()?;
-    assert_eq!(generated_ui["session"]["threadId"], "thread-spawned");
+    let mut app_surface_args = JsonObject::new();
+    app_surface_args.insert("title".to_string(), json!("Thread UI"));
+    app_surface_args.insert("html".to_string(), json!("<!doctype html><main>UI</main>"));
+    app_surface_args.insert("fallbackContent".to_string(), json!("Thread UI fallback"));
+    let mut app_surface_meta = JsonObject::new();
+    app_surface_meta.insert("threadId".to_string(), json!("thread-spawned"));
+    let mut app_surface_call =
+        CallToolRequestParams::new("open_app_surface").with_arguments(app_surface_args);
+    app_surface_call.set_meta(Meta(app_surface_meta));
+    let app_surface: Value = client.call_tool(app_surface_call).await?.into_typed()?;
+    assert_eq!(app_surface["session"]["threadId"], "thread-spawned");
 
     let mut deny_args = JsonObject::new();
     deny_args.insert("approvalId".to_string(), json!("approval-1"));
@@ -210,8 +216,9 @@ async fn kodex_control_mcp_smokes_new_tools_against_fake_gateway() -> anyhow::Re
     }));
     assert!(requests.iter().any(|request| {
         request.method == Method::POST
-            && request.path == "/v1/self-control/threads/thread-spawned/generated-ui"
+            && request.path == "/v1/self-control/threads/thread-spawned/app-surface"
             && request.body["title"] == "Thread UI"
+            && request.body["fallbackContent"] == "Thread UI fallback"
             && request.body.get("threadId").is_none()
     }));
     assert!(requests.iter().any(|request| {
@@ -309,7 +316,7 @@ async fn fake_gateway_handler(
         (Method::PATCH, "/v1/self-control/threads/thread-spawned/settings") => {
             json!({"thread": {"id": "thread-spawned", "model": request_body["model"]}})
         }
-        (Method::POST, "/v1/self-control/threads/thread-spawned/generated-ui") => {
+        (Method::POST, "/v1/self-control/threads/thread-spawned/app-surface") => {
             json!({"session": {"threadId": "thread-spawned", "title": request_body["title"]}})
         }
         (Method::POST, "/v1/self-control/approvals/approval-1/decision") => {

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { buildGeneratedUiSrcDoc, buildGeneratedUiThemeCss, GENERATED_UI_DOCUMENT_CSP } from "./themeDocument";
+import {
+  buildGeneratedUiDocumentCsp,
+  buildGeneratedUiSrcDoc,
+  buildGeneratedUiThemeCss,
+  GENERATED_UI_DOCUMENT_CSP,
+} from "./themeDocument";
 
 describe("generated UI theme document", () => {
   it("builds a compact Kodex theme token stylesheet for the selected color scheme", () => {
@@ -26,6 +31,15 @@ describe("generated UI theme document", () => {
     expect(srcDoc).toContain("<button>Pick</button>");
   });
 
+  it("injects a submit helper with the canonical generated UI bridge event", () => {
+    const srcDoc = buildGeneratedUiSrcDoc("<main>Generated form</main>", "oled-black");
+
+    expect(srcDoc).toContain("id=\"kodex-generated-ui-bridge\"");
+    expect(srcDoc).toContain("submitMessage");
+    expect(srcDoc).toContain("kodex.generatedUi.submit");
+    expect(srcDoc).toContain("kodex.generatedUi.submit.result");
+  });
+
   it("wraps an HTML fragment in a themed self-contained document", () => {
     const srcDoc = buildGeneratedUiSrcDoc("<main>Generated form</main>", "dracula");
 
@@ -33,5 +47,30 @@ describe("generated UI theme document", () => {
     expect(srcDoc).toContain("<body>\n<main>Generated form</main>\n</body>");
     expect(srcDoc).toContain("color-scheme: dark;");
     expect(srcDoc).toContain("--kodex-accent: #bd93f9;");
+  });
+
+  it("adds app-surface connect and resource domains to the injected CSP", () => {
+    const csp = buildGeneratedUiDocumentCsp({
+      connectDomains: ["https://api.example.test", "wss://events.example.test"],
+      resourceDomains: ["https://cdn.example.test"],
+    });
+
+    expect(csp).toContain("connect-src https://api.example.test wss://events.example.test");
+    expect(csp).toContain("img-src data: blob: https://cdn.example.test");
+    expect(csp).toContain("media-src https://cdn.example.test");
+    expect(csp).toContain("font-src data: https://cdn.example.test");
+
+    const srcDoc = buildGeneratedUiSrcDoc("<main>App</main>", "oled-black", {
+      connectDomains: ["https://api.example.test"],
+      resourceDomains: ["https://cdn.example.test"],
+    });
+
+    expect(srcDoc).toContain("connect-src https://api.example.test");
+    expect(srcDoc).toContain("img-src data: blob: https://cdn.example.test");
+  });
+
+  it("keeps generated document CSP deny-by-default when no domains are provided", () => {
+    expect(buildGeneratedUiDocumentCsp()).toBe(GENERATED_UI_DOCUMENT_CSP);
+    expect(buildGeneratedUiDocumentCsp({ connectDomains: [], resourceDomains: [] })).toBe(GENERATED_UI_DOCUMENT_CSP);
   });
 });

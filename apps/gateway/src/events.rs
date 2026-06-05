@@ -27,6 +27,7 @@ use crate::{
         ThreadTurnSnapshot, TimelineItemUpsertPayload, TimelineThreadMetadataPayload,
         TimelineUpdateSource,
     },
+    app_surfaces,
     error::{ApiError, ApiResult},
     events_replay::{
         event_matches, is_normal_live_event, is_operational_replay_event,
@@ -34,6 +35,7 @@ use crate::{
     },
     events_synthetic::{synthetic_event, thread_view_refresh_required_event},
     queue,
+    routes::app_surfaces::{app_surface_payload_event, APP_SURFACE_UPSERTED_EVENT},
     routes::threads::{
         apply_thread_summary_state, ThreadReadStateUpdate, THREAD_READ_UPDATED_EVENT,
     },
@@ -628,6 +630,22 @@ async fn timeline_item_upsert_event(
     )
     .await?;
     let mut events = vec![thread_view_patch_payload_event(state, patch).await?];
+    match app_surfaces::sync_mcp_app_surface_for_item(state, &thread_id, &turn_id, item).await {
+        Ok(Some(session)) => {
+            events.push(
+                app_surface_payload_event(state, APP_SURFACE_UPSERTED_EVENT, &session).await?,
+            );
+        }
+        Ok(None) => {}
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                thread_id,
+                turn_id,
+                "failed to sync MCP app surface from item"
+            );
+        }
+    }
     if let Some(event) =
         queue::reconcile_pending_steer_commit_event(state, &thread_id, &turn_id, item).await?
     {

@@ -84,6 +84,69 @@ fn thread_read_response_with_context_compaction(thread_id: &str) -> Value {
     })
 }
 
+fn mcp_app_resource_response() -> Value {
+    json!({
+        "contents": [{
+            "uri": "ui://docs/dashboard",
+            "mimeType": "text/html;profile=mcp-app",
+            "text": "<!doctype html><h1>Docs dashboard</h1>",
+            "_meta": {
+                "ui": {
+                    "csp": {
+                        "resourceDomains": ["data:"]
+                    }
+                }
+            }
+        }]
+    })
+}
+
+fn mcp_server_status_response() -> Value {
+    json!({
+        "data": [{
+            "name": "docs",
+            "authStatus": "unsupported",
+            "tools": {
+                "lookup": {
+                    "name": "lookup",
+                    "inputSchema": {},
+                    "_meta": {"ui": {"visibility": ["app"]}}
+                },
+                "model_only": {
+                    "name": "model_only",
+                    "inputSchema": {},
+                    "_meta": {"ui": {"visibility": ["model"]}}
+                }
+            },
+            "resources": [{
+                "name": "extra",
+                "uri": "ui://docs/extra",
+                "mimeType": "text/plain"
+            }],
+            "resourceTemplates": []
+        }],
+        "nextCursor": null
+    })
+}
+
+fn mcp_app_tool_item() -> Value {
+    json!({
+        "id": "item-mcp-app",
+        "type": "mcpToolCall",
+        "server": "docs",
+        "tool": "lookup",
+        "arguments": {"query": "widgets"},
+        "status": "completed",
+        "mcpAppResourceUri": "ui://docs/dashboard",
+        "result": {
+            "content": [{"type": "text", "text": "Dashboard ready"}],
+            "structuredContent": {"count": 3},
+            "_meta": {"trace": "mcp-result-1"}
+        },
+        "error": null
+    })
+}
+
 #[tokio::test]
 async fn notification_ingest_persists_thread_view_cursor_before_broadcast() {
     let state = test_state().await;
@@ -114,6 +177,70 @@ async fn notification_ingest_persists_thread_view_cursor_before_broadcast() {
     assert!(replay
         .iter()
         .all(|event| event.kind != "codex.notification"));
+}
+
+#[tokio::test]
+async fn mcp_tool_item_with_app_resource_creates_app_surface_session() {
+    let (state, app_server) = test_state_with_app_server().await;
+    app_server
+        .queued_responses
+        .lock()
+        .unwrap()
+        .extend([mcp_app_resource_response(), mcp_server_status_response()]);
+    let mut receiver = state.events.subscribe();
+
+    ingest_inbound(
+        InboundMessage::Notification {
+            method: "item/completed".to_string(),
+            params: json!({
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "item": mcp_app_tool_item()
+            }),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+
+    let patch = receiver.recv().await.unwrap();
+    assert_eq!(patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
+    let app_surface_event = receiver.recv().await.unwrap();
+    assert_eq!(app_surface_event.kind, "app_surface.session_upserted");
+    assert_eq!(app_surface_event.thread_id.as_deref(), Some("thread-1"));
+    assert_eq!(app_surface_event.payload["provider"], "mcp");
+    assert_eq!(
+        app_surface_event.payload["resourceUri"],
+        "ui://docs/dashboard"
+    );
+    assert_eq!(
+        app_surface_event.payload["fallbackContent"],
+        "Dashboard ready"
+    );
+    assert_eq!(
+        app_surface_event.payload["grants"]["tools"],
+        json!([{"server": "docs", "tool": "lookup"}])
+    );
+
+    let session = state
+        .store
+        .latest_app_surface_session("thread-1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(session.provider.as_str(), "mcp");
+    assert_eq!(session.revision, 1);
+    assert!(session.html.contains("Docs dashboard"));
+    assert_eq!(
+        session.provenance["mcp"]["result"]["structuredContent"]["count"],
+        3
+    );
+
+    let requests = app_server.requests.lock().unwrap();
+    assert_eq!(requests[0].0, "mcpServer/resource/read");
+    assert_eq!(requests[0].1["server"], "docs");
+    assert_eq!(requests[0].1["uri"], "ui://docs/dashboard");
+    assert_eq!(requests[1].0, "mcpServerStatus/list");
 }
 
 #[tokio::test]

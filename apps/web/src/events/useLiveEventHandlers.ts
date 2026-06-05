@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import type { Approval, EventEnvelope, QueuedInput, RateLimitSnapshot } from "../api/client";
 import { applyMcpLifecycleEvent } from "../api/mcpCache";
 import { queryKeys } from "../api/queryKeys";
+import { applyAppSurfaceEvent } from "../appSurfaces/cache";
 import { applyCachedAutomationEvent } from "../automations/cache";
 import { applyGeneratedUiEvent } from "../generatedUi/cache";
 import type { ThreadSubagentDiscoveryEvent, ThreadUpsert } from "../threads/events";
@@ -74,6 +75,10 @@ export function useLiveEventHandlers({
       applyGeneratedUiEvent(queryClient, event);
     }
 
+    function applyAppSurfaceStreamEvent(event: EventEnvelope) {
+      applyAppSurfaceEvent(queryClient, event);
+    }
+
     function applyLiveUsageLimitSnapshot(nextUsageLimitSnapshot: RateLimitSnapshot) {
       liveUsageLimitSnapshotReceivedRef.current = true;
       if (applyUsageLimitSnapshot) {
@@ -97,6 +102,7 @@ export function useLiveEventHandlers({
       applySubagentDiscoveryEvent,
       applyUsageLimitSnapshot: applyLiveUsageLimitSnapshot,
       applyApprovalEvent,
+      applyAppSurfaceEvent: applyAppSurfaceStreamEvent,
       applyGeneratedUiEvent: applyGeneratedUiStreamEvent,
       applySkillsChangedEvent,
       applyMcpLifecycleEvent: applyMcpLifecycleStreamEvent,

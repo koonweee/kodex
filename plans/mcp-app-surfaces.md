@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+Active. Core app-surface storage, MCP resource detection, generated-provider self-control routes, Kodex Control tools, OpenAPI types, web pane rendering, MCP-style bridge notifications, token-bound bridge calls, generated-provider approval gating, compact audit events, and README/plugin guidance are implemented and covered by focused plus full test gates. A disposable gateway validated the official `@modelcontextprotocol/server-budget-allocator` MCP Apps example through normal app-server MCP install/status/resource-read paths and an approved app-surface bridge `tools/call`. Live `$agent-browser` validation with an authenticated model turn also created and rendered the official Budget Allocator MCP app pane; that pass exposed real compatibility fixes for bundled app HTML size and `ui/initialize` bridge handshakes, now covered by focused regression tests. Remaining work is later cleanup of legacy generated-UI compatibility aliases once that migration window closes.
 
 ## Goal
 
@@ -432,4 +432,3 @@ Exit criteria:
 - External network policy for generated app surfaces should remain deny-by-default. Any allowlist/approval expansion must be explicit in grants, CSP, and audit events.
 - Large HTML/resources/tool results can bloat SQLite and SSE payloads. Store large content in resource rows, keep events compact, and enforce size limits before exposing real MCP Apps broadly.
 - If multiple MCP App surfaces appear in one thread, "latest visible surface" may be too limiting. The first implementation can project one active surface, but storage should not make multiple sessions impossible.
-

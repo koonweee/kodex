@@ -248,7 +248,12 @@ fn initialize_params() -> Value {
             "version": env!("CARGO_PKG_VERSION")
         },
         "capabilities": {
-            "experimentalApi": true
+            "experimentalApi": true,
+            "extensions": {
+                "io.modelcontextprotocol/ui": {
+                    "mimeTypes": ["text/html;profile=mcp-app"]
+                }
+            }
         }
     })
 }
@@ -549,6 +554,10 @@ pub mod tests {
         assert_eq!(params["clientInfo"]["title"], "Kodex Gateway");
         assert_eq!(params["clientInfo"]["version"], env!("CARGO_PKG_VERSION"));
         assert_eq!(params["capabilities"]["experimentalApi"], true);
+        assert_eq!(
+            params["capabilities"]["extensions"]["io.modelcontextprotocol/ui"]["mimeTypes"][0],
+            "text/html;profile=mcp-app"
+        );
     }
 
     #[test]

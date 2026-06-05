@@ -8,6 +8,11 @@ use crate::{
     events_synthetic::thread_view_refresh_required_event,
     queue,
     routes::{
+        app_surfaces::{
+            APP_SURFACE_ARCHIVED_EVENT, APP_SURFACE_BRIDGE_CALL_EVENT, APP_SURFACE_ERROR_EVENT,
+            APP_SURFACE_MODEL_CONTEXT_UPDATED_EVENT, APP_SURFACE_SUBMITTED_EVENT,
+            APP_SURFACE_UPSERTED_EVENT,
+        },
         generated_ui::{
             GENERATED_UI_ARCHIVED_EVENT, GENERATED_UI_SUBMITTED_EVENT, GENERATED_UI_UPSERTED_EVENT,
         },
@@ -66,6 +71,12 @@ pub(crate) fn is_operational_replay_event(event: &EventEnvelope) -> bool {
             | THREAD_SUBAGENT_UPDATED_EVENT
             | THREAD_SUBAGENT_STOPPED_EVENT
             | THREAD_SUBAGENTS_CHANGED_EVENT
+            | APP_SURFACE_UPSERTED_EVENT
+            | APP_SURFACE_SUBMITTED_EVENT
+            | APP_SURFACE_ARCHIVED_EVENT
+            | APP_SURFACE_ERROR_EVENT
+            | APP_SURFACE_BRIDGE_CALL_EVENT
+            | APP_SURFACE_MODEL_CONTEXT_UPDATED_EVENT
             | GENERATED_UI_UPSERTED_EVENT
             | GENERATED_UI_SUBMITTED_EVENT
             | GENERATED_UI_ARCHIVED_EVENT

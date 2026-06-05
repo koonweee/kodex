@@ -13,9 +13,11 @@ use utoipa::{IntoParams, ToSchema};
 use crate::{
     api::AppState,
     app_server_api::UserInput,
+    app_surfaces::{app_surface_csp, validate_app_surface_html, validate_app_surface_title},
     error::{ApiError, ApiResult},
+    routes::app_surfaces::{broadcast_app_surface_event, APP_SURFACE_SUBMITTED_EVENT},
     routes::turns::{submit_thread_input, ThreadInputResponse, TurnStartRequest},
-    store::{GeneratedUiSession, GeneratedUiSessionStatus, NewEvent},
+    store::{AppSurfaceSession, AppSurfaceSessionStatus, GeneratedUiSessionStatus},
 };
 
 pub const GENERATED_UI_UPSERTED_EVENT: &str = "generated_ui.session_upserted";
@@ -107,9 +109,9 @@ pub async fn get_thread_generated_ui(
 ) -> ApiResult<Json<GeneratedUiSessionReadResponse>> {
     let session = state
         .store
-        .latest_generated_ui_session(&thread_id)
+        .latest_app_surface_session(&thread_id)
         .await?
-        .filter(|session| session.status != GeneratedUiSessionStatus::Archived)
+        .filter(|session| session.status != AppSurfaceSessionStatus::Archived)
         .map(session_dto);
     Ok(Json(GeneratedUiSessionReadResponse { session }))
 }
@@ -125,7 +127,7 @@ pub async fn generated_ui_document(
     Path(session_id): Path<String>,
     Query(query): Query<GeneratedUiDocumentQuery>,
 ) -> ApiResult<Response> {
-    let session = state.store.get_generated_ui_session(&session_id).await?;
+    let session = state.store.get_app_surface_session(&session_id).await?;
     if session.revision != query.revision {
         return Err(ApiError::Conflict(format!(
             "generated UI revision {} is not current",
@@ -136,7 +138,8 @@ pub async fn generated_ui_document(
     let headers = response.headers_mut();
     headers.insert(
         header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static(generated_ui_csp()),
+        HeaderValue::from_str(&app_surface_csp(&session.csp))
+            .map_err(|error| ApiError::Other(error.into()))?,
     );
     headers.insert(
         header::CACHE_CONTROL,
@@ -161,13 +164,33 @@ pub async fn submit_generated_ui(
 ) -> ApiResult<Json<GeneratedUiSubmitResponse>> {
     let message = validate_submit_message(request.message)?;
     validate_metadata(&request.metadata)?;
-    let claimed = state
-        .store
-        .claim_generated_ui_submit(&session_id, request.revision)
-        .await?;
-    let input_response = match submit_thread_input(
+    let session = state.store.get_app_surface_session(&session_id).await?;
+    if session.revision != request.revision {
+        return Err(ApiError::Conflict(format!(
+            "generated UI revision {} is not current",
+            request.revision
+        )));
+    }
+    if session.status == AppSurfaceSessionStatus::Archived {
+        return Err(ApiError::Conflict(
+            "generated UI session is archived".to_string(),
+        ));
+    }
+    if session.submitted_revision == Some(request.revision)
+        || session.status == AppSurfaceSessionStatus::Submitted
+    {
+        return Err(ApiError::Conflict(
+            "generated UI revision has already been submitted".to_string(),
+        ));
+    }
+    if !session.grants.can_send_message {
+        return Err(ApiError::BadRequest(
+            "generated UI session is not granted submit".to_string(),
+        ));
+    }
+    let input_response = submit_thread_input(
         State(state.clone()),
-        Path(claimed.thread_id.clone()),
+        Path(session.thread_id.clone()),
         Json(TurnStartRequest {
             input: vec![UserInput::Text {
                 text: message.clone(),
@@ -177,64 +200,41 @@ pub async fn submit_generated_ui(
             options: Default::default(),
         }),
     )
-    .await
-    {
-        Ok(response) => response.0,
-        Err(error) => {
-            state
-                .store
-                .reset_generated_ui_submit(&session_id, request.revision)
-                .await?;
-            return Err(error);
-        }
-    };
+    .await?
+    .0;
     let session = state
         .store
-        .finish_generated_ui_submit(&session_id, request.revision, &message, request.metadata)
+        .submit_app_surface_session(&session_id, request.revision, &message, request.metadata)
         .await?;
-    broadcast_generated_ui_event(&state, GENERATED_UI_SUBMITTED_EVENT, &session).await?;
+    broadcast_app_surface_event(&state, APP_SURFACE_SUBMITTED_EVENT, &session).await?;
     Ok(Json(GeneratedUiSubmitResponse {
         session: session_dto(session),
         input: input_response,
     }))
 }
 
-pub(crate) async fn broadcast_generated_ui_event(
-    state: &AppState,
-    kind: &str,
-    session: &GeneratedUiSession,
-) -> ApiResult<()> {
-    let event = state
-        .store
-        .append_event(NewEvent {
-            project_id: None,
-            thread_id: Some(session.thread_id.clone()),
-            turn_id: None,
-            item_id: None,
-            kind: kind.to_string(),
-            codex_method: None,
-            payload: serde_json::to_value(session_dto(session.clone()))?,
-        })
-        .await?;
-    let _ = state.events.send(event);
-    Ok(())
-}
-
-pub(crate) fn session_dto(session: GeneratedUiSession) -> GeneratedUiSessionDto {
+pub(crate) fn session_dto(session: AppSurfaceSession) -> GeneratedUiSessionDto {
     let document_url = format!(
         "/v1/generated-ui/sessions/{}/document?revision={}",
         url_path_segment(&session.id),
         session.revision
     );
+    let status = match session.status {
+        AppSurfaceSessionStatus::Active => GeneratedUiSessionStatus::Interactive,
+        AppSurfaceSessionStatus::Submitting => GeneratedUiSessionStatus::Submitting,
+        AppSurfaceSessionStatus::Submitted => GeneratedUiSessionStatus::Submitted,
+        AppSurfaceSessionStatus::Archived => GeneratedUiSessionStatus::Archived,
+        AppSurfaceSessionStatus::Errored => GeneratedUiSessionStatus::Interactive,
+    };
     GeneratedUiSessionDto {
-        submit_available: session.status == GeneratedUiSessionStatus::Interactive
+        submit_available: session.status == AppSurfaceSessionStatus::Active
             && session.submitted_revision != Some(session.revision)
             && session.archived_at.is_none(),
         id: session.id,
         thread_id: session.thread_id,
         title: session.title,
         revision: session.revision,
-        status: session.status,
+        status,
         submitted_revision: session.submitted_revision,
         submitted_message: session.submitted_message,
         submitted_metadata: session.submitted_metadata,
@@ -248,32 +248,21 @@ pub(crate) fn session_dto(session: GeneratedUiSession) -> GeneratedUiSessionDto 
 }
 
 pub(crate) fn validate_generated_ui_title(title: String) -> ApiResult<String> {
-    let title = title.trim().to_string();
-    if title.is_empty() {
-        return Err(ApiError::BadRequest(
-            "generated UI title cannot be empty".to_string(),
-        ));
-    }
-    if title.len() > 120 {
-        return Err(ApiError::BadRequest(
-            "generated UI title is too long".to_string(),
-        ));
-    }
-    Ok(title)
+    validate_app_surface_title(title).map_err(|error| match error {
+        ApiError::BadRequest(message) if message.contains("app surface") => {
+            ApiError::BadRequest(message.replace("app surface", "generated UI"))
+        }
+        error => error,
+    })
 }
 
 pub(crate) fn validate_generated_ui_html(html: String) -> ApiResult<String> {
-    if html.trim().is_empty() {
-        return Err(ApiError::BadRequest(
-            "generated UI HTML cannot be empty".to_string(),
-        ));
-    }
-    if html.len() > 512 * 1024 {
-        return Err(ApiError::BadRequest(
-            "generated UI HTML exceeds the 512 KiB v1 limit".to_string(),
-        ));
-    }
-    Ok(html)
+    validate_app_surface_html(html).map_err(|error| match error {
+        ApiError::BadRequest(message) if message.contains("app surface") => {
+            ApiError::BadRequest(message.replace("app surface", "generated UI"))
+        }
+        error => error,
+    })
 }
 
 fn validate_submit_message(message: String) -> ApiResult<String> {
@@ -302,12 +291,6 @@ fn validate_metadata(metadata: &Option<Value>) -> ApiResult<()> {
         ));
     }
     Ok(())
-}
-
-// V1 generated UI is intentionally self-contained. To relax this later, add a
-// named allowlist/approval policy and widen these directives at that boundary.
-pub(crate) fn generated_ui_csp() -> &'static str {
-    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; navigate-to 'none'; form-action 'none'; frame-src 'none'; base-uri 'none'"
 }
 
 fn url_path_segment(value: &str) -> String {

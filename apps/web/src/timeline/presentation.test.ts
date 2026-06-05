@@ -37,4 +37,24 @@ describe("timeline presentation", () => {
 
     expect(presented?.item.text).toBe("Review this");
   });
+
+  it("uses the saved image path when generated image bytes are compacted", () => {
+    const presented = createPresentationItem(
+      event({
+        item: {
+          id: "image-1",
+          type: "imageGeneration",
+          status: "completed",
+          result: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB...[truncated]",
+          saved_path: "/Users/example/.codex/generated_images/thread-1/image.png",
+          revised_prompt: "A compact preview regression",
+        },
+      }),
+    );
+
+    expect(presented?.item.kind).toBe("image_generation");
+    expect(presented?.item.imageSrc).toBeUndefined();
+    expect(presented?.item.path).toBe("/Users/example/.codex/generated_images/thread-1/image.png");
+    expect(presented?.item.resultSummary).toBe("A compact preview regression");
+  });
 });

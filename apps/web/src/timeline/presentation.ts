@@ -342,8 +342,12 @@ function payloadFileAttachments(payload: unknown): TimelineFileAttachment[] {
   });
 }
 
-function imageDataUrl(result: string): string {
-  return result.startsWith("data:image/") ? result : `data:image/png;base64,${result}`;
+function imageDataUrl(result: string): string | undefined {
+  const value = result.trim();
+  if (!value || value.endsWith("...[truncated]")) {
+    return undefined;
+  }
+  return value.startsWith("data:image/") ? value : `data:image/png;base64,${value}`;
 }
 
 function contextCompactionText(status: TimelineItem["status"]): string {

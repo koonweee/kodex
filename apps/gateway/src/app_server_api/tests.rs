@@ -340,6 +340,55 @@ async fn adapter_uses_schema_values_for_thread_turns_list() {
 }
 
 #[tokio::test]
+async fn adapter_calls_mcp_server_tool_and_preserves_result_payload() {
+    let server = Arc::new(RecordingServer {
+        ready: AtomicBool::new(true),
+        response: StdMutex::new(json!({
+            "content": [{"type": "text", "text": "lookup complete"}],
+            "structuredContent": {"answer": 42},
+            "isError": false,
+            "_meta": {"trace": "tool-call-1"}
+        })),
+        ..Default::default()
+    });
+    let client = CodexClient::new(server.clone());
+
+    let response = client
+        .mcp_tool_call(McpServerToolCallRequest {
+            server: "docs".to_string(),
+            thread_id: "thread-1".to_string(),
+            tool: "lookup".to_string(),
+            arguments: Some(json!({"query": "answer"})),
+            meta: Some(json!({"source": "iframe"})),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.content,
+        vec![json!({"type": "text", "text": "lookup complete"})]
+    );
+    assert_eq!(response.structured_content, Some(json!({"answer": 42})));
+    assert_eq!(response.is_error, Some(false));
+    assert_eq!(response.meta, Some(json!({"trace": "tool-call-1"})));
+
+    let requests = server.requests.lock().unwrap();
+    assert_eq!(
+        requests[0],
+        (
+            "mcpServer/tool/call".to_string(),
+            json!({
+                "server": "docs",
+                "threadId": "thread-1",
+                "tool": "lookup",
+                "arguments": {"query": "answer"},
+                "_meta": {"source": "iframe"}
+            })
+        )
+    );
+}
+
+#[tokio::test]
 async fn adapter_reads_bounded_recent_history_window_and_counts_lightly() {
     let server = Arc::new(RecordingServer {
         ready: AtomicBool::new(true),

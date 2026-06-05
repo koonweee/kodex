@@ -11,6 +11,7 @@ use crate::{
     error::{ApiError, ApiResult},
 };
 
+mod app_surfaces;
 mod approvals;
 mod automations;
 mod events;
@@ -210,6 +211,148 @@ pub struct GeneratedUiSessionUpsert {
     pub thread_id: String,
     pub title: String,
     pub html: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum AppSurfaceProvider {
+    Mcp,
+    Generated,
+}
+
+impl AppSurfaceProvider {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Mcp => "mcp",
+            Self::Generated => "generated",
+        }
+    }
+
+    fn from_str(value: &str) -> ApiResult<Self> {
+        match value {
+            "mcp" => Ok(Self::Mcp),
+            "generated" => Ok(Self::Generated),
+            _ => Err(ApiError::Other(anyhow::anyhow!(
+                "unknown app surface provider {value}"
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum AppSurfaceSessionStatus {
+    Active,
+    Submitting,
+    Submitted,
+    Archived,
+    Errored,
+}
+
+impl AppSurfaceSessionStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Submitting => "submitting",
+            Self::Submitted => "submitted",
+            Self::Archived => "archived",
+            Self::Errored => "errored",
+        }
+    }
+
+    fn from_str(value: &str) -> ApiResult<Self> {
+        match value {
+            "active" => Ok(Self::Active),
+            "submitting" => Ok(Self::Submitting),
+            "submitted" => Ok(Self::Submitted),
+            "archived" => Ok(Self::Archived),
+            "errored" => Ok(Self::Errored),
+            _ => Err(ApiError::Other(anyhow::anyhow!(
+                "unknown app surface session status {value}"
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSurfaceCsp {
+    #[serde(default)]
+    pub connect_domains: Vec<String>,
+    #[serde(default)]
+    pub resource_domains: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSurfaceToolGrant {
+    pub server: String,
+    pub tool: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSurfaceResourceGrant {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server: Option<String>,
+    pub uri: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSurfaceGrants {
+    #[serde(default)]
+    pub tools: Vec<AppSurfaceToolGrant>,
+    #[serde(default)]
+    pub resources: Vec<AppSurfaceResourceGrant>,
+    #[serde(default)]
+    pub can_send_message: bool,
+    #[serde(default)]
+    pub can_update_model_context: bool,
+    #[serde(default)]
+    pub can_open_links: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSurfaceSession {
+    pub id: String,
+    pub thread_id: String,
+    pub bridge_token: String,
+    pub provider: AppSurfaceProvider,
+    pub title: String,
+    pub resource_uri: String,
+    pub resource_mime_type: String,
+    pub html: String,
+    pub fallback_content: String,
+    pub revision: i64,
+    pub status: AppSurfaceSessionStatus,
+    pub display_modes: Vec<String>,
+    pub csp: AppSurfaceCsp,
+    pub grants: AppSurfaceGrants,
+    pub provenance: Value,
+    pub submitted_revision: Option<i64>,
+    pub submitted_message: Option<String>,
+    pub submitted_metadata: Option<Value>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub submitted_at: Option<DateTime<Utc>>,
+    pub archived_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppSurfaceSessionUpsert {
+    pub thread_id: String,
+    pub provider: AppSurfaceProvider,
+    pub title: String,
+    pub resource_uri: Option<String>,
+    pub resource_mime_type: String,
+    pub html: String,
+    pub fallback_content: String,
+    pub display_modes: Vec<String>,
+    pub csp: AppSurfaceCsp,
+    pub grants: AppSurfaceGrants,
+    pub provenance: Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

@@ -526,6 +526,25 @@ impl CodexClient {
         McpResourceReadResponse::from_payload(payload)
     }
 
+    pub async fn mcp_tool_call(
+        &self,
+        request: McpServerToolCallRequest,
+    ) -> ApiResult<McpServerToolCallResponse> {
+        let payload = self
+            .request(
+                "mcpServer/tool/call",
+                json!({
+                    "server": request.server,
+                    "threadId": request.thread_id,
+                    "tool": request.tool,
+                    "arguments": request.arguments,
+                    "_meta": request.meta,
+                }),
+            )
+            .await?;
+        McpServerToolCallResponse::from_payload(payload)
+    }
+
     pub async fn mcp_oauth_login(
         &self,
         name: String,

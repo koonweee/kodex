@@ -362,6 +362,46 @@ pub struct GeneratedUiMutationToolParams {
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct AppSurfaceToolParams {
+    #[serde(default, alias = "thread_id", skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+    pub title: String,
+    pub html: String,
+    pub fallback_content: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub display_modes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub csp: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grants: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_self_control_depth: Option<u8>,
+    #[serde(default, flatten, skip_serializing_if = "Map::is_empty")]
+    pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSurfaceThreadToolParams {
+    #[serde(default, alias = "thread_id", skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSurfaceMutationToolParams {
+    #[serde(default, alias = "thread_id", skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ThreadTimelineToolParams {
     #[serde(alias = "thread_id")]
     pub thread_id: String,
@@ -736,7 +776,70 @@ impl KodexControlMcp {
     }
 
     #[tool(
-        description = "Open a generated UI pane for the invoking Kodex thread by default, or for an explicit threadId override when intentionally targeting another thread. Use only when it creates a richer experience than chat alone through visual grouping, branching choices, comparison, preview, direct manipulation, progressive disclosure, or repeated actions. Generated UI may include both local UI interactions and conversational actions. Buttons are not inherently prompts: prefer local UI interactions when behavior can be handled inside the HTML with already-available data, such as modals, row expansion, tabs, chart filters or toggles, unit switches, breakdowns, or visualization views; these should not submit messages. Use conversational actions when interaction requires Codex, tools, external data, persistence, workflow continuation, or an explicit user decision, such as questionnaire answers, plan approval, investigation, visualization regeneration, automation updates, or follow-up artifacts. When an action is intended to involve Codex again, submit a standalone human-readable message plus optional compact JSON metadata. Pair every open with a short assistant message. Strongly prefer a theme-native UI unless the user explicitly asks for a distinct visual style: use Kodex semantic CSS variables for body, surfaces, cards, text, borders, buttons, charts, status colors, shadows, focus rings, and radii; avoid inventing custom palettes, gradients, stock dashboard chrome, or hard-coded color schemes for ordinary generated UIs. Keep the UI responsive, and keep HTML self-contained because v1 blocks external network by default."
+        description = "Open a generated app surface in the invoking Kodex thread by default, or an explicit threadId. App surfaces render MCP App-compatible HTML in the shared pane and may use the JSON-RPC bridge according to declared grants. Use when visual layout, direct manipulation, branching choices, comparison, preview, questionnaires, dashboards, or repeated actions are clearer than chat alone. Provide meaningful fallbackContent for text-only hosts."
+    )]
+    async fn open_app_surface(
+        &self,
+        Parameters(params): Parameters<AppSurfaceToolParams>,
+        meta: Meta,
+    ) -> Result<CallToolResult, McpError> {
+        upsert_app_surface_tool(self, params, meta).await
+    }
+
+    #[tool(
+        description = "Replace the latest generated app-surface revision for the invoking Kodex thread by default, or an explicit threadId. Use when the pane needs new embedded data, revised controls, or the next step of a workflow. Provide meaningful fallbackContent and declare any bridge grants explicitly."
+    )]
+    async fn update_app_surface(
+        &self,
+        Parameters(params): Parameters<AppSurfaceToolParams>,
+        meta: Meta,
+    ) -> Result<CallToolResult, McpError> {
+        upsert_app_surface_tool(self, params, meta).await
+    }
+
+    #[tool(
+        description = "Read the latest app-surface metadata for the invoking Kodex thread by default, or for an explicit threadId override"
+    )]
+    async fn get_app_surface(
+        &self,
+        Parameters(params): Parameters<AppSurfaceThreadToolParams>,
+        meta: Meta,
+    ) -> Result<CallToolResult, McpError> {
+        let thread_id = resolve_app_surface_thread_id(params.thread_id, &meta)?;
+        Ok(json_tool_result(
+            self.get_json(&format!(
+                "/v1/self-control/threads/{}/app-surface",
+                path_segment(&thread_id)
+            ))
+            .await?,
+        ))
+    }
+
+    #[tool(
+        description = "Archive the latest app surface for the invoking Kodex thread by default, or for an explicit threadId override"
+    )]
+    async fn archive_app_surface(
+        &self,
+        Parameters(params): Parameters<AppSurfaceMutationToolParams>,
+        meta: Meta,
+    ) -> Result<CallToolResult, McpError> {
+        let thread_id = resolve_app_surface_thread_id(params.thread_id.clone(), &meta)?;
+        let mut body = json_object(params)?;
+        body.remove("threadId");
+        Ok(json_tool_result(
+            self.delete_json(
+                &format!(
+                    "/v1/self-control/threads/{}/app-surface",
+                    path_segment(&thread_id)
+                ),
+                Some(Value::Object(body)),
+            )
+            .await?,
+        ))
+    }
+
+    #[tool(
+        description = "Open a generated UI pane for the invoking Kodex thread by default, or for an explicit threadId override when intentionally targeting another thread. Use only when it creates a richer experience than chat alone through visual grouping, branching choices, comparison, preview, direct manipulation, progressive disclosure, or repeated actions. Generated UI may include both local UI interactions and conversational actions. Buttons are not inherently prompts: prefer local UI interactions when behavior can be handled inside the HTML with already-available data, such as modals, row expansion, tabs, chart filters or toggles, unit switches, breakdowns, or visualization views; these should not submit messages. Use conversational actions when interaction requires Codex, tools, external data, persistence, workflow continuation, or an explicit user decision, such as questionnaire answers, plan approval, investigation, visualization regeneration, automation updates, or follow-up artifacts. When an action is intended to involve Codex again, submit a standalone human-readable message plus optional compact JSON metadata. In iframe HTML, prefer the injected helper `window.kodex.submitMessage(message, metadata)`. The raw postMessage contract is `{ type: \"kodex.generatedUi.submit\", message: \"human-readable message\", metadata: { ... } }`; the host also sends `kodex.generatedUi.submit.result` ack/error messages. Pair every open with a short assistant message. Strongly prefer a theme-native UI unless the user explicitly asks for a distinct visual style: use Kodex semantic CSS variables for body, surfaces, cards, text, borders, buttons, charts, status colors, shadows, focus rings, and radii; avoid inventing custom palettes, gradients, stock dashboard chrome, or hard-coded color schemes for ordinary generated UIs. Keep the UI responsive, and keep HTML self-contained because v1 blocks external network by default."
     )]
     async fn open_generated_ui(
         &self,
@@ -747,7 +850,7 @@ impl KodexControlMcp {
     }
 
     #[tool(
-        description = "Replace the latest generated UI pane revision for the invoking Kodex thread by default, or for an explicit threadId override when intentionally targeting another thread. Use this after a local UI view needs new embedded data, the user submits a conversational action, asks a follow-up, requests a revised mockup, or needs the next step of a workflow. Generated UI may include both local UI interactions and conversational actions. Buttons are not inherently prompts: prefer local UI interactions for embedded-data behavior such as modals, tabs, filters, chart toggles, unit switches, drilldowns, or progressive disclosure; these should not submit messages. Use conversational actions when interaction requires Codex, tools, external data, persistence, workflow continuation, or an explicit user decision, such as submitting answers, approving a plan, investigating, regenerating a visualization, updating automation, or creating a follow-up artifact. When an action is intended to involve Codex again, submit a standalone human-readable message plus optional compact JSON metadata. Strongly prefer a theme-native UI unless the user explicitly asks for a distinct visual style: use Kodex semantic CSS variables for body, surfaces, cards, text, borders, buttons, charts, status colors, shadows, focus rings, and radii; avoid inventing custom palettes, gradients, stock dashboard chrome, or hard-coded color schemes for ordinary generated UIs. Keep HTML self-contained, responsive, and bounded."
+        description = "Replace the latest generated UI pane revision for the invoking Kodex thread by default, or for an explicit threadId override when intentionally targeting another thread. Use this after a local UI view needs new embedded data, the user submits a conversational action, asks a follow-up, requests a revised mockup, or needs the next step of a workflow. Generated UI may include both local UI interactions and conversational actions. Buttons are not inherently prompts: prefer local UI interactions for embedded-data behavior such as modals, tabs, filters, chart toggles, unit switches, drilldowns, or progressive disclosure; these should not submit messages. Use conversational actions when interaction requires Codex, tools, external data, persistence, workflow continuation, or an explicit user decision, such as submitting answers, approving a plan, investigating, regenerating a visualization, updating automation, or creating a follow-up artifact. When an action is intended to involve Codex again, submit a standalone human-readable message plus optional compact JSON metadata. In iframe HTML, prefer the injected helper `window.kodex.submitMessage(message, metadata)`. The raw postMessage contract is `{ type: \"kodex.generatedUi.submit\", message: \"human-readable message\", metadata: { ... } }`; the host also sends `kodex.generatedUi.submit.result` ack/error messages. Strongly prefer a theme-native UI unless the user explicitly asks for a distinct visual style: use Kodex semantic CSS variables for body, surfaces, cards, text, borders, buttons, charts, status colors, shadows, focus rings, and radii; avoid inventing custom palettes, gradients, stock dashboard chrome, or hard-coded color schemes for ordinary generated UIs. Keep HTML self-contained, responsive, and bounded."
     )]
     async fn update_generated_ui(
         &self,
@@ -765,10 +868,10 @@ impl KodexControlMcp {
         Parameters(params): Parameters<GeneratedUiThreadToolParams>,
         meta: Meta,
     ) -> Result<CallToolResult, McpError> {
-        let thread_id = resolve_generated_ui_thread_id(params.thread_id, &meta)?;
+        let thread_id = resolve_app_surface_thread_id(params.thread_id, &meta)?;
         Ok(json_tool_result(
             self.get_json(&format!(
-                "/v1/self-control/threads/{}/generated-ui",
+                "/v1/self-control/threads/{}/app-surface",
                 path_segment(&thread_id)
             ))
             .await?,
@@ -783,13 +886,13 @@ impl KodexControlMcp {
         Parameters(params): Parameters<GeneratedUiMutationToolParams>,
         meta: Meta,
     ) -> Result<CallToolResult, McpError> {
-        let thread_id = resolve_generated_ui_thread_id(params.thread_id.clone(), &meta)?;
+        let thread_id = resolve_app_surface_thread_id(params.thread_id.clone(), &meta)?;
         let mut body = json_object(params)?;
         body.remove("threadId");
         Ok(json_tool_result(
             self.delete_json(
                 &format!(
-                    "/v1/self-control/threads/{}/generated-ui",
+                    "/v1/self-control/threads/{}/app-surface",
                     path_segment(&thread_id)
                 ),
                 Some(Value::Object(body)),
@@ -1495,12 +1598,22 @@ impl ServerHandler for KodexControlMcp {
                 ))
                 .await?
             }
+            uri if uri.starts_with("kodex://threads/") && uri.ends_with("/app-surface") => {
+                let thread_id = uri
+                    .trim_start_matches("kodex://threads/")
+                    .trim_end_matches("/app-surface");
+                self.get_json(&format!(
+                    "/v1/self-control/threads/{}/app-surface",
+                    path_segment(thread_id)
+                ))
+                .await?
+            }
             uri if uri.starts_with("kodex://threads/") && uri.ends_with("/generated-ui") => {
                 let thread_id = uri
                     .trim_start_matches("kodex://threads/")
                     .trim_end_matches("/generated-ui");
                 self.get_json(&format!(
-                    "/v1/self-control/threads/{}/generated-ui",
+                    "/v1/self-control/threads/{}/app-surface",
                     path_segment(thread_id)
                 ))
                 .await?
@@ -1572,8 +1685,8 @@ impl ServerHandler for KodexControlMcp {
                     "Kodex queued thread inputs",
                 ),
                 Self::template(
-                    "kodex://threads/{threadId}/generated-ui",
-                    "Kodex generated UI pane",
+                    "kodex://threads/{threadId}/app-surface",
+                    "Kodex app surface pane",
                 ),
                 Self::template("kodex://automations/{automationId}", "Kodex automation"),
                 Self::template("kodex://approvals/{approvalId}", "Kodex approval"),
@@ -1650,34 +1763,122 @@ async fn upsert_generated_ui_tool(
     params: GeneratedUiToolParams,
     meta: Meta,
 ) -> Result<CallToolResult, McpError> {
-    let thread_id = resolve_generated_ui_thread_id(params.thread_id.clone(), &meta)?;
-    let mut body = json_object(params)?;
-    body.remove("threadId");
-    normalize_self_control_source_shorthand(&mut body)?;
+    let warnings = generated_ui_bridge_warnings(&params.html);
+    let fallback_content = format!("Interactive generated UI: {}", params.title);
+    let mut value = upsert_app_surface_value(
+        service,
+        AppSurfaceToolParams {
+            thread_id: params.thread_id,
+            title: params.title,
+            html: params.html,
+            fallback_content,
+            display_modes: Vec::new(),
+            csp: None,
+            grants: Some(json!({"canSendMessage": true})),
+            provenance: None,
+            source: params.source,
+            max_self_control_depth: params.max_self_control_depth,
+            extra: params.extra,
+        },
+        meta,
+    )
+    .await?;
+    if !warnings.is_empty() {
+        if let Value::Object(object) = &mut value {
+            object.insert("warnings".to_string(), json!(warnings));
+        }
+    }
+    Ok(json_tool_result(value))
+}
+
+async fn upsert_app_surface_tool(
+    service: &KodexControlMcp,
+    params: AppSurfaceToolParams,
+    meta: Meta,
+) -> Result<CallToolResult, McpError> {
     Ok(json_tool_result(
-        service
-            .post_json(
-                &format!(
-                    "/v1/self-control/threads/{}/generated-ui",
-                    path_segment(&thread_id)
-                ),
-                Value::Object(body),
-            )
-            .await?,
+        upsert_app_surface_value(service, params, meta).await?,
     ))
 }
 
-fn resolve_generated_ui_thread_id(
+async fn upsert_app_surface_value(
+    service: &KodexControlMcp,
+    params: AppSurfaceToolParams,
+    meta: Meta,
+) -> Result<Value, McpError> {
+    let thread_id = resolve_app_surface_thread_id(params.thread_id.clone(), &meta)?;
+    let mut body = json_object(params)?;
+    body.remove("threadId");
+    normalize_self_control_source_shorthand(&mut body)?;
+    service
+        .post_json(
+            &format!(
+                "/v1/self-control/threads/{}/app-surface",
+                path_segment(&thread_id)
+            ),
+            Value::Object(body),
+        )
+        .await
+}
+
+fn generated_ui_bridge_warnings(html: &str) -> Vec<String> {
+    generated_ui_post_message_types(html)
+        .into_iter()
+        .filter(|event_type| event_type.starts_with("kodex") && !is_known_generated_ui_event_type(event_type))
+        .map(|event_type| {
+            format!(
+                "Unrecognized generated UI postMessage event type `{event_type}`; use `window.kodex.submitMessage(message, metadata)` or post `{{ type: \"kodex.generatedUi.submit\", message, metadata }}`."
+            )
+        })
+        .collect()
+}
+
+fn generated_ui_post_message_types(html: &str) -> Vec<String> {
+    let mut types = Vec::new();
+    let mut remaining = html;
+    while let Some(post_message_index) = remaining.find("postMessage") {
+        remaining = &remaining[post_message_index + "postMessage".len()..];
+        let Some(type_index) = remaining.find("type") else {
+            break;
+        };
+        remaining = &remaining[type_index + "type".len()..];
+        let Some(colon_index) = remaining.find(':') else {
+            continue;
+        };
+        remaining = &remaining[colon_index + 1..];
+        let trimmed = remaining.trim_start();
+        let quote = match trimmed.as_bytes().first() {
+            Some(b'"') => '"',
+            Some(b'\'') => '\'',
+            _ => continue,
+        };
+        let value_start = quote.len_utf8();
+        if let Some(value_end) = trimmed[value_start..].find(quote) {
+            types.push(trimmed[value_start..value_start + value_end].to_string());
+            remaining = &trimmed[value_start + value_end + quote.len_utf8()..];
+        }
+    }
+    types
+}
+
+fn is_known_generated_ui_event_type(event_type: &str) -> bool {
+    matches!(
+        event_type,
+        "kodex.generatedUi.submit" | "kodex:generated-ui:submit" | "kodex.ui.submit"
+    )
+}
+
+fn resolve_app_surface_thread_id(
     explicit_thread_id: Option<String>,
     meta: &Meta,
 ) -> Result<String, McpError> {
     if let Some(thread_id) = explicit_thread_id {
-        return validate_generated_ui_thread_id(thread_id, "threadId");
+        return validate_app_surface_thread_id(thread_id, "threadId");
     }
 
     match meta.0.get(MCP_TOOL_THREAD_ID_META_KEY) {
         Some(Value::String(thread_id)) => {
-            validate_generated_ui_thread_id(thread_id.clone(), "_meta.threadId")
+            validate_app_surface_thread_id(thread_id.clone(), "_meta.threadId")
         }
         Some(_) => Err(McpError::invalid_params(
             "MCP _meta.threadId must be a string",
@@ -1690,7 +1891,7 @@ fn resolve_generated_ui_thread_id(
     }
 }
 
-fn validate_generated_ui_thread_id(
+fn validate_app_surface_thread_id(
     thread_id: String,
     field: &'static str,
 ) -> Result<String, McpError> {
@@ -1978,6 +2179,22 @@ mod tests {
         assert!(tools.iter().any(|tool| tool.name == "get_status"));
         assert_tool_requires(&tools, "create_thread", &["projectId"]);
         assert_tool_requires(&tools, "send_thread_input", &["threadId", "input"]);
+        assert_tool_requires(
+            &tools,
+            "open_app_surface",
+            &["title", "html", "fallbackContent"],
+        );
+        assert_tool_does_not_require(&tools, "open_app_surface", "threadId");
+        assert_tool_description_contains(
+            &tools,
+            "open_app_surface",
+            &[
+                "MCP App-compatible HTML",
+                "JSON-RPC bridge",
+                "declared grants",
+                "fallbackContent",
+            ],
+        );
         assert_tool_requires(&tools, "open_generated_ui", &["title", "html"]);
         assert_tool_does_not_require(&tools, "open_generated_ui", "threadId");
         assert_tool_description_contains(
@@ -1988,6 +2205,8 @@ mod tests {
                 "local UI interactions",
                 "conversational actions",
                 "standalone human-readable message",
+                "window.kodex.submitMessage(message, metadata)",
+                "kodex.generatedUi.submit",
                 "Strongly prefer a theme-native UI",
                 "Kodex semantic CSS variables",
                 "avoid inventing custom palettes",
@@ -2001,6 +2220,8 @@ mod tests {
                 "local UI interactions",
                 "conversational actions",
                 "standalone human-readable message",
+                "window.kodex.submitMessage(message, metadata)",
+                "kodex.generatedUi.submit",
                 "Strongly prefer a theme-native UI",
                 "Kodex semantic CSS variables",
                 "avoid inventing custom palettes",
@@ -2043,7 +2264,7 @@ mod tests {
         generated_ui_args.insert("source".to_string(), json!("codex"));
         generated_ui_args.insert(
             "html".to_string(),
-            json!("<!doctype html><button>Choose</button>"),
+            json!("<!doctype html><button>Choose</button><script>window.parent.postMessage({type:'kodex:submit-message', message:'Choose'}, '*')</script>"),
         );
         let mut generated_ui_meta = JsonObject::new();
         generated_ui_meta.insert("threadId".to_string(), json!("thread-1"));
@@ -2054,14 +2275,18 @@ mod tests {
         assert_eq!(opened["session"]["threadId"], "thread-1");
         assert_eq!(opened["session"]["revision"], 1);
         assert!(opened["session"].get("html").is_none());
+        assert_eq!(
+            opened["warnings"][0],
+            "Unrecognized generated UI postMessage event type `kodex:submit-message`; use `window.kodex.submitMessage(message, metadata)` or post `{ type: \"kodex.generatedUi.submit\", message, metadata }`."
+        );
         let audit_events = state
             .store
             .replay_events(None, None, Some("thread-1".to_string()))
             .await?;
         let generated_ui_audit = audit_events
             .iter()
-            .find(|event| event.kind == "self_control.generated_ui_upserted")
-            .expect("generated UI audit event");
+            .find(|event| event.kind == "self_control.app_surface_upserted")
+            .expect("app surface audit event");
         assert_eq!(
             generated_ui_audit.payload["source"]["sourceToolCallId"],
             "codex"

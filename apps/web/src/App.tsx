@@ -25,7 +25,7 @@ import {
   createThread,
   deleteAutomation,
   getCapabilities,
-  getThreadGeneratedUi,
+  getThreadAppSurface,
   getRateLimits,
   listAutomations,
   listChatThreadsPage,
@@ -39,16 +39,16 @@ import {
   renameThread,
   resumeAutomation,
   setThreadNotificationsEnabled,
-  submitGeneratedUiSession,
+  callAppSurfaceBridge,
   unpinThread,
   updateAutomation,
+  type AppSurfaceBridgeRequest,
+  type AppSurfaceBridgeResponse,
   type Approval,
   type Automation,
   type AutomationCreateRequest,
   type AutomationUpdateRequest,
   type EventEnvelope,
-  type GeneratedUiSubmitRequest,
-  type GeneratedUiSubmitResponse,
   type Project,
   type QueuedInput,
   type ThreadSummary,
@@ -69,7 +69,7 @@ import { installLiveLongTaskObserver } from "./events/liveDiagnostics";
 import { useLiveEventHandlers } from "./events/useLiveEventHandlers";
 import { useGlobalLiveStream } from "./events/useGlobalLiveStream";
 import type { MarkdownPreviewRequest } from "./files/types";
-import { GeneratedUiPane } from "./generatedUi/GeneratedUiPane";
+import { AppSurfacePane } from "./appSurfaces/AppSurfacePane";
 import type { ImageLightboxImage } from "./images/types";
 import { useKodexNotifications } from "./notifications/useKodexNotifications";
 import type { PreferenceSection } from "./PreferencesModal";
@@ -169,6 +169,37 @@ function useEventCallback<TArgs extends unknown[], TResult>(
   });
 
   return useCallback((...args: TArgs) => callbackRef.current(...args), []);
+}
+
+function appSurfaceBridgeMessageText(request: AppSurfaceBridgeRequest): string | null {
+  if (request.method !== "ui/message" || !request.params || typeof request.params !== "object") {
+    return null;
+  }
+  const message = (request.params as { message?: unknown }).message;
+  return typeof message === "string" && message.trim().length > 0 ? message.trim() : null;
+}
+
+function appSurfaceBridgeQueuedInput(response: AppSurfaceBridgeResponse): QueuedInput | null {
+  if (!response.result || typeof response.result !== "object") {
+    return null;
+  }
+  const result = response.result as { input?: unknown; queuedInput?: unknown };
+  const directQueuedInput = queuedInputFromUnknown(result.queuedInput);
+  if (directQueuedInput) {
+    return directQueuedInput;
+  }
+  if (!result.input || typeof result.input !== "object") {
+    return null;
+  }
+  return queuedInputFromUnknown((result.input as { queuedInput?: unknown }).queuedInput);
+}
+
+function queuedInputFromUnknown(value: unknown): QueuedInput | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const row = value as Partial<QueuedInput>;
+  return typeof row.id === "string" && typeof row.threadId === "string" ? (row as QueuedInput) : null;
 }
 
 export function App() {
@@ -491,16 +522,19 @@ function KodexShell({
     mutationFn: ({ threadId, enabled }: { threadId: string; enabled: boolean }) =>
       setThreadNotificationsEnabled(threadId, enabled),
   });
-  const submitGeneratedUiMutation = useMutation({
+  const appSurfaceBridgeMutation = useMutation({
     mutationFn: ({
       request,
       sessionId,
     }: {
-      request: GeneratedUiSubmitRequest;
+      request: AppSurfaceBridgeRequest;
       sessionId: string;
-    }) => submitGeneratedUiSession(sessionId, request),
-    onSuccess: (response) => {
-      queryClientForShell.setQueryData(queryKeys.generatedUi(response.session.threadId), response.session);
+    }) => callAppSurfaceBridge(sessionId, request),
+    onSuccess: () => {
+      const threadId = selectedThreadId;
+      if (threadId) {
+        void queryClientForShell.invalidateQueries({ queryKey: queryKeys.appSurface(threadId) });
+      }
     },
   });
   const chatThreads = chatThreadsQuery.data ?? [];
@@ -526,14 +560,14 @@ function KodexShell({
     selectedTimelineEntry.phase === "streamingLive" || selectedTimelineEntry.phase === "refreshingSnapshot";
   const isDraftThreadSelected =
     draftChatThreadSelected || (draftThreadProjectId !== null && draftThreadProjectId === selectedProjectId);
-  const selectedGeneratedUiThreadId =
+  const selectedAppSurfaceThreadId =
     selectedMainPane === "thread" && selectedThreadId && !isDraftThreadSelected ? selectedThreadId : null;
-  const selectedGeneratedUiQuery = useQuery({
-    enabled: selectedGeneratedUiThreadId !== null,
-    queryKey: selectedGeneratedUiThreadId ? queryKeys.generatedUi(selectedGeneratedUiThreadId) : ["threads", "none", "generated-ui"],
+  const selectedAppSurfaceQuery = useQuery({
+    enabled: selectedAppSurfaceThreadId !== null,
+    queryKey: selectedAppSurfaceThreadId ? queryKeys.appSurface(selectedAppSurfaceThreadId) : ["threads", "none", "app-surface"],
     queryFn: async () => {
-      const threadId = selectedGeneratedUiThreadId;
-      return threadId ? getThreadGeneratedUi(threadId) : null;
+      const threadId = selectedAppSurfaceThreadId;
+      return threadId ? getThreadAppSurface(threadId) : null;
     },
   });
   const selectedThreadSubagentsQuery = useQuery({
@@ -1298,73 +1332,80 @@ function KodexShell({
         />
       </Suspense>
     ) : null;
-  const selectedGeneratedUiSession = selectedGeneratedUiQuery.data ?? null;
-  const selectedGeneratedUiKey = selectedGeneratedUiSession
-    ? `${selectedGeneratedUiSession.id}:${selectedGeneratedUiSession.revision}`
+  const selectedAppSurfaceSession = selectedAppSurfaceQuery.data ?? null;
+  const selectedAppSurfaceKey = selectedAppSurfaceSession
+    ? `${selectedAppSurfaceSession.id}:${selectedAppSurfaceSession.revision}`
     : null;
-  const generatedUiAvailable = selectedGeneratedUiSession !== null;
-  const generatedUiHidden = generatedUiAvailable && hiddenGeneratedUiKey === selectedGeneratedUiKey;
+  const generatedUiAvailable = selectedAppSurfaceSession !== null;
+  const generatedUiHidden = generatedUiAvailable && hiddenGeneratedUiKey === selectedAppSurfaceKey;
   const generatedUiVisible = generatedUiAvailable && !generatedUiHidden;
   const gatewayTerminalAvailable = capabilitiesQuery.data?.gateway.terminals?.enabled ?? true;
 
   const handleHideGeneratedUi = useCallback(() => {
-    if (selectedGeneratedUiKey) {
-      setHiddenGeneratedUiKey(selectedGeneratedUiKey);
+    if (selectedAppSurfaceKey) {
+      setHiddenGeneratedUiKey(selectedAppSurfaceKey);
     }
-  }, [selectedGeneratedUiKey]);
+  }, [selectedAppSurfaceKey]);
 
   const handleShowGeneratedUi = useCallback(() => {
     setHiddenGeneratedUiKey(null);
   }, []);
 
-  const handleGeneratedUiSubmit = useEventCallback(
-    async (request: GeneratedUiSubmitRequest): Promise<GeneratedUiSubmitResponse> => {
-      const session = selectedGeneratedUiSession;
+  const handleAppSurfaceBridgeRequest = useEventCallback(
+    async (request: AppSurfaceBridgeRequest): Promise<AppSurfaceBridgeResponse> => {
+      const session = selectedAppSurfaceSession;
       if (!session) {
-        return Promise.reject(new Error("No generated UI session is available."));
+        return Promise.reject(new Error("No app surface session is available."));
       }
       const threadId = session.threadId;
+      const optimisticText = appSurfaceBridgeMessageText(request);
       let optimisticClientRequestId: string | null = null;
-      markThreadActive(threadId);
-      optimisticClientRequestId = addOptimisticTimelineUserMessage({
-        skillMentions: [],
-        text: request.message,
-        threadId,
-      });
+      if (optimisticText) {
+        markThreadActive(threadId);
+        optimisticClientRequestId = addOptimisticTimelineUserMessage({
+          skillMentions: [],
+          text: optimisticText,
+          threadId,
+        });
+      }
       try {
-        const response = await submitGeneratedUiMutation.mutateAsync({
+        const response = await appSurfaceBridgeMutation.mutateAsync({
           request,
           sessionId: session.id,
         });
-        if (response.input.queuedInput) {
+        if (response.error) {
+          throw new Error(response.error.message);
+        }
+        const queuedInput = appSurfaceBridgeQueuedInput(response);
+        if (queuedInput) {
           if (optimisticClientRequestId) {
             removeOptimisticTimelineUserMessage(optimisticClientRequestId);
           }
-          upsertQueuedInput(response.input.queuedInput);
+          upsertQueuedInput(queuedInput);
           return response;
         }
         if (optimisticClientRequestId) {
           markOptimisticTimelineUserMessageSent(optimisticClientRequestId);
+          markThreadMaterialized(threadId);
         }
-        markThreadMaterialized(threadId);
         return response;
       } catch (error) {
         if (optimisticClientRequestId) {
           removeOptimisticTimelineUserMessage(optimisticClientRequestId);
+          markThreadIdle(threadId);
         }
-        markThreadIdle(threadId);
         throw error;
       }
     },
   );
   const generatedUiPane =
-    selectedGeneratedUiSession && generatedUiVisible ? (
-      <GeneratedUiPane
+    selectedAppSurfaceSession && generatedUiVisible ? (
+      <AppSurfacePane
         colorSchemeId={colorSchemeId}
-        isSubmitting={submitGeneratedUiMutation.isPending}
+        isBridgePending={appSurfaceBridgeMutation.isPending}
         onHide={handleHideGeneratedUi}
-        onSubmit={handleGeneratedUiSubmit}
-        session={selectedGeneratedUiSession}
+        onBridgeRequest={handleAppSurfaceBridgeRequest}
+        session={selectedAppSurfaceSession}
       />
     ) : null;
 

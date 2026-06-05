@@ -116,6 +116,62 @@ impl Store {
         .await?;
         sqlx::query(
             r#"
+            create table if not exists app_surface_sessions (
+                id text primary key,
+                thread_id text not null unique,
+                bridge_token text not null,
+                provider text not null,
+                title text not null,
+                resource_uri text not null,
+                resource_mime_type text not null,
+                fallback_content text not null,
+                revision integer not null,
+                status text not null,
+                display_modes_json text not null,
+                csp_json text not null,
+                grants_json text not null,
+                provenance_json text not null,
+                submitted_revision integer,
+                submitted_message text,
+                submitted_metadata_json text,
+                created_at text not null,
+                updated_at text not null,
+                submitted_at text,
+                archived_at text
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        self.add_column_if_missing(
+            "app_surface_sessions",
+            "bridge_token",
+            "text not null default ''",
+        )
+        .await?;
+        sqlx::query(
+            "update app_surface_sessions set bridge_token = lower(hex(randomblob(16))) where bridge_token = ''",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
+            create table if not exists app_surface_resources (
+                session_id text not null,
+                revision integer not null,
+                uri text not null,
+                mime_type text not null,
+                text text not null,
+                created_at text not null,
+                primary key (session_id, revision),
+                foreign key (session_id) references app_surface_sessions(id)
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            r#"
             create table if not exists approvals (
                 id text primary key,
                 request_id text not null,
@@ -483,7 +539,7 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'project_preview_services', 'project_previews', 'project_preview_routes', 'generated_ui_sessions', 'approvals', 'thread_reads', 'push_subscriptions', 'notification_deliveries', 'thread_notification_settings', 'thread_local_settings_overlays', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'project_preview_services', 'project_previews', 'project_preview_routes', 'generated_ui_sessions', 'app_surface_sessions', 'app_surface_resources', 'approvals', 'thread_reads', 'push_subscriptions', 'notification_deliveries', 'thread_notification_settings', 'thread_local_settings_overlays', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
         )
         .fetch_all(store.pool())
         .await
@@ -491,6 +547,8 @@ mod tests {
         assert_eq!(
             tables,
             vec![
+                "app_surface_resources",
+                "app_surface_sessions",
                 "approvals",
                 "automation_runs",
                 "automations",

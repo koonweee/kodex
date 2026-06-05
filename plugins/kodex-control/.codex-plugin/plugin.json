@@ -1,6 +1,6 @@
 {
   "name": "kodex-control",
-  "version": "0.1.0+codex.20260604080625",
+  "version": "0.1.0+codex.20260605003523",
   "description": "First-party Kodex control plugin for guarded self-management workflows.",
   "author": {
     "name": "OpenAI",

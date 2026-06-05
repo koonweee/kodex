@@ -109,7 +109,7 @@ describe("ThreadPanel", () => {
     expect(screen.getByRole("button", { name: /thread actions/i })).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("keeps the generated UI toggle grouped next to the thread actions menu", async () => {
+  it("keeps the app surface toggle grouped next to the thread actions menu", async () => {
     const onGeneratedUiHide = vi.fn();
     render(
       <MantineProvider>
@@ -151,11 +151,11 @@ describe("ThreadPanel", () => {
       .map((button) => button.getAttribute("aria-label"));
     expect(headerButtonLabels).toEqual([
       "Show sidebar",
-      "Hide generated UI",
+      "Hide app surface",
       "Thread actions",
     ]);
 
-    const generatedUiToggle = screen.getByRole("button", { name: /hide generated ui/i });
+    const generatedUiToggle = screen.getByRole("button", { name: /hide app surface/i });
     expect(generatedUiToggle).toHaveAttribute("aria-pressed", "true");
 
     await userEvent.click(generatedUiToggle);

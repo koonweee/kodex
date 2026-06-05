@@ -3,6 +3,7 @@ import { asRecord, stringValue } from "../shared/values";
 
 const APPROVAL_TEXT = {
   commandTitle: "Would you like to run the following command?",
+  appSurfaceBridgeTitle: "Would you like to let this app surface call a tool?",
   fallbackTitle: "Approval request",
   fileTitle: "Would you like to make the following edits?",
   permissionsTitle: "Would you like to grant these permissions?",
@@ -14,6 +15,7 @@ export type NormalizedApprovalMethod =
   | "file"
   | "permissions"
   | "mcp_elicitation"
+  | "app_surface_bridge"
   | "tool_user_input"
   | "unknown";
 
@@ -33,6 +35,8 @@ export function approvalTitle(approval: Approval): string {
       return APPROVAL_TEXT.permissionsTitle;
     case "mcp_elicitation":
       return `${approvalServerName(approval) ?? "MCP server"} needs your approval.`;
+    case "app_surface_bridge":
+      return APPROVAL_TEXT.appSurfaceBridgeTitle;
     case "tool_user_input":
       return APPROVAL_TEXT.toolInputTitle;
     default:
@@ -101,6 +105,9 @@ export function normalizedApprovalMethod(method: string): NormalizedApprovalMeth
     case "mcpServer/elicitation/request":
     case "mcp_elicitation":
       return "mcp_elicitation";
+    case "appSurface/bridge/requestApproval":
+    case "app_surface_bridge":
+      return "app_surface_bridge";
     case "item/tool/requestUserInput":
     case "tool_user_input":
       return "tool_user_input";

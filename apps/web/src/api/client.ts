@@ -12,6 +12,10 @@ export type Capabilities = components["schemas"]["CapabilitiesResponse"];
 export type ComposerSettingsResponse = components["schemas"]["ComposerSettingsResponse"];
 export type ComposerSettingsUpdateRequest = components["schemas"]["ComposerSettingsUpdateRequest"];
 export type EventEnvelope = components["schemas"]["EventEnvelope"];
+export type AppSurfaceBridgeRequest = components["schemas"]["AppSurfaceBridgeRequest"];
+export type AppSurfaceBridgeResponse = components["schemas"]["AppSurfaceBridgeResponse"];
+export type AppSurfaceSession = components["schemas"]["AppSurfaceSessionDto"];
+export type AppSurfaceSessionReadResponse = components["schemas"]["AppSurfaceSessionReadResponse"];
 export type GeneratedUiSession = components["schemas"]["GeneratedUiSessionDto"];
 export type GeneratedUiSessionReadResponse = components["schemas"]["GeneratedUiSessionReadResponse"];
 export type GeneratedUiSubmitRequest = components["schemas"]["GeneratedUiSubmitRequest"];
@@ -397,6 +401,25 @@ export async function getThreadGeneratedUi(threadId: string): Promise<GeneratedU
     api.GET("/v1/threads/{threadId}/generated-ui", { params: { path: { threadId } } }),
   );
   return response.session ?? null;
+}
+
+export async function getThreadAppSurface(threadId: string): Promise<AppSurfaceSession | null> {
+  const response = await unwrap(
+    api.GET("/v1/threads/{threadId}/app-surface", { params: { path: { threadId } } }),
+  );
+  return response.session ?? null;
+}
+
+export async function callAppSurfaceBridge(
+  sessionId: string,
+  request: AppSurfaceBridgeRequest,
+): Promise<AppSurfaceBridgeResponse> {
+  return unwrap(
+    api.POST("/v1/app-surfaces/{sessionId}/bridge", {
+      params: { path: { sessionId } },
+      body: request,
+    }),
+  );
 }
 
 export async function submitGeneratedUiSession(

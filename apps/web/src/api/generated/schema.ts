@@ -116,6 +116,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/app-surfaces/{sessionId}/bridge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["app_surface_bridge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/app-surfaces/{sessionId}/document": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["app_surface_document"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/approvals": {
         parameters: {
             query?: never;
@@ -1104,6 +1136,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/self-control/threads/{threadId}/app-surface": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the latest app surface for a thread through self-control */
+        get: operations["get_self_control_app_surface"];
+        put?: never;
+        /**
+         * Open or replace a generated app surface through self-control
+         * @description Agent-facing generated app-surface endpoint. The HTML is stored as an MCP App-compatible resource and rendered in the shared app-surface iframe runtime. Grants declare which bridge capabilities the generated surface may use.
+         */
+        post: operations["upsert_self_control_generated_app_surface"];
+        /** Archive the latest app surface for a thread through self-control */
+        delete: operations["archive_self_control_app_surface"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/self-control/threads/{threadId}/archive": {
         parameters: {
             query?: never;
@@ -1492,6 +1546,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["get_thread"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/threads/{threadId}/app-surface": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_thread_app_surface"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1960,6 +2030,119 @@ export interface components {
             installUrl?: string | null;
             name: string;
             needsAuth: boolean;
+        };
+        AppSurfaceBridgeError: {
+            /** Format: int64 */
+            code: number;
+            data?: unknown;
+            message: string;
+        };
+        AppSurfaceBridgeRequest: {
+            bridgeToken?: string | null;
+            id?: unknown;
+            method: string;
+            params?: unknown;
+            /** Format: int64 */
+            revision: number;
+        };
+        AppSurfaceBridgeResponse: {
+            error?: null | components["schemas"]["AppSurfaceBridgeError"];
+            id?: unknown;
+            result?: unknown;
+        };
+        AppSurfaceCsp: {
+            connectDomains?: string[];
+            resourceDomains?: string[];
+        };
+        AppSurfaceDocumentQuery: {
+            /** Format: int64 */
+            revision: number;
+        };
+        AppSurfaceGrants: {
+            canOpenLinks?: boolean;
+            canSendMessage?: boolean;
+            canUpdateModelContext?: boolean;
+            resources?: components["schemas"]["AppSurfaceResourceGrant"][];
+            tools?: components["schemas"]["AppSurfaceToolGrant"][];
+        };
+        /** @enum {string} */
+        AppSurfaceProvider: "mcp" | "generated";
+        AppSurfaceResourceGrant: {
+            server?: string | null;
+            uri: string;
+        };
+        AppSurfaceSession: {
+            /** Format: date-time */
+            archivedAt?: string | null;
+            bridgeToken: string;
+            /** Format: date-time */
+            createdAt: string;
+            csp: components["schemas"]["AppSurfaceCsp"];
+            displayModes: string[];
+            fallbackContent: string;
+            grants: components["schemas"]["AppSurfaceGrants"];
+            html: string;
+            id: string;
+            provenance: unknown;
+            provider: components["schemas"]["AppSurfaceProvider"];
+            resourceMimeType: string;
+            resourceUri: string;
+            /** Format: int64 */
+            revision: number;
+            status: components["schemas"]["AppSurfaceSessionStatus"];
+            /** Format: date-time */
+            submittedAt?: string | null;
+            submittedMessage?: string | null;
+            submittedMetadata?: unknown;
+            /** Format: int64 */
+            submittedRevision?: number | null;
+            threadId: string;
+            title: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AppSurfaceSessionDto: {
+            /** Format: date-time */
+            archivedAt?: string | null;
+            bridgeToken: string;
+            /** Format: date-time */
+            createdAt: string;
+            csp: components["schemas"]["AppSurfaceCsp"];
+            displayModes: string[];
+            documentUrl: string;
+            fallbackContent: string;
+            grants: components["schemas"]["AppSurfaceGrants"];
+            id: string;
+            provenance: unknown;
+            provider: components["schemas"]["AppSurfaceProvider"];
+            resourceMimeType: string;
+            resourceUri: string;
+            /** Format: int64 */
+            revision: number;
+            status: components["schemas"]["AppSurfaceSessionStatus"];
+            submitAvailable: boolean;
+            /** Format: date-time */
+            submittedAt?: string | null;
+            submittedMessage?: string | null;
+            submittedMetadata?: unknown;
+            /** Format: int64 */
+            submittedRevision?: number | null;
+            threadId: string;
+            title: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AppSurfaceSessionReadResponse: {
+            session?: null | components["schemas"]["AppSurfaceSessionDto"];
+        };
+        AppSurfaceSessionResponse: {
+            session: components["schemas"]["AppSurfaceSessionDto"];
+        };
+        /** @enum {string} */
+        AppSurfaceSessionStatus: "active" | "submitting" | "submitted" | "archived" | "errored";
+        AppSurfaceToolGrant: {
+            server: string;
+            tool: string;
         };
         Approval: {
             /** Format: date-time */
@@ -2932,6 +3115,18 @@ export interface components {
             name: string;
             protocol?: string | null;
         };
+        SelfControlGeneratedAppSurfaceUpsertRequest: {
+            csp?: components["schemas"]["AppSurfaceCsp"];
+            displayModes?: string[];
+            fallbackContent: string;
+            grants?: components["schemas"]["AppSurfaceGrants"];
+            html: string;
+            /** Format: int32 */
+            maxSelfControlDepth?: number | null;
+            provenance?: unknown;
+            source?: components["schemas"]["SelfControlSource"];
+            title: string;
+        };
         SelfControlGeneratedUiUpsertRequest: {
             html: string;
             /** Format: int32 */
@@ -3757,6 +3952,54 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RateLimitsResponse"];
+                };
+            };
+        };
+    };
+    app_surface_bridge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppSurfaceBridgeRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppSurfaceBridgeResponse"];
+                };
+            };
+        };
+    };
+    app_surface_document: {
+        parameters: {
+            query: {
+                revision: number;
+            };
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": unknown;
                 };
             };
         };
@@ -5435,6 +5678,77 @@ export interface operations {
             };
         };
     };
+    get_self_control_app_surface: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppSurfaceSessionReadResponse"];
+                };
+            };
+        };
+    };
+    upsert_self_control_generated_app_surface: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlGeneratedAppSurfaceUpsertRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppSurfaceSessionResponse"];
+                };
+            };
+        };
+    };
+    archive_self_control_app_surface: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlMutationRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppSurfaceSessionReadResponse"];
+                };
+            };
+        };
+    };
     archive_self_control_thread: {
         parameters: {
             query?: never;
@@ -6092,6 +6406,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadViewResponse"];
+                };
+            };
+        };
+    };
+    get_thread_app_surface: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppSurfaceSessionReadResponse"];
                 };
             };
         };

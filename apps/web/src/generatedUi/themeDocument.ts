@@ -3,6 +3,11 @@ import {
   type KodexColorSchemeId,
 } from "../themeRegistry";
 
+export type GeneratedUiDocumentCsp = {
+  connectDomains?: string[];
+  resourceDomains?: string[];
+};
+
 export const GENERATED_UI_DOCUMENT_CSP =
   "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; navigate-to 'none'; form-action 'none'; frame-src 'none'; base-uri 'none'";
 
@@ -43,8 +48,12 @@ export function buildGeneratedUiThemeCss(colorSchemeId: KodexColorSchemeId): str
   return `:root {\n  color-scheme: ${colorScheme.mode};\n${cssVariables}\n}\n\nbody {\n  font-family: var(--kodex-font-family);\n}`;
 }
 
-export function buildGeneratedUiSrcDoc(html: string, colorSchemeId: KodexColorSchemeId): string {
-  const headInjection = generatedUiHeadInjection(colorSchemeId);
+export function buildGeneratedUiSrcDoc(
+  html: string,
+  colorSchemeId: KodexColorSchemeId,
+  csp?: GeneratedUiDocumentCsp,
+): string {
+  const headInjection = generatedUiHeadInjection(colorSchemeId, csp);
   const headMatch = html.match(/<head\b[^>]*>/i);
   if (headMatch?.index !== undefined) {
     const insertAt = headMatch.index + headMatch[0].length;
@@ -68,12 +77,96 @@ ${html}
 </html>`;
 }
 
-function generatedUiHeadInjection(colorSchemeId: KodexColorSchemeId): string {
-  return `<meta http-equiv="Content-Security-Policy" content="${escapeHtmlAttribute(GENERATED_UI_DOCUMENT_CSP)}">
+function generatedUiHeadInjection(colorSchemeId: KodexColorSchemeId, csp?: GeneratedUiDocumentCsp): string {
+  return `<meta http-equiv="Content-Security-Policy" content="${escapeHtmlAttribute(buildGeneratedUiDocumentCsp(csp))}">
 <meta name="color-scheme" content="dark light">
+<script id="kodex-generated-ui-bridge">
+${GENERATED_UI_BRIDGE_SCRIPT}
+</script>
 <style id="kodex-generated-ui-theme">
 ${buildGeneratedUiThemeCss(colorSchemeId)}
 </style>`;
+}
+
+const GENERATED_UI_BRIDGE_SCRIPT = `(() => {
+  const submitType = "kodex.generatedUi.submit";
+  const submitResultType = "kodex.generatedUi.submit.result";
+  const pending = new Map();
+
+  window.addEventListener("message", (event) => {
+    const data = event.data;
+    if (!data || typeof data !== "object" || data.type !== submitResultType || typeof data.requestId !== "string") {
+      return;
+    }
+    const request = pending.get(data.requestId);
+    if (!request) {
+      return;
+    }
+    window.clearTimeout(request.timeout);
+    pending.delete(data.requestId);
+    if (data.ok) {
+      request.resolve(data);
+    } else {
+      const error = new Error(data.error?.message || "Generated UI submit was not accepted.");
+      error.details = data;
+      request.reject(error);
+    }
+  });
+
+  function submitMessage(message, metadata) {
+    const requestId = "kodex-submit-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+    const payload = { type: submitType, requestId, message, metadata };
+    const response = new Promise((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        pending.delete(requestId);
+        reject(new Error("Timed out waiting for Kodex to acknowledge generated UI submit."));
+      }, 30000);
+      pending.set(requestId, { resolve, reject, timeout });
+    });
+    window.parent.postMessage(payload, "*");
+    return response;
+  }
+
+  window.kodex = Object.assign({}, window.kodex, {
+    submitMessage,
+    bridge: Object.assign({}, window.kodex?.bridge, {
+      submitEventType: submitType,
+      submitResultEventType: submitResultType,
+    }),
+  });
+})();`;
+
+export function buildGeneratedUiDocumentCsp(csp?: GeneratedUiDocumentCsp): string {
+  const connectDomains = cleanSources(csp?.connectDomains);
+  const resourceDomains = cleanSources(csp?.resourceDomains);
+  if (connectDomains.length === 0 && resourceDomains.length === 0) {
+    return GENERATED_UI_DOCUMENT_CSP;
+  }
+  const connectSrc = sourceList(connectDomains);
+  const resourceSrc = sourceList(resourceDomains);
+  const imageSrc = resourceSrc === "'none'" ? "data: blob:" : `data: blob: ${resourceSrc}`;
+  const fontSrc = resourceSrc === "'none'" ? "data:" : `data: ${resourceSrc}`;
+  return [
+    "default-src 'none'",
+    "script-src 'unsafe-inline'",
+    "style-src 'unsafe-inline'",
+    `img-src ${imageSrc}`,
+    `media-src ${resourceSrc}`,
+    `font-src ${fontSrc}`,
+    `connect-src ${connectSrc}`,
+    "navigate-to 'none'",
+    "form-action 'none'",
+    "frame-src 'none'",
+    "base-uri 'none'",
+  ].join("; ");
+}
+
+function cleanSources(sources: string[] | undefined): string[] {
+  return (sources ?? []).filter((source) => typeof source === "string" && source.trim()).map((source) => source.trim());
+}
+
+function sourceList(sources: string[]): string {
+  return sources.length > 0 ? sources.join(" ") : "'none'";
 }
 
 function escapeHtmlAttribute(value: string): string {
