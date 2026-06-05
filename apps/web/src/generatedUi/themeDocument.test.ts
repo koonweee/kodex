@@ -69,6 +69,16 @@ describe("generated UI theme document", () => {
     expect(srcDoc).toContain("img-src data: blob: https://cdn.example.test");
   });
 
+  it("omits unsupported navigate-to from generated document CSP", () => {
+    expect(buildGeneratedUiDocumentCsp()).not.toContain("navigate-to");
+    expect(
+      buildGeneratedUiDocumentCsp({
+        connectDomains: ["https://api.example.test"],
+        resourceDomains: ["https://cdn.example.test"],
+      }),
+    ).not.toContain("navigate-to");
+  });
+
   it("keeps generated document CSP deny-by-default when no domains are provided", () => {
     expect(buildGeneratedUiDocumentCsp()).toBe(GENERATED_UI_DOCUMENT_CSP);
     expect(buildGeneratedUiDocumentCsp({ connectDomains: [], resourceDomains: [] })).toBe(GENERATED_UI_DOCUMENT_CSP);

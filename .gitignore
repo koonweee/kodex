@@ -12,6 +12,8 @@ apps/ios/KodexIOS.xcodeproj/
 *.tsbuildinfo
 playwright-report/
 test-results/
+tmp/dockview-profiling/
+tmp/real-gateway-profiling/
 *.env
 *.env.local
 apps/gateway/config/production.env

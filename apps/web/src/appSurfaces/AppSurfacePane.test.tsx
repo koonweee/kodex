@@ -170,7 +170,7 @@ describe("AppSurfacePane", () => {
         provenance: {
           mcp: {
             arguments: { color: "blue" },
-            result: { content: [{ type: "text", text: "Rendered sketch" }] },
+            result: { _meta: null, content: [{ type: "text", text: "Rendered sketch" }] },
           },
         },
         revision: 4,
@@ -224,7 +224,6 @@ describe("AppSurfacePane", () => {
             hostInfo: { name: "Kodex", version: "0.1.0" },
             protocolVersion: "2025-11-21",
           }),
-          error: undefined,
         },
         "*",
       );
@@ -285,6 +284,145 @@ describe("AppSurfacePane", () => {
       });
     });
     expect(openSpy).not.toHaveBeenCalled();
+  });
+
+  it("posts normalized JSON-RPC result responses without undefined error fields", async () => {
+    const onBridgeRequest = vi.fn().mockResolvedValue({
+      id: "call-1",
+      result: { _meta: null, ok: true },
+    }) as unknown as AppSurfacePaneBridge;
+
+    renderPane(appSurfaceSession({ revision: 2 }), { onBridgeRequest });
+    const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
+    const postMessage = vi.fn();
+    Object.defineProperty(iframe.contentWindow, "postMessage", {
+      configurable: true,
+      value: postMessage,
+    });
+
+    postFromFrame({
+      jsonrpc: "2.0",
+      id: "call-1",
+      method: "tools/call",
+      params: { server: "sketch", tool: "export" },
+      revision: 2,
+    });
+
+    await waitFor(() => {
+      expect(postMessage).toHaveBeenCalledWith(
+        {
+          jsonrpc: "2.0",
+          id: "call-1",
+          result: { ok: true },
+        },
+        "*",
+      );
+    });
+    expect(postMessage.mock.calls[0]?.[0]).not.toHaveProperty("error");
+  });
+
+  it("posts normalized JSON-RPC error responses without undefined result fields", async () => {
+    const onBridgeRequest = vi.fn().mockResolvedValue({
+      id: "call-1",
+      error: { code: -32001, message: "Approval required" },
+    }) as unknown as AppSurfacePaneBridge;
+
+    renderPane(appSurfaceSession({ revision: 2 }), { onBridgeRequest });
+    const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
+    const postMessage = vi.fn();
+    Object.defineProperty(iframe.contentWindow, "postMessage", {
+      configurable: true,
+      value: postMessage,
+    });
+
+    postFromFrame({
+      jsonrpc: "2.0",
+      id: "call-1",
+      method: "tools/call",
+      params: { server: "sketch", tool: "export" },
+      revision: 2,
+    });
+
+    await waitFor(() => {
+      expect(postMessage).toHaveBeenCalledWith(
+        {
+          jsonrpc: "2.0",
+          id: "call-1",
+          error: { code: -32001, message: "Approval required" },
+        },
+        "*",
+      );
+    });
+    expect(postMessage.mock.calls[0]?.[0]).not.toHaveProperty("result");
+  });
+
+  it("normalizes bridge responses with no result to an empty JSON-RPC result object", async () => {
+    const onBridgeRequest = vi.fn().mockResolvedValue({
+      id: "call-1",
+    }) as unknown as AppSurfacePaneBridge;
+
+    renderPane(appSurfaceSession({ revision: 2 }), { onBridgeRequest });
+    const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
+    const postMessage = vi.fn();
+    Object.defineProperty(iframe.contentWindow, "postMessage", {
+      configurable: true,
+      value: postMessage,
+    });
+
+    postFromFrame({
+      jsonrpc: "2.0",
+      id: "call-1",
+      method: "tools/call",
+      params: { server: "sketch", tool: "export" },
+      revision: 2,
+    });
+
+    await waitFor(() => {
+      expect(postMessage).toHaveBeenCalledWith(
+        {
+          jsonrpc: "2.0",
+          id: "call-1",
+          result: {},
+        },
+        "*",
+      );
+    });
+    expect(postMessage.mock.calls[0]?.[0]).not.toHaveProperty("error");
+  });
+
+  it("normalizes null JSON-RPC result responses to an empty result object", async () => {
+    const onBridgeRequest = vi.fn().mockResolvedValue({
+      id: "call-1",
+      result: null,
+    }) as unknown as AppSurfacePaneBridge;
+
+    renderPane(appSurfaceSession({ revision: 2 }), { onBridgeRequest });
+    const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
+    const postMessage = vi.fn();
+    Object.defineProperty(iframe.contentWindow, "postMessage", {
+      configurable: true,
+      value: postMessage,
+    });
+
+    postFromFrame({
+      jsonrpc: "2.0",
+      id: "call-1",
+      method: "tools/call",
+      params: { server: "sketch", tool: "export" },
+      revision: 2,
+    });
+
+    await waitFor(() => {
+      expect(postMessage).toHaveBeenCalledWith(
+        {
+          jsonrpc: "2.0",
+          id: "call-1",
+          result: {},
+        },
+        "*",
+      );
+    });
+    expect(postMessage.mock.calls[0]?.[0]).not.toHaveProperty("error");
   });
 
   it("hides through the mobile pane header control", async () => {

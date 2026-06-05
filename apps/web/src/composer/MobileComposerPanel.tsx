@@ -11,6 +11,7 @@ import { ComposerToolbar } from "./ComposerToolbar";
 import { InlineComposerPanel } from "./InlineComposerPanel";
 import { MobileSlashCommandSheet } from "./MobileSlashCommandSheet";
 import { MobileSkillCommandSheet } from "./MobileSkillCommandSheet";
+import { shouldSyncComposerCursorOnKeyUp } from "./keyEvents";
 import type { SlashCommandItem } from "./slashCommands";
 import type { ComposerDraftState } from "./useComposerDraftState";
 import { useComposerKeyboardViewport } from "./useComposerKeyboardViewport";
@@ -228,7 +229,7 @@ export function MobileComposerPanel({
                 draftState.updateComposerText(event.currentTarget.value, event.currentTarget.selectionStart)
               }
               onKeyUp={(event) => {
-                if (event.key !== "Escape") {
+                if (shouldSyncComposerCursorOnKeyUp(event.key)) {
                   draftState.updateComposerText(event.currentTarget.value, event.currentTarget.selectionStart);
                 }
               }}

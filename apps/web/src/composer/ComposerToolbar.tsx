@@ -1,5 +1,6 @@
 import { ActionIcon, Group, Loader, Menu, Tooltip } from "@mantine/core";
 import { ArrowUp, Maximize2, Paperclip, Plus, Square } from "lucide-react";
+import { memo } from "react";
 import type { RefObject } from "react";
 
 import { ComposerFooterControls } from "../ComposerFooterControls";
@@ -33,7 +34,7 @@ type ComposerToolbarProps = {
   showContextUsage?: boolean;
 };
 
-export function ComposerToolbar({
+export const ComposerToolbar = memo(function ComposerToolbar({
   attachmentInputRef,
   canSubmitComposer,
   contextUsage,
@@ -146,4 +147,4 @@ export function ComposerToolbar({
       </Tooltip>
     </Group>
   );
-}
+});

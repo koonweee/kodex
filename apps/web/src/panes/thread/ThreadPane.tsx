@@ -4,7 +4,9 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState, type Dispatch
 
 import type { EventEnvelope, ThreadSummary } from "../../api/client";
 import { getThreadDetail, getThreadTimelinePage } from "../../api/client";
+import { recordReducerBatch } from "../../events/liveDiagnostics";
 import { errorMessageFrom } from "../../shared/values";
+import { applyTimelineEventBatch, coalesceTimelineEventBatch } from "../../timeline/batch";
 import { idleTimelineEntry, type TimelineEntry } from "../../timeline/entry";
 import {
   applyLiveTimelineUpdate,
@@ -23,6 +25,7 @@ import {
   MATERIALIZING_THREAD_SNAPSHOT_RETRY_MS,
 } from "../../timeline/snapshotRetry";
 import { isCanonicalThreadViewRenderEvent, threadViewSummaryToThreadSummary } from "../../timeline/threadViewEvents";
+import { useTimelineEventQueue } from "../../timeline/useTimelineEventQueue";
 import { threadDisplayTitle } from "../../threads/helpers";
 import type { WorkspacePaneComponentProps } from "../../workspace/paneTypes";
 import { paneTargetRecord } from "../../workspace/paneTypes";
@@ -189,14 +192,44 @@ function ExistingThreadPane({
     }
   }, [clearRetrySnapshotTimer, onThreadSnapshotLoadFailed, onThreadSnapshotLoaded, pane.id, threadId, updatePane]);
 
+  function reduceQueuedPaneTimelineEvents(current: TimelineState, events: EventEnvelope[]) {
+    if (events.length === 0) {
+      return current;
+    }
+    const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
+    let shouldRefresh = false;
+    let validationState = current;
+    const coalescedEvents = coalesceTimelineEventBatch(events);
+    for (const event of coalescedEvents) {
+      if (!canApplyThreadViewItemDelta(validationState, event)) {
+        shouldRefresh = true;
+        break;
+      }
+      validationState = applyLiveTimelineUpdate(validationState, event);
+    }
+    const next = applyTimelineEventBatch(current, coalescedEvents);
+    const finishedAt = typeof performance !== "undefined" ? performance.now() : startedAt;
+    recordReducerBatch(events.length, finishedAt - startedAt);
+    if (shouldRefresh) {
+      void refreshSnapshot();
+    }
+    return next;
+  }
+
+  const { cancelQueuedTimelineEvents, enqueueTimelineEvent } = useTimelineEventQueue({
+    reduceEvents: reduceQueuedPaneTimelineEvents,
+    setTimeline,
+  });
+
   useEffect(() => {
     clearRetrySnapshotTimer();
+    cancelQueuedTimelineEvents();
     setTimeline(createTimelineState());
     setEntry({ phase: "loadingSnapshot", threadId });
     setThread(seededThread);
     setPaneErrorMessage(null);
     void refreshSnapshot();
-  }, [clearRetrySnapshotTimer, refreshSnapshot, threadId]);
+  }, [cancelQueuedTimelineEvents, clearRetrySnapshotTimer, refreshSnapshot, threadId]);
 
   useEffect(() => {
     if (!seededThread) {
@@ -221,6 +254,7 @@ function ExistingThreadPane({
         return;
       }
       if (event.kind === "thread_view.refresh_required") {
+        cancelQueuedTimelineEvents();
         void refreshSnapshot();
         return;
       }
@@ -274,16 +308,9 @@ function ExistingThreadPane({
       if (!isCanonicalThreadViewRenderEvent(event, { includeGatewayDiagnostics: true })) {
         return;
       }
-      setTimeline((current) => {
-        if (event.kind === "thread_view.item_delta" && !canApplyThreadViewItemDelta(current, event)) {
-          void refreshSnapshot();
-          return current;
-        }
-        return applyLiveTimelineUpdate(current, event);
-      });
-      setEntry({ phase: "streamingLive", threadId });
+      enqueueTimelineEvent(event);
     });
-  }, [pane.id, refreshSnapshot, subscribeLiveEvent, threadId, updatePane]);
+  }, [cancelQueuedTimelineEvents, enqueueTimelineEvent, pane.id, refreshSnapshot, subscribeLiveEvent, threadId, updatePane]);
 
   useEffect(() => {
     return subscribeThreadPaneTimelineAction((action) => {

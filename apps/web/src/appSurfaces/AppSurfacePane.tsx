@@ -122,28 +122,11 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
         setLocalError(null);
         void onBridgeRequest(bridgeRequest)
           .then((response) => {
-            iframeRef.current?.contentWindow?.postMessage(
-              {
-                jsonrpc: "2.0",
-                id: response.id ?? bridgeRequest.id ?? null,
-                result: response.result ?? undefined,
-                error: response.error ?? undefined,
-              },
-              "*",
-            );
             postGeneratedUiSubmitResult(iframeRef.current?.contentWindow ?? null, bridgeRequest.id, response);
           })
           .catch((error) => {
             const message = errorMessageFrom(error);
             setLocalError(message);
-            iframeRef.current?.contentWindow?.postMessage(
-              {
-                jsonrpc: "2.0",
-                id: bridgeRequest.id ?? null,
-                error: { code: -32000, message },
-              },
-              "*",
-            );
             postGeneratedUiSubmitResult(iframeRef.current?.contentWindow ?? null, bridgeRequest.id, {
               id: bridgeRequest.id,
               error: { code: -32000, message },
@@ -167,15 +150,7 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
       setLocalError(null);
       void onBridgeRequest(bridgeRequest)
         .then((response) => {
-          iframeRef.current?.contentWindow?.postMessage(
-            {
-              jsonrpc: "2.0",
-              id: response.id ?? bridgeRequest.id ?? null,
-              result: response.result ?? undefined,
-              error: response.error ?? undefined,
-            },
-            "*",
-          );
+          postJsonRpcResponse(iframeRef.current?.contentWindow ?? null, bridgeRequest.id, response);
           if (bridgeRequest.method === "ui/initialize" && !response.error) {
             window.setTimeout(postSessionToolNotifications, 0);
           }
@@ -183,14 +158,7 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
         .catch((error) => {
           const message = errorMessageFrom(error);
           setLocalError(message);
-          iframeRef.current?.contentWindow?.postMessage(
-            {
-              jsonrpc: "2.0",
-              id: bridgeRequest.id ?? null,
-              error: { code: -32000, message },
-            },
-            "*",
-          );
+          postJsonRpcError(iframeRef.current?.contentWindow ?? null, bridgeRequest.id, message);
         });
     }
 
@@ -274,7 +242,33 @@ function postToolNotifications(target: Window | null, session: AppSurfaceSession
 }
 
 function postJsonRpcNotification(target: Window, method: string, params: unknown) {
-  target.postMessage({ jsonrpc: "2.0", method, params }, "*");
+  target.postMessage({ jsonrpc: "2.0", method, params: jsonRpcObject(params) }, "*");
+}
+
+function postJsonRpcResponse(target: Window | null, fallbackId: unknown, response: AppSurfaceBridgeResponse) {
+  if (!target) {
+    return;
+  }
+  const id = response.id ?? fallbackId ?? null;
+  if (response.error) {
+    target.postMessage({ jsonrpc: "2.0", id, error: response.error }, "*");
+    return;
+  }
+  target.postMessage({ jsonrpc: "2.0", id, result: jsonRpcObject(response.result) }, "*");
+}
+
+function postJsonRpcError(target: Window | null, id: unknown, message: string) {
+  if (!target) {
+    return;
+  }
+  target.postMessage(
+    {
+      jsonrpc: "2.0",
+      id: id ?? null,
+      error: { code: -32000, message },
+    },
+    "*",
+  );
 }
 
 function postGeneratedUiSubmitResult(
@@ -361,6 +355,18 @@ function toolResultFromSession(session: AppSurfaceSession): unknown {
 
 function recordValue(value: unknown): JsonRecord | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonRecord) : null;
+}
+
+function jsonRpcObject(value: unknown): JsonRecord {
+  const record = recordValue(value);
+  if (!record) {
+    return {};
+  }
+  const normalized = { ...record };
+  if (normalized._meta === null) {
+    delete normalized._meta;
+  }
+  return normalized;
 }
 
 function bridgeRequestFromMessage(data: unknown, currentSessionId: string, currentRevision: number): AppSurfaceBridgeRequest | null {

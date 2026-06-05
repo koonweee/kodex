@@ -9,7 +9,7 @@ export type GeneratedUiDocumentCsp = {
 };
 
 export const GENERATED_UI_DOCUMENT_CSP =
-  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; navigate-to 'none'; form-action 'none'; frame-src 'none'; base-uri 'none'";
+  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'; base-uri 'none'";
 
 const GENERATED_UI_FONT_FAMILY =
   'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
@@ -154,7 +154,6 @@ export function buildGeneratedUiDocumentCsp(csp?: GeneratedUiDocumentCsp): strin
     `media-src ${resourceSrc}`,
     `font-src ${fontSrc}`,
     `connect-src ${connectSrc}`,
-    "navigate-to 'none'",
     "form-action 'none'",
     "frame-src 'none'",
     "base-uri 'none'",

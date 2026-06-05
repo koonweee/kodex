@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { EventEnvelope } from "./api/client";
+import { getLiveDiagnosticsSnapshot, resetLiveDiagnosticsForTest } from "./events/liveDiagnostics";
 import {
   App,
   FakeEventSource,
@@ -143,6 +144,7 @@ describe("MVP timeline flows", () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     FakeEventSource.instances = [];
+    resetLiveDiagnosticsForTest();
   });
 
   it("does not render a no-events placeholder in an empty selected thread", async () => {
@@ -790,6 +792,103 @@ describe("MVP timeline flows", () => {
 
     expect(await screen.findByText(/live update continued/i)).toBeInTheDocument();
     expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(1);
+  });
+
+  it("batches active Dockview pane workspace stream render events", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    window.history.pushState({}, "", "/threads/thread-1");
+    const gateway = mockGateway(
+      baseRoutes({
+        "GET /v1/threads/thread-1": threadDetail(thread, [
+          snapshotTurn("turn-1", [
+            snapshotItem("item-1", "agentMessage", {
+              text: "Initial snapshot",
+            }),
+          ]),
+        ]),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/initial snapshot/i)).toBeInTheDocument();
+    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
+    resetLiveDiagnosticsForTest();
+
+    act(() => {
+      workspaceStream.emitNamed(
+        "thread_view.patch",
+        projectionPatchEvent({
+          seq: 2,
+          turnId: "turn-live",
+          itemId: "agent-live",
+          text: "",
+        }),
+      );
+      workspaceStream.emitNamed(
+        "thread_view.item_delta",
+        itemDeltaEvent({
+          seq: 3,
+          turnId: "turn-live",
+          itemId: "agent-live",
+          delta: "First",
+        }),
+      );
+      workspaceStream.emitNamed(
+        "thread_view.item_delta",
+        itemDeltaEvent({
+          seq: 4,
+          turnId: "turn-live",
+          itemId: "agent-live",
+          delta: " streamed batch",
+        }),
+      );
+    });
+
+    expect(await screen.findByText(/first streamed batch/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(getLiveDiagnosticsSnapshot()).toMatchObject({
+        reducerBatchCount: 1,
+        reducerEventCount: 3,
+      });
+    });
+    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(1);
+  });
+
+  it("keeps applying later Dockview pane patches after an orphan delta in the same batch", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    window.history.pushState({}, "", "/threads/thread-1");
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads/thread-1": threadDetail(thread, [
+          snapshotTurn("turn-1", [
+            snapshotItem("item-1", "agentMessage", {
+              text: "Initial snapshot",
+            }),
+          ]),
+        ]),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/initial snapshot/i)).toBeInTheDocument();
+    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
+
+    act(() => {
+      workspaceStream.emitNamed("thread_view.item_delta", itemDeltaEvent({ seq: 2, delta: "orphan" }));
+      workspaceStream.emitNamed(
+        "thread_view.patch",
+        projectionPatchEvent({
+          seq: 3,
+          turnId: "turn-live",
+          itemId: "agent-live",
+          text: "Later valid patch",
+        }),
+      );
+    });
+
+    expect(await screen.findByText(/later valid patch/i)).toBeInTheDocument();
   });
 
   it("indexes empty running assistant patches so later deltas can append", async () => {

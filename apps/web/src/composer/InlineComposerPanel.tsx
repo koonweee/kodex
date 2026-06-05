@@ -9,6 +9,7 @@ import { ComposerToolbar } from "./ComposerToolbar";
 import { QueuedSteerCard } from "./QueuedSteerCard";
 import { SlashCommandPopup } from "./SlashCommandPopup";
 import { SkillMentionPopup } from "./SkillMentionPopup";
+import { shouldSyncComposerCursorOnKeyUp } from "./keyEvents";
 import type { SlashCommandItem } from "./slashCommands";
 import type { ComposerDraftState } from "./useComposerDraftState";
 import type { SkillCatalogState } from "./useSkillCatalog";
@@ -216,7 +217,7 @@ export function InlineComposerPanel({
             }
           }}
           onKeyUp={(event) => {
-            if (event.key !== "Escape") {
+            if (shouldSyncComposerCursorOnKeyUp(event.key)) {
               draftState.updateComposerText(event.currentTarget.value, event.currentTarget.selectionStart);
             }
           }}

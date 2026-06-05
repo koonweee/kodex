@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json && vite build",
+    "profile:dockview": "node scripts/profile-dockview.mjs",
+    "profile:real-gateway": "node scripts/profile-real-gateway.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
@@ -45,6 +47,7 @@
     "vite": "^7.2.4",
     "vite-plugin-pwa": "^1.3.0",
     "vitest": "^4.0.14",
+    "ws": "^8.20.0",
     "workbox-precaching": "^7.4.1"
   }
 }
