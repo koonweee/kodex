@@ -97,18 +97,21 @@ function ExistingThreadPane({
     showDebugEvents,
     subscribeLiveEvent,
     subscribeThreadPaneTimelineAction,
+    threadSummariesById,
     threadActions,
     updatePane,
   } = useWorkspace();
+  const seededThread = threadSummariesById[threadId] ?? null;
   const [entry, setEntry] = useState<TimelineEntry>(idleTimelineEntry);
   const [paneErrorMessage, setPaneErrorMessage] = useState<string | null>(null);
   const [scrollParentElement, setScrollParentElement] = useState<HTMLDivElement | null>(null);
-  const [thread, setThread] = useState<ThreadSummary | null>(null);
+  const [thread, setThread] = useState<ThreadSummary | null>(seededThread);
   const [timeline, setTimeline] = useState<TimelineState>(() => createTimelineState());
   const refreshInFlightRef = useRef(false);
   const refreshInFlightThreadIdRef = useRef<string | null>(null);
   const refreshQueuedRef = useRef(false);
   const refreshRequestIdRef = useRef(0);
+  const latestPaneThreadRef = useRef<ThreadSummary | null>(seededThread);
   const latestThreadIdRef = useRef(threadId);
   const [renameModalOpen, setRenameModalOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
@@ -124,6 +127,7 @@ function ExistingThreadPane({
     }
   }, []);
   latestThreadIdRef.current = threadId;
+  latestPaneThreadRef.current = thread;
 
   const refreshSnapshot = useCallback(async () => {
     if (refreshInFlightRef.current && refreshInFlightThreadIdRef.current === threadId) {
@@ -147,9 +151,10 @@ function ExistingThreadPane({
       }
       const nextThread = threadViewSummaryToThreadSummary(snapshot.thread);
       setTimeline((current) => applyTimelineSnapshot(current, snapshot));
-      setThread(nextThread);
-      onThreadSnapshotLoaded(nextThread);
-      void updatePane(pane.id, { title: threadDisplayTitle(nextThread) }).catch((error: unknown) => {
+      const mergedThread = mergePaneThreadSummary(latestPaneThreadRef.current, nextThread);
+      setThread((current) => mergePaneThreadSummary(current, nextThread));
+      onThreadSnapshotLoaded(mergedThread);
+      void updatePane(pane.id, { title: threadDisplayTitle(mergedThread) }).catch((error: unknown) => {
         console.error("Failed to update workspace thread pane title", error);
       });
       setEntry({ phase: "streamingLive", threadId });
@@ -188,10 +193,17 @@ function ExistingThreadPane({
     clearRetrySnapshotTimer();
     setTimeline(createTimelineState());
     setEntry({ phase: "loadingSnapshot", threadId });
-    setThread(null);
+    setThread(seededThread);
     setPaneErrorMessage(null);
     void refreshSnapshot();
   }, [clearRetrySnapshotTimer, refreshSnapshot, threadId]);
+
+  useEffect(() => {
+    if (!seededThread) {
+      return;
+    }
+    setThread((current) => mergePaneThreadSummary(current, seededThread));
+  }, [seededThread]);
 
   useEffect(() => () => clearRetrySnapshotTimer(), [clearRetrySnapshotTimer]);
 
@@ -233,6 +245,20 @@ function ExistingThreadPane({
         const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
           ? event.payload as Record<string, unknown>
           : {};
+        const metadataThread = payload.thread && typeof payload.thread === "object" && !Array.isArray(payload.thread)
+          ? payload.thread as ThreadSummary
+          : null;
+        if (metadataThread?.id === threadId) {
+          setThread(metadataThread);
+          void updatePane(pane.id, { title: threadDisplayTitle(metadataThread) }).catch((error: unknown) => {
+            console.error("Failed to update workspace thread pane title", error);
+          });
+        }
+        if ("gitInfo" in payload) {
+          setThread((current) =>
+            current ? { ...current, gitInfo: mergeGitInfoPatch(current.gitInfo, payload.gitInfo) } : current,
+          );
+        }
         const name = typeof payload.threadName === "string" ? payload.threadName : typeof payload.name === "string" ? payload.name : null;
         if (name) {
           setThread((current) => (current ? { ...current, name } : current));
@@ -292,14 +318,14 @@ function ExistingThreadPane({
     void getThreadTimelinePage(threadId, { cursor })
       .then((snapshot) => {
         setTimeline((current) => applyTimelineHistoryWindow(current, snapshot));
-        setThread(threadViewSummaryToThreadSummary(snapshot.thread));
+        const nextThread = threadViewSummaryToThreadSummary(snapshot.thread);
+        setThread((current) => mergePaneThreadSummary(current, nextThread));
       })
       .catch((error) => {
         setTimeline((current) => setTimelineOlderHistoryLoading(current, false));
         setPaneErrorMessage(errorMessageFrom(error));
       });
   }, [threadId, timeline.isLoadingOlderHistory, timeline.olderCursor]);
-
   const threadApprovals = approvals.filter((approval) => approval.threadId === threadId);
   const isReady = entry.phase === "streamingLive" || entry.phase === "refreshingSnapshot";
   const isInitialSnapshotLoading = (entry.phase === "loadingSnapshot" || entry.phase === "refreshingSnapshot") && !thread;
@@ -352,7 +378,7 @@ function ExistingThreadPane({
   }
 
   return (
-    <section className="kodex-thread-pane" data-workspace-pane-active={isActive ? "true" : undefined}>
+    <section className="kodex-thread-pane kodex-thread-pane-existing" data-workspace-pane-active={isActive ? "true" : undefined}>
       <Modal centered onClose={closeRenameModal} opened={renameModalOpen && thread !== null} title="Rename thread">
         <Box component="form" onSubmit={handleRenameSubmit}>
           <TextInput
@@ -441,12 +467,14 @@ function ExistingThreadPane({
           </Group>
         )}
       </Group>
-      {isActive && appErrorMessage ? <ThreadPaneErrorMessage message={appErrorMessage} /> : null}
-      {paneErrorMessage && !isUnavailable ? (
-        <Badge className="kodex-thread-pane-error" color="red" variant="light">
-          {paneErrorMessage}
-        </Badge>
-      ) : null}
+      <div className="kodex-thread-pane-status">
+        {isActive && appErrorMessage ? <ThreadPaneErrorMessage message={appErrorMessage} /> : null}
+        {paneErrorMessage && !isUnavailable ? (
+          <Badge className="kodex-thread-pane-error" color="red" variant="light">
+            {paneErrorMessage}
+          </Badge>
+        ) : null}
+      </div>
       {isUnavailable ? (
         <ThreadUnavailablePane onBrowseThreads={onShowMobileSidebar} />
       ) : (
@@ -484,9 +512,48 @@ function ExistingThreadPane({
         isActive,
         isReady,
         selectedThreadPresent: true,
+        thread,
       })}
     </section>
   );
+}
+
+function mergePaneThreadSummary(current: ThreadSummary | null, next: ThreadSummary): ThreadSummary {
+  if (!current || current.id !== next.id) {
+    return next;
+  }
+  if (Object.prototype.hasOwnProperty.call(next, "gitInfo")) {
+    return next;
+  }
+  return {
+    ...next,
+    gitInfo: current.gitInfo,
+  };
+}
+
+function mergeGitInfoPatch(current: ThreadSummary["gitInfo"], patch: unknown): ThreadSummary["gitInfo"] {
+  if (patch === null) {
+    return null;
+  }
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+    return current;
+  }
+  const patchRecord = patch as Record<string, unknown>;
+  return {
+    branch: Object.prototype.hasOwnProperty.call(patchRecord, "branch")
+      ? stringOrNull(patchRecord.branch)
+      : current?.branch ?? null,
+    originUrl: Object.prototype.hasOwnProperty.call(patchRecord, "originUrl")
+      ? stringOrNull(patchRecord.originUrl)
+      : current?.originUrl ?? null,
+    sha: Object.prototype.hasOwnProperty.call(patchRecord, "sha")
+      ? stringOrNull(patchRecord.sha)
+      : current?.sha ?? null,
+  };
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function ThreadActionsMenu({
@@ -695,14 +762,10 @@ function DraftThreadPane({
           </Title>
         </Group>
       </Group>
-      {errorMessage ? <ThreadPaneErrorMessage message={errorMessage} /> : null}
-      <div className="kodex-thread-pane-empty-copy">
-        <Text fw={650}>Draft thread</Text>
-        <Text c="dimmed" size="sm">
-          Send a message to start this thread.
-        </Text>
+      <div className="kodex-thread-pane-empty-body">
+        {errorMessage ? <ThreadPaneErrorMessage message={errorMessage} /> : null}
+        {composer}
       </div>
-      {composer}
     </section>
   );
 }

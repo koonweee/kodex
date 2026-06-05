@@ -40,7 +40,7 @@ import type { ComposerDraftControls } from "./ComposerPanel";
 import { isTouchInputDevice } from "../shared/inputCapabilities";
 import type { PendingAttachment, QueuedSteerRow } from "./types";
 
-type DraftThreadCreateRequest = { firstMessageText: string; projectId?: string };
+type DraftThreadCreateRequest = { composerSettings?: ComposerSettings; firstMessageText: string; projectId?: string };
 type DraftThreadCreateResult = { threadId: string; composerSettings: ComposerSettings };
 type QueuedInputMutation = {
   queueId: string;
@@ -68,6 +68,7 @@ type UseComposerOrchestrationParams = {
     text: string;
     threadId: string;
   }) => string | null;
+  onImagePreviewUrlsChanged?: (previewUrls: Record<string, string>) => void;
   onThreadMaterialized: (threadId: string) => void;
   onThreadTurnStartFailed: (threadId: string) => void;
   onThreadTurnStarted: (threadId: string) => void;
@@ -93,6 +94,7 @@ export function useComposerOrchestration({
   onOptimisticUserMessageRemoved,
   onOptimisticUserMessageSent,
   onOptimisticUserMessageStarted,
+  onImagePreviewUrlsChanged,
   onThreadMaterialized,
   onThreadTurnStartFailed,
   onThreadTurnStarted,
@@ -110,6 +112,7 @@ export function useComposerOrchestration({
   const latestComposerContextRef = useRef<ComposerContext | null>(null);
   const imagePreviewUrlsByPathRef = useRef<Record<string, string>>({});
   const previousActiveSelectedTurnIdRef = useRef<string | null>(activeSelectedTurnId);
+  const isComposerSubmittingRef = useRef(isComposerSubmitting);
   const nextAttachmentId = useRef(0);
   const retryQueuedInputMutation = useMutation({
     mutationFn: ({ queueId, threadId }: QueuedInputMutation) => retryQueuedInput(threadId, queueId),
@@ -135,6 +138,10 @@ export function useComposerOrchestration({
   }, [activeSelectedTurnId]);
 
   useEffect(() => {
+    isComposerSubmittingRef.current = isComposerSubmitting;
+  }, [isComposerSubmitting]);
+
+  useEffect(() => {
     const nextContext = { activeSelectedTurnId, draftChatThreadSelected, draftThreadProjectId, selectedProjectId, selectedThreadId };
     const previousContext = composerContextRef.current;
     composerContextRef.current = nextContext;
@@ -148,13 +155,13 @@ export function useComposerOrchestration({
     ) {
       return;
     }
-    if (isComposerSubmitting) {
+    if (isComposerSubmittingRef.current) {
       return;
     }
 
     setIsQueuedTurnStartPending(false);
     clearPendingAttachments();
-  }, [activeSelectedTurnId, draftChatThreadSelected, draftThreadProjectId, isComposerSubmitting, selectedProjectId, selectedThreadId]);
+  }, [activeSelectedTurnId, draftChatThreadSelected, draftThreadProjectId, selectedProjectId, selectedThreadId]);
 
   async function handleSubmitTurn(
     event: FormEvent,
@@ -261,6 +268,7 @@ export function useComposerOrchestration({
       }
 
       const createdThread = await onCreateDraftThread({
+        composerSettings,
         firstMessageText: text,
         ...(draftChatThreadSelected ? {} : { projectId: selectedProjectId ?? undefined }),
       });
@@ -573,6 +581,7 @@ export function useComposerOrchestration({
   function rememberImagePreviewUrls(previewUrls: Record<string, string>) {
     imagePreviewUrlsByPathRef.current = { ...imagePreviewUrlsByPathRef.current, ...previewUrls };
     setImagePreviewUrlsByPath(imagePreviewUrlsByPathRef.current);
+    onImagePreviewUrlsChanged?.(previewUrls);
   }
 
   function releaseAttachmentObjectUrl(attachment: PendingAttachment) {

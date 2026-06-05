@@ -107,6 +107,12 @@ export function useShellSelection({
     setRouteSelectedThread(thread);
   }, []);
 
+  useEffect(() => {
+    if (initialRoute.threadId) {
+      replaceKodexRoute({ panel: initialRoute.panel, threadId: null, view: "thread" });
+    }
+  }, []);
+
   const selectKnownProjectThread = useCallback((projectId: string, threadId: string) => {
     setSelectedMainPane("thread");
     setSelectedProjectPaneId(null);
@@ -311,17 +317,17 @@ export function useShellSelection({
   ]);
 
   const handleSelectThread = useCallback((projectId: string, threadId: string) => {
-    pushKodexRoute({ panel: null, threadId });
+    pushKodexRoute({ panel: null, threadId: null });
     selectKnownProjectThread(projectId, threadId);
   }, [selectKnownProjectThread]);
 
   const handleSelectChatThread = useCallback((threadId: string) => {
-    pushKodexRoute({ panel: null, threadId });
+    pushKodexRoute({ panel: null, threadId: null });
     selectKnownChatThread(threadId);
   }, [selectKnownChatThread]);
 
   const handleSelectPinnedThread = useCallback((threadId: string) => {
-    pushKodexRoute({ panel: null, threadId });
+    pushKodexRoute({ panel: null, threadId: null });
     selectKnownPinnedThread(threadId);
   }, [selectKnownPinnedThread]);
 
@@ -395,7 +401,7 @@ export function useShellSelection({
     setRouteSelectedThreadState(thread);
     beginMaterializingTimelineEntry(thread.id);
     setSelectedThreadIdWithRef(thread.id);
-    pushKodexRoute({ panel: null, threadId: thread.id });
+    pushKodexRoute({ panel: null, threadId: null });
   }, [
     beginMaterializingTimelineEntry,
     setRouteSelectedThreadState,

@@ -1,5 +1,5 @@
 import { AppShell, Button, Group, Stack, Title } from "@mantine/core";
-import { lazy, Suspense, useEffect, useRef, type ComponentProps } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 
 import type { AutomationsPane as AutomationsPaneComponent } from "../automations/AutomationsPane";
 import { ComposerPanel } from "../composer/ComposerPanel";
@@ -22,6 +22,7 @@ const PreferencesModal = lazy(() =>
 const ProjectPane = lazy(() =>
   import("../projects/ProjectPane").then((module) => ({ default: module.ProjectPane })),
 );
+const NARROW_THREAD_WORKSPACE_QUERY = "(max-width: 900px)";
 
 type KodexShellViewProps = {
   automationsPaneProps: ComponentProps<typeof AutomationsPaneComponent>;
@@ -29,10 +30,12 @@ type KodexShellViewProps = {
   isSidebarResizing: boolean;
   mainPane: "thread" | "automations" | "project";
   mobilePanel: MobilePanel;
+  narrowAppSurfacePane?: ReactNode;
   preferencesProps: PreferencesModalProps;
   projectPaneProps: ComponentProps<typeof ProjectPaneComponent>;
   sidebarWidth: number;
   threadPanelProps: ComponentProps<typeof ThreadPanel>;
+  useSingleThreadWorkspace: boolean;
   workspaceSidebarProps: ComponentProps<typeof WorkspaceSidebar>;
   workspaceSelectedThreadPaneId: string | null;
 };
@@ -59,10 +62,12 @@ export function KodexShellView({
   isSidebarResizing,
   mainPane,
   mobilePanel,
+  narrowAppSurfacePane,
   preferencesProps,
   projectPaneProps,
   sidebarWidth,
   threadPanelProps,
+  useSingleThreadWorkspace,
   workspaceSidebarProps,
   workspaceSelectedThreadPaneId,
 }: KodexShellViewProps) {
@@ -78,6 +83,7 @@ export function KodexShellView({
     >
       <WorkspaceSidebarWithPaneActions
         {...workspaceSidebarProps}
+        useSingleThreadMode={useSingleThreadWorkspace}
         workspaceSelectedThreadPaneId={workspaceSelectedThreadPaneId}
       />
       <AppShell.Main aria-label={mainLabel} className="kodex-main">
@@ -95,6 +101,13 @@ export function KodexShellView({
             <Suspense fallback={null}>
               <ProjectPane {...projectPaneProps} />
             </Suspense>
+          ) : useSingleThreadWorkspace && narrowAppSurfacePane ? (
+            narrowAppSurfacePane
+          ) : useSingleThreadWorkspace ? (
+            <>
+              <ThreadPanel {...threadPanelProps} />
+              <ComposerPanel {...composerPanelProps} />
+            </>
           ) : (
             <WorkspaceShell />
           )}
@@ -109,23 +122,61 @@ export function KodexShellView({
   );
 }
 
+export function useNarrowThreadWorkspace(): boolean {
+  const [matches, setMatches] = useState(() => narrowThreadWorkspaceMatches());
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return;
+    }
+    const mediaQuery = window.matchMedia(NARROW_THREAD_WORKSPACE_QUERY);
+    setMatches(mediaQuery.matches);
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      setMatches(event.matches);
+    };
+    mediaQuery.addEventListener?.("change", handleChange);
+    mediaQuery.addListener?.(handleChange);
+    return () => {
+      mediaQuery.removeEventListener?.("change", handleChange);
+      mediaQuery.removeListener?.(handleChange);
+    };
+  }, []);
+
+  return matches;
+}
+
+function narrowThreadWorkspaceMatches(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia(NARROW_THREAD_WORKSPACE_QUERY).matches
+  );
+}
+
 type WorkspaceSidebarWithPaneActionsProps = ComponentProps<typeof WorkspaceSidebar> & {
+  useSingleThreadMode: boolean;
   workspaceSelectedThreadPaneId: string | null;
 };
 
 function WorkspaceSidebarWithPaneActions({
+  useSingleThreadMode,
   workspaceSelectedThreadPaneId,
   ...props
 }: WorkspaceSidebarWithPaneActionsProps) {
-  const { openDraftThreadPane, openTerminalPane, openThreadPane, workspace } = useWorkspace();
+  const { openDraftThreadPane, openTerminalPane, openThreadPane } = useWorkspace();
   const titleLookupPropsRef = useRef(props);
+  const seededRouteThreadPaneRef = useRef<string | null>(null);
 
   useEffect(() => {
     titleLookupPropsRef.current = props;
   }, [props.chatThreads, props.pinnedThreads, props.threadsByProjectId]);
 
   function openThread(threadId: string) {
-    void openThreadPane(threadId, titleForThread(props, threadId)).catch((error: unknown) => {
+    if (useSingleThreadMode) {
+      return;
+    }
+    void openThreadPane(threadId, titleForThread(props, threadId), { duplicate: true }).catch((error: unknown) => {
       console.error("Failed to open workspace thread pane", error);
     });
   }
@@ -134,28 +185,17 @@ function WorkspaceSidebarWithPaneActions({
     if (props.selectedMainPane !== "thread") {
       return;
     }
+    if (useSingleThreadMode) {
+      return;
+    }
     if (!workspaceSelectedThreadPaneId) {
-      if (props.selectedThreadId === null) {
-        void openDraftThreadPane(props.selectedProjectId).catch((error: unknown) => {
-          console.error("Failed to reconcile route draft into workspace pane", error);
-        });
-      }
+      seededRouteThreadPaneRef.current = null;
       return;
     }
-    const activePane = workspace.activePaneId
-      ? workspace.panes.find((candidate) => candidate.id === workspace.activePaneId) ?? null
-      : null;
-    const activeThreadId =
-      activePane?.kind === "thread" && activePane.target.mode === "existing" ? activePane.target.threadId : null;
-    const routeThreadPaneAlreadyOpen = workspace.panes.some(
-      (candidate) =>
-        candidate.kind === "thread" &&
-        candidate.target.mode === "existing" &&
-        candidate.target.threadId === workspaceSelectedThreadPaneId,
-    );
-    if (activeThreadId && activeThreadId !== workspaceSelectedThreadPaneId && !routeThreadPaneAlreadyOpen) {
+    if (seededRouteThreadPaneRef.current === workspaceSelectedThreadPaneId) {
       return;
     }
+    seededRouteThreadPaneRef.current = workspaceSelectedThreadPaneId;
     void openThreadPane(
       workspaceSelectedThreadPaneId,
       titleForThread(titleLookupPropsRef.current, workspaceSelectedThreadPaneId),
@@ -168,8 +208,7 @@ function WorkspaceSidebarWithPaneActions({
     props.selectedProjectId,
     props.selectedMainPane,
     props.selectedThreadId,
-    workspace.activePaneId,
-    workspace.panes,
+    useSingleThreadMode,
     workspaceSelectedThreadPaneId,
   ]);
 
@@ -179,6 +218,10 @@ function WorkspaceSidebarWithPaneActions({
       onOpenTerminal={
         props.onOpenTerminal
           ? () => {
+              if (useSingleThreadMode) {
+                props.onOpenTerminal?.();
+                return;
+              }
               void openTerminalPane({ duplicate: true }).catch((error: unknown) => {
                 console.error("Failed to open workspace terminal pane", error);
               });
@@ -187,26 +230,41 @@ function WorkspaceSidebarWithPaneActions({
       }
       onCreateChat={() => {
         props.onCreateChat();
+        if (useSingleThreadMode) {
+          return;
+        }
         void openDraftThreadPane(null, { duplicate: true }).catch((error: unknown) => {
           console.error("Failed to open workspace draft chat pane", error);
         });
       }}
       onCreateThread={(projectId) => {
         props.onCreateThread(projectId);
+        if (useSingleThreadMode) {
+          return;
+        }
         void openDraftThreadPane(projectId, { duplicate: true }).catch((error: unknown) => {
           console.error("Failed to open workspace draft thread pane", error);
         });
       }}
       onSelectChatThread={(threadId) => {
-        props.onSelectChatThread(threadId);
+        if (useSingleThreadMode) {
+          props.onSelectChatThread(threadId);
+          return;
+        }
         openThread(threadId);
       }}
       onSelectPinnedThread={(threadId) => {
-        props.onSelectPinnedThread(threadId);
+        if (useSingleThreadMode) {
+          props.onSelectPinnedThread(threadId);
+          return;
+        }
         openThread(threadId);
       }}
       onSelectThread={(projectId, threadId) => {
-        props.onSelectThread(projectId, threadId);
+        if (useSingleThreadMode) {
+          props.onSelectThread(projectId, threadId);
+          return;
+        }
         openThread(threadId);
       }}
     />

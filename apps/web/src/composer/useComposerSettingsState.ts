@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -18,6 +18,7 @@ import {
   DEFAULT_COMPOSER_SETTINGS,
   mergeDurableComposerSettings,
   normalizePersistedComposerSettings,
+  sameComposerSettings,
 } from "./settings";
 
 type UseComposerSettingsStateParams = {
@@ -86,37 +87,38 @@ export function useComposerSettingsState({
       ? globalComposerDefaults
       : draftComposerSettings;
 
-  async function hydrateComposerDefaults(projectId: string | null): Promise<ComposerSettings | null> {
+  const hydrateComposerDefaults = useCallback(async (projectId: string | null): Promise<ComposerSettings | null> => {
     try {
       const nextModels = await queryClient.fetchQuery({
         queryKey: queryKeys.models,
         queryFn: listModels,
       });
-      setModels(nextModels);
+      setModels((current) => (sameModelSummaries(current, nextModels) ? current : nextModels));
       const settings = await queryClient.fetchQuery({
         queryKey: queryKeys.composerSettings(projectId),
         queryFn: () => getComposerSettings(projectId),
       });
       const normalized = normalizePersistedComposerSettings(settings, nextModels);
-      setComposerDefaults(normalized);
+      setComposerDefaults((current) => (sameComposerSettings(current, normalized) ? current : normalized));
       if (projectId === null) {
-        setGlobalComposerDefaults(normalized);
+        setGlobalComposerDefaults((current) => (sameComposerSettings(current, normalized) ? current : normalized));
       }
       if (!draftComposerEditedRef.current) {
-        setDraftComposerSettings(normalized);
+        setDraftComposerSettings((current) => (sameComposerSettings(current, normalized) ? current : normalized));
       }
       return normalized;
     } catch (error) {
       if (models.length === 0) {
         try {
-          setModels(await queryClient.fetchQuery({ queryKey: queryKeys.models, queryFn: listModels }));
+          const nextModels = await queryClient.fetchQuery({ queryKey: queryKeys.models, queryFn: listModels });
+          setModels((current) => (sameModelSummaries(current, nextModels) ? current : nextModels));
         } catch (modelsError) {
           onError(modelsError);
         }
       }
       return null;
     }
-  }
+  }, [models.length, onError, queryClient]);
 
   function handleComposerSettingsChange(nextSettings: ComposerSettings) {
     const previousSettings = composerSettings;
@@ -174,4 +176,11 @@ export function useComposerSettingsState({
     models,
     selectedThreadComposerOverride,
   };
+}
+
+function sameModelSummaries(left: ModelSummary[], right: ModelSummary[]): boolean {
+  if (left === right) {
+    return true;
+  }
+  return JSON.stringify(left) === JSON.stringify(right);
 }

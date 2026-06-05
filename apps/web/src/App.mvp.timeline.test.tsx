@@ -49,6 +49,16 @@ function workspaceNavigation() {
   return screen.getByRole("navigation", { name: /workspace/i });
 }
 
+function activeThreadPane() {
+  const pane = document.querySelector<HTMLElement>('.kodex-thread-pane[data-workspace-pane-active="true"]');
+  expect(pane).toBeInTheDocument();
+  return pane as HTMLElement;
+}
+
+function activeSendButton() {
+  return within(activeThreadPane()).getByRole("button", { name: /send message/i });
+}
+
 async function openSecondThreadInAdditionalPane() {
   await userEvent.click(screen.getByRole("button", { name: /duplicate pane/i }));
   await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /second thread/i }));
@@ -959,7 +969,7 @@ describe("MVP timeline flows", () => {
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: /stop turn/i })).not.toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: /send message/i })).toBeInTheDocument();
+    expect(activeSendButton()).toBeInTheDocument();
   });
 
   it("keeps a resumed idle external thread in send state after pane snapshot recovery", async () => {
@@ -1010,7 +1020,7 @@ describe("MVP timeline flows", () => {
     await openSecondThreadInAdditionalPane();
     expect(await screen.findByText(/external completed snapshot/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /stop turn/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /send message/i })).toBeInTheDocument();
+    expect(activeSendButton()).toBeInTheDocument();
     const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id, secondThread.id]);
 
     act(() => {
@@ -1089,7 +1099,7 @@ describe("MVP timeline flows", () => {
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: /stop turn/i })).not.toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: /send message/i })).toBeInTheDocument();
+    expect(activeSendButton()).toBeInTheDocument();
     const externalThreadButton = screen
       .getAllByRole("button", { name: /second thread/i })
       .find((button) => button.classList.contains("kodex-thread-select-button"));

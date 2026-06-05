@@ -106,11 +106,13 @@ export function WorkspaceDock({
 
 function WorkspaceDockPane({ params }: IDockviewPanelProps<DockviewPaneParams>) {
   return (
-    <WorkspacePaneRenderer
-      key={params.pane.id}
-      pane={params.pane}
-      isActive={params.activePaneId === params.pane.id}
-    />
+    <div className="kodex-workspace-pane-host" data-pane-kind={params.pane.kind}>
+      <WorkspacePaneRenderer
+        key={params.pane.id}
+        pane={params.pane}
+        isActive={params.activePaneId === params.pane.id}
+      />
+    </div>
   );
 }
 
@@ -128,6 +130,7 @@ export function syncWorkspaceIntoDockview(
       return;
     }
     const shouldHydrateSavedLayout =
+      workspace.panes.length > 1 &&
       hasDockviewPanels(workspace.dockviewLayout) &&
       layoutMatchesWorkspacePanes(workspace.dockviewLayout, workspace.panes) &&
       (api.panels.length === 0 || livePanelDescriptorsMatchWorkspace(api, workspace));

@@ -79,6 +79,7 @@ export function useThreadMetadata({
   return {
     applyThreadMetadataEvent,
     applyThreadMetadataEvents,
+    contextUsageByThreadId,
     selectedContextUsage,
   };
 }

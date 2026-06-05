@@ -77,23 +77,38 @@ export function useComposerDraftState(
     const nextBindings = validSkillMentionBindings(nextText, skillBindingsRef.current);
     const nextToken = cursor === null ? null : activeSkillMentionToken(nextText, cursor);
     const nextSlashToken = cursor === null ? null : activeSlashCommandToken(nextText, cursor);
+    const bindingsChanged = !skillMentionBindingsEqual(skillBindingsRef.current, nextBindings);
+    const skillTokenChanged = !skillMentionTokensEqual(skillTokenRef.current, nextToken);
+    const slashTokenChanged = !slashCommandTokensEqual(slashTokenRef.current, nextSlashToken);
     if (
       composerTextRef.current === nextText &&
-      skillMentionBindingsEqual(skillBindingsRef.current, nextBindings) &&
-      skillMentionTokensEqual(skillTokenRef.current, nextToken) &&
-      slashCommandTokensEqual(slashTokenRef.current, nextSlashToken)
+      !bindingsChanged &&
+      !skillTokenChanged &&
+      !slashTokenChanged
     ) {
       return;
     }
     composerTextRef.current = nextText;
-    skillBindingsRef.current = nextBindings;
-    skillTokenRef.current = nextToken;
-    slashTokenRef.current = nextSlashToken;
+    if (bindingsChanged) {
+      skillBindingsRef.current = nextBindings;
+    }
+    if (skillTokenChanged) {
+      skillTokenRef.current = nextToken;
+    }
+    if (slashTokenChanged) {
+      slashTokenRef.current = nextSlashToken;
+    }
     persistDraft(activeDraftKeyRef.current, nextText, nextBindings);
     setComposerText(nextText);
-    setSkillBindings(nextBindings);
-    setSkillToken(nextToken);
-    setSlashToken(nextSlashToken);
+    if (bindingsChanged) {
+      setSkillBindings(nextBindings);
+    }
+    if (skillTokenChanged) {
+      setSkillToken(nextToken);
+    }
+    if (slashTokenChanged) {
+      setSlashToken(nextSlashToken);
+    }
   }
 
   function selectSkill(skill: SkillMetadata | undefined): number | null {

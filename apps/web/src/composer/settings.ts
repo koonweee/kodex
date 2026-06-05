@@ -21,6 +21,10 @@ export type ComposerContext = {
 
 export const DEFAULT_COMPOSER_SETTINGS: ComposerSettings = { fast: false };
 
+export function sameComposerSettings(left: ComposerSettings, right: ComposerSettings): boolean {
+  return left.fast === right.fast && left.model === right.model && left.effort === right.effort;
+}
+
 export function normalizePersistedComposerSettings(
   settings: ComposerSettingsResponse,
   models: ModelSummary[],

@@ -51,6 +51,24 @@ function streamIncludesThread(instance: FakeEventSource, threadId: string): bool
   return (url.searchParams.get("threadIds") ?? "").split(",").includes(threadId);
 }
 
+function activeThreadPane() {
+  const pane = document.querySelector<HTMLElement>('.kodex-thread-pane[data-workspace-pane-active="true"]');
+  expect(pane).toBeInTheDocument();
+  return pane as HTMLElement;
+}
+
+function getActiveComposer() {
+  return within(activeThreadPane()).getByLabelText(/message composer/i);
+}
+
+function getActiveSendButton() {
+  return within(activeThreadPane()).getByRole("button", { name: /send message/i });
+}
+
+function getActiveModelButton(name: RegExp) {
+  return within(activeThreadPane()).getByRole("button", { name });
+}
+
 describe("MVP composer settings flows", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -462,14 +480,14 @@ describe("MVP composer settings flows", () => {
 
     await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
     await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
-    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
+    await userEvent.click(getActiveModelButton(/model: gpt-5\.4, medium/i));
     await clickMenuItem(/^high$/i);
-    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, high/i }));
+    await userEvent.click(getActiveModelButton(/model: gpt-5\.4, high/i));
     await clickFastSwitch();
     expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
 
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Start with toolbar settings");
-    const sendButton = screen.getByRole("button", { name: /send message/i });
+    await userEvent.type(getActiveComposer(), "Start with toolbar settings");
+    const sendButton = getActiveSendButton();
     await waitFor(() => {
       expect(sendButton).toBeEnabled();
     });
@@ -524,8 +542,8 @@ describe("MVP composer settings flows", () => {
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /start new chat from desktop header/i }));
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Use global defaults");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await userEvent.type(getActiveComposer(), "Use global defaults");
+    await userEvent.click(getActiveSendButton());
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/chats/threads")).toHaveLength(1);
@@ -615,8 +633,8 @@ describe("MVP composer settings flows", () => {
     expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /^chats$/i }));
     await userEvent.click(await screen.findByRole("button", { name: /chat without settings/i }));
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Send before global hydration");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await userEvent.type(getActiveComposer(), "Send before global hydration");
+    await userEvent.click(getActiveSendButton());
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/chat-thread-1/input")).toHaveLength(1);
@@ -806,7 +824,7 @@ describe("MVP composer settings flows", () => {
       ...thread,
       id: "thread-mini",
       name: "mini",
-      preview: null,
+      preview: "",
       model: "gpt-5.4-mini",
       reasoningEffort: "medium",
       rawPayload: {},
@@ -815,7 +833,7 @@ describe("MVP composer settings flows", () => {
       ...thread,
       id: "thread-spark",
       name: "spark",
-      preview: null,
+      preview: "",
       model: "gpt-5.3-codex-spark",
       reasoningEffort: "medium",
       rawPayload: {},
@@ -865,6 +883,18 @@ describe("MVP composer settings flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         }),
+        "GET /v1/threads/thread-mini": () => threadDetail(createdThreads[0]),
+        "GET /v1/threads/thread-spark": () => threadDetail(createdThreads[1]),
+        "POST /v1/threads/thread-mini/attach": () => ({
+          disposition: "resumed",
+          thread: createdThreads[0],
+          rawPayload: {},
+        }),
+        "POST /v1/threads/thread-spark/attach": () => ({
+          disposition: "resumed",
+          thread: createdThreads[1],
+          rawPayload: {},
+        }),
         "POST /v1/threads": () => {
           const createdThread = createdThreads[createThreadIndex++];
           serverThreads.unshift(createdThread);
@@ -879,31 +909,31 @@ describe("MVP composer settings flows", () => {
 
     await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
     await userEvent.click(await screen.findByRole("button", { name: /create thread in kodex/i }));
-    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
+    await userEvent.click(getActiveModelButton(/model: gpt-5\.4, medium/i));
     await clickMenuItem(/^gpt-5\.4-mini$/i);
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4-mini, medium/i })).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText(/message composer/i), "mini");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await userEvent.type(getActiveComposer(), "mini");
+    await userEvent.click(getActiveSendButton());
     expect(await screen.findByRole("heading", { name: /^mini$/i })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
-    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4-mini, medium/i }));
+    await userEvent.click(getActiveModelButton(/model: gpt-5\.4, medium/i));
     await clickMenuItem(/^gpt-5\.3-codex-spark$/i);
     expect(await screen.findByRole("button", { name: /model: gpt-5\.3-codex-spark, medium/i })).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText(/message composer/i), "spark");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await userEvent.type(getActiveComposer(), "spark");
+    await userEvent.click(getActiveSendButton());
     expect(await screen.findByRole("heading", { name: /^spark$/i })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /^mini$/i }));
-    expect(await screen.findByRole("button", { name: /model: gpt-5\.4-mini, medium/i })).toBeInTheDocument();
+    await waitFor(() => expect(getActiveModelButton(/model: gpt-5\.4-mini, medium/i)).toBeInTheDocument());
 
     unmount();
     render(<App />);
 
     await userEvent.click(await screen.findByRole("button", { name: /^spark$/i }));
-    expect(await screen.findByRole("button", { name: /model: gpt-5\.3-codex-spark, medium/i })).toBeInTheDocument();
+    await waitFor(() => expect(getActiveModelButton(/model: gpt-5\.3-codex-spark, medium/i)).toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: /^mini$/i }));
-    expect(await screen.findByRole("button", { name: /model: gpt-5\.4-mini, medium/i })).toBeInTheDocument();
+    await waitFor(() => expect(getActiveModelButton(/model: gpt-5\.4-mini, medium/i)).toBeInTheDocument());
   });
 
   it("does not preserve missing existing-thread metadata in a client thread cache", async () => {

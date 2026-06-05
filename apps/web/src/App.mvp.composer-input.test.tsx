@@ -44,6 +44,40 @@ function workspaceNavigation() {
   return screen.getByRole("navigation", { name: /workspace/i });
 }
 
+function threadPaneByHeading(name: RegExp) {
+  const pane = screen.getByRole("heading", { name }).closest(".kodex-thread-pane");
+  expect(pane).toBeInTheDocument();
+  return pane as HTMLElement;
+}
+
+function activeThreadPane() {
+  const pane = document.querySelector<HTMLElement>('.kodex-thread-pane[data-workspace-pane-active="true"]');
+  expect(pane).toBeInTheDocument();
+  return pane as HTMLElement;
+}
+
+function composerInActiveThreadPane() {
+  return within(activeThreadPane()).getByLabelText(/message composer/i);
+}
+
+function sendButtonInActiveThreadPane() {
+  return within(activeThreadPane()).getByRole("button", { name: /send message/i });
+}
+
+function attachmentInputInActiveThreadPane() {
+  const input = activeThreadPane().querySelector<HTMLInputElement>('input[type="file"]');
+  expect(input).not.toBeNull();
+  return input as HTMLInputElement;
+}
+
+function composerInThreadPane(name: RegExp) {
+  return within(threadPaneByHeading(name)).getByLabelText(/message composer/i);
+}
+
+function sendButtonInThreadPane(name: RegExp) {
+  return within(threadPaneByHeading(name)).getByRole("button", { name: /send message/i });
+}
+
 async function expectHelloFromCodex() {
   await waitFor(() => {
     expect(screen.getByText(/hello from codex/i)).toBeInTheDocument();
@@ -366,20 +400,20 @@ describe("MVP composer input flows", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Draft for first thread");
+    await userEvent.type(composerInThreadPane(/implement frontend/i), "Draft for first thread");
 
     await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /second thread/i }));
     expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
-    expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
+    expect(composerInThreadPane(/second thread/i)).toHaveValue("");
 
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Draft for second thread");
+    await userEvent.type(composerInThreadPane(/second thread/i), "Draft for second thread");
     await userEvent.click(screen.getByRole("button", { name: /implement frontend/i }));
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
-    expect(screen.getByLabelText(/message composer/i)).toHaveValue("Draft for first thread");
+    expect(composerInThreadPane(/implement frontend/i)).toHaveValue("Draft for first thread");
 
     await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
     expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
-    expect(screen.getByLabelText(/message composer/i)).toHaveValue("Draft for second thread");
+    expect(composerInThreadPane(/second thread/i)).toHaveValue("Draft for second thread");
   }, 20_000);
 
   it("sends selected skill metadata and renders the skill row only from gateway patches", async () => {
@@ -816,8 +850,8 @@ describe("MVP composer input flows", () => {
     const firstThreadButton = await within(workspaceNavigation()).findByRole("button", { name: /implement frontend/i });
     const firstThreadRow = firstThreadButton.closest(".kodex-thread-list-button");
     expect(firstThreadRow).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText(/message composer/i), "sleep 5s, then send hello");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await userEvent.type(composerInThreadPane(/implement frontend/i), "sleep 5s, then send hello");
+    await userEvent.click(sendButtonInThreadPane(/implement frontend/i));
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
@@ -1138,15 +1172,13 @@ describe("MVP composer input flows", () => {
     await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
     expect(within(screen.getByRole("main", { name: /thread/i })).queryByRole("heading", { name: /new thread/i })).not.toBeInTheDocument();
 
-    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
-    expect(input).not.toBeNull();
-    await userEvent.upload(input!, new File(["fake"], "diagram.png", { type: "image/png" }));
+    await userEvent.upload(attachmentInputInActiveThreadPane(), new File(["fake"], "diagram.png", { type: "image/png" }));
     expect(createObjectUrl).toHaveBeenCalled();
 
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await userEvent.type(composerInActiveThreadPane(), "Inspect this");
+    await userEvent.click(sendButtonInActiveThreadPane());
 
-    await waitFor(() => expect(screen.getByLabelText(/message composer/i)).toHaveValue(""));
+    await waitFor(() => expect(composerInActiveThreadPane()).toHaveValue(""));
     expect(within(timelineElement(container)).queryByText("Inspect this")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
     expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
@@ -1203,8 +1235,8 @@ describe("MVP composer input flows", () => {
 
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Materialize this");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await userEvent.type(composerInActiveThreadPane(), "Materialize this");
+    await userEvent.click(sendButtonInActiveThreadPane());
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(1);
@@ -1251,8 +1283,8 @@ describe("MVP composer input flows", () => {
 
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Materialize this");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await userEvent.type(composerInActiveThreadPane(), "Materialize this");
+    await userEvent.click(sendButtonInActiveThreadPane());
 
     expect(await screen.findByText("Materialized response")).toBeInTheDocument();
     expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(2);
@@ -1292,8 +1324,8 @@ describe("MVP composer input flows", () => {
 
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Materialize this");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await userEvent.type(composerInActiveThreadPane(), "Materialize this");
+    await userEvent.click(sendButtonInActiveThreadPane());
 
     expect(await screen.findByText("Materialized response")).toBeInTheDocument();
     expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(2);
@@ -1341,38 +1373,37 @@ describe("MVP composer input flows", () => {
 
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
-    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
-    expect(input).not.toBeNull();
-    await userEvent.upload(input!, new File(["fake"], "diagram.png", { type: "image/png" }));
+    await userEvent.upload(attachmentInputInActiveThreadPane(), new File(["fake"], "diagram.png", { type: "image/png" }));
     expect(createObjectUrl).toHaveBeenCalled();
 
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await userEvent.type(composerInActiveThreadPane(), "Inspect this");
+    await userEvent.click(sendButtonInActiveThreadPane());
 
-    await waitFor(() => expect(screen.getByLabelText(/message composer/i)).toHaveValue(""));
+    await waitFor(() => expect(composerInActiveThreadPane()).toHaveValue(""));
     expect(within(timelineElement(container)).queryByText("Inspect this")).not.toBeInTheDocument();
     expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
     expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(1);
     expect(revokeObjectUrl).not.toHaveBeenCalledWith("blob:draft-retry-diagram");
 
-    await act(async () => {
-      rejectUpload(new Error("Upload unavailable"));
-    });
+    rejectUpload(new Error("Upload unavailable"));
+    await Promise.resolve();
 
     expect(await screen.findByText("Failed")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /remove diagram.png/i })).toBeInTheDocument();
     expect(screen.getByText("Upload unavailable")).toBeInTheDocument();
-    expect(screen.getByLabelText(/message composer/i)).toHaveValue("Inspect this");
+    expect(composerInActiveThreadPane()).toHaveValue("Inspect this");
     expect(within(timelineElement(container)).queryByText("Inspect this")).not.toBeInTheDocument();
     expect(revokeObjectUrl).not.toHaveBeenCalledWith("blob:draft-retry-diagram");
 
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    expect(sendButtonInActiveThreadPane()).toBeEnabled();
+    fireEvent.click(sendButtonInActiveThreadPane());
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(2);
       expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
       expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(1);
-    });
+    }, { timeout: 2_000 });
     expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
     expect(within(timelineElement(container)).getAllByText("Inspect this")).toHaveLength(1);
   });

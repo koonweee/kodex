@@ -47,6 +47,19 @@ function streamIncludesThread(instance: FakeEventSource, threadId: string): bool
   return (url.searchParams.get("threadIds") ?? "").split(",").includes(threadId);
 }
 
+function activeThreadPane() {
+  const pane = document.querySelector<HTMLElement>('.kodex-thread-pane[data-workspace-pane-active="true"]');
+  return pane ?? screen.getByRole("main", { name: /thread/i });
+}
+
+function activeComposer() {
+  return within(activeThreadPane()).getByLabelText(/message composer/i);
+}
+
+function activeSendButton() {
+  return within(activeThreadPane()).getByRole("button", { name: /send message/i });
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: unknown) => void;
@@ -141,16 +154,17 @@ describe("MVP shell flows", () => {
       expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(0);
       expect(screen.getAllByRole("button", { name: /new thread/i })).toHaveLength(1);
       expect(within(screen.getByRole("main", { name: /thread/i })).queryByRole("heading", { name: /new thread/i })).not.toBeInTheDocument();
-      expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
+      expect(activeComposer()).toBeEnabled();
       const main = screen.getByRole("main", { name: /thread/i });
-      expect(within(main).getByText(/good (morning|afternoon|evening)|burning the midnight oil\?/i)).toBeInTheDocument();
-      const draftToolbar = within(main).getByRole("toolbar", { name: /draft thread toolbar/i });
+      const activePane = activeThreadPane();
+      expect(within(activePane).getByText(/good (morning|afternoon|evening)|burning the midnight oil\?/i)).toBeInTheDocument();
+      const draftToolbar = within(activePane).getByRole("toolbar", { name: /draft thread toolbar/i });
       expect(within(draftToolbar).getByText("scratch")).toBeInTheDocument();
       expect(draftToolbar.querySelector(".lucide-folder")).toBeInTheDocument();
       const mainStack = main.querySelector(".kodex-main-stack");
       expect(mainStack).toHaveAttribute("data-draft-thread", "true");
-      const activeThreadPane = main.querySelector('.kodex-thread-pane[data-workspace-pane-active="true"]');
-      expect(activeThreadPane?.querySelector(".kodex-timeline-scroll")).not.toBeInTheDocument();
+      const activePaneElement = main.querySelector('.kodex-thread-pane[data-workspace-pane-active="true"]');
+      expect(activePaneElement?.querySelector(".kodex-timeline-scroll")).not.toBeInTheDocument();
       expect(within(main).queryByText("No events")).not.toBeInTheDocument();
       expect(appCss).toMatch(
         /\.kodex-main-stack\[data-draft-thread="true"\]\s+\.kodex-composer-shell\s*\{[^}]*margin-top:\s*auto;/s,
@@ -161,8 +175,8 @@ describe("MVP shell flows", () => {
       expect(appCss).toMatch(/\.kodex-composer-hero-stage\[data-transitioning="true"\]\s*\{[^}]*opacity:\s*0;/s);
       expect(appCss).toMatch(/\.kodex-composer-underbar\s*\{[^}]*border-bottom-left-radius:\s*var\(--kodex-radius-composer\);/s);
 
-      await userEvent.type(screen.getByLabelText(/message composer/i), "Implement the next milestone for the web client");
-      await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+      await userEvent.type(activeComposer(), "Implement the next milestone for the web client");
+      await userEvent.click(activeSendButton());
       await waitFor(() => {
         expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
       });
@@ -444,8 +458,8 @@ describe("MVP shell flows", () => {
     expect(gateway.callsFor("POST", "/v1/chats/threads")).toHaveLength(0);
     expect(within(screen.getByRole("main", { name: /thread/i })).queryByRole("heading", { name: /new thread/i })).not.toBeInTheDocument();
 
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Plan the chat sidebar implementation");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await userEvent.type(activeComposer(), "Plan the chat sidebar implementation");
+    await userEvent.click(activeSendButton());
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/chats/threads")).toHaveLength(1);
@@ -473,7 +487,7 @@ describe("MVP shell flows", () => {
 
     expect(window.location.pathname).toBe("/");
     expect(screen.getByRole("button", { name: /project: no project/i })).toBeInTheDocument();
-    expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
+    expect(activeComposer()).toBeEnabled();
   });
 
   it("keeps a locally created chat when the initial chat list resolves late", async () => {
@@ -501,8 +515,8 @@ describe("MVP shell flows", () => {
     render(<App />);
 
     await userEvent.click(await screen.findByRole("button", { name: /start new chat from desktop header/i }));
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Keep local chat");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await userEvent.type(activeComposer(), "Keep local chat");
+    await userEvent.click(activeSendButton());
 
     expect(await screen.findByRole("button", { name: /keep local chat/i })).toBeInTheDocument();
     initialChatThreads.resolve({ threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} });
@@ -535,8 +549,8 @@ describe("MVP shell flows", () => {
     render(<App />);
 
     await userEvent.click(await screen.findByRole("button", { name: /create thread in kodex/i }));
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Keep local project thread");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await userEvent.type(activeComposer(), "Keep local project thread");
+    await userEvent.click(activeSendButton());
 
     expect(await screen.findByRole("button", { name: /keep local project thread/i })).toBeInTheDocument();
     initialProjectThreads.resolve({ threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} });
@@ -1228,7 +1242,7 @@ describe("MVP shell flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/archive")).toHaveLength(1);
     });
-    expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
+    expect(activeComposer()).toBeEnabled();
     expect(screen.queryByText(/select or create a thread/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /project: kodex/i })).toBeInTheDocument();
   });
@@ -1518,7 +1532,7 @@ describe("MVP shell flows", () => {
     });
     const main = screen.getByRole("main", { name: /thread/i });
     expect(within(main).queryByText(/select or create a thread/i)).not.toBeInTheDocument();
-    expect(within(main).getByLabelText(/message composer/i)).toBeEnabled();
+    expect(activeComposer()).toBeEnabled();
     expect(main.querySelector(".kodex-main-stack")).toHaveAttribute("data-draft-thread", "true");
     expect(within(main).getByRole("button", { name: /project: kodex/i })).toBeInTheDocument();
   });
@@ -1547,7 +1561,7 @@ describe("MVP shell flows", () => {
     });
     const main = screen.getByRole("main", { name: /thread/i });
     expect(within(main).queryByText(/select or create a thread/i)).not.toBeInTheDocument();
-    expect(within(main).getByLabelText(/message composer/i)).toBeEnabled();
+    expect(activeComposer()).toBeEnabled();
     expect(main.querySelector(".kodex-main-stack")).toHaveAttribute("data-draft-thread", "true");
     expect(within(main).getByRole("button", { name: /project: no project/i })).toBeInTheDocument();
   });
@@ -1787,6 +1801,49 @@ describe("MVP shell flows", () => {
     expect(appCss).toMatch(/\.kodex-sidebar-scope-switch\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(0,\s*1fr\);/s);
   });
 
+  it("uses the single-thread main pane without Dockview chrome on narrow viewports", async () => {
+    vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
+      matches: query === "(max-width: 900px)",
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, secondThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "GET /v1/threads/thread-2": threadDetail(secondThread, [
+          snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Second thread snapshot" })]),
+        ]),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    const main = screen.getByRole("main", { name: /thread/i });
+    expect(main.querySelector(".kodex-workspace-dock")).not.toBeInTheDocument();
+    expect(main.querySelector(".dockview")).not.toBeInTheDocument();
+    expect(within(main).getAllByLabelText(/message composer/i)).toHaveLength(1);
+
+    await userEvent.click(within(main).getByRole("button", { name: /show sidebar/i }));
+    await userEvent.click(within(screen.getByRole("navigation", { name: /workspace/i })).getByRole("button", { name: /second thread/i }));
+
+    expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
+    expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+    expect(await screen.findByText(/second thread snapshot/i)).toBeInTheDocument();
+    expect(main.querySelector(".kodex-workspace-dock")).not.toBeInTheDocument();
+    expect(main.querySelector(".dockview")).not.toBeInTheDocument();
+  });
+
   it("renders when an older gateway capability response omits terminal support", async () => {
     mockGateway(
       baseRoutes({
@@ -1873,8 +1930,8 @@ describe("MVP shell flows", () => {
     expect(window.location.pathname).toBe("/");
     expect(screen.getByRole("button", { name: /project: no project/i })).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: /no project/i })).not.toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Start from mobile chats");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await userEvent.type(activeComposer(), "Start from mobile chats");
+    await userEvent.click(activeSendButton());
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/chats/threads")).toHaveLength(1);
@@ -1901,8 +1958,8 @@ describe("MVP shell flows", () => {
 
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
     expect(screen.getByRole("button", { name: new RegExp(`project: ${project.name}`, "i") })).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Start in project");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await userEvent.type(activeComposer(), "Start in project");
+    await userEvent.click(activeSendButton());
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
@@ -1914,6 +1971,16 @@ describe("MVP shell flows", () => {
   });
 
   it("returns narrow viewport navigation to chat after selecting or creating a thread", async () => {
+    vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
+      matches: query === "(max-width: 900px)",
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
     mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
@@ -1969,7 +2036,7 @@ describe("MVP shell flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/projects")).toHaveLength(1);
     });
-    expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
+    expect(activeComposer()).toBeEnabled();
     expect(screen.queryByText(/select or create a thread/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /project: scratch/i })).toBeInTheDocument();
 
@@ -1982,7 +2049,7 @@ describe("MVP shell flows", () => {
     expect(await screen.findByRole("button", { name: /second thread/i })).toBeInTheDocument();
   });
 
-  it("selects the clicked thread when switching projects from the sidebar", async () => {
+  it("opens a new pane for clicked sidebar threads without selecting a thread URL", async () => {
     const otherProject = {
       ...project,
       id: "project-2",
@@ -2012,10 +2079,13 @@ describe("MVP shell flows", () => {
 
     render(<App />);
 
+    expect(window.location.pathname).toBe("/");
     expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
     await userEvent.click(await screen.findByRole("button", { name: /second thread/i }));
 
     expect(await screen.findByText(/second project snapshot/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
   });
 
   it("keeps the old active thread when a project title row is clicked", async () => {
@@ -2046,7 +2116,7 @@ describe("MVP shell flows", () => {
     expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
     await userEvent.click(screen.getByText("Scratch"));
 
-    expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
+    expect(activeComposer()).toBeEnabled();
     expect(screen.getByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
 
     resolveSecondThreads({
@@ -2089,17 +2159,17 @@ describe("MVP shell flows", () => {
 
     const file = new File(["fake"], "diagram.png", { type: "image/png" });
     await userEvent.upload(input!, file);
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await userEvent.type(activeComposer(), "Inspect this");
+    await userEvent.click(activeSendButton());
 
     expect(await screen.findByText("Failed")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /remove diagram.png/i })).toBeInTheDocument();
     expect(screen.getByText("Upload unavailable")).toBeInTheDocument();
-    expect(screen.getByLabelText(/message composer/i)).toHaveValue("Inspect this");
+    expect(activeComposer()).toHaveValue("Inspect this");
     expect(within(timelineElement(container)).queryByText("Inspect this")).not.toBeInTheDocument();
     expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(0);
 
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await userEvent.click(activeSendButton());
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(2);

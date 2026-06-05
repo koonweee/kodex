@@ -1,5 +1,6 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   App,
@@ -15,6 +16,45 @@ describe("app surface pane integration", () => {
   beforeEach(() => {
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("shows the selected thread app surface as the single narrow main pane", async () => {
+    vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
+      matches: query === "(max-width: 900px)",
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads/thread-1/app-surface": { session: appSurfaceSession() },
+        "GET /v1/app-surfaces/session-1/document": appSurfaceDocument,
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(document.querySelector(".kodex-workspace-dock")).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: /show app surface/i }));
+
+    expect(await screen.findByTitle(/app surface: generated mockups/i)).toBeInTheDocument();
+    expect(document.querySelector(".kodex-workspace-dock")).not.toBeInTheDocument();
+    expect(document.querySelector(".dockview")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/message composer/i)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /hide app surface/i }));
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/message composer/i)).toBeInTheDocument();
   });
 
   it("renders generated UI as a workspace pane and subscribes once for the target thread", async () => {

@@ -5,6 +5,29 @@ import { syncWorkspaceIntoDockview } from "./WorkspaceDock";
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
 
 describe("WorkspaceDock sync", () => {
+  it("rebuilds a single-pane workspace instead of hydrating a stale saved split layout", () => {
+    const api = fakeDockviewApi([]);
+    const suppressEventsRef = { current: false };
+    const singlePane = pane("pane-a", "thread", { mode: "existing", threadId: "thread-1" });
+
+    syncWorkspaceIntoDockview(
+      api as unknown as DockviewApi,
+      workspaceModel([singlePane], "pane-a"),
+      suppressEventsRef,
+    );
+
+    expect(api.clear).toHaveBeenCalled();
+    expect(api.fromJSON).not.toHaveBeenCalled();
+    expect(api.addPanel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "pane-a",
+        params: { pane: singlePane, activePaneId: "pane-a" },
+      }),
+    );
+    expect(api.addPanel).toHaveBeenCalledTimes(1);
+    expect(api.activePanel?.id).toBe("pane-a");
+  });
+
   it("adds new workspace panes without clearing the existing Dockview layout", async () => {
     vi.useFakeTimers();
     try {

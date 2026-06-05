@@ -35,13 +35,14 @@ export type ThreadPaneTimelineAction =
   | { clientRequestId: string; kind: "optimistic_user_removed" };
 export type ThreadPaneTimelineActionHandler = (action: ThreadPaneTimelineAction) => void;
 
-type ThreadComposerState = {
+export type ThreadComposerState = {
   activeTurnId: string | null;
   isActive: boolean;
   isReady: boolean;
   materializeThreadPane?: (threadId: string, title?: string | null) => void;
   publishThreadPaneTimelineAction: (action: ThreadPaneTimelineAction) => void;
   selectedThreadPresent: boolean;
+  thread?: ThreadSummary | null;
 };
 
 type ThreadPaneChromeState = {
@@ -71,6 +72,7 @@ type WorkspaceProviderProps = {
   renderThreadPane?: (pane: WorkspacePane, fallback: ReactNode) => ReactNode;
   showDebugEvents?: boolean;
   subscribeThreadPaneTimelineAction?: (handler: ThreadPaneTimelineActionHandler) => () => void;
+  threadSummariesById?: Record<string, ThreadSummary>;
   threadActions?: WorkspaceThreadActions;
 };
 
@@ -101,6 +103,7 @@ type WorkspaceContextValue = {
   showDebugEvents: boolean;
   subscribeLiveEvent: (handler: WorkspaceLiveEventHandler) => () => void;
   subscribeThreadPaneTimelineAction: (handler: ThreadPaneTimelineActionHandler) => () => void;
+  threadSummariesById: Record<string, ThreadSummary>;
   threadActions: WorkspaceThreadActions;
   updatePane: (paneId: string, request: WorkspacePanePatch) => Promise<void>;
   workspace: WorkspaceModel;
@@ -140,6 +143,7 @@ export function WorkspaceProvider({
   renderThreadPane,
   showDebugEvents = false,
   subscribeThreadPaneTimelineAction = noopSubscribeThreadPaneTimelineAction,
+  threadSummariesById = {},
   threadActions = {},
 }: WorkspaceProviderProps) {
   const liveEventCursorRef = useRef<number | undefined>(undefined);
@@ -462,6 +466,7 @@ export function WorkspaceProvider({
       showDebugEvents,
       subscribeLiveEvent,
       subscribeThreadPaneTimelineAction,
+      threadSummariesById,
       threadActions,
       updatePane,
       workspace,
@@ -493,6 +498,7 @@ export function WorkspaceProvider({
       showDebugEvents,
       subscribeLiveEvent,
       subscribeThreadPaneTimelineAction,
+      threadSummariesById,
       threadActions,
       updatePane,
       workspace,

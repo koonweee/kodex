@@ -20,17 +20,44 @@ import { useWorkspace } from "../../workspace/WorkspaceProvider";
 import type { WorkspacePaneComponentProps } from "../../workspace/paneTypes";
 import { paneTargetRecord } from "../../workspace/paneTypes";
 
+type ThreadAppSurfacePaneProps = {
+  colorSchemeId: ReturnType<typeof readStoredKodexColorScheme>;
+  emptyTitle?: string;
+  onHide: () => void;
+  targetSessionId?: string | null;
+  threadId: string | null;
+};
+
 export function GeneratedUiWorkspacePane({ pane }: WorkspacePaneComponentProps) {
-  const queryClient = useQueryClient();
-  const { publishThreadPaneTimelineAction } = useWorkspace();
   const target = paneTargetRecord(pane);
   const threadId = typeof target.threadId === "string" ? target.threadId : null;
   const targetSessionId = typeof target.sessionId === "string" ? target.sessionId : null;
   const [colorSchemeId] = useState(() => readStoredKodexColorScheme());
 
+  return (
+    <ThreadAppSurfacePane
+      colorSchemeId={colorSchemeId}
+      emptyTitle={pane.title ?? "Generated UI"}
+      onHide={() => undefined}
+      targetSessionId={targetSessionId}
+      threadId={threadId}
+    />
+  );
+}
+
+export function ThreadAppSurfacePane({
+  colorSchemeId,
+  emptyTitle = "Generated UI",
+  onHide,
+  targetSessionId = null,
+  threadId,
+}: ThreadAppSurfacePaneProps) {
+  const queryClient = useQueryClient();
+  const { publishThreadPaneTimelineAction } = useWorkspace();
+
   const sessionQuery = useQuery({
     enabled: threadId !== null,
-    queryKey: threadId ? queryKeys.appSurface(threadId) : ["app-surface", "pane", pane.id, "none"],
+    queryKey: threadId ? queryKeys.appSurface(threadId) : ["app-surface", "thread", "none"],
     queryFn: () => {
       if (!threadId) {
         return null;
@@ -151,7 +178,7 @@ export function GeneratedUiWorkspacePane({ pane }: WorkspacePaneComponentProps) 
             ? "The selected generated UI session is no longer the latest session for this thread."
             : "No generated UI session is available for this thread yet."
         }
-        title={pane.title ?? "Generated UI"}
+        title={emptyTitle}
       />
     );
   }
@@ -160,7 +187,7 @@ export function GeneratedUiWorkspacePane({ pane }: WorkspacePaneComponentProps) 
     <AppSurfacePane
       colorSchemeId={colorSchemeId}
       isBridgePending={bridgeMutation.isPending}
-      onHide={() => undefined}
+      onHide={onHide}
       onBridgeRequest={handleBridgeRequest}
       session={visibleSession}
     />

@@ -4,16 +4,6 @@
   overflow: hidden;
 }
 
-.kodex-workspace-toolbar {
-  align-items: center;
-  border-bottom: 1px solid var(--kodex-border-subtle);
-  display: flex;
-  flex: 0 0 auto;
-  height: 32px;
-  justify-content: flex-end;
-  padding: 0 12px;
-}
-
 .kodex-workspace-dock {
   background: var(--kodex-bg-app);
   flex: 1 1 auto;
@@ -24,6 +14,36 @@
 .kodex-workspace-dock .dockview-react-part,
 .kodex-workspace-dock .dockview {
   height: 100%;
+}
+
+.kodex-workspace-dock .dv-view {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.kodex-workspace-dock .dv-content-container {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.kodex-workspace-dock .dv-react-part {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.kodex-workspace-pane-host {
+  box-sizing: border-box;
+  display: block;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  width: 100%;
 }
 
 .kodex-workspace-state {
@@ -156,8 +176,20 @@
 
 .kodex-thread-pane-error {
   justify-self: start;
-  margin: 8px 10px 0;
   max-width: calc(100% - 20px);
+}
+
+.kodex-thread-pane-status {
+  align-items: start;
+  display: grid;
+  gap: 6px;
+  min-height: 0;
+  padding: 0 10px;
+}
+
+.kodex-thread-pane-status:empty {
+  display: block;
+  padding: 0;
 }
 
 .kodex-thread-pane-scroll {
@@ -166,16 +198,22 @@
   padding: 8px 0 20px;
 }
 
-.kodex-thread-pane > .kodex-composer-shell {
+.kodex-thread-pane-existing > .kodex-thread-content {
+  grid-row: 3;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.kodex-thread-pane-existing > .kodex-composer-shell {
   align-self: end;
+  grid-row: 4;
   justify-self: center;
   margin: 8px 12px 12px;
   max-width: min(920px, calc(100% - 24px));
   width: calc(100% - 24px);
 }
 
-.kodex-thread-pane-loading,
-.kodex-thread-pane-empty {
+.kodex-thread-pane-loading {
   align-items: center;
   display: flex;
   flex-direction: column;
@@ -186,16 +224,24 @@
   text-align: center;
 }
 
-.kodex-thread-pane-empty-copy {
-  display: grid;
-  gap: 4px;
+.kodex-thread-pane-empty {
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 0;
+  text-align: center;
 }
 
-.kodex-thread-pane-empty > .kodex-composer-shell {
-  flex: 0 0 auto;
-  margin-top: 12px;
-  max-width: min(920px, 100%);
-  width: 100%;
+.kodex-thread-pane-empty-body {
+  align-content: center;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  min-height: 0;
+  padding: 18px;
+}
+
+.kodex-thread-pane-empty-body > .kodex-composer-shell {
+  max-width: min(920px, calc(100% - 24px));
+  width: min(920px, calc(100% - 24px));
 }
 
 .kodex-workspace-dock .kodex-terminal-pane {
