@@ -5,7 +5,7 @@ import {
   getCurrentPushSubscriptionStatus,
   upsertPushSubscription,
 } from "../api/client";
-import { registerKodexServiceWorker } from "../pwa/registerServiceWorker";
+import { getServiceWorkerRegistration } from "../pwa/registerServiceWorker";
 import {
   applicationServerKeyBytes,
   browserPushNotificationsSupported,
@@ -22,10 +22,10 @@ vi.mock("../api/client", async (importOriginal) => ({
 }));
 
 vi.mock("../pwa/registerServiceWorker", () => ({
-  registerKodexServiceWorker: vi.fn(),
+  getServiceWorkerRegistration: vi.fn(),
 }));
 
-const mockedRegisterServiceWorker = vi.mocked(registerKodexServiceWorker);
+const mockedGetServiceWorkerRegistration = vi.mocked(getServiceWorkerRegistration);
 const mockedUpsertPushSubscription = vi.mocked(upsertPushSubscription);
 const mockedDeleteCurrentPushSubscription = vi.mocked(deleteCurrentPushSubscription);
 const mockedGetCurrentPushSubscriptionStatus = vi.mocked(getCurrentPushSubscriptionStatus);
@@ -177,15 +177,20 @@ describe("loadBrowserPushNotificationState", () => {
 describe("enableBrowserPushNotifications", () => {
   it("returns null when push is unsupported", async () => {
     await expect(enableBrowserPushNotifications("AQIDBA")).resolves.toBeNull();
-    expect(mockedRegisterServiceWorker).not.toHaveBeenCalled();
+    expect(mockedGetServiceWorkerRegistration).not.toHaveBeenCalled();
   });
 
   it("returns null when the registered service worker has no push manager", async () => {
     installPushGlobals();
-    mockedRegisterServiceWorker.mockResolvedValue({
-      registered: true,
-      registration: {} as ServiceWorkerRegistration,
-    });
+    mockedGetServiceWorkerRegistration.mockResolvedValue({} as ServiceWorkerRegistration);
+
+    await expect(enableBrowserPushNotifications("AQIDBA")).resolves.toBeNull();
+    expect(mockedUpsertPushSubscription).not.toHaveBeenCalled();
+  });
+
+  it("returns null when shared service worker registration fails", async () => {
+    installPushGlobals();
+    mockedGetServiceWorkerRegistration.mockRejectedValue(new Error("registration failed"));
 
     await expect(enableBrowserPushNotifications("AQIDBA")).resolves.toBeNull();
     expect(mockedUpsertPushSubscription).not.toHaveBeenCalled();
@@ -196,15 +201,12 @@ describe("enableBrowserPushNotifications", () => {
     const subscription = { endpoint: "https://push.example/sub" } as PushSubscription;
     const subscribe = vi.fn().mockResolvedValue(subscription);
     localStorage.setItem("kodex.pushSubscriptionId", "subscription-1");
-    mockedRegisterServiceWorker.mockResolvedValue({
-      registered: true,
-      registration: {
-        pushManager: {
-          getSubscription: vi.fn().mockResolvedValue(null),
-          subscribe,
-        },
-      } as unknown as ServiceWorkerRegistration,
-    });
+    mockedGetServiceWorkerRegistration.mockResolvedValue({
+      pushManager: {
+        getSubscription: vi.fn().mockResolvedValue(null),
+        subscribe,
+      },
+    } as unknown as ServiceWorkerRegistration);
     mockedUpsertPushSubscription.mockResolvedValue({
       subscription: {
         createdAt: "2026-05-15T00:00:00Z",
@@ -223,6 +225,7 @@ describe("enableBrowserPushNotifications", () => {
       userVisibleOnly: true,
     });
     expect(mockedUpsertPushSubscription).toHaveBeenCalledWith(subscription);
+    expect(mockedGetServiceWorkerRegistration).toHaveBeenCalledTimes(1);
     expect(localStorage.getItem("kodex.pushSubscriptionId")).toBeNull();
   });
 
@@ -230,15 +233,12 @@ describe("enableBrowserPushNotifications", () => {
     installPushGlobals();
     const subscription = { endpoint: "https://push.example/sub" } as PushSubscription;
     const subscribe = vi.fn();
-    mockedRegisterServiceWorker.mockResolvedValue({
-      registered: true,
-      registration: {
-        pushManager: {
-          getSubscription: vi.fn().mockResolvedValue(subscription),
-          subscribe,
-        },
-      } as unknown as ServiceWorkerRegistration,
-    });
+    mockedGetServiceWorkerRegistration.mockResolvedValue({
+      pushManager: {
+        getSubscription: vi.fn().mockResolvedValue(subscription),
+        subscribe,
+      },
+    } as unknown as ServiceWorkerRegistration);
     mockedUpsertPushSubscription.mockResolvedValue({
       subscription: {
         createdAt: "2026-05-15T00:00:00Z",
@@ -258,15 +258,12 @@ describe("enableBrowserPushNotifications", () => {
 
   it("does not store a subscription id when browser subscribe fails", async () => {
     installPushGlobals();
-    mockedRegisterServiceWorker.mockResolvedValue({
-      registered: true,
-      registration: {
-        pushManager: {
-          getSubscription: vi.fn().mockResolvedValue(null),
-          subscribe: vi.fn().mockRejectedValue(new Error("subscribe failed")),
-        },
-      } as unknown as ServiceWorkerRegistration,
-    });
+    mockedGetServiceWorkerRegistration.mockResolvedValue({
+      pushManager: {
+        getSubscription: vi.fn().mockResolvedValue(null),
+        subscribe: vi.fn().mockRejectedValue(new Error("subscribe failed")),
+      },
+    } as unknown as ServiceWorkerRegistration);
 
     await expect(enableBrowserPushNotifications("AQIDBA")).rejects.toThrow("subscribe failed");
     expect(mockedUpsertPushSubscription).not.toHaveBeenCalled();

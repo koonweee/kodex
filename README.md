@@ -294,7 +294,7 @@ The Vite dev server runs on `127.0.0.1:5173` and proxies `/v1` plus `/openapi.js
 
 Playwright E2E tests run against mocked gateway responses and start their own Vite server on `127.0.0.1:5174`.
 
-The web app is built as an installable PWA. The service worker precaches built static assets only; API routes, SSE, OpenAPI, uploads, and file previews stay network-owned. App badge updates use gateway-owned unread completed-agent-turn state and silently no-op in browsers without the Badging API.
+The web app is built as an installable PWA. The service worker precaches built static assets only; API routes, SSE, OpenAPI, uploads, and file previews stay network-owned. Long-open tabs or installed PWA windows may show an update banner when a newer static bundle is waiting; choosing Update activates the new bundle and reloads the page. This prompt is browser-local UI state, not gateway-owned shared state. App badge updates use gateway-owned unread completed-agent-turn state and silently no-op in browsers without the Badging API.
 
 Browser notifications are optional. To enable Web Push, configure VAPID keys on the gateway:
 

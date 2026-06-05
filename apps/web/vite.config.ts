@@ -13,6 +13,7 @@ export default defineConfig({
       strategies: "injectManifest",
       srcDir: "src",
       filename: "sw.ts",
+      injectRegister: false,
       registerType: "prompt",
       manifest: {
         id: "/",

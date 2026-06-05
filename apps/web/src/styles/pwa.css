@@ -1,0 +1,38 @@
+.kodex-pwa-lifecycle {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  left: max(12px, env(safe-area-inset-left));
+  z-index: 28;
+  display: grid;
+  justify-items: center;
+  pointer-events: none;
+}
+
+.kodex-pwa-lifecycle-alert {
+  width: min(560px, 100%);
+  box-shadow: var(--kodex-shadow-floating);
+  pointer-events: auto;
+}
+
+.kodex-pwa-lifecycle-copy {
+  min-width: min(100%, 280px);
+}
+
+@media (pointer: coarse) {
+  .kodex-pwa-lifecycle .mantine-Button-root {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 48em) {
+  .kodex-pwa-lifecycle {
+    top: max(8px, env(safe-area-inset-top));
+    right: max(8px, env(safe-area-inset-right));
+    left: max(8px, env(safe-area-inset-left));
+  }
+
+  .kodex-pwa-lifecycle .mantine-Button-root {
+    min-height: 44px;
+  }
+}

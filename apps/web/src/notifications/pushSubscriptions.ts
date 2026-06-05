@@ -3,7 +3,7 @@ import {
   getCurrentPushSubscriptionStatus,
   upsertPushSubscription,
 } from "../api/client";
-import { registerKodexServiceWorker } from "../pwa/registerServiceWorker";
+import { getServiceWorkerRegistration } from "../pwa/registerServiceWorker";
 import { notificationPermission } from "./browserNotifications";
 import type { BrowserNotificationPermission } from "./notificationTypes";
 
@@ -93,11 +93,11 @@ export async function enableBrowserPushNotifications(vapidPublicKey: string): Pr
   if (!browserPushNotificationsSupported()) {
     return null;
   }
-  const registrationResult = await registerKodexServiceWorker();
-  if (!registrationResult.registered) {
+  const registration = await getRegistrationForPushSubscription();
+  if (!registration) {
     return null;
   }
-  const pushManager = registrationResult.registration.pushManager;
+  const pushManager = registration.pushManager;
   if (!pushManager) {
     return null;
   }
@@ -110,6 +110,14 @@ export async function enableBrowserPushNotifications(vapidPublicKey: string): Pr
   await upsertPushSubscription(subscription);
   cleanupLegacyPushSubscriptionId();
   return subscription;
+}
+
+async function getRegistrationForPushSubscription(): Promise<ServiceWorkerRegistration | null> {
+  try {
+    return await getServiceWorkerRegistration();
+  } catch {
+    return null;
+  }
 }
 
 export async function disableBrowserPushNotifications(): Promise<void> {

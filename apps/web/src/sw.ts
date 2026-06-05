@@ -9,6 +9,16 @@ declare let self: ServiceWorkerGlobalScope & { __WB_MANIFEST: Array<unknown> };
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+self.addEventListener("message", (event) => {
+  if ((event.data as { type?: unknown } | undefined)?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener("push", (event) => {
   event.waitUntil(showPushNotification(event));
 });

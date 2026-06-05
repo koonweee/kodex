@@ -75,6 +75,7 @@ import { useLiveEventHandlers } from "./events/useLiveEventHandlers";
 import type { MarkdownPreviewRequest } from "./files/types";
 import type { ImageLightboxImage } from "./images/types";
 import { useKodexNotifications } from "./notifications/useKodexNotifications";
+import { PwaLifecycle } from "./pwa/PwaLifecycle";
 import type { PreferenceSection } from "./PreferencesModal";
 import { ThreadAppSurfacePane } from "./panes/generatedUi/GeneratedUiWorkspacePane";
 import {
@@ -489,6 +490,7 @@ export function App({ queryClientInstance = queryClient, workspacePaneStore }: A
   return (
     <QueryClientProvider client={queryClientInstance}>
       <MantineProvider forceColorScheme={colorScheme.mode} theme={theme}>
+        <PwaLifecycle />
         {isThemeWorkbench ? (
           <Suspense fallback={null}>
             <ThemeWorkbench colorSchemeId={colorSchemeId} onColorSchemeChange={setColorSchemeId} />

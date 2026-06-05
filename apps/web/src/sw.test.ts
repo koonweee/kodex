@@ -9,6 +9,24 @@ afterEach(() => {
 });
 
 describe("service worker push handling", () => {
+  it("activates waiting workers only when requested", async () => {
+    const { claim, listeners, skipWaiting } = await installServiceWorker();
+    const waitUntilPromises: Array<Promise<unknown>> = [];
+
+    listeners.get("message")?.({ data: { type: "IGNORED" } });
+    expect(skipWaiting).not.toHaveBeenCalled();
+
+    listeners.get("message")?.({ data: { type: "SKIP_WAITING" } });
+    expect(skipWaiting).toHaveBeenCalledTimes(1);
+
+    listeners.get("activate")?.({
+      waitUntil: (promise: Promise<unknown>) => waitUntilPromises.push(promise),
+    });
+    await Promise.all(waitUntilPromises);
+
+    expect(claim).toHaveBeenCalledTimes(1);
+  });
+
   it("shows unread agent message push notifications even when a same-thread client is visible", async () => {
     const { listeners, matchAll, setAppBadge, showNotification } = await installServiceWorker({
       clients: [{ url: "https://kodex.test/threads/thread-1", focus: vi.fn(), navigate: vi.fn() }],
@@ -115,12 +133,15 @@ async function installServiceWorker({
   const showNotification = vi.fn().mockResolvedValue(undefined);
   const setAppBadge = vi.fn().mockResolvedValue(undefined);
   const matchAll = vi.fn().mockResolvedValue(clients);
+  const claim = vi.fn().mockResolvedValue(undefined);
+  const skipWaiting = vi.fn();
   const fakeSelf = {
     __WB_MANIFEST: [],
     addEventListener: vi.fn((type: string, listener: (event: unknown) => void) => {
       listeners.set(type, listener);
     }),
     clients: {
+      claim,
       matchAll,
       openWindow,
     },
@@ -131,9 +152,10 @@ async function installServiceWorker({
       setAppBadge,
       showNotification,
     },
+    skipWaiting,
   };
   Object.defineProperty(globalThis, "self", { configurable: true, value: fakeSelf });
 
   await import("./sw");
-  return { listeners, matchAll, openWindow, setAppBadge, showNotification };
+  return { claim, listeners, matchAll, openWindow, setAppBadge, showNotification, skipWaiting };
 }
