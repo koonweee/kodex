@@ -21,6 +21,11 @@ function goTo(path: string) {
   window.history.replaceState(null, "", path);
 }
 
+function streamIncludesThread(instance: FakeEventSource, threadId: string): boolean {
+  const url = new URL(instance.url, "http://localhost");
+  return (url.searchParams.get("threadIds") ?? "").split(",").includes(threadId);
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((promiseResolve) => {
@@ -217,12 +222,12 @@ describe("Automations frontend", () => {
     render(<App />);
 
     const stream = await waitFor(() => {
-      const eventStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+      const eventStream = FakeEventSource.instances.find((instance) => streamIncludesThread(instance, "thread-1"));
       expect(eventStream).toBeDefined();
       return eventStream;
     });
-    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
-    expect(globalStream?.url).toContain("excludeThreadId=thread-1");
+    const globalStream = FakeEventSource.instances.find((instance) => instance.url.includes("includeGlobal=true"));
+    expect(globalStream).toBe(stream);
     act(() => {
       stream!.emitNamed("automation.item_upsert", {
         id: "event-before-open",

@@ -4340,6 +4340,8 @@ export interface operations {
                 projectId?: string | null;
                 threadId?: string | null;
                 excludeThreadId?: string | null;
+                includeGlobal?: boolean | null;
+                threadIds?: string | null;
             };
             header?: never;
             path?: never;
@@ -4364,6 +4366,8 @@ export interface operations {
                 projectId?: string | null;
                 threadId?: string | null;
                 excludeThreadId?: string | null;
+                includeGlobal?: boolean | null;
+                threadIds?: string | null;
             };
             header?: never;
             path?: never;
@@ -5449,6 +5453,8 @@ export interface operations {
                 projectId?: string | null;
                 threadId?: string | null;
                 excludeThreadId?: string | null;
+                includeGlobal?: boolean | null;
+                threadIds?: string | null;
             };
             header?: never;
             path?: never;

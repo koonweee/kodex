@@ -671,8 +671,12 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
 
   const affectedTurnIds = new Set(patch.affectedTurnIds ?? []);
   const mappedPatchRows = canonicalTimelineRowsToViewRows(threadId, patch.rows ?? [], createEmptyTimelineIndexes());
+  const retainedRows = removeOptimisticUserRowsCoveredByCanonicalRows(
+    state.rows.filter((row) => !row.turnId || !affectedTurnIds.has(row.turnId)),
+    mappedPatchRows.rows,
+  );
   const rows = [
-    ...state.rows.filter((row) => !row.turnId || !affectedTurnIds.has(row.turnId)),
+    ...retainedRows,
     ...mappedPatchRows.rows,
   ].sort((left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right));
   reducerInstrumentation.turnPatchIndexedRows += rows.length;
@@ -689,6 +693,39 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
     indexes,
     rows,
   });
+}
+
+function removeOptimisticUserRowsCoveredByCanonicalRows(currentRows: TimelineRow[], canonicalRows: TimelineRow[]): TimelineRow[] {
+  const canonicalUserTexts = new Set<string>();
+  for (const row of canonicalRows) {
+    for (const item of timelineItemsForRow(row)) {
+      if (item.source !== "optimistic" && item.kind === "user_message" && item.text) {
+        canonicalUserTexts.add(item.text);
+      }
+    }
+  }
+  if (canonicalUserTexts.size === 0) {
+    return currentRows;
+  }
+  return currentRows.filter((row) => {
+    if (row.type !== "item" || row.item.source !== "optimistic" || row.item.kind !== "user_message" || !row.item.text) {
+      return true;
+    }
+    return !canonicalUserTexts.has(row.item.text);
+  });
+}
+
+function timelineItemsForRow(row: TimelineRow): TimelineItem[] {
+  if (row.type === "item") {
+    return [row.item];
+  }
+  if (row.type === "activity") {
+    return row.items;
+  }
+  if (row.type === "work") {
+    return row.collapsedRows.flatMap(timelineItemsForRow);
+  }
+  return [];
 }
 
 function applyCanonicalRowDeltaPatch(

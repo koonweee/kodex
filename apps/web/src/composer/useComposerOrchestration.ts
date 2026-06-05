@@ -49,7 +49,9 @@ type QueuedInputMutation = {
 
 type UseComposerOrchestrationParams = {
   activeSelectedTurnId: string | null;
+  activeSelectedTurnIdOverrideRef?: { current: string | null | undefined };
   canCompose: boolean;
+  canComposeOverrideRef?: { current: boolean | undefined };
   composerSettings: ComposerSettings;
   selectedThreadComposerOverride: ComposerSettings | null;
   draftChatThreadSelected: boolean;
@@ -76,7 +78,9 @@ type UseComposerOrchestrationParams = {
 
 export function useComposerOrchestration({
   activeSelectedTurnId,
+  activeSelectedTurnIdOverrideRef,
   canCompose,
+  canComposeOverrideRef,
   composerSettings,
   selectedThreadComposerOverride,
   draftChatThreadSelected,
@@ -162,7 +166,7 @@ export function useComposerOrchestration({
   ) {
     event.preventDefault();
     const canSubmitComposer =
-      canCompose &&
+      currentCanCompose() &&
       !isComposerSubmitting &&
       !isQueuedTurnStartPending &&
       (Boolean(composerText.trim()) || pendingAttachments.length > 0);
@@ -170,6 +174,7 @@ export function useComposerOrchestration({
       return;
     }
 
+    const effectiveActiveSelectedTurnId = currentActiveSelectedTurnId();
     const text = composerText.trim();
     const slashCommand = slashCommandFromSubmittedText(text);
     if (slashCommand === "unknown") {
@@ -202,7 +207,7 @@ export function useComposerOrchestration({
     let startedThreadId: string | null = null;
     let optimisticClientRequestId: string | null = null;
     let retryRestoreContext: ComposerContext = {
-      activeSelectedTurnId,
+      activeSelectedTurnId: effectiveActiveSelectedTurnId,
       draftChatThreadSelected,
       draftThreadProjectId,
       selectedProjectId,
@@ -214,7 +219,7 @@ export function useComposerOrchestration({
         draftControls.clearText();
         const payload = await buildTurnPayload(selectedThreadId, text, attachments, skillInputs, skillTextElements);
         const options = selectedThreadComposerOverride ? composerTurnOptions(selectedThreadComposerOverride) : {};
-        if (activeSelectedTurnId) {
+        if (effectiveActiveSelectedTurnId) {
           const queuedInput = await createQueuedInput(selectedThreadId, payload.input, payload.attachments, options);
           onQueuedInputUpsert(queuedInput);
           clearPendingAttachments();
@@ -306,7 +311,7 @@ export function useComposerOrchestration({
   }
 
   async function handleStopTurn() {
-    if (!selectedThreadId || !activeSelectedTurnId) {
+    if (!selectedThreadId || !currentActiveSelectedTurnId()) {
       return;
     }
 
@@ -320,7 +325,7 @@ export function useComposerOrchestration({
 
     setIsQueuedTurnStartPending(true);
     try {
-      if (row.status === "failed" || !activeSelectedTurnId) {
+      if (row.status === "failed" || !currentActiveSelectedTurnId()) {
         await retryQueuedInputMutation.mutateAsync({ queueId: row.id, threadId: row.threadId });
       } else {
         await steerQueuedInputMutation.mutateAsync({ queueId: row.id, threadId: row.threadId });
@@ -341,7 +346,7 @@ export function useComposerOrchestration({
   }
 
   function handleAttachmentInputChange(event: ReactChangeEvent<HTMLInputElement>) {
-    if (!canCompose || isComposerSubmitting) {
+    if (!currentCanCompose() || isComposerSubmitting) {
       event.currentTarget.value = "";
       return;
     }
@@ -363,7 +368,7 @@ export function useComposerOrchestration({
   }
 
   function handleComposerDragOver(event: ReactDragEvent<HTMLElement>) {
-    if (!canCompose || isComposerSubmitting || !hasFiles(event.dataTransfer)) {
+    if (!currentCanCompose() || isComposerSubmitting || !hasFiles(event.dataTransfer)) {
       return;
     }
     event.preventDefault();
@@ -377,7 +382,7 @@ export function useComposerOrchestration({
   }
 
   function handleComposerDrop(event: ReactDragEvent<HTMLElement>) {
-    if (!canCompose || isComposerSubmitting || !hasFiles(event.dataTransfer)) {
+    if (!currentCanCompose() || isComposerSubmitting || !hasFiles(event.dataTransfer)) {
       return;
     }
     event.preventDefault();
@@ -386,7 +391,7 @@ export function useComposerOrchestration({
   }
 
   function handleComposerPaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
-    if (!canCompose || isComposerSubmitting || !hasFiles(event.clipboardData)) {
+    if (!currentCanCompose() || isComposerSubmitting || !hasFiles(event.clipboardData)) {
       return;
     }
     event.preventDefault();
@@ -403,6 +408,14 @@ export function useComposerOrchestration({
 
     event.preventDefault();
     event.currentTarget.form?.requestSubmit();
+  }
+
+  function currentActiveSelectedTurnId() {
+    return activeSelectedTurnIdOverrideRef?.current ?? activeSelectedTurnId;
+  }
+
+  function currentCanCompose() {
+    return canComposeOverrideRef?.current ?? canCompose;
   }
 
   async function buildTurnPayload(

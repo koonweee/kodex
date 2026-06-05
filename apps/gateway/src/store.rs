@@ -23,7 +23,7 @@ mod queued_inputs;
 mod runtime;
 mod threads;
 
-const EVENT_REPLAY_LIMIT: i64 = 500;
+pub(crate) const EVENT_REPLAY_LIMIT: i64 = 500;
 
 #[derive(Debug, Clone)]
 pub struct Store {

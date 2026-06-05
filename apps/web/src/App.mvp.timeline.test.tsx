@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -26,6 +26,73 @@ import {
 
 function clickMenuItem(name: RegExp) {
   return clickMenuItemWithDeps(name, screen, waitFor, fireEvent);
+}
+
+type FakeEventSourceInstance = InstanceType<typeof FakeEventSource>;
+
+function eventSourceUrl(instance: FakeEventSourceInstance) {
+  return new URL(instance.url, "http://localhost");
+}
+
+function workspaceStreamThreadIds(instance: FakeEventSourceInstance) {
+  return (eventSourceUrl(instance).searchParams.get("threadIds") ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
+function sameThreadIdSet(left: string[], right: string[]) {
+  return [...left].sort().join("\n") === [...right].sort().join("\n");
+}
+
+function workspaceNavigation() {
+  return screen.getByRole("navigation", { name: /workspace/i });
+}
+
+async function openSecondThreadInAdditionalPane() {
+  await userEvent.click(screen.getByRole("button", { name: /duplicate pane/i }));
+  await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /second thread/i }));
+}
+
+function openWorkspaceStreams() {
+  return FakeEventSource.instances.filter((instance) => {
+    if (instance.closed) {
+      return false;
+    }
+    const url = eventSourceUrl(instance);
+    return url.pathname === "/v1/events" && url.searchParams.get("includeGlobal") === "true";
+  });
+}
+
+function latestOpenWorkspaceStream() {
+  const stream = openWorkspaceStreams().at(-1);
+  expect(stream).toBeDefined();
+  return stream!;
+}
+
+function expectWorkspaceStreamContract(instance: FakeEventSourceInstance, threadIds: string[]) {
+  const url = eventSourceUrl(instance);
+  expect(url.pathname).toBe("/v1/events");
+  expect(url.searchParams.get("includeGlobal")).toBe("true");
+  expect(url.searchParams.has("threadId")).toBe(false);
+  expect(url.searchParams.has("excludeThreadId")).toBe(false);
+  expect(sameThreadIdSet(workspaceStreamThreadIds(instance), threadIds)).toBe(true);
+}
+
+async function waitForWorkspaceStreamThreadIds(threadIds: string[]) {
+  let stream: FakeEventSourceInstance | undefined;
+  await waitFor(() => {
+    stream = openWorkspaceStreams().find((instance) =>
+      sameThreadIdSet(workspaceStreamThreadIds(instance), threadIds),
+    );
+    expect(stream).toBeDefined();
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  return openWorkspaceStreams()
+    .filter((instance) => sameThreadIdSet(workspaceStreamThreadIds(instance), threadIds))
+    .at(-1) ?? stream!;
 }
 
 function itemDeltaEvent({
@@ -61,6 +128,7 @@ function itemDeltaEvent({
 
 describe("MVP timeline flows", () => {
   afterEach(() => {
+    cleanup();
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -82,7 +150,7 @@ describe("MVP timeline flows", () => {
     expect(within(timeline).queryByText("Thread activity will stream into this timeline.")).not.toBeInTheDocument();
   });
 
-  it("excludes the selected thread from the global event stream and refreshes the exclusion on selection changes", async () => {
+  it("uses one workspace stream for global events and subscribed thread panes", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     mockGateway(
       baseRoutes({
@@ -104,35 +172,37 @@ describe("MVP timeline flows", () => {
     render(<App />);
 
     expect(await screen.findByText(/initial snapshot/i)).toBeInTheDocument();
-    await waitFor(() => {
-      const openGlobalStream = FakeEventSource.instances.find(
-        (instance) => !instance.closed && !instance.url.includes("threadId="),
-      );
-      expect(openGlobalStream?.url).toContain("excludeThreadId=thread-1");
-    });
-    const selectedThreadOneStream = FakeEventSource.instances.find(
-      (instance) => !instance.closed && instance.url.includes("threadId=thread-1"),
-    );
-    expect(selectedThreadOneStream).toBeDefined();
-    const globalThreadOneExcludedStream = FakeEventSource.instances.find(
-      (instance) => !instance.closed && !instance.url.includes("threadId="),
-    );
+    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
+    expectWorkspaceStreamContract(workspaceStream, [thread.id]);
+    expect(openWorkspaceStreams()).toHaveLength(1);
+
     act(() => {
-      globalThreadOneExcludedStream?.emitNamed(
+      workspaceStream.emitNamed(
         "thread_view.patch",
-        projectionPatchEvent({ seq: 2, threadId: thread.id, text: "Wrong global duplicate" }),
+        projectionPatchEvent({
+          id: "active-pane-update",
+          seq: 2,
+          threadId: thread.id,
+          text: "Active pane update",
+        }),
       );
     });
-    expect(screen.queryByText(/wrong global duplicate/i)).not.toBeInTheDocument();
+    expect(await screen.findByText(/active pane update/i)).toBeInTheDocument();
+
     act(() => {
-      selectedThreadOneStream?.emitNamed(
+      workspaceStream.emitNamed(
         "thread_view.patch",
-        projectionPatchEvent({ seq: 3, threadId: thread.id, text: "Selected stream update" }),
+        projectionPatchEvent({
+          id: "background-pane-update",
+          seq: 3,
+          threadId: secondThread.id,
+          text: "Background pane update",
+        }),
       );
     });
-    expect(await screen.findByText(/selected stream update/i)).toBeInTheDocument();
+    expect(screen.queryByText(/background pane update/i)).not.toBeInTheDocument();
     act(() => {
-      selectedThreadOneStream?.emitNamed("gateway.warning", {
+      workspaceStream.emitNamed("gateway.warning", {
         id: "selected-thread-warning",
         seq: 4,
         kind: "gateway.warning",
@@ -147,7 +217,7 @@ describe("MVP timeline flows", () => {
     });
     expect(await screen.findByText(/selected warning routed/i)).toBeInTheDocument();
     act(() => {
-      selectedThreadOneStream?.emitNamed("gateway.error", {
+      workspaceStream.emitNamed("gateway.error", {
         id: "selected-thread-error",
         seq: 5,
         kind: "gateway.error",
@@ -162,88 +232,66 @@ describe("MVP timeline flows", () => {
     });
     expect(await screen.findByText(/selected error routed/i)).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    await openSecondThreadInAdditionalPane();
     expect(await screen.findByText(/second snapshot/i)).toBeInTheDocument();
 
-    await waitFor(() => {
-      const openGlobalStream = FakeEventSource.instances.find(
-        (instance) => !instance.closed && !instance.url.includes("threadId="),
-      );
-      expect(openGlobalStream?.url).toContain("excludeThreadId=thread-2");
-    });
-    expect(
-      FakeEventSource.instances.some((instance) => !instance.closed && instance.url.includes("threadId=thread-2")),
-    ).toBe(true);
+    const expandedWorkspaceStream = await waitForWorkspaceStreamThreadIds([thread.id, secondThread.id]);
+    expectWorkspaceStreamContract(expandedWorkspaceStream, [thread.id, secondThread.id]);
   });
 
-  it("reports selected thread stream disconnects as retrying and clears the notice after live recovery", async () => {
+  it("reconnects the workspace stream with the live cursor and applies recovered active-pane events", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    let detailReads = 0;
-    const gateway = mockGateway(
+    mockGateway(
       baseRoutes({
-        "GET /v1/threads/thread-1": () => {
-          detailReads += 1;
-          if (detailReads === 2) {
-            throw new Error("Load failed");
-          }
-          return threadDetail(thread, [
-            snapshotTurn("turn-1", [
-              snapshotItem("answer-1", "agentMessage", { text: "Initial snapshot" }),
-            ]),
-          ]);
-        },
+        "GET /v1/threads/thread-1": threadDetail(thread, [
+          snapshotTurn("turn-1", [
+            snapshotItem("answer-1", "agentMessage", { text: "Initial snapshot" }),
+          ]),
+        ]),
       }),
     );
 
     render(<App />);
 
     expect(await screen.findByText(/initial snapshot/i)).toBeInTheDocument();
-    await waitFor(() =>
-      expect(FakeEventSource.instances.some((instance) => instance.url.includes("threadId=thread-1"))).toBe(true),
-    );
-    const selectedStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
-    expect(selectedStream).toBeDefined();
+    const initialStream = await waitForWorkspaceStreamThreadIds([thread.id]);
+    expectWorkspaceStreamContract(initialStream, [thread.id]);
 
     act(() => {
-      selectedStream?.onerror?.();
+      initialStream.emitNamed(
+        "thread_view.patch",
+        projectionPatchEvent({ id: "before-reconnect-live-update", seq: 5, text: "Before reconnect live update" }),
+      );
     });
-    await act(async () => {
-      await Promise.resolve();
-    });
+    expect(await screen.findByText(/before reconnect live update/i)).toBeInTheDocument();
 
-    expect(
-      await screen.findByText(/selected thread stream disconnected\. reconnecting and retrying thread refresh: load failed/i),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("alert", { name: /load failed/i })).not.toBeInTheDocument();
-    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(2);
+    act(() => {
+      initialStream.onerror?.();
+    });
+    expect(initialStream.closed).toBe(true);
 
     await waitFor(
-      () =>
-        expect(FakeEventSource.instances.filter((instance) => instance.url.includes("threadId=thread-1")).length).toBe(
-          2,
-        ),
+      () => expect(openWorkspaceStreams()).toHaveLength(1),
       { timeout: 1500 },
     );
-    const reconnectedStream = FakeEventSource.instances
-      .filter((instance) => instance.url.includes("threadId=thread-1"))
-      .at(-1);
-    expect(reconnectedStream).toBeDefined();
+    const reconnectedStream = latestOpenWorkspaceStream();
+    expect(reconnectedStream).not.toBe(initialStream);
+    expectWorkspaceStreamContract(reconnectedStream, [thread.id]);
+    expect(eventSourceUrl(reconnectedStream).searchParams.get("cursor")).toBe("5");
 
     act(() => {
-      reconnectedStream?.emitNamed(
+      reconnectedStream.emitNamed(
         "thread_view.patch",
-        projectionPatchEvent({ seq: 5, text: "Recovered live update" }),
+        projectionPatchEvent({ id: "recovered-live-update", seq: 6, text: "Recovered live update" }),
       );
     });
 
-    await waitFor(() => {
-      expect(screen.queryByText(/selected thread stream disconnected/i)).not.toBeInTheDocument();
-    });
+    expect(screen.queryByText(/selected thread stream disconnected/i)).not.toBeInTheDocument();
     expect(await screen.findByText(/recovered live update/i)).toBeInTheDocument();
   });
 
-  it("adds operation context to selected thread load failures", async () => {
-    mockGateway(
+  it("shows the pane unavailable state when the initial snapshot cannot load", async () => {
+    const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads/thread-1": () => {
           throw new Error("Load failed");
@@ -253,9 +301,8 @@ describe("MVP timeline flows", () => {
 
     render(<App />);
 
-    expect(
-      await screen.findByText("Selected thread load failed (thread-1): Load failed"),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Thread not found or unavailable" })).toBeInTheDocument();
+    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(1);
   });
 
   it("retries empty rollout selected thread snapshot reads without reporting a hard load failure", async () => {
@@ -344,12 +391,10 @@ describe("MVP timeline flows", () => {
     const secondThreadRow = secondThreadButton.closest(".kodex-thread-list-button");
     expect(firstThreadRow).toBeInTheDocument();
     expect(secondThreadRow).toBeInTheDocument();
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
-    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
-    expect(globalStream).toBeDefined();
+    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
 
     act(() => {
-      globalStream?.emit({
+      workspaceStream.emit({
         id: "event-other-thread-delta",
         seq: 2,
         kind: "codex",
@@ -365,7 +410,7 @@ describe("MVP timeline flows", () => {
     expect(secondThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
 
     act(() => {
-      globalStream?.emit({
+      workspaceStream.emit({
         id: "event-other-thread-completed",
         seq: 3,
         kind: "thread_view.patch",
@@ -411,12 +456,10 @@ describe("MVP timeline flows", () => {
     expect(runningThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument();
     expect(runningThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /implement frontend/i }));
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
-    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
-    expect(globalStream).toBeDefined();
+    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
 
     act(() => {
-      globalStream?.emit({
+      workspaceStream.emit({
         id: "event-running-thread-completed",
         seq: 3,
         kind: "thread_view.patch",
@@ -439,7 +482,7 @@ describe("MVP timeline flows", () => {
     });
   });
 
-  it("does not mark already represented completed turns unread when the global stream replays after refresh", async () => {
+  it("does not mark already represented completed turns unread when the workspace stream replays after refresh", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     mockGateway(
       baseRoutes({
@@ -463,12 +506,10 @@ describe("MVP timeline flows", () => {
     render(<App />);
 
     const secondThreadButton = await screen.findByRole("button", { name: /second thread/i });
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
-    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
-    expect(globalStream).toBeDefined();
+    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
 
     act(() => {
-      globalStream?.emit({
+      workspaceStream.emit({
         id: "event-replayed-completed",
         seq: 3,
         kind: "codex",
@@ -515,12 +556,10 @@ describe("MVP timeline flows", () => {
 
     const secondThreadButton = await screen.findByRole("button", { name: /second thread/i });
     const secondThreadRow = secondThreadButton.closest(".kodex-thread-list-button");
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
-    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
-    expect(globalStream).toBeDefined();
+    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
 
     act(() => {
-      globalStream?.emit({
+      workspaceStream.emit({
         id: "event-background-completed-after-reload",
         seq: 4,
         kind: "thread_view.patch",
@@ -570,10 +609,10 @@ describe("MVP timeline flows", () => {
       }),
     );
 
-    render(<App />);
+    const { container } = render(<App />);
 
     expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /second thread/i }));
     resolveSecondDetail(
       threadDetail(secondThread, [
         snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Second thread snapshot" })]),
@@ -588,15 +627,14 @@ describe("MVP timeline flows", () => {
     );
 
     await waitFor(() => {
-      expect(screen.queryByText(/stale first snapshot/i)).not.toBeInTheDocument();
+      expect(within(timelineElement(container)).queryByText(/stale first snapshot/i)).not.toBeInTheDocument();
     });
     expect(gateway.callsFor("GET", "/v1/events")).toHaveLength(0);
-    const threadStreams = FakeEventSource.instances.filter((instance) => instance.url.includes("threadId=") && !instance.closed);
-    expect(threadStreams).toHaveLength(1);
-    expect(threadStreams[0].url).toContain("threadId=thread-2");
+    const workspaceStream = await waitForWorkspaceStreamThreadIds([secondThread.id]);
+    expectWorkspaceStreamContract(workspaceStream, [secondThread.id]);
   });
 
-  it("refetches the selected snapshot when the stream requires snapshot recovery", async () => {
+  it("refetches the active pane snapshot when the stream requires snapshot recovery", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     let detailCall = 0;
     let resolveRecovery: (value: unknown) => void = () => undefined;
@@ -624,11 +662,10 @@ describe("MVP timeline flows", () => {
     render(<App />);
 
     expect(await screen.findByText(/initial snapshot/i)).toBeInTheDocument();
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
-    expect(selectedThreadStream).toBeDefined();
+    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
 
     act(() => {
-      selectedThreadStream?.emit({
+      workspaceStream.emit({
         id: "snapshot-required-1",
         seq: 1,
         kind: "thread_view.refresh_required",
@@ -657,7 +694,7 @@ describe("MVP timeline flows", () => {
     expect(gateway.callsFor("GET", "/v1/events")).toHaveLength(0);
   });
 
-  it("coalesces selected snapshot recovery while delta misses keep arriving", async () => {
+  it("coalesces active pane snapshot recovery while delta misses keep arriving", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     let detailCall = 0;
     const recoveryDetail = new Promise(() => undefined);
@@ -682,20 +719,19 @@ describe("MVP timeline flows", () => {
     render(<App />);
 
     expect(await screen.findByText(/initial snapshot/i)).toBeInTheDocument();
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
-    expect(selectedThreadStream).toBeDefined();
+    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
 
     act(() => {
-      selectedThreadStream?.emitNamed("thread_view.item_delta", itemDeltaEvent({ seq: 2, delta: "First" }));
+      workspaceStream.emitNamed("thread_view.item_delta", itemDeltaEvent({ seq: 2, delta: "First" }));
     });
     await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(2));
 
     act(() => {
-      selectedThreadStream?.emitNamed("thread_view.item_delta", itemDeltaEvent({ seq: 3, delta: "Second" }));
+      workspaceStream.emitNamed("thread_view.item_delta", itemDeltaEvent({ seq: 3, delta: "Second" }));
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
     act(() => {
-      selectedThreadStream?.emitNamed("thread_view.item_delta", itemDeltaEvent({ seq: 4, delta: "Third" }));
+      workspaceStream.emitNamed("thread_view.item_delta", itemDeltaEvent({ seq: 4, delta: "Third" }));
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
 
@@ -719,11 +755,10 @@ describe("MVP timeline flows", () => {
     render(<App />);
 
     expect(await screen.findByText(/initial snapshot/i)).toBeInTheDocument();
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
-    expect(selectedThreadStream).toBeDefined();
+    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
 
     act(() => {
-      selectedThreadStream?.emitNamed(
+      workspaceStream.emitNamed(
         "thread_view.patch",
         projectionPatchEvent({
           seq: 2,
@@ -732,7 +767,7 @@ describe("MVP timeline flows", () => {
           text: "Live update",
         }),
       );
-      selectedThreadStream?.emitNamed(
+      workspaceStream.emitNamed(
         "thread_view.item_delta",
         itemDeltaEvent({
           seq: 3,
@@ -764,11 +799,10 @@ describe("MVP timeline flows", () => {
     render(<App />);
 
     expect(await screen.findByText(/initial snapshot/i)).toBeInTheDocument();
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
-    expect(selectedThreadStream).toBeDefined();
+    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
 
     act(() => {
-      selectedThreadStream?.emitNamed(
+      workspaceStream.emitNamed(
         "thread_view.patch",
         projectionPatchEvent({
           seq: 2,
@@ -781,7 +815,7 @@ describe("MVP timeline flows", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     act(() => {
-      selectedThreadStream?.emitNamed(
+      workspaceStream.emitNamed(
         "thread_view.item_delta",
         itemDeltaEvent({
           seq: 3,
@@ -796,33 +830,30 @@ describe("MVP timeline flows", () => {
     expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(1);
   });
 
-  it("applies selected-thread stream events even when their server timestamp predates snapshot completion", async () => {
+  it("applies active pane workspace stream patches", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     mockGateway(baseRoutes());
 
     render(<App />);
 
     expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
-    expect(selectedThreadStream).toBeDefined();
+    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
 
     act(() => {
-      selectedThreadStream?.emit(projectionPatchEvent({
-        id: "historical-replay-1",
+      workspaceStream.emit(projectionPatchEvent({
+        id: "active-pane-stream-patch",
         seq: 2,
-        projectId: project.id,
         threadId: thread.id,
-        turnId: "turn-1",
+        turnId: "turn-live",
         itemId: "historical-agent-1",
-        text: "Snapshot race live event",
-        displayOrder: 2,
+        text: "Workspace stream live event",
       }));
     });
 
-    expect(await screen.findByText(/snapshot race live event/i)).toBeInTheDocument();
+    expect(await screen.findByText(/workspace stream live event/i)).toBeInTheDocument();
   });
 
-  it("connects selected-thread stream after the initial snapshot is loaded", async () => {
+  it("connects the workspace stream as soon as pane subscriptions are known", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     let resolveDetail: (value: unknown) => void = () => undefined;
     const detail = new Promise((resolve) => {
@@ -837,7 +868,8 @@ describe("MVP timeline flows", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
-    expect(FakeEventSource.instances.some((instance) => instance.url.includes("threadId=thread-1"))).toBe(false);
+    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
+    expectWorkspaceStreamContract(workspaceStream, [thread.id]);
 
     resolveDetail(
       threadDetail(thread, [
@@ -846,12 +878,9 @@ describe("MVP timeline flows", () => {
     );
 
     expect(await screen.findByText(/snapshot before live/i)).toBeInTheDocument();
-    await waitFor(() => {
-      expect(FakeEventSource.instances.some((instance) => instance.url.includes("threadId=thread-1"))).toBe(true);
-    });
   });
 
-  it("uses snapshot revision as the selected-thread stream cursor instead of completed-turn markers", async () => {
+  it("does not use completed-turn markers as the workspace stream cursor", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const markerThread = { ...thread, lastCompletedAgentTurnSeq: 100 };
     mockGateway(
@@ -871,12 +900,11 @@ describe("MVP timeline flows", () => {
     render(<App />);
 
     expect(await screen.findByText(/high marker snapshot/i)).toBeInTheDocument();
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
-    expect(selectedThreadStream).toBeDefined();
-    expect(selectedThreadStream?.url).toContain("cursor=1");
+    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
+    expect(eventSourceUrl(workspaceStream).searchParams.get("cursor")).not.toBe("100");
 
     act(() => {
-      selectedThreadStream?.emit(projectionPatchEvent({
+      workspaceStream.emit(projectionPatchEvent({
         id: "low-seq-live-event-1",
         seq: 2,
         projectId: project.id,
@@ -891,7 +919,7 @@ describe("MVP timeline flows", () => {
     expect(await screen.findByText(/low seq live event/i)).toBeInTheDocument();
   });
 
-  it("clears the selected stop state from the selected terminal thread view patch", async () => {
+  it("clears the active stop state from a workspace thread view patch", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     mockGateway(
       baseRoutes({
@@ -915,28 +943,26 @@ describe("MVP timeline flows", () => {
 
     expect(await screen.findByText(/working answer/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /stop turn/i })).toBeInTheDocument();
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
-    const selectedStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
-    expect(selectedStream).toBeDefined();
+    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
 
     act(() => {
-      selectedStream?.emitNamed("thread_view.patch", terminalProjectionEvent({
+      workspaceStream.emitNamed("thread_view.patch", terminalProjectionEvent({
         seq: 5,
-        text: "Final answer from selected stream",
+        text: "Final answer from workspace stream",
         threadId: "thread-1",
         turnId: "turn-1",
         itemId: "agent-1",
       }));
     });
 
-    expect(await screen.findByText(/final answer from selected stream/i)).toBeInTheDocument();
+    expect(await screen.findByText(/final answer from workspace stream/i)).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: /stop turn/i })).not.toBeInTheDocument();
     });
     expect(screen.getByRole("button", { name: /send message/i })).toBeInTheDocument();
   });
 
-  it("keeps a resumed idle external thread in send state after selected snapshot recovery", async () => {
+  it("keeps a resumed idle external thread in send state after pane snapshot recovery", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     let detailCall = 0;
     const externalThread = {
@@ -981,15 +1007,14 @@ describe("MVP timeline flows", () => {
 
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /second thread/i }));
+    await openSecondThreadInAdditionalPane();
     expect(await screen.findByText(/external completed snapshot/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /stop turn/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /send message/i })).toBeInTheDocument();
-    await waitFor(() => expect(FakeEventSource.instances.some((instance) => instance.url.includes("threadId=thread-2"))).toBe(true));
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-2"));
+    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id, secondThread.id]);
 
     act(() => {
-      selectedThreadStream?.emit({
+      workspaceStream.emit({
         id: "snapshot-required-external",
         seq: 1,
         kind: "thread_view.refresh_required",
@@ -1006,7 +1031,7 @@ describe("MVP timeline flows", () => {
     expect(await screen.findByText(/external recovered snapshot/i)).toBeInTheDocument();
 
     act(() => {
-      selectedThreadStream?.emit({
+      workspaceStream.emit({
         id: "historical-projection-external",
         seq: 2,
         kind: "thread_view.patch",
@@ -1075,7 +1100,7 @@ describe("MVP timeline flows", () => {
     expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(2);
   });
 
-  it("marks the selected thread seen from the loaded snapshot marker", async () => {
+  it("does not persist read state from pane snapshot loads", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const gateway = mockGateway(
       baseRoutes({
@@ -1100,15 +1125,32 @@ describe("MVP timeline flows", () => {
     render(<App />);
 
     expect(await screen.findByText(/historical snapshot/i)).toBeInTheDocument();
-    await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-1/seen")).toHaveLength(1);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/seen")).toHaveLength(0);
+    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
+
+    act(() => {
+      workspaceStream.emit({
+        id: "event-active-read-state",
+        seq: 3,
+        kind: "thread.read_updated",
+        codexMethod: null,
+        projectId: project.id,
+        threadId: thread.id,
+        turnId: null,
+        itemId: null,
+        payload: {
+          threadId: thread.id,
+          seenCompletedAgentTurnSeq: 2,
+          lastCompletedAgentTurnSeq: 2,
+          unreadCompletedAgentTurn: false,
+        },
+        receivedAt: "2026-04-30T00:00:02Z",
+      });
     });
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/seen")[0])).resolves.toEqual({
-      seenCompletedAgentTurnSeq: 2,
-    });
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/seen")).toHaveLength(0);
   });
 
-  it("ignores late events from a closed previous thread stream", async () => {
+  it("keeps the active pane isolated from late events after workspace stream subscription changes", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     mockGateway(
       baseRoutes({
@@ -1127,32 +1169,33 @@ describe("MVP timeline flows", () => {
       }),
     );
 
-    render(<App />);
+    const { container } = render(<App />);
 
     expect(await screen.findByText(/first thread snapshot/i)).toBeInTheDocument();
-    const firstThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
-    expect(firstThreadStream).toBeDefined();
+    const initialWorkspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
 
-    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    await openSecondThreadInAdditionalPane();
     expect(await screen.findByText(/second thread snapshot/i)).toBeInTheDocument();
+    await waitForWorkspaceStreamThreadIds([thread.id, secondThread.id]);
+    expect(initialWorkspaceStream.closed).toBe(true);
 
     act(() => {
-      firstThreadStream?.emit({
+      initialWorkspaceStream.emitNamed(
+        "thread_view.patch",
+        projectionPatchEvent({
         id: "event-stale-closed-stream",
         seq: 2,
-        kind: "codex",
-        codexMethod: "item/agentMessage/delta",
         projectId: project.id,
         threadId: "thread-1",
         turnId: "turn-1",
         itemId: "item-1",
-        payload: { delta: "Stale closed stream delta" },
-        receivedAt: "2026-04-30T00:00:02Z",
-      });
+        text: "Stale closed stream update",
+      }),
+      );
     });
 
     await waitFor(() => {
-      expect(screen.queryByText(/stale closed stream delta/i)).not.toBeInTheDocument();
+      expect(within(timelineElement(container)).queryByText(/stale closed stream update/i)).not.toBeInTheDocument();
     });
   });
 
@@ -1188,11 +1231,11 @@ describe("MVP timeline flows", () => {
     render(<App />);
 
     expect(await screen.findByText(/initial snapshot/i)).toBeInTheDocument();
-    const firstThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
-    expect(firstThreadStream).toBeDefined();
+    await waitForWorkspaceStreamThreadIds([thread.id]);
 
-    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    await openSecondThreadInAdditionalPane();
     expect(await screen.findByText(/other thread snapshot/i)).toBeInTheDocument();
+    await waitForWorkspaceStreamThreadIds([thread.id, secondThread.id]);
 
     await userEvent.click(screen.getByRole("button", { name: /implement frontend/i }));
     expect(await screen.findByText(/recovered live message/i)).toBeInTheDocument();

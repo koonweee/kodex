@@ -1,0 +1,225 @@
+.kodex-workspace-shell {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.kodex-workspace-toolbar {
+  align-items: center;
+  border-bottom: 1px solid var(--kodex-border-subtle);
+  display: flex;
+  flex: 0 0 auto;
+  height: 32px;
+  justify-content: flex-end;
+  padding: 0 12px;
+}
+
+.kodex-workspace-dock {
+  background: var(--kodex-bg-app);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.kodex-workspace-dock .dockview-react-part,
+.kodex-workspace-dock .dockview {
+  height: 100%;
+}
+
+.kodex-workspace-state {
+  height: 100%;
+  min-height: 320px;
+}
+
+.kodex-workspace-placeholder-pane {
+  align-items: center;
+  background: var(--kodex-bg-panel);
+  color: var(--kodex-text-primary);
+  display: flex;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  padding: 18px;
+}
+
+.kodex-workspace-placeholder-icon {
+  align-items: center;
+  background: var(--kodex-bg-raised);
+  border: 1px solid var(--kodex-border-subtle);
+  border-radius: 8px;
+  color: var(--kodex-text-secondary);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.kodex-workspace-placeholder-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.kodex-workspace-placeholder-copy strong {
+  font-size: 0.95rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.kodex-workspace-placeholder-copy span {
+  color: var(--kodex-text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.kodex-workspace-placeholder-copy .kodex-workspace-placeholder-eyebrow {
+  color: var(--kodex-text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.kodex-thread-pane {
+  background: var(--kodex-bg-panel);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.kodex-thread-pane-header {
+  border-bottom: 1px solid var(--kodex-border-subtle);
+  min-height: 42px;
+  padding: 6px 10px;
+}
+
+.kodex-thread-pane-title-block {
+  min-width: 0;
+}
+
+.kodex-thread-pane-title-block h3 {
+  overflow: hidden;
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kodex-thread-actions-menu {
+  position: relative;
+}
+
+.kodex-thread-actions-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid var(--kodex-border-subtle);
+  border-radius: 6px;
+  background: var(--kodex-surface-1);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 32%);
+}
+
+.kodex-thread-actions-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--kodex-text-primary);
+  background: transparent;
+  font: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+}
+
+.kodex-thread-actions-item:hover,
+.kodex-thread-actions-item:focus-visible {
+  background: var(--kodex-surface-hover);
+  outline: none;
+}
+
+.kodex-thread-actions-item > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kodex-thread-pane-error {
+  justify-self: start;
+  margin: 8px 10px 0;
+  max-width: calc(100% - 20px);
+}
+
+.kodex-thread-pane-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 0 20px;
+}
+
+.kodex-thread-pane > .kodex-composer-shell {
+  align-self: end;
+  justify-self: center;
+  margin: 8px 12px 12px;
+  max-width: min(920px, calc(100% - 24px));
+  width: calc(100% - 24px);
+}
+
+.kodex-thread-pane-loading,
+.kodex-thread-pane-empty {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  justify-content: center;
+  padding: 18px;
+  text-align: center;
+}
+
+.kodex-thread-pane-empty-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.kodex-thread-pane-empty > .kodex-composer-shell {
+  flex: 0 0 auto;
+  margin-top: 12px;
+  max-width: min(920px, 100%);
+  width: 100%;
+}
+
+.kodex-workspace-dock .kodex-terminal-pane {
+  position: relative;
+  inset: auto;
+  bottom: auto;
+  z-index: auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--kodex-surface-0) 96%, black);
+  box-shadow: none;
+}
+
+.kodex-workspace-dock .kodex-terminal-pane .kodex-terminal-header {
+  flex: 0 0 auto;
+}
+
+.kodex-workspace-dock .kodex-terminal-pane .kodex-terminal-cwd {
+  max-width: 100%;
+}
+
+.kodex-workspace-dock .kodex-terminal-pane .kodex-terminal-body {
+  min-height: 160px;
+}

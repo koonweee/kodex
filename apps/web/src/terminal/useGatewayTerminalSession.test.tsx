@@ -6,6 +6,7 @@ import {
   createTerminalSession,
   deleteTerminalSession,
   listTerminalSessions,
+  type CreateTerminalSession,
   type TerminalSessionInfo,
 } from "../api/client";
 import { useGatewayTerminalSession } from "./useGatewayTerminalSession";
@@ -35,8 +36,18 @@ const replacementSession: TerminalSessionInfo = {
   title: "replacement: /bin/zsh",
 };
 
-function HookProbe({ opened }: { opened: boolean }) {
-  const terminal = useGatewayTerminalSession(opened);
+function HookProbe({
+  createRequest,
+  opened,
+  preferredTerminalId,
+  reuseRunning,
+}: {
+  createRequest?: CreateTerminalSession;
+  opened: boolean;
+  preferredTerminalId?: string | null;
+  reuseRunning?: boolean;
+}) {
+  const terminal = useGatewayTerminalSession(opened, { createRequest, preferredTerminalId, reuseRunning });
   return (
     <div>
       <span>{terminal.isLoading ? "loading" : "idle"}</span>
@@ -91,5 +102,24 @@ describe("useGatewayTerminalSession", () => {
 
     expect(await screen.findByText("replacement: /bin/zsh")).toBeInTheDocument();
     expect(deleteTerminalSession).toHaveBeenCalledWith("terminal-1");
+  });
+
+  it("prefers a requested running terminal over other reusable sessions", async () => {
+    vi.mocked(listTerminalSessions).mockResolvedValue([session, replacementSession]);
+
+    render(<HookProbe opened preferredTerminalId="terminal-2" />);
+
+    expect(await screen.findByText("replacement: /bin/zsh")).toBeInTheDocument();
+    expect(createTerminalSession).not.toHaveBeenCalled();
+  });
+
+  it("creates a dedicated session when running session reuse is disabled", async () => {
+    vi.mocked(listTerminalSessions).mockResolvedValue([session]);
+    vi.mocked(createTerminalSession).mockResolvedValue(replacementSession);
+
+    render(<HookProbe createRequest={{ cwd: "/tmp/worktree" }} opened reuseRunning={false} />);
+
+    expect(await screen.findByText("replacement: /bin/zsh")).toBeInTheDocument();
+    expect(createTerminalSession).toHaveBeenCalledWith({ cwd: "/tmp/worktree" });
   });
 });

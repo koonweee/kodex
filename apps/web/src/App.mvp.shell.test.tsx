@@ -42,6 +42,11 @@ function addProjectSubmitButton() {
   return buttons[buttons.length - 1];
 }
 
+function streamIncludesThread(instance: FakeEventSource, threadId: string): boolean {
+  const url = new URL(instance.url, window.location.href);
+  return (url.searchParams.get("threadIds") ?? "").split(",").includes(threadId);
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: unknown) => void;
@@ -144,7 +149,8 @@ describe("MVP shell flows", () => {
       expect(draftToolbar.querySelector(".lucide-folder")).toBeInTheDocument();
       const mainStack = main.querySelector(".kodex-main-stack");
       expect(mainStack).toHaveAttribute("data-draft-thread", "true");
-      expect(main.querySelector(".kodex-timeline-scroll")).not.toBeInTheDocument();
+      const activeThreadPane = main.querySelector('.kodex-thread-pane[data-workspace-pane-active="true"]');
+      expect(activeThreadPane?.querySelector(".kodex-timeline-scroll")).not.toBeInTheDocument();
       expect(within(main).queryByText("No events")).not.toBeInTheDocument();
       expect(appCss).toMatch(
         /\.kodex-main-stack\[data-draft-thread="true"\]\s+\.kodex-composer-shell\s*\{[^}]*margin-top:\s*auto;/s,
@@ -173,7 +179,7 @@ describe("MVP shell flows", () => {
 
       let createdThreadStream: FakeEventSource | undefined;
       await waitFor(() => {
-        createdThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-2"));
+        createdThreadStream = FakeEventSource.instances.find((instance) => streamIncludesThread(instance, "thread-2"));
         expect(createdThreadStream).toBeDefined();
       });
       act(() => {
@@ -250,7 +256,7 @@ describe("MVP shell flows", () => {
 
     let selectedThreadStream: FakeEventSource | undefined;
     await waitFor(() => {
-      selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+      selectedThreadStream = FakeEventSource.instances.find((instance) => streamIncludesThread(instance, "thread-1"));
       expect(selectedThreadStream).toBeDefined();
     });
     act(() => {
@@ -286,8 +292,8 @@ describe("MVP shell flows", () => {
 
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
     expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => streamIncludesThread(instance, "thread-1"));
     expect(selectedThreadStream).toBeDefined();
 
     act(() => {
@@ -335,7 +341,7 @@ describe("MVP shell flows", () => {
 
     let selectedThreadStream: FakeEventSource | undefined;
     await waitFor(() => {
-      selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+      selectedThreadStream = FakeEventSource.instances.find((instance) => streamIncludesThread(instance, "thread-1"));
       expect(selectedThreadStream).toBeDefined();
     });
     act(() => {
@@ -805,7 +811,7 @@ describe("MVP shell flows", () => {
     expect(gateway.callsFor("GET", "/v1/threads")).toHaveLength(0);
     expect(gateway.callsFor("GET", "/v1/chats/threads")).toHaveLength(0);
     expect(gateway.callsFor("GET", "/v1/threads/pinned")).toHaveLength(0);
-    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    const globalStream = FakeEventSource.instances.find((instance) => instance.url.includes("includeGlobal=true"));
     expect(globalStream).toBeDefined();
 
     act(() => {
@@ -947,8 +953,8 @@ describe("MVP shell flows", () => {
 
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
     expect(within(kodexGroup).getByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => streamIncludesThread(instance, "thread-1"));
     expect(selectedThreadStream).toBeDefined();
 
     act(() => {
@@ -999,7 +1005,7 @@ describe("MVP shell flows", () => {
 
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
-    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    const globalStream = FakeEventSource.instances.find((instance) => instance.url.includes("includeGlobal=true"));
     expect(globalStream).toBeDefined();
 
     const projectThread = {
@@ -1087,7 +1093,7 @@ describe("MVP shell flows", () => {
     render(<App />);
 
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
-    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    const globalStream = FakeEventSource.instances.find((instance) => instance.url.includes("includeGlobal=true"));
     expect(globalStream).toBeDefined();
     await waitFor(() => expect(chatListCalls).toBeGreaterThanOrEqual(1));
 
@@ -1170,7 +1176,7 @@ describe("MVP shell flows", () => {
     expect(recentRow!.compareDocumentPosition(activeRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
-    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    const globalStream = FakeEventSource.instances.find((instance) => instance.url.includes("includeGlobal=true"));
     act(() => {
       globalStream?.emitNamed("thread_view.patch", {
         id: "event-chat-active-completed",
@@ -1313,8 +1319,8 @@ describe("MVP shell flows", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => streamIncludesThread(instance, "thread-1"));
     expect(selectedThreadStream).toBeDefined();
 
     act(() => {
@@ -1445,8 +1451,8 @@ describe("MVP shell flows", () => {
 
     const kodexGroup = await screen.findByRole("group", { name: /kodex/i });
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => streamIncludesThread(instance, "thread-1"));
     expect(selectedThreadStream).toBeDefined();
 
     act(() => {
@@ -1606,7 +1612,7 @@ describe("MVP shell flows", () => {
     expect(container.querySelector(".kodex-thread-status")).not.toBeInTheDocument();
     expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach")).toHaveLength(0);
 
-    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    await userEvent.click(within(screen.getByRole("navigation", { name: /workspace/i })).getByRole("button", { name: /second thread/i }));
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
@@ -1647,7 +1653,7 @@ describe("MVP shell flows", () => {
     let selectedStream: FakeEventSource | undefined;
     await waitFor(() => {
       selectedStream = FakeEventSource.instances.find(
-        (instance) => instance.url.includes("threadId=thread-2") && !instance.closed,
+        (instance) => streamIncludesThread(instance, "thread-2") && !instance.closed,
       );
       expect(selectedStream).toBeDefined();
     });
@@ -1665,9 +1671,10 @@ describe("MVP shell flows", () => {
     });
     expect(await screen.findByText(/live active update/i)).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /implement frontend/i }));
+    const workspaceNav = screen.getByRole("navigation", { name: /workspace/i });
+    await userEvent.click(within(workspaceNav).getByRole("button", { name: /implement frontend/i }));
     await screen.findByText(/hello from codex/i);
-    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    await userEvent.click(within(workspaceNav).getByRole("button", { name: /second thread/i }));
     await screen.findByText(/running snapshot/i);
 
     await waitFor(() => {
@@ -1707,7 +1714,8 @@ describe("MVP shell flows", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /implement frontend/i }));
     await screen.findByText(/hello from codex/i);
-    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    const workspaceNav = screen.getByRole("navigation", { name: /workspace/i });
+    await userEvent.click(within(workspaceNav).getByRole("button", { name: /second thread/i }));
     await screen.findByText(/loaded snapshot/i);
 
     await waitFor(() => {
@@ -1751,7 +1759,8 @@ describe("MVP shell flows", () => {
       await attachDeferred.promise;
     });
 
-    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    const workspaceNav = screen.getByRole("navigation", { name: /workspace/i });
+    await userEvent.click(within(workspaceNav).getByRole("button", { name: /second thread/i }));
     await screen.findByText(/running snapshot/i);
 
     await waitFor(() => {
@@ -1768,7 +1777,7 @@ describe("MVP shell flows", () => {
     expect(screen.queryByRole("tablist", { name: /mobile panels/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /show sidebar/i })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /show sidebar/i }));
+    await userEvent.click(screen.getAllByRole("button", { name: /show sidebar/i })[0]);
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "threads");
     expect(appCss).toMatch(/html,\s*body\s*\{[^}]*overflow:\s*hidden;/s);
     expect(appCss).toMatch(/\.kodex-shell\s*\{[^}]*height:\s*100dvh;[^}]*overflow:\s*hidden;/s);
@@ -1916,13 +1925,14 @@ describe("MVP shell flows", () => {
     await userEvent.click(await screen.findByRole("button", { name: /show sidebar/i }));
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "threads");
 
-    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    const workspaceNav = screen.getByRole("navigation", { name: /workspace/i });
+    await userEvent.click(within(workspaceNav).getByRole("button", { name: /second thread/i }));
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
 
-    await userEvent.click(screen.getByRole("button", { name: /show sidebar/i }));
+    await userEvent.click(screen.getAllByRole("button", { name: /show sidebar/i })[0]);
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "threads");
 
-    await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+    await userEvent.click(within(workspaceNav).getByRole("button", { name: /new thread/i }));
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
   });
 

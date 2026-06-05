@@ -2,7 +2,26 @@
 
 ## Status
 
-Proposed.
+Superseded.
+
+Superseded by [Frontend-owned workspace panes plan](frontend-owned-workspace-panes.md).
+
+This plan is retained as historical context for the Dockview exploration and the
+multi-resource SSE bandwidth guardrails. Its central architecture is no longer
+the desired direction: the gateway should not own workspace pane instances,
+Dockview layout, active pane focus, or canvas arrangement. The replacement plan
+makes all pane and canvas state frontend-owned, with the backend providing only
+resource APIs and transports for threads, generated UI sessions, terminals,
+approvals, lifecycle/read state, and event streams.
+
+Implementation checkpoint:
+
+- Implemented gateway-owned workspace panes/layout persistence, mutation routes, OpenAPI regeneration, and workspace SSE events.
+- Implemented a single workspace SSE stream with `includeGlobal=true` plus unique subscribed `threadIds`; backend live and replay filtering keeps `thread_view.patch` and `thread_view.item_delta` scoped to subscribed threads, while low-volume coordination events can still update shell/sidebar state.
+- Implemented the desktop Dockview shell inside the existing main pane only. The AppShell sidebar, preferences, account footer, sidebar resize, and non-thread main panes remain outside the tiling canvas.
+- Implemented initial thread, generated UI, and terminal pane renderers. Terminal PTY bytes remain on terminal websocket transport.
+- Review fixes landed for draft thread pane materialization, Dockview focus selecting the focused thread pane, generated UI pane reachability from thread panes, and in-place Dockview updates for unchanged panel sets.
+- Remaining hardening: full chat composer orchestration is still selected-thread-oriented. The active selected thread pane can render the existing composer bridge, but true independent multi-chat composer state, old timeline affordance parity, and the legacy selected-thread test migration remain unfinished.
 
 ## Goal
 

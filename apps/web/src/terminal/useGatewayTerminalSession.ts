@@ -4,6 +4,7 @@ import {
   createTerminalSession,
   deleteTerminalSession,
   listTerminalSessions,
+  type CreateTerminalSession,
   type TerminalSessionInfo,
 } from "../api/client";
 import { errorMessageFrom } from "../shared/values";
@@ -14,7 +15,18 @@ type GatewayTerminalSessionState = {
   session: TerminalSessionInfo | null;
 };
 
-export function useGatewayTerminalSession(opened: boolean) {
+type GatewayTerminalSessionOptions = {
+  createRequest?: CreateTerminalSession;
+  preferredTerminalId?: string | null;
+  reuseRunning?: boolean;
+};
+
+export function useGatewayTerminalSession(opened: boolean, options: GatewayTerminalSessionOptions = {}) {
+  const {
+    createRequest = {},
+    preferredTerminalId = null,
+    reuseRunning = true,
+  } = options;
   const [state, setState] = useState<GatewayTerminalSessionState>({
     error: null,
     isLoading: false,
@@ -27,16 +39,12 @@ export function useGatewayTerminalSession(opened: boolean) {
     }
 
     let cancelled = false;
-    const preferredSessionId = state.session?.id ?? null;
+    const preferredSessionId = preferredTerminalId ?? state.session?.id ?? null;
     setState((current) => ({ ...current, error: null, isLoading: true }));
 
     async function ensureSession() {
       const existing = await listTerminalSessions();
-      const runningSession =
-        existing.find((session) => session.id === preferredSessionId && session.status === "running") ??
-        existing.find((session) => session.status === "running") ??
-        null;
-      return runningSession ?? createTerminalSession();
+      return ensureTerminalSession(existing, preferredSessionId, reuseRunning, createRequest);
     }
 
     ensureSession()
@@ -59,7 +67,7 @@ export function useGatewayTerminalSession(opened: boolean) {
     return () => {
       cancelled = true;
     };
-  }, [opened]);
+  }, [createRequest.command, createRequest.cwd, createRequest.title, opened, preferredTerminalId, reuseRunning]);
 
   async function createNewSession() {
     const currentTerminalId = state.session?.id ?? null;
@@ -68,7 +76,7 @@ export function useGatewayTerminalSession(opened: boolean) {
       if (currentTerminalId) {
         await deleteKnownSession(currentTerminalId);
       }
-      const session = await createTerminalSession();
+      const session = await createTerminalSession(createRequest);
       setState({ error: null, isLoading: false, session });
     } catch (error) {
       setState((current) => ({
@@ -101,7 +109,7 @@ export function useGatewayTerminalSession(opened: boolean) {
     setState((current) => ({ ...current, error: null, isLoading: true, session: null }));
     try {
       const existing = await listTerminalSessions();
-      const session = existing.find((terminal) => terminal.status === "running") ?? (await createTerminalSession());
+      const session = await ensureTerminalSession(existing, preferredTerminalId, reuseRunning, createRequest);
       setState({ error: null, isLoading: false, session });
     } catch (error) {
       setState((current) => ({
@@ -119,6 +127,20 @@ export function useGatewayTerminalSession(opened: boolean) {
     recoverSession,
     stopSession,
   };
+}
+
+async function ensureTerminalSession(
+  existing: TerminalSessionInfo[],
+  preferredTerminalId: string | null,
+  reuseRunning: boolean,
+  createRequest: CreateTerminalSession,
+) {
+  const preferredSession =
+    preferredTerminalId
+      ? existing.find((session) => session.id === preferredTerminalId && session.status === "running")
+      : null;
+  const reusableSession = reuseRunning ? existing.find((session) => session.status === "running") ?? null : null;
+  return preferredSession ?? reusableSession ?? createTerminalSession(createRequest);
 }
 
 async function deleteKnownSession(terminalId: string) {

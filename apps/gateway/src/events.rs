@@ -1,4 +1,4 @@
-use std::convert::Infallible;
+use std::{collections::BTreeSet, convert::Infallible};
 
 use async_stream::stream;
 use axum::{
@@ -31,7 +31,7 @@ use crate::{
     error::{ApiError, ApiResult},
     events_replay::{
         event_matches, is_normal_live_event, is_operational_replay_event,
-        selected_thread_sse_replay_events, THREAD_VIEW_CURSOR_KIND,
+        workspace_sse_replay_events, THREAD_VIEW_CURSOR_KIND,
     },
     events_synthetic::{synthetic_event, thread_view_refresh_required_event},
     queue,
@@ -71,6 +71,51 @@ pub struct EventsQuery {
     pub project_id: Option<String>,
     pub thread_id: Option<String>,
     pub exclude_thread_id: Option<String>,
+    pub include_global: Option<bool>,
+    pub thread_ids: Option<String>,
+}
+
+impl EventsQuery {
+    pub(crate) fn uses_resource_set_filter(&self) -> bool {
+        self.include_global.is_some() || self.thread_ids.is_some()
+    }
+
+    pub(crate) fn include_global_events(&self) -> bool {
+        self.uses_resource_set_filter() && self.include_global.unwrap_or(false)
+    }
+
+    pub(crate) fn subscribed_thread_ids(&self) -> BTreeSet<String> {
+        let mut ids = BTreeSet::new();
+        if let Some(thread_id) = self.thread_id.as_deref() {
+            if !thread_id.trim().is_empty() {
+                ids.insert(thread_id.trim().to_string());
+            }
+        }
+        if let Some(thread_ids) = self.thread_ids.as_deref() {
+            ids.extend(
+                thread_ids
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|thread_id| !thread_id.is_empty())
+                    .map(ToOwned::to_owned),
+            );
+        }
+        ids
+    }
+
+    pub(crate) fn has_thread_subscriptions(&self) -> bool {
+        !self.subscribed_thread_ids().is_empty()
+    }
+
+    pub(crate) fn is_thread_subscribed(&self, thread_id: Option<&str>) -> bool {
+        let Some(thread_id) = thread_id else {
+            return false;
+        };
+        if self.uses_resource_set_filter() {
+            return self.subscribed_thread_ids().contains(thread_id);
+        }
+        self.thread_id.as_deref() == Some(thread_id)
+    }
 }
 
 #[utoipa::path(get, path = "/v1/events", params(EventsQuery), responses((status = 200, body = EventListResponse)))]
@@ -97,14 +142,13 @@ pub async fn debug_events(
     Query(query): Query<EventsQuery>,
 ) -> ApiResult<Json<EventListResponse>> {
     validate_events_query(&query)?;
-    let events = state
-        .store
-        .replay_events(
-            query.cursor,
-            query.project_id.clone(),
-            query.thread_id.clone(),
-        )
-        .await?;
+    let events = replay_events_page_for_query(
+        &state,
+        query.cursor,
+        &query,
+        crate::store::EVENT_REPLAY_LIMIT,
+    )
+    .await?;
     let events = events
         .into_iter()
         .filter(|event| event_matches(event, &query))
@@ -116,6 +160,16 @@ fn validate_events_query(query: &EventsQuery) -> ApiResult<()> {
     if query.thread_id.is_some() && query.exclude_thread_id.is_some() {
         return Err(ApiError::BadRequest(
             "threadId and excludeThreadId cannot be combined".to_string(),
+        ));
+    }
+    if query.thread_ids.is_some() && query.thread_id.is_some() {
+        return Err(ApiError::BadRequest(
+            "threadId and threadIds cannot be combined".to_string(),
+        ));
+    }
+    if query.uses_resource_set_filter() && query.exclude_thread_id.is_some() {
+        return Err(ApiError::BadRequest(
+            "excludeThreadId cannot be combined with workspace event filters".to_string(),
         ));
     }
     Ok(())
@@ -333,21 +387,19 @@ async fn event_stream(
 
     if query.cursor.is_some() {
         loop {
-            let page = state
-                .store
-                .replay_events_page(
-                    Some(replay_high_water),
-                    query.project_id.as_deref(),
-                    query.thread_id.as_deref(),
-                    SSE_REPLAY_PAGE_SIZE,
-                )
-                .await?;
+            let page = replay_events_page_for_query(
+                &state,
+                Some(replay_high_water),
+                &query,
+                SSE_REPLAY_PAGE_SIZE,
+            )
+            .await?;
             let page_len = page.len();
             let Some(last) = page.last() else {
                 break;
             };
             replay_high_water = last.seq;
-            replay.extend(selected_thread_sse_replay_events(page, &query)?);
+            replay.extend(workspace_sse_replay_events(page, &query)?);
             if page_len < SSE_REPLAY_PAGE_SIZE as usize {
                 break;
             }
@@ -380,7 +432,7 @@ async fn event_stream(
                 }
                 Ok(Ok(_)) => {}
                 Ok(Err(broadcast::error::RecvError::Lagged(_))) => {
-                    if let Some(thread_id) = query.thread_id.clone() {
+                    for thread_id in query.subscribed_thread_ids() {
                         if let Ok(event) = thread_view_refresh_required_event(high_water, thread_id, "lagged") {
                             if let Ok(sse_event) = event_to_sse(event) {
                                 yield Ok(sse_event);
@@ -396,7 +448,7 @@ async fn event_stream(
 }
 
 fn event_for_sse_query(mut event: EventEnvelope, query: &EventsQuery) -> EventEnvelope {
-    if query.thread_id.is_none() && event.kind == THREAD_VIEW_PATCH_EVENT_KIND {
+    if !query.has_thread_subscriptions() && event.kind == THREAD_VIEW_PATCH_EVENT_KIND {
         if let Ok(patch) =
             serde_json::from_value::<thread_view::ThreadViewPatch>(event.payload.clone())
         {
@@ -419,10 +471,7 @@ fn event_for_sse_query(mut event: EventEnvelope, query: &EventsQuery) -> EventEn
 
 fn is_sse_live_event_for_query(event: &EventEnvelope, query: &EventsQuery) -> bool {
     if event.kind == THREAD_VIEW_ITEM_DELTA_EVENT_KIND {
-        return query
-            .thread_id
-            .as_ref()
-            .is_some_and(|thread_id| event.thread_id.as_ref() == Some(thread_id));
+        return query.is_thread_subscribed(event.thread_id.as_deref());
     }
     is_normal_live_event(event)
 }
@@ -435,15 +484,9 @@ async fn replay_operational_events(
     let mut high_water = query.cursor.unwrap_or(0);
 
     loop {
-        let page = state
-            .store
-            .replay_events_page(
-                Some(high_water),
-                query.project_id.as_deref(),
-                query.thread_id.as_deref(),
-                SSE_REPLAY_PAGE_SIZE,
-            )
-            .await?;
+        let page =
+            replay_events_page_for_query(state, Some(high_water), query, SSE_REPLAY_PAGE_SIZE)
+                .await?;
         let page_len = page.len();
         let Some(last) = page.last() else {
             break;
@@ -462,6 +505,40 @@ async fn replay_operational_events(
     }
 
     Ok(events)
+}
+
+async fn replay_events_page_for_query(
+    state: &AppState,
+    cursor: Option<i64>,
+    query: &EventsQuery,
+    limit: i64,
+) -> ApiResult<Vec<EventEnvelope>> {
+    if query.uses_resource_set_filter() {
+        let thread_ids = query
+            .subscribed_thread_ids()
+            .into_iter()
+            .collect::<Vec<_>>();
+        state
+            .store
+            .replay_events_page_for_threads(
+                cursor,
+                query.project_id.as_deref(),
+                &thread_ids,
+                query.include_global_events(),
+                limit,
+            )
+            .await
+    } else {
+        state
+            .store
+            .replay_events_page(
+                cursor,
+                query.project_id.as_deref(),
+                query.thread_id.as_deref(),
+                limit,
+            )
+            .await
+    }
 }
 
 async fn normalized_timeline_events(

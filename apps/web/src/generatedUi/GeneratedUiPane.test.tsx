@@ -160,10 +160,13 @@ describe("GeneratedUiPane", () => {
     expect(onHide).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the narrow generated UI surface as a full-page bottom sheet", () => {
+  it("keeps generated UI styling scoped to the workspace pane host", () => {
+    expect(generatedUiCss).toMatch(/\.kodex-generated-ui-pane\s*\{[^}]*height:\s*100%;/s);
+    expect(generatedUiCss).toMatch(/\.kodex-generated-ui-frame-wrap\s*\{[^}]*height:\s*100%;/s);
     expect(generatedUiCss).toMatch(/@media \(max-width:\s*900px\)/);
-    expect(generatedUiCss).toMatch(/\.kodex-generated-ui-surface\s*\{[^}]*position:\s*fixed;[^}]*inset:\s*0;/s);
-    expect(generatedUiCss).toMatch(/@keyframes kodex-generated-ui-sheet-in\s*\{[^}]*from\s*\{[^}]*translateY\(100%\)/s);
+    expect(generatedUiCss).not.toContain(".kodex-generated-ui-surface");
+    expect(generatedUiCss).not.toContain(".kodex-generated-ui-resize-handle");
+    expect(generatedUiCss).not.toContain("data-generated-ui-resizing");
   });
 
   it("does not force a white iframe border or background around dark generated UIs", () => {

@@ -13,8 +13,10 @@ type EventStreamClientOptions = {
   EventSourceCtor?: EventSourceCtor;
   cursor?: number;
   excludeThreadId?: string | null;
+  includeGlobal?: boolean;
   reconnectDelayMs?: number;
   threadId?: string;
+  threadIds?: string[];
   onEvent: (event: EventEnvelope) => void;
   onStatusChange?: (status: "connected" | "reconnecting" | "closed") => void;
 };
@@ -54,14 +56,20 @@ const GATEWAY_SSE_EVENT_TYPES = [
   "timeline.thread_metadata",
   "turn_queue.item_deleted",
   "turn_queue.item_upsert",
+  "workspace.focus_updated",
+  "workspace.pane_deleted",
+  "workspace.pane_upserted",
+  "workspace.updated",
 ];
 
 export function createEventStreamClient({
   EventSourceCtor = globalThis.EventSource as EventSourceCtor | undefined,
   cursor,
   excludeThreadId,
+  includeGlobal,
   reconnectDelayMs = 1000,
   threadId,
+  threadIds,
   onEvent,
   onStatusChange,
 }: EventStreamClientOptions) {
@@ -75,7 +83,9 @@ export function createEventStreamClient({
       return;
     }
 
-    eventSource = new EventSourceCtor(eventStreamUrl(lastSeq, threadId, excludeThreadId));
+    eventSource = new EventSourceCtor(
+      eventStreamUrl({ cursor: lastSeq, excludeThreadId, includeGlobal, threadId, threadIds }),
+    );
     onStatusChange?.("connected");
 
     const handleMessage = (message: MessageEvent<string>) => {
@@ -111,14 +121,34 @@ export function createEventStreamClient({
   return { close, connect };
 }
 
-function eventStreamUrl(cursor?: number, threadId?: string, excludeThreadId?: string | null): string {
+function eventStreamUrl({
+  cursor,
+  excludeThreadId,
+  includeGlobal,
+  threadId,
+  threadIds,
+}: {
+  cursor?: number;
+  excludeThreadId?: string | null;
+  includeGlobal?: boolean;
+  threadId?: string;
+  threadIds?: string[];
+}): string {
   const baseUrl =
     typeof window === "undefined" ? "http://127.0.0.1:8787" : window.location.origin;
   const url = new URL("/v1/events", baseUrl);
   if (typeof cursor === "number") {
     url.searchParams.set("cursor", String(cursor));
   }
-  if (threadId) {
+  if (typeof includeGlobal === "boolean") {
+    url.searchParams.set("includeGlobal", String(includeGlobal));
+  }
+  const uniqueThreadIds = Array.from(
+    new Set((threadIds ?? []).map((id) => id.trim()).filter(Boolean)),
+  );
+  if (uniqueThreadIds.length > 0) {
+    url.searchParams.set("threadIds", uniqueThreadIds.join(","));
+  } else if (threadId) {
     url.searchParams.set("threadId", threadId);
   }
   if (excludeThreadId) {

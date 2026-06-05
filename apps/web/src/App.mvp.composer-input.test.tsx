@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -15,6 +15,7 @@ import {
   projectionPatchEvent,
   requestJson,
   secondThread,
+  setInitialWorkspacePaneState,
   snapshotItem,
   snapshotTurn,
   thread,
@@ -31,7 +32,22 @@ function latestFakeEventSource(predicate: (instance: FakeEventSource) => boolean
 }
 
 function hasThreadId(instance: FakeEventSource, threadId: string) {
-  return new URL(instance.url, window.location.origin).searchParams.get("threadId") === threadId;
+  const params = new URL(instance.url, window.location.origin).searchParams;
+  const threadIds = (params.get("threadIds") ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return params.get("threadId") === threadId || threadIds.includes(threadId);
+}
+
+function workspaceNavigation() {
+  return screen.getByRole("navigation", { name: /workspace/i });
+}
+
+async function expectHelloFromCodex() {
+  await waitFor(() => {
+    expect(screen.getByText(/hello from codex/i)).toBeInTheDocument();
+  });
 }
 
 function deferred<T>() {
@@ -66,6 +82,9 @@ async function queuedThreadInputResponse(request: Request, queueId: string, thre
 
 describe("MVP composer input flows", () => {
   afterEach(() => {
+    cleanup();
+    window.history.replaceState(null, "", "/");
+    window.localStorage.clear();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     FakeEventSource.instances = [];
@@ -86,7 +105,7 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
+    await expectHelloFromCodex();
     expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
     expect(screen.queryByLabelText(/steer active turn/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /send message/i })).not.toBeInTheDocument();
@@ -349,7 +368,7 @@ describe("MVP composer input flows", () => {
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/message composer/i), "Draft for first thread");
 
-    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /second thread/i }));
     expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
 
@@ -408,7 +427,7 @@ describe("MVP composer input flows", () => {
       expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
     });
     expect(container.querySelector(".kodex-inline-skill-badge")).toHaveTextContent("Documents");
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => hasThreadId(instance, "thread-1"));
     expect(selectedThreadStream).toBeDefined();
     act(() => {
       selectedThreadStream?.emit(projectionPatchEvent({
@@ -457,7 +476,7 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
+    await expectHelloFromCodex();
     await userEvent.type(screen.getByLabelText(/message composer/i), "Steered follow-up");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
@@ -481,9 +500,9 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    await expectHelloFromCodex();
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => hasThreadId(instance, "thread-1"));
     expect(selectedThreadStream).toBeDefined();
 
     act(() => {
@@ -551,10 +570,10 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
+    await expectHelloFromCodex();
     await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/thread-1/queued-inputs")).toHaveLength(1));
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => hasThreadId(instance, "thread-1"));
     expect(selectedThreadStream).toBeDefined();
 
     act(() => {
@@ -690,7 +709,7 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
+    await expectHelloFromCodex();
     await userEvent.type(screen.getByLabelText(/message composer/i), "Steer this turn");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
     await userEvent.click(screen.getByRole("button", { name: /^steer$/i }));
@@ -727,10 +746,10 @@ describe("MVP composer input flows", () => {
     await waitFor(() => {
       expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
     });
-    expect(within(timelineElement(document.body)).getByText("Ship it")).toBeInTheDocument();
+    expect(await screen.findByText("Ship it")).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
     expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => hasThreadId(instance, "thread-1"));
     act(() => {
       selectedThreadStream?.emit(projectionPatchEvent({
         id: "projection-sent-text",
@@ -744,7 +763,7 @@ describe("MVP composer input flows", () => {
         status: "completed",
       }));
     });
-    await waitFor(() => expect(within(timelineElement(document.body)).getAllByText("Ship it")).toHaveLength(1));
+    await waitFor(() => expect(screen.getAllByText("Ship it")).toHaveLength(1));
 
     act(() => resolveTurn({ payload: {} }));
     await waitFor(() => expect(screen.getByLabelText(/message composer/i)).toBeEnabled());
@@ -757,7 +776,12 @@ describe("MVP composer input flows", () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "GET /v1/threads/thread-1": () => threadDetail(thread, firstThreadTurns),
+        "GET /v1/threads/thread-1": () => {
+          const detail = threadDetail(thread, firstThreadTurns);
+          return firstThreadTurns.length === 0
+            ? detail
+            : { ...detail, timeline: { ...detail.timeline, viewRevision: 3 } };
+        },
         "GET /v1/threads/thread-2": threadDetail(secondThread, [
           snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Second thread snapshot" })]),
         ]),
@@ -767,10 +791,29 @@ describe("MVP composer input flows", () => {
           }),
       }),
     );
+    setInitialWorkspacePaneState({
+      activePaneId: "pane-thread-1",
+      dockviewLayout: null,
+      panes: [
+        {
+          id: "pane-thread-1",
+          kind: "thread",
+          target: { mode: "existing", threadId: "thread-1" },
+          title: "Implement frontend",
+        },
+        {
+          id: "pane-thread-2",
+          kind: "thread",
+          target: { mode: "existing", threadId: "thread-2" },
+          title: "Second thread",
+        },
+      ],
+      schemaVersion: 1,
+    });
 
     const { container } = render(<App />);
 
-    const firstThreadButton = await screen.findByRole("button", { name: /implement frontend/i });
+    const firstThreadButton = await within(workspaceNavigation()).findByRole("button", { name: /implement frontend/i });
     const firstThreadRow = firstThreadButton.closest(".kodex-thread-list-button");
     expect(firstThreadRow).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/message composer/i), "sleep 5s, then send hello");
@@ -781,9 +824,12 @@ describe("MVP composer input flows", () => {
       expect(firstThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument();
     });
 
-    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /second thread/i }));
     expect(await screen.findByText(/second thread snapshot/i)).toBeInTheDocument();
-    expect(firstThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument();
+    const currentFirstThreadRow = within(workspaceNavigation())
+      .getByRole("button", { name: /implement frontend/i })
+      .closest(".kodex-thread-list-button");
+    expect(currentFirstThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument();
 
     firstThreadTurns = [
       snapshotTurn("turn-3", [
@@ -794,8 +840,8 @@ describe("MVP composer input flows", () => {
       ]),
     ];
     act(() => resolveTurn({ payload: {} }));
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
-    const globalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
+    const globalStream = latestFakeEventSource((instance) => hasThreadId(instance, "thread-1") && !instance.closed);
     act(() => {
       globalStream?.emit({
         id: "event-background-send-completed",
@@ -829,12 +875,15 @@ describe("MVP composer input flows", () => {
     });
 
     await waitFor(() => {
-      expect(firstThreadRow?.querySelector(".kodex-thread-progress-indicator")).not.toBeInTheDocument();
-      expect(firstThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
+      const currentFirstThreadRow = within(workspaceNavigation())
+        .getByRole("button", { name: /implement frontend/i })
+        .closest(".kodex-thread-list-button");
+      expect(currentFirstThreadRow?.querySelector(".kodex-thread-progress-indicator")).not.toBeInTheDocument();
+      expect(currentFirstThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
     });
 
-    await userEvent.click(firstThreadButton);
-    expect(await within(timelineElement(container)).findByText("hello")).toBeInTheDocument();
+    await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /implement frontend/i }));
+    expect(await screen.findByText("hello")).toBeInTheDocument();
     expect(within(timelineElement(container)).getAllByText("sleep 5s, then send hello")).toHaveLength(1);
   });
 
@@ -961,7 +1010,7 @@ describe("MVP composer input flows", () => {
     const file = new File(["fake"], "diagram.png", { type: "image/png" });
     await userEvent.upload(input!, file);
 
-    expect(screen.getByRole("button", { name: /remove diagram.png/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /remove diagram.png/i })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
@@ -1165,7 +1214,7 @@ describe("MVP composer input flows", () => {
 
     act(() => resolveTurn({ payload: {} }));
 
-    expect(await within(timelineElement(container)).findByText("Materialized response")).toBeInTheDocument();
+    expect(await screen.findByText("Materialized response")).toBeInTheDocument();
     expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(1);
     expect(within(timelineElement(container)).getAllByText("Materialize this")).toHaveLength(1);
   });
@@ -1205,7 +1254,7 @@ describe("MVP composer input flows", () => {
     await userEvent.type(screen.getByLabelText(/message composer/i), "Materialize this");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
-    expect(await within(timelineElement(container)).findByText("Materialized response")).toBeInTheDocument();
+    expect(await screen.findByText("Materialized response")).toBeInTheDocument();
     expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(2);
     expect(screen.queryByText(/not materialized yet/i)).not.toBeInTheDocument();
     expect(within(timelineElement(container)).getAllByText("Materialize this")).toHaveLength(1);
@@ -1246,7 +1295,7 @@ describe("MVP composer input flows", () => {
     await userEvent.type(screen.getByLabelText(/message composer/i), "Materialize this");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
-    expect(await within(timelineElement(container)).findByText("Materialized response")).toBeInTheDocument();
+    expect(await screen.findByText("Materialized response")).toBeInTheDocument();
     expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(2);
     expect(screen.queryByText(/failed to load thread history/i)).not.toBeInTheDocument();
     expect(within(timelineElement(container)).getAllByText("Materialize this")).toHaveLength(1);
@@ -1456,7 +1505,7 @@ describe("MVP composer input flows", () => {
 
     let selectedThreadStream: FakeEventSource | undefined;
     await waitFor(() => {
-      selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+      selectedThreadStream = FakeEventSource.instances.find((instance) => hasThreadId(instance, "thread-1"));
       expect(selectedThreadStream).toBeDefined();
     });
     act(() => {
@@ -1560,7 +1609,7 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
+    await expectHelloFromCodex();
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
     const composer = screen.getByLabelText(/message composer/i);
     expect(screen.getByRole("button", { name: /stop turn/i })).toBeInTheDocument();
@@ -1648,7 +1697,7 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
+    await expectHelloFromCodex();
     const queuedCard = screen.getByRole("region", { name: /queued steer messages/i });
     const row = within(queuedCard).getByRole("group");
     const rowId = row.getAttribute("data-steer-row-id");

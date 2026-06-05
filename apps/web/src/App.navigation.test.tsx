@@ -246,7 +246,10 @@ describe("deep link navigation", () => {
       expect(screen.getByRole("button", { name: /project: no project/i })).toBeInTheDocument();
     });
     expect(within(main).queryByText(/no thread selected/i)).not.toBeInTheDocument();
-    expect(within(main).queryByRole("heading", { name: /second thread/i })).not.toBeInTheDocument();
+    const activePane = main.querySelector('.kodex-thread-pane[data-workspace-pane-active="true"]');
+    expect(activePane).not.toBeNull();
+    expect(within(activePane as HTMLElement).getByRole("heading", { name: /draft thread/i })).toBeInTheDocument();
+    expect(within(activePane as HTMLElement).queryByRole("heading", { name: /second thread/i })).not.toBeInTheDocument();
   });
 
   it("uses mobile panel route state so back navigation can return from a thread to the selector", async () => {

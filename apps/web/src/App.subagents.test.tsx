@@ -46,6 +46,11 @@ function deferred<T>() {
   return { promise, reject, resolve };
 }
 
+function streamIncludesThread(instance: FakeEventSource, threadId: string): boolean {
+  const url = new URL(instance.url, "http://localhost");
+  return (url.searchParams.get("threadIds") ?? "").split(",").includes(threadId);
+}
+
 const subagentThread = {
   ...thread,
   id: "subagent-1",
@@ -201,7 +206,7 @@ describe("subagent thread viewer", () => {
     await userEvent.click(await screen.findByRole("radio", { name: /builder/i }));
     expect(await screen.findByText(/builder snapshot/i)).toBeInTheDocument();
 
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => streamIncludesThread(instance, "thread-1"));
     act(() => {
       selectedThreadStream?.emitNamed("thread.subagent_updated", subagentDiscoveryEvent({
         id: "subagent-update",
@@ -231,7 +236,7 @@ describe("subagent thread viewer", () => {
     render(<App />);
 
     await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/thread-1/subagents")).toHaveLength(1));
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => streamIncludesThread(instance, "thread-1"));
     act(() => {
       selectedThreadStream?.emitNamed("thread_view.patch", projectionPatchEvent({
         id: "main-ordinary-streaming-patch",
@@ -258,7 +263,7 @@ describe("subagent thread viewer", () => {
     expect(gateway.callsFor("GET", "/v1/threads")).toHaveLength(0);
     expect(gateway.callsFor("GET", "/v1/chats/threads")).toHaveLength(0);
 
-    const globalStream = FakeEventSource.instances.find((instance) => instance.url.includes("excludeThreadId=thread-1"));
+    const globalStream = FakeEventSource.instances.find((instance) => instance.url.includes("includeGlobal=true"));
     act(() => {
       globalStream?.emitNamed("thread_view.patch", projectionPatchEvent({
         id: "background-subagent-patch",
@@ -301,7 +306,7 @@ describe("subagent thread viewer", () => {
     await userEvent.click(await screen.findByRole("button", { name: /show subagents/i }));
     expect(await screen.findByText(/scout snapshot/i)).toBeInTheDocument();
 
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => streamIncludesThread(instance, "thread-1"));
     act(() => {
       selectedThreadStream?.emitNamed("thread.subagent_stopped", subagentDiscoveryEvent({
         id: "subagent-stop",
@@ -334,7 +339,7 @@ describe("subagent thread viewer", () => {
     expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /show subagents/i })).not.toBeInTheDocument();
 
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => streamIncludesThread(instance, "thread-1"));
     act(() => {
       selectedThreadStream?.emitNamed("thread.subagent_started", subagentDiscoveryEvent({
         id: "subagent-start",

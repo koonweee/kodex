@@ -46,6 +46,11 @@ function resetDateLabel(date: Date) {
   return new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short" }).format(date);
 }
 
+function streamIncludesThread(instance: FakeEventSource, threadId: string): boolean {
+  const url = new URL(instance.url, "http://localhost");
+  return (url.searchParams.get("threadIds") ?? "").split(",").includes(threadId);
+}
+
 describe("MVP composer settings flows", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -81,10 +86,10 @@ describe("MVP composer settings flows", () => {
 
     const modelButton = await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
     await waitFor(() => {
-      expect(FakeEventSource.instances.some((instance) => instance.url.includes("threadId=thread-1"))).toBe(true);
+      expect(FakeEventSource.instances.some((instance) => streamIncludesThread(instance, "thread-1"))).toBe(true);
     });
 
-    const threadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    const threadStream = FakeEventSource.instances.find((instance) => streamIncludesThread(instance, "thread-1"));
     act(() => {
       threadStream?.emit({
         id: "usage-1",
@@ -293,10 +298,10 @@ describe("MVP composer settings flows", () => {
 
     await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
     await waitFor(() => {
-      expect(FakeEventSource.instances.some((instance) => instance.url.includes("threadId=thread-1"))).toBe(true);
+      expect(FakeEventSource.instances.some((instance) => streamIncludesThread(instance, "thread-1"))).toBe(true);
     });
 
-    const threadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    const threadStream = FakeEventSource.instances.find((instance) => streamIncludesThread(instance, "thread-1"));
     act(() => {
       threadStream?.emit({
         id: "usage-1",
@@ -1027,7 +1032,7 @@ describe("MVP composer settings flows", () => {
       expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(1);
     });
 
-    const selectedThreadStreams = FakeEventSource.instances.filter((instance) => instance.url.includes("threadId=thread-1"));
+    const selectedThreadStreams = FakeEventSource.instances.filter((instance) => streamIncludesThread(instance, "thread-1"));
     expect(selectedThreadStreams).toHaveLength(2);
     act(() => {
       for (const stream of selectedThreadStreams) {

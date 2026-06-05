@@ -1,0 +1,201 @@
+import { ActionIcon, Alert, Badge, Box, Button, Group, Loader, Text, Tooltip } from "@mantine/core";
+import { Plus, RotateCw, Square } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { terminalWebSocketUrl } from "../../api/client";
+import { errorMessageFrom } from "../../shared/values";
+import { useInputCapabilities } from "../../shared/inputCapabilities";
+import {
+  XtermTerminal,
+  type TerminalConnectionState,
+  type TerminalInputSignal,
+} from "../../terminal/XtermTerminal";
+import { useGatewayTerminalSession } from "../../terminal/useGatewayTerminalSession";
+import { useWorkspace } from "../../workspace/WorkspaceProvider";
+import type { WorkspacePaneComponentProps } from "../../workspace/paneTypes";
+import { paneTargetRecord } from "../../workspace/paneTypes";
+
+const TERMINAL_TEXT = {
+  create: "New terminal",
+  fallbackTitle: "Terminal",
+  loading: "Starting terminal",
+  reconnect: "Reconnect terminal",
+  stop: "Stop terminal",
+};
+
+const TERMINAL_ACCESSORY_KEYS: Array<{ data: string; label: string }> = [
+  { label: "Esc", data: "\x1b" },
+  { label: "Tab", data: "\t" },
+  { label: "Ctrl-C", data: "\x03" },
+  { label: "Left", data: "\x1b[D" },
+  { label: "Down", data: "\x1b[B" },
+  { label: "Up", data: "\x1b[A" },
+  { label: "Right", data: "\x1b[C" },
+];
+
+export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
+  const target = paneTargetRecord(pane);
+  const { updatePane } = useWorkspace();
+  const targetTerminalId = typeof target.terminalId === "string" ? target.terminalId : null;
+  const targetCwd = typeof target.cwd === "string" ? target.cwd : null;
+  const targetCommand = typeof target.command === "string" ? target.command : null;
+  const createRequest = useMemo(
+    () => ({
+      command: targetCommand ?? undefined,
+      cwd: targetCwd ?? undefined,
+      title: pane.title ?? undefined,
+    }),
+    [pane.title, targetCommand, targetCwd],
+  );
+  const { createNewSession, error, isLoading, recoverSession, session, stopSession } = useGatewayTerminalSession(true, {
+    createRequest,
+    preferredTerminalId: targetTerminalId,
+    reuseRunning: false,
+  });
+  const patchingSessionIdRef = useRef<string | null>(null);
+  const [connectionState, setConnectionState] = useState<TerminalConnectionState>("closed");
+  const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
+  const [inputSignal, setInputSignal] = useState<TerminalInputSignal | null>(null);
+  const [paneError, setPaneError] = useState<string | null>(null);
+  const { hasTouchInput } = useInputCapabilities();
+
+  useEffect(() => {
+    if (!session || targetTerminalId === session.id || patchingSessionIdRef.current === session.id) {
+      return;
+    }
+    patchingSessionIdRef.current = session.id;
+    setPaneError(null);
+    void updatePane(pane.id, {
+      target: {
+        ...target,
+        command: targetCommand ?? session.command,
+        cwd: targetCwd ?? session.cwd,
+        terminalId: session.id,
+      },
+      title: pane.title ?? session.title,
+    })
+      .catch((updateError: unknown) => setPaneError(errorMessageFrom(updateError)))
+      .finally(() => {
+        if (patchingSessionIdRef.current === session.id) {
+          patchingSessionIdRef.current = null;
+        }
+      });
+  }, [pane.id, pane.title, session, target, targetCommand, targetCwd, targetTerminalId, updatePane]);
+
+  const handleConnectionStateChange = useCallback((state: TerminalConnectionState) => {
+    setConnectionState(state);
+    if (state === "open" || state === "connecting") {
+      setConnectionMessage(null);
+      return;
+    }
+    if (session && !isLoading) {
+      setConnectionMessage(state === "error" ? "Terminal connection failed." : "Terminal connection closed.");
+    }
+  }, [isLoading, session]);
+
+  function sendAccessoryInput(data: string) {
+    setInputSignal((current) => ({ data, id: (current?.id ?? 0) + 1 }));
+  }
+
+  async function handlePaste() {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        sendAccessoryInput(text);
+      }
+    } catch {
+      setConnectionMessage("Clipboard paste is unavailable.");
+    }
+  }
+
+  async function handleReconnect() {
+    setConnectionMessage(null);
+    setConnectionState("connecting");
+    await recoverSession();
+  }
+
+  const status = connectionState === "open" && session?.status === "running" ? "connected" : session?.status ?? connectionState;
+  const actionSize = hasTouchInput ? "lg" : "sm";
+  const terminalError = paneError ?? error ?? connectionMessage;
+
+  return (
+    <Box aria-label="Terminal pane" className="kodex-terminal-host kodex-terminal-pane" role="region">
+      <Group className="kodex-terminal-header" justify="space-between" wrap="nowrap">
+        <Box className="kodex-terminal-heading">
+          <Group gap="xs" wrap="nowrap">
+            <Text className="kodex-terminal-title">{session?.title ?? pane.title ?? TERMINAL_TEXT.fallbackTitle}</Text>
+            <Badge className="kodex-terminal-status" color={status === "connected" ? "green" : "gray"} size="xs" variant="light">
+              {status}
+            </Badge>
+          </Group>
+          {session?.cwd ?? targetCwd ? <Text className="kodex-terminal-cwd">{session?.cwd ?? targetCwd}</Text> : null}
+        </Box>
+        <Group gap={4} wrap="nowrap">
+          <Tooltip label={TERMINAL_TEXT.create}>
+            <ActionIcon
+              aria-label={TERMINAL_TEXT.create}
+              color="gray"
+              disabled={isLoading}
+              onClick={createNewSession}
+              size={actionSize}
+              type="button"
+              variant="subtle"
+            >
+              <Plus size={16} />
+            </ActionIcon>
+          </Tooltip>
+          <Tooltip label={TERMINAL_TEXT.stop}>
+            <ActionIcon
+              aria-label={TERMINAL_TEXT.stop}
+              color="gray"
+              disabled={!session || isLoading}
+              onClick={stopSession}
+              size={actionSize}
+              type="button"
+              variant="subtle"
+            >
+              <Square size={14} />
+            </ActionIcon>
+          </Tooltip>
+        </Group>
+      </Group>
+      {terminalError ? (
+        <Alert className="kodex-terminal-error" color="red">
+          <Group gap="xs" justify="space-between" wrap="nowrap">
+            <Text size="sm">{terminalError}</Text>
+            {connectionMessage ? (
+              <Button leftSection={<RotateCw size={13} />} onClick={handleReconnect} size="xs" type="button" variant="light">
+                {TERMINAL_TEXT.reconnect}
+              </Button>
+            ) : null}
+          </Group>
+        </Alert>
+      ) : null}
+      <Group className="kodex-terminal-accessory-row" gap={4} wrap="nowrap">
+        {TERMINAL_ACCESSORY_KEYS.map((key) => (
+          <button className="kodex-terminal-accessory-key" key={key.label} onClick={() => sendAccessoryInput(key.data)} type="button">
+            {key.label}
+          </button>
+        ))}
+        <button className="kodex-terminal-accessory-key" onClick={handlePaste} type="button">
+          Paste
+        </button>
+      </Group>
+      <Box className="kodex-terminal-body">
+        {isLoading && !session ? (
+          <Group className="kodex-terminal-loading" gap="xs" justify="center">
+            <Loader size="sm" />
+            <Text>{TERMINAL_TEXT.loading}</Text>
+          </Group>
+        ) : session ? (
+          <XtermTerminal
+            className="kodex-terminal-viewport"
+            inputSignal={inputSignal}
+            onConnectionStateChange={handleConnectionStateChange}
+            webSocketUrl={terminalWebSocketUrl(session.id)}
+          />
+        ) : null}
+      </Box>
+    </Box>
+  );
+}

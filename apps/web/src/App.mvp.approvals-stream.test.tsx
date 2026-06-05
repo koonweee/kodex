@@ -22,6 +22,22 @@ function clickMenuItem(name: RegExp) {
   return clickMenuItemWithDeps(name, screen, waitFor, fireEvent);
 }
 
+function activeWorkspaceStream(threadId?: string) {
+  return [...FakeEventSource.instances].reverse().find((instance) => {
+    if (instance.closed) {
+      return false;
+    }
+    const params = new URL(instance.url, window.location.origin).searchParams;
+    if (params.get("includeGlobal") !== "true") {
+      return false;
+    }
+    if (!threadId) {
+      return true;
+    }
+    return (params.get("threadIds") ?? "").split(",").includes(threadId);
+  });
+}
+
 describe("MVP approvals stream flows", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -62,8 +78,8 @@ describe("MVP approvals stream flows", () => {
     const timeline = await screen.findByRole("main", { name: /thread/i });
     expect(await within(timeline).findByText(/cargo test/i)).toBeInTheDocument();
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
-    const globalApprovalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
-    expect(globalApprovalStream).toBeDefined();
+    const workspaceStream = activeWorkspaceStream(thread.id);
+    expect(workspaceStream).toBeDefined();
 
     await userEvent.click(within(timeline).getByRole("button", { name: /yes, proceed/i }));
     await waitFor(() => {
@@ -71,7 +87,7 @@ describe("MVP approvals stream flows", () => {
     });
 
     act(() => {
-      globalApprovalStream?.emit({
+      workspaceStream?.emit({
         id: "event-stale-local-created",
         seq: 2,
         kind: "approval.created",
@@ -109,13 +125,13 @@ describe("MVP approvals stream flows", () => {
 
     await screen.findByRole("heading", { name: /implement frontend/i });
     const timeline = await screen.findByRole("main", { name: /thread/i });
-    let selectedThreadStream: FakeEventSource | undefined;
+    let workspaceStream: FakeEventSource | undefined;
     await waitFor(() => {
-      selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
-      expect(selectedThreadStream).toBeDefined();
+      workspaceStream = activeWorkspaceStream("thread-1");
+      expect(workspaceStream).toBeDefined();
     });
     act(() => {
-      selectedThreadStream?.emit({
+      workspaceStream?.emit({
         id: "event-approval-created",
         seq: 2,
         kind: "approval.created",
@@ -132,7 +148,7 @@ describe("MVP approvals stream flows", () => {
     expect(await within(timeline).findByText(/npm test/i)).toBeInTheDocument();
 
     act(() => {
-      selectedThreadStream?.emit({
+      workspaceStream?.emit({
         id: "event-approval-resolved",
         seq: 3,
         kind: "approval.resolved",
@@ -181,12 +197,14 @@ describe("MVP approvals stream flows", () => {
     render(<App />);
 
     const secondThreadButton = await screen.findByRole("button", { name: /second thread/i });
-    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2));
-    const globalApprovalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
-    expect(globalApprovalStream).toBeDefined();
+    let workspaceStream: FakeEventSource | undefined;
+    await waitFor(() => {
+      workspaceStream = activeWorkspaceStream("thread-1");
+      expect(workspaceStream).toBeDefined();
+    });
 
     act(() => {
-      globalApprovalStream?.emit({
+      workspaceStream?.emit({
         id: "event-other-approval-created",
         seq: 2,
         kind: "approval.created",
@@ -204,16 +222,13 @@ describe("MVP approvals stream flows", () => {
     await userEvent.click(secondThreadButton);
     const timeline = await screen.findByRole("main", { name: /thread/i });
     expect(await within(timeline).findByText(/cargo fmt/i)).toBeInTheDocument();
-    let selectedThreadStream: FakeEventSource | undefined;
     await waitFor(() => {
-      selectedThreadStream = [...FakeEventSource.instances]
-        .reverse()
-        .find((instance) => instance.url.includes("threadId=thread-2"));
-      expect(selectedThreadStream).toBeDefined();
+      workspaceStream = activeWorkspaceStream("thread-2");
+      expect(workspaceStream).toBeDefined();
     });
 
     act(() => {
-      selectedThreadStream?.emit({
+      workspaceStream?.emit({
         id: "event-other-approval-resolved",
         seq: 3,
         kind: "approval.resolved",
@@ -267,11 +282,11 @@ describe("MVP approvals stream flows", () => {
 
     const secondThreadButton = await screen.findByRole("button", { name: /second thread/i });
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
-    const globalApprovalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
-    expect(globalApprovalStream).toBeDefined();
+    const workspaceStream = activeWorkspaceStream();
+    expect(workspaceStream).toBeDefined();
 
     act(() => {
-      globalApprovalStream?.emit({
+      workspaceStream?.emit({
         id: "event-before-load-created",
         seq: 2,
         kind: "approval.created",
@@ -332,11 +347,11 @@ describe("MVP approvals stream flows", () => {
 
     const secondThreadButton = await screen.findByRole("button", { name: /second thread/i });
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
-    const globalApprovalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
-    expect(globalApprovalStream).toBeDefined();
+    const workspaceStream = activeWorkspaceStream();
+    expect(workspaceStream).toBeDefined();
 
     act(() => {
-      globalApprovalStream?.emit({
+      workspaceStream?.emit({
         id: "event-before-load-resolved",
         seq: 2,
         kind: "approval.resolved",
@@ -378,11 +393,11 @@ describe("MVP approvals stream flows", () => {
 
     const timeline = await screen.findByRole("main", { name: /thread/i });
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
-    const globalApprovalStream = FakeEventSource.instances.find((instance) => !instance.url.includes("threadId="));
-    expect(globalApprovalStream).toBeDefined();
+    const workspaceStream = activeWorkspaceStream(thread.id);
+    expect(workspaceStream).toBeDefined();
 
     act(() => {
-      globalApprovalStream?.emit({
+      workspaceStream?.emit({
         id: "event-resolved-before-created-replay",
         seq: 3,
         kind: "approval.resolved",
@@ -394,7 +409,7 @@ describe("MVP approvals stream flows", () => {
         payload: { ...staleApproval, status: "resolved", response: { decision: "accept" } },
         receivedAt: "2026-04-30T00:00:03Z",
       });
-      globalApprovalStream?.emit({
+      workspaceStream?.emit({
         id: "event-created-after-resolved-replay",
         seq: 2,
         kind: "approval.created",

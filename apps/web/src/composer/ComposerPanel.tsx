@@ -20,7 +20,7 @@ import { MobileComposerPanel } from "./MobileComposerPanel";
 import { filterSlashCommands, replaceSlashCommandToken, slashCommandItems } from "./slashCommands";
 import { filterSkillsForQuery } from "./skillMentions";
 import type { PendingAttachment, QueuedSteerRow } from "./types";
-import { useComposerDraftState } from "./useComposerDraftState";
+import { useComposerDraftState, type ComposerDraftStore } from "./useComposerDraftState";
 import { useSkillCatalog } from "./useSkillCatalog";
 
 export type ComposerDraftControls = {
@@ -41,6 +41,7 @@ export type ComposerPanelProps = {
   composerSettingsError: string | null;
   composerResetToken: number;
   composerDraftKey?: string;
+  composerDraftStore?: ComposerDraftStore;
   composerCwd?: string | null;
   composerShellRef?: RefObject<HTMLDivElement | null>;
   contextUsage?: ContextUsage | null;
@@ -92,6 +93,7 @@ export function ComposerPanel({
   composerSettingsError,
   composerResetToken,
   composerDraftKey,
+  composerDraftStore,
   composerCwd,
   composerShellRef,
   contextUsage,
@@ -123,7 +125,7 @@ export function ComposerPanel({
   queuedSteerRows,
   selectedThreadPresent,
 }: ComposerPanelProps) {
-  const draftState = useComposerDraftState(composerResetToken, composerDraftKey);
+  const draftState = useComposerDraftState(composerResetToken, composerDraftKey, composerDraftStore);
   const isNarrowComposer = useIsNarrowComposer();
   const inputCapabilities = useInputCapabilities();
   const isMobileComposer = isNarrowComposer && inputCapabilities.hasTouchInput;

@@ -23,17 +23,26 @@ type StoredComposerDraft = {
   skillBindings: SkillMentionBinding[];
 };
 
-export function useComposerDraftState(resetToken: number, draftKey = DEFAULT_COMPOSER_DRAFT_KEY) {
-  const [composerText, setComposerText] = useState("");
-  const [skillBindings, setSkillBindings] = useState<SkillMentionBinding[]>([]);
+export type ComposerDraftStore = Map<string, StoredComposerDraft>;
+
+export function useComposerDraftState(
+  resetToken: number,
+  draftKey = DEFAULT_COMPOSER_DRAFT_KEY,
+  draftStore?: ComposerDraftStore,
+) {
+  const activeDraftKey = draftKey || DEFAULT_COMPOSER_DRAFT_KEY;
+  const localDraftStoreRef = useRef<ComposerDraftStore>(new Map());
+  const draftsByKey = draftStore ?? localDraftStoreRef.current;
+  const initialDraft = draftsByKey.get(activeDraftKey);
+  const [composerText, setComposerText] = useState(initialDraft?.composerText ?? "");
+  const [skillBindings, setSkillBindings] = useState<SkillMentionBinding[]>(initialDraft?.skillBindings ?? []);
   const [skillToken, setSkillToken] = useState<SkillMentionToken | null>(null);
   const [activeSkillIndex, setActiveSkillIndex] = useState(0);
   const [slashToken, setSlashToken] = useState<ComposerTriggerToken<"/"> | null>(null);
   const [activeSlashIndex, setActiveSlashIndex] = useState(0);
-  const activeDraftKey = draftKey || DEFAULT_COMPOSER_DRAFT_KEY;
   const activeDraftKeyRef = useRef(activeDraftKey);
   const composerTextRef = useRef(composerText);
-  const draftsByKeyRef = useRef(new Map<string, StoredComposerDraft>());
+  const lastResetTokenRef = useRef(resetToken);
   const skillBindingsRef = useRef(skillBindings);
   const skillTokenRef = useRef(skillToken);
   const slashTokenRef = useRef(slashToken);
@@ -48,7 +57,11 @@ export function useComposerDraftState(resetToken: number, draftKey = DEFAULT_COM
   }, [activeDraftKey]);
 
   useEffect(() => {
-    draftsByKeyRef.current.delete(activeDraftKeyRef.current);
+    if (lastResetTokenRef.current === resetToken) {
+      return;
+    }
+    lastResetTokenRef.current = resetToken;
+    draftsByKey.delete(activeDraftKeyRef.current);
     clearText();
   }, [resetToken]);
 
@@ -140,7 +153,7 @@ export function useComposerDraftState(resetToken: number, draftKey = DEFAULT_COM
     skillBindingsRef.current = [];
     skillTokenRef.current = null;
     slashTokenRef.current = null;
-    draftsByKeyRef.current.delete(activeDraftKeyRef.current);
+    draftsByKey.delete(activeDraftKeyRef.current);
     setComposerText("");
     setSkillBindings([]);
     setSkillToken(null);
@@ -201,19 +214,27 @@ export function useComposerDraftState(resetToken: number, draftKey = DEFAULT_COM
 
   function persistDraft(key: string, text: string, bindings: SkillMentionBinding[]) {
     if (text.length === 0 && bindings.length === 0) {
-      draftsByKeyRef.current.delete(key);
+      draftsByKey.delete(key);
       return;
     }
-    draftsByKeyRef.current.set(key, {
+    draftsByKey.set(key, {
       composerText: text,
       skillBindings: [...bindings],
     });
   }
 
   function restoreDraftForKey(key: string) {
-    const storedDraft = draftsByKeyRef.current.get(key);
+    const storedDraft = draftsByKey.get(key);
     const nextText = storedDraft?.composerText ?? "";
     const nextBindings = storedDraft?.skillBindings ?? [];
+    if (
+      composerTextRef.current === nextText &&
+      skillMentionBindingsEqual(skillBindingsRef.current, nextBindings) &&
+      skillTokenRef.current === null &&
+      slashTokenRef.current === null
+    ) {
+      return;
+    }
     composerTextRef.current = nextText;
     skillBindingsRef.current = nextBindings;
     skillTokenRef.current = null;

@@ -257,7 +257,7 @@ test("renders selected thread snapshot output", async ({ page }) => {
   await expect(page.getByText(/snapshot assistant output/i)).toBeVisible();
 });
 
-test("renders an app surface as a desktop split and narrow bottom sheet", async ({ page }) => {
+test("renders generated UI as a workspace pane and submits from the frame", async ({ page }) => {
   const interactiveSession = {
     archivedAt: null,
     createdAt: "2026-04-30T00:00:00Z",
@@ -356,27 +356,14 @@ test("renders an app surface as a desktop split and narrow bottom sheet", async 
   await page.setViewportSize({ width: 1800, height: 820 });
   await page.goto("/threads/thread-1");
 
-  const surface = page.locator(".kodex-generated-ui-surface");
-  const resizeHandle = page.getByRole("separator", { name: /resize generated ui pane/i });
-  const workspace = page.locator(".kodex-thread-workspace");
+  await expect(page.getByText(/snapshot assistant output/i)).toBeVisible();
+  await page.getByRole("button", { name: /open generated ui/i }).click();
+
+  const generatedUiPane = page.locator(".kodex-generated-ui-pane");
   await expect(page.getByTitle(/app surface: mockup chooser/i)).toBeVisible();
-  await expect(resizeHandle).toBeVisible();
-  await expect(resizeHandle).toHaveCSS("width", "4px");
-  await expect(surface).toHaveCSS("position", "static");
-  await expect(surface).toHaveCSS("width", "520px");
-  await expect
-    .poll(async () => Number(await resizeHandle.getAttribute("aria-valuemax")))
-    .toBeGreaterThan(720);
-  const threadHeaderButtonLabels = await page.locator(".kodex-thread-header button").evaluateAll((buttons) =>
-    buttons.map((button) => button.getAttribute("aria-label")),
-  );
-  expect(threadHeaderButtonLabels).toEqual([
-    "Show sidebar",
-    "Hide app surface",
-    "Thread actions",
-  ]);
-  await expect(page.locator(".kodex-generated-ui-pane").getByRole("button", { name: /hide app surface/i })).toHaveCount(0);
-  const desktopFrameLayout = await page.locator(".kodex-generated-ui-pane").evaluate((pane) => {
+  await expect(page.locator(".kodex-workspace-toolbar")).toContainText(/\d+ panes · 1 thread subscriptions/);
+  await expect(generatedUiPane.getByRole("button", { name: /hide app surface/i })).toHaveCount(0);
+  const desktopFrameLayout = await generatedUiPane.evaluate((pane) => {
     const header = pane.querySelector(".kodex-generated-ui-header");
     const frame = pane.querySelector(".kodex-generated-ui-frame-wrap");
     if (!header || !frame) {
@@ -398,48 +385,9 @@ test("renders an app surface as a desktop split and narrow bottom sheet", async 
     desktopFrameLayout.paneHeight - desktopFrameLayout.headerHeight - 16,
   );
 
-  const handleBox = await resizeHandle.boundingBox();
-  expect(handleBox).not.toBeNull();
-  await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(handleBox!.x - 1200, handleBox!.y + handleBox!.height / 2);
-  await page.mouse.up();
-  const workspaceBox = await workspace.boundingBox();
-  const resizedSurfaceBox = await surface.boundingBox();
-  expect(workspaceBox).not.toBeNull();
-  expect(resizedSurfaceBox).not.toBeNull();
-  const expectedMaxWidth = Math.floor(Math.min(workspaceBox!.width * 0.75, workspaceBox!.width - 320 - 4));
-  expect(Math.round(resizedSurfaceBox!.width)).toBe(expectedMaxWidth);
-  expect(resizedSurfaceBox!.width).toBeGreaterThan(720);
-  expect(resizedSurfaceBox!.width / workspaceBox!.width).toBeLessThanOrEqual(0.751);
-
-  await page.getByRole("button", { name: /hide app surface/i }).click();
-  await expect(surface).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /show app surface/i })).toBeVisible();
-  await page.getByRole("button", { name: /show app surface/i }).click();
-  await expect(page.getByTitle(/app surface: mockup chooser/i)).toBeVisible();
-
   const frameSubmit = page.frameLocator('iframe[title="App surface: Mockup chooser"]').getByRole("button", { name: "Choose A" });
   await frameSubmit.click();
   await expect(page.getByText(/submitted/i)).toBeVisible();
-
-  await page.setViewportSize({ width: 430, height: 760 });
-  await expect(surface).toHaveCSS("position", "fixed");
-  await page.waitForTimeout(250);
-  await expect(page.locator(".kodex-generated-ui-pane").getByRole("button", { name: /hide app surface/i })).toBeVisible();
-  const mobileBox = await surface.boundingBox();
-  const mobilePaneBox = await page.locator(".kodex-generated-ui-pane").boundingBox();
-  const mobileFrameBox = await page.locator(".kodex-generated-ui-frame-wrap").boundingBox();
-  expect(mobileBox).not.toBeNull();
-  expect(mobilePaneBox).not.toBeNull();
-  expect(mobileFrameBox).not.toBeNull();
-  expect(Math.round(mobileBox!.x)).toBe(0);
-  expect(Math.round(mobileBox!.y)).toBe(0);
-  expect(Math.round(mobileBox!.width)).toBe(430);
-  expect(Math.round(mobileBox!.height)).toBe(760);
-  const mobilePaneBottom = mobilePaneBox!.y + mobilePaneBox!.height;
-  const mobileFrameBottom = mobileFrameBox!.y + mobileFrameBox!.height;
-  expect(Math.round(mobilePaneBottom - mobileFrameBottom)).toBeGreaterThanOrEqual(28);
 });
 
 test("opens idle historical snapshots without unread or stop state after refresh interval", async ({ page }) => {

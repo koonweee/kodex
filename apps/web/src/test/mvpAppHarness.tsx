@@ -1,16 +1,28 @@
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { useRef } from "react";
 import { VirtuosoMockContext } from "react-virtuoso";
 import { expect, vi } from "vitest";
 
 import { App as KodexApp } from "../App";
+import { createKodexQueryClient } from "../api/queryClient";
+import { createMemoryWorkspacePaneStore } from "../workspace/paneStore";
+import type { WorkspacePaneState } from "../workspace/paneTypes";
 import type { GatewayRouteMap } from "./gatewayMock";
 import { mockGateway, requestJson } from "./gatewayMock";
 
 function App() {
+  const paneStoreRef = useRef<ReturnType<typeof createMemoryWorkspacePaneStore> | null>(null);
+  const queryClientRef = useRef<ReturnType<typeof createKodexQueryClient> | null>(null);
+  if (!paneStoreRef.current) {
+    paneStoreRef.current = createMemoryWorkspacePaneStore(nextWorkspacePaneState);
+  }
+  if (!queryClientRef.current) {
+    queryClientRef.current = createKodexQueryClient();
+  }
   return (
     <VirtuosoMockContext.Provider value={{ viewportHeight: 720, itemHeight: 96 }}>
-      <KodexApp />
+      <KodexApp queryClientInstance={queryClientRef.current} workspacePaneStore={paneStoreRef.current} />
     </VirtuosoMockContext.Provider>
   );
 }
@@ -128,6 +140,7 @@ class FakeEventSource {
 }
 
 function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
+  setInitialWorkspacePaneState(defaultWorkspacePaneStateForCurrentRoute());
   let nextQueueIndex = 0;
   const routes: GatewayRouteMap = {
     "GET /v1/capabilities": capabilities,
@@ -184,6 +197,70 @@ function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
   routes["GET /v1/threads/thread-2"] ??= (request: Request) =>
     threadDetailFromSnapshot(routes, request, secondThread);
   return routes;
+}
+
+let nextWorkspacePaneState: WorkspacePaneState = defaultWorkspacePaneState();
+
+function setInitialWorkspacePaneState(state: WorkspacePaneState) {
+  nextWorkspacePaneState = state;
+}
+
+function defaultWorkspacePaneState(): WorkspacePaneState {
+  return {
+    activePaneId: "pane-thread-1",
+    dockviewLayout: {
+      panes: [{ id: "pane-thread-1" }],
+    },
+    panes: [
+      {
+        id: "pane-thread-1",
+        kind: "thread",
+        target: { mode: "existing", threadId: "thread-1" },
+        title: "Implement frontend",
+      },
+    ],
+    schemaVersion: 1,
+  };
+}
+
+function defaultWorkspacePaneStateForCurrentRoute(): WorkspacePaneState {
+  const threadMatch = window.location.pathname.match(/^\/threads\/([^/]+)$/);
+  if (!threadMatch) {
+    return {
+      activePaneId: "pane-draft",
+      dockviewLayout: {
+        panes: [{ id: "pane-draft" }],
+      },
+      panes: [
+        {
+          id: "pane-draft",
+          kind: "thread",
+          target: { mode: "draft", projectId: null },
+          title: "Draft thread",
+        },
+      ],
+      schemaVersion: 1,
+    };
+  }
+  const threadId = decodeURIComponent(threadMatch[1]);
+  if (threadId === "thread-1") {
+    return defaultWorkspacePaneState();
+  }
+  return {
+    activePaneId: `pane-${threadId}`,
+    dockviewLayout: {
+      panes: [{ id: `pane-${threadId}` }],
+    },
+    panes: [
+      {
+        id: `pane-${threadId}`,
+        kind: "thread",
+        target: { mode: "existing", threadId },
+        title: null,
+      },
+    ],
+    schemaVersion: 1,
+  };
 }
 
 function canBuildStaticSidebarThreadsSnapshot(routes: GatewayRouteMap): boolean {
@@ -583,7 +660,11 @@ function queuedInput(id: string, threadId: string, text: string, status = "queue
 }
 
 function timelineElement(container: HTMLElement) {
-  const element = container.querySelector<HTMLElement>(".kodex-timeline-scroll");
+  const timelines = Array.from(container.querySelectorAll<HTMLElement>(".kodex-timeline-scroll"));
+  const element =
+    container.querySelector<HTMLElement>('[data-workspace-pane-active="true"] .kodex-timeline-scroll') ??
+    timelines.at(-1) ??
+    null;
   expect(element).not.toBeNull();
   return element!;
 }
@@ -614,6 +695,7 @@ export {
   projectionPatchEvent,
   requestJson,
   secondThread,
+  setInitialWorkspacePaneState,
   snapshotItem,
   snapshotTurn,
   thread,

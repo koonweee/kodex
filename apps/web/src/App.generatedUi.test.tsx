@@ -1,5 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -8,7 +7,7 @@ import {
   baseRoutes,
   mockGateway,
   projectionPatchEvent,
-  timelineElement,
+  setInitialWorkspacePaneState,
 } from "./test/mvpAppHarness";
 import type { AppSurfaceSession } from "./api/client";
 
@@ -18,43 +17,38 @@ describe("app surface pane integration", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
   });
 
-  it("renders an app surface for the selected thread and reopens it from the thread header", async () => {
+  it("renders generated UI as a workspace pane and subscribes once for the target thread", async () => {
     mockGateway(
       baseRoutes({
         "GET /v1/threads/thread-1/app-surface": { session: appSurfaceSession() },
         "GET /v1/app-surfaces/session-1/document": appSurfaceDocument,
       }),
     );
+    seedGeneratedUiWorkspace();
 
     render(<App />);
 
     expect(await screen.findByTitle(/app surface: generated mockups/i)).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: /hide app surface/i }));
-
+    expect(await screen.findByText("Hello from Codex")).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.queryByTitle(/app surface: generated mockups/i)).not.toBeInTheDocument();
+      const workspaceStreams = FakeEventSource.instances.filter((source) => source.url.includes("threadIds=thread-1"));
+      expect(workspaceStreams).toHaveLength(1);
+      expect(workspaceStreams[0].url).toContain("includeGlobal=true");
     });
-    const showButton = await screen.findByRole("button", { name: /show app surface/i });
-
-    await userEvent.click(showButton);
-
-    expect(await screen.findByTitle(/app surface: generated mockups/i)).toBeInTheDocument();
   });
 
-  it("reveals a hidden pane for a new revision and converges archived state from SSE", async () => {
+  it("converges generated UI revisions and archived state from the workspace stream", async () => {
     mockGateway(
       baseRoutes({
         "GET /v1/threads/thread-1/app-surface": { session: appSurfaceSession() },
         "GET /v1/app-surfaces/session-1/document": appSurfaceDocument,
       }),
     );
+    seedGeneratedUiWorkspace();
 
     render(<App />);
 
     expect(await screen.findByTitle(/app surface: generated mockups/i)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /hide app surface/i }));
-    await screen.findByRole("button", { name: /show app surface/i });
 
     const followUpSession = appSurfaceSession({
       documentUrl: "/v1/app-surfaces/session-1/document?revision=2",
@@ -64,7 +58,6 @@ describe("app surface pane integration", () => {
     emitAppSurfaceEvent("app_surface.session_upserted", followUpSession);
 
     expect(await screen.findByTitle(/app surface: follow-up mockups/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /show app surface/i })).not.toBeInTheDocument();
 
     emitAppSurfaceEvent("app_surface.session_archived", {
       ...followUpSession,
@@ -77,7 +70,7 @@ describe("app surface pane integration", () => {
     });
   });
 
-  it("sends ui/message bridge calls as visible user messages", async () => {
+  it("submits generated UI output and applies the resulting thread patch through the workspace stream", async () => {
     let resolveBridge: (value: unknown) => void = () => undefined;
     const gateway = mockGateway(
       baseRoutes({
@@ -89,6 +82,7 @@ describe("app surface pane integration", () => {
           }),
       }),
     );
+    seedGeneratedUiWorkspace();
 
     render(<App />);
 
@@ -96,13 +90,29 @@ describe("app surface pane integration", () => {
 
     postAppSurfaceMessage({
       type: "kodex.generatedUi.submit",
+      requestId: "submit-1",
+      sessionId: "session-1",
+      revision: 1,
       message: "Pick mockup A",
+      metadata: { choice: "a" },
     });
 
-    expect(await within(timelineElement(document.body)).findByText("Pick mockup A")).toBeInTheDocument();
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/app-surfaces/session-1/bridge")).toHaveLength(1);
+    });
+    await expect(gateway.callsFor("POST", "/v1/app-surfaces/session-1/bridge")[0].json()).resolves.toEqual({
+      bridgeToken: "bridge-token-1",
+      id: "submit-1",
+      method: "ui/message",
+      params: {
+        message: "Pick mockup A",
+        metadata: { choice: "a" },
+      },
+      revision: 1,
+    });
+
     act(() => {
-      selectedThreadStream?.emitNamed("thread_view.patch", projectionPatchEvent({
+      workspaceStream()?.emitNamed("thread_view.patch", projectionPatchEvent({
         id: "projection-generated-ui-submit",
         seq: 7,
         threadId: "thread-1",
@@ -114,7 +124,7 @@ describe("app surface pane integration", () => {
         status: "completed",
       }));
       resolveBridge({
-        id: "legacy-submit:session-1:1",
+        id: "submit-1",
         result: {
           input: { disposition: "started", queuedInput: null, rawPayload: { turnId: "turn-generated-ui" } },
         },
@@ -122,17 +132,7 @@ describe("app surface pane integration", () => {
     });
 
     await waitFor(() => {
-      expect(within(timelineElement(document.body)).getAllByText("Pick mockup A")).toHaveLength(1);
-    });
-    expect(gateway.callsFor("POST", "/v1/app-surfaces/session-1/bridge")).toHaveLength(1);
-    await expect(gateway.callsFor("POST", "/v1/app-surfaces/session-1/bridge")[0].json()).resolves.toEqual({
-      bridgeToken: "bridge-token-1",
-      id: "legacy-submit:session-1:1",
-      method: "ui/message",
-      params: {
-        message: "Pick mockup A",
-      },
-      revision: 1,
+      expect(screen.getAllByText("Pick mockup A")).toHaveLength(1);
     });
   });
 });
@@ -141,15 +141,14 @@ function postAppSurfaceMessage(data: unknown) {
   const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
   const event = new MessageEvent("message", { data });
   Object.defineProperty(event, "source", { value: iframe.contentWindow });
-  window.dispatchEvent(event);
+  act(() => {
+    window.dispatchEvent(event);
+  });
 }
 
 function emitAppSurfaceEvent(kind: string, session: AppSurfaceSession) {
   act(() => {
-    const selectedThreadStream = FakeEventSource.instances.find((source) =>
-      source.url.includes(`threadId=${session.threadId}`),
-    );
-    selectedThreadStream?.emitNamed(kind, {
+    workspaceStream()?.emitNamed(kind, {
       codexMethod: null,
       id: `event-${kind}-${session.revision}`,
       itemId: null,
@@ -161,6 +160,34 @@ function emitAppSurfaceEvent(kind: string, session: AppSurfaceSession) {
       threadId: session.threadId,
       turnId: null,
     });
+  });
+}
+
+function workspaceStream() {
+  return FakeEventSource.instances.find((source) => source.url.includes("threadIds=thread-1"));
+}
+
+function seedGeneratedUiWorkspace() {
+  setInitialWorkspacePaneState({
+    activePaneId: "pane-generated-ui-1",
+    dockviewLayout: {
+      panes: [{ id: "pane-thread-1" }, { id: "pane-generated-ui-1" }],
+    },
+    panes: [
+      {
+        id: "pane-thread-1",
+        kind: "thread",
+        target: { mode: "existing", threadId: "thread-1" },
+        title: "Implement frontend",
+      },
+      {
+        id: "pane-generated-ui-1",
+        kind: "generatedUi",
+        target: { mode: "latest", threadId: "thread-1" },
+        title: "Generated UI",
+      },
+    ],
+    schemaVersion: 1,
   });
 }
 

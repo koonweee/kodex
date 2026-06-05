@@ -4,15 +4,52 @@ import { VirtuosoMockContext } from "react-virtuoso";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
-import { queryClient } from "./api/queryClient";
+import { createKodexQueryClient, queryClient } from "./api/queryClient";
 import { mockGateway } from "./test/gatewayMock";
+import { createMemoryWorkspacePaneStore } from "./workspace/paneStore";
+import type { WorkspacePaneState } from "./workspace/paneTypes";
 
 function renderApp() {
+  const queryClientInstance = createKodexQueryClient();
+  const workspacePaneStore = createMemoryWorkspacePaneStore(workspacePaneStateForCurrentRoute());
   return render(
     <VirtuosoMockContext.Provider value={{ viewportHeight: 720, itemHeight: 96 }}>
-      <App />
+      <App queryClientInstance={queryClientInstance} workspacePaneStore={workspacePaneStore} />
     </VirtuosoMockContext.Provider>,
   );
+}
+
+function workspacePaneStateForCurrentRoute(): WorkspacePaneState {
+  const threadMatch = window.location.pathname.match(/^\/threads\/([^/]+)$/);
+  if (!threadMatch) {
+    return {
+      activePaneId: "pane-draft",
+      dockviewLayout: { panes: [{ id: "pane-draft" }] },
+      panes: [
+        {
+          id: "pane-draft",
+          kind: "thread",
+          target: { mode: "draft", projectId: null },
+          title: "Draft thread",
+        },
+      ],
+      schemaVersion: 1,
+    };
+  }
+  const threadId = decodeURIComponent(threadMatch[1]);
+  return {
+    activePaneId: `pane-${threadId}`,
+    dockviewLayout: { panes: [{ id: `pane-${threadId}` }] },
+    panes: [
+      {
+        id: `pane-${threadId}`,
+        kind: "thread",
+        target: { mode: "existing", threadId },
+        title: null,
+      },
+    ],
+    schemaVersion: 1,
+  };
 }
 
 async function waitForTimelineReady() {
@@ -974,8 +1011,8 @@ describe("App shell", () => {
     expect(await screen.findByText("Large answer 0")).toBeInTheDocument();
     await waitForTimelineReady();
     await waitForAnimationFrame();
-    await waitFor(() => expect(FakeEventSource.instances.some((instance) => instance.url.includes("threadId=thread-1"))).toBe(true));
-    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadId=thread-1"));
+    await waitFor(() => expect(FakeEventSource.instances.some((instance) => instance.url.includes("threadIds=thread-1"))).toBe(true));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadIds=thread-1"));
     const scrollRegion = container.querySelector(".kodex-timeline-scroll") as HTMLElement;
     Object.defineProperties(scrollRegion, {
       clientHeight: { configurable: true, value: 400 },

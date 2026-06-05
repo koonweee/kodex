@@ -33,9 +33,11 @@ import {
   isThreadViewQueueEvent,
   threadViewSummaryToThreadSummary,
 } from "./threadViewEvents";
+import {
+  isTransientThreadSnapshotLoadError,
+  MATERIALIZING_THREAD_SNAPSHOT_RETRY_MS,
+} from "./snapshotRetry";
 import { useTimelineEventQueue } from "./useTimelineEventQueue";
-
-const MATERIALIZING_THREAD_SNAPSHOT_RETRY_MS = 250;
 
 export type ThreadSyncNotice = {
   message: string;
@@ -454,17 +456,6 @@ function payloadMentionsTarget(value: unknown, target: { itemId: string | null; 
     return true;
   }
   return Object.values(record).some((item) => payloadMentionsTarget(item, target));
-}
-
-function isTransientThreadSnapshotLoadError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  const normalized = message.toLowerCase();
-  return (
-    normalized.includes("not materialized yet") ||
-    normalized.includes("failed to load rollout") ||
-    normalized.includes("failed to load thread history") ||
-    (normalized.includes("rollout at") && normalized.includes(" is empty"))
-  );
 }
 
 function stringValue(value: unknown): string | null {

@@ -1,5 +1,5 @@
 import { AppShell, Button, Group, Stack, Title } from "@mantine/core";
-import { lazy, Suspense, type ComponentProps, type CSSProperties, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, type ComponentProps } from "react";
 
 import type { AutomationsPane as AutomationsPaneComponent } from "../automations/AutomationsPane";
 import { ComposerPanel } from "../composer/ComposerPanel";
@@ -7,7 +7,9 @@ import type { PreferencesModalProps } from "../PreferencesModal";
 import type { ProjectPane as ProjectPaneComponent } from "../projects/ProjectPane";
 import { ThreadPanel } from "../threads/ThreadPanel";
 import { WorkspaceSidebar } from "../threads/WorkspaceSidebar";
-import { useGeneratedUiResize } from "./useGeneratedUiResize";
+import type { ThreadSummary } from "../api/client";
+import { WorkspaceShell } from "../workspace/WorkspaceShell";
+import { useWorkspace } from "../workspace/WorkspaceProvider";
 
 export type MobilePanel = "threads" | "chat";
 
@@ -24,17 +26,15 @@ const ProjectPane = lazy(() =>
 type KodexShellViewProps = {
   automationsPaneProps: ComponentProps<typeof AutomationsPaneComponent>;
   composerPanelProps: ComponentProps<typeof ComposerPanel>;
-  generatedUiOpen?: boolean;
-  generatedUiPane?: ReactNode;
   isSidebarResizing: boolean;
   mainPane: "thread" | "automations" | "project";
   mobilePanel: MobilePanel;
   preferencesProps: PreferencesModalProps;
   projectPaneProps: ComponentProps<typeof ProjectPaneComponent>;
   sidebarWidth: number;
-  terminalHost?: ReactNode;
   threadPanelProps: ComponentProps<typeof ThreadPanel>;
   workspaceSidebarProps: ComponentProps<typeof WorkspaceSidebar>;
+  workspaceSelectedThreadPaneId: string | null;
 };
 
 function AutomationsPaneFallback() {
@@ -56,29 +56,17 @@ function AutomationsPaneFallback() {
 export function KodexShellView({
   automationsPaneProps,
   composerPanelProps,
-  generatedUiOpen,
-  generatedUiPane,
   isSidebarResizing,
   mainPane,
   mobilePanel,
   preferencesProps,
   projectPaneProps,
   sidebarWidth,
-  terminalHost,
   threadPanelProps,
   workspaceSidebarProps,
+  workspaceSelectedThreadPaneId,
 }: KodexShellViewProps) {
-  const mainLabel = mainPane === "automations" ? "Automations" : mainPane === "project" ? "Project" : "Thread";
-  const {
-    generatedUiMaxWidth,
-    generatedUiMinWidth,
-    generatedUiWidth,
-    handleGeneratedUiResizeKeyDown,
-    handleGeneratedUiResizePointerDown,
-    isGeneratedUiResizing,
-    setGeneratedUiWorkspaceElement,
-  } = useGeneratedUiResize();
-  const generatedUiVisible = mainPane === "thread" && generatedUiOpen && generatedUiPane;
+  const mainLabel = mainPane === "automations" ? "Automations" : mainPane === "project" ? "Project" : "Thread workspace";
 
   return (
     <AppShell
@@ -86,10 +74,12 @@ export function KodexShellView({
       padding="md"
       className="kodex-shell"
       data-mobile-panel={mobilePanel}
-      data-generated-ui-resizing={isGeneratedUiResizing ? "true" : undefined}
       data-sidebar-resizing={isSidebarResizing ? "true" : undefined}
     >
-      <WorkspaceSidebar {...workspaceSidebarProps} />
+      <WorkspaceSidebarWithPaneActions
+        {...workspaceSidebarProps}
+        workspaceSelectedThreadPaneId={workspaceSelectedThreadPaneId}
+      />
       <AppShell.Main aria-label={mainLabel} className="kodex-main">
         <Stack
           h="calc(100dvh - var(--app-shell-padding))"
@@ -106,34 +96,7 @@ export function KodexShellView({
               <ProjectPane {...projectPaneProps} />
             </Suspense>
           ) : (
-            <div
-              className="kodex-thread-workspace"
-              data-generated-ui={generatedUiVisible ? "open" : "closed"}
-              ref={setGeneratedUiWorkspaceElement}
-              style={{ "--kodex-generated-ui-width": `${generatedUiWidth}px` } as CSSProperties}
-            >
-              <div className="kodex-thread-chat-column">
-                <ThreadPanel {...threadPanelProps} />
-                <ComposerPanel {...composerPanelProps} />
-              </div>
-              {generatedUiVisible ? (
-                <>
-                  <button
-                    aria-label="Resize generated UI pane"
-                    aria-orientation="vertical"
-                    aria-valuemax={generatedUiMaxWidth}
-                    aria-valuemin={generatedUiMinWidth}
-                    aria-valuenow={generatedUiWidth}
-                    className="kodex-generated-ui-resize-handle"
-                    onKeyDown={handleGeneratedUiResizeKeyDown}
-                    onPointerDown={handleGeneratedUiResizePointerDown}
-                    role="separator"
-                    type="button"
-                  />
-                  <div className="kodex-generated-ui-surface">{generatedUiPane}</div>
-                </>
-              ) : null}
-            </div>
+            <WorkspaceShell />
           )}
         </Stack>
       </AppShell.Main>
@@ -142,7 +105,126 @@ export function KodexShellView({
           <PreferencesModal {...preferencesProps} />
         </Suspense>
       ) : null}
-      {terminalHost}
     </AppShell>
   );
+}
+
+type WorkspaceSidebarWithPaneActionsProps = ComponentProps<typeof WorkspaceSidebar> & {
+  workspaceSelectedThreadPaneId: string | null;
+};
+
+function WorkspaceSidebarWithPaneActions({
+  workspaceSelectedThreadPaneId,
+  ...props
+}: WorkspaceSidebarWithPaneActionsProps) {
+  const { openDraftThreadPane, openTerminalPane, openThreadPane, workspace } = useWorkspace();
+  const titleLookupPropsRef = useRef(props);
+
+  useEffect(() => {
+    titleLookupPropsRef.current = props;
+  }, [props.chatThreads, props.pinnedThreads, props.threadsByProjectId]);
+
+  function openThread(threadId: string) {
+    void openThreadPane(threadId, titleForThread(props, threadId)).catch((error: unknown) => {
+      console.error("Failed to open workspace thread pane", error);
+    });
+  }
+
+  useEffect(() => {
+    if (props.selectedMainPane !== "thread") {
+      return;
+    }
+    if (!workspaceSelectedThreadPaneId) {
+      if (props.selectedThreadId === null) {
+        void openDraftThreadPane(props.selectedProjectId).catch((error: unknown) => {
+          console.error("Failed to reconcile route draft into workspace pane", error);
+        });
+      }
+      return;
+    }
+    const activePane = workspace.activePaneId
+      ? workspace.panes.find((candidate) => candidate.id === workspace.activePaneId) ?? null
+      : null;
+    const activeThreadId =
+      activePane?.kind === "thread" && activePane.target.mode === "existing" ? activePane.target.threadId : null;
+    const routeThreadPaneAlreadyOpen = workspace.panes.some(
+      (candidate) =>
+        candidate.kind === "thread" &&
+        candidate.target.mode === "existing" &&
+        candidate.target.threadId === workspaceSelectedThreadPaneId,
+    );
+    if (activeThreadId && activeThreadId !== workspaceSelectedThreadPaneId && !routeThreadPaneAlreadyOpen) {
+      return;
+    }
+    void openThreadPane(
+      workspaceSelectedThreadPaneId,
+      titleForThread(titleLookupPropsRef.current, workspaceSelectedThreadPaneId),
+    ).catch((error: unknown) => {
+      console.error("Failed to reconcile route thread into workspace pane", error);
+    });
+  }, [
+    openDraftThreadPane,
+    openThreadPane,
+    props.selectedProjectId,
+    props.selectedMainPane,
+    props.selectedThreadId,
+    workspace.activePaneId,
+    workspace.panes,
+    workspaceSelectedThreadPaneId,
+  ]);
+
+  return (
+    <WorkspaceSidebar
+      {...props}
+      onOpenTerminal={
+        props.onOpenTerminal
+          ? () => {
+              void openTerminalPane({ duplicate: true }).catch((error: unknown) => {
+                console.error("Failed to open workspace terminal pane", error);
+              });
+            }
+          : undefined
+      }
+      onCreateChat={() => {
+        props.onCreateChat();
+        void openDraftThreadPane(null, { duplicate: true }).catch((error: unknown) => {
+          console.error("Failed to open workspace draft chat pane", error);
+        });
+      }}
+      onCreateThread={(projectId) => {
+        props.onCreateThread(projectId);
+        void openDraftThreadPane(projectId, { duplicate: true }).catch((error: unknown) => {
+          console.error("Failed to open workspace draft thread pane", error);
+        });
+      }}
+      onSelectChatThread={(threadId) => {
+        props.onSelectChatThread(threadId);
+        openThread(threadId);
+      }}
+      onSelectPinnedThread={(threadId) => {
+        props.onSelectPinnedThread(threadId);
+        openThread(threadId);
+      }}
+      onSelectThread={(projectId, threadId) => {
+        props.onSelectThread(projectId, threadId);
+        openThread(threadId);
+      }}
+    />
+  );
+}
+
+function titleForThread(props: ComponentProps<typeof WorkspaceSidebar>, threadId: string): string | null {
+  const thread =
+    findThread(props.chatThreads, threadId) ??
+    findThread(props.pinnedThreads, threadId) ??
+    findThread(Object.values(props.threadsByProjectId).flat(), threadId);
+  return stringOrNull(thread?.name) ?? stringOrNull(thread?.preview);
+}
+
+function findThread(threads: ThreadSummary[], threadId: string): ThreadSummary | null {
+  return threads.find((thread) => thread.id === threadId) ?? null;
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }

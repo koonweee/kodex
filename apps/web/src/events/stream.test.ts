@@ -57,6 +57,59 @@ describe("event stream client", () => {
     client.close();
   });
 
+
+  it("starts workspace streams with deduped thread ids and global events", () => {
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      includeGlobal: true,
+      threadIds: ["thread-1", "thread-1", " thread-2 "],
+      onEvent: () => {},
+    });
+
+    client.connect();
+
+    const url = new URL(FakeEventSource.instances[0].url, window.location.origin);
+    expect(url.pathname).toBe("/v1/events");
+    expect(url.searchParams.get("includeGlobal")).toBe("true");
+    expect(url.searchParams.get("threadIds")).toBe("thread-1,thread-2");
+    expect(url.searchParams.has("threadId")).toBe(false);
+    client.close();
+  });
+
+  it("preserves workspace stream filters across reconnects", () => {
+    vi.useFakeTimers();
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      includeGlobal: true,
+      reconnectDelayMs: 250,
+      threadIds: ["thread-1", "thread-2"],
+      cursor: 5,
+      onEvent: () => {},
+    });
+
+    client.connect();
+    FakeEventSource.instances[0].emit({
+      id: "event-6",
+      seq: 6,
+      kind: "workspace.updated",
+      codexMethod: null,
+      itemId: null,
+      threadId: null,
+      turnId: null,
+      projectId: null,
+      payload: { workspaceId: "default" },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+    FakeEventSource.instances[0].fail();
+    vi.advanceTimersByTime(250);
+
+    const url = new URL(FakeEventSource.instances[1].url, window.location.origin);
+    expect(url.searchParams.get("cursor")).toBe("6");
+    expect(url.searchParams.get("includeGlobal")).toBe("true");
+    expect(url.searchParams.get("threadIds")).toBe("thread-1,thread-2");
+    client.close();
+  });
+
   it("starts global streams with a selected-thread exclusion", () => {
     const client = createEventStreamClient({
       EventSourceCtor: FakeEventSource,
