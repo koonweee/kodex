@@ -269,6 +269,7 @@ export function useSelectedThreadTimeline({
     }
 
     const refetchSnapshot = (reason: SelectedThreadSnapshotRefreshReason) => {
+      cancelQueuedTimelineEvents();
       if (reason === "streamReconnect") {
         setSyncNotice({
           message: "Selected thread stream disconnected. Reconnecting and retrying thread refresh.",

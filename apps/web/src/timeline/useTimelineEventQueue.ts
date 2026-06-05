@@ -5,17 +5,23 @@ import type { TimelineState } from "./reducer";
 
 export type TimelineEventQueueReducer = (current: TimelineState, events: EventEnvelope[]) => TimelineState;
 
+export const DEFAULT_TIMELINE_EVENT_FLUSH_DELAY_MS = 64;
+
 export function useTimelineEventQueue({
+  flushDelayMs = defaultTimelineEventFlushDelayMs(),
   reduceEvents,
   setTimeline,
 }: {
+  flushDelayMs?: number;
   reduceEvents: TimelineEventQueueReducer;
   setTimeline: Dispatch<SetStateAction<TimelineState>>;
 }) {
   const queuedTimelineEvents = useRef<EventEnvelope[]>([]);
   const timelineFlushFrame = useRef<number | null>(null);
   const timelineFlushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestFlushDelayMs = useRef(flushDelayMs);
   const latestReduceEvents = useRef(reduceEvents);
+  latestFlushDelayMs.current = flushDelayMs;
   latestReduceEvents.current = reduceEvents;
 
   const flushQueuedTimelineEvents = useCallback(() => {
@@ -35,6 +41,12 @@ export function useTimelineEventQueue({
 
   const scheduleQueuedTimelineFlush = useCallback(() => {
     if (timelineFlushFrame.current !== null || timelineFlushTimer.current !== null) {
+      return;
+    }
+
+    const delayMs = Math.max(0, latestFlushDelayMs.current);
+    if (delayMs > 0) {
+      timelineFlushTimer.current = setTimeout(flushQueuedTimelineEvents, delayMs);
       return;
     }
 
@@ -69,4 +81,8 @@ export function useTimelineEventQueue({
     cancelQueuedTimelineEvents,
     enqueueTimelineEvent,
   };
+}
+
+function defaultTimelineEventFlushDelayMs() {
+  return import.meta.env.MODE === "test" ? 0 : DEFAULT_TIMELINE_EVENT_FLUSH_DELAY_MS;
 }

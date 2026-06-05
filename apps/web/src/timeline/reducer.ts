@@ -511,7 +511,7 @@ function applyThreadViewPatch(state: TimelineState, event: EventEnvelope): Timel
 }
 
 function applyThreadViewItemDelta(state: TimelineState, event: EventEnvelope): TimelineState {
-  if (event.seq < state.lastSeq) {
+  if (event.seq <= state.lastSeq) {
     return state;
   }
   const payload = recordPayload(event.payload);

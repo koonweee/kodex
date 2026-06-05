@@ -15,10 +15,12 @@ import {
 import { useTimelineEventQueue } from "./useTimelineEventQueue";
 
 export function useReadonlyThreadTimeline({
+  timelineEventFlushDelayMs,
   onError,
   onSnapshotThread,
   threadId,
 }: {
+  timelineEventFlushDelayMs?: number;
   onError: (error: unknown) => void;
   onSnapshotThread?: (thread: ThreadSummary) => void;
   threadId: string | null;
@@ -72,6 +74,7 @@ export function useReadonlyThreadTimeline({
   }
 
   const { cancelQueuedTimelineEvents, enqueueTimelineEvent } = useTimelineEventQueue({
+    flushDelayMs: timelineEventFlushDelayMs,
     reduceEvents: reduceQueuedTimelineEvents,
     setTimeline,
   });
@@ -106,6 +109,7 @@ export function useReadonlyThreadTimeline({
     }
 
     const refetchSnapshot = () => {
+      cancelQueuedTimelineEvents();
       void refreshSnapshot("refreshingSnapshot").catch((error) => {
         if (!cancelled) {
           latestCallbacks.current.onError(error);

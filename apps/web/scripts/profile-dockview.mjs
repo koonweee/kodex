@@ -562,6 +562,9 @@ async function collectMetrics(page, client) {
     const profile = window.__kodexProfile ?? { longTasks: [], layoutShifts: [] };
     const longTasks = profile.longTasks ?? [];
     const layoutShifts = profile.layoutShifts ?? [];
+    const liveDiagnostics = typeof window.__KODEX_LIVE_DIAGNOSTICS__ === "function"
+      ? window.__KODEX_LIVE_DIAGNOSTICS__()
+      : null;
     const composerTyping = profile.composerTyping ?? null;
     const composerTypingActionMs = composerTyping?.finishedAt && composerTyping?.startedAt
       ? composerTyping.finishedAt - composerTyping.startedAt
@@ -585,6 +588,7 @@ async function collectMetrics(page, client) {
       dockviewPanes: paneHosts,
       fcpMs: paint["first-contentful-paint"] ?? null,
       iframeCount: document.querySelectorAll("iframe").length,
+      liveDiagnostics,
       longTaskCount: longTasks.length,
       longTaskMaxMs: longTasks.reduce((max, task) => Math.max(max, task.duration), 0),
       longTaskTotalMs: longTasks.reduce((sum, task) => sum + task.duration, 0),
@@ -775,6 +779,19 @@ function renderReport({ agentProfiles, baseUrl, generatedAt, results }) {
           ...composerResults.map((result) => {
             const typing = result.composerTyping;
             return `| ${result.id} | ${round(typing.actionMs)} ms | ${typing.inputEventCount} | ${round(typing.inputToFrameAvgMs)} / ${round(typing.inputToFrameMaxMs)} ms | ${typing.mutationBatchCount}/${typing.mutationCount} | ${typing.keydownCount}/${typing.keyupCount} |`;
+          }),
+          "",
+        ]
+      : []),
+    ...(results.some((result) => result.liveDiagnostics)
+      ? [
+          "## Live Diagnostics",
+          "",
+          "| ID | Live events | Reducer batches/events | Reducer total/avg event | Refreshes | Delta misses | Patch bytes |",
+          "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+          ...results.map((result) => {
+            const live = result.liveDiagnostics;
+            return `| ${result.id} | ${formatEventsByStream(live)} | ${formatReducerCounts(live)} | ${formatReducerDurations(live)} | ${live?.selectedThreadSnapshotRefreshes ?? ""} | ${live?.selectedThreadDeltaMisses ?? ""} | ${formatRecord(live?.patchBytesByScope)} |`;
           }),
           "",
         ]
@@ -1710,6 +1727,40 @@ function round(value) {
   return typeof value === "number" && Number.isFinite(value) ? Math.round(value * 10) / 10 : "";
 }
 
+function perCount(value, count) {
+  return typeof value === "number" && Number.isFinite(value) && count > 0 ? value / count : null;
+}
+
+function formatEventsByStream(live) {
+  if (!live) {
+    return "";
+  }
+  return `g:${live.eventsByStream?.global ?? 0} s:${live.eventsByStream?.selected ?? 0}`;
+}
+
+function formatReducerCounts(live) {
+  if (!live) {
+    return "";
+  }
+  return `${live.reducerBatchCount}/${live.reducerEventCount}`;
+}
+
+function formatReducerDurations(live) {
+  if (!live) {
+    return "";
+  }
+  return `${round(live.reducerTotalDurationMs)} ms / ${round(perCount(live.reducerTotalDurationMs, live.reducerEventCount))} ms`;
+}
+
+function formatRecord(record) {
+  if (!record || Object.keys(record).length === 0) {
+    return "";
+  }
+  return Object.entries(record)
+    .map(([key, value]) => `${key}:${round(value)}`)
+    .join(", ");
+}
+
 function rel(filePath) {
   return path.relative(REPO_ROOT, filePath);
 }
@@ -1731,6 +1782,9 @@ function formatOneLineResult(result) {
   if (result.composerTyping) {
     parts.splice(2, 0, `typing=${round(result.composerTyping.actionMs)}ms`);
     parts.splice(3, 0, `frame=${round(result.composerTyping.inputToFrameAvgMs)}/${round(result.composerTyping.inputToFrameMaxMs)}ms`);
+  }
+  if (result.liveDiagnostics?.reducerEventCount) {
+    parts.splice(4, 0, `reduce=${round(result.liveDiagnostics.reducerTotalDurationMs)}ms/${result.liveDiagnostics.reducerEventCount}e`);
   }
   return parts.join(" ");
 }
