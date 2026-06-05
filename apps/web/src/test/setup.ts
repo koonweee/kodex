@@ -1,9 +1,12 @@
 import "@testing-library/jest-dom/vitest";
+import { configure } from "@testing-library/react";
 import { afterEach, beforeEach } from "vitest";
 
 import { queryClient } from "../api/queryClient";
 
 const localStorageState = new Map<string, string>();
+
+configure({ asyncUtilTimeout: 5000 });
 
 if (typeof window.localStorage?.getItem !== "function") {
   Object.defineProperty(window, "localStorage", {

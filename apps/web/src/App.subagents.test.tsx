@@ -67,11 +67,12 @@ describe("subagent thread viewer", () => {
   });
 
   it("hides the robot action when the gateway reports no subagents", async () => {
+    window.history.replaceState(null, "", "/threads/thread-1");
     mockGateway(baseRoutes());
 
     render(<App />);
 
-    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
+    expect(await screen.findByRole("navigation", { name: /workspace/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /show subagents/i })).not.toBeInTheDocument();
   });
 
@@ -86,7 +87,6 @@ describe("subagent thread viewer", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("status", { name: /loading thread timeline/i })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -151,7 +151,8 @@ describe("subagent thread viewer", () => {
 
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /show subagents/i }));
+    expect(await screen.findByText(/hello from codex/i)).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: /show subagents/i }, { timeout: 5000 }));
     expect(await screen.findByText(/subagent snapshot/i)).toBeInTheDocument();
 
     let subagentStream: FakeEventSource | undefined;

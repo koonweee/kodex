@@ -45,7 +45,10 @@ function workspaceNavigation() {
 }
 
 function threadPaneByHeading(name: RegExp) {
-  const pane = screen.getByRole("heading", { name }).closest(".kodex-thread-pane");
+  const headings = screen.getAllByRole("heading", { name });
+  const activePane = document.querySelector<HTMLElement>('.kodex-thread-pane[data-workspace-pane-active="true"]');
+  const heading = headings.find((candidate) => activePane?.contains(candidate)) ?? headings.at(-1);
+  const pane = heading?.closest(".kodex-thread-pane");
   expect(pane).toBeInTheDocument();
   return pane as HTMLElement;
 }
@@ -167,7 +170,9 @@ describe("MVP composer input flows", () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(activeThreadPane()).getByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    });
     const sendButton = screen.getByRole("button", { name: /send message/i });
     expect(sendButton).toBeDisabled();
     expect(sendButton).toHaveClass("kodex-composer-action");
@@ -403,16 +408,22 @@ describe("MVP composer input flows", () => {
     await userEvent.type(composerInThreadPane(/implement frontend/i), "Draft for first thread");
 
     await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /second thread/i }));
-    expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(activeThreadPane()).getByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+    });
     expect(composerInThreadPane(/second thread/i)).toHaveValue("");
 
     await userEvent.type(composerInThreadPane(/second thread/i), "Draft for second thread");
     await userEvent.click(screen.getByRole("button", { name: /implement frontend/i }));
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(activeThreadPane()).getByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    });
     expect(composerInThreadPane(/implement frontend/i)).toHaveValue("Draft for first thread");
 
     await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
-    expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(activeThreadPane()).getByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+    });
     expect(composerInThreadPane(/second thread/i)).toHaveValue("Draft for second thread");
   }, 20_000);
 
@@ -859,7 +870,9 @@ describe("MVP composer input flows", () => {
     });
 
     await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /second thread/i }));
-    expect(await screen.findByText(/second thread snapshot/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(activeThreadPane()).getByText(/second thread snapshot/i)).toBeInTheDocument();
+    });
     const currentFirstThreadRow = within(workspaceNavigation())
       .getByRole("button", { name: /implement frontend/i })
       .closest(".kodex-thread-list-button");
@@ -917,8 +930,10 @@ describe("MVP composer input flows", () => {
     });
 
     await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /implement frontend/i }));
-    expect(await screen.findByText("hello")).toBeInTheDocument();
-    expect(within(timelineElement(container)).getAllByText("sleep 5s, then send hello")).toHaveLength(1);
+    await waitFor(() => {
+      expect(within(activeThreadPane()).getByText("hello")).toBeInTheDocument();
+    });
+    expect(within(activeThreadPane()).getAllByText("sleep 5s, then send hello")).toHaveLength(1);
   });
 
   it("removes failed optimistic text sends before retrying from the restored composer", async () => {
@@ -1009,9 +1024,9 @@ describe("MVP composer input flows", () => {
     const { container } = render(<App />);
 
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Retry in first thread");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
-    await waitFor(() => expect(screen.getByLabelText(/message composer/i)).toHaveValue(""));
+    await userEvent.type(composerInActiveThreadPane(), "Retry in first thread");
+    await userEvent.click(sendButtonInActiveThreadPane());
+    await waitFor(() => expect(composerInActiveThreadPane()).toHaveValue(""));
 
     await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
     expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
@@ -1021,7 +1036,7 @@ describe("MVP composer input flows", () => {
     });
 
     expect(await screen.findByText(/gateway request failed|start turn failed/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
+    expect(composerInActiveThreadPane()).toHaveValue("");
     expect(within(timelineElement(container)).queryByText("Retry in first thread")).not.toBeInTheDocument();
     expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(0);
   });
@@ -1430,9 +1445,9 @@ describe("MVP composer input flows", () => {
     expect(input).not.toBeNull();
     await userEvent.upload(input!, new File(["fake"], "diagram.png", { type: "image/png" }));
     expect(createObjectUrl).toHaveBeenCalled();
-    await userEvent.type(screen.getByLabelText(/message composer/i), "Inspect this");
-    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
-    await waitFor(() => expect(screen.getByLabelText(/message composer/i)).toHaveValue(""));
+    await userEvent.type(composerInActiveThreadPane(), "Inspect this");
+    await userEvent.click(sendButtonInActiveThreadPane());
+    await waitFor(() => expect(composerInActiveThreadPane()).toHaveValue(""));
 
     await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
     expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
@@ -1442,9 +1457,9 @@ describe("MVP composer input flows", () => {
     });
 
     expect(await screen.findByText("Upload unavailable")).toBeInTheDocument();
-    expect(screen.getByLabelText(/message composer/i)).toHaveValue("");
-    expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
-    expect(within(timelineElement(container)).queryByText("Inspect this")).not.toBeInTheDocument();
+    expect(composerInActiveThreadPane()).toHaveValue("");
+    expect(within(activeThreadPane()).queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
+    expect(within(activeThreadPane()).queryByText("Inspect this")).not.toBeInTheDocument();
     expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(0);
   });
 
@@ -1699,7 +1714,7 @@ describe("MVP composer input flows", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
     await waitFor(() => {
-      expect(screen.queryByRole("region", { name: /queued steer messages/i })).not.toBeInTheDocument();
+      expect(within(activeThreadPane()).queryByRole("region", { name: /queued steer messages/i })).not.toBeInTheDocument();
     });
   });
 

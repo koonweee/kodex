@@ -103,6 +103,33 @@ type TestTimelineItem = {
   payload: { item?: unknown };
 };
 
+function activeThreadPane(page: Page) {
+  return page.locator('.kodex-thread-pane[data-workspace-pane-active="true"]');
+}
+
+function composerInActiveThreadPane(page: Page) {
+  return activeThreadPane(page).getByLabel(/message composer/i);
+}
+
+function sendButtonInActiveThreadPane(page: Page) {
+  return activeThreadPane(page).getByRole("button", { name: /send message/i });
+}
+
+function modelButtonInActiveThreadPane(page: Page, name: RegExp) {
+  return activeThreadPane(page).getByRole("button", { name });
+}
+
+async function selectModelInActiveThreadPane(page: Page, modelName: string) {
+  await activeThreadPane(page).getByRole("button", { name: /model:/i }).click();
+  await page.getByRole("menuitem", { name: modelName, exact: true }).click();
+}
+
+async function openFrontendMvpThread(page: Page) {
+  await page.goto("/");
+  await page.getByRole("button", { name: /frontend mvp/i }).click();
+  await expect(activeThreadPane(page).getByRole("heading", { name: /frontend mvp/i })).toBeVisible();
+}
+
 function canonicalRowsFromSnapshotItems(items: TestTimelineItem[]) {
   const rows: unknown[] = [];
   let activityItems: TestTimelineItem[] = [];
@@ -246,15 +273,15 @@ test("creates a thread and submits a turn", async ({ page }) => {
   await page.goto("/");
 
   await page.getByRole("button", { name: /create thread in kodex/i }).click();
-  await page.getByLabel(/message composer/i).fill("Implement the next milestone");
-  await page.getByRole("button", { name: /send message/i }).click();
-  await expect(page.getByLabel(/message composer/i)).toBeEmpty();
+  await composerInActiveThreadPane(page).fill("Implement the next milestone");
+  await sendButtonInActiveThreadPane(page).click();
+  await expect(composerInActiveThreadPane(page)).toBeEmpty();
 });
 
 test("renders selected thread snapshot output", async ({ page }) => {
-  await page.goto("/threads/thread-1");
+  await openFrontendMvpThread(page);
 
-  await expect(page.getByText(/snapshot assistant output/i)).toBeVisible();
+  await expect(activeThreadPane(page).getByText(/snapshot assistant output/i)).toBeVisible();
 });
 
 test("renders generated UI as a workspace pane and submits from the frame", async ({ page }) => {
@@ -354,14 +381,14 @@ test("renders generated UI as a workspace pane and submits from the frame", asyn
   });
 
   await page.setViewportSize({ width: 1800, height: 820 });
-  await page.goto("/threads/thread-1");
+  await openFrontendMvpThread(page);
 
-  await expect(page.getByText(/snapshot assistant output/i)).toBeVisible();
-  await page.getByRole("button", { name: /open generated ui/i }).click();
+  await expect(activeThreadPane(page).getByText(/snapshot assistant output/i)).toBeVisible();
+  await activeThreadPane(page).getByRole("button", { name: /open generated ui/i }).click();
 
   const generatedUiPane = page.locator(".kodex-generated-ui-pane");
   await expect(page.getByTitle(/app surface: mockup chooser/i)).toBeVisible();
-  await expect(page.locator(".kodex-workspace-toolbar")).toContainText(/\d+ panes · 1 thread subscriptions/);
+  await expect(generatedUiPane).toBeVisible();
   await expect(generatedUiPane.getByRole("button", { name: /hide app surface/i })).toHaveCount(0);
   const desktopFrameLayout = await generatedUiPane.evaluate((pane) => {
     const header = pane.querySelector(".kodex-generated-ui-header");
@@ -391,16 +418,16 @@ test("renders generated UI as a workspace pane and submits from the frame", asyn
 });
 
 test("opens idle historical snapshots without unread or stop state after refresh interval", async ({ page }) => {
-  await page.goto("/threads/thread-1");
+  await openFrontendMvpThread(page);
 
-  await expect(page.getByText(/snapshot assistant output/i)).toBeVisible();
+  await expect(activeThreadPane(page).getByText(/snapshot assistant output/i)).toBeVisible();
   await expect(page.locator(".kodex-thread-unread-agent-turn-indicator")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /stop turn/i })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /send message/i })).toBeVisible();
+  await expect(sendButtonInActiveThreadPane(page)).toBeVisible();
   await page.waitForTimeout(5500);
   await expect(page.locator(".kodex-thread-unread-agent-turn-indicator")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /stop turn/i })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /send message/i })).toBeVisible();
+  await expect(sendButtonInActiveThreadPane(page)).toBeVisible();
 });
 
 test("keeps long timeline content inside the thread viewer", async ({ page }) => {
@@ -1093,11 +1120,43 @@ test("restores selected thread model settings when switching threads", async ({ 
       return;
     }
 
-    if (key.startsWith("POST /v1/threads/") && key.endsWith("/turns")) {
+    if (key.startsWith("POST /v1/threads/") && key.endsWith("/attach")) {
+      const threadId = url.pathname.split("/").at(-2);
+      const thread = threadId ? threadsById[threadId] : null;
+      if (!thread) {
+        await route.fulfill({ status: 404, headers: { "Content-Type": "application/json" }, body: "{}" });
+        return;
+      }
       await route.fulfill({
         status: 200,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payload: {} }),
+        body: JSON.stringify({
+          disposition: "resumed",
+          thread: {
+            id: thread.id,
+            name: thread.name,
+            cwd: "/tmp",
+            status: "idle",
+            source: "local",
+            preview: `Thread ${thread.name}`,
+            lastCompletedAgentTurnSeq: null,
+            seenCompletedAgentTurnSeq: 0,
+            unreadCompletedAgentTurn: false,
+            rawPayload: { model: thread.model },
+            createdAt: 1777500000,
+            updatedAt: 1777501000,
+          },
+          rawPayload: {},
+        }),
+      });
+      return;
+    }
+
+    if (key.startsWith("POST /v1/threads/") && key.endsWith("/input")) {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ disposition: "started", queuedInput: null, rawPayload: {} }),
       });
       return;
     }
@@ -1112,17 +1171,19 @@ test("restores selected thread model settings when switching threads", async ({ 
   await page.goto("/");
 
   await page.getByRole("button", { name: /start new chat from desktop header/i }).click();
-  await page.getByLabel(/message composer/i).fill("mini thread message");
-  await page.getByRole("button", { name: /send message/i }).click();
-  await expect(await page.getByRole("button", { name: /model: gpt-5\.4mini/i })).toBeVisible();
+  await composerInActiveThreadPane(page).fill("mini thread message");
+  await sendButtonInActiveThreadPane(page).click();
+  await expect(modelButtonInActiveThreadPane(page, /model: gpt-5\.4mini/i)).toBeVisible();
 
   await page.getByRole("button", { name: /start new chat from desktop header/i }).click();
-  await page.getByLabel(/message composer/i).fill("spark thread message");
-  await page.getByRole("button", { name: /send message/i }).click();
-  await expect(await page.getByRole("button", { name: /model: gpt-5\.3spark/i })).toBeVisible();
+  await selectModelInActiveThreadPane(page, "gpt-5.3spark");
+  await expect(modelButtonInActiveThreadPane(page, /model: gpt-5\.3spark/i)).toBeVisible();
+  await composerInActiveThreadPane(page).fill("spark thread message");
+  await sendButtonInActiveThreadPane(page).click();
+  await expect(modelButtonInActiveThreadPane(page, /model: gpt-5\.3spark/i)).toBeVisible();
 
-  await page.getByRole("button", { name: /mini/i }).click();
-  await expect(await page.getByRole("button", { name: /model: gpt-5\.4mini/i })).toBeVisible();
+  await page.getByRole("button", { name: "mini", exact: true }).click();
+  await expect(modelButtonInActiveThreadPane(page, /model: gpt-5\.4mini/i)).toBeVisible();
 });
 
 async function expectNoRenderedTimelineOverlap(page: Page) {

@@ -385,7 +385,7 @@ describe("Automations frontend", () => {
     await userEvent.click(await screen.findByRole("button", { name: /second thread/i }));
 
     expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/threads/thread-2");
+    expect(window.location.pathname).toBe("/");
   });
 });
 

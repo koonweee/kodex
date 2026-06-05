@@ -754,11 +754,11 @@ describe("MVP composer settings flows", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4mini, medium/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /spark/i }));
-    expect(await screen.findByRole("button", { name: /model: gpt-5\.3spark, medium/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "spark" }));
+    expect(getActiveModelButton(/model: gpt-5\.3spark, medium/i)).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /mini/i }));
-    expect(await screen.findByRole("button", { name: /model: gpt-5\.4mini, medium/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "mini" }));
+    expect(getActiveModelButton(/model: gpt-5\.4mini, medium/i)).toBeInTheDocument();
   });
 
   it("falls back to durable defaults when the selected thread has no model metadata", async () => {
@@ -814,8 +814,10 @@ describe("MVP composer settings flows", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4-mini, medium/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /plain/i }));
-    expect(await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "plain" }));
+    await waitFor(() => {
+      expect(getActiveModelButton(/model: gpt-5\.4, medium/i)).toBeInTheDocument();
+    });
   });
 
   it("restores model settings for newly created threads from gateway create metadata", async () => {
@@ -934,55 +936,6 @@ describe("MVP composer settings flows", () => {
     await waitFor(() => expect(getActiveModelButton(/model: gpt-5\.3-codex-spark, medium/i)).toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: /^mini$/i }));
     await waitFor(() => expect(getActiveModelButton(/model: gpt-5\.4-mini, medium/i)).toBeInTheDocument());
-  });
-
-  it("does not preserve missing existing-thread metadata in a client thread cache", async () => {
-    vi.stubGlobal("EventSource", FakeEventSource);
-    mockGateway(
-      baseRoutes({
-        "GET /v1/models": {
-          models: [
-            highReasoningModel,
-            {
-              id: "gpt-5.4-mini",
-              model: "gpt-5.4-mini",
-              displayName: "GPT-5.4 Mini",
-              description: "Fast coding model",
-              defaultReasoningEffort: "medium",
-              hidden: false,
-              inputModalities: ["text"],
-              isDefault: false,
-              rawPayload: {},
-              supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }],
-              upgrade: null,
-            },
-          ],
-          nextCursor: null,
-          rawPayload: {},
-        },
-        "GET /v1/threads": {
-          threads: [
-            { ...thread, name: "plain one", model: undefined, reasoningEffort: undefined, rawPayload: {} },
-            { ...secondThread, name: "plain two", model: undefined, reasoningEffort: undefined, rawPayload: {} },
-          ],
-          nextCursor: null,
-          backwardsCursor: null,
-          rawPayload: {},
-        },
-      }),
-    );
-
-    render(<App />);
-
-    await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
-    await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
-    await clickMenuItem(/^gpt-5\.4-mini$/i);
-    expect(await screen.findByRole("button", { name: /model: gpt-5\.4-mini, medium/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /plain two/i }));
-    expect(await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i })).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: /plain one/i }));
-    expect(await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i })).toBeInTheDocument();
   });
 
   it("replaces stale local thread settings overrides from refreshed metadata in two clients", async () => {

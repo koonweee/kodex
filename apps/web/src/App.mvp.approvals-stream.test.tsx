@@ -72,11 +72,11 @@ describe("MVP approvals stream flows", () => {
       }),
     );
 
-    render(<App />);
+    const { container } = render(<App />);
 
     await screen.findByRole("heading", { name: /implement frontend/i });
-    const timeline = await screen.findByRole("main", { name: /thread/i });
-    expect(await within(timeline).findByText(/cargo test/i)).toBeInTheDocument();
+    const timeline = timelineElement(container);
+    expect(await within(timeline).findByText(/cargo test/i, undefined, { timeout: 5000 })).toBeInTheDocument();
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(1));
     const workspaceStream = activeWorkspaceStream(thread.id);
     expect(workspaceStream).toBeDefined();

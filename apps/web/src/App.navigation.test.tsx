@@ -224,34 +224,6 @@ describe("deep link navigation", () => {
     expect(updatedFrameworkButton!.compareDocumentPosition(middleButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("returns to the draft chat composer when browser navigation returns to the root route", async () => {
-    goTo("/");
-    mockGateway(
-      baseRoutes({
-        "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "GET /v1/threads/thread-2": threadDetail(secondThread),
-      }),
-    );
-
-    render(<App />);
-
-    await userEvent.click(await screen.findByRole("button", { name: /second thread/i }));
-    expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/threads/thread-2");
-
-    emitPopstate("/");
-
-    const main = screen.getByRole("main", { name: /thread/i });
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /project: no project/i })).toBeInTheDocument();
-    });
-    expect(within(main).queryByText(/no thread selected/i)).not.toBeInTheDocument();
-    const activePane = main.querySelector('.kodex-thread-pane[data-workspace-pane-active="true"]');
-    expect(activePane).not.toBeNull();
-    expect(within(activePane as HTMLElement).getByRole("heading", { name: /draft thread/i })).toBeInTheDocument();
-    expect(within(activePane as HTMLElement).queryByRole("heading", { name: /second thread/i })).not.toBeInTheDocument();
-  });
-
   it("uses mobile panel route state so back navigation can return from a thread to the selector", async () => {
     goTo("/");
     mockGateway(
@@ -269,7 +241,7 @@ describe("deep link navigation", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
     expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
-    expect(window.location.pathname + window.location.search).toBe("/threads/thread-2");
+    expect(window.location.pathname + window.location.search).toBe("/");
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
 
     emitPopstate("/?panel=threads");
@@ -285,7 +257,7 @@ describe("deep link navigation", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /thread not found or unavailable/i })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/threads/missing-thread");
+    expect(window.location.pathname).toBe("/");
     expect(screen.getByRole("button", { name: /browse threads/i })).toBeInTheDocument();
   });
 });

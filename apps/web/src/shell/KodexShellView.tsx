@@ -164,7 +164,7 @@ function WorkspaceSidebarWithPaneActions({
   workspaceSelectedThreadPaneId,
   ...props
 }: WorkspaceSidebarWithPaneActionsProps) {
-  const { openDraftThreadPane, openTerminalPane, openThreadPane } = useWorkspace();
+  const { focusPane, openDraftThreadPane, openTerminalPane, openThreadPane, workspace } = useWorkspace();
   const titleLookupPropsRef = useRef(props);
   const seededRouteThreadPaneRef = useRef<string | null>(null);
 
@@ -174,6 +174,13 @@ function WorkspaceSidebarWithPaneActions({
 
   function openThread(threadId: string) {
     if (useSingleThreadMode) {
+      return;
+    }
+    const existingPane = workspace.panes.find(
+      (pane) => pane.kind === "thread" && pane.target.mode === "existing" && pane.target.threadId === threadId,
+    );
+    if (existingPane) {
+      focusPane(existingPane.id);
       return;
     }
     void openThreadPane(threadId, titleForThread(props, threadId), { duplicate: true }).catch((error: unknown) => {
@@ -252,6 +259,7 @@ function WorkspaceSidebarWithPaneActions({
           return;
         }
         openThread(threadId);
+        props.onSelectChatThread(threadId);
       }}
       onSelectPinnedThread={(threadId) => {
         if (useSingleThreadMode) {
@@ -259,6 +267,7 @@ function WorkspaceSidebarWithPaneActions({
           return;
         }
         openThread(threadId);
+        props.onSelectPinnedThread(threadId);
       }}
       onSelectThread={(projectId, threadId) => {
         if (useSingleThreadMode) {
@@ -266,6 +275,7 @@ function WorkspaceSidebarWithPaneActions({
           return;
         }
         openThread(threadId);
+        props.onSelectThread(projectId, threadId);
       }}
     />
   );

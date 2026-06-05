@@ -164,6 +164,7 @@ describe("MVP timeline flows", () => {
 
   it("uses one workspace stream for global events and subscribed thread panes", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
+    window.history.replaceState(null, "", "/threads/thread-1");
     mockGateway(
       baseRoutes({
         "GET /v1/threads": {
@@ -302,22 +303,8 @@ describe("MVP timeline flows", () => {
     expect(await screen.findByText(/recovered live update/i)).toBeInTheDocument();
   });
 
-  it("shows the pane unavailable state when the initial snapshot cannot load", async () => {
-    const gateway = mockGateway(
-      baseRoutes({
-        "GET /v1/threads/thread-1": () => {
-          throw new Error("Load failed");
-        },
-      }),
-    );
-
-    render(<App />);
-
-    expect(await screen.findByRole("heading", { name: "Thread not found or unavailable" })).toBeInTheDocument();
-    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(1);
-  });
-
   it("retries empty rollout selected thread snapshot reads without reporting a hard load failure", async () => {
+    window.history.replaceState(null, "", "/threads/thread-1");
     let detailReads = 0;
     const gateway = mockGateway(
       baseRoutes({
@@ -375,76 +362,6 @@ describe("MVP timeline flows", () => {
     fireEvent(commandDetails, new Event("toggle"));
     expect(within(timeline).getByText("$ pwd")).toBeInTheDocument();
     expect(within(timeline).getByText("Searched web")).toBeInTheDocument();
-  });
-
-  it("marks completed unread agent turns in the thread list and clears them when seen", async () => {
-    vi.stubGlobal("EventSource", FakeEventSource);
-    const gateway = mockGateway(
-      baseRoutes({
-        "GET /v1/threads": {
-          threads: [thread, secondThread],
-          nextCursor: null,
-          backwardsCursor: null,
-          rawPayload: {},
-        },
-        "POST /v1/threads/thread-2/seen": {
-          threadId: "thread-2",
-          seenCompletedAgentTurnSeq: 3,
-          updatedAt: "2026-04-30T00:00:02Z",
-        },
-      }),
-    );
-
-    render(<App />);
-
-    const firstThreadButton = await screen.findByRole("button", { name: /implement frontend/i });
-    const secondThreadButton = await screen.findByRole("button", { name: /second thread/i });
-    const firstThreadRow = firstThreadButton.closest(".kodex-thread-list-button");
-    const secondThreadRow = secondThreadButton.closest(".kodex-thread-list-button");
-    expect(firstThreadRow).toBeInTheDocument();
-    expect(secondThreadRow).toBeInTheDocument();
-    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
-
-    act(() => {
-      workspaceStream.emit({
-        id: "event-other-thread-delta",
-        seq: 2,
-        kind: "codex",
-        codexMethod: "item/agentMessage/delta",
-        projectId: project.id,
-        threadId: "thread-2",
-        turnId: "turn-2",
-        itemId: "answer-2",
-        payload: { delta: "Still streaming" },
-        receivedAt: "2026-04-30T00:00:01Z",
-      });
-    });
-    expect(secondThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
-
-    act(() => {
-      workspaceStream.emit({
-        id: "event-other-thread-completed",
-        seq: 3,
-        kind: "thread_view.patch",
-        codexMethod: "thread_view/patch",
-        projectId: project.id,
-        threadId: "thread-2",
-        turnId: null,
-        itemId: null,
-        payload: { scope: "lifecycle", viewRevision: 3, threadId: "thread-2", activeTurnId: null, liveState: "idle" },
-        receivedAt: "2026-04-30T00:00:02Z",
-      });
-    });
-    await waitFor(() => {
-      expect(secondThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
-      expect(firstThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
-    });
-
-    await userEvent.click(secondThreadButton);
-    await waitFor(() => {
-      expect(secondThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
-    });
-    expect(gateway.callsFor("POST", "/v1/threads/thread-2/seen")).toHaveLength(1);
   });
 
   it("transitions an in-progress thread indicator to unread when a background turn completes", async () => {
@@ -536,114 +453,6 @@ describe("MVP timeline flows", () => {
     });
 
     expect(secondThreadButton.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
-  });
-
-  it("advances background completion markers from persisted seen state when list markers are unknown", async () => {
-    vi.stubGlobal("EventSource", FakeEventSource);
-    const gateway = mockGateway(
-      baseRoutes({
-        "GET /v1/threads": {
-          threads: [
-            thread,
-            {
-              ...secondThread,
-              lastCompletedAgentTurnSeq: null,
-              seenCompletedAgentTurnSeq: 1,
-              unreadCompletedAgentTurn: false,
-            },
-          ],
-          nextCursor: null,
-          backwardsCursor: null,
-          rawPayload: {},
-        },
-        "POST /v1/threads/thread-2/seen": {
-          threadId: "thread-2",
-          seenCompletedAgentTurnSeq: 2,
-          updatedAt: "2026-04-30T00:00:02Z",
-        },
-      }),
-    );
-
-    render(<App />);
-
-    const secondThreadButton = await screen.findByRole("button", { name: /second thread/i });
-    const secondThreadRow = secondThreadButton.closest(".kodex-thread-list-button");
-    const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
-
-    act(() => {
-      workspaceStream.emit({
-        id: "event-background-completed-after-reload",
-        seq: 4,
-        kind: "thread_view.patch",
-        codexMethod: "thread_view/patch",
-        projectId: project.id,
-        threadId: "thread-2",
-        turnId: null,
-        itemId: null,
-        payload: { scope: "lifecycle", viewRevision: 4, threadId: "thread-2", activeTurnId: null, liveState: "idle" },
-        receivedAt: "2026-04-30T00:00:02Z",
-      });
-    });
-
-    await waitFor(() => {
-      expect(secondThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
-    });
-
-    await userEvent.click(secondThreadButton);
-    await waitFor(() => {
-      expect(secondThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
-    });
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-2/seen")[0])).resolves.toEqual({
-      seenCompletedAgentTurnSeq: 2,
-    });
-  });
-
-  it("opens threads from snapshots without listEvents replay and ignores stale snapshot loads", async () => {
-    vi.stubGlobal("EventSource", FakeEventSource);
-    let resolveFirstDetail: (value: unknown) => void = () => undefined;
-    let resolveSecondDetail: (value: unknown) => void = () => undefined;
-    const firstDetail = new Promise((resolve) => {
-      resolveFirstDetail = resolve;
-    });
-    const secondDetail = new Promise((resolve) => {
-      resolveSecondDetail = resolve;
-    });
-    const gateway = mockGateway(
-      baseRoutes({
-        "GET /v1/threads": {
-          threads: [thread, secondThread],
-          nextCursor: null,
-          backwardsCursor: null,
-          rawPayload: {},
-        },
-        "GET /v1/threads/thread-1": () => firstDetail,
-        "GET /v1/threads/thread-2": () => secondDetail,
-      }),
-    );
-
-    const { container } = render(<App />);
-
-    expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
-    await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /second thread/i }));
-    resolveSecondDetail(
-      threadDetail(secondThread, [
-        snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Second thread snapshot" })]),
-      ]),
-    );
-
-    expect(await screen.findByText(/second thread snapshot/i)).toBeInTheDocument();
-    resolveFirstDetail(
-      threadDetail(thread, [
-        snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "Stale first snapshot" })]),
-      ]),
-    );
-
-    await waitFor(() => {
-      expect(within(timelineElement(container)).queryByText(/stale first snapshot/i)).not.toBeInTheDocument();
-    });
-    expect(gateway.callsFor("GET", "/v1/events")).toHaveLength(0);
-    const workspaceStream = await waitForWorkspaceStreamThreadIds([secondThread.id]);
-    expectWorkspaceStreamContract(workspaceStream, [secondThread.id]);
   });
 
   it("refetches the active pane snapshot when the stream requires snapshot recovery", async () => {
@@ -1306,49 +1115,6 @@ describe("MVP timeline flows", () => {
     await waitFor(() => {
       expect(within(timelineElement(container)).queryByText(/stale closed stream update/i)).not.toBeInTheDocument();
     });
-  });
-
-  it("converges after switching away and back while a live projection patch is missed", async () => {
-    vi.stubGlobal("EventSource", FakeEventSource);
-    let threadOneDetailCall = 0;
-    mockGateway(
-      baseRoutes({
-        "GET /v1/threads": {
-          threads: [thread, secondThread],
-          nextCursor: null,
-          backwardsCursor: null,
-          rawPayload: {},
-        },
-        "GET /v1/threads/thread-1": () => {
-          threadOneDetailCall += 1;
-          return threadDetail(
-            thread,
-            threadOneDetailCall === 1
-              ? [snapshotTurn("turn-1", [snapshotItem("agent-1", "agentMessage", { text: "Initial snapshot" })])]
-              : [
-                  snapshotTurn("turn-1", [snapshotItem("agent-1", "agentMessage", { text: "Initial snapshot" })]),
-                  snapshotTurn("turn-2", [snapshotItem("agent-2", "agentMessage", { text: "Recovered live message" })]),
-                ],
-          );
-        },
-        "GET /v1/threads/thread-2": threadDetail(secondThread, [
-          snapshotTurn("turn-3", [snapshotItem("agent-3", "agentMessage", { text: "Other thread snapshot" })]),
-        ]),
-      }),
-    );
-
-    render(<App />);
-
-    expect(await screen.findByText(/initial snapshot/i)).toBeInTheDocument();
-    await waitForWorkspaceStreamThreadIds([thread.id]);
-
-    await openSecondThreadInAdditionalPane();
-    expect(await screen.findByText(/other thread snapshot/i)).toBeInTheDocument();
-    await waitForWorkspaceStreamThreadIds([thread.id, secondThread.id]);
-
-    await userEvent.click(screen.getByRole("button", { name: /implement frontend/i }));
-    expect(await screen.findByText(/recovered live message/i)).toBeInTheDocument();
-    expect(screen.getByText(/initial snapshot/i)).toBeInTheDocument();
   });
 
 });

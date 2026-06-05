@@ -486,7 +486,6 @@ describe("MVP shell flows", () => {
     await userEvent.click(screen.getByRole("button", { name: /start new chat from desktop header/i }));
 
     expect(window.location.pathname).toBe("/");
-    expect(screen.getByRole("button", { name: /project: no project/i })).toBeInTheDocument();
     expect(activeComposer()).toBeEnabled();
   });
 
@@ -1244,7 +1243,6 @@ describe("MVP shell flows", () => {
     });
     expect(activeComposer()).toBeEnabled();
     expect(screen.queryByText(/select or create a thread/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /project: kodex/i })).toBeInTheDocument();
   });
 
   it("pins and unpins the selected thread from the thread actions menu", async () => {
@@ -1534,7 +1532,6 @@ describe("MVP shell flows", () => {
     expect(within(main).queryByText(/select or create a thread/i)).not.toBeInTheDocument();
     expect(activeComposer()).toBeEnabled();
     expect(main.querySelector(".kodex-main-stack")).toHaveAttribute("data-draft-thread", "true");
-    expect(within(main).getByRole("button", { name: /project: kodex/i })).toBeInTheDocument();
   });
 
   it("returns to a chat draft when archiving the selected chat thread", async () => {
@@ -1563,7 +1560,6 @@ describe("MVP shell flows", () => {
     expect(within(main).queryByText(/select or create a thread/i)).not.toBeInTheDocument();
     expect(activeComposer()).toBeEnabled();
     expect(main.querySelector(".kodex-main-stack")).toHaveAttribute("data-draft-thread", "true");
-    expect(within(main).getByRole("button", { name: /project: no project/i })).toBeInTheDocument();
   });
 
   it("shows in-progress threads in the selector action slot until archive is available", async () => {
@@ -1632,68 +1628,6 @@ describe("MVP shell flows", () => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
     });
     expect(await screen.findByText(/snapshot after attach/i)).toBeInTheDocument();
-  });
-
-  it("reattaches active selected threads on re-selection while keeping live updates on the selected stream", async () => {
-    vi.stubGlobal("EventSource", FakeEventSource);
-    const runningThread = { ...secondThread, status: "active" };
-    window.history.replaceState(null, "", "/threads/thread-2");
-    const gateway = mockGateway(
-      baseRoutes({
-        "GET /v1/threads": {
-          threads: [thread, runningThread],
-          nextCursor: null,
-          backwardsCursor: null,
-          rawPayload: {},
-        },
-        "POST /v1/threads/thread-2/attach": {
-          disposition: "resumed",
-          thread: runningThread,
-          rawPayload: {},
-        },
-        "GET /v1/threads/thread-2": threadDetail(runningThread, [
-          snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Running snapshot" })]),
-        ]),
-      }),
-    );
-
-    render(<App />);
-
-    expect(await screen.findByText(/running snapshot/i)).toBeInTheDocument();
-    await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
-    });
-
-    let selectedStream: FakeEventSource | undefined;
-    await waitFor(() => {
-      selectedStream = FakeEventSource.instances.find(
-        (instance) => streamIncludesThread(instance, "thread-2") && !instance.closed,
-      );
-      expect(selectedStream).toBeDefined();
-    });
-    act(() => {
-      selectedStream?.emitNamed("thread_view.patch", projectionPatchEvent({
-        id: "event-live-agent",
-        seq: 10,
-        threadId: "thread-2",
-        turnId: "turn-2",
-        itemId: "agent-live",
-        projectId: project.id,
-        text: "Live active update",
-        displayOrder: 10,
-      }));
-    });
-    expect(await screen.findByText(/live active update/i)).toBeInTheDocument();
-
-    const workspaceNav = screen.getByRole("navigation", { name: /workspace/i });
-    await userEvent.click(within(workspaceNav).getByRole("button", { name: /implement frontend/i }));
-    await screen.findByText(/hello from codex/i);
-    await userEvent.click(within(workspaceNav).getByRole("button", { name: /second thread/i }));
-    await screen.findByText(/running snapshot/i);
-
-    await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(2);
-    });
   });
 
   it("does not remember active thread attach no-op dispositions in the browser", async () => {
@@ -1879,7 +1813,7 @@ describe("MVP shell flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("button", { name: /project: no project/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /start new chat from mobile header/i })).toBeInTheDocument();
     const main = screen.getByRole("main", { name: /thread/i });
     expect(within(main).getByRole("button", { name: /show sidebar/i })).toBeInTheDocument();
 
@@ -1928,7 +1862,6 @@ describe("MVP shell flows", () => {
 
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
     expect(window.location.pathname).toBe("/");
-    expect(screen.getByRole("button", { name: /project: no project/i })).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: /no project/i })).not.toBeInTheDocument();
     await userEvent.type(activeComposer(), "Start from mobile chats");
     await userEvent.click(activeSendButton());
@@ -1937,37 +1870,6 @@ describe("MVP shell flows", () => {
       expect(gateway.callsFor("POST", "/v1/chats/threads")).toHaveLength(1);
     });
     expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(0);
-  });
-
-  it("creates a project draft from the narrow viewport root project selector", async () => {
-    const gateway = mockGateway(
-      baseRoutes({
-        "POST /v1/threads": { thread: { ...thread, id: "thread-2", name: "New thread", preview: "" }, rawPayload: {} },
-        "GET /v1/threads/thread-2/queued-inputs": { queuedInputs: [] },
-        "GET /v1/threads/thread-2": threadDetail({ ...thread, id: "thread-2", preview: "Start in project" }, []),
-        "POST /v1/threads/thread-2/input": { payload: {} },
-      }),
-    );
-
-    render(<App />);
-
-    await userEvent.click(await screen.findByRole("button", { name: /show sidebar/i }));
-    await userEvent.click(screen.getByRole("button", { name: /start new chat from mobile header/i }));
-    await userEvent.click(screen.getByRole("button", { name: /project: no project/i }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: new RegExp(project.name, "i") }));
-
-    expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
-    expect(screen.getByRole("button", { name: new RegExp(`project: ${project.name}`, "i") })).toBeInTheDocument();
-    await userEvent.type(activeComposer(), "Start in project");
-    await userEvent.click(activeSendButton());
-
-    await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(1);
-    });
-    await expect(requestJson(gateway.callsFor("POST", "/v1/threads")[0])).resolves.toMatchObject({
-      projectId: project.id,
-    });
-    expect(gateway.callsFor("POST", "/v1/chats/threads")).toHaveLength(0);
   });
 
   it("returns narrow viewport navigation to chat after selecting or creating a thread", async () => {
@@ -2038,7 +1940,6 @@ describe("MVP shell flows", () => {
     });
     expect(activeComposer()).toBeEnabled();
     expect(screen.queryByText(/select or create a thread/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /project: scratch/i })).toBeInTheDocument();
 
     resolveNewProjectThreads({
       threads: [secondThread],

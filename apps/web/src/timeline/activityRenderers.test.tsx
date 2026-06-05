@@ -227,13 +227,13 @@ describe("timeline activity renderers", () => {
     expect(screen.getByText("Inspect the renderer behavior and summarize the result.")).toBeInTheDocument();
     expect(screen.getAllByText("Lorentz [explorer]").length).toBeGreaterThan(0);
     expect(screen.getByText("Completed")).toBeInTheDocument();
-    expect(await screen.findByText("Done")).toBeInTheDocument();
+    await waitFor(() => expect(reactMarkdownRenderSpy).toHaveBeenCalledWith(expect.stringContaining("**Done**")));
+    expect(await screen.findByText("Done", undefined, { timeout: 5000 })).toBeInTheDocument();
     expect(screen.getByText("renderers.tsx")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "plan" })).toHaveAttribute(
       "href",
       "plans/collab-agent-timeline-rendering.md",
     );
-    expect(reactMarkdownRenderSpy).toHaveBeenCalledWith(expect.stringContaining("**Done**"));
     expect(container).not.toHaveTextContent("thread-lorentz");
   });
 
