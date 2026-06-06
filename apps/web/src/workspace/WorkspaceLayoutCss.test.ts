@@ -40,6 +40,28 @@ describe("workspace pane layout CSS", () => {
     expect(paneHostRule).toContain("min-height: 0;");
   });
 
+  it("maps Dockview chrome variables onto Kodex theme tokens", () => {
+    const dockRule = cssRuleContaining("--dv-group-view-background-color");
+
+    expect(dockRule).toContain(".kodex-workspace-dock .dockview-theme-abyss");
+    expect(dockRule).toContain("--dv-group-view-background-color: var(--kodex-bg-panel);");
+    expect(dockRule).toContain("--dv-tabs-and-actions-container-background-color: var(--kodex-bg-shell);");
+    expect(dockRule).toContain("--dv-activegroup-visiblepanel-tab-color: var(--kodex-text-primary);");
+    expect(dockRule).toContain("--dv-activegroup-hiddenpanel-tab-color: var(--kodex-text-secondary);");
+    expect(dockRule).toContain("--dv-inactivegroup-hiddenpanel-tab-color: var(--kodex-text-muted);");
+    expect(dockRule).toContain("--dv-tab-divider-color: var(--kodex-border-subtle);");
+    expect(dockRule).toContain("--dv-paneview-active-outline-color: var(--kodex-border-accent);");
+    expect(dockRule).toContain("--dv-drag-over-border-color: var(--kodex-border-accent-soft);");
+    expect(dockRule).toContain("--dv-icon-hover-background-color: var(--kodex-bg-button-hover);");
+    expect(dockRule).toContain("--dv-floating-box-shadow: var(--kodex-shadow-floating);");
+  });
+
+  it("does not reference undefined legacy surface aliases", () => {
+    expect(workspaceCss).not.toMatch(/--kodex-surface-[01]\b/);
+    expect(workspaceCss).not.toContain("--kodex-surface-hover");
+    expect(workspaceCss).not.toContain("--kodex-border-color");
+  });
+
   it("keeps draft pane composers centered instead of bottom-pinned", () => {
     expect(cssRule(".kodex-thread-pane-empty")).toContain("grid-template-rows: auto minmax(0, 1fr);");
     expect(cssRule(".kodex-thread-pane-empty-body")).toContain("align-content: center;");
@@ -53,5 +75,12 @@ function cssRule(selector: string): string {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = workspaceCss.match(new RegExp(`${escapedSelector}\\s*\\{[^}]*\\}`, "s"));
   expect(match, `Expected CSS rule for ${selector}`).not.toBeNull();
+  return match?.[0] ?? "";
+}
+
+function cssRuleContaining(declaration: string): string {
+  const escapedDeclaration = declaration.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = workspaceCss.match(new RegExp(`[^{}]*\\{[^}]*${escapedDeclaration}[^}]*\\}`, "s"));
+  expect(match, `Expected CSS rule containing ${declaration}`).not.toBeNull();
   return match?.[0] ?? "";
 }

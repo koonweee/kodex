@@ -4,6 +4,35 @@
   overflow: hidden;
 }
 
+.kodex-workspace-dock,
+.kodex-workspace-dock .dockview-theme-abyss,
+.kodex-workspace-dock .dockview-theme-dark,
+.kodex-workspace-dock .dockview-theme-light {
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--kodex-bg-raised-muted);
+  --dv-activegroup-hiddenpanel-tab-color: var(--kodex-text-secondary);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--kodex-bg-panel);
+  --dv-activegroup-visiblepanel-tab-color: var(--kodex-text-primary);
+  --dv-drag-over-background-color: color-mix(in srgb, var(--kodex-accent) 20%, transparent);
+  --dv-drag-over-border-color: var(--kodex-border-accent-soft);
+  --dv-dropdown-border-radius: var(--kodex-radius-sm);
+  --dv-floating-border: 1px solid var(--kodex-border-subtle);
+  --dv-floating-box-shadow: var(--kodex-shadow-floating);
+  --dv-group-view-background-color: var(--kodex-bg-panel);
+  --dv-icon-hover-background-color: var(--kodex-bg-button-hover);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--kodex-bg-raised-muted);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--kodex-text-muted);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--kodex-bg-panel);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--kodex-text-secondary);
+  --dv-paneview-active-outline-color: var(--kodex-border-accent);
+  --dv-paneview-header-border-color: var(--kodex-border-subtle);
+  --dv-sash-color: color-mix(in srgb, var(--kodex-border-subtle) 72%, transparent);
+  --dv-separator-border: var(--kodex-border-subtle);
+  --dv-tab-border-radius: var(--kodex-radius-xs);
+  --dv-tab-divider-color: var(--kodex-border-subtle);
+  --dv-tabs-and-actions-container-background-color: var(--kodex-bg-shell);
+  --dv-tabs-container-scrollbar-color: var(--kodex-scroll-button-border);
+}
+
 .kodex-workspace-dock {
   background: var(--kodex-bg-app);
   flex: 1 1 auto;
@@ -66,7 +95,7 @@
   align-items: center;
   background: var(--kodex-bg-raised);
   border: 1px solid var(--kodex-border-subtle);
-  border-radius: 8px;
+  border-radius: var(--kodex-radius-md);
   color: var(--kodex-text-secondary);
   display: inline-flex;
   flex: 0 0 auto;
@@ -141,9 +170,9 @@
   min-width: 180px;
   padding: 4px;
   border: 1px solid var(--kodex-border-subtle);
-  border-radius: 6px;
-  background: var(--kodex-surface-1);
-  box-shadow: 0 12px 30px rgb(0 0 0 / 32%);
+  border-radius: var(--kodex-radius-sm);
+  background: var(--kodex-bg-raised);
+  box-shadow: var(--kodex-shadow-menu);
 }
 
 .kodex-thread-actions-item {
@@ -154,7 +183,7 @@
   min-height: 30px;
   padding: 5px 8px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--kodex-radius-xs);
   color: var(--kodex-text-primary);
   background: transparent;
   font: inherit;
@@ -164,7 +193,7 @@
 
 .kodex-thread-actions-item:hover,
 .kodex-thread-actions-item:focus-visible {
-  background: var(--kodex-surface-hover);
+  background: var(--kodex-bg-button-hover);
   outline: none;
 }
 
@@ -254,7 +283,7 @@
   min-height: 0;
   border: 0;
   border-radius: 0;
-  background: color-mix(in srgb, var(--kodex-surface-0) 96%, black);
+  background: color-mix(in srgb, var(--kodex-bg-app) 96%, black);
   box-shadow: none;
 }
 

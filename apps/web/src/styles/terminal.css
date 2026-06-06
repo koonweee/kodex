@@ -8,16 +8,16 @@
   height: min(48dvh, 460px);
   min-height: 280px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--kodex-border-color) 88%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--kodex-surface-0) 96%, black);
-  box-shadow: 0 22px 72px color-mix(in srgb, black 34%, transparent);
+  border: 1px solid color-mix(in srgb, var(--kodex-border-subtle) 88%, transparent);
+  border-radius: var(--kodex-radius-md);
+  background: color-mix(in srgb, var(--kodex-bg-app) 96%, black);
+  box-shadow: var(--kodex-shadow-strong);
 }
 
 .kodex-terminal-header {
   min-height: 44px;
   padding: 8px 10px 8px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--kodex-border-color) 72%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--kodex-border-subtle) 72%, transparent);
 }
 
 .kodex-terminal-heading {
@@ -57,7 +57,7 @@
 .kodex-terminal-accessory-row {
   min-width: 0;
   overflow-x: auto;
-  border-bottom: 1px solid color-mix(in srgb, var(--kodex-border-color) 64%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--kodex-border-subtle) 64%, transparent);
   padding: 6px 10px;
   scrollbar-width: none;
 }
@@ -70,10 +70,10 @@
   flex: 0 0 auto;
   min-width: 34px;
   height: 28px;
-  border: 1px solid color-mix(in srgb, var(--kodex-border-color) 76%, transparent);
-  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--kodex-border-subtle) 76%, transparent);
+  border-radius: var(--kodex-radius-sm);
   padding: 0 8px;
-  background: color-mix(in srgb, var(--kodex-surface-1) 92%, transparent);
+  background: color-mix(in srgb, var(--kodex-bg-raised) 92%, transparent);
   color: var(--kodex-text-secondary);
   font: inherit;
   font-size: 0.74rem;
@@ -89,7 +89,7 @@
 .kodex-terminal-body {
   flex: 1 1 auto;
   min-height: 0;
-  background: #11151f;
+  background: var(--kodex-bg-command);
 }
 
 .kodex-terminal-loading {
