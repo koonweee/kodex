@@ -16,12 +16,41 @@ describe("workspaceLayoutCodec", () => {
     expect(layoutMatchesWorkspacePanes(layout, [pane("pane-a"), pane("pane-b")])).toBe(true);
   });
 
-  it("reads Dockview serialized panel ids", () => {
-    const layout = { panels: { "pane-a": {}, "pane-b": {} }, grid: { root: {} } };
+  it("reads Dockview serialized panel ids from populated grid groups", () => {
+    const layout = {
+      panels: { "pane-a": {}, "pane-b": {} },
+      grid: {
+        root: {
+          type: "branch",
+          data: [
+            { type: "leaf", data: { id: "group-a", views: ["pane-a"] } },
+            { type: "leaf", data: { id: "group-b", views: ["pane-b"] } },
+          ],
+        },
+      },
+    };
 
     expect(hasDockviewPanels(layout)).toBe(true);
     expect(workspaceLayoutPanelIds(layout)).toEqual(["pane-a", "pane-b"]);
     expect(layoutMatchesWorkspacePanes(layout, [pane("pane-a"), pane("pane-c")])).toBe(false);
+  });
+
+  it("rejects Dockview layouts with empty grid groups even when panel ids match", () => {
+    const layout = {
+      panels: { "pane-a": {}, "pane-b": {} },
+      grid: {
+        root: {
+          type: "branch",
+          data: [
+            { type: "leaf", data: { id: "empty-group", views: [] } },
+            { type: "leaf", data: { id: "group-a", views: ["pane-a"] } },
+            { type: "leaf", data: { id: "group-b", views: ["pane-b"] } },
+          ],
+        },
+      },
+    };
+
+    expect(layoutMatchesWorkspacePanes(layout, [pane("pane-a"), pane("pane-b")])).toBe(false);
   });
 
   it("creates compact layouts from the workspace document", () => {

@@ -63,6 +63,164 @@
   height: 100%;
 }
 
+.kodex-workspace-dock .dv-tabs-and-actions-container {
+  overflow: visible;
+  position: relative;
+  z-index: 40;
+}
+
+.kodex-workspace-dock .dv-tabs-and-actions-container .dv-scrollable,
+.kodex-workspace-dock .dv-tabs-and-actions-container .dv-tabs-container {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.kodex-workspace-dock .dv-tabs-and-actions-container .dv-right-actions-container {
+  align-items: center;
+  flex: 0 0 clamp(132px, 20%, 240px);
+  justify-content: flex-end;
+  min-width: 0;
+  position: relative;
+  z-index: 41;
+}
+
+.kodex-workspace-dock .dv-tabs-and-actions-container .dv-left-actions-container {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  position: relative;
+}
+
+.kodex-workspace-dock .dv-tabs-and-actions-container .dv-left-actions-container > .dv-react-part,
+.kodex-workspace-dock .dv-tabs-and-actions-container .dv-right-actions-container > .dv-react-part {
+  overflow: visible;
+}
+
+.kodex-workspace-pane-actions {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+  height: 100%;
+  justify-content: flex-end;
+  min-width: 0;
+  padding: 0 6px;
+  width: 100%;
+}
+
+.kodex-workspace-tab-overflow {
+  align-items: center;
+  display: inline-flex;
+  height: 100%;
+  position: relative;
+}
+
+.kodex-workspace-tab-overflow-button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--kodex-radius-xs);
+  color: var(--kodex-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 650;
+  height: calc(100% - 4px);
+  justify-content: center;
+  min-width: 44px;
+  padding: 0 8px;
+}
+
+.kodex-workspace-tab-overflow-button:hover,
+.kodex-workspace-tab-overflow-button:focus-visible,
+.kodex-workspace-tab-overflow-button[aria-expanded="true"] {
+  background: var(--kodex-bg-button-hover);
+  color: var(--kodex-text-primary);
+  outline: none;
+}
+
+.kodex-workspace-tab-overflow-menu {
+  background: var(--kodex-bg-raised);
+  border: 1px solid var(--kodex-border-subtle);
+  border-radius: var(--kodex-radius-sm);
+  box-shadow: var(--kodex-shadow-menu);
+  display: grid;
+  max-height: min(50vh, 400px);
+  min-width: min(340px, calc(100vw - 24px));
+  overflow-y: auto;
+  padding: 4px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+}
+
+.kodex-workspace-tab-overflow-item {
+  background: transparent;
+  border: 0;
+  border-radius: var(--kodex-radius-xs);
+  color: var(--kodex-text-secondary);
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  font-size: 0.78rem;
+  min-height: 30px;
+  min-width: 0;
+  padding: 5px 8px;
+  text-align: left;
+}
+
+.kodex-workspace-tab-overflow-item:hover,
+.kodex-workspace-tab-overflow-item:focus-visible,
+.kodex-workspace-tab-overflow-item[aria-current="page"] {
+  background: var(--kodex-bg-button-hover);
+  color: var(--kodex-text-primary);
+  outline: none;
+}
+
+.kodex-workspace-tab-overflow-item > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kodex-workspace-dock .dv-tab {
+  flex: 0 0 180px;
+  max-width: 240px;
+  min-width: 180px;
+}
+
+.kodex-workspace-dock .dv-default-tab-content {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kodex-workspace-dock .dv-tabs-container {
+  scrollbar-width: none;
+}
+
+.kodex-workspace-dock .dv-tabs-container::-webkit-scrollbar {
+  display: none;
+}
+
+.kodex-workspace-dock .dv-tabs-overflow-dropdown-default {
+  border-radius: var(--kodex-radius-xs);
+  min-width: 44px;
+}
+
+.kodex-workspace-dock .dv-tabs-overflow-container {
+  border-radius: var(--kodex-radius-sm);
+  box-shadow: var(--kodex-shadow-menu);
+  min-width: min(340px, calc(100vw - 24px));
+}
+
+.kodex-workspace-dock .dv-tabs-overflow-container .dv-tab {
+  max-width: none;
+  width: 100%;
+}
+
 .kodex-workspace-dock .dv-view {
   min-height: 0;
   min-width: 0;
@@ -153,10 +311,22 @@
 .kodex-thread-pane {
   background: var(--kodex-pane-bg);
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100%;
   min-height: 0;
   overflow: hidden;
+}
+
+.kodex-thread-pane-accessible-title {
+  clip: rect(0 0 0 0);
+  border: 0;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
 }
 
 .kodex-thread-pane-header {
@@ -186,7 +356,7 @@
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
-  z-index: 20;
+  z-index: 60;
   display: grid;
   min-width: 180px;
   padding: 4px;
@@ -249,14 +419,14 @@
 }
 
 .kodex-thread-pane-existing > .kodex-thread-content {
-  grid-row: 3;
+  grid-row: 2;
   min-height: 0;
   overflow: hidden;
 }
 
 .kodex-thread-pane-existing > .kodex-composer-shell {
   align-self: end;
-  grid-row: 4;
+  grid-row: 3;
   justify-self: center;
   margin: var(--kodex-pane-edge-space) calc(var(--kodex-pane-edge-space) + 4px) calc(var(--kodex-pane-edge-space) + 4px);
   max-width: min(920px, calc(100% - 24px));
@@ -275,7 +445,7 @@
 }
 
 .kodex-thread-pane-empty {
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   padding: 0;
   text-align: center;
 }
@@ -320,4 +490,19 @@
 
 .kodex-workspace-dock .kodex-terminal-pane .kodex-terminal-body {
   min-height: 160px;
+}
+
+@media (max-width: 700px) {
+  .kodex-workspace-dock .dv-tabs-and-actions-container .dv-right-actions-container {
+    flex: 0 0 auto;
+  }
+
+  .kodex-workspace-dock .dv-tab {
+    flex-basis: min(220px, calc(100vw - 160px));
+    min-width: min(180px, calc(100vw - 160px));
+  }
+
+  .kodex-workspace-pane-actions {
+    padding: 0 4px;
+  }
 }

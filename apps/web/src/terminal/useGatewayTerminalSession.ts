@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   createTerminalSession,
@@ -69,7 +69,7 @@ export function useGatewayTerminalSession(opened: boolean, options: GatewayTermi
     };
   }, [createRequest.command, createRequest.cwd, createRequest.title, opened, preferredTerminalId, reuseRunning]);
 
-  async function createNewSession() {
+  const createNewSession = useCallback(async () => {
     const currentTerminalId = state.session?.id ?? null;
     setState((current) => ({ ...current, error: null, isLoading: true }));
     try {
@@ -85,9 +85,9 @@ export function useGatewayTerminalSession(opened: boolean, options: GatewayTermi
         isLoading: false,
       }));
     }
-  }
+  }, [createRequest, state.session?.id]);
 
-  async function stopSession() {
+  const stopSession = useCallback(async () => {
     const terminalId = state.session?.id;
     if (!terminalId) {
       return;
@@ -103,9 +103,9 @@ export function useGatewayTerminalSession(opened: boolean, options: GatewayTermi
         isLoading: false,
       }));
     }
-  }
+  }, [state.session?.id]);
 
-  async function recoverSession() {
+  const recoverSession = useCallback(async () => {
     setState((current) => ({ ...current, error: null, isLoading: true, session: null }));
     try {
       const existing = await listTerminalSessions();
@@ -119,7 +119,7 @@ export function useGatewayTerminalSession(opened: boolean, options: GatewayTermi
         session: null,
       }));
     }
-  }
+  }, [createRequest, preferredTerminalId, reuseRunning]);
 
   return {
     ...state,

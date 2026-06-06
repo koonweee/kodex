@@ -504,7 +504,7 @@ describe("App shell", () => {
     expect(screen.getByRole("navigation", { name: /workspace/i })).toHaveStyle({ width: "420px" });
   });
 
-  it("keeps the thread header and composer outside the timeline scroll region and toggles debug events locally", async () => {
+  it("keeps unified pane chrome and composer outside the timeline scroll region and toggles debug events locally", async () => {
     mockGateway({
       "GET /v1/projects": {
         projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
@@ -553,7 +553,8 @@ describe("App shell", () => {
 
     const thread = await screen.findByRole("main", { name: /thread/i });
     expect(await within(thread).findByText(/visible answer/i)).toBeInTheDocument();
-    expect(thread.querySelector(".kodex-thread-header")).toBeInTheDocument();
+    expect(thread.querySelector(".kodex-thread-header")).not.toBeInTheDocument();
+    expect(thread.querySelector(".kodex-thread-pane-accessible-title")).toBeInTheDocument();
     expect(thread.querySelector(".kodex-timeline-scroll")).toBeInTheDocument();
     expect(thread.querySelector(".kodex-composer")).toBeInTheDocument();
     expect(within(thread).queryByText(/event stream/i)).not.toBeInTheDocument();

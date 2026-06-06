@@ -1,8 +1,11 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { useEffect } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { DockviewApi } from "dockview";
 
-import { kodexDockviewTheme, syncWorkspaceIntoDockview } from "./WorkspaceDock";
+import { WorkspaceRightHeaderActions, WorkspaceTabOverflowActions, kodexDockviewTheme, syncWorkspaceIntoDockview } from "./WorkspaceDock";
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
+import { WorkspaceProvider, useWorkspace } from "./WorkspaceProvider";
 
 describe("WorkspaceDock sync", () => {
   it("uses a compact Kodex Dockview theme instead of the default abyss chrome", () => {
@@ -12,6 +15,59 @@ describe("WorkspaceDock sync", () => {
     expect(kodexDockviewTheme.dndTabIndicator).toBe("line");
     expect(kodexDockviewTheme.dndPanelOverlay).toBe("group");
     expect(kodexDockviewTheme.tabAnimation).toBe("smooth");
+  });
+
+  it("renders registered active pane actions in the shared Dockview header slot", async () => {
+    render(
+      <WorkspaceProvider>
+        <PaneActionHarness activePaneId="pane-thread" />
+      </WorkspaceProvider>,
+    );
+
+    expect(await screen.findByRole("toolbar", { name: "Pane actions" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Thread overflow" })).toBeInTheDocument();
+  });
+
+  it("renders a dropdown for measured overflow tabs and focuses the chosen panel", async () => {
+    const panels = Array.from({ length: 6 }, (_, index) => ({
+      focus: vi.fn(),
+      id: `pane-${index + 1}`,
+      title: `Pane ${index + 1}`,
+    }));
+
+    render(
+      <div className="dv-tabs-and-actions-container">
+        <div className="dv-tabs-container">
+          {panels.map((panel) => (
+            <div className="dv-tab" key={panel.id}>
+              {panel.title}
+            </div>
+          ))}
+        </div>
+        <WorkspaceTabOverflowActions
+          activePanel={panels[0] as never}
+          api={{} as never}
+          containerApi={{} as never}
+          group={{} as never}
+          headerPosition="top"
+          isGroupActive
+          panels={panels as never}
+        />
+      </div>,
+    );
+    const tabsContainer = document.querySelector<HTMLElement>(".dv-tabs-container");
+    expect(tabsContainer).not.toBeNull();
+    vi.spyOn(tabsContainer as HTMLElement, "getBoundingClientRect").mockReturnValue(domRect(0, 360));
+    document.querySelectorAll<HTMLElement>(".dv-tab").forEach((tab, index) => {
+      vi.spyOn(tab, "getBoundingClientRect").mockReturnValue(domRect(index * 180, index * 180 + 180));
+    });
+
+    fireEvent(window, new Event("resize"));
+    expect(await screen.findByRole("button", { name: "More tabs" })).toHaveTextContent("+4");
+    fireEvent.click(screen.getByRole("button", { name: "More tabs" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Pane 6" }));
+
+    expect(panels[5]?.focus).toHaveBeenCalledTimes(1);
   });
 
   it("rebuilds a single-pane workspace instead of hydrating a stale saved split layout", () => {
@@ -35,6 +91,49 @@ describe("WorkspaceDock sync", () => {
     );
     expect(api.addPanel).toHaveBeenCalledTimes(1);
     expect(api.activePanel?.id).toBe("pane-a");
+  });
+
+  it("rebuilds a multi-pane workspace instead of hydrating a saved layout with an empty grid group", () => {
+    const api = fakeDockviewApi([]);
+    const suppressEventsRef = { current: false };
+    const panes = [
+      pane("pane-a", "thread", { mode: "existing", threadId: "thread-1" }),
+      pane("pane-b", "thread", { mode: "existing", threadId: "thread-2" }),
+    ];
+
+    syncWorkspaceIntoDockview(
+      api as unknown as DockviewApi,
+      {
+        activePaneId: "pane-b",
+        dockviewLayout: {
+          panels: { "pane-a": {}, "pane-b": {} },
+          grid: {
+            root: {
+              type: "branch",
+              data: [
+                { type: "leaf", data: { id: "empty-group", views: [] } },
+                { type: "leaf", data: { id: "group-a", views: ["pane-a"] } },
+                { type: "leaf", data: { id: "group-b", views: ["pane-b"] } },
+              ],
+            },
+          },
+        },
+        panes,
+        schemaVersion: 1,
+      },
+      suppressEventsRef,
+    );
+
+    expect(api.clear).toHaveBeenCalled();
+    expect(api.fromJSON).not.toHaveBeenCalled();
+    expect(api.addPanel).toHaveBeenCalledTimes(2);
+    expect(api.addPanel).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        id: "pane-b",
+        position: { referencePanel: "pane-a", direction: "right" },
+      }),
+    );
+    expect(api.activePanel?.id).toBe("pane-b");
   });
 
   it("adds new workspace panes without clearing the existing Dockview layout", async () => {
@@ -95,6 +194,39 @@ type FakeDockviewPanel = {
   title: string;
   update: ReturnType<typeof vi.fn>;
 };
+
+function PaneActionHarness({ activePaneId }: { activePaneId: string }) {
+  const { setPaneHeaderActions } = useWorkspace();
+  useEffect(() => {
+    setPaneHeaderActions(activePaneId, <button type="button">Thread overflow</button>);
+    return () => setPaneHeaderActions(activePaneId, null);
+  }, [activePaneId, setPaneHeaderActions]);
+  return (
+    <WorkspaceRightHeaderActions
+      activePanel={{ id: activePaneId } as never}
+      api={{} as never}
+      containerApi={{} as never}
+      group={{} as never}
+      headerPosition="top"
+      isGroupActive
+      panels={[]}
+    />
+  );
+}
+
+function domRect(left: number, right: number): DOMRect {
+  return {
+    bottom: 32,
+    height: 32,
+    left,
+    right,
+    toJSON: () => ({}),
+    top: 0,
+    width: right - left,
+    x: left,
+    y: 0,
+  };
+}
 
 function fakeDockviewApi(panelIds: string[]) {
   let activePanel: FakeDockviewPanel | null = null;

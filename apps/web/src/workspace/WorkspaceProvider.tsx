@@ -94,6 +94,7 @@ type WorkspaceContextValue = {
   openGeneratedUiPane: (threadId: string, title?: string | null) => Promise<void>;
   openTerminalPane: (options?: { command?: string | null; cwd?: string | null; duplicate?: boolean }) => Promise<void>;
   openThreadPane: (threadId: string, title?: string | null, options?: { duplicate?: boolean }) => Promise<void>;
+  paneHeaderActionsById: Record<string, ReactNode>;
   persistLayout: (dockviewLayout: unknown, activePaneId: string | null) => void;
   publishThreadPaneTimelineAction: (action: ThreadPaneTimelineAction) => void;
   renderThreadComposer?: (pane: WorkspacePane, state: Omit<ThreadComposerState, "publishThreadPaneTimelineAction">) => ReactNode;
@@ -103,6 +104,7 @@ type WorkspaceContextValue = {
   showDebugEvents: boolean;
   subscribeLiveEvent: (handler: WorkspaceLiveEventHandler) => () => void;
   subscribeThreadPaneTimelineAction: (handler: ThreadPaneTimelineActionHandler) => () => void;
+  setPaneHeaderActions: (paneId: string, actions: ReactNode | null) => void;
   threadSummariesById: Record<string, ThreadSummary>;
   threadActions: WorkspaceThreadActions;
   updatePane: (paneId: string, request: WorkspacePanePatch) => Promise<void>;
@@ -149,6 +151,7 @@ export function WorkspaceProvider({
   const liveEventCursorRef = useRef<number | undefined>(undefined);
   const liveEventHandlersRef = useRef(new Set<WorkspaceLiveEventHandler>());
   const onLiveEventRef = useRef(onLiveEvent);
+  const [paneHeaderActionsById, setPaneHeaderActionsById] = useState<Record<string, ReactNode>>({});
   const [workspace, setWorkspace] = useState<WorkspaceModel>(() => ensureWorkspaceHasActivePane(paneStore.load()));
   const [workspaceError, setWorkspaceError] = useState<Error | null>(null);
 
@@ -204,6 +207,25 @@ export function WorkspaceProvider({
     return () => {
       liveEventHandlersRef.current.delete(handler);
     };
+  }, []);
+
+  const setPaneHeaderActions = useCallback((paneId: string, actions: ReactNode | null) => {
+    setPaneHeaderActionsById((current) => {
+      if (actions === null) {
+        if (!Object.prototype.hasOwnProperty.call(current, paneId)) {
+          return current;
+        }
+        const { [paneId]: _removed, ...rest } = current;
+        return rest;
+      }
+      if (current[paneId] === actions) {
+        return current;
+      }
+      return {
+        ...current,
+        [paneId]: actions,
+      };
+    });
   }, []);
 
   const persistLayout = useCallback((dockviewLayout: unknown, activePaneId: string | null) => {
@@ -451,6 +473,7 @@ export function WorkspaceProvider({
       openGeneratedUiPane,
       openTerminalPane,
       openThreadPane,
+      paneHeaderActionsById,
       persistLayout,
       publishThreadPaneTimelineAction,
       renderThreadComposer: renderThreadComposer
@@ -466,6 +489,7 @@ export function WorkspaceProvider({
       showDebugEvents,
       subscribeLiveEvent,
       subscribeThreadPaneTimelineAction,
+      setPaneHeaderActions,
       threadSummariesById,
       threadActions,
       updatePane,
@@ -489,6 +513,7 @@ export function WorkspaceProvider({
       openGeneratedUiPane,
       openTerminalPane,
       openThreadPane,
+      paneHeaderActionsById,
       persistLayout,
       publishThreadPaneTimelineAction,
       renderThreadComposer,
@@ -498,6 +523,7 @@ export function WorkspaceProvider({
       showDebugEvents,
       subscribeLiveEvent,
       subscribeThreadPaneTimelineAction,
+      setPaneHeaderActions,
       threadSummariesById,
       threadActions,
       updatePane,

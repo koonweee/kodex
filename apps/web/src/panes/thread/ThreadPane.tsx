@@ -1,6 +1,6 @@
 import { ActionIcon, Badge, Box, Button, Group, Loader, Modal, Skeleton, Switch, Text, TextInput, Title } from "@mantine/core";
 import { AlertCircle, Archive, CopyPlus, MoreHorizontal, PanelLeftOpen, PanelRightOpen, Pencil, Pin, PinOff } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
 
 import type { EventEnvelope, ThreadSummary } from "../../api/client";
 import { getThreadDetail, getThreadTimelinePage } from "../../api/client";
@@ -37,9 +37,31 @@ const TimelineView = lazy(() =>
 );
 
 export function ThreadPane({ isActive, pane }: WorkspacePaneComponentProps) {
-  const { errorMessage, onShowMobileSidebar, renderThreadComposer, renderThreadPane, updatePane, workspace } = useWorkspace();
+  const { errorMessage, onShowMobileSidebar, renderThreadComposer, renderThreadPane, setPaneHeaderActions, updatePane, workspace } = useWorkspace();
   const paneIsActive = isActive || workspace?.activePaneId === pane.id;
   const target = paneTargetRecord(pane);
+  const draftPaneActions = useMemo(
+    () =>
+      target.mode === "existing" ? null : (
+        <ActionIcon
+          aria-label="Show sidebar"
+          className="kodex-thread-sidebar-button"
+          onClick={onShowMobileSidebar}
+          size="sm"
+          variant="subtle"
+        >
+          <PanelLeftOpen size={17} />
+        </ActionIcon>
+      ),
+    [onShowMobileSidebar, target.mode],
+  );
+  useEffect(() => {
+    if (target.mode === "existing") {
+      return;
+    }
+    setPaneHeaderActions(pane.id, draftPaneActions);
+    return () => setPaneHeaderActions(pane.id, null);
+  }, [draftPaneActions, pane.id, setPaneHeaderActions, target.mode]);
   const materializeThreadPane = useCallback(
     (threadId: string, title?: string | null) => {
       void updatePane(pane.id, {
@@ -63,7 +85,6 @@ export function ThreadPane({ isActive, pane }: WorkspacePaneComponentProps) {
         })}
         errorMessage={paneIsActive ? errorMessage : null}
         isActive={paneIsActive}
-        onShowMobileSidebar={onShowMobileSidebar}
       />
     ) : (
       <ExistingThreadPane isActive={paneIsActive} pane={pane} paneTitle={pane.title ?? null} threadId={target.threadId} />
@@ -97,6 +118,7 @@ function ExistingThreadPane({
     renderThreadComposer,
     renderThreadPaneAside,
     renderThreadPaneHeaderActions,
+    setPaneHeaderActions,
     showDebugEvents,
     subscribeLiveEvent,
     subscribeThreadPaneTimelineAction,
@@ -121,7 +143,6 @@ function ExistingThreadPane({
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renamePending, setRenamePending] = useState(false);
   const retrySnapshotTimerRef = useRef<number | null>(null);
-  const wasActiveRef = useRef(isActive);
 
   const clearRetrySnapshotTimer = useCallback(() => {
     if (retrySnapshotTimerRef.current !== null) {
@@ -241,14 +262,6 @@ function ExistingThreadPane({
   useEffect(() => () => clearRetrySnapshotTimer(), [clearRetrySnapshotTimer]);
 
   useEffect(() => {
-    const wasActive = wasActiveRef.current;
-    wasActiveRef.current = isActive;
-    if (isActive && !wasActive) {
-      void refreshSnapshot();
-    }
-  }, [isActive, refreshSnapshot]);
-
-  useEffect(() => {
     return subscribeLiveEvent((event) => {
       if (!isThreadEventForPane(event, threadId)) {
         return;
@@ -359,8 +372,86 @@ function ExistingThreadPane({
   const isUnavailable = entry.phase === "error" && !thread;
   const title = isUnavailable ? "Thread not found or unavailable" : paneTitle ?? (thread ? threadDisplayTitle(thread) : threadId);
   const threadChromeState = thread ? { isActive, thread, threadId } : null;
-  const headerActions = threadChromeState ? renderThreadPaneHeaderActions?.(pane, threadChromeState) : null;
   const paneAside = threadChromeState ? renderThreadPaneAside?.(pane, threadChromeState) : null;
+  const paneHeaderActions = useMemo(
+    () => {
+      const customHeaderActions = threadChromeState ? renderThreadPaneHeaderActions?.(pane, threadChromeState) : null;
+      return (
+        <Group className="kodex-thread-pane-actions" gap={4} wrap="nowrap">
+          <ActionIcon
+            aria-label="Show sidebar"
+            className="kodex-thread-sidebar-button"
+            onClick={onShowMobileSidebar}
+            size="sm"
+            variant="subtle"
+          >
+            <PanelLeftOpen size={17} />
+          </ActionIcon>
+          {entry.phase === "loadingSnapshot" || entry.phase === "refreshingSnapshot" ? (
+            <Badge leftSection={<Loader size={10} />} variant="light">
+              Syncing
+            </Badge>
+          ) : null}
+          {!isUnavailable ? (
+            <>
+              {customHeaderActions}
+              <ActionIcon
+                aria-label="Duplicate pane"
+                onClick={() => void openThreadPane(threadId, title, { duplicate: true })}
+                size="sm"
+                title="Duplicate pane"
+                variant="subtle"
+              >
+                <CopyPlus size={16} />
+              </ActionIcon>
+              <ActionIcon
+                aria-label="Open generated UI"
+                onClick={() => void openGeneratedUiPane(threadId, `${title} UI`)}
+                size="sm"
+                title="Open generated UI"
+                variant="subtle"
+              >
+                <PanelRightOpen size={16} />
+              </ActionIcon>
+              {thread ? (
+                <ThreadActionsMenu
+                  onArchiveThread={threadActions.onArchiveThread}
+                  onPinThread={threadActions.onPinThread}
+                  onRenameThread={() => setRenameModalOpen(true)}
+                  onSetThread={setThread}
+                  onSetThreadNotificationsEnabled={threadActions.onSetThreadNotificationsEnabled}
+                  onUnpinThread={threadActions.onUnpinThread}
+                  thread={thread}
+                />
+              ) : null}
+            </>
+          ) : null}
+        </Group>
+      );
+    },
+    [
+      entry.phase,
+      isActive,
+      isUnavailable,
+      onShowMobileSidebar,
+      openGeneratedUiPane,
+      openThreadPane,
+      pane,
+      renderThreadPaneHeaderActions,
+      thread,
+      threadActions.onArchiveThread,
+      threadActions.onPinThread,
+      threadActions.onSetThreadNotificationsEnabled,
+      threadActions.onUnpinThread,
+      threadId,
+      title,
+    ],
+  );
+
+  useEffect(() => {
+    setPaneHeaderActions(pane.id, paneHeaderActions);
+    return () => setPaneHeaderActions(pane.id, null);
+  }, [pane.id, paneHeaderActions, setPaneHeaderActions]);
 
   useEffect(() => {
     if (!renameModalOpen || !thread) {
@@ -406,6 +497,9 @@ function ExistingThreadPane({
 
   return (
     <section className="kodex-thread-pane kodex-thread-pane-existing" data-workspace-pane-active={isActive ? "true" : undefined}>
+      <Title className="kodex-thread-pane-accessible-title" order={3} size="h5" title={title}>
+        {title}
+      </Title>
       <Modal centered onClose={closeRenameModal} opened={renameModalOpen && thread !== null} title="Rename thread">
         <Box component="form" onSubmit={handleRenameSubmit}>
           <TextInput
@@ -434,66 +528,6 @@ function ExistingThreadPane({
           </Group>
         </Box>
       </Modal>
-      <Group className="kodex-thread-pane-header kodex-thread-header" justify="space-between" wrap="nowrap">
-        <Group gap="xs" wrap="nowrap" className="kodex-thread-heading">
-          <ActionIcon
-            aria-label="Show sidebar"
-            className="kodex-thread-sidebar-button"
-            onClick={onShowMobileSidebar}
-            variant="subtle"
-          >
-            <PanelLeftOpen size={17} />
-          </ActionIcon>
-          <div className="kodex-thread-pane-title-block">
-            <Title className="kodex-thread-title" order={3} size="h5" title={title}>
-              {title}
-            </Title>
-          </div>
-        </Group>
-        {isUnavailable ? null : (
-          <Group gap={4} wrap="nowrap">
-            {entry.phase === "loadingSnapshot" || entry.phase === "refreshingSnapshot" ? (
-              <Badge leftSection={<Loader size={10} />} variant="light">
-                Syncing
-              </Badge>
-            ) : null}
-            {isActive ? (
-              <>
-                {headerActions}
-                <ActionIcon
-                  aria-label="Duplicate pane"
-                  onClick={() => void openThreadPane(threadId, title, { duplicate: true })}
-                  size="sm"
-                  title="Duplicate pane"
-                  variant="subtle"
-                >
-                  <CopyPlus size={16} />
-                </ActionIcon>
-                <ActionIcon
-                  aria-label="Open generated UI"
-                  onClick={() => void openGeneratedUiPane(threadId, `${title} UI`)}
-                  size="sm"
-                  title="Open generated UI"
-                  variant="subtle"
-                >
-                  <PanelRightOpen size={16} />
-                </ActionIcon>
-                {thread ? (
-                  <ThreadActionsMenu
-                    onArchiveThread={threadActions.onArchiveThread}
-                    onPinThread={threadActions.onPinThread}
-                    onRenameThread={() => setRenameModalOpen(true)}
-                    onSetThread={setThread}
-                    onSetThreadNotificationsEnabled={threadActions.onSetThreadNotificationsEnabled}
-                    onUnpinThread={threadActions.onUnpinThread}
-                    thread={thread}
-                  />
-                ) : null}
-              </>
-            ) : null}
-          </Group>
-        )}
-      </Group>
       <div className="kodex-thread-pane-status">
         {isActive && appErrorMessage ? <ThreadPaneErrorMessage message={appErrorMessage} /> : null}
         {paneErrorMessage && !isUnavailable ? (
@@ -765,30 +799,16 @@ function DraftThreadPane({
   composer,
   errorMessage,
   isActive,
-  onShowMobileSidebar,
 }: {
   composer?: ReactNode;
   errorMessage: string | null;
   isActive: boolean;
-  onShowMobileSidebar: () => void;
 }) {
   return (
     <section className="kodex-thread-pane kodex-thread-pane-empty" data-workspace-pane-active={isActive ? "true" : undefined}>
-      <Group className="kodex-thread-pane-header kodex-thread-header" justify="space-between" wrap="nowrap">
-        <Group gap="xs" wrap="nowrap" className="kodex-thread-heading">
-          <ActionIcon
-            aria-label="Show sidebar"
-            className="kodex-thread-sidebar-button"
-            onClick={onShowMobileSidebar}
-            variant="subtle"
-          >
-            <PanelLeftOpen size={17} />
-          </ActionIcon>
-          <Title className="kodex-thread-title" order={3} size="h5">
-            Draft thread
-          </Title>
-        </Group>
-      </Group>
+      <Title className="kodex-thread-pane-accessible-title" order={3} size="h5">
+        Draft thread
+      </Title>
       <div className="kodex-thread-pane-empty-body">
         {errorMessage ? <ThreadPaneErrorMessage message={errorMessage} /> : null}
         {composer}

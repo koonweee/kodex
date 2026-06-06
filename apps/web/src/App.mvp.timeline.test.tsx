@@ -165,7 +165,7 @@ describe("MVP timeline flows", () => {
   it("uses one workspace stream for global events and subscribed thread panes", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     window.history.replaceState(null, "", "/threads/thread-1");
-    mockGateway(
+    const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": {
           threads: [thread, secondThread],
@@ -247,6 +247,18 @@ describe("MVP timeline flows", () => {
 
     await openSecondThreadInAdditionalPane();
     expect(await screen.findByText(/second snapshot/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: /duplicate pane/i })).toHaveLength(3);
+      expect(screen.getAllByRole("button", { name: /thread actions/i })).toHaveLength(3);
+    });
+    const firstThreadDetailCalls = gateway.callsFor("GET", "/v1/threads/thread-1").length;
+    await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /implement frontend/i }));
+    await waitFor(() => {
+      expect(document.querySelector('.kodex-thread-pane[data-workspace-pane-active="true"]')).toHaveTextContent(
+        /initial snapshot/i,
+      );
+    });
+    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(firstThreadDetailCalls);
 
     const expandedWorkspaceStream = await waitForWorkspaceStreamThreadIds([thread.id, secondThread.id]);
     expectWorkspaceStreamContract(expandedWorkspaceStream, [thread.id, secondThread.id]);

@@ -2,15 +2,17 @@ import {
   DockviewReact,
   themeAbyss,
   type DockviewApi,
+  type IDockviewHeaderActionsProps,
   type DockviewReadyEvent,
   type DockviewTheme,
   type IDockviewPanelProps,
 } from "dockview";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
 import { paneTitle } from "./paneTypes";
 import { WorkspacePaneRenderer } from "./paneRegistry";
+import { useWorkspace } from "./WorkspaceProvider";
 import { hasDockviewPanels, layoutMatchesWorkspacePanes } from "./workspaceLayoutCodec";
 
 type DockviewPaneParams = {
@@ -122,10 +124,111 @@ export function WorkspaceDock({
     <div className="kodex-workspace-dock" data-testid="workspace-dock">
       <DockviewReact
         components={components}
+        disableTabsOverflowList
         disableFloatingGroups
+        leftHeaderActionsComponent={WorkspaceTabOverflowActions}
         onReady={handleReady}
+        rightHeaderActionsComponent={WorkspaceRightHeaderActions}
         theme={kodexDockviewTheme}
       />
+    </div>
+  );
+}
+
+export function WorkspaceRightHeaderActions({ activePanel }: IDockviewHeaderActionsProps) {
+  const { paneHeaderActionsById } = useWorkspace();
+  const actions = activePanel?.id ? paneHeaderActionsById[activePanel.id] : null;
+  return (
+    <div aria-label="Pane actions" className="kodex-workspace-pane-actions" role="toolbar">
+      {actions}
+    </div>
+  );
+}
+
+export function WorkspaceTabOverflowActions({ activePanel, panels }: IDockviewHeaderActionsProps) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [overflowPanelIds, setOverflowPanelIds] = useState<string[]>([]);
+  const [opened, setOpened] = useState(false);
+  const measureOverflow = useCallback(() => {
+    const root = rootRef.current;
+    const header = root?.closest(".dv-tabs-and-actions-container");
+    const tabsContainer = header?.querySelector<HTMLElement>(".dv-tabs-container");
+    if (!tabsContainer) {
+      setOverflowPanelIds([]);
+      return;
+    }
+    const containerRect = tabsContainer.getBoundingClientRect();
+    const tabElements = Array.from(tabsContainer.querySelectorAll<HTMLElement>(":scope > .dv-tab"));
+    const nextIds = panels.flatMap((panel, index) => {
+      const tabElement = tabElements[index];
+      if (!tabElement) {
+        return [];
+      }
+      const tabRect = tabElement.getBoundingClientRect();
+      return tabRect.left < containerRect.left || tabRect.right > containerRect.right ? [panel.id] : [];
+    });
+    setOverflowPanelIds((current) =>
+      current.length === nextIds.length && current.every((id, index) => id === nextIds[index])
+        ? current
+        : nextIds,
+    );
+  }, [panels]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    const header = root?.closest(".dv-tabs-and-actions-container");
+    const tabsContainer = header?.querySelector<HTMLElement>(".dv-tabs-container");
+    const frame = window.requestAnimationFrame(measureOverflow);
+    if (!header || !tabsContainer || typeof ResizeObserver === "undefined") {
+      return () => window.cancelAnimationFrame(frame);
+    }
+    const observer = new ResizeObserver(measureOverflow);
+    observer.observe(tabsContainer);
+    observer.observe(header);
+    tabsContainer.addEventListener("scroll", measureOverflow, { passive: true });
+    window.addEventListener("resize", measureOverflow);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+      tabsContainer.removeEventListener("scroll", measureOverflow);
+      window.removeEventListener("resize", measureOverflow);
+    };
+  }, [measureOverflow]);
+
+  const overflowPanels = panels.filter((panel) => overflowPanelIds.includes(panel.id));
+  return (
+    <div className="kodex-workspace-tab-overflow" ref={rootRef}>
+      {overflowPanels.length > 0 ? (
+        <button
+          aria-expanded={opened}
+          aria-haspopup="menu"
+          aria-label="More tabs"
+          className="kodex-workspace-tab-overflow-button"
+          onClick={() => setOpened((current) => !current)}
+          type="button"
+        >
+          +{overflowPanels.length}
+        </button>
+      ) : null}
+      {opened && overflowPanels.length > 0 ? (
+        <div className="kodex-workspace-tab-overflow-menu" role="menu">
+          {overflowPanels.map((panel) => (
+            <button
+              aria-current={panel.id === activePanel?.id ? "page" : undefined}
+              className="kodex-workspace-tab-overflow-item"
+              key={panel.id}
+              onClick={() => {
+                panel.focus();
+                setOpened(false);
+              }}
+              role="menuitem"
+              type="button"
+            >
+              <span>{panel.title ?? panel.id}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

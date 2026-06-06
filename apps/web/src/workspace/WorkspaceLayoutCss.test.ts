@@ -12,13 +12,13 @@ describe("workspace pane layout CSS", () => {
     const scrollRule = cssRule(".kodex-thread-pane-scroll");
     const statusRule = cssRule(".kodex-thread-pane-status");
 
-    expect(paneRule).toContain("grid-template-rows: auto auto minmax(0, 1fr) auto;");
+    expect(paneRule).toContain("grid-template-rows: auto minmax(0, 1fr) auto;");
     expect(paneRule).not.toContain("position: relative;");
     expect(composerRule).not.toContain("position: absolute;");
     expect(composerRule).toContain("align-self: end;");
-    expect(composerRule).toContain("grid-row: 4;");
+    expect(composerRule).toContain("grid-row: 3;");
     expect(composerRule).toContain("justify-self: center;");
-    expect(contentRule).toContain("grid-row: 3;");
+    expect(contentRule).toContain("grid-row: 2;");
     expect(scrollRule).toContain("padding: var(--kodex-pane-edge-space) var(--kodex-pane-edge-space) 20px;");
     expect(statusRule).toContain("display: grid;");
     expect(statusRule).toContain("padding: 0 calc(var(--kodex-pane-edge-space) + 2px);");
@@ -46,11 +46,9 @@ describe("workspace pane layout CSS", () => {
   });
 
   it("lets pane content own edge spacing instead of the Dockview host", () => {
-    const headerRule = cssRule(".kodex-thread-pane-header");
     const composerRule = cssRule(".kodex-thread-pane-existing > .kodex-composer-shell");
     const terminalPaneRule = cssRule(".kodex-workspace-dock .kodex-terminal-pane");
 
-    expect(headerRule).toContain("padding: 6px calc(var(--kodex-pane-edge-space) + 2px);");
     expect(composerRule).toContain(
       "margin: var(--kodex-pane-edge-space) calc(var(--kodex-pane-edge-space) + 4px) calc(var(--kodex-pane-edge-space) + 4px);",
     );
@@ -87,6 +85,33 @@ describe("workspace pane layout CSS", () => {
     expect(dockRule).toContain("--dv-floating-box-shadow: var(--kodex-shadow-floating);");
   });
 
+  it("keeps pane actions in a fixed Dockview header slot and uses dropdown overflow for many tabs", () => {
+    expect(cssRule(".kodex-workspace-dock .dv-tabs-and-actions-container")).toContain("overflow: visible;");
+    expect(cssRule(".kodex-workspace-dock .dv-tabs-and-actions-container")).toContain("z-index: 40;");
+    expect(cssRule(".kodex-workspace-dock .dv-tabs-and-actions-container .dv-right-actions-container")).toContain(
+      "flex: 0 0 clamp(132px, 20%, 240px);",
+    );
+    expect(cssRule(".kodex-workspace-dock .dv-tabs-and-actions-container .dv-right-actions-container")).toContain(
+      "z-index: 41;",
+    );
+    expect(cssRule(".kodex-workspace-dock .dv-tabs-and-actions-container .dv-left-actions-container")).toContain(
+      "flex: 0 0 auto;",
+    );
+    expect(
+      cssRule(
+        ".kodex-workspace-dock .dv-tabs-and-actions-container .dv-left-actions-container > .dv-react-part,\n.kodex-workspace-dock .dv-tabs-and-actions-container .dv-right-actions-container > .dv-react-part",
+      ),
+    ).toContain("overflow: visible;");
+    expect(cssRule(".kodex-workspace-dock .dv-tab")).toContain("min-width: 180px;");
+    expect(cssRule(".kodex-workspace-dock .dv-tabs-container")).toContain("scrollbar-width: none;");
+    expect(cssRule(".kodex-workspace-dock .dv-tabs-container::-webkit-scrollbar")).toContain("display: none;");
+    expect(cssRule(".kodex-workspace-dock .dv-tabs-overflow-dropdown-default")).toContain("min-width: 44px;");
+    expect(cssRule(".kodex-workspace-pane-actions")).toContain("justify-content: flex-end;");
+    expect(cssRule(".kodex-workspace-tab-overflow-button")).toContain("min-width: 44px;");
+    expect(cssRule(".kodex-workspace-tab-overflow-menu")).toContain("position: absolute;");
+    expect(cssRule(".kodex-thread-actions-dropdown")).toContain("z-index: 60;");
+  });
+
   it("does not reference undefined legacy surface aliases", () => {
     expect(workspaceCss).not.toMatch(/--kodex-surface-[01]\b/);
     expect(workspaceCss).not.toContain("--kodex-surface-hover");
@@ -94,7 +119,7 @@ describe("workspace pane layout CSS", () => {
   });
 
   it("keeps draft pane composers centered instead of bottom-pinned", () => {
-    expect(cssRule(".kodex-thread-pane-empty")).toContain("grid-template-rows: auto minmax(0, 1fr);");
+    expect(cssRule(".kodex-thread-pane-empty")).toContain("grid-template-rows: minmax(0, 1fr);");
     expect(cssRule(".kodex-thread-pane-empty-body")).toContain("align-content: center;");
     expect(cssRule(".kodex-thread-pane-empty-body > .kodex-composer-shell")).toContain(
       "width: min(920px, calc(100% - 24px));",

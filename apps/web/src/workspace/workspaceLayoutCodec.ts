@@ -32,9 +32,68 @@ export function workspaceLayoutPanelIds(layout: unknown): string[] {
 }
 
 export function layoutMatchesWorkspacePanes(layout: unknown, panes: WorkspacePane[]): boolean {
-  const layoutIds = workspaceLayoutPanelIds(layout).sort();
   const paneIds = panes.map((pane) => pane.id).sort();
-  return layoutIds.length === paneIds.length && layoutIds.every((id, index) => id === paneIds[index]);
+  if (hasDockviewPanels(layout)) {
+    const panelIds = Object.keys(layout.panels).sort();
+    const gridIds = dockviewGridPanelIds(layout);
+    if (!gridIds) {
+      return false;
+    }
+    gridIds.sort();
+    return (
+      sameSortedIds(panelIds, paneIds) &&
+      sameSortedIds(gridIds, paneIds)
+    );
+  }
+  const layoutIds = workspaceLayoutPanelIds(layout).sort();
+  return sameSortedIds(layoutIds, paneIds);
+}
+
+function sameSortedIds(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+function dockviewGridPanelIds(layout: LayoutObject & { panels: Record<string, unknown> }): string[] | null {
+  if (!isRecord(layout.grid) || !isRecord(layout.grid.root)) {
+    return null;
+  }
+  return dockviewGridNodePanelIds(layout.grid.root);
+}
+
+function dockviewGridNodePanelIds(node: LayoutObject): string[] | null {
+  if (node.type === "branch") {
+    if (!Array.isArray(node.data) || node.data.length === 0) {
+      return null;
+    }
+    const ids: string[] = [];
+    for (const child of node.data) {
+      if (!isRecord(child)) {
+        return null;
+      }
+      const childIds = dockviewGridNodePanelIds(child);
+      if (!childIds) {
+        return null;
+      }
+      ids.push(...childIds);
+    }
+    return ids;
+  }
+
+  if (node.type === "leaf") {
+    if (!isRecord(node.data) || !Array.isArray(node.data.views) || node.data.views.length === 0) {
+      return null;
+    }
+    const ids: string[] = [];
+    for (const view of node.data.views) {
+      if (typeof view !== "string") {
+        return null;
+      }
+      ids.push(view);
+    }
+    return ids;
+  }
+
+  return null;
 }
 
 export function compactWorkspaceLayout(workspace: WorkspaceModel): unknown {

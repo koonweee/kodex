@@ -13,6 +13,7 @@ const workspaceMocks = vi.hoisted(() => ({
 
 vi.mock("../../workspace/WorkspaceProvider", () => ({
   useWorkspace: () => ({
+    setPaneHeaderActions: vi.fn(),
     updatePane: workspaceMocks.updatePane,
   }),
 }));

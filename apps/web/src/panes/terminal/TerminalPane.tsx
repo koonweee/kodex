@@ -35,7 +35,7 @@ const TERMINAL_ACCESSORY_KEYS: Array<{ data: string; label: string }> = [
 
 export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
   const target = paneTargetRecord(pane);
-  const { updatePane } = useWorkspace();
+  const { setPaneHeaderActions, updatePane } = useWorkspace();
   const targetTerminalId = typeof target.terminalId === "string" ? target.terminalId : null;
   const targetCwd = typeof target.cwd === "string" ? target.cwd : null;
   const targetCommand = typeof target.command === "string" ? target.command : null;
@@ -108,19 +108,72 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
     }
   }
 
-  async function handleReconnect() {
+  const handleReconnect = useCallback(async () => {
     setConnectionMessage(null);
     setConnectionState("connecting");
     await recoverSession();
-  }
+  }, [recoverSession]);
 
   const status = connectionState === "open" && session?.status === "running" ? "connected" : session?.status ?? connectionState;
   const actionSize = hasTouchInput ? "lg" : "sm";
   const terminalError = paneError ?? error ?? connectionMessage;
+  const paneHeaderActions = useMemo(
+    () => (
+      <Group className="kodex-terminal-pane-actions" gap={4} wrap="nowrap">
+        <Tooltip label={TERMINAL_TEXT.create}>
+          <ActionIcon
+            aria-label={TERMINAL_TEXT.create}
+            color="gray"
+            disabled={isLoading}
+            onClick={createNewSession}
+            size={actionSize}
+            type="button"
+            variant="subtle"
+          >
+            <Plus size={16} />
+          </ActionIcon>
+        </Tooltip>
+        <Tooltip label={TERMINAL_TEXT.stop}>
+          <ActionIcon
+            aria-label={TERMINAL_TEXT.stop}
+            color="gray"
+            disabled={!session || isLoading}
+            onClick={stopSession}
+            size={actionSize}
+            type="button"
+            variant="subtle"
+          >
+            <Square size={14} />
+          </ActionIcon>
+        </Tooltip>
+        {connectionMessage ? (
+          <Tooltip label={TERMINAL_TEXT.reconnect}>
+            <ActionIcon
+              aria-label={TERMINAL_TEXT.reconnect}
+              color="gray"
+              disabled={isLoading}
+              onClick={() => void handleReconnect()}
+              size={actionSize}
+              type="button"
+              variant="subtle"
+            >
+              <RotateCw size={15} />
+            </ActionIcon>
+          </Tooltip>
+        ) : null}
+      </Group>
+    ),
+    [actionSize, connectionMessage, createNewSession, handleReconnect, isLoading, session, stopSession],
+  );
+
+  useEffect(() => {
+    setPaneHeaderActions(pane.id, paneHeaderActions);
+    return () => setPaneHeaderActions(pane.id, null);
+  }, [pane.id, paneHeaderActions, setPaneHeaderActions]);
 
   return (
     <Box aria-label="Terminal pane" className="kodex-terminal-host kodex-terminal-pane" role="region">
-      <Group className="kodex-terminal-header" justify="space-between" wrap="nowrap">
+      <Group className="kodex-terminal-header" justify="flex-start" wrap="nowrap">
         <Box className="kodex-terminal-heading">
           <Group gap="xs" wrap="nowrap">
             <Text className="kodex-terminal-title">{session?.title ?? pane.title ?? TERMINAL_TEXT.fallbackTitle}</Text>
@@ -130,34 +183,6 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
           </Group>
           {session?.cwd ?? targetCwd ? <Text className="kodex-terminal-cwd">{session?.cwd ?? targetCwd}</Text> : null}
         </Box>
-        <Group gap={4} wrap="nowrap">
-          <Tooltip label={TERMINAL_TEXT.create}>
-            <ActionIcon
-              aria-label={TERMINAL_TEXT.create}
-              color="gray"
-              disabled={isLoading}
-              onClick={createNewSession}
-              size={actionSize}
-              type="button"
-              variant="subtle"
-            >
-              <Plus size={16} />
-            </ActionIcon>
-          </Tooltip>
-          <Tooltip label={TERMINAL_TEXT.stop}>
-            <ActionIcon
-              aria-label={TERMINAL_TEXT.stop}
-              color="gray"
-              disabled={!session || isLoading}
-              onClick={stopSession}
-              size={actionSize}
-              type="button"
-              variant="subtle"
-            >
-              <Square size={14} />
-            </ActionIcon>
-          </Tooltip>
-        </Group>
       </Group>
       {terminalError ? (
         <Alert className="kodex-terminal-error" color="red">
