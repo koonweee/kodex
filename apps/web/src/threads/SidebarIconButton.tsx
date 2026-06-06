@@ -8,7 +8,7 @@ type SidebarIconButtonProps = Omit<ComponentProps<typeof AdaptiveIconButton>, "c
 
 export function SidebarIconButton({
   className,
-  color = "gray",
+  color,
   tooltipProps,
   ...props
 }: SidebarIconButtonProps) {

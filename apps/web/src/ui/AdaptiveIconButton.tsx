@@ -7,6 +7,7 @@ type AdaptiveIconButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "ar
   children: ReactNode;
   color?: ActionIconProps["color"];
   density?: "compact" | "standard";
+  iconColor?: "default" | "inherit";
   label: string;
   loading?: ActionIconProps["loading"];
   shape?: "default" | "round";
@@ -18,7 +19,9 @@ type AdaptiveIconButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "ar
 export function AdaptiveIconButton({
   children,
   className,
+  color,
   density = "standard",
+  iconColor,
   label,
   shape = "default",
   type = "button",
@@ -27,10 +30,13 @@ export function AdaptiveIconButton({
   variant = "subtle",
   ...props
 }: AdaptiveIconButtonProps) {
+  const resolvedIconColor = iconColor ?? (color || variant === "filled" ? "inherit" : "default");
+
   const button = (
     <ActionIcon
       aria-label={label}
       className={["kodex-adaptive-icon-button", className].filter(Boolean).join(" ")}
+      color={color}
       data-density={density}
       radius={shape === "round" ? "xl" : undefined}
       size={32}
@@ -38,7 +44,7 @@ export function AdaptiveIconButton({
       variant={variant}
       {...props}
     >
-      <AdaptiveIcon color="inherit" density={density}>
+      <AdaptiveIcon color={resolvedIconColor} density={density}>
         {children}
       </AdaptiveIcon>
     </ActionIcon>

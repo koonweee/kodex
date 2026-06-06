@@ -74,7 +74,6 @@ function SettingsMenu({
       <Menu.Target>
         <AdaptiveIconButton
           className="kodex-account-menu-trigger"
-          color="gray"
           label={ACCOUNT_TEXT.settings}
           tooltip={false}
 
