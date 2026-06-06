@@ -5,7 +5,7 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 ## Required Workflow
 
 - Start behavior-changing implementation work with a failing test when practical. Match test coverage to risk and user-visible behavior using unit, integration, contract, or Playwright tests as appropriate.
-- Pure styling, copy, layout-only, mechanical refactors, and tiny low-risk changes do not require new tests unless they protect existing regression-prone behavior.
+- Pure styling, copy, layout-only, mechanical refactors, and tiny low-risk changes do not require new tests unless they protect existing regression-prone behavior. Do not add low-value tests that only assert CSS declarations, z-index numbers, config constants, or other implementation strings for simple visual/config tweaks; verify those changes through build/typecheck or manual UI inspection instead.
 - Keep code DRY. Add shared helpers only when they remove real duplication or clarify a repeated contract.
 - Follow YAGNI. Do not build features outside the active plan milestone unless the current change requires them.
 - Treat generated OpenAPI as the public API contract. Public request/response DTOs live in Rust code and must generate `/openapi.json`.

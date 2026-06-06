@@ -1,9 +1,11 @@
 import { Menu } from "@mantine/core";
 import {
+  DockviewDefaultTab,
   DockviewReact,
   themeAbyss,
   type DockviewApi,
   type IDockviewHeaderActionsProps,
+  type IDockviewPanelHeaderProps,
   type DockviewReadyEvent,
   type DockviewTheme,
   type IDockviewPanelProps,
@@ -11,7 +13,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
-import type { WorkspacePanePlacementHintsById, WorkspacePaneSplitDirection } from "./panePlacement";
+import type { WorkspacePanePlacementDirection, WorkspacePanePlacementHintsById } from "./panePlacement";
 import { paneTitle } from "./paneTypes";
 import { WorkspacePaneRenderer } from "./paneRegistry";
 import { useWorkspace } from "./WorkspaceProvider";
@@ -36,7 +38,7 @@ export const kodexDockviewTheme = {
   ...themeAbyss,
   name: "kodex",
   className: `${themeAbyss.className} kodex-dockview-theme`,
-  gap: 2,
+  gap: 6,
   edgeGroupCollapsedSize: 34,
   dndOverlayMounting: "absolute",
   dndPanelOverlay: "group",
@@ -171,6 +173,7 @@ export function WorkspaceDock({
     <div className="kodex-workspace-dock" data-testid="workspace-dock">
       <DockviewReact
         components={components}
+        defaultTabComponent={WorkspaceDefaultTab}
         disableTabsOverflowList
         disableFloatingGroups
         leftHeaderActionsComponent={WorkspaceTabOverflowActions}
@@ -180,6 +183,19 @@ export function WorkspaceDock({
       />
     </div>
   );
+}
+
+export function WorkspaceDefaultTab(props: IDockviewPanelHeaderProps<DockviewPaneParams>) {
+  const { paneTabStatusById } = useWorkspace();
+  const pane = props.params.pane;
+  const terminalStatus = pane.kind === "terminal" ? paneTabStatusById[props.api.id] : undefined;
+  const tabClassName = [
+    "kodex-workspace-tab",
+    pane.kind === "terminal" ? "kodex-workspace-terminal-tab" : null,
+    terminalStatus ? `kodex-workspace-terminal-tab-${terminalStatus}` : null,
+  ].filter(Boolean).join(" ");
+
+  return <DockviewDefaultTab {...props} className={tabClassName} />;
 }
 
 export function WorkspaceRightHeaderActions({ activePanel }: IDockviewHeaderActionsProps) {
@@ -445,7 +461,7 @@ function panelPlacementOptions(
   fallbackReferencePane: WorkspacePane | null,
   panePlacementHintsById: WorkspacePanePlacementHintsById,
   consumedPlacementHintIds: Set<string>,
-): { floating: false; position: { direction: WorkspacePaneSplitDirection; referencePanel: string } } | Record<string, never> {
+): { floating: false; position: { direction: WorkspacePanePlacementDirection; referencePanel: string } } | Record<string, never> {
   const hint = panePlacementHintsById[pane.id];
   if (hint) {
     consumedPlacementHintIds.add(pane.id);

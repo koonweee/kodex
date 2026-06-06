@@ -18,7 +18,6 @@ describe("WorkspaceDock sync", () => {
   it("uses a compact Kodex Dockview theme instead of the default abyss chrome", () => {
     expect(kodexDockviewTheme.className).toContain("dockview-theme-abyss");
     expect(kodexDockviewTheme.className).toContain("kodex-dockview-theme");
-    expect(kodexDockviewTheme.gap).toBe(2);
     expect(kodexDockviewTheme.dndTabIndicator).toBe("line");
     expect(kodexDockviewTheme.dndPanelOverlay).toBe("group");
     expect(kodexDockviewTheme.tabAnimation).toBe("smooth");
@@ -200,6 +199,31 @@ describe("WorkspaceDock sync", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("adds placement-hinted panes within the reference panel tab group", () => {
+    const api = fakeDockviewApi(["pane-a"]);
+    const suppressEventsRef = { current: false };
+
+    syncWorkspaceIntoDockview(
+      api as unknown as DockviewApi,
+      workspaceModel([
+        pane("pane-a", "terminal", { terminalId: "terminal-a" }),
+        pane("pane-b", "terminal", {}),
+      ], "pane-b"),
+      suppressEventsRef,
+      undefined,
+      {
+        "pane-b": { direction: "within", referencePaneId: "pane-a" },
+      },
+    );
+
+    expect(api.addPanel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "pane-b",
+        position: { referencePanel: "pane-a", direction: "within" },
+      }),
+    );
   });
 
   it("reports one visible panel per Dockview group", () => {

@@ -57,6 +57,17 @@
   margin: 8px 10px 0;
 }
 
+.kodex-terminal-reconnect-button.kodex-mantine-button-root {
+  border: 1px solid color-mix(in srgb, var(--kodex-border-info) 78%, var(--kodex-text-primary));
+  background: color-mix(in srgb, var(--kodex-border-info) 34%, var(--kodex-bg-raised));
+  color: var(--kodex-text-primary);
+}
+
+.kodex-terminal-reconnect-button.kodex-mantine-button-root:hover {
+  background: color-mix(in srgb, var(--kodex-border-info) 46%, var(--kodex-bg-raised));
+  color: var(--kodex-text-primary);
+}
+
 .kodex-terminal-accessory-row {
   min-width: 0;
   overflow-x: auto;
@@ -112,10 +123,11 @@
 
 .kodex-terminal-viewport .xterm {
   height: 100%;
-  padding: 8px var(--kodex-terminal-edge-space);
+  padding: 0;
 }
 
 .kodex-terminal-viewport .xterm-viewport {
+  background-color: var(--kodex-terminal-bg);
   -webkit-overflow-scrolling: touch;
 }
 

@@ -1,16 +1,17 @@
 import type { WorkspaceModel } from "./paneTypes";
 
 export type WorkspacePaneSplitDirection = "above" | "below" | "left" | "right";
+export type WorkspacePanePlacementDirection = WorkspacePaneSplitDirection | "within";
 
 export type WorkspacePanePlacementHint = {
-  direction: WorkspacePaneSplitDirection;
+  direction: WorkspacePanePlacementDirection;
   referencePaneId: string;
 };
 
 export type WorkspacePanePlacementIntent = "draftThread" | "duplicate" | "generatedUi" | "terminal" | "thread";
 
 export type WorkspacePanePlacementOptions = {
-  direction?: WorkspacePaneSplitDirection;
+  direction?: WorkspacePanePlacementDirection;
   sourcePaneId?: string | null;
 };
 

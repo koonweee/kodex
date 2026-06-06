@@ -77,7 +77,6 @@ describe("workspace pane layout CSS", () => {
     expect(dockRule).toContain("--dv-tab-divider-color: var(--kodex-border-subtle);");
     expect(dockRule).toContain("--dv-paneview-active-outline-color: var(--kodex-border-accent);");
     expect(dockRule).toContain("--dv-active-sash-color: color-mix(in srgb, var(--kodex-border-accent) 72%, transparent);");
-    expect(dockRule).toContain("--dv-sash-color: color-mix(in srgb, var(--kodex-border-subtle) 48%, transparent);");
     expect(dockRule).toContain("--dv-drag-over-background-color: color-mix(in srgb, var(--kodex-accent) 12%, transparent);");
     expect(dockRule).toContain("--dv-drag-over-border: 1px solid var(--kodex-border-accent-soft);");
     expect(dockRule).toContain("--dv-drag-over-border-color: var(--kodex-border-accent-soft);");

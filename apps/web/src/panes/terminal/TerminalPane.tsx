@@ -1,4 +1,4 @@
-import { ActionIcon, Alert, Badge, Box, Button, Group, Loader, Text, Tooltip } from "@mantine/core";
+import { ActionIcon, Alert, Box, Button, Group, Loader, Text, Tooltip } from "@mantine/core";
 import { Plus, RotateCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -17,7 +17,6 @@ import { paneTargetRecord } from "../../workspace/paneTypes";
 
 const TERMINAL_TEXT = {
   create: "New terminal",
-  fallbackTitle: "Terminal",
   loading: "Starting terminal",
   reconnect: "Reconnect terminal",
 };
@@ -34,7 +33,7 @@ const TERMINAL_ACCESSORY_KEYS: Array<{ data: string; label: string }> = [
 
 export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
   const target = paneTargetRecord(pane);
-  const { setPaneHeaderActions, updatePane } = useWorkspace();
+  const { openTerminalPane, setPaneHeaderActions, setPaneTabStatus, updatePane } = useWorkspace();
   const targetTerminalId = typeof target.terminalId === "string" ? target.terminalId : null;
   const targetCwd = typeof target.cwd === "string" ? target.cwd : null;
   const targetCommand = typeof target.command === "string" ? target.command : null;
@@ -46,7 +45,7 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
     }),
     [pane.title, targetCommand, targetCwd],
   );
-  const { createNewSession, error, isLoading, recoverSession, session } = useGatewayTerminalSession(true, {
+  const { error, isLoading, recoverSession, session } = useGatewayTerminalSession(true, {
     createRequest,
     preferredTerminalId: targetTerminalId,
     reuseRunning: false,
@@ -113,9 +112,22 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
     await recoverSession();
   }, [recoverSession]);
 
-  const status = connectionState === "open" && session?.status === "running" ? "connected" : session?.status ?? connectionState;
   const actionSize = hasTouchInput ? "lg" : "sm";
   const terminalError = paneError ?? error ?? connectionMessage;
+  const tabStatus = terminalError
+    ? "error"
+    : connectionState === "open" && session?.status === "running"
+      ? "connected"
+      : connectionState === "connecting" || isLoading
+        ? "connecting"
+        : "closed";
+  const handleOpenTerminalTab = useCallback(() => {
+    void openTerminalPane({
+      ...(targetCommand ? { command: targetCommand } : {}),
+      ...(session?.cwd ?? targetCwd ? { cwd: session?.cwd ?? targetCwd } : {}),
+      placement: { direction: "within", sourcePaneId: pane.id },
+    });
+  }, [openTerminalPane, pane.id, session?.cwd, targetCommand, targetCwd]);
   const paneHeaderActions = useMemo(
     () => (
       <Group className="kodex-terminal-pane-actions" gap={4} wrap="nowrap">
@@ -124,7 +136,7 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
             aria-label={TERMINAL_TEXT.create}
             color="gray"
             disabled={isLoading}
-            onClick={createNewSession}
+            onClick={handleOpenTerminalTab}
             size={actionSize}
             type="button"
             variant="subtle"
@@ -149,7 +161,7 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
         ) : null}
       </Group>
     ),
-    [actionSize, connectionMessage, createNewSession, handleReconnect, isLoading],
+    [actionSize, connectionMessage, handleOpenTerminalTab, handleReconnect, isLoading],
   );
 
   useEffect(() => {
@@ -157,25 +169,26 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
     return () => setPaneHeaderActions(pane.id, null);
   }, [pane.id, paneHeaderActions, setPaneHeaderActions]);
 
+  useEffect(() => {
+    setPaneTabStatus(pane.id, tabStatus);
+    return () => setPaneTabStatus(pane.id, null);
+  }, [pane.id, setPaneTabStatus, tabStatus]);
+
   return (
     <Box aria-label="Terminal pane" className="kodex-terminal-host kodex-terminal-pane" role="region">
-      <Group className="kodex-terminal-header" justify="flex-start" wrap="nowrap">
-        <Box className="kodex-terminal-heading">
-          <Group gap="xs" wrap="nowrap">
-            <Text className="kodex-terminal-title">{session?.title ?? pane.title ?? TERMINAL_TEXT.fallbackTitle}</Text>
-            <Badge className="kodex-terminal-status" color={status === "connected" ? "green" : "gray"} size="xs" variant="light">
-              {status}
-            </Badge>
-          </Group>
-          {session?.cwd ?? targetCwd ? <Text className="kodex-terminal-cwd">{session?.cwd ?? targetCwd}</Text> : null}
-        </Box>
-      </Group>
       {terminalError ? (
         <Alert className="kodex-terminal-error" color="red">
           <Group gap="xs" justify="space-between" wrap="nowrap">
             <Text size="sm">{terminalError}</Text>
             {connectionMessage ? (
-              <Button leftSection={<RotateCw size={13} />} onClick={handleReconnect} size="xs" type="button" variant="light">
+              <Button
+                className="kodex-terminal-reconnect-button"
+                leftSection={<RotateCw size={13} />}
+                onClick={handleReconnect}
+                size="xs"
+                type="button"
+                variant="light"
+              >
                 {TERMINAL_TEXT.reconnect}
               </Button>
             ) : null}

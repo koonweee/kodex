@@ -148,6 +148,27 @@ describe("WorkspaceProvider pane commands", () => {
     ]);
   });
 
+  it("can place a new terminal pane inside the source pane tab group", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      threadPane("pane-thread-1", "thread-1", "Thread 1"),
+      terminalPane("pane-terminal-1", "terminal-1"),
+    ], "pane-terminal-1"));
+    renderProvider(store);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open terminal tab" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pane-placement-hints")).toHaveTextContent("within");
+    });
+    const hints = JSON.parse(screen.getByTestId("pane-placement-hints").textContent ?? "{}");
+    expect(Object.values(hints)).toEqual([
+      {
+        direction: "within",
+        referencePaneId: "pane-terminal-1",
+      },
+    ]);
+  });
+
   it("dedupes workspace stream subscriptions by unique thread resource", async () => {
     const store = createMemoryWorkspacePaneStore(workspaceState([
       threadPane("pane-thread-1", "thread-1", "Thread 1"),
@@ -191,6 +212,12 @@ function CommandHarness() {
       </button>
       <button type="button" onClick={() => void workspace.openTerminalPane()}>
         Open terminal
+      </button>
+      <button
+        type="button"
+        onClick={() => void workspace.openTerminalPane({ placement: { direction: "within", sourcePaneId: "pane-terminal-1" } })}
+      >
+        Open terminal tab
       </button>
       <button type="button" onClick={() => workspace.closePane("pane-terminal-1", { panes: [{ id: "pane-thread-1" }] })}>
         Close existing terminal

@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { TerminalSessionInfo } from "../../api/client";
@@ -8,12 +8,17 @@ import type { WorkspacePane } from "../../workspace/paneTypes";
 import { TerminalPane } from "./TerminalPane";
 
 const workspaceMocks = vi.hoisted(() => ({
+  openTerminalPane: vi.fn(),
+  setPaneHeaderActions: vi.fn(),
+  setPaneTabStatus: vi.fn(),
   updatePane: vi.fn(),
 }));
 
 vi.mock("../../workspace/WorkspaceProvider", () => ({
   useWorkspace: () => ({
-    setPaneHeaderActions: vi.fn(),
+    openTerminalPane: workspaceMocks.openTerminalPane,
+    setPaneHeaderActions: workspaceMocks.setPaneHeaderActions,
+    setPaneTabStatus: workspaceMocks.setPaneTabStatus,
     updatePane: workspaceMocks.updatePane,
   }),
 }));
@@ -40,6 +45,10 @@ const session: TerminalSessionInfo = {
 
 describe("TerminalPane", () => {
   beforeEach(() => {
+    workspaceMocks.openTerminalPane.mockReset();
+    workspaceMocks.openTerminalPane.mockResolvedValue(undefined);
+    workspaceMocks.setPaneHeaderActions.mockReset();
+    workspaceMocks.setPaneTabStatus.mockReset();
     workspaceMocks.updatePane.mockReset();
     workspaceMocks.updatePane.mockResolvedValue(undefined);
     vi.mocked(useGatewayTerminalSession).mockReset();
@@ -85,6 +94,29 @@ describe("TerminalPane", () => {
       reuseRunning: false,
     });
     expect(workspaceMocks.updatePane).not.toHaveBeenCalled();
+  });
+
+  it("opens the terminal plus action as a sibling tab in the current tab group", async () => {
+    renderTerminalPane(workspacePane({ terminalId: "terminal-1" }));
+    const actions = workspaceMocks.setPaneHeaderActions.mock.calls.find(([paneId]) => paneId === "pane-terminal")?.[1];
+
+    render(<MantineProvider>{actions}</MantineProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
+
+    await waitFor(() => {
+      expect(workspaceMocks.openTerminalPane).toHaveBeenCalledWith({
+        cwd: "/tmp/worktree",
+        placement: { direction: "within", sourcePaneId: "pane-terminal" },
+      });
+    });
+    expect(vi.mocked(useGatewayTerminalSession).mock.results[0]?.value.createNewSession).not.toHaveBeenCalled();
+  });
+
+  it("does not render the terminal title, status, and cwd as an in-pane header", () => {
+    renderTerminalPane(workspacePane({ terminalId: "terminal-1" }));
+
+    expect(screen.queryByText("worktree: /bin/zsh")).not.toBeInTheDocument();
+    expect(screen.queryByText("/tmp/worktree")).not.toBeInTheDocument();
   });
 });
 

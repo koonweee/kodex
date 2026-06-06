@@ -3,7 +3,7 @@
   top: max(12px, env(safe-area-inset-top));
   right: max(12px, env(safe-area-inset-right));
   left: max(12px, env(safe-area-inset-left));
-  z-index: 28;
+  z-index: 1200;
   display: grid;
   justify-items: center;
   pointer-events: none;

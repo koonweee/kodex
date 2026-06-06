@@ -58,6 +58,8 @@ type ThreadPaneChromeState = {
   threadId: string;
 };
 
+export type WorkspacePaneTabStatus = "connected" | "connecting" | "error" | "closed";
+
 type WorkspaceProviderProps = {
   approvals?: Approval[];
   children: ReactNode;
@@ -105,6 +107,7 @@ type WorkspaceContextValue = {
   openThreadPane: (threadId: string, title?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
   paneHeaderActionsById: Record<string, ReactNode>;
   panePlacementHintsById: WorkspacePanePlacementHintsById;
+  paneTabStatusById: Record<string, WorkspacePaneTabStatus>;
   persistLayout: (dockviewLayout: unknown, activePaneId: string | null) => void;
   publishThreadPaneTimelineAction: (action: ThreadPaneTimelineAction) => void;
   renderThreadComposer?: (pane: WorkspacePane, state: Omit<ThreadComposerState, "publishThreadPaneTimelineAction">) => ReactNode;
@@ -116,6 +119,7 @@ type WorkspaceContextValue = {
   subscribeThreadPaneTimelineAction: (handler: ThreadPaneTimelineActionHandler) => () => void;
   clearPanePlacementHints: (paneIds: string[]) => void;
   setPaneHeaderActions: (paneId: string, actions: ReactNode | null) => void;
+  setPaneTabStatus: (paneId: string, status: WorkspacePaneTabStatus | null) => void;
   threadSummariesById: Record<string, ThreadSummary>;
   threadActions: WorkspaceThreadActions;
   updatePane: (paneId: string, request: WorkspacePanePatch) => Promise<void>;
@@ -165,6 +169,7 @@ export function WorkspaceProvider({
   const onLiveEventRef = useRef(onLiveEvent);
   const [paneHeaderActionsById, setPaneHeaderActionsById] = useState<Record<string, ReactNode>>({});
   const [panePlacementHintsById, setPanePlacementHintsById] = useState<WorkspacePanePlacementHintsById>({});
+  const [paneTabStatusById, setPaneTabStatusById] = useState<Record<string, WorkspacePaneTabStatus>>({});
   const [visiblePaneIds, setVisiblePaneIds] = useState<string[]>([]);
   const [workspace, setWorkspace] = useState<WorkspaceModel>(() => ensureWorkspaceHasActivePane(paneStore.load()));
   const [workspaceError, setWorkspaceError] = useState<Error | null>(null);
@@ -186,6 +191,22 @@ export function WorkspaceProvider({
       for (const [paneId, hint] of Object.entries(current)) {
         if (paneIds.has(paneId)) {
           next[paneId] = hint;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [workspace.panes]);
+
+  useEffect(() => {
+    const paneIds = new Set(workspace.panes.map((pane) => pane.id));
+    setPaneTabStatusById((current) => {
+      let changed = false;
+      const next: Record<string, WorkspacePaneTabStatus> = {};
+      for (const [paneId, status] of Object.entries(current)) {
+        if (paneIds.has(paneId)) {
+          next[paneId] = status;
         } else {
           changed = true;
         }
@@ -272,6 +293,25 @@ export function WorkspaceProvider({
       return {
         ...current,
         [paneId]: actions,
+      };
+    });
+  }, []);
+
+  const setPaneTabStatus = useCallback((paneId: string, status: WorkspacePaneTabStatus | null) => {
+    setPaneTabStatusById((current) => {
+      if (status === null) {
+        if (!Object.prototype.hasOwnProperty.call(current, paneId)) {
+          return current;
+        }
+        const { [paneId]: _removed, ...rest } = current;
+        return rest;
+      }
+      if (current[paneId] === status) {
+        return current;
+      }
+      return {
+        ...current,
+        [paneId]: status,
       };
     });
   }, []);
@@ -567,6 +607,7 @@ export function WorkspaceProvider({
       openThreadPane,
       paneHeaderActionsById,
       panePlacementHintsById,
+      paneTabStatusById,
       persistLayout,
       publishThreadPaneTimelineAction,
       renderThreadComposer: renderThreadComposer
@@ -584,6 +625,7 @@ export function WorkspaceProvider({
       subscribeThreadPaneTimelineAction,
       clearPanePlacementHints,
       setPaneHeaderActions,
+      setPaneTabStatus,
       threadSummariesById,
       threadActions,
       updatePane,
@@ -610,6 +652,7 @@ export function WorkspaceProvider({
       openThreadPane,
       paneHeaderActionsById,
       panePlacementHintsById,
+      paneTabStatusById,
       persistLayout,
       publishThreadPaneTimelineAction,
       renderThreadComposer,
@@ -621,6 +664,7 @@ export function WorkspaceProvider({
       subscribeThreadPaneTimelineAction,
       clearPanePlacementHints,
       setPaneHeaderActions,
+      setPaneTabStatus,
       threadSummariesById,
       threadActions,
       updatePane,
