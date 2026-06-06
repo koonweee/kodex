@@ -1,4 +1,6 @@
 .kodex-composer-shell {
+  --kodex-composer-shadow: 0 8px 18px rgb(0 0 0 / 20%);
+
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -51,7 +53,7 @@
   border-radius: var(--kodex-radius-composer);
   padding: 14px 14px 10px;
   background: var(--kodex-bg-raised);
-  box-shadow: var(--kodex-shadow-strong);
+  box-shadow: var(--kodex-composer-shadow);
 }
 
 .kodex-composer-underbar {
@@ -63,7 +65,7 @@
   border-bottom-right-radius: var(--kodex-radius-composer);
   border-bottom-left-radius: var(--kodex-radius-composer);
   background: var(--kodex-bg-raised);
-  box-shadow: var(--kodex-shadow-strong);
+  box-shadow: var(--kodex-composer-shadow);
 }
 
 .kodex-composer-underbar-left {
