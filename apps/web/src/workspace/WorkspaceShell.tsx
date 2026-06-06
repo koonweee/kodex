@@ -12,6 +12,7 @@ export function WorkspaceShell() {
     closePane,
     focusPane,
     isLoading,
+    onVisiblePaneIdsChange,
     panePlacementHintsById,
     persistLayout,
     workspace,
@@ -43,6 +44,7 @@ export function WorkspaceShell() {
         onLayoutChange={persistLayout}
         onPanePlacementHintsConsumed={clearPanePlacementHints}
         onPaneClose={closePane}
+        onVisiblePaneIdsChange={onVisiblePaneIdsChange}
         panePlacementHintsById={panePlacementHintsById}
         workspace={workspace}
       />

@@ -27,6 +27,7 @@ type WorkspaceDockProps = {
   onLayoutChange: (layout: unknown, activePaneId: string | null) => void;
   onPaneClose: (paneId: string, layout: unknown) => void;
   onPanePlacementHintsConsumed?: (paneIds: string[]) => void;
+  onVisiblePaneIdsChange?: (paneIds: string[]) => void;
   panePlacementHintsById?: WorkspacePanePlacementHintsById;
   workspace: WorkspaceModel;
 };
@@ -50,6 +51,7 @@ export function WorkspaceDock({
   onLayoutChange,
   onPaneClose,
   onPanePlacementHintsConsumed,
+  onVisiblePaneIdsChange,
   panePlacementHintsById = {},
   workspace,
 }: WorkspaceDockProps) {
@@ -84,6 +86,12 @@ export function WorkspaceDock({
     },
     [onLayoutChange, workspace.panes],
   );
+  const reportVisiblePaneIds = useCallback(
+    (api: DockviewApi) => {
+      onVisiblePaneIdsChange?.(visibleDockviewPanelIds(api));
+    },
+    [onVisiblePaneIdsChange],
+  );
 
   const handleReady = useCallback(
     (event: DockviewReadyEvent) => {
@@ -96,21 +104,39 @@ export function WorkspaceDock({
         panePlacementHintsById,
         onPanePlacementHintsConsumed,
       );
+      reportVisiblePaneIds(event.api);
       disposablesRef.current = [
-        event.api.onDidLayoutChange(() => scheduleLayoutChange(event.api)),
+        event.api.onDidLayoutChange(() => {
+          scheduleLayoutChange(event.api);
+          reportVisiblePaneIds(event.api);
+        }),
         event.api.onDidActivePanelChange((panel) => {
           if (!suppressEventsRef.current) {
             onActivePaneChange(panel?.id ?? null);
           }
+          reportVisiblePaneIds(event.api);
         }),
         event.api.onDidRemovePanel((panel) => {
           if (!suppressEventsRef.current) {
             onPaneClose(panel.id, event.api.toJSON());
           }
+          reportVisiblePaneIds(event.api);
         }),
+        event.api.onDidAddPanel(() => reportVisiblePaneIds(event.api)),
+        event.api.onDidAddGroup(() => reportVisiblePaneIds(event.api)),
+        event.api.onDidRemoveGroup(() => reportVisiblePaneIds(event.api)),
+        event.api.onDidMovePanel(() => reportVisiblePaneIds(event.api)),
       ];
     },
-    [onActivePaneChange, onPaneClose, onPanePlacementHintsConsumed, panePlacementHintsById, scheduleLayoutChange, workspace],
+    [
+      onActivePaneChange,
+      onPaneClose,
+      onPanePlacementHintsConsumed,
+      panePlacementHintsById,
+      reportVisiblePaneIds,
+      scheduleLayoutChange,
+      workspace,
+    ],
   );
 
   useEffect(() => {
@@ -124,8 +150,9 @@ export function WorkspaceDock({
         panePlacementHintsById,
         onPanePlacementHintsConsumed,
       );
+      reportVisiblePaneIds(api);
     }
-  }, [onLayoutChange, onPanePlacementHintsConsumed, panePlacementHintsById, workspace]);
+  }, [onLayoutChange, onPanePlacementHintsConsumed, panePlacementHintsById, reportVisiblePaneIds, workspace]);
 
   useEffect(
     () => () => {
@@ -242,6 +269,20 @@ export function WorkspaceTabOverflowActions({ activePanel, panels }: IDockviewHe
       ) : null}
     </div>
   );
+}
+
+export function visibleDockviewPanelIds(api: Pick<DockviewApi, "groups" | "activePanel">): string[] {
+  const panelIds = new Set<string>();
+  for (const group of api.groups) {
+    const panelId = group.activePanel?.id;
+    if (panelId) {
+      panelIds.add(panelId);
+    }
+  }
+  if (panelIds.size === 0 && api.activePanel?.id) {
+    panelIds.add(api.activePanel.id);
+  }
+  return Array.from(panelIds);
 }
 
 function WorkspaceDockPane({ params }: IDockviewPanelProps<DockviewPaneParams>) {

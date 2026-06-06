@@ -4,7 +4,13 @@ import { useEffect } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { DockviewApi } from "dockview";
 
-import { WorkspaceRightHeaderActions, WorkspaceTabOverflowActions, kodexDockviewTheme, syncWorkspaceIntoDockview } from "./WorkspaceDock";
+import {
+  WorkspaceRightHeaderActions,
+  WorkspaceTabOverflowActions,
+  kodexDockviewTheme,
+  syncWorkspaceIntoDockview,
+  visibleDockviewPanelIds,
+} from "./WorkspaceDock";
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
 import { WorkspaceProvider, useWorkspace } from "./WorkspaceProvider";
 
@@ -195,6 +201,19 @@ describe("WorkspaceDock sync", () => {
       vi.useRealTimers();
     }
   });
+
+  it("reports one visible panel per Dockview group", () => {
+    expect(
+      visibleDockviewPanelIds({
+        activePanel: { id: "pane-a" },
+        groups: [
+          { activePanel: { id: "pane-a" } },
+          { activePanel: { id: "pane-c" } },
+          { activePanel: undefined },
+        ],
+      } as never),
+    ).toEqual(["pane-a", "pane-c"]);
+  });
 });
 
 type FakeDockviewPanel = {
@@ -204,6 +223,10 @@ type FakeDockviewPanel = {
   setTitle: ReturnType<typeof vi.fn>;
   title: string;
   update: ReturnType<typeof vi.fn>;
+};
+
+type FakeDockviewGroup = {
+  activePanel: FakeDockviewPanel | null;
 };
 
 function PaneActionHarness({ activePaneId }: { activePaneId: string }) {
@@ -242,19 +265,25 @@ function domRect(left: number, right: number): DOMRect {
 function fakeDockviewApi(panelIds: string[]) {
   let activePanel: FakeDockviewPanel | null = null;
   const panels: FakeDockviewPanel[] = [];
+  const groups: FakeDockviewGroup[] = [];
   const api = {
     get activePanel() {
       return activePanel;
+    },
+    get groups() {
+      return groups;
     },
     addPanel: vi.fn((options: { id: string; params?: unknown; title?: string }) => {
       const panel = fakePanel(options.id, options.params, options.title ?? options.id, () => {
         activePanel = panel;
       });
       panels.push(panel);
+      groups[0] = { activePanel: panel };
       return panel;
     }),
     clear: vi.fn(() => {
       panels.length = 0;
+      groups.length = 0;
       activePanel = null;
     }),
     fromJSON: vi.fn(),
@@ -281,6 +310,9 @@ function fakeDockviewApi(panelIds: string[]) {
     panels.push(panel);
   }
   activePanel = panels[0] ?? null;
+  if (activePanel) {
+    groups.push({ activePanel });
+  }
   return api;
 }
 

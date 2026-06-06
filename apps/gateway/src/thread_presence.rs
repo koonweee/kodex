@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex as StdMutex},
 };
 
@@ -18,7 +18,7 @@ pub struct ThreadPresence {
 
 #[derive(Default)]
 struct ThreadPresenceInner {
-    clients: HashMap<String, ThreadPresenceRecord>,
+    clients: HashMap<String, HashMap<String, ThreadPresenceRecord>>,
 }
 
 #[derive(Clone)]
@@ -54,21 +54,53 @@ impl ThreadPresence {
         let mut inner = self.inner.lock().unwrap();
         inner.prune_expired(now);
         if visible {
-            inner.clients.insert(
-                client_id.to_string(),
-                ThreadPresenceRecord {
-                    thread_id: thread_id.to_string(),
-                    last_seen_at: now,
-                },
-            );
-        } else if inner
-            .clients
-            .get(client_id)
-            .is_some_and(|record| record.thread_id == thread_id)
-        {
-            inner.clients.remove(client_id);
+            inner
+                .clients
+                .entry(client_id.to_string())
+                .or_default()
+                .insert(
+                    thread_id.to_string(),
+                    ThreadPresenceRecord {
+                        thread_id: thread_id.to_string(),
+                        last_seen_at: now,
+                    },
+                );
+        } else {
+            inner.remove_client_thread(client_id, thread_id);
         }
         inner.snapshot(thread_id, now)
+    }
+
+    pub fn replace_views(&self, client_id: &str, thread_ids: impl IntoIterator<Item = String>) {
+        self.replace_views_at(client_id, thread_ids, Utc::now());
+    }
+
+    pub fn replace_views_at(
+        &self,
+        client_id: &str,
+        thread_ids: impl IntoIterator<Item = String>,
+        now: DateTime<Utc>,
+    ) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.prune_expired(now);
+        let visible_thread_ids = thread_ids.into_iter().collect::<HashSet<_>>();
+        if visible_thread_ids.is_empty() {
+            inner.clients.remove(client_id);
+            return;
+        }
+        let records = visible_thread_ids
+            .into_iter()
+            .map(|thread_id| {
+                (
+                    thread_id.clone(),
+                    ThreadPresenceRecord {
+                        thread_id,
+                        last_seen_at: now,
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        inner.clients.insert(client_id.to_string(), records);
     }
 
     pub fn foreground_viewer_count(&self, thread_id: &str) -> usize {
@@ -88,8 +120,20 @@ impl ThreadPresence {
 
 impl ThreadPresenceInner {
     fn prune_expired(&mut self, now: DateTime<Utc>) {
-        self.clients
-            .retain(|_, record| !is_expired(record.last_seen_at, now));
+        self.clients.retain(|_, records| {
+            records.retain(|_, record| !is_expired(record.last_seen_at, now));
+            !records.is_empty()
+        });
+    }
+
+    fn remove_client_thread(&mut self, client_id: &str, thread_id: &str) {
+        let Some(records) = self.clients.get_mut(client_id) else {
+            return;
+        };
+        records.remove(thread_id);
+        if records.is_empty() {
+            self.clients.remove(client_id);
+        }
     }
 
     fn snapshot(&self, thread_id: &str, now: DateTime<Utc>) -> ThreadPresenceSnapshot {
@@ -104,6 +148,7 @@ impl ThreadPresenceInner {
     fn foreground_viewer_count(&self, thread_id: &str, now: DateTime<Utc>) -> usize {
         self.clients
             .values()
+            .flat_map(|records| records.values())
             .filter(|record| record.thread_id == thread_id && !is_expired(record.last_seen_at, now))
             .count()
     }
@@ -154,7 +199,7 @@ mod tests {
         presence.record_view_at("client-1", "thread-1", true, now);
         presence.record_view_at("client-1", "thread-2", true, now);
 
-        assert_eq!(presence.foreground_viewer_count_at("thread-1", now), 0);
+        assert_eq!(presence.foreground_viewer_count_at("thread-1", now), 1);
         assert_eq!(presence.foreground_viewer_count_at("thread-2", now), 1);
     }
 

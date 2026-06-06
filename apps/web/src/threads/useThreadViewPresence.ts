@@ -1,9 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import {
-  sendThreadViewPresenceBeacon,
-  updateThreadViewPresence,
-  type ThreadViewPresenceRequest,
+  replaceThreadViewPresence,
+  sendThreadViewPresenceSnapshotBeacon,
+  type ThreadViewPresenceSnapshotRequest,
 } from "../api/client";
 
 const THREAD_VIEW_PRESENCE_CLIENT_ID_KEY = "kodex.threadViewPresenceClientId";
@@ -14,31 +14,47 @@ let fallbackClientId: string | null = null;
 export function useThreadViewPresence({
   enabled,
   heartbeatMs = DEFAULT_THREAD_VIEW_PRESENCE_HEARTBEAT_MS,
-  threadId,
+  threadIds,
 }: {
   enabled: boolean;
   heartbeatMs?: number;
-  threadId: string | null;
+  threadIds: string[];
 }) {
+  const visibleThreadIds = useMemo(() => normalizedThreadIds(threadIds), [threadIds]);
+  const visibleThreadIdsKey = visibleThreadIds.join("\n");
+  const latestVisibleThreadIdsRef = useRef<string[]>(visibleThreadIds);
+  const clientIdRef = useRef<string | null>(null);
+  const lastReportedVisibleThreadIdsKeyRef = useRef("");
+
+  latestVisibleThreadIdsRef.current = visibleThreadIds;
+
   useEffect(() => {
-    if (!enabled || !threadId || typeof document === "undefined") {
+    if (!enabled || typeof document === "undefined") {
       return;
     }
 
-    const clientId = threadViewPresenceClientId();
-    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-    let lastReportedVisible = false;
+    if (document.visibilityState === "visible") {
+      reportLatestVisibleThreads();
+    }
+  }, [enabled, visibleThreadIdsKey]);
 
-    function report(visible: boolean) {
-      lastReportedVisible = visible;
-      void updateThreadViewPresence(threadId as string, presenceRequest(clientId, visible)).catch(() => {
+  useEffect(() => {
+    if (!enabled || typeof document === "undefined") {
+      return;
+    }
+
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+    function report(threadIds: string[]) {
+      lastReportedVisibleThreadIdsKeyRef.current = threadIds.join("\n");
+      void replaceThreadViewPresence(presenceRequest(ensureClientId(), threadIds)).catch(() => {
         // Presence is ephemeral. Missed heartbeats expire in the gateway.
       });
     }
 
-    function reportWithBeacon(visible: boolean): boolean {
-      lastReportedVisible = visible;
-      return sendThreadViewPresenceBeacon(threadId as string, presenceRequest(clientId, visible));
+    function reportWithBeacon(threadIds: string[]): boolean {
+      lastReportedVisibleThreadIdsKeyRef.current = threadIds.join("\n");
+      return sendThreadViewPresenceSnapshotBeacon(presenceRequest(ensureClientId(), threadIds));
     }
 
     function clearHeartbeat() {
@@ -48,45 +64,82 @@ export function useThreadViewPresence({
       }
     }
 
-    function syncVisibility() {
+    function reportLatestVisibleThreads() {
+      report(latestVisibleThreadIdsRef.current);
+    }
+
+    function clearPresence() {
+      if (lastReportedVisibleThreadIdsKeyRef.current.length === 0) {
+        return;
+      }
+      report([]);
+    }
+
+    function clearPresenceWithBeacon(): boolean {
+      if (lastReportedVisibleThreadIdsKeyRef.current.length === 0) {
+        return true;
+      }
+      return reportWithBeacon([]);
+    }
+
+    function syncVisibility(reportVisible: boolean) {
       clearHeartbeat();
       if (document.visibilityState === "visible") {
-        report(true);
+        if (reportVisible) {
+          reportLatestVisibleThreads();
+        }
         heartbeatTimer = setInterval(() => {
           if (document.visibilityState === "visible") {
-            report(true);
+            reportLatestVisibleThreads();
           }
         }, heartbeatMs);
         return;
       }
-      if (lastReportedVisible) {
-        report(false);
-      }
+      clearPresence();
     }
 
     function handlePageHide() {
-      if (!reportWithBeacon(false)) {
-        report(false);
+      if (!clearPresenceWithBeacon()) {
+        clearPresence();
       }
     }
 
-    syncVisibility();
-    document.addEventListener("visibilitychange", syncVisibility);
+    syncVisibility(false);
+    const handleVisibilityChange = () => syncVisibility(true);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("pagehide", handlePageHide);
 
     return () => {
       clearHeartbeat();
-      document.removeEventListener("visibilitychange", syncVisibility);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("pagehide", handlePageHide);
-      if (!reportWithBeacon(false)) {
-        report(false);
+      if (!clearPresenceWithBeacon()) {
+        clearPresence();
       }
     };
-  }, [enabled, heartbeatMs, threadId]);
+  }, [enabled, heartbeatMs]);
+
+  function ensureClientId(): string {
+    clientIdRef.current ??= threadViewPresenceClientId();
+    return clientIdRef.current;
+  }
+
+  function reportLatestVisibleThreads() {
+    lastReportedVisibleThreadIdsKeyRef.current = latestVisibleThreadIdsRef.current.join("\n");
+    void replaceThreadViewPresence(
+      presenceRequest(ensureClientId(), latestVisibleThreadIdsRef.current),
+    ).catch(() => {
+      // Presence is ephemeral. Missed heartbeats expire in the gateway.
+    });
+  }
 }
 
-function presenceRequest(clientId: string, visible: boolean): ThreadViewPresenceRequest {
-  return { clientId, visible };
+function presenceRequest(clientId: string, visibleThreadIds: string[]): ThreadViewPresenceSnapshotRequest {
+  return { clientId, visibleThreadIds };
+}
+
+function normalizedThreadIds(threadIds: string[]): string[] {
+  return Array.from(new Set(threadIds.filter((threadId) => threadId.length > 0))).sort();
 }
 
 function threadViewPresenceClientId(): string {

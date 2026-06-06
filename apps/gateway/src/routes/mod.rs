@@ -144,6 +144,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn thread_view_presence_snapshot_route_replaces_visible_threads_for_client() {
+        let (state, _) = test_state().await;
+        let app = build_router(state.clone());
+
+        let visible = app
+            .clone()
+            .oneshot(
+                Request::put("/v1/thread-view-presence")
+                    .body(Body::from(
+                        json!({
+                            "clientId": "client-1",
+                            "visibleThreadIds": ["thread-1", "thread-2"]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(visible.status(), StatusCode::NO_CONTENT);
+        assert_eq!(state.thread_presence.foreground_viewer_count("thread-1"), 1);
+        assert_eq!(state.thread_presence.foreground_viewer_count("thread-2"), 1);
+
+        let replaced = app
+            .oneshot(
+                Request::put("/v1/thread-view-presence")
+                    .body(Body::from(
+                        json!({
+                            "clientId": "client-1",
+                            "visibleThreadIds": ["thread-2"]
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(replaced.status(), StatusCode::NO_CONTENT);
+        assert_eq!(state.thread_presence.foreground_viewer_count("thread-1"), 0);
+        assert_eq!(state.thread_presence.foreground_viewer_count("thread-2"), 1);
+    }
+
+    #[tokio::test]
     async fn default_routes_do_not_emit_wildcard_cors() {
         let (state, _) = test_state().await;
         let app = build_router(state.clone());

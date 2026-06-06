@@ -1506,6 +1506,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/thread-view-presence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["replace_thread_view_presence"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/threads": {
         parameters: {
             query?: never;
@@ -3633,6 +3649,10 @@ export interface components {
         ThreadViewPresenceRequest: {
             clientId: string;
             visible: boolean;
+        };
+        ThreadViewPresenceSnapshotRequest: {
+            clientId: string;
+            visibleThreadIds: string[];
         };
         ThreadViewResponse: {
             historyPage?: null | components["schemas"]["ThreadTimelineWindowPage"];
@@ -6327,6 +6347,28 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TerminalDeleteResponse"];
                 };
+            };
+        };
+    };
+    replace_thread_view_presence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadViewPresenceSnapshotRequest"];
+            };
+        };
+        responses: {
+            /** @description Thread view presence snapshot replaced */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -61,6 +61,7 @@ export type ThreadSettingsUpdateRequest = components["schemas"]["ThreadSettingsU
 export type ThreadSettingsUpdateResponse = components["schemas"]["ThreadSettingsUpdateResponse"];
 export type ThreadNotificationSettingsResponse = components["schemas"]["ThreadNotificationSettingsResponse"];
 export type ThreadViewPresenceRequest = components["schemas"]["ThreadViewPresenceRequest"];
+export type ThreadViewPresenceSnapshotRequest = components["schemas"]["ThreadViewPresenceSnapshotRequest"];
 export type ThreadAttachResponse = components["schemas"]["ThreadAttachResponse"];
 export type ThreadListResponse = components["schemas"]["ThreadListResponse"];
 export type SidebarThreadSummary = components["schemas"]["SidebarThreadSummary"];
@@ -501,8 +502,24 @@ export async function updateThreadViewPresence(
   );
 }
 
+export async function replaceThreadViewPresence(
+  request: ThreadViewPresenceSnapshotRequest,
+): Promise<void> {
+  await unwrapNoContent(
+    api.PUT("/v1/thread-view-presence", {
+      body: request,
+    }),
+  );
+}
+
 export function threadViewPresenceUrl(threadId: string): string {
   const route = `/v1/threads/${encodeURIComponent(threadId)}/view-presence`;
+  const apiBaseUrl = getApiBaseUrl();
+  return apiBaseUrl ? `${apiBaseUrl}${route}` : route;
+}
+
+export function threadViewPresenceSnapshotUrl(): string {
+  const route = "/v1/thread-view-presence";
   const apiBaseUrl = getApiBaseUrl();
   return apiBaseUrl ? `${apiBaseUrl}${route}` : route;
 }
@@ -513,6 +530,14 @@ export function sendThreadViewPresenceBeacon(threadId: string, request: ThreadVi
   }
   const body = new Blob([JSON.stringify(request)], { type: "application/json" });
   return navigator.sendBeacon(threadViewPresenceUrl(threadId), body);
+}
+
+export function sendThreadViewPresenceSnapshotBeacon(request: ThreadViewPresenceSnapshotRequest): boolean {
+  if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") {
+    return false;
+  }
+  const body = new Blob([JSON.stringify(request)], { type: "application/json" });
+  return navigator.sendBeacon(threadViewPresenceSnapshotUrl(), body);
 }
 
 export async function getNotificationStatus(): Promise<NotificationStatusResponse> {

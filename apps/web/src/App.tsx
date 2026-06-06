@@ -577,6 +577,8 @@ function KodexShell({
   const [projectThreadNextCursors, setProjectThreadNextCursors] = useState<Record<string, string | null>>({});
   const [chatThreadsPaginationState, setChatThreadsPaginationState] = useState<SidebarPaginationState>("idle");
   const [projectThreadPaginationStateById, setProjectThreadPaginationStateById] = useState<Record<string, SidebarPaginationState>>({});
+  const [visibleThreadIds, setVisibleThreadIds] = useState<string[]>([]);
+  const visibleThreadIdsRef = useRef<Set<string>>(new Set());
 
   const {
     clearSelectionToDraft,
@@ -955,13 +957,14 @@ function KodexShell({
     chatThreads,
     onError: reportError,
     selectedThreadIdRef,
+    viewedThreadIdsRef: visibleThreadIdsRef,
     threadsByProjectId,
     pinnedThreads,
     updateThreadEverywhere: patchThreadEverywhere,
   });
   useThreadViewPresence({
     enabled: selectedMainPane === "thread",
-    threadId: selectedThreadId,
+    threadIds: visibleThreadIds,
   });
   useKodexNotifications({
     chatThreads,
@@ -1185,6 +1188,15 @@ function KodexShell({
 
   const handleWorkspaceLiveEvent = useEventCallback((event: EventEnvelope) => {
     routeGlobalLiveEvent(event, liveRouteHandlers);
+  });
+  const handleVisibleThreadIdsChange = useEventCallback((threadIds: string[]) => {
+    const nextThreadIds = Array.from(new Set(threadIds)).sort();
+    visibleThreadIdsRef.current = new Set(nextThreadIds);
+    setVisibleThreadIds((current) =>
+      current.length === nextThreadIds.length && current.every((threadId, index) => threadId === nextThreadIds[index])
+        ? current
+        : nextThreadIds,
+    );
   });
 
   useSelectedThreadAttach({
@@ -1793,6 +1805,7 @@ function KodexShell({
         onShowMobileSidebar={handleShowMobileSidebar}
         onThreadSnapshotLoadFailed={handleThreadPaneSnapshotLoadFailed}
         onThreadSnapshotLoaded={handleThreadPaneSnapshotLoaded}
+        onVisibleThreadIdsChange={handleVisibleThreadIdsChange}
         paneStore={workspacePaneStore}
         publishThreadPaneTimelineAction={publishThreadPaneTimelineAction}
         renderThreadComposer={renderWorkspaceThreadComposer}

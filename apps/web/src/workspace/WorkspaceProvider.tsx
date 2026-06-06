@@ -26,7 +26,7 @@ import {
   type WorkspacePanePlacementHintsById,
   type WorkspacePanePlacementIntent,
 } from "./panePlacement";
-import type { WorkspaceModel, WorkspacePane, WorkspacePanePatch } from "./paneTypes";
+import { paneTargetRecord, type WorkspaceModel, type WorkspacePane, type WorkspacePanePatch } from "./paneTypes";
 import { workspaceSubscribedThreadIds } from "./resourceSubscriptions";
 
 type WorkspaceLiveEventHandler = (event: EventEnvelope) => void;
@@ -71,6 +71,7 @@ type WorkspaceProviderProps = {
   onShowMobileSidebar?: () => void;
   onThreadSnapshotLoadFailed?: (threadId: string) => void;
   onThreadSnapshotLoaded?: (thread: ThreadSummary) => void;
+  onVisibleThreadIdsChange?: (threadIds: string[]) => void;
   paneStore?: WorkspacePaneStoreAdapter;
   publishThreadPaneTimelineAction?: (action: ThreadPaneTimelineAction) => void;
   renderThreadComposer?: (pane: WorkspacePane, state: ThreadComposerState) => ReactNode;
@@ -97,6 +98,7 @@ type WorkspaceContextValue = {
   onShowMobileSidebar: () => void;
   onThreadSnapshotLoadFailed: (threadId: string) => void;
   onThreadSnapshotLoaded: (thread: ThreadSummary) => void;
+  onVisiblePaneIdsChange: (paneIds: string[]) => void;
   openDraftThreadPane: (projectId?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
   openGeneratedUiPane: (threadId: string, title?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
   openTerminalPane: (options?: WorkspacePaneOpenOptions & { command?: string | null; cwd?: string | null }) => Promise<void>;
@@ -146,6 +148,7 @@ export function WorkspaceProvider({
   onShowMobileSidebar = () => undefined,
   onThreadSnapshotLoadFailed = () => undefined,
   onThreadSnapshotLoaded = () => undefined,
+  onVisibleThreadIdsChange = () => undefined,
   paneStore = browserWorkspacePaneStore,
   publishThreadPaneTimelineAction = noopPublishThreadPaneTimelineAction,
   renderThreadComposer,
@@ -162,6 +165,7 @@ export function WorkspaceProvider({
   const onLiveEventRef = useRef(onLiveEvent);
   const [paneHeaderActionsById, setPaneHeaderActionsById] = useState<Record<string, ReactNode>>({});
   const [panePlacementHintsById, setPanePlacementHintsById] = useState<WorkspacePanePlacementHintsById>({});
+  const [visiblePaneIds, setVisiblePaneIds] = useState<string[]>([]);
   const [workspace, setWorkspace] = useState<WorkspaceModel>(() => ensureWorkspaceHasActivePane(paneStore.load()));
   const [workspaceError, setWorkspaceError] = useState<Error | null>(null);
   const workspaceRef = useRef(workspace);
@@ -211,6 +215,19 @@ export function WorkspaceProvider({
       onFocusThreadPane?.(activeFocusedThreadId);
     }
   }, [activeFocusedThreadId, onFocusThreadPane]);
+
+  const onVisiblePaneIdsChange = useCallback((paneIds: string[]) => {
+    setVisiblePaneIds((current) => (sameStringArray(current, paneIds) ? current : paneIds));
+  }, []);
+
+  const visibleThreadIds = useMemo(
+    () => visibleThreadIdsForPaneIds(workspace.panes, visiblePaneIds),
+    [visiblePaneIds, workspace.panes],
+  );
+
+  useEffect(() => {
+    onVisibleThreadIdsChange(visibleThreadIds);
+  }, [onVisibleThreadIdsChange, visibleThreadIds]);
 
   const subscribedThreadIds = useMemo(() => workspaceSubscribedThreadIds(workspace.panes), [workspace.panes]);
   const subscribedThreadIdsKey = subscribedThreadIds.join("\n");
@@ -543,6 +560,7 @@ export function WorkspaceProvider({
       onShowMobileSidebar,
       onThreadSnapshotLoadFailed,
       onThreadSnapshotLoaded,
+      onVisiblePaneIdsChange,
       openDraftThreadPane,
       openGeneratedUiPane,
       openTerminalPane,
@@ -585,6 +603,7 @@ export function WorkspaceProvider({
       onShowMobileSidebar,
       onThreadSnapshotLoadFailed,
       onThreadSnapshotLoaded,
+      onVisiblePaneIdsChange,
       openDraftThreadPane,
       openGeneratedUiPane,
       openTerminalPane,
@@ -635,6 +654,25 @@ function duplicateWorkspacePane(pane: WorkspacePane): WorkspacePane {
     ...pane,
     id: createPaneId(pane.kind),
   };
+}
+
+function visibleThreadIdsForPaneIds(panes: WorkspacePane[], paneIds: string[]): string[] {
+  const visiblePaneIds = new Set(paneIds);
+  const threadIds = new Set<string>();
+  for (const pane of panes) {
+    if (!visiblePaneIds.has(pane.id)) {
+      continue;
+    }
+    const target = paneTargetRecord(pane);
+    if (pane.kind === "thread" && target.mode === "existing" && typeof target.threadId === "string") {
+      threadIds.add(target.threadId);
+    }
+  }
+  return Array.from(threadIds).sort();
+}
+
+function sameStringArray(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function stableJsonKey(value: unknown): string {

@@ -10,6 +10,7 @@ type UseThreadReadStateParams = {
   chatThreads: ThreadSummary[];
   pinnedThreads: ThreadSummary[];
   selectedThreadIdRef: MutableRefObject<string | null>;
+  viewedThreadIdsRef: MutableRefObject<Set<string>>;
   threadsByProjectId: ThreadsByProjectId;
   updateThreadEverywhere: (
     threadId: string,
@@ -22,6 +23,7 @@ export function useThreadReadState({
   onError,
   pinnedThreads,
   selectedThreadIdRef,
+  viewedThreadIdsRef,
   threadsByProjectId,
   updateThreadEverywhere,
 }: UseThreadReadStateParams) {
@@ -40,8 +42,10 @@ export function useThreadReadState({
     if (!completedTurn) {
       return;
     }
-    const isSelected = completedTurn.threadId === selectedThreadIdRef.current;
-    if (isSelected) {
+    const isViewed =
+      completedTurn.threadId === selectedThreadIdRef.current ||
+      viewedThreadIdsRef.current.has(completedTurn.threadId);
+    if (isViewed) {
       void persistCompletedAgentTurnSeen(completedTurn.threadId, undefined);
       return;
     }

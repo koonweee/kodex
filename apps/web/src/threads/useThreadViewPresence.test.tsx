@@ -38,11 +38,11 @@ describe("useThreadViewPresence", () => {
   });
 
   it("sends an immediate visible heartbeat and repeats while visible", async () => {
-    renderHook(() => useThreadViewPresence({ enabled: true, heartbeatMs: HEARTBEAT_MS, threadId: "thread-1" }));
+    renderHook(() => useThreadViewPresence({ enabled: true, heartbeatMs: HEARTBEAT_MS, threadIds: ["thread-1"] }));
 
     await flushEffects();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    await expect(lastPresenceRequest()).resolves.toMatchObject({ visible: true });
+    await expect(lastPresenceRequest()).resolves.toMatchObject({ visibleThreadIds: ["thread-1"] });
 
     await act(async () => {
       vi.advanceTimersByTime(HEARTBEAT_MS);
@@ -50,11 +50,11 @@ describe("useThreadViewPresence", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    await expect(lastPresenceRequest()).resolves.toMatchObject({ visible: true });
+    await expect(lastPresenceRequest()).resolves.toMatchObject({ visibleThreadIds: ["thread-1"] });
   });
 
   it("uses a ten second heartbeat by default", async () => {
-    renderHook(() => useThreadViewPresence({ enabled: true, threadId: "thread-1" }));
+    renderHook(() => useThreadViewPresence({ enabled: true, threadIds: ["thread-1"] }));
 
     await flushEffects();
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -70,12 +70,12 @@ describe("useThreadViewPresence", () => {
       await Promise.resolve();
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    await expect(lastPresenceRequest()).resolves.toMatchObject({ visible: true });
+    await expect(lastPresenceRequest()).resolves.toMatchObject({ visibleThreadIds: ["thread-1"] });
   });
 
   it("does not heartbeat while hidden and clears when visibility changes to hidden", async () => {
     const { unmount } = renderHook(() =>
-      useThreadViewPresence({ enabled: true, heartbeatMs: HEARTBEAT_MS, threadId: "thread-1" }),
+      useThreadViewPresence({ enabled: true, heartbeatMs: HEARTBEAT_MS, threadIds: ["thread-1"] }),
     );
 
     await flushEffects();
@@ -88,7 +88,7 @@ describe("useThreadViewPresence", () => {
 
     await flushEffects();
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    await expect(lastPresenceRequest()).resolves.toMatchObject({ visible: false });
+    await expect(lastPresenceRequest()).resolves.toMatchObject({ visibleThreadIds: [] });
 
     await act(async () => {
       vi.advanceTimersByTime(HEARTBEAT_MS * 2);
@@ -101,7 +101,7 @@ describe("useThreadViewPresence", () => {
 
   it("does not send a visible heartbeat when initially hidden", async () => {
     visibilityState = "hidden";
-    renderHook(() => useThreadViewPresence({ enabled: true, heartbeatMs: HEARTBEAT_MS, threadId: "thread-1" }));
+    renderHook(() => useThreadViewPresence({ enabled: true, heartbeatMs: HEARTBEAT_MS, threadIds: ["thread-1"] }));
 
     await flushEffects();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -113,23 +113,25 @@ describe("useThreadViewPresence", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("clears the previous thread when selection changes", async () => {
+  it("replaces visible threads when the visible set changes", async () => {
     const { rerender } = renderHook(
-      ({ threadId }: { threadId: string }) =>
-        useThreadViewPresence({ enabled: true, heartbeatMs: HEARTBEAT_MS, threadId }),
-      { initialProps: { threadId: "thread-1" } },
+      ({ threadIds }: { threadIds: string[] }) =>
+        useThreadViewPresence({ enabled: true, heartbeatMs: HEARTBEAT_MS, threadIds }),
+      { initialProps: { threadIds: ["thread-1"] } },
     );
 
     await flushEffects();
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    rerender({ threadId: "thread-2" });
+    rerender({ threadIds: ["thread-1", "thread-2"] });
 
     await flushEffects();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     const requests = await presenceRequests();
-    expect(requests.at(-2)).toMatchObject({ path: "/v1/threads/thread-1/view-presence", visible: false });
-    expect(requests.at(-1)).toMatchObject({ path: "/v1/threads/thread-2/view-presence", visible: true });
+    expect(requests.at(-1)).toMatchObject({
+      path: "/v1/thread-view-presence",
+      visibleThreadIds: ["thread-1", "thread-2"],
+    });
   });
 
   it("uses sendBeacon for pagehide cleanup when available", async () => {
@@ -138,7 +140,7 @@ describe("useThreadViewPresence", () => {
       configurable: true,
       value: sendBeacon,
     });
-    renderHook(() => useThreadViewPresence({ enabled: true, heartbeatMs: HEARTBEAT_MS, threadId: "thread-1" }));
+    renderHook(() => useThreadViewPresence({ enabled: true, heartbeatMs: HEARTBEAT_MS, threadIds: ["thread-1"] }));
 
     await flushEffects();
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -148,7 +150,7 @@ describe("useThreadViewPresence", () => {
 
     expect(sendBeacon).toHaveBeenCalledTimes(1);
     const [url, body] = (sendBeacon.mock.calls as unknown as Array<[string, BodyInit]>)[0] ?? ["", ""];
-    expect(new URL(String(url), window.location.origin).pathname).toBe("/v1/threads/thread-1/view-presence");
+    expect(new URL(String(url), window.location.origin).pathname).toBe("/v1/thread-view-presence");
     expect(body).toEqual(expect.any(Blob));
   });
 
@@ -165,13 +167,30 @@ describe("useThreadViewPresence", () => {
       },
     });
 
-    renderHook(() => useThreadViewPresence({ enabled: true, heartbeatMs: HEARTBEAT_MS, threadId: "thread-1" }));
+    renderHook(() => useThreadViewPresence({ enabled: true, heartbeatMs: HEARTBEAT_MS, threadIds: ["thread-1"] }));
 
     await flushEffects();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const request = await lastPresenceRequest();
     expect(typeof request.clientId).toBe("string");
     expect((request.clientId as string).length).toBeGreaterThan(0);
+  });
+
+  it("reports all visible thread ids in one snapshot", async () => {
+    renderHook(() =>
+      useThreadViewPresence({
+        enabled: true,
+        heartbeatMs: HEARTBEAT_MS,
+        threadIds: ["thread-2", "thread-1", "thread-1"],
+      }),
+    );
+
+    await flushEffects();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(lastPresenceRequest()).resolves.toMatchObject({
+      path: "/v1/thread-view-presence",
+      visibleThreadIds: ["thread-1", "thread-2"],
+    });
   });
 });
 
