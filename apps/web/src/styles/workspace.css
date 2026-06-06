@@ -140,46 +140,17 @@
 }
 
 .kodex-workspace-tab-overflow-menu {
-  background: var(--kodex-bg-raised);
-  border: 1px solid var(--kodex-border-subtle);
-  border-radius: var(--kodex-radius-sm);
-  box-shadow: var(--kodex-shadow-menu);
-  display: grid;
   max-height: min(50vh, 400px);
   min-width: min(340px, calc(100vw - 24px));
   overflow-y: auto;
-  padding: 4px;
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 30;
 }
 
-.kodex-workspace-tab-overflow-item {
-  background: transparent;
-  border: 0;
-  border-radius: var(--kodex-radius-xs);
-  color: var(--kodex-text-secondary);
-  cursor: pointer;
-  display: block;
-  font: inherit;
-  font-size: 0.78rem;
-  min-height: 30px;
-  min-width: 0;
-  padding: 5px 8px;
-  text-align: left;
-}
-
-.kodex-workspace-tab-overflow-item:hover,
-.kodex-workspace-tab-overflow-item:focus-visible,
 .kodex-workspace-tab-overflow-item[aria-current="page"] {
   background: var(--kodex-bg-button-hover);
   color: var(--kodex-text-primary);
-  outline: none;
 }
 
-.kodex-workspace-tab-overflow-item > span {
-  display: block;
+.kodex-workspace-tab-overflow-item .kodex-mantine-menu-item-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -344,52 +315,6 @@
   font-size: 0.9rem;
   font-weight: 650;
   line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.kodex-thread-actions-menu {
-  position: relative;
-}
-
-.kodex-thread-actions-dropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 60;
-  display: grid;
-  min-width: 180px;
-  padding: 4px;
-  border: 1px solid var(--kodex-border-subtle);
-  border-radius: var(--kodex-radius-sm);
-  background: var(--kodex-bg-raised);
-  box-shadow: var(--kodex-shadow-menu);
-}
-
-.kodex-thread-actions-item {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-  min-height: 30px;
-  padding: 5px 8px;
-  border: 0;
-  border-radius: var(--kodex-radius-xs);
-  color: var(--kodex-text-primary);
-  background: transparent;
-  font: inherit;
-  font-size: 0.82rem;
-  text-align: left;
-}
-
-.kodex-thread-actions-item:hover,
-.kodex-thread-actions-item:focus-visible {
-  background: var(--kodex-bg-button-hover);
-  outline: none;
-}
-
-.kodex-thread-actions-item > span {
-  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

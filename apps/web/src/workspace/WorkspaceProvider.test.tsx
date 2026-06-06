@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { deleteTerminalSession } from "../api/client";
 import { createMemoryWorkspacePaneStore } from "./paneStore";
 import type { WorkspacePane, WorkspacePaneState } from "./paneTypes";
 import { WorkspaceProvider, useWorkspace } from "./WorkspaceProvider";
@@ -18,6 +19,14 @@ vi.mock("../events/stream", () => ({
     return client;
   }),
 }));
+
+vi.mock("../api/client", async (importActual) => {
+  const actual = await importActual<typeof import("../api/client")>();
+  return {
+    ...actual,
+    deleteTerminalSession: vi.fn(),
+  };
+});
 
 describe("WorkspaceProvider pane commands", () => {
   afterEach(() => {
@@ -49,7 +58,8 @@ describe("WorkspaceProvider pane commands", () => {
     expect(store.getState().panes.filter((pane) => pane.kind === "thread" && pane.target.mode === "existing" && pane.target.threadId === "thread-1")).toHaveLength(2);
   });
 
-  it("creates terminal panes as new local pane instances without deleting terminal resources on close", async () => {
+  it("creates terminal panes as new local pane instances and deletes terminal resources on close", async () => {
+    vi.mocked(deleteTerminalSession).mockResolvedValue({ id: "terminal-1" });
     const store = createMemoryWorkspacePaneStore(workspaceState([
       threadPane("pane-thread-1", "thread-1", "Thread 1"),
       terminalPane("pane-terminal-1", "terminal-1"),
@@ -70,6 +80,7 @@ describe("WorkspaceProvider pane commands", () => {
     await waitFor(() => {
       expect(store.getState().panes.some((pane) => pane.id === "pane-terminal-1")).toBe(false);
     });
+    expect(deleteTerminalSession).toHaveBeenCalledWith("terminal-1");
   });
 
   it("does not retarget an active draft thread pane when opening an existing thread", async () => {
@@ -93,6 +104,48 @@ describe("WorkspaceProvider pane commands", () => {
         pane.kind === "thread" && pane.target.mode === "existing" && pane.target.threadId === "thread-1",
       ),
     ).toBe(true);
+  });
+
+  it("opens unseen threads in a new pane instead of retargeting the active existing thread pane", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      threadPane("pane-thread-1", "thread-1", "Thread 1"),
+    ], "pane-thread-1"));
+    renderProvider(store);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open unseen thread" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pane-count")).toHaveTextContent("2");
+    });
+    expect(store.getState().panes.find((pane) => pane.id === "pane-thread-1")?.target).toEqual({
+      mode: "existing",
+      threadId: "thread-1",
+    });
+    expect(
+      store.getState().panes.some((pane) =>
+        pane.kind === "thread" && pane.target.mode === "existing" && pane.target.threadId === "thread-2",
+      ),
+    ).toBe(true);
+  });
+
+  it("records centralized placement hints for newly created panes", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      threadPane("pane-thread-1", "thread-1", "Thread 1"),
+    ], "pane-thread-1"));
+    renderProvider(store);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open terminal" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pane-placement-hints")).toHaveTextContent("below");
+    });
+    const hints = JSON.parse(screen.getByTestId("pane-placement-hints").textContent ?? "{}");
+    expect(Object.values(hints)).toEqual([
+      {
+        direction: "below",
+        referencePaneId: "pane-thread-1",
+      },
+    ]);
   });
 
   it("dedupes workspace stream subscriptions by unique thread resource", async () => {
@@ -126,8 +179,12 @@ function CommandHarness() {
     <>
       <span data-testid="pane-count">{workspace.workspace.panes.length}</span>
       <span data-testid="active-pane">{workspace.workspace.activePaneId ?? "none"}</span>
+      <span data-testid="pane-placement-hints">{JSON.stringify(workspace.panePlacementHintsById)}</span>
       <button type="button" onClick={() => void workspace.openThreadPane("thread-1", "Thread 1")}>
         Open thread
+      </button>
+      <button type="button" onClick={() => void workspace.openThreadPane("thread-2", "Thread 2")}>
+        Open unseen thread
       </button>
       <button type="button" onClick={() => void workspace.openThreadPane("thread-1", "Thread 1", { duplicate: true })}>
         Duplicate thread

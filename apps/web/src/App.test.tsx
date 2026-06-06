@@ -560,6 +560,13 @@ describe("App shell", () => {
     expect(within(thread).queryByText(/event stream/i)).not.toBeInTheDocument();
     expect(within(thread).queryByText(/turn\/started/i)).not.toBeInTheDocument();
 
+    const threadActionsButton = screen.getByRole("button", { name: /thread actions/i });
+    await userEvent.click(threadActionsButton);
+    expect(threadActionsButton).toHaveAttribute("aria-expanded", "true");
+    expect(await screen.findByRole("menuitem", { hidden: true, name: /rename thread/i })).toBeInTheDocument();
+    fireEvent.mouseDown(document.body);
+    await waitFor(() => expect(threadActionsButton).toHaveAttribute("aria-expanded", "false"));
+
     fireEvent.click(screen.getByRole("button", { name: /account settings/i }));
     await userEvent.click(await screen.findByRole("menuitemcheckbox", { name: /show debug events/i }));
 

@@ -9,6 +9,7 @@ use kodex_gateway::{
     events::run_inbound_ingest,
     queue::recover_queued_inputs,
     store::Store,
+    terminal::start_terminal_cleanup,
     AppState,
 };
 use tokio::sync::mpsc;
@@ -59,6 +60,7 @@ async fn main() -> anyhow::Result<()> {
     recover_queued_inputs(&state).await?;
     recover_automations_after_restart(&state).await?;
     start_automation_scheduler(state.clone());
+    start_terminal_cleanup(state.terminals.clone());
     state.notifications.start_delivery_worker(state.clone());
     tokio::spawn(run_inbound_ingest(inbound_rx, state.clone()));
 

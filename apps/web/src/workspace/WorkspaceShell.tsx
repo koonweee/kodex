@@ -7,7 +7,16 @@ import { WorkspaceDock } from "./WorkspaceDock";
 import { useWorkspace } from "./WorkspaceProvider";
 
 export function WorkspaceShell() {
-  const { closePane, focusPane, isLoading, persistLayout, workspace, workspaceError } = useWorkspace();
+  const {
+    clearPanePlacementHints,
+    closePane,
+    focusPane,
+    isLoading,
+    panePlacementHintsById,
+    persistLayout,
+    workspace,
+    workspaceError,
+  } = useWorkspace();
 
   if (isLoading) {
     return (
@@ -32,7 +41,9 @@ export function WorkspaceShell() {
       <WorkspaceDock
         onActivePaneChange={focusPane}
         onLayoutChange={persistLayout}
+        onPanePlacementHintsConsumed={clearPanePlacementHints}
         onPaneClose={closePane}
+        panePlacementHintsById={panePlacementHintsById}
         workspace={workspace}
       />
     </Stack>

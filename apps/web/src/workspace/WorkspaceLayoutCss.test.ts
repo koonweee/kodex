@@ -108,8 +108,7 @@ describe("workspace pane layout CSS", () => {
     expect(cssRule(".kodex-workspace-dock .dv-tabs-overflow-dropdown-default")).toContain("min-width: 44px;");
     expect(cssRule(".kodex-workspace-pane-actions")).toContain("justify-content: flex-end;");
     expect(cssRule(".kodex-workspace-tab-overflow-button")).toContain("min-width: 44px;");
-    expect(cssRule(".kodex-workspace-tab-overflow-menu")).toContain("position: absolute;");
-    expect(cssRule(".kodex-thread-actions-dropdown")).toContain("z-index: 60;");
+    expect(cssRule(".kodex-workspace-tab-overflow-menu")).toContain("max-height: min(50vh, 400px);");
   });
 
   it("does not reference undefined legacy surface aliases", () => {

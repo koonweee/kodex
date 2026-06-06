@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Box, Button, Group, Loader, Modal, Skeleton, Switch, Text, TextInput, Title } from "@mantine/core";
+import { ActionIcon, Badge, Box, Button, Group, Loader, Menu, Modal, Skeleton, Switch, Text, TextInput, Title } from "@mantine/core";
 import { AlertCircle, Archive, CopyPlus, MoreHorizontal, PanelLeftOpen, PanelRightOpen, Pencil, Pin, PinOff } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
 
@@ -397,7 +397,12 @@ function ExistingThreadPane({
               {customHeaderActions}
               <ActionIcon
                 aria-label="Duplicate pane"
-                onClick={() => void openThreadPane(threadId, title, { duplicate: true })}
+                onClick={() =>
+                  void openThreadPane(threadId, title, {
+                    duplicate: true,
+                    placement: { sourcePaneId: pane.id },
+                  })
+                }
                 size="sm"
                 title="Duplicate pane"
                 variant="subtle"
@@ -406,7 +411,11 @@ function ExistingThreadPane({
               </ActionIcon>
               <ActionIcon
                 aria-label="Open generated UI"
-                onClick={() => void openGeneratedUiPane(threadId, `${title} UI`)}
+                onClick={() =>
+                  void openGeneratedUiPane(threadId, `${title} UI`, {
+                    placement: { sourcePaneId: pane.id },
+                  })
+                }
                 size="sm"
                 title="Open generated UI"
                 variant="subtle"
@@ -634,66 +643,45 @@ function ThreadActionsMenu({
   onUnpinThread?: (threadId: string) => void;
   thread: ThreadSummary;
 }) {
-  const [opened, setOpened] = useState(false);
   const notificationsEnabled = thread.notificationsEnabled !== false;
   return (
-    <Box className="kodex-thread-actions-menu">
-      <ActionIcon
-        aria-expanded={opened}
-        aria-haspopup="menu"
-        aria-label="Thread actions"
-        onClick={() => setOpened((current) => !current)}
-        variant="subtle"
-      >
-        <MoreHorizontal size={17} />
-      </ActionIcon>
-      {opened ? (
-        <div className="kodex-thread-actions-dropdown" role="menu">
-          <button
-            className="kodex-thread-actions-item"
-            onClick={() => {
+    <Menu position="bottom-end" withinPortal>
+      <Menu.Target>
+        <ActionIcon aria-label="Thread actions" variant="subtle">
+          <MoreHorizontal size={17} />
+        </ActionIcon>
+      </Menu.Target>
+      <Menu.Dropdown aria-label="Thread actions">
+        <Menu.Item
+          leftSection={thread.pinnedAt ? <PinOff size={14} /> : <Pin size={14} />}
+          onClick={() => {
             if (thread.pinnedAt) {
               onUnpinThread?.(thread.id);
               onSetThread((current) => (current ? { ...current, pinnedAt: null } : current));
-              setOpened(false);
               return;
             }
             onPinThread?.(thread.id);
             onSetThread((current) =>
               current ? { ...current, pinnedAt: new Date().toISOString() } : current,
             );
-            setOpened(false);
           }}
-            role="menuitem"
-            type="button"
-          >
-            {thread.pinnedAt ? <PinOff size={14} /> : <Pin size={14} />}
-            <span>{thread.pinnedAt ? "Unpin thread" : "Pin thread"}</span>
-          </button>
-          <button
-            className="kodex-thread-actions-item"
-            onClick={() => {
-              onRenameThread();
-              setOpened(false);
-            }}
-            role="menuitem"
-            type="button"
-          >
-            <Pencil size={14} />
-            <span>Rename thread</span>
-          </button>
-          <button
-            aria-checked={notificationsEnabled}
-            className="kodex-thread-actions-item"
-            onClick={() => {
+        >
+          {thread.pinnedAt ? "Unpin thread" : "Pin thread"}
+        </Menu.Item>
+        <Menu.Item leftSection={<Pencil size={14} />} onClick={onRenameThread}>
+          Rename thread
+        </Menu.Item>
+        <Menu.Item
+          aria-checked={notificationsEnabled}
+          closeMenuOnClick={false}
+          onClick={() => {
             const nextEnabled = !notificationsEnabled;
             onSetThreadNotificationsEnabled?.(thread.id, nextEnabled);
-            onSetThread((current) => (current ? { ...current, notificationsEnabled: nextEnabled } : current));
+            onSetThread((current) =>
+              current ? { ...current, notificationsEnabled: nextEnabled } : current,
+            );
           }}
-            role="menuitem"
-            type="button"
-          >
-            <span>Notifications</span>
+          rightSection={
             <Switch
               aria-hidden="true"
               checked={notificationsEnabled}
@@ -702,24 +690,23 @@ function ThreadActionsMenu({
               style={{ pointerEvents: "none" }}
               tabIndex={-1}
             />
-          </button>
-          {onArchiveThread ? (
-            <button
-              className="kodex-thread-actions-item"
-              onClick={() => {
-                onArchiveThread(thread.id);
-                setOpened(false);
-              }}
-              role="menuitem"
-              type="button"
-            >
-              <Archive size={14} />
-              <span>Archive thread</span>
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-    </Box>
+          }
+          role="menuitemcheckbox"
+        >
+          Notifications
+        </Menu.Item>
+        {onArchiveThread ? (
+          <Menu.Item
+            leftSection={<Archive size={14} />}
+            onClick={() => {
+              onArchiveThread(thread.id);
+            }}
+          >
+            Archive thread
+          </Menu.Item>
+        ) : null}
+      </Menu.Dropdown>
+    </Menu>
   );
 }
 

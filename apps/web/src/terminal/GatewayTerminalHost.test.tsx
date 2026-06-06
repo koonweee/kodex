@@ -82,7 +82,7 @@ describe("GatewayTerminalHost", () => {
     );
   });
 
-  it("keeps session controls delegated to the terminal hook", async () => {
+  it("closes by stopping the owned terminal session", async () => {
     const onClose = vi.fn();
     render(
       <MantineProvider>
@@ -91,7 +91,7 @@ describe("GatewayTerminalHost", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: "New terminal" }));
-    await userEvent.click(screen.getByRole("button", { name: "Stop terminal" }));
+    expect(screen.queryByRole("button", { name: "Stop terminal" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Close terminal" }));
 
     expect(createNewSession).toHaveBeenCalledTimes(1);

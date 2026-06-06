@@ -1,6 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  deleteTerminalSession,
   type Approval,
   type ApprovalResponse,
   type EventEnvelope,
@@ -19,6 +20,12 @@ import {
   ensureWorkspaceHasActivePane,
   type WorkspacePaneStoreAdapter,
 } from "./paneStore";
+import {
+  resolvePanePlacementHint,
+  type WorkspacePaneOpenOptions,
+  type WorkspacePanePlacementHintsById,
+  type WorkspacePanePlacementIntent,
+} from "./panePlacement";
 import type { WorkspaceModel, WorkspacePane, WorkspacePanePatch } from "./paneTypes";
 import { workspaceSubscribedThreadIds } from "./resourceSubscriptions";
 
@@ -90,11 +97,12 @@ type WorkspaceContextValue = {
   onShowMobileSidebar: () => void;
   onThreadSnapshotLoadFailed: (threadId: string) => void;
   onThreadSnapshotLoaded: (thread: ThreadSummary) => void;
-  openDraftThreadPane: (projectId?: string | null, options?: { duplicate?: boolean }) => Promise<void>;
-  openGeneratedUiPane: (threadId: string, title?: string | null) => Promise<void>;
-  openTerminalPane: (options?: { command?: string | null; cwd?: string | null; duplicate?: boolean }) => Promise<void>;
-  openThreadPane: (threadId: string, title?: string | null, options?: { duplicate?: boolean }) => Promise<void>;
+  openDraftThreadPane: (projectId?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
+  openGeneratedUiPane: (threadId: string, title?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
+  openTerminalPane: (options?: WorkspacePaneOpenOptions & { command?: string | null; cwd?: string | null }) => Promise<void>;
+  openThreadPane: (threadId: string, title?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
   paneHeaderActionsById: Record<string, ReactNode>;
+  panePlacementHintsById: WorkspacePanePlacementHintsById;
   persistLayout: (dockviewLayout: unknown, activePaneId: string | null) => void;
   publishThreadPaneTimelineAction: (action: ThreadPaneTimelineAction) => void;
   renderThreadComposer?: (pane: WorkspacePane, state: Omit<ThreadComposerState, "publishThreadPaneTimelineAction">) => ReactNode;
@@ -104,6 +112,7 @@ type WorkspaceContextValue = {
   showDebugEvents: boolean;
   subscribeLiveEvent: (handler: WorkspaceLiveEventHandler) => () => void;
   subscribeThreadPaneTimelineAction: (handler: ThreadPaneTimelineActionHandler) => () => void;
+  clearPanePlacementHints: (paneIds: string[]) => void;
   setPaneHeaderActions: (paneId: string, actions: ReactNode | null) => void;
   threadSummariesById: Record<string, ThreadSummary>;
   threadActions: WorkspaceThreadActions;
@@ -152,12 +161,34 @@ export function WorkspaceProvider({
   const liveEventHandlersRef = useRef(new Set<WorkspaceLiveEventHandler>());
   const onLiveEventRef = useRef(onLiveEvent);
   const [paneHeaderActionsById, setPaneHeaderActionsById] = useState<Record<string, ReactNode>>({});
+  const [panePlacementHintsById, setPanePlacementHintsById] = useState<WorkspacePanePlacementHintsById>({});
   const [workspace, setWorkspace] = useState<WorkspaceModel>(() => ensureWorkspaceHasActivePane(paneStore.load()));
   const [workspaceError, setWorkspaceError] = useState<Error | null>(null);
+  const workspaceRef = useRef(workspace);
 
   useEffect(() => {
     onLiveEventRef.current = onLiveEvent;
   }, [onLiveEvent]);
+
+  useEffect(() => {
+    workspaceRef.current = workspace;
+  }, [workspace]);
+
+  useEffect(() => {
+    const paneIds = new Set(workspace.panes.map((pane) => pane.id));
+    setPanePlacementHintsById((current) => {
+      let changed = false;
+      const next: WorkspacePanePlacementHintsById = {};
+      for (const [paneId, hint] of Object.entries(current)) {
+        if (paneIds.has(paneId)) {
+          next[paneId] = hint;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [workspace.panes]);
 
   useEffect(() => {
     try {
@@ -228,6 +259,38 @@ export function WorkspaceProvider({
     });
   }, []);
 
+  const clearPanePlacementHints = useCallback((paneIds: string[]) => {
+    if (paneIds.length === 0) {
+      return;
+    }
+    setPanePlacementHintsById((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const paneId of paneIds) {
+        if (Object.prototype.hasOwnProperty.call(next, paneId)) {
+          delete next[paneId];
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, []);
+
+  const recordPanePlacementHint = useCallback((
+    paneId: string,
+    intent: WorkspacePanePlacementIntent,
+    options: WorkspacePaneOpenOptions = {},
+  ) => {
+    const hint = resolvePanePlacementHint(workspaceRef.current, intent, options.placement);
+    if (!hint) {
+      return;
+    }
+    setPanePlacementHintsById((current) => ({
+      ...current,
+      [paneId]: hint,
+    }));
+  }, []);
+
   const persistLayout = useCallback((dockviewLayout: unknown, activePaneId: string | null) => {
     setWorkspace((current) => {
       if (!layoutMatchesWorkspacePanes(dockviewLayout, current.panes)) {
@@ -257,6 +320,12 @@ export function WorkspaceProvider({
   }, []);
 
   const closePane = useCallback((paneId: string, dockviewLayout: unknown) => {
+    const paneToClose = workspace.panes.find((pane) => pane.id === paneId) ?? null;
+    if (paneToClose?.kind === "terminal" && typeof paneToClose.target.terminalId === "string") {
+      void deleteTerminalSession(paneToClose.target.terminalId).catch((error: unknown) => {
+        setWorkspaceError(error instanceof Error ? error : new Error("Terminal session could not be stopped."));
+      });
+    }
     setWorkspace((current) => {
       const remainingPanes = current.panes.filter((pane) => pane.id !== paneId);
       if (remainingPanes.length === current.panes.length) {
@@ -275,7 +344,7 @@ export function WorkspaceProvider({
         panes,
       };
     });
-  }, []);
+  }, [workspace.panes]);
 
   const updatePane = useCallback(async (paneId: string, request: WorkspacePanePatch) => {
     setWorkspace((current) => {
@@ -309,7 +378,18 @@ export function WorkspaceProvider({
     });
   }, []);
 
-  const openPane = useCallback((pane: WorkspacePane, options: { duplicate?: boolean } = {}) => {
+  const openPane = useCallback((
+    pane: WorkspacePane,
+    intent: WorkspacePanePlacementIntent,
+    options: WorkspacePaneOpenOptions = {},
+  ) => {
+    const current = workspaceRef.current;
+    const willAppend = options.duplicate || !current.panes.some(
+      (candidate) => stableJsonKey(paneIdentity(candidate)) === stableJsonKey(paneIdentity(pane)),
+    );
+    if (willAppend) {
+      recordPanePlacementHint(pane.id, intent, options);
+    }
     setWorkspace((current) => {
       if (!options.duplicate) {
         const targetKey = stableJsonKey(paneIdentity(pane));
@@ -339,15 +419,20 @@ export function WorkspaceProvider({
         panes: [...current.panes, pane],
       };
     });
-  }, []);
+  }, [recordPanePlacementHint]);
 
   const duplicatePane = useCallback((paneId: string) => {
+    const sourcePane = workspaceRef.current.panes.find((candidate) => candidate.id === paneId);
+    if (!sourcePane) {
+      return;
+    }
+    const duplicatedPane = duplicateWorkspacePane(sourcePane);
+    recordPanePlacementHint(duplicatedPane.id, "duplicate", { placement: { sourcePaneId: paneId } });
     setWorkspace((current) => {
       const pane = current.panes.find((candidate) => candidate.id === paneId);
       if (!pane) {
         return current;
       }
-      const duplicatedPane = duplicateWorkspacePane(pane);
       return {
         ...current,
         activePaneId: duplicatedPane.id,
@@ -355,10 +440,10 @@ export function WorkspaceProvider({
         panes: [...current.panes, duplicatedPane],
       };
     });
-  }, []);
+  }, [recordPanePlacementHint]);
 
   const openThreadPane = useCallback(
-    async (threadId: string, title?: string | null, options: { duplicate?: boolean } = {}) => {
+    async (threadId: string, title?: string | null, options: WorkspacePaneOpenOptions = {}) => {
       const pane: WorkspacePane = {
         id: createPaneId("thread"),
         kind: "thread",
@@ -366,8 +451,12 @@ export function WorkspaceProvider({
         title: title ?? null,
       };
       if (options.duplicate) {
-        openPane(pane, options);
+        openPane(pane, "duplicate", options);
         return;
+      }
+      const current = workspaceRef.current;
+      if (!current.panes.some((candidate) => stableJsonKey(paneIdentity(candidate)) === stableJsonKey(paneIdentity(pane)))) {
+        recordPanePlacementHint(pane.id, "thread", options);
       }
       setWorkspace((current) => {
         const targetKey = stableJsonKey(paneIdentity(pane));
@@ -390,22 +479,6 @@ export function WorkspaceProvider({
           };
         }
 
-        const activePane = current.activePaneId
-          ? current.panes.find((candidate) => candidate.id === current.activePaneId) ?? null
-          : null;
-        if (activePane?.kind === "thread" && activePane.target.mode === "existing") {
-          const retargetedPane = { ...pane, id: activePane.id } as WorkspacePane;
-          const panes = current.panes.map((candidate) =>
-            candidate.id === activePane.id ? retargetedPane : candidate,
-          );
-          return {
-            ...current,
-            activePaneId: activePane.id,
-            dockviewLayout: layoutMatchesWorkspacePanes(current.dockviewLayout, panes) ? current.dockviewLayout : null,
-            panes,
-          };
-        }
-
         return {
           ...current,
           activePaneId: pane.id,
@@ -414,30 +487,30 @@ export function WorkspaceProvider({
         };
       });
     },
-    [openPane],
+    [openPane, recordPanePlacementHint],
   );
 
   const openDraftThreadPane = useCallback(
-    async (projectId?: string | null, options: { duplicate?: boolean } = {}) => {
-      openPane(createDraftThreadPane(projectId), options);
+    async (projectId?: string | null, options: WorkspacePaneOpenOptions = {}) => {
+      openPane(createDraftThreadPane(projectId), "draftThread", options);
     },
     [openPane],
   );
 
   const openGeneratedUiPane = useCallback(
-    async (threadId: string, title?: string | null) => {
+    async (threadId: string, title?: string | null, options: WorkspacePaneOpenOptions = {}) => {
       openPane({
         id: createPaneId("generatedUi"),
         kind: "generatedUi",
         target: { mode: "latest", threadId },
         title: title ?? "Generated UI",
-      });
+      }, "generatedUi", options);
     },
     [openPane],
   );
 
   const openTerminalPane = useCallback(
-    async (options: { command?: string | null; cwd?: string | null; duplicate?: boolean } = {}) => {
+    async (options: WorkspacePaneOpenOptions & { command?: string | null; cwd?: string | null } = {}) => {
       openPane(
         {
           id: createPaneId("terminal"),
@@ -448,7 +521,8 @@ export function WorkspaceProvider({
           },
           title: "Terminal",
         },
-        { duplicate: true },
+        "terminal",
+        { ...options, duplicate: true },
       );
     },
     [openPane],
@@ -474,6 +548,7 @@ export function WorkspaceProvider({
       openTerminalPane,
       openThreadPane,
       paneHeaderActionsById,
+      panePlacementHintsById,
       persistLayout,
       publishThreadPaneTimelineAction,
       renderThreadComposer: renderThreadComposer
@@ -489,6 +564,7 @@ export function WorkspaceProvider({
       showDebugEvents,
       subscribeLiveEvent,
       subscribeThreadPaneTimelineAction,
+      clearPanePlacementHints,
       setPaneHeaderActions,
       threadSummariesById,
       threadActions,
@@ -514,6 +590,7 @@ export function WorkspaceProvider({
       openTerminalPane,
       openThreadPane,
       paneHeaderActionsById,
+      panePlacementHintsById,
       persistLayout,
       publishThreadPaneTimelineAction,
       renderThreadComposer,
@@ -523,6 +600,7 @@ export function WorkspaceProvider({
       showDebugEvents,
       subscribeLiveEvent,
       subscribeThreadPaneTimelineAction,
+      clearPanePlacementHints,
       setPaneHeaderActions,
       threadSummariesById,
       threadActions,

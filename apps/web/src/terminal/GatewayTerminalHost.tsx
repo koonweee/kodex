@@ -1,5 +1,5 @@
 import { ActionIcon, Alert, Badge, Box, Button, Group, Loader, Text, Tooltip } from "@mantine/core";
-import { Plus, Square, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useCallback, useState } from "react";
 
 import { terminalWebSocketUrl } from "../api/client";
@@ -18,7 +18,6 @@ const TERMINAL_TEXT = {
   fallbackTitle: "Terminal",
   loading: "Starting terminal",
   reconnect: "Reconnect terminal",
-  stop: "Stop terminal",
 };
 
 const TERMINAL_ACCESSORY_KEYS: Array<{ data: string; label: string }> = [
@@ -77,6 +76,13 @@ export function GatewayTerminalHost({ onClose, opened }: GatewayTerminalHostProp
     await recoverSession();
   }
 
+  async function handleClose() {
+    if (session) {
+      await stopSession();
+    }
+    onClose();
+  }
+
   return (
     <Box aria-label="Gateway terminal" className="kodex-terminal-host" role="dialog">
       <Group className="kodex-terminal-header" justify="space-between" wrap="nowrap">
@@ -103,24 +109,12 @@ export function GatewayTerminalHost({ onClose, opened }: GatewayTerminalHostProp
               <Plus size={16} />
             </ActionIcon>
           </Tooltip>
-          <Tooltip label={TERMINAL_TEXT.stop}>
-            <ActionIcon
-              aria-label={TERMINAL_TEXT.stop}
-              color="gray"
-              disabled={!session || isLoading}
-              onClick={stopSession}
-              size={actionSize}
-              type="button"
-              variant="subtle"
-            >
-              <Square size={14} />
-            </ActionIcon>
-          </Tooltip>
           <Tooltip label={TERMINAL_TEXT.close}>
             <ActionIcon
               aria-label={TERMINAL_TEXT.close}
               color="gray"
-              onClick={onClose}
+              disabled={isLoading}
+              onClick={() => void handleClose()}
               size={actionSize}
               type="button"
               variant="subtle"

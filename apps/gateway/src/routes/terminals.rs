@@ -84,14 +84,16 @@ pub async fn connect_terminal_ws(
             "terminal {terminal_id} was not found"
         )));
     };
+    let attachment = session.attach();
     Ok(ws.on_upgrade(move |socket| async move {
-        forward_terminal_socket(socket, session).await;
+        forward_terminal_socket(socket, session, attachment).await;
     }))
 }
 
 async fn forward_terminal_socket(
     mut socket: WebSocket,
     session: std::sync::Arc<crate::terminal::TerminalSession>,
+    _attachment: crate::terminal::TerminalAttachmentGuard,
 ) {
     let mut stdout = session.subscribe();
     let mut exit = session.subscribe_exit();

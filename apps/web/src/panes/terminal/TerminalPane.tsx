@@ -1,5 +1,5 @@
 import { ActionIcon, Alert, Badge, Box, Button, Group, Loader, Text, Tooltip } from "@mantine/core";
-import { Plus, RotateCw, Square } from "lucide-react";
+import { Plus, RotateCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { terminalWebSocketUrl } from "../../api/client";
@@ -20,7 +20,6 @@ const TERMINAL_TEXT = {
   fallbackTitle: "Terminal",
   loading: "Starting terminal",
   reconnect: "Reconnect terminal",
-  stop: "Stop terminal",
 };
 
 const TERMINAL_ACCESSORY_KEYS: Array<{ data: string; label: string }> = [
@@ -47,7 +46,7 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
     }),
     [pane.title, targetCommand, targetCwd],
   );
-  const { createNewSession, error, isLoading, recoverSession, session, stopSession } = useGatewayTerminalSession(true, {
+  const { createNewSession, error, isLoading, recoverSession, session } = useGatewayTerminalSession(true, {
     createRequest,
     preferredTerminalId: targetTerminalId,
     reuseRunning: false,
@@ -133,19 +132,6 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
             <Plus size={16} />
           </ActionIcon>
         </Tooltip>
-        <Tooltip label={TERMINAL_TEXT.stop}>
-          <ActionIcon
-            aria-label={TERMINAL_TEXT.stop}
-            color="gray"
-            disabled={!session || isLoading}
-            onClick={stopSession}
-            size={actionSize}
-            type="button"
-            variant="subtle"
-          >
-            <Square size={14} />
-          </ActionIcon>
-        </Tooltip>
         {connectionMessage ? (
           <Tooltip label={TERMINAL_TEXT.reconnect}>
             <ActionIcon
@@ -163,7 +149,7 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
         ) : null}
       </Group>
     ),
-    [actionSize, connectionMessage, createNewSession, handleReconnect, isLoading, session, stopSession],
+    [actionSize, connectionMessage, createNewSession, handleReconnect, isLoading],
   );
 
   useEffect(() => {

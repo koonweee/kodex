@@ -1,3 +1,4 @@
+import { MantineProvider } from "@mantine/core";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { useEffect } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -36,24 +37,26 @@ describe("WorkspaceDock sync", () => {
     }));
 
     render(
-      <div className="dv-tabs-and-actions-container">
-        <div className="dv-tabs-container">
-          {panels.map((panel) => (
-            <div className="dv-tab" key={panel.id}>
-              {panel.title}
-            </div>
-          ))}
+      <MantineProvider>
+        <div className="dv-tabs-and-actions-container">
+          <div className="dv-tabs-container">
+            {panels.map((panel) => (
+              <div className="dv-tab" key={panel.id}>
+                {panel.title}
+              </div>
+            ))}
+          </div>
+          <WorkspaceTabOverflowActions
+            activePanel={panels[0] as never}
+            api={{} as never}
+            containerApi={{} as never}
+            group={{} as never}
+            headerPosition="top"
+            isGroupActive
+            panels={panels as never}
+          />
         </div>
-        <WorkspaceTabOverflowActions
-          activePanel={panels[0] as never}
-          api={{} as never}
-          containerApi={{} as never}
-          group={{} as never}
-          headerPosition="top"
-          isGroupActive
-          panels={panels as never}
-        />
-      </div>,
+      </MantineProvider>,
     );
     const tabsContainer = document.querySelector<HTMLElement>(".dv-tabs-container");
     expect(tabsContainer).not.toBeNull();
@@ -63,9 +66,11 @@ describe("WorkspaceDock sync", () => {
     });
 
     fireEvent(window, new Event("resize"));
-    expect(await screen.findByRole("button", { name: "More tabs" })).toHaveTextContent("+4");
-    fireEvent.click(screen.getByRole("button", { name: "More tabs" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Pane 6" }));
+    const moreTabsButton = await screen.findByRole("button", { name: "More tabs" });
+    expect(moreTabsButton).toHaveTextContent("+4");
+
+    fireEvent.click(moreTabsButton);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Pane 6" }));
 
     expect(panels[5]?.focus).toHaveBeenCalledTimes(1);
   });
@@ -136,11 +141,12 @@ describe("WorkspaceDock sync", () => {
     expect(api.activePanel?.id).toBe("pane-b");
   });
 
-  it("adds new workspace panes without clearing the existing Dockview layout", async () => {
+  it("adds new workspace panes at their placement hint without clearing the existing Dockview layout", async () => {
     vi.useFakeTimers();
     try {
       const api = fakeDockviewApi(["pane-a", "pane-b"]);
       const onReconciledLayout = vi.fn();
+      const onPanePlacementHintsConsumed = vi.fn();
       const suppressEventsRef = { current: false };
 
       syncWorkspaceIntoDockview(
@@ -152,6 +158,10 @@ describe("WorkspaceDock sync", () => {
         ], "pane-c"),
         suppressEventsRef,
         onReconciledLayout,
+        {
+          "pane-c": { direction: "below", referencePaneId: "pane-b" },
+        },
+        onPanePlacementHintsConsumed,
       );
 
       expect(api.clear).not.toHaveBeenCalled();
@@ -159,7 +169,7 @@ describe("WorkspaceDock sync", () => {
       expect(api.addPanel).toHaveBeenCalledWith(
         expect.objectContaining({
           id: "pane-c",
-          position: { referencePanel: "pane-a", direction: "right" },
+          position: { referencePanel: "pane-b", direction: "below" },
         }),
       );
       expect(api.panels.map((panel) => panel.id)).toEqual(["pane-a", "pane-b", "pane-c"]);
@@ -180,6 +190,7 @@ describe("WorkspaceDock sync", () => {
         },
         "pane-c",
       );
+      expect(onPanePlacementHintsConsumed).toHaveBeenCalledWith(["pane-c"]);
     } finally {
       vi.useRealTimers();
     }

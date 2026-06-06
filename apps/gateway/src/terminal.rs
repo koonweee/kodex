@@ -4,10 +4,10 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, RwLock as StdRwLock,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc, Mutex as StdMutex, RwLock as StdRwLock,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{anyhow, Context};
@@ -25,6 +25,8 @@ const STDOUT_CHANNEL_CAPACITY: usize = 1024;
 const STDIN_CHANNEL_CAPACITY: usize = 1024;
 const EXIT_CHANNEL_CAPACITY: usize = 16;
 pub const MAX_TERMINAL_SESSIONS: usize = 8;
+pub const TERMINAL_DETACHED_SESSION_TTL: Duration = Duration::from_secs(5 * 60);
+const TERMINAL_CLEANUP_INTERVAL: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
 pub struct TerminalManager {
@@ -51,7 +53,7 @@ impl TerminalManager {
             .filter(|title| !title.trim().is_empty())
             .unwrap_or_else(|| terminal_title(&command, &cwd));
         let mut sessions = self.sessions.lock().await;
-        sessions.retain(|_, session| !session.cancelled());
+        retain_live_sessions(&mut sessions, TERMINAL_DETACHED_SESSION_TTL);
         if sessions.len() >= MAX_TERMINAL_SESSIONS {
             return Err(anyhow!(
                 "terminal session limit reached; close a terminal before opening another"
@@ -64,7 +66,8 @@ impl TerminalManager {
     }
 
     pub async fn list_sessions(&self) -> Vec<TerminalSessionInfo> {
-        self.cleanup_exited().await;
+        self.cleanup_stale_sessions(TERMINAL_DETACHED_SESSION_TTL)
+            .await;
         let mut sessions = self
             .sessions
             .lock()
@@ -96,6 +99,44 @@ impl TerminalManager {
             .await
             .retain(|_, session| !session.cancelled());
     }
+
+    pub async fn cleanup_stale_sessions(&self, detached_ttl: Duration) -> usize {
+        let mut sessions = self.sessions.lock().await;
+        let before = sessions.len();
+        retain_live_sessions(&mut sessions, detached_ttl);
+        before.saturating_sub(sessions.len())
+    }
+}
+
+pub fn start_terminal_cleanup(manager: TerminalManager) {
+    tokio::spawn(async move {
+        let mut ticks = tokio::time::interval(TERMINAL_CLEANUP_INTERVAL);
+        loop {
+            ticks.tick().await;
+            let removed = manager
+                .cleanup_stale_sessions(TERMINAL_DETACHED_SESSION_TTL)
+                .await;
+            if removed > 0 {
+                tracing::debug!(removed, "cleaned up detached terminal sessions");
+            }
+        }
+    });
+}
+
+fn retain_live_sessions(
+    sessions: &mut HashMap<String, Arc<TerminalSession>>,
+    detached_ttl: Duration,
+) {
+    sessions.retain(|_, session| {
+        if session.cancelled() {
+            return false;
+        }
+        if session.detached_for(detached_ttl) {
+            session.kill();
+            return false;
+        }
+        true
+    });
 }
 
 pub struct TerminalSession {
@@ -109,6 +150,7 @@ pub struct TerminalSession {
     stdout: broadcast::Sender<Vec<u8>>,
     exit: broadcast::Sender<()>,
     history: Arc<TerminalHistory>,
+    attachments: Arc<TerminalAttachments>,
 }
 
 impl TerminalSession {
@@ -255,6 +297,7 @@ impl TerminalSession {
             stdout,
             exit,
             history,
+            attachments: Arc::new(TerminalAttachments::new_detached()),
         })
     }
 
@@ -282,6 +325,13 @@ impl TerminalSession {
         self.exit.subscribe()
     }
 
+    pub fn attach(&self) -> TerminalAttachmentGuard {
+        self.attachments.attach();
+        TerminalAttachmentGuard {
+            attachments: self.attachments.clone(),
+        }
+    }
+
     pub fn history_parts(&self) -> (Vec<u8>, Vec<u8>) {
         self.history.bytes_parts()
     }
@@ -300,6 +350,79 @@ impl TerminalSession {
 
     pub fn cancelled(&self) -> bool {
         self.cancelled.load(Ordering::SeqCst)
+    }
+
+    fn detached_for(&self, ttl: Duration) -> bool {
+        self.attachments.detached_for(ttl)
+    }
+}
+
+#[derive(Debug)]
+pub struct TerminalAttachmentGuard {
+    attachments: Arc<TerminalAttachments>,
+}
+
+impl Drop for TerminalAttachmentGuard {
+    fn drop(&mut self) {
+        self.attachments.detach();
+    }
+}
+
+#[derive(Debug)]
+struct TerminalAttachments {
+    count: AtomicUsize,
+    last_detached_at: StdMutex<Option<Instant>>,
+}
+
+impl TerminalAttachments {
+    fn new_detached() -> Self {
+        Self {
+            count: AtomicUsize::new(0),
+            last_detached_at: StdMutex::new(Some(Instant::now())),
+        }
+    }
+
+    fn attach(&self) {
+        let previous = self.count.fetch_add(1, Ordering::SeqCst);
+        if previous == 0 {
+            *self
+                .last_detached_at
+                .lock()
+                .expect("terminal attachment lock poisoned") = None;
+        }
+    }
+
+    fn detach(&self) {
+        loop {
+            let current = self.count.load(Ordering::SeqCst);
+            if current == 0 {
+                return;
+            }
+            if self
+                .count
+                .compare_exchange(current, current - 1, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                if current == 1 {
+                    *self
+                        .last_detached_at
+                        .lock()
+                        .expect("terminal attachment lock poisoned") = Some(Instant::now());
+                }
+                return;
+            }
+        }
+    }
+
+    fn detached_for(&self, ttl: Duration) -> bool {
+        let last_detached_at = *self
+            .last_detached_at
+            .lock()
+            .expect("terminal attachment lock poisoned");
+        self.count.load(Ordering::SeqCst) == 0
+            && last_detached_at
+                .map(|detached_at| detached_at.elapsed() >= ttl)
+                .unwrap_or(false)
     }
 }
 
@@ -568,6 +691,55 @@ mod tests {
         for terminal_id in terminal_ids {
             assert!(manager.delete_session(&terminal_id).await);
         }
+    }
+
+    #[tokio::test]
+    async fn manager_cleans_up_never_attached_sessions_after_ttl() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = TerminalManager::new(temp.path().to_path_buf());
+        let terminal = manager
+            .create_session(CreateTerminalSession {
+                command: Some("/bin/sh".to_string()),
+                cwd: None,
+                title: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(manager.list_sessions().await.len(), 1);
+        assert_eq!(manager.cleanup_stale_sessions(Duration::ZERO).await, 1);
+        assert!(manager.get_session(&terminal.id).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn manager_keeps_attached_sessions_during_cleanup() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = TerminalManager::new(temp.path().to_path_buf());
+        let terminal = manager
+            .create_session(CreateTerminalSession {
+                command: Some("/bin/sh".to_string()),
+                cwd: None,
+                title: None,
+            })
+            .await
+            .unwrap();
+        let session = manager.get_session(&terminal.id).await.unwrap();
+        let attachment = session.attach();
+
+        assert_eq!(manager.cleanup_stale_sessions(Duration::ZERO).await, 0);
+        assert!(manager.get_session(&terminal.id).await.is_some());
+
+        drop(attachment);
+        assert_eq!(
+            manager
+                .cleanup_stale_sessions(Duration::from_secs(60))
+                .await,
+            0
+        );
+        assert!(manager.get_session(&terminal.id).await.is_some());
+
+        assert_eq!(manager.cleanup_stale_sessions(Duration::ZERO).await, 1);
+        assert!(manager.get_session(&terminal.id).await.is_none());
     }
 
     #[tokio::test]

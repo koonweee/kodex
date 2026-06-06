@@ -1,3 +1,4 @@
+import { Menu } from "@mantine/core";
 import {
   DockviewReact,
   themeAbyss,
@@ -10,6 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
+import type { WorkspacePanePlacementHintsById, WorkspacePaneSplitDirection } from "./panePlacement";
 import { paneTitle } from "./paneTypes";
 import { WorkspacePaneRenderer } from "./paneRegistry";
 import { useWorkspace } from "./WorkspaceProvider";
@@ -24,6 +26,8 @@ type WorkspaceDockProps = {
   onActivePaneChange: (paneId: string | null) => void;
   onLayoutChange: (layout: unknown, activePaneId: string | null) => void;
   onPaneClose: (paneId: string, layout: unknown) => void;
+  onPanePlacementHintsConsumed?: (paneIds: string[]) => void;
+  panePlacementHintsById?: WorkspacePanePlacementHintsById;
   workspace: WorkspaceModel;
 };
 
@@ -45,6 +49,8 @@ export function WorkspaceDock({
   onActivePaneChange,
   onLayoutChange,
   onPaneClose,
+  onPanePlacementHintsConsumed,
+  panePlacementHintsById = {},
   workspace,
 }: WorkspaceDockProps) {
   const apiRef = useRef<DockviewApi | null>(null);
@@ -82,7 +88,14 @@ export function WorkspaceDock({
   const handleReady = useCallback(
     (event: DockviewReadyEvent) => {
       apiRef.current = event.api;
-      syncWorkspaceIntoDockview(event.api, workspace, suppressEventsRef, onLayoutChange);
+      syncWorkspaceIntoDockview(
+        event.api,
+        workspace,
+        suppressEventsRef,
+        onLayoutChange,
+        panePlacementHintsById,
+        onPanePlacementHintsConsumed,
+      );
       disposablesRef.current = [
         event.api.onDidLayoutChange(() => scheduleLayoutChange(event.api)),
         event.api.onDidActivePanelChange((panel) => {
@@ -97,15 +110,22 @@ export function WorkspaceDock({
         }),
       ];
     },
-    [onActivePaneChange, onPaneClose, scheduleLayoutChange, workspace],
+    [onActivePaneChange, onPaneClose, onPanePlacementHintsConsumed, panePlacementHintsById, scheduleLayoutChange, workspace],
   );
 
   useEffect(() => {
     const api = apiRef.current;
     if (api) {
-      syncWorkspaceIntoDockview(api, workspace, suppressEventsRef, onLayoutChange);
+      syncWorkspaceIntoDockview(
+        api,
+        workspace,
+        suppressEventsRef,
+        onLayoutChange,
+        panePlacementHintsById,
+        onPanePlacementHintsConsumed,
+      );
     }
-  }, [onLayoutChange, workspace]);
+  }, [onLayoutChange, onPanePlacementHintsConsumed, panePlacementHintsById, workspace]);
 
   useEffect(
     () => () => {
@@ -148,7 +168,6 @@ export function WorkspaceRightHeaderActions({ activePanel }: IDockviewHeaderActi
 export function WorkspaceTabOverflowActions({ activePanel, panels }: IDockviewHeaderActionsProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [overflowPanelIds, setOverflowPanelIds] = useState<string[]>([]);
-  const [opened, setOpened] = useState(false);
   const measureOverflow = useCallback(() => {
     const root = rootRef.current;
     const header = root?.closest(".dv-tabs-and-actions-container");
@@ -199,35 +218,27 @@ export function WorkspaceTabOverflowActions({ activePanel, panels }: IDockviewHe
   return (
     <div className="kodex-workspace-tab-overflow" ref={rootRef}>
       {overflowPanels.length > 0 ? (
-        <button
-          aria-expanded={opened}
-          aria-haspopup="menu"
-          aria-label="More tabs"
-          className="kodex-workspace-tab-overflow-button"
-          onClick={() => setOpened((current) => !current)}
-          type="button"
-        >
-          +{overflowPanels.length}
-        </button>
-      ) : null}
-      {opened && overflowPanels.length > 0 ? (
-        <div className="kodex-workspace-tab-overflow-menu" role="menu">
-          {overflowPanels.map((panel) => (
-            <button
-              aria-current={panel.id === activePanel?.id ? "page" : undefined}
-              className="kodex-workspace-tab-overflow-item"
-              key={panel.id}
-              onClick={() => {
-                panel.focus();
-                setOpened(false);
-              }}
-              role="menuitem"
-              type="button"
-            >
-              <span>{panel.title ?? panel.id}</span>
+        <Menu position="bottom-start" withinPortal>
+          <Menu.Target>
+            <button aria-label="More tabs" className="kodex-workspace-tab-overflow-button" type="button">
+              +{overflowPanels.length}
             </button>
-          ))}
-        </div>
+          </Menu.Target>
+          <Menu.Dropdown aria-label="More tabs" className="kodex-workspace-tab-overflow-menu">
+            {overflowPanels.map((panel) => (
+              <Menu.Item
+                aria-current={panel.id === activePanel?.id ? "page" : undefined}
+                className="kodex-workspace-tab-overflow-item"
+                key={panel.id}
+                onClick={() => {
+                  panel.focus();
+                }}
+              >
+                {panel.title ?? panel.id}
+              </Menu.Item>
+            ))}
+          </Menu.Dropdown>
+        </Menu>
       ) : null}
     </div>
   );
@@ -250,12 +261,20 @@ export function syncWorkspaceIntoDockview(
   workspace: WorkspaceModel,
   suppressEventsRef: { current: boolean },
   onReconciledLayout?: (layout: unknown, activePaneId: string | null) => void,
+  panePlacementHintsById: WorkspacePanePlacementHintsById = {},
+  onPanePlacementHintsConsumed?: (paneIds: string[]) => void,
 ) {
   suppressEventsRef.current = true;
   let shouldPersistLiveLayout = false;
+  const consumedPlacementHintIds = new Set<string>();
   try {
     if (canReconcileWorkspacePanelsInPlace(api, workspace)) {
-      shouldPersistLiveLayout = reconcileWorkspacePanelsInPlace(api, workspace);
+      shouldPersistLiveLayout = reconcileWorkspacePanelsInPlace(
+        api,
+        workspace,
+        panePlacementHintsById,
+        consumedPlacementHintIds,
+      );
       return;
     }
     const shouldHydrateSavedLayout =
@@ -272,17 +291,20 @@ export function syncWorkspaceIntoDockview(
         });
       }
     } else {
-      addWorkspacePanels(api, workspace);
+      addWorkspacePanels(api, workspace, panePlacementHintsById, consumedPlacementHintIds);
     }
     if (workspace.activePaneId) {
       api.getPanel(workspace.activePaneId)?.focus();
     }
   } catch {
     api.clear();
-    addWorkspacePanels(api, workspace);
+    addWorkspacePanels(api, workspace, panePlacementHintsById, consumedPlacementHintIds);
   } finally {
     window.setTimeout(() => {
       suppressEventsRef.current = false;
+      if (consumedPlacementHintIds.size > 0) {
+        onPanePlacementHintsConsumed?.([...consumedPlacementHintIds]);
+      }
       if (shouldPersistLiveLayout) {
         onReconciledLayout?.(api.toJSON(), api.activePanel?.id ?? workspace.activePaneId ?? null);
       }
@@ -305,7 +327,12 @@ function livePanelDescriptorsMatchWorkspace(api: DockviewApi, workspace: Workspa
   });
 }
 
-function reconcileWorkspacePanelsInPlace(api: DockviewApi, workspace: WorkspaceModel) {
+function reconcileWorkspacePanelsInPlace(
+  api: DockviewApi,
+  workspace: WorkspaceModel,
+  panePlacementHintsById: WorkspacePanePlacementHintsById,
+  consumedPlacementHintIds: Set<string>,
+) {
   let layoutChanged = false;
   const workspacePaneIds = new Set(workspace.panes.map((pane) => pane.id));
   for (const panel of [...api.panels]) {
@@ -340,9 +367,7 @@ function reconcileWorkspacePanelsInPlace(api: DockviewApi, workspace: WorkspaceM
       component: "workspacePane",
       title: paneTitle(pane),
       params: { pane, activePaneId: workspace.activePaneId ?? null },
-      ...(firstPane && api.getPanel(firstPane.id)
-        ? { floating: false as const, position: { referencePanel: firstPane.id, direction: "right" as const } }
-        : {}),
+      ...panelPlacementOptions(api, pane, firstPane, panePlacementHintsById, consumedPlacementHintIds),
     });
     layoutChanged = true;
   }
@@ -353,7 +378,12 @@ function reconcileWorkspacePanelsInPlace(api: DockviewApi, workspace: WorkspaceM
   return layoutChanged;
 }
 
-function addWorkspacePanels(api: DockviewApi, workspace: WorkspaceModel) {
+function addWorkspacePanels(
+  api: DockviewApi,
+  workspace: WorkspaceModel,
+  panePlacementHintsById: WorkspacePanePlacementHintsById = {},
+  consumedPlacementHintIds: Set<string> = new Set(),
+) {
   const [firstPane] = workspace.panes;
   for (const [index, pane] of workspace.panes.entries()) {
     api.addPanel<DockviewPaneParams>({
@@ -361,11 +391,37 @@ function addWorkspacePanels(api: DockviewApi, workspace: WorkspaceModel) {
       component: "workspacePane",
       title: paneTitle(pane),
       params: { pane, activePaneId: workspace.activePaneId ?? null },
-      ...(index > 0 && firstPane
-        ? { floating: false as const, position: { referencePanel: firstPane.id, direction: "right" as const } }
+      ...(index > 0
+        ? panelPlacementOptions(api, pane, firstPane ?? null, panePlacementHintsById, consumedPlacementHintIds)
         : {}),
     });
   }
+}
+
+function panelPlacementOptions(
+  api: DockviewApi,
+  pane: WorkspacePane,
+  fallbackReferencePane: WorkspacePane | null,
+  panePlacementHintsById: WorkspacePanePlacementHintsById,
+  consumedPlacementHintIds: Set<string>,
+): { floating: false; position: { direction: WorkspacePaneSplitDirection; referencePanel: string } } | Record<string, never> {
+  const hint = panePlacementHintsById[pane.id];
+  if (hint) {
+    consumedPlacementHintIds.add(pane.id);
+    if (api.getPanel(hint.referencePaneId)) {
+      return {
+        floating: false,
+        position: { referencePanel: hint.referencePaneId, direction: hint.direction },
+      };
+    }
+  }
+  if (fallbackReferencePane && api.getPanel(fallbackReferencePane.id)) {
+    return {
+      floating: false,
+      position: { referencePanel: fallbackReferencePane.id, direction: "right" },
+    };
+  }
+  return {};
 }
 
 function stableJsonKey(value: unknown): string {
