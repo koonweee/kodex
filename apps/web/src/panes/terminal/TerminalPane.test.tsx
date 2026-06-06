@@ -8,6 +8,7 @@ import type { WorkspacePane } from "../../workspace/paneTypes";
 import { TerminalPane } from "./TerminalPane";
 
 const workspaceMocks = vi.hoisted(() => ({
+  openNewTerminalPane: vi.fn(),
   openTerminalPane: vi.fn(),
   setPaneHeaderActions: vi.fn(),
   setPaneTabStatus: vi.fn(),
@@ -16,6 +17,7 @@ const workspaceMocks = vi.hoisted(() => ({
 
 vi.mock("../../workspace/WorkspaceProvider", () => ({
   useWorkspace: () => ({
+    openNewTerminalPane: workspaceMocks.openNewTerminalPane,
     openTerminalPane: workspaceMocks.openTerminalPane,
     setPaneHeaderActions: workspaceMocks.setPaneHeaderActions,
     setPaneTabStatus: workspaceMocks.setPaneTabStatus,
@@ -45,6 +47,8 @@ const session: TerminalSessionInfo = {
 
 describe("TerminalPane", () => {
   beforeEach(() => {
+    workspaceMocks.openNewTerminalPane.mockReset();
+    workspaceMocks.openNewTerminalPane.mockResolvedValue(undefined);
     workspaceMocks.openTerminalPane.mockReset();
     workspaceMocks.openTerminalPane.mockResolvedValue(undefined);
     workspaceMocks.setPaneHeaderActions.mockReset();
@@ -104,7 +108,7 @@ describe("TerminalPane", () => {
     fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
 
     await waitFor(() => {
-      expect(workspaceMocks.openTerminalPane).toHaveBeenCalledWith({
+      expect(workspaceMocks.openNewTerminalPane).toHaveBeenCalledWith({
         cwd: "/tmp/worktree",
         placement: { direction: "within", sourcePaneId: "pane-terminal" },
       });

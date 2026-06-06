@@ -238,7 +238,7 @@ function WorkspaceSidebarWithPaneActions({
                 props.onOpenTerminal?.();
                 return;
               }
-              void openTerminalPane({ duplicate: true }).catch((error: unknown) => {
+              void openTerminalPane().catch((error: unknown) => {
                 console.error("Failed to open workspace terminal pane", error);
               });
             }

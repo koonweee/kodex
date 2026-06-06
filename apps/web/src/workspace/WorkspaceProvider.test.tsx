@@ -58,7 +58,7 @@ describe("WorkspaceProvider pane commands", () => {
     expect(store.getState().panes.filter((pane) => pane.kind === "thread" && pane.target.mode === "existing" && pane.target.threadId === "thread-1")).toHaveLength(2);
   });
 
-  it("creates terminal panes as new local pane instances and deletes terminal resources on close", async () => {
+  it("focuses an existing terminal pane unless a new terminal is requested", async () => {
     vi.mocked(deleteTerminalSession).mockResolvedValue({ id: "terminal-1" });
     const store = createMemoryWorkspacePaneStore(workspaceState([
       threadPane("pane-thread-1", "thread-1", "Thread 1"),
@@ -67,6 +67,13 @@ describe("WorkspaceProvider pane commands", () => {
     renderProvider(store);
 
     fireEvent.click(screen.getByRole("button", { name: "Open terminal" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("active-pane")).toHaveTextContent("pane-terminal-1");
+    });
+    expect(screen.getByTestId("pane-count")).toHaveTextContent("2");
+
+    fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("pane-count")).toHaveTextContent("3");
@@ -213,9 +220,12 @@ function CommandHarness() {
       <button type="button" onClick={() => void workspace.openTerminalPane()}>
         Open terminal
       </button>
+      <button type="button" onClick={() => void workspace.openNewTerminalPane()}>
+        New terminal
+      </button>
       <button
         type="button"
-        onClick={() => void workspace.openTerminalPane({ placement: { direction: "within", sourcePaneId: "pane-terminal-1" } })}
+        onClick={() => void workspace.openNewTerminalPane({ placement: { direction: "within", sourcePaneId: "pane-terminal-1" } })}
       >
         Open terminal tab
       </button>

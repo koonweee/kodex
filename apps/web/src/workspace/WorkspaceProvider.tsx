@@ -59,6 +59,7 @@ type ThreadPaneChromeState = {
 };
 
 export type WorkspacePaneTabStatus = "connected" | "connecting" | "error" | "closed";
+type WorkspaceTerminalOpenOptions = WorkspacePaneOpenOptions & { command?: string | null; cwd?: string | null };
 
 type WorkspaceProviderProps = {
   approvals?: Approval[];
@@ -103,7 +104,8 @@ type WorkspaceContextValue = {
   onVisiblePaneIdsChange: (paneIds: string[]) => void;
   openDraftThreadPane: (projectId?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
   openGeneratedUiPane: (threadId: string, title?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
-  openTerminalPane: (options?: WorkspacePaneOpenOptions & { command?: string | null; cwd?: string | null }) => Promise<void>;
+  openNewTerminalPane: (options?: WorkspaceTerminalOpenOptions) => Promise<void>;
+  openTerminalPane: (options?: WorkspaceTerminalOpenOptions) => Promise<void>;
   openThreadPane: (threadId: string, title?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
   paneHeaderActionsById: Record<string, ReactNode>;
   panePlacementHintsById: WorkspacePanePlacementHintsById;
@@ -435,40 +437,13 @@ export function WorkspaceProvider({
     });
   }, []);
 
-  const openPane = useCallback((
+  const appendPane = useCallback((
     pane: WorkspacePane,
     intent: WorkspacePanePlacementIntent,
     options: WorkspacePaneOpenOptions = {},
   ) => {
-    const current = workspaceRef.current;
-    const willAppend = options.duplicate || !current.panes.some(
-      (candidate) => stableJsonKey(paneIdentity(candidate)) === stableJsonKey(paneIdentity(pane)),
-    );
-    if (willAppend) {
-      recordPanePlacementHint(pane.id, intent, options);
-    }
+    recordPanePlacementHint(pane.id, intent, options);
     setWorkspace((current) => {
-      if (!options.duplicate) {
-        const targetKey = stableJsonKey(paneIdentity(pane));
-        const existing = current.panes.find(
-          (candidate) => stableJsonKey(paneIdentity(candidate)) === targetKey,
-        );
-        if (existing) {
-          const nextPanes = pane.title && !existing.title
-            ? current.panes.map((candidate) =>
-                candidate.id === existing.id ? ({ ...candidate, title: pane.title } as WorkspacePane) : candidate,
-              )
-            : current.panes;
-          if (current.activePaneId === existing.id && nextPanes === current.panes) {
-            return current;
-          }
-          return {
-            ...current,
-            panes: nextPanes,
-            activePaneId: existing.id,
-          };
-        }
-      }
       return {
         ...current,
         activePaneId: pane.id,
@@ -477,6 +452,47 @@ export function WorkspaceProvider({
       };
     });
   }, [recordPanePlacementHint]);
+
+  const focusPaneOrAppend = useCallback((
+    pane: WorkspacePane,
+    intent: WorkspacePanePlacementIntent,
+    options: WorkspacePaneOpenOptions = {},
+    findExistingPane: (panes: WorkspacePane[]) => WorkspacePane | null = (panes) => findPaneByIdentity(panes, pane),
+  ) => {
+    if (options.duplicate) {
+      appendPane(pane, intent, options);
+      return;
+    }
+    const current = workspaceRef.current;
+    if (!findExistingPane(current.panes)) {
+      recordPanePlacementHint(pane.id, intent, options);
+    }
+    setWorkspace((current) => {
+      const existing = findExistingPane(current.panes);
+      if (existing) {
+        const nextPanes = pane.title && !existing.title
+          ? current.panes.map((candidate) =>
+              candidate.id === existing.id ? ({ ...candidate, title: pane.title } as WorkspacePane) : candidate,
+            )
+          : current.panes;
+        if (current.activePaneId === existing.id && nextPanes === current.panes) {
+          return current;
+        }
+        return {
+          ...current,
+          panes: nextPanes,
+          activePaneId: existing.id,
+        };
+      }
+
+      return {
+        ...current,
+        activePaneId: pane.id,
+        dockviewLayout: null,
+        panes: [...current.panes, pane],
+      };
+    });
+  }, [appendPane, recordPanePlacementHint]);
 
   const duplicatePane = useCallback((paneId: string) => {
     const sourcePane = workspaceRef.current.panes.find((candidate) => candidate.id === paneId);
@@ -507,68 +523,49 @@ export function WorkspaceProvider({
         target: { mode: "existing", threadId },
         title: title ?? null,
       };
-      if (options.duplicate) {
-        openPane(pane, "duplicate", options);
-        return;
-      }
-      const current = workspaceRef.current;
-      if (!current.panes.some((candidate) => stableJsonKey(paneIdentity(candidate)) === stableJsonKey(paneIdentity(pane)))) {
-        recordPanePlacementHint(pane.id, "thread", options);
-      }
-      setWorkspace((current) => {
-        const targetKey = stableJsonKey(paneIdentity(pane));
-        const existing = current.panes.find(
-          (candidate) => stableJsonKey(paneIdentity(candidate)) === targetKey,
-        );
-        if (existing) {
-          const nextPanes = pane.title && !existing.title
-            ? current.panes.map((candidate) =>
-                candidate.id === existing.id ? ({ ...candidate, title: pane.title } as WorkspacePane) : candidate,
-              )
-            : current.panes;
-          if (current.activePaneId === existing.id && nextPanes === current.panes) {
-            return current;
-          }
-          return {
-            ...current,
-            panes: nextPanes,
-            activePaneId: existing.id,
-          };
-        }
-
-        return {
-          ...current,
-          activePaneId: pane.id,
-          dockviewLayout: null,
-          panes: [...current.panes, pane],
-        };
-      });
+      focusPaneOrAppend(pane, options.duplicate ? "duplicate" : "thread", options);
     },
-    [openPane, recordPanePlacementHint],
+    [focusPaneOrAppend],
   );
 
   const openDraftThreadPane = useCallback(
     async (projectId?: string | null, options: WorkspacePaneOpenOptions = {}) => {
-      openPane(createDraftThreadPane(projectId), "draftThread", options);
+      focusPaneOrAppend(createDraftThreadPane(projectId), "draftThread", options);
     },
-    [openPane],
+    [focusPaneOrAppend],
   );
 
   const openGeneratedUiPane = useCallback(
     async (threadId: string, title?: string | null, options: WorkspacePaneOpenOptions = {}) => {
-      openPane({
+      focusPaneOrAppend({
         id: createPaneId("generatedUi"),
         kind: "generatedUi",
         target: { mode: "latest", threadId },
         title: title ?? "Generated UI",
       }, "generatedUi", options);
     },
-    [openPane],
+    [focusPaneOrAppend],
   );
 
   const openTerminalPane = useCallback(
-    async (options: WorkspacePaneOpenOptions & { command?: string | null; cwd?: string | null } = {}) => {
-      openPane(
+    async (options: WorkspaceTerminalOpenOptions = {}) => {
+      const pane: WorkspacePane = {
+        id: createPaneId("terminal"),
+        kind: "terminal",
+        target: {
+          command: options.command ?? null,
+          cwd: options.cwd ?? null,
+        },
+        title: "Terminal",
+      };
+      focusPaneOrAppend(pane, "terminal", options, terminalPaneForRequest(options));
+    },
+    [focusPaneOrAppend],
+  );
+
+  const openNewTerminalPane = useCallback(
+    async (options: WorkspaceTerminalOpenOptions = {}) => {
+      appendPane(
         {
           id: createPaneId("terminal"),
           kind: "terminal",
@@ -582,7 +579,7 @@ export function WorkspaceProvider({
         { ...options, duplicate: true },
       );
     },
-    [openPane],
+    [appendPane],
   );
 
   const value = useMemo<WorkspaceContextValue>(
@@ -603,6 +600,7 @@ export function WorkspaceProvider({
       onVisiblePaneIdsChange,
       openDraftThreadPane,
       openGeneratedUiPane,
+      openNewTerminalPane,
       openTerminalPane,
       openThreadPane,
       paneHeaderActionsById,
@@ -648,6 +646,7 @@ export function WorkspaceProvider({
       onVisiblePaneIdsChange,
       openDraftThreadPane,
       openGeneratedUiPane,
+      openNewTerminalPane,
       openTerminalPane,
       openThreadPane,
       paneHeaderActionsById,
@@ -721,6 +720,29 @@ function sameStringArray(left: string[], right: string[]): boolean {
 
 function stableJsonKey(value: unknown): string {
   return JSON.stringify(value);
+}
+
+function findPaneByIdentity(panes: WorkspacePane[], pane: WorkspacePane): WorkspacePane | null {
+  const targetKey = stableJsonKey(paneIdentity(pane));
+  return panes.find((candidate) => stableJsonKey(paneIdentity(candidate)) === targetKey) ?? null;
+}
+
+function terminalPaneForRequest(options: WorkspaceTerminalOpenOptions): (panes: WorkspacePane[]) => WorkspacePane | null {
+  const command = options.command ?? null;
+  const cwd = options.cwd ?? null;
+  return (panes) => {
+    const terminalPanes = [...panes].reverse().filter((pane) => pane.kind === "terminal");
+    if (!command && !cwd) {
+      return terminalPanes[0] ?? null;
+    }
+    return terminalPanes.find((pane) => {
+      const target = paneTargetRecord(pane);
+      return (
+        (!command || target.command === command) &&
+        (!cwd || target.cwd === cwd)
+      );
+    }) ?? null;
+  };
 }
 
 function paneIdentity(pane: WorkspacePane): unknown {

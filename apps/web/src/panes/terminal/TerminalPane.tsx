@@ -33,7 +33,7 @@ const TERMINAL_ACCESSORY_KEYS: Array<{ data: string; label: string }> = [
 
 export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
   const target = paneTargetRecord(pane);
-  const { openTerminalPane, setPaneHeaderActions, setPaneTabStatus, updatePane } = useWorkspace();
+  const { openNewTerminalPane, setPaneHeaderActions, setPaneTabStatus, updatePane } = useWorkspace();
   const targetTerminalId = typeof target.terminalId === "string" ? target.terminalId : null;
   const targetCwd = typeof target.cwd === "string" ? target.cwd : null;
   const targetCommand = typeof target.command === "string" ? target.command : null;
@@ -122,12 +122,12 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
         ? "connecting"
         : "closed";
   const handleOpenTerminalTab = useCallback(() => {
-    void openTerminalPane({
+    void openNewTerminalPane({
       ...(targetCommand ? { command: targetCommand } : {}),
       ...(session?.cwd ?? targetCwd ? { cwd: session?.cwd ?? targetCwd } : {}),
       placement: { direction: "within", sourcePaneId: pane.id },
     });
-  }, [openTerminalPane, pane.id, session?.cwd, targetCommand, targetCwd]);
+  }, [openNewTerminalPane, pane.id, session?.cwd, targetCommand, targetCwd]);
   const paneHeaderActions = useMemo(
     () => (
       <Group className="kodex-terminal-pane-actions" gap={4} wrap="nowrap">
