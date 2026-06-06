@@ -1085,12 +1085,20 @@ async fn notification_ingest_commits_pending_skill_mentions_to_user_item() {
     );
     let persisted = state
         .store
-        .timeline_skill_mentions_for_items("thread-1", &["item-user-1".to_string()])
+        .timeline_skill_mentions_for_items(
+            "thread-1",
+            &[("turn-1".to_string(), "item-user-1".to_string())],
+        )
         .await
         .unwrap();
-    assert_eq!(persisted["item-user-1"][0].name, "agent-browser");
     assert_eq!(
-        persisted["item-user-1"][0].display_name.as_deref(),
+        persisted[&("turn-1".to_string(), "item-user-1".to_string())][0].name,
+        "agent-browser"
+    );
+    assert_eq!(
+        persisted[&("turn-1".to_string(), "item-user-1".to_string())][0]
+            .display_name
+            .as_deref(),
         Some("Agent Browser")
     );
 }

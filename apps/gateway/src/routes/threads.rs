@@ -1411,15 +1411,18 @@ async fn apply_thread_detail_skill_mentions(
     response: &mut ThreadDetailResponse,
 ) -> ApiResult<()> {
     let thread_id = response.thread.id.clone();
-    let item_ids = response
+    let item_refs = response
         .turns
         .iter()
-        .flat_map(|turn| turn.items.iter())
-        .map(|item| item.id.clone())
+        .flat_map(|turn| {
+            turn.items
+                .iter()
+                .map(|item| (turn.id.clone(), item.id.clone()))
+        })
         .collect::<Vec<_>>();
     let mut stored = state
         .store
-        .timeline_skill_mentions_for_items(&thread_id, &item_ids)
+        .timeline_skill_mentions_for_items(&thread_id, &item_refs)
         .await?;
     let has_snapshot_skill_mentions = response
         .turns
@@ -1448,6 +1451,7 @@ async fn apply_thread_detail_skill_mentions(
             apply_thread_item_skill_mentions(
                 state,
                 &thread_id,
+                &turn.id,
                 item,
                 &mut stored,
                 catalog.as_ref().map(|catalog| catalog.skills.as_slice()),
@@ -1461,8 +1465,9 @@ async fn apply_thread_detail_skill_mentions(
 async fn apply_thread_item_skill_mentions(
     state: &AppState,
     thread_id: &str,
+    turn_id: &str,
     item: &mut ThreadItemSnapshot,
-    stored: &mut HashMap<String, Vec<TimelineSkillMention>>,
+    stored: &mut HashMap<(String, String), Vec<TimelineSkillMention>>,
     catalog: Option<&[app_server_api::SkillMetadata]>,
 ) -> ApiResult<()> {
     if !item.skill_mentions.is_empty() {
@@ -1472,15 +1477,15 @@ async fn apply_thread_item_skill_mentions(
         );
         state
             .store
-            .upsert_timeline_skill_mentions(thread_id, &item.id, &item.skill_mentions)
+            .upsert_timeline_skill_mentions(thread_id, turn_id, &item.id, &item.skill_mentions)
             .await?;
         return Ok(());
     }
-    if let Some(mentions) = stored.remove(&item.id) {
+    if let Some(mentions) = stored.remove(&(turn_id.to_string(), item.id.clone())) {
         item.skill_mentions = enrich_timeline_skill_mentions(mentions, catalog.unwrap_or(&[]));
         state
             .store
-            .upsert_timeline_skill_mentions(thread_id, &item.id, &item.skill_mentions)
+            .upsert_timeline_skill_mentions(thread_id, turn_id, &item.id, &item.skill_mentions)
             .await?;
         return Ok(());
     }
@@ -1489,7 +1494,7 @@ async fn apply_thread_item_skill_mentions(
     };
     if let Some(mentions) = state
         .store
-        .commit_pending_timeline_skill_mentions(thread_id, &item.id, &text)
+        .commit_pending_timeline_skill_mentions(thread_id, turn_id, &item.id, &text)
         .await?
     {
         item.skill_mentions = mentions;
@@ -1500,7 +1505,7 @@ async fn apply_thread_item_skill_mentions(
         if !item.skill_mentions.is_empty() {
             state
                 .store
-                .upsert_timeline_skill_mentions(thread_id, &item.id, &item.skill_mentions)
+                .upsert_timeline_skill_mentions(thread_id, turn_id, &item.id, &item.skill_mentions)
                 .await?;
         }
     }

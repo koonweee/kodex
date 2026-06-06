@@ -659,7 +659,12 @@ mod tests {
             .unwrap();
         assert_eq!(requeued[0].status, QueuedInputStatus::Queued);
         let committed = store
-            .commit_pending_timeline_skill_mentions("thread-1", "item-later", "Use $agent-browser")
+            .commit_pending_timeline_skill_mentions(
+                "thread-1",
+                "turn-1",
+                "item-later",
+                "Use $agent-browser",
+            )
             .await
             .unwrap();
         assert!(committed.is_none());

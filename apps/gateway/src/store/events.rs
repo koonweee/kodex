@@ -97,6 +97,7 @@ impl Store {
     pub async fn upsert_timeline_skill_mentions(
         &self,
         thread_id: &str,
+        turn_id: &str,
         item_id: &str,
         mentions: &[TimelineSkillMention],
     ) -> ApiResult<()> {
@@ -108,15 +109,16 @@ impl Store {
         sqlx::query(
             r#"
             insert into timeline_skill_mentions (
-                thread_id, item_id, mentions_json, created_at, updated_at
+                thread_id, turn_id, item_id, mentions_json, created_at, updated_at
             )
-            values (?, ?, ?, ?, ?)
-            on conflict(thread_id, item_id) do update set
+            values (?, ?, ?, ?, ?, ?)
+            on conflict(thread_id, turn_id, item_id) do update set
                 mentions_json = excluded.mentions_json,
                 updated_at = excluded.updated_at
             "#,
         )
         .bind(thread_id)
+        .bind(turn_id)
         .bind(item_id)
         .bind(mentions_json)
         .bind(now)
@@ -129,6 +131,7 @@ impl Store {
     pub async fn commit_pending_timeline_skill_mentions(
         &self,
         thread_id: &str,
+        turn_id: &str,
         item_id: &str,
         text: &str,
     ) -> ApiResult<Option<Vec<TimelineSkillMention>>> {
@@ -161,15 +164,16 @@ impl Store {
         sqlx::query(
             r#"
             insert into timeline_skill_mentions (
-                thread_id, item_id, mentions_json, created_at, updated_at
+                thread_id, turn_id, item_id, mentions_json, created_at, updated_at
             )
-            values (?, ?, ?, ?, ?)
-            on conflict(thread_id, item_id) do update set
+            values (?, ?, ?, ?, ?, ?)
+            on conflict(thread_id, turn_id, item_id) do update set
                 mentions_json = excluded.mentions_json,
                 updated_at = excluded.updated_at
             "#,
         )
         .bind(thread_id)
+        .bind(turn_id)
         .bind(item_id)
         .bind(mentions_json)
         .bind(now)
@@ -183,27 +187,24 @@ impl Store {
     pub async fn timeline_skill_mentions_for_items(
         &self,
         thread_id: &str,
-        item_ids: &[String],
-    ) -> ApiResult<HashMap<String, Vec<TimelineSkillMention>>> {
-        if item_ids.is_empty() {
+        item_refs: &[(String, String)],
+    ) -> ApiResult<HashMap<(String, String), Vec<TimelineSkillMention>>> {
+        if item_refs.is_empty() {
             return Ok(HashMap::new());
         }
-        let mut builder = QueryBuilder::new(
-            "select item_id, mentions_json from timeline_skill_mentions where thread_id = ",
-        );
+        let item_refs = item_refs.iter().cloned().collect::<HashSet<_>>();
+        let mut builder = QueryBuilder::new("select turn_id, item_id, mentions_json from timeline_skill_mentions where thread_id = ");
         builder.push_bind(thread_id);
-        builder.push(" and item_id in (");
-        let mut separated = builder.separated(", ");
-        for item_id in item_ids {
-            separated.push_bind(item_id);
-        }
-        separated.push_unseparated(")");
         let rows = builder.build().fetch_all(&self.pool).await?;
         let mut mentions_by_item_id = HashMap::new();
         for row in rows {
+            let turn_id: String = row.try_get("turn_id")?;
             let item_id: String = row.try_get("item_id")?;
+            if !item_refs.contains(&(turn_id.clone(), item_id.clone())) {
+                continue;
+            }
             let mentions_json: String = row.try_get("mentions_json")?;
-            mentions_by_item_id.insert(item_id, serde_json::from_str(&mentions_json)?);
+            mentions_by_item_id.insert((turn_id, item_id), serde_json::from_str(&mentions_json)?);
         }
         Ok(mentions_by_item_id)
     }
@@ -397,21 +398,93 @@ mod tests {
         assert!(pending_id.is_some());
 
         let committed = store
-            .commit_pending_timeline_skill_mentions("thread-1", "item-user-1", "Use $agent-browser")
+            .commit_pending_timeline_skill_mentions(
+                "thread-1",
+                "turn-1",
+                "item-user-1",
+                "Use $agent-browser",
+            )
             .await
             .unwrap();
         assert_eq!(committed.as_deref(), Some(mentions.as_slice()));
         assert!(store
-            .commit_pending_timeline_skill_mentions("thread-1", "item-user-2", "Use $agent-browser")
+            .commit_pending_timeline_skill_mentions(
+                "thread-1",
+                "turn-1",
+                "item-user-2",
+                "Use $agent-browser",
+            )
             .await
             .unwrap()
             .is_none());
 
         let loaded = store
-            .timeline_skill_mentions_for_items("thread-1", &["item-user-1".to_string()])
+            .timeline_skill_mentions_for_items(
+                "thread-1",
+                &[("turn-1".to_string(), "item-user-1".to_string())],
+            )
             .await
             .unwrap();
-        assert_eq!(loaded.get("item-user-1"), Some(&mentions));
+        assert_eq!(
+            loaded.get(&("turn-1".to_string(), "item-user-1".to_string())),
+            Some(&mentions)
+        );
+    }
+
+    #[tokio::test]
+    async fn timeline_skill_mentions_are_scoped_by_turn_and_item() {
+        let store = Store::in_memory().await.unwrap();
+        let first_mentions = vec![TimelineSkillMention {
+            start: 0,
+            end: 12,
+            name: "first-skill".to_string(),
+            path: "/skills/first/SKILL.md".to_string(),
+            display_name: None,
+            scope: None,
+            short_description: None,
+            brand_color: None,
+            icon_small_url: None,
+        }];
+        let second_mentions = vec![TimelineSkillMention {
+            start: 0,
+            end: 13,
+            name: "second-skill".to_string(),
+            path: "/skills/second/SKILL.md".to_string(),
+            display_name: None,
+            scope: None,
+            short_description: None,
+            brand_color: None,
+            icon_small_url: None,
+        }];
+
+        store
+            .upsert_timeline_skill_mentions("thread-1", "turn-first", "item-1", &first_mentions)
+            .await
+            .unwrap();
+        store
+            .upsert_timeline_skill_mentions("thread-1", "turn-second", "item-1", &second_mentions)
+            .await
+            .unwrap();
+
+        let loaded = store
+            .timeline_skill_mentions_for_items(
+                "thread-1",
+                &[
+                    ("turn-first".to_string(), "item-1".to_string()),
+                    ("turn-second".to_string(), "item-1".to_string()),
+                ],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            loaded.get(&("turn-first".to_string(), "item-1".to_string())),
+            Some(&first_mentions)
+        );
+        assert_eq!(
+            loaded.get(&("turn-second".to_string(), "item-1".to_string())),
+            Some(&second_mentions)
+        );
     }
 
     #[tokio::test]

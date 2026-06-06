@@ -681,7 +681,7 @@ async fn timeline_item_upsert_event(
     let Ok(mut item_snapshot) = item_snapshot_from_value(item) else {
         return Ok(Vec::new());
     };
-    apply_live_item_skill_mentions(state, &thread_id, item, &mut item_snapshot).await?;
+    apply_live_item_skill_mentions(state, &thread_id, &turn_id, item, &mut item_snapshot).await?;
     let payload = TimelineItemUpsertPayload {
         source,
         turn_id: turn_id.clone(),
@@ -879,6 +879,7 @@ async fn refresh_completed_turn_head(
 async fn apply_live_item_skill_mentions(
     state: &AppState,
     thread_id: &str,
+    turn_id: &str,
     item: &Value,
     item_snapshot: &mut ThreadItemSnapshot,
 ) -> ApiResult<()> {
@@ -888,6 +889,7 @@ async fn apply_live_item_skill_mentions(
                 .store
                 .upsert_timeline_skill_mentions(
                     thread_id,
+                    turn_id,
                     &item_snapshot.id,
                     &item_snapshot.skill_mentions,
                 )
@@ -897,7 +899,7 @@ async fn apply_live_item_skill_mentions(
     };
     if let Some(mentions) = state
         .store
-        .commit_pending_timeline_skill_mentions(thread_id, &item_snapshot.id, &text)
+        .commit_pending_timeline_skill_mentions(thread_id, turn_id, &item_snapshot.id, &text)
         .await?
     {
         item_snapshot.skill_mentions = mentions;
@@ -908,6 +910,7 @@ async fn apply_live_item_skill_mentions(
             .store
             .upsert_timeline_skill_mentions(
                 thread_id,
+                turn_id,
                 &item_snapshot.id,
                 &item_snapshot.skill_mentions,
             )
@@ -916,9 +919,12 @@ async fn apply_live_item_skill_mentions(
     }
     if let Some(mentions) = state
         .store
-        .timeline_skill_mentions_for_items(thread_id, std::slice::from_ref(&item_snapshot.id))
+        .timeline_skill_mentions_for_items(
+            thread_id,
+            &[(turn_id.to_string(), item_snapshot.id.clone())],
+        )
         .await?
-        .remove(&item_snapshot.id)
+        .remove(&(turn_id.to_string(), item_snapshot.id.clone()))
     {
         item_snapshot.skill_mentions = mentions;
     }

@@ -284,16 +284,18 @@ impl Store {
             r#"
             create table if not exists timeline_skill_mentions (
                 thread_id text not null,
+                turn_id text not null,
                 item_id text not null,
                 mentions_json text not null,
                 created_at text not null,
                 updated_at text not null,
-                primary key (thread_id, item_id)
+                primary key (thread_id, turn_id, item_id)
             )
             "#,
         )
         .execute(&self.pool)
         .await?;
+        self.migrate_timeline_skill_mentions_turn_scope().await?;
         sqlx::query(
             r#"
             create table if not exists queued_turn_inputs (
@@ -449,6 +451,54 @@ impl Store {
         Ok(())
     }
 
+    async fn migrate_timeline_skill_mentions_turn_scope(&self) -> ApiResult<()> {
+        let rows = sqlx::query("pragma table_info(timeline_skill_mentions)")
+            .fetch_all(&self.pool)
+            .await?;
+        if rows
+            .iter()
+            .any(|row| row.get::<String, _>("name") == "turn_id")
+        {
+            return Ok(());
+        }
+
+        let mut tx = self.pool.begin().await?;
+        sqlx::query(
+            r#"
+            create table timeline_skill_mentions_next (
+                thread_id text not null,
+                turn_id text not null,
+                item_id text not null,
+                mentions_json text not null,
+                created_at text not null,
+                updated_at text not null,
+                primary key (thread_id, turn_id, item_id)
+            )
+            "#,
+        )
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            r#"
+            insert into timeline_skill_mentions_next (
+                thread_id, turn_id, item_id, mentions_json, created_at, updated_at
+            )
+            select thread_id, '', item_id, mentions_json, created_at, updated_at
+            from timeline_skill_mentions
+            "#,
+        )
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query("drop table timeline_skill_mentions")
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("alter table timeline_skill_mentions_next rename to timeline_skill_mentions")
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     async fn migrate_thread_local_settings_overlay(&self) -> ApiResult<()> {
         sqlx::query(
             r#"
@@ -526,7 +576,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
-    use sqlx::sqlite::SqlitePoolOptions;
+    use sqlx::{sqlite::SqlitePoolOptions, Row};
     use tempfile::tempdir;
 
     use crate::store::{NewEvent, Store};
@@ -570,6 +620,60 @@ mod tests {
                 "timeline_skill_mentions"
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn migration_turn_scopes_existing_timeline_skill_mentions() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("gateway.db");
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(&format!("sqlite://{}?mode=rwc", path.display()))
+            .await
+            .unwrap();
+        sqlx::query(
+            r#"
+            create table timeline_skill_mentions (
+                thread_id text not null,
+                item_id text not null,
+                mentions_json text not null,
+                created_at text not null,
+                updated_at text not null,
+                primary key (thread_id, item_id)
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+            insert into timeline_skill_mentions (
+                thread_id, item_id, mentions_json, created_at, updated_at
+            )
+            values ('thread-1', 'item-1', '[]', '2026-06-06T00:00:00Z', '2026-06-06T00:00:00Z')
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+
+        let store = Store::connect(&path).await.unwrap();
+        let columns = sqlx::query("pragma table_info(timeline_skill_mentions)")
+            .fetch_all(store.pool())
+            .await
+            .unwrap();
+        assert!(columns
+            .iter()
+            .any(|row| row.get::<String, _>("name") == "turn_id"));
+        let legacy_turn_id: String = sqlx::query_scalar(
+            "select turn_id from timeline_skill_mentions where thread_id = 'thread-1' and item_id = 'item-1'",
+        )
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+        assert_eq!(legacy_turn_id, "");
     }
 
     #[tokio::test]

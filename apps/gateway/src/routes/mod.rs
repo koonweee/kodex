@@ -6720,6 +6720,7 @@ mod tests {
             .store
             .upsert_timeline_skill_mentions(
                 "thread-1",
+                "turn-1",
                 "item-user-1",
                 &[TimelineSkillMention {
                     start: 4,
@@ -6786,6 +6787,107 @@ mod tests {
                 "end": 18,
                 "name": "agent-browser",
                 "path": "/skills/agent-browser/SKILL.md"
+            }])
+        );
+    }
+
+    #[tokio::test]
+    async fn thread_detail_scopes_persisted_skill_mentions_by_turn_when_item_ids_repeat() {
+        let (state, app_server) = test_state().await;
+        state
+            .store
+            .upsert_timeline_skill_mentions(
+                "thread-1",
+                "turn-second",
+                "item-1",
+                &[TimelineSkillMention {
+                    start: 0,
+                    end: 22,
+                    name: "implement-review-loop".to_string(),
+                    path: "/Users/example/.codex/skills/implement-review-loop/SKILL.md".to_string(),
+                    display_name: Some("Implement Review Loop".to_string()),
+                    scope: Some("user".to_string()),
+                    short_description: Some("Implement changes with review".to_string()),
+                    brand_color: None,
+                    icon_small_url: None,
+                }],
+            )
+            .await
+            .unwrap();
+        let app = build_router(state);
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({
+                "thread": {
+                    "id": "thread-1",
+                    "cliVersion": "0.130.0",
+                    "cwd": "/workspace",
+                    "ephemeral": false,
+                    "modelProvider": "openai",
+                    "preview": "Initial prompt",
+                    "source": "cli",
+                    "status": {"type": "idle"},
+                    "turns": [],
+                    "createdAt": 1_767_225_600_i64,
+                    "updatedAt": 1_767_225_610_i64
+                }
+            }),
+            json!({
+                "data": [
+                    {
+                        "id": "turn-first",
+                        "status": {"type": "completed"},
+                        "startedAt": 1_767_225_600_i64,
+                        "completedAt": 1_767_225_601_i64,
+                        "items": [
+                            {"id": "item-1", "type": "userMessage", "content": [{"type": "text", "text": "Initial prompt"}]}
+                        ]
+                    },
+                    {
+                        "id": "turn-second",
+                        "status": {"type": "completed"},
+                        "startedAt": 1_767_225_602_i64,
+                        "completedAt": 1_767_225_610_i64,
+                        "items": [
+                            {"id": "item-1", "type": "userMessage", "content": [{"type": "text", "text": "$implement-review-loop"}]}
+                        ]
+                    }
+                ],
+                "nextCursor": null,
+                "backwardsCursor": null
+            }),
+        ]);
+
+        let response = app
+            .oneshot(
+                Request::get("/v1/threads/thread-1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        let items = serialized_timeline_items(&body["timeline"]);
+        let first_user = items
+            .iter()
+            .find(|item| item["turnId"] == "turn-first")
+            .expect("first turn user item");
+        let second_user = items
+            .iter()
+            .find(|item| item["turnId"] == "turn-second")
+            .expect("second turn user item");
+        assert_eq!(
+            first_user["payload"]["itemSnapshot"]["skillMentions"],
+            Value::Null
+        );
+        assert_eq!(
+            second_user["payload"]["itemSnapshot"]["skillMentions"],
+            json!([{
+                "start": 0,
+                "end": 22,
+                "name": "implement-review-loop",
+                "path": "/Users/example/.codex/skills/implement-review-loop/SKILL.md"
             }])
         );
     }
@@ -9567,7 +9669,12 @@ mod tests {
 
         let mentions = state
             .store
-            .commit_pending_timeline_skill_mentions("thread-1", "item-user-1", "Run $review-fix")
+            .commit_pending_timeline_skill_mentions(
+                "thread-1",
+                "turn-1",
+                "item-user-1",
+                "Run $review-fix",
+            )
             .await
             .unwrap()
             .expect("structured skill mention should be pending until item materializes");
@@ -9603,7 +9710,12 @@ mod tests {
 
         let mentions = state
             .store
-            .commit_pending_timeline_skill_mentions("thread-1", "item-user-1", "Run $review-fix")
+            .commit_pending_timeline_skill_mentions(
+                "thread-1",
+                "turn-1",
+                "item-user-1",
+                "Run $review-fix",
+            )
             .await
             .unwrap()
             .expect("structured skill mention should be pending until item materializes");
@@ -9648,7 +9760,12 @@ mod tests {
 
         let mentions = state
             .store
-            .commit_pending_timeline_skill_mentions("thread-1", "item-user-1", "Use $agent-browser")
+            .commit_pending_timeline_skill_mentions(
+                "thread-1",
+                "turn-1",
+                "item-user-1",
+                "Use $agent-browser",
+            )
             .await
             .unwrap()
             .expect("structured steer skill mention should be pending until item materializes");
