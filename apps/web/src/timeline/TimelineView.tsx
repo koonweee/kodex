@@ -62,6 +62,12 @@ export function TimelineView({
   timeline: TimelineState;
 }) {
   const rows = timeline.rows;
+  const initialVirtuosoUsesCustomParent = useRef<boolean | null>(null);
+  const initialVirtuosoThreadId = useRef(threadId);
+  if (initialVirtuosoThreadId.current !== threadId) {
+    initialVirtuosoThreadId.current = threadId;
+    initialVirtuosoUsesCustomParent.current = null;
+  }
   const [expandedWorkRowKeys, setExpandedWorkRowKeys] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
     setExpandedWorkRowKeys(new Set());
@@ -112,6 +118,13 @@ export function TimelineView({
   const approvalsByRowKey = useMemo(() => buildTimelineRowApprovalMap(rows, approvalIndex), [approvalIndex, rows]);
   const rowCount = visibleRows.length;
   const virtuosoScrollParent = scrollParentElement && scrollParentElement.clientHeight > 0 ? scrollParentElement : null;
+  if (rowCount > 0 && initialVirtuosoUsesCustomParent.current === null) {
+    initialVirtuosoUsesCustomParent.current = Boolean(virtuosoScrollParent);
+  }
+  const useVirtuosoInitialBottomPosition = initialVirtuosoUsesCustomParent.current === true;
+  const virtuosoInitialPositionProps = useVirtuosoInitialBottomPosition
+    ? { initialTopMostItemIndex: { index: "LAST" as const, align: "end" as const } }
+    : { initialItemCount: Math.min(rowCount, 30) };
   const olderHistoryBoundary = timeline.hasOlderHistory ? (
     <OlderHistoryBoundary
       isLoading={timeline.isLoadingOlderHistory}
@@ -127,11 +140,13 @@ export function TimelineView({
   const {
     followOutput,
     handleAtBottomStateChange,
+    handleTotalListHeightChanged,
     initialBottomAligned,
     scrollToBottom,
     showScrollToBottom,
     virtuosoRef,
   } = useBottomPinnedVirtuosoTimeline({
+    enableHeightFollow: useVirtuosoInitialBottomPosition,
     onReady,
     onOverflowAboveChange,
     rowCount,
@@ -173,7 +188,9 @@ export function TimelineView({
         defaultItemHeight={112}
         followOutput={followOutput}
         increaseViewportBy={{ top: 720, bottom: 720 }}
-        initialItemCount={Math.min(rowCount, 30)}
+        key={useVirtuosoInitialBottomPosition ? "custom-scroll-parent" : "internal-scroll-parent"}
+        totalListHeightChanged={handleTotalListHeightChanged}
+        {...virtuosoInitialPositionProps}
         itemContent={(index, renderRow = visibleRows[index]) => renderRow ? (
           <Box className="kodex-timeline-virtual-row kodex-thread-column" data-index={index}>
             <TimelineRowView
@@ -370,12 +387,14 @@ function HiddenDebugPanel({
 }
 
 function useBottomPinnedVirtuosoTimeline({
+  enableHeightFollow,
   onReady,
   onOverflowAboveChange,
   rowCount,
   scrollParentElement,
   timelineLastSeq,
 }: {
+  enableHeightFollow: boolean;
   onReady: () => void;
   onOverflowAboveChange?: (hasOverflowAbove: boolean) => void;
   rowCount: number;
@@ -385,8 +404,16 @@ function useBottomPinnedVirtuosoTimeline({
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const nearBottomRef = useRef(true);
   const initialAlignmentSnapshotRef = useRef<{ rowCount: number; timelineLastSeq: number } | null>(null);
+  const pendingHeightFollowFrame = useRef<number | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [initialBottomAligned, setInitialBottomAligned] = useState(false);
+
+  const cancelPendingHeightFollow = useCallback(() => {
+    if (pendingHeightFollowFrame.current !== null) {
+      cancelAnimationFrame(pendingHeightFollowFrame.current);
+      pendingHeightFollowFrame.current = null;
+    }
+  }, []);
 
   const updateOverflowAbove = useCallback(() => {
     const scrollElement = scrollParentElement;
@@ -406,10 +433,13 @@ function useBottomPinnedVirtuosoTimeline({
     const distanceFromBottom = getDistanceFromBottom(scrollElement);
     const isNearBottom = distanceFromBottom < 60;
     nearBottomRef.current = isNearBottom;
+    if (!isNearBottom) {
+      cancelPendingHeightFollow();
+    }
     setShowScrollToBottom(!isNearBottom && rowCount > 0 && distanceFromBottom > 0);
     updateOverflowAbove();
     return isNearBottom;
-  }, [onOverflowAboveChange, rowCount, scrollParentElement, updateOverflowAbove]);
+  }, [cancelPendingHeightFollow, onOverflowAboveChange, rowCount, scrollParentElement, updateOverflowAbove]);
 
   const scrollToTimelineBottom = useCallback(() => {
     if (rowCount === 0) {
@@ -449,10 +479,37 @@ function useBottomPinnedVirtuosoTimeline({
   const handleAtBottomStateChange = useCallback(
     (atBottom: boolean) => {
       nearBottomRef.current = atBottom;
+      if (!atBottom) {
+        cancelPendingHeightFollow();
+      }
       setShowScrollToBottom(!atBottom && rowCount > 0);
     },
-    [rowCount],
+    [cancelPendingHeightFollow, rowCount],
   );
+
+  const handleTotalListHeightChanged = useCallback(() => {
+    if (!enableHeightFollow || rowCount === 0 || showScrollToBottom || !nearBottomRef.current) {
+      return;
+    }
+    if (pendingHeightFollowFrame.current !== null) {
+      return;
+    }
+    pendingHeightFollowFrame.current = requestAnimationFrame(() => {
+      pendingHeightFollowFrame.current = null;
+      if (!nearBottomRef.current || showScrollToBottom) {
+        return;
+      }
+      scrollToTimelineBottom();
+      requestAnimationFrame(() => {
+        if (nearBottomRef.current && !showScrollToBottom) {
+          scrollToTimelineBottom();
+        }
+        updateNearBottom();
+      });
+    });
+  }, [enableHeightFollow, rowCount, scrollToTimelineBottom, showScrollToBottom, updateNearBottom]);
+
+  useEffect(() => cancelPendingHeightFollow, [cancelPendingHeightFollow]);
 
   const followOutput = useCallback<Exclude<FollowOutput, boolean | string>>(
     (isAtBottom) => timelineFollowOutputBehavior(isAtBottom || (nearBottomRef.current && !showScrollToBottom)),
@@ -550,6 +607,7 @@ function useBottomPinnedVirtuosoTimeline({
   return {
     followOutput,
     handleAtBottomStateChange,
+    handleTotalListHeightChanged,
     initialBottomAligned,
     scrollToBottom,
     showScrollToBottom,
