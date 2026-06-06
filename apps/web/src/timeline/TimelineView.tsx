@@ -1,4 +1,4 @@
-import { ActionIcon, Box, Button, Stack, Text, Tooltip } from "@mantine/core";
+import { Box, Button, Stack, Text } from "@mantine/core";
 import { ArrowDownToLine } from "lucide-react";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Virtuoso, type FollowOutput, type VirtuosoHandle } from "react-virtuoso";
@@ -7,6 +7,7 @@ import type { Approval, ApprovalResponse, PendingTimelineRequestSummary } from "
 import type { MarkdownPreviewRequest } from "../files/types";
 import { ApprovalCard, ThreadApprovalStack } from "../approvals/ApprovalCard";
 import type { ImageLightboxImage } from "../images/types";
+import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import {
   buildApprovalIndex,
   getTimelineRowApprovals,
@@ -213,19 +214,16 @@ export function TimelineView({
         <ThreadApprovalStack approvals={unanchoredApprovals} onDecision={onApprovalDecision} />
       ) : null}
       {showScrollToBottom ? (
-        <Tooltip label={TIMELINE_TEXT.scrollToBottom}>
-          <ActionIcon
-            aria-label={TIMELINE_TEXT.scrollToBottom}
-            className="kodex-scroll-to-bottom"
-            color="gray"
-            onClick={scrollToBottom}
-            radius="xl"
-            size="md"
-            variant="light"
-          >
-            <ArrowDownToLine size={16} />
-          </ActionIcon>
-        </Tooltip>
+        <AdaptiveIconButton
+          className="kodex-scroll-to-bottom"
+          color="gray"
+          label={TIMELINE_TEXT.scrollToBottom}
+          onClick={scrollToBottom}
+          shape="round"
+          variant="light"
+        >
+          <ArrowDownToLine />
+        </AdaptiveIconButton>
       ) : null}
     </Box>
   );

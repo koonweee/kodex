@@ -1,4 +1,4 @@
-import { ActionIcon, Group, Loader, Menu, Tooltip } from "@mantine/core";
+import { Group, Loader, Menu } from "@mantine/core";
 import { ArrowUp, Maximize2, Paperclip, Plus, Square } from "lucide-react";
 import { memo } from "react";
 import type { RefObject } from "react";
@@ -6,6 +6,7 @@ import type { RefObject } from "react";
 import { ComposerFooterControls } from "../ComposerFooterControls";
 import type { ComposerSettings, ContextUsage } from "../ComposerFooterControls";
 import type { ModelSummary } from "../api/client";
+import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 
 const COMPOSER_TOOLBAR_TEXT = {
   addAttachment: "Add attachment",
@@ -61,16 +62,14 @@ export const ComposerToolbar = memo(function ComposerToolbar({
       <Group className="kodex-composer-toolbar-left" gap={6} wrap="nowrap">
         <Menu position="top-start" withinPortal>
           <Menu.Target>
-            <ActionIcon
-              aria-label={COMPOSER_TOOLBAR_TEXT.openAttachments}
+            <AdaptiveIconButton
               className="kodex-composer-secondary-action"
-              size="md"
-              type="button"
-              variant="subtle"
               disabled={disabled}
+              label={COMPOSER_TOOLBAR_TEXT.openAttachments}
+              tooltip={false}
             >
-              <Plus size={16} />
-            </ActionIcon>
+              <Plus />
+            </AdaptiveIconButton>
           </Menu.Target>
           <Menu.Dropdown aria-label={COMPOSER_TOOLBAR_TEXT.attachments}>
             <Menu.Item
@@ -93,58 +92,47 @@ export const ComposerToolbar = memo(function ComposerToolbar({
         />
       </Group>
       {onExpandComposer ? (
-        <Tooltip label={COMPOSER_TOOLBAR_TEXT.expand}>
-          <ActionIcon
-            aria-label={COMPOSER_TOOLBAR_TEXT.expand}
-            className="kodex-composer-secondary-action kodex-composer-expand-action"
-            size="md"
-            type="button"
-            variant="subtle"
-            disabled={disabled}
-            onClick={onExpandComposer}
-          >
-            <Maximize2 size={15} />
-          </ActionIcon>
-        </Tooltip>
+        <AdaptiveIconButton
+          className="kodex-composer-secondary-action kodex-composer-expand-action"
+          disabled={disabled}
+          label={COMPOSER_TOOLBAR_TEXT.expand}
+          onClick={onExpandComposer}
+        >
+          <Maximize2 />
+        </AdaptiveIconButton>
       ) : null}
-      <Tooltip label={actionLabel}>
-        {isSubmitting ? (
-          <ActionIcon
-            className="kodex-composer-action"
-            data-action-state="submitting"
-            aria-label={COMPOSER_TOOLBAR_TEXT.sending}
-            size="md"
-            type="button"
-            disabled
-          >
-            <Loader aria-hidden="true" color="currentColor" size={16} />
-          </ActionIcon>
-        ) : shouldShowStopAction ? (
-          <ActionIcon
-            className="kodex-composer-action"
-            data-action-state="active"
-            aria-label={COMPOSER_TOOLBAR_TEXT.stop}
-            size="md"
-            variant="filled"
-            type="button"
-            disabled={!selectedThreadPresent}
-            onClick={onStopTurn}
-          >
-            <Square size={13} fill="currentColor" strokeWidth={0} />
-          </ActionIcon>
-        ) : (
-          <ActionIcon
-            className="kodex-composer-action"
-            data-action-state="idle"
-            aria-label={COMPOSER_TOOLBAR_TEXT.send}
-            size="md"
-            type="submit"
-            disabled={!canSubmitComposer}
-          >
-            <ArrowUp size={16} />
-          </ActionIcon>
-        )}
-      </Tooltip>
+      {isSubmitting ? (
+        <AdaptiveIconButton
+          className="kodex-composer-action"
+          data-action-state="submitting"
+          disabled
+          label={COMPOSER_TOOLBAR_TEXT.sending}
+        >
+          <Loader aria-hidden="true" color="currentColor" size={16} />
+        </AdaptiveIconButton>
+      ) : shouldShowStopAction ? (
+        <AdaptiveIconButton
+          className="kodex-composer-action"
+          data-action-state="active"
+          disabled={!selectedThreadPresent}
+          label={COMPOSER_TOOLBAR_TEXT.stop}
+          onClick={onStopTurn}
+          variant="filled"
+        >
+          <Square fill="currentColor" strokeWidth={0} />
+        </AdaptiveIconButton>
+      ) : (
+        <AdaptiveIconButton
+          className="kodex-composer-action"
+          data-action-state="idle"
+          disabled={!canSubmitComposer}
+          label={COMPOSER_TOOLBAR_TEXT.send}
+          tooltip={actionLabel}
+          type="submit"
+        >
+          <ArrowUp />
+        </AdaptiveIconButton>
+      )}
     </Group>
   );
 });

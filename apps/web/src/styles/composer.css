@@ -206,7 +206,6 @@
   position: absolute;
   top: 3px;
   right: 3px;
-  --ai-bg: var(--kodex-overlay-strong) !important;
 }
 
 .kodex-attachment-status {
@@ -642,16 +641,6 @@
   border-radius: 10px;
   padding-inline: 16px;
   font-weight: 700;
-}
-
-.kodex-queued-steer-abort {
-  color: var(--kodex-text-secondary);
-}
-
-.kodex-queued-steer-abort:hover,
-.kodex-queued-steer-abort:focus-visible {
-  background: var(--kodex-bg-button-hover);
-  color: var(--kodex-text-primary);
 }
 
 @media (max-width: 700px) {

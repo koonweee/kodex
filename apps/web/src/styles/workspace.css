@@ -360,10 +360,6 @@
 .kodex-workspace-single-pane-sidebar-button,
 .kodex-workspace-single-pane-close-button {
   flex: 0 0 auto;
-  min-width: 36px;
-  width: 36px;
-  min-height: 36px;
-  height: 36px;
 }
 
 .kodex-workspace-single-pane-switcher {

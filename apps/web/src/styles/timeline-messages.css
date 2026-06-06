@@ -209,15 +209,7 @@
 }
 
 .kodex-message-copy-button {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border-radius: var(--kodex-radius-sm);
-  line-height: 0;
-}
-
-.kodex-message-copy-button:hover {
-  color: var(--kodex-text-primary);
+  flex: 0 0 auto;
 }
 
 .kodex-assistant-markdown-paragraph {
@@ -268,25 +260,13 @@
 }
 
 .kodex-code-block-shell .kodex-timeline-code {
-  padding-right: 44px;
+  padding-right: 56px;
 }
 
 .kodex-code-copy-button {
   position: absolute;
   top: 6px;
   right: 6px;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border-radius: var(--kodex-radius-sm);
-  background: transparent;
-  color: var(--kodex-text-muted);
-  line-height: 0;
-}
-
-.kodex-code-copy-button:hover {
-  background: transparent;
-  color: var(--kodex-text-primary);
 }
 
 .kodex-markdown-preview-rendered {

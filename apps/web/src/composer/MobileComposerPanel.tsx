@@ -1,10 +1,11 @@
-import { ActionIcon, Box, Text, Textarea } from "@mantine/core";
+import { Box, Text, Textarea } from "@mantine/core";
 import { Minimize2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
 
 import type { SkillMetadata } from "../api/client";
 import { useInputCapabilities } from "../shared/inputCapabilities";
+import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import { AttachmentTray } from "./AttachmentTray";
 import type { ComposerPanelProps } from "./ComposerPanel";
 import { ComposerToolbar } from "./ComposerToolbar";
@@ -183,14 +184,9 @@ export function MobileComposerPanel({
           <Text fw={700} size="sm">
             {MOBILE_COMPOSER_TEXT.compose}
           </Text>
-          <ActionIcon
-            aria-label={MOBILE_COMPOSER_TEXT.collapse}
-            type="button"
-            variant="subtle"
-            onClick={() => setIsExpanded(false)}
-          >
-            <Minimize2 size={18} />
-          </ActionIcon>
+          <AdaptiveIconButton label={MOBILE_COMPOSER_TEXT.collapse} onClick={() => setIsExpanded(false)}>
+            <Minimize2 />
+          </AdaptiveIconButton>
         </Box>
         <Box
           component="form"

@@ -1,5 +1,4 @@
 import {
-  ActionIcon,
   Alert,
   Group,
   Modal,
@@ -9,7 +8,6 @@ import {
   Tabs,
   Text,
   TextInput,
-  Tooltip,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { AlertCircle, Pause, Play, Save, Trash2 } from "lucide-react";
@@ -28,6 +26,7 @@ import {
 } from "./schedule";
 import type { AutomationThreadOption } from "./threadOptions";
 import { PromptMarkdownEditor } from "./PromptMarkdownEditor";
+import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 
 const REPEAT_UNIT_OPTIONS = [
   { label: "Seconds", value: "seconds" },
@@ -294,47 +293,33 @@ export function AutomationEditorModal({
           <Group gap="xs" wrap="nowrap">
             {automation ? (
               <>
-                <Tooltip label={deletePendingConfirmation ? "Confirm delete" : "Delete"}>
-                  <ActionIcon
-                    aria-label={deletePendingConfirmation ? "Confirm delete" : "Delete"}
-                    color="red"
-                    disabled={isSubmitting}
-                    loading={submittingAction === "delete"}
-                    onClick={() => void handleAction("delete")}
-                    size="lg"
-                    variant={deletePendingConfirmation ? "filled" : "subtle"}
-                  >
-                    <Trash2 size={18} />
-                  </ActionIcon>
-                </Tooltip>
-                <Tooltip label={automation.status === "paused" ? "Resume" : "Pause"}>
-                  <ActionIcon
-                    aria-label={automation.status === "paused" ? "Resume" : "Pause"}
-                    className="kodex-automation-status-action"
-                    disabled={isSubmitting}
-                    loading={submittingAction === "pause" || submittingAction === "resume"}
-                    onClick={() => void handleAction(automation.status === "paused" ? "resume" : "pause")}
-                    size="lg"
-                    variant="subtle"
-                  >
-                    {automation.status === "paused" ? <Play size={18} /> : <Pause size={18} />}
-                  </ActionIcon>
-                </Tooltip>
+                <AdaptiveIconButton
+                  color="red"
+                  disabled={isSubmitting}
+                  label={deletePendingConfirmation ? "Confirm delete" : "Delete"}
+                  loading={submittingAction === "delete"}
+                  onClick={() => void handleAction("delete")}
+                  variant={deletePendingConfirmation ? "filled" : "subtle"}
+                >
+                  <Trash2 />
+                </AdaptiveIconButton>
+                <AdaptiveIconButton
+                  className="kodex-automation-status-action"
+                  disabled={isSubmitting}
+                  label={automation.status === "paused" ? "Resume" : "Pause"}
+                  loading={submittingAction === "pause" || submittingAction === "resume"}
+                  onClick={() => void handleAction(automation.status === "paused" ? "resume" : "pause")}
+
+                >
+                  {automation.status === "paused" ? <Play /> : <Pause />}
+                </AdaptiveIconButton>
               </>
             ) : null}
           </Group>
           <Group gap="xs" wrap="nowrap">
-            <Tooltip label="Save">
-              <ActionIcon
-                aria-label="Save"
-                loading={submittingAction === "save"}
-                onClick={() => void handleSave()}
-                size="lg"
-                variant="filled"
-              >
-                <Save size={18} />
-              </ActionIcon>
-            </Tooltip>
+            <AdaptiveIconButton label="Save" loading={submittingAction === "save"} onClick={() => void handleSave()} variant="filled">
+              <Save />
+            </AdaptiveIconButton>
           </Group>
         </Group>
       </Stack>

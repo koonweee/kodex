@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Box, Button, Group, Loader, Menu, Modal, Skeleton, Switch, TextInput, Title } from "@mantine/core";
+import { Badge, Box, Button, Group, Loader, Menu, Modal, Skeleton, Switch, TextInput, Title } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, Archive, CopyPlus, MoreHorizontal, Pencil, Pin, PinOff, Sparkles } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
@@ -32,6 +32,7 @@ import { threadDisplayTitle } from "../../threads/helpers";
 import type { WorkspacePaneComponentProps } from "../../workspace/paneTypes";
 import { paneTargetRecord } from "../../workspace/paneTypes";
 import { useWorkspace } from "../../workspace/WorkspaceProvider";
+import { AdaptiveIconButton } from "../../ui/AdaptiveIconButton";
 import { EmptyPanel } from "../../ui/EmptyPanel";
 
 const TimelineView = lazy(() =>
@@ -384,19 +385,16 @@ function ExistingThreadPane({
             <>
               {customHeaderActions}
               {appSurfaceSession ? (
-                <ActionIcon
-                  aria-label="Open generated UI"
+                <AdaptiveIconButton
+                  label="Open generated UI"
                   onClick={() =>
                     void openGeneratedUiPane(threadId, `${title} UI`, {
                       placement: { sourcePaneId: pane.id },
                     })
                   }
-                  size="sm"
-                  title="Open generated UI"
-                  variant="subtle"
                 >
-                  <Sparkles size={16} />
-                </ActionIcon>
+                  <Sparkles />
+                </AdaptiveIconButton>
               ) : null}
               <ThreadActionsMenu
                 onDuplicatePane={() =>
@@ -641,9 +639,9 @@ function ThreadActionsMenu({
   return (
     <Menu position="bottom-end" withinPortal>
       <Menu.Target>
-        <ActionIcon aria-label="Thread actions" variant="subtle">
-          <MoreHorizontal size={17} />
-        </ActionIcon>
+        <AdaptiveIconButton label="Thread actions" tooltip={false}>
+          <MoreHorizontal />
+        </AdaptiveIconButton>
       </Menu.Target>
       <Menu.Dropdown aria-label="Thread actions">
         <Menu.Item leftSection={<CopyPlus size={14} />} onClick={onDuplicatePane}>

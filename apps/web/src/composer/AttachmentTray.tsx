@@ -1,8 +1,9 @@
-import { ActionIcon, Box, Text, Tooltip } from "@mantine/core";
+import { Box, Text, Tooltip } from "@mantine/core";
 import { X } from "lucide-react";
 
 import { ImageThumbnail } from "../images/ImageThumbnail";
 import type { ImageLightboxImage } from "../images/types";
+import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import type { PendingAttachment } from "./types";
 
 export function AttachmentTray({
@@ -36,16 +37,16 @@ export function AttachmentTray({
             )}
             {attachment.status === "uploading" ? <Box className="kodex-attachment-status">Uploading</Box> : null}
             {attachment.status === "error" ? <Box className="kodex-attachment-status">Failed</Box> : null}
-            <ActionIcon
-              aria-label={`Remove ${attachment.file.name}`}
+            <AdaptiveIconButton
               className="kodex-attachment-remove"
-              size="xs"
-              type="button"
-              variant="filled"
+              density="compact"
+              label={`Remove ${attachment.file.name}`}
               onClick={() => onRemove(attachment.id)}
+              tooltip={false}
+              variant="filled"
             >
-              <X size={12} />
-            </ActionIcon>
+              <X />
+            </AdaptiveIconButton>
           </Box>
         </Tooltip>
       ))}

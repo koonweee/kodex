@@ -11,6 +11,44 @@
   color: var(--kodex-text-danger);
 }
 
+.kodex-adaptive-icon {
+  --kodex-adaptive-icon-color: var(--kodex-text-secondary);
+  --kodex-adaptive-icon-size: 16px;
+
+  display: inline-grid;
+  width: var(--kodex-adaptive-icon-size);
+  height: var(--kodex-adaptive-icon-size);
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--kodex-adaptive-icon-color);
+  line-height: 0;
+}
+
+.kodex-adaptive-icon[data-color="inherit"] {
+  --kodex-adaptive-icon-color: currentColor;
+}
+
+.kodex-adaptive-icon[data-density="compact"] {
+  --kodex-adaptive-icon-size: 14px;
+}
+
+.kodex-adaptive-icon > svg {
+  width: 100%;
+  height: 100%;
+}
+
+.kodex-adaptive-icon-button {
+  --kodex-adaptive-icon-button-size: 32px;
+
+  --ai-size: var(--kodex-adaptive-icon-button-size) !important;
+  width: var(--kodex-adaptive-icon-button-size);
+  height: var(--kodex-adaptive-icon-button-size);
+}
+
+.kodex-adaptive-icon-button[data-density="compact"] {
+  --kodex-adaptive-icon-button-size: 28px;
+}
+
 .kodex-mantine-input {
   border-color: var(--kodex-border-subtle);
   background: var(--kodex-bg-raised-muted);
@@ -47,6 +85,16 @@
 }
 
 @media (pointer: coarse), (any-pointer: coarse) {
+  .kodex-adaptive-icon-button {
+    --ai-size: 44px !important;
+    --kodex-adaptive-icon-button-size: 44px;
+  }
+
+  .kodex-adaptive-icon-button[data-density="compact"] {
+    --ai-size: 36px !important;
+    --kodex-adaptive-icon-button-size: 36px;
+  }
+
   .kodex-mantine-input,
   .kodex-mantine-combobox-search,
   .kodex-mantine-multi-select-input-field {

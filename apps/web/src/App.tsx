@@ -1,4 +1,4 @@
-import { ActionIcon, MantineProvider, Tooltip } from "@mantine/core";
+import { MantineProvider } from "@mantine/core";
 import { QueryClientProvider, useMutation, useQueries, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { Bot } from "lucide-react";
 import {
@@ -123,6 +123,7 @@ import { useSidebarThreadsSnapshot } from "./threads/useSidebarThreadsSnapshot";
 import { useThreadMetadata } from "./threads/useThreadMetadata";
 import { useThreadReadState } from "./threads/useThreadReadState";
 import { useThreadViewPresence } from "./threads/useThreadViewPresence";
+import { AdaptiveIconButton } from "./ui/AdaptiveIconButton";
 import { paneTargetRecord } from "./workspace/paneTypes";
 import { createTimelineState, type TimelineState } from "./timeline/reducer";
 import { errorMessageFrom } from "./shared/values";
@@ -831,13 +832,7 @@ function KodexShell({
   pinnedThreadsRef.current = pinnedThreads;
   pendingTitleThreadIdsRef.current = pendingTitleThreadIds;
   threadsByProjectIdRef.current = threadsByProjectId;
-  const {
-    account,
-    handleCancelLogin,
-    handleLogin,
-    handleLogout,
-    loginState,
-  } = useAccountSession({ onError: reportError });
+  const { account, handleLogout } = useAccountSession({ onError: reportError });
   const {
     applyThreadNotificationsState,
     applyThreadPinState,
@@ -909,8 +904,7 @@ function KodexShell({
     updateThreadEverywhere: patchThreadEverywhere,
   });
   const {
-    handleSidebarResizeKeyDown,
-    handleSidebarResizePointerDown,
+    handleSidebarCollapseClick,
     handleSidebarExpandClick,
     isSidebarResizing,
     sidebarCollapsed,
@@ -1619,16 +1613,14 @@ function KodexShell({
   >(
     (_pane, state) =>
       state.isActive && state.thread.id === selectedThreadId && selectedThreadSubagents.length > 0 ? (
-        <Tooltip label={subagentSidebarOpen ? "Hide subagents" : "Show subagents"}>
-          <ActionIcon
-            aria-label={subagentSidebarOpen ? "Hide subagents" : "Show subagents"}
-            aria-pressed={subagentSidebarOpen ? "true" : "false"}
-            onClick={() => setSubagentSidebarOpen((current) => !current)}
-            variant={subagentSidebarOpen ? "light" : "subtle"}
-          >
-            <Bot size={17} />
-          </ActionIcon>
-        </Tooltip>
+        <AdaptiveIconButton
+          aria-pressed={subagentSidebarOpen ? "true" : "false"}
+          label={subagentSidebarOpen ? "Hide subagents" : "Show subagents"}
+          onClick={() => setSubagentSidebarOpen((current) => !current)}
+          variant={subagentSidebarOpen ? "light" : "subtle"}
+        >
+          <Bot />
+        </AdaptiveIconButton>
       ) : null,
     [selectedThreadId, selectedThreadSubagents.length, subagentSidebarOpen],
   );
@@ -1682,22 +1674,21 @@ function KodexShell({
           onShowMobileSidebar: handleShowMobileSidebar,
           project: selectedProjectPane,
         }}
-          sidebarWidth={sidebarWidth}
           sidebarCollapsed={sidebarCollapsed}
           useSingleThreadWorkspace={useSingleThreadWorkspace}
           workspaceSidebarProps={{
-          account, approvals, chatThreads: sidebarChatThreads, dataState: sidebarDataState, hoveredThreadActionId, isSidebarResizing, loginState,
+          account, approvals, chatThreads: sidebarChatThreads, dataState: sidebarDataState, hoveredThreadActionId,
           chatThreadsHasMore: chatThreadsNextCursor !== null,
           chatThreadsPaginationState,
-          onArchiveThread: handleArchiveThreadById, onCancelLogin: handleCancelLogin,
-          onCreateChat: stableHandleCreateChat, onCreateProject: stableHandleCreateProject, onCreateThread: stableHandleCreateThread, onLogin: handleLogin, onLogout: handleLogout,
+          onArchiveThread: handleArchiveThreadById,
+          onCreateChat: stableHandleCreateChat, onCreateProject: stableHandleCreateProject, onCreateThread: stableHandleCreateThread, onLogout: handleLogout,
           onLoadMoreChatThreads: handleLoadMoreChatThreads, onLoadMoreProjectThreads: handleLoadMoreProjectThreads,
           onPinThread: stableHandlePinThread,
           onOpenPreferences: handleOpenPreferences, onOpenTerminal: gatewayTerminalAvailable ? () => undefined : undefined, onProjectCwdChange: handleProjectCwdChange, onProjectDirectoryCreateCancel: () => setProjectDirectoryCreateCwd(null),
           onProjectFormOpenChange: setProjectFormOpen, onReorderProjects: handleReorderProjects, onSelectChatThread: stableHandleSelectChatThread,
           onSelectAutomations: stableHandleSelectAutomations, onSelectPinnedThread: stableHandleSelectPinnedThread, onSelectProjectSettings: stableHandleSelectProjectSettings, onSelectThread: stableHandleSelectThread, onUnpinThread: stableHandleUnpinThread,
-          onShowThread: handleShowMobileThread, onShowDebugEventsChange: setShowDebugEvents, onSidebarResizeKeyDown: handleSidebarResizeKeyDown,
-          onSidebarExpandClick: handleSidebarExpandClick, onSidebarResizePointerDown: handleSidebarResizePointerDown, onThreadActionHoverChange: setHoveredThreadActionId,
+          onShowThread: handleShowMobileThread, onShowDebugEventsChange: setShowDebugEvents, onSidebarCollapseClick: handleSidebarCollapseClick,
+          onSidebarExpandClick: handleSidebarExpandClick, onThreadActionHoverChange: setHoveredThreadActionId,
           pinnedThreads: sidebarPinnedThreads,
           pendingTitleThreadIds, projectCwd, projectDirectoryCreatePending: projectDirectoryCreateCwd === projectCwd.trim() && projectCwd.trim().length > 0,
           projectThreadHasMoreById: Object.fromEntries(Object.entries(projectThreadNextCursors).map(([projectId, cursor]) => [projectId, cursor !== null])),

@@ -294,6 +294,10 @@
     transform: none !important;
   }
 
+  .kodex-sidebar {
+    padding-top: 6px !important;
+  }
+
   .kodex-main {
     overflow: hidden;
   }
@@ -304,10 +308,6 @@
     background: transparent;
     box-shadow: none;
     overflow: visible;
-  }
-
-  .kodex-sidebar-resize-handle {
-    display: none;
   }
 
   .kodex-shell[data-mobile-panel="threads"] .kodex-sidebar,
@@ -368,5 +368,11 @@
 
   .kodex-mcp-server-list {
     max-height: none;
+  }
+}
+
+@media (max-width: 900px) and (pointer: coarse), (max-width: 900px) and (any-pointer: coarse) {
+  .kodex-sidebar {
+    padding-top: 4px !important;
   }
 }

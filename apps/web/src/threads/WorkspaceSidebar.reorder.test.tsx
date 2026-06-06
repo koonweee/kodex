@@ -109,23 +109,73 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(screen.queryByRole("button", { name: "Thread 2" })).not.toBeInTheDocument();
   });
 
-  it("collapses desktop sidebar content behind a persistent resize handle", () => {
+  it("renders collapsed desktop sidebar as an icon rail", async () => {
+    const onOpenTerminal = vi.fn();
+    const onSelectChatThread = vi.fn();
+    const onSelectThread = vi.fn();
     renderSidebar({
+      chatThreads: [threadSummary(3, { id: "chat-recent", name: "Recent chat", updatedAt: 30 })],
+      onOpenTerminal,
+      onSelectChatThread,
+      onSelectThread,
       projects: [projectSummary("project-1", "Project")],
       sidebarCollapsed: true,
-      sidebarWidth: 32,
+      sidebarWidth: 44,
       threadsByProjectId: {
-        "project-1": [threadSummary(1)],
+        "project-1": [threadSummary(1, { id: "project-recent", name: "Recent project", updatedAt: 40 })],
       },
     });
 
     expect(screen.getByLabelText("Workspace")).toHaveAttribute("data-collapsed", "true");
-    expect(screen.getByRole("separator", { name: "Expand workspace sidebar" })).toHaveAttribute(
-      "data-collapsed",
-      "true",
-    );
-    expect(screen.queryByLabelText("Search")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Expand workspace sidebar" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open terminal" }));
+    expect(onOpenTerminal).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("separator", { name: /sidebar/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Search" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Projects" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Recent threads" }));
+    const recentProjectItem = await screen.findByText("Recent project");
+    expect(recentProjectItem.closest('nav[aria-label="Workspace"]')).not.toBeInTheDocument();
+    fireEvent.click(recentProjectItem);
+    expect(onSelectThread).toHaveBeenCalledWith("project-1", "project-recent");
+    expect(onSelectChatThread).not.toHaveBeenCalled();
+  });
+
+  it("turns the expanded search action into a focused input", async () => {
+    renderSidebar({
+      projects: [projectSummary("project-1", "Project")],
+      threadsByProjectId: {
+        "project-1": [threadSummary(1, { name: "Needle thread" })],
+      },
+    });
+
+    expect(screen.queryByLabelText("Search")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    const searchInput = screen.getByLabelText("Search");
+    await waitFor(() => expect(searchInput).toHaveFocus());
+
+    fireEvent.change(searchInput, { target: { value: "needle" } });
+    expect(screen.getByRole("button", { name: "Needle thread" })).toBeInTheDocument();
+
+    fireEvent.change(searchInput, { target: { value: "" } });
+    fireEvent.blur(searchInput);
+    expect(screen.queryByLabelText("Search")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Search" })).toBeInTheDocument();
+  });
+
+  it("expands collapsed sidebar when search is clicked", () => {
+    const onSidebarExpandClick = vi.fn();
+    renderSidebar({
+      onSidebarExpandClick,
+      sidebarCollapsed: true,
+      sidebarWidth: 44,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+
+    expect(onSidebarExpandClick).toHaveBeenCalledTimes(1);
   });
 
   it("shows local loading and error states for cursor-backed project pagination", () => {
@@ -152,14 +202,10 @@ describe("WorkspaceSidebar project reorder", () => {
             approvals={[]}
             chatThreads={[]}
             hoveredThreadActionId={null}
-            isSidebarResizing={false}
-            loginState={{}}
             onArchiveThread={vi.fn()}
-            onCancelLogin={vi.fn()}
             onCreateChat={vi.fn()}
             onCreateProject={vi.fn()}
             onCreateThread={vi.fn()}
-            onLogin={vi.fn()}
             onLogout={vi.fn()}
             onLoadMoreProjectThreads={onLoadMoreProjectThreads}
             onOpenPreferences={vi.fn()}
@@ -174,9 +220,8 @@ describe("WorkspaceSidebar project reorder", () => {
             onSelectProjectSettings={vi.fn()}
             onSelectThread={vi.fn()}
             onShowDebugEventsChange={vi.fn()}
+            onSidebarCollapseClick={vi.fn()}
             onSidebarExpandClick={vi.fn()}
-            onSidebarResizeKeyDown={vi.fn()}
-            onSidebarResizePointerDown={vi.fn()}
             onThreadActionHoverChange={vi.fn()}
             onUnpinThread={vi.fn()}
             pendingTitleThreadIds={new Set()}
@@ -361,7 +406,8 @@ describe("WorkspaceSidebar project reorder", () => {
       },
     });
 
-    fireEvent.change(screen.getAllByLabelText("Search")[0], { target: { value: "target" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    fireEvent.change(screen.getByLabelText("Search"), { target: { value: "target" } });
 
     expect(screen.getByRole("group", { name: "Project" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pinned target" })).toBeInTheDocument();
@@ -606,14 +652,10 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
           approvals={[]}
           chatThreads={[]}
           hoveredThreadActionId={null}
-          isSidebarResizing={false}
-          loginState={{}}
           onArchiveThread={vi.fn()}
-          onCancelLogin={vi.fn()}
           onCreateChat={vi.fn()}
           onCreateProject={vi.fn()}
           onCreateThread={vi.fn()}
-          onLogin={vi.fn()}
           onLogout={vi.fn()}
           onOpenPreferences={vi.fn()}
           onPinThread={vi.fn()}
@@ -627,9 +669,8 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
           onSelectProjectSettings={vi.fn()}
           onSelectThread={vi.fn()}
           onShowDebugEventsChange={vi.fn()}
+          onSidebarCollapseClick={vi.fn()}
           onSidebarExpandClick={vi.fn()}
-          onSidebarResizeKeyDown={vi.fn()}
-          onSidebarResizePointerDown={vi.fn()}
           onThreadActionHoverChange={vi.fn()}
           onUnpinThread={vi.fn()}
           pendingTitleThreadIds={new Set()}

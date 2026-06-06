@@ -1,10 +1,10 @@
 import {
-  ActionIcon,
   AppShell,
   Badge,
   Box,
   Button,
   Group,
+  Menu,
   Stack,
   Text,
   TextInput,
@@ -18,30 +18,34 @@ import {
   FolderPlus,
   Inbox,
   MessageSquare,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pin,
   PinOff,
   Search,
   Settings,
   SquarePen,
+  SquareTerminal,
   X,
 } from "lucide-react";
 import {
   memo,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type DragEvent as ReactDragEvent,
   type FormEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type RefObject,
 } from "react";
 
 import type { AccountResponse, Approval, Project, ThreadSummary } from "../api/client";
 import type { UsageLimitLines } from "../account/rateLimits";
-import { SidebarAccountFooter, type LoginState } from "../account/SidebarAccountFooter";
+import { SidebarAccountMenu } from "../account/SidebarAccountFooter";
 import { useInputCapabilities } from "../shared/inputCapabilities";
-import { GatewayTerminalLauncher } from "../terminal/GatewayTerminalLauncher";
+import { AdaptiveIcon } from "../ui/AdaptiveIcon";
 import { EmptyPanel } from "../ui/EmptyPanel";
 import {
   threadDisplayTitle,
@@ -53,16 +57,23 @@ import {
   type ThreadsByProjectId,
 } from "./helpers";
 import { moveProjectInSidebarOrderAt } from "./projectOrder";
+import { SidebarIconButton } from "./SidebarIconButton";
 import {
   loadSidebarDisclosureState,
   saveSidebarDisclosureState,
   type SidebarDisclosureState,
 } from "./sidebarDisclosureState";
-import { SidebarActionDisclosureRow, SidebarRowFrame, SidebarSectionDisclosureRow } from "./sidebarRows";
+import {
+  SidebarActionDisclosureRow,
+  SidebarRowFrame,
+  SidebarSectionDisclosureRow,
+  SidebarTextActionRow,
+  SidebarTextInputRow,
+} from "./sidebarRows";
 
 const SIDEBAR_TEXT = {
-  cancelLogin: "Cancel login",
   chats: "Chats",
+  collapseSidebar: "Collapse workspace sidebar",
   createProject: "Add project",
   cwd: "Directory",
   expandSidebarHandle: "Expand workspace sidebar",
@@ -76,6 +87,8 @@ const SIDEBAR_TEXT = {
   pinThread: "Pin thread",
   projects: "Projects",
   resizeSidebarLabel: "Resize workspace sidebar",
+  recentThreads: "Recent threads",
+  recents: "Recents",
   search: "Search",
   showThread: "Show thread",
   showLessThreads: "Show less",
@@ -115,14 +128,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   chatThreadsPaginationState = "idle",
   dataState = DEFAULT_DATA_STATE,
   hoveredThreadActionId,
-  isSidebarResizing,
-  loginState,
   onArchiveThread,
-  onCancelLogin,
   onCreateChat,
   onCreateProject,
   onCreateThread,
-  onLogin,
   onLogout,
   onLoadMoreChatThreads,
   onLoadMoreProjectThreads,
@@ -140,9 +149,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onSelectThread,
   onShowThread = () => undefined,
   onShowDebugEventsChange,
+  onSidebarCollapseClick,
   onSidebarExpandClick,
-  onSidebarResizeKeyDown,
-  onSidebarResizePointerDown,
   onThreadActionHoverChange,
   onUnpinThread,
   pinnedThreads,
@@ -169,14 +177,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   chatThreadsPaginationState?: SidebarPaginationState;
   dataState?: WorkspaceSidebarDataState;
   hoveredThreadActionId: string | null;
-  isSidebarResizing: boolean;
-  loginState: LoginState;
   onArchiveThread: (threadId: string) => void;
-  onCancelLogin: () => void;
   onCreateChat: () => void;
   onCreateProject: (options?: { createDirectory?: boolean }) => void;
   onCreateThread: (projectId: string) => void;
-  onLogin: () => void;
   onLogout: () => void;
   onLoadMoreChatThreads?: () => void;
   onLoadMoreProjectThreads?: (projectId: string) => void;
@@ -194,9 +198,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onSelectThread: (projectId: string, threadId: string) => void;
   onShowThread?: () => void;
   onShowDebugEventsChange: (value: boolean) => void;
+  onSidebarCollapseClick: () => void;
   onSidebarExpandClick: () => void;
-  onSidebarResizeKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => void;
-  onSidebarResizePointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onThreadActionHoverChange: (threadId: string | null) => void;
   onUnpinThread: (threadId: string) => void;
   pendingTitleThreadIds: Set<string>;
@@ -224,11 +227,13 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const [expandedThreadProjectIds, setExpandedThreadProjectIds] = useState<Set<string>>(() => new Set());
   const [sidebarScope, setSidebarScope] = useState<SidebarScope>("projects");
   const [previewProjectIds, setPreviewProjectIds] = useState<string[] | null>(null);
+  const [searchActive, setSearchActive] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const isMobileSidebar = useMediaQuery("(max-width: 900px)", false);
   const useTouchDensity = useInputCapabilities().hasTouchInput;
   const projectGroupRefs = useRef<Map<string, HTMLElement>>(new Map());
   const pendingProjectAnimationRects = useRef<Map<string, DOMRect> | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const displayedProjects = useMemo(
     () => projectsFromPreviewOrder(projects, previewProjectIds),
     [previewProjectIds, projects],
@@ -257,6 +262,23 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     pinnedSectionCollapsed,
     projectsSectionCollapsed,
   } = sidebarDisclosureState;
+  const recentThreads = useMemo(
+    () =>
+      recentSidebarThreads({
+        chatThreads,
+        pinnedThreads,
+        projects,
+        threadsByProjectId,
+      }),
+    [chatThreads, pinnedThreads, projects, threadsByProjectId],
+  );
+
+  useEffect(() => {
+    if (!searchActive || sidebarCollapsed) {
+      return;
+    }
+    searchInputRef.current?.focus();
+  }, [searchActive, sidebarCollapsed]);
 
   useLayoutEffect(() => {
     const beforeRects = pendingProjectAnimationRects.current;
@@ -363,6 +385,31 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     });
   }
 
+  function handleSearchActivate() {
+    setSearchActive(true);
+  }
+
+  function handleSearchBlur() {
+    if (!searchQuery.trim()) {
+      setSearchActive(false);
+    }
+  }
+
+  function handleCollapsedSearchClick() {
+    onSidebarExpandClick();
+    setSearchActive(true);
+  }
+
+  function handleRecentThreadSelect(thread: RecentSidebarThread) {
+    if (thread.location.kind === "project") {
+      onSelectThread(thread.location.projectId, thread.thread.id);
+    } else if (thread.location.kind === "chat") {
+      onSelectChatThread(thread.thread.id);
+    } else {
+      onSelectPinnedThread(thread.thread.id);
+    }
+  }
+
   return (
     <AppShell.Navbar
       aria-label={SIDEBAR_TEXT.workspaceLabel}
@@ -374,57 +421,38 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       data-sidebar-scope={sidebarScope}
       style={{ width: sidebarWidth }}
     >
-      <Stack gap={isMobileSidebar ? "md" : "lg"} h="100%">
+      <Stack gap={isMobileSidebar ? 8 : "lg"} h="100%">
         {!sidebarCollapsed ? (
           <>
-            <Box className="kodex-sidebar-desktop-header">
-              <TextInput
-                aria-label={SIDEBAR_TEXT.search}
-                className="kodex-sidebar-search"
-                id="kodex-sidebar-search-desktop"
-                leftSection={<Search size={13} />}
-                onChange={(event) => setSearchQuery(event.currentTarget.value)}
-                placeholder={SIDEBAR_TEXT.search}
-                size="xs"
-                value={searchQuery}
-                variant="unstyled"
+            <Box className="kodex-sidebar-header">
+              <SidebarAccountMenu
+                account={account}
+                onLogout={onLogout}
+                onSelectAutomations={onSelectAutomations}
+                onOpenPreferences={onOpenPreferences}
+                onShowDebugEventsChange={onShowDebugEventsChange}
+                showDebugEvents={showDebugEvents}
+                usageLimitLines={usageLimitLines}
               />
-              {onOpenTerminal ? (
-                <Group className="kodex-sidebar-header-actions" gap={2} wrap="nowrap">
-                  <GatewayTerminalLauncher onOpen={onOpenTerminal} size="xs" />
-                </Group>
-              ) : null}
+              <SidebarIconButton
+                className="kodex-sidebar-header-action"
+                label={isMobileSidebar ? SIDEBAR_TEXT.showThread : SIDEBAR_TEXT.collapseSidebar}
+                onClick={isMobileSidebar ? onShowThread : onSidebarCollapseClick}
+                tooltipProps={{ position: isMobileSidebar ? "bottom" : "right" }}
+              >
+                <PanelLeftClose size={16} />
+              </SidebarIconButton>
             </Box>
-            <Box className="kodex-sidebar-mobile-header">
-              <TextInput
-                aria-label={SIDEBAR_TEXT.search}
-                className="kodex-sidebar-search"
-                id="kodex-sidebar-search-mobile"
-                leftSection={<Search size={13} />}
-                onChange={(event) => setSearchQuery(event.currentTarget.value)}
-                placeholder={SIDEBAR_TEXT.search}
-                size="xs"
-                value={searchQuery}
-                variant="unstyled"
+            <Box className="kodex-sidebar-actions" aria-label="Sidebar actions">
+              <SearchActionRow
+                active={searchActive}
+                inputRef={searchInputRef}
+                onActivate={handleSearchActivate}
+                onBlur={handleSearchBlur}
+                onChange={setSearchQuery}
+                query={searchQuery}
               />
-              {onOpenTerminal ? (
-                <Group className="kodex-sidebar-header-actions" gap={2} wrap="nowrap">
-                  <GatewayTerminalLauncher onOpen={onOpenTerminal} size="md" />
-                </Group>
-              ) : null}
-              <Tooltip label={SIDEBAR_TEXT.showThread}>
-                <ActionIcon
-                  aria-label={SIDEBAR_TEXT.showThread}
-                  className="kodex-sidebar-mobile-action"
-                  color="gray"
-                  onClick={onShowThread}
-                  size="md"
-                  type="button"
-                  variant="subtle"
-                >
-                  <X size={17} />
-                </ActionIcon>
-              </Tooltip>
+              {onOpenTerminal ? <SidebarTextActionRow icon={<SquareTerminal />} label="Terminal" onClick={onOpenTerminal} /> : null}
             </Box>
             <Box className="kodex-sidebar-scope-switch">
               <button
@@ -590,9 +618,13 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                                 label={project.name}
                                 leadingIcon={
                                   projectCollapsed ? (
-                                    <Folder className="kodex-project-folder-icon" data-collapsed="true" />
+                                    <AdaptiveIcon className="kodex-project-folder-icon" data-collapsed="true">
+                                      <Folder />
+                                    </AdaptiveIcon>
                                   ) : (
-                                    <FolderOpen className="kodex-project-folder-icon" />
+                                    <AdaptiveIcon className="kodex-project-folder-icon">
+                                      <FolderOpen />
+                                    </AdaptiveIcon>
                                   )
                                 }
                                 mainClassName="kodex-ui-selectable kodex-project-title"
@@ -702,39 +734,117 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 </Box>
               ) : null}
             </Box>
-            <SidebarAccountFooter
-              account={account}
-              loginState={loginState}
-              onCancelLogin={onCancelLogin}
-              onLogin={onLogin}
-              onLogout={onLogout}
-              onSelectAutomations={onSelectAutomations}
-              onOpenPreferences={onOpenPreferences}
-              onShowDebugEventsChange={onShowDebugEventsChange}
-              showDebugEvents={showDebugEvents}
-              usageLimitLines={usageLimitLines}
-            />
           </>
-        ) : null}
+        ) : (
+          <CollapsedSidebarRail
+            onExpand={onSidebarExpandClick}
+            onOpenTerminal={onOpenTerminal}
+            onRecentThreadSelect={handleRecentThreadSelect}
+            onSearch={handleCollapsedSearchClick}
+            recentThreads={recentThreads}
+          />
+        )}
       </Stack>
-      <button
-        aria-label={sidebarCollapsed ? SIDEBAR_TEXT.expandSidebarHandle : SIDEBAR_TEXT.resizeSidebarLabel}
-        aria-orientation="vertical"
-        aria-valuemax={520}
-        aria-valuemin={sidebarCollapsed ? 0 : 292}
-        aria-valuenow={sidebarWidth}
-        className="kodex-sidebar-resize-handle"
-        data-collapsed={sidebarCollapsed ? "true" : undefined}
-        data-sidebar-resizing={isSidebarResizing ? "true" : undefined}
-        onClick={sidebarCollapsed ? onSidebarExpandClick : undefined}
-        onKeyDown={onSidebarResizeKeyDown}
-        onPointerDown={onSidebarResizePointerDown}
-        role="separator"
-        type="button"
-      />
     </AppShell.Navbar>
   );
 });
+
+function SearchActionRow({
+  active,
+  inputRef,
+  onActivate,
+  onBlur,
+  onChange,
+  query,
+}: {
+  active: boolean;
+  inputRef: RefObject<HTMLInputElement | null>;
+  onActivate: () => void;
+  onBlur: () => void;
+  onChange: (value: string) => void;
+  query: string;
+}) {
+  return active ? (
+    <SidebarTextInputRow
+      icon={<Search aria-hidden="true" />}
+      inputRef={inputRef}
+      inputProps={{
+        "aria-label": SIDEBAR_TEXT.search,
+        onBlur,
+        onChange: (event) => onChange(event.currentTarget.value),
+        placeholder: SIDEBAR_TEXT.search,
+        value: query,
+      }}
+    />
+  ) : (
+    <SidebarTextActionRow icon={<Search aria-hidden="true" />} label={SIDEBAR_TEXT.search} onClick={onActivate} />
+  );
+}
+
+function CollapsedSidebarRail({
+  onExpand,
+  onOpenTerminal,
+  onRecentThreadSelect,
+  onSearch,
+  recentThreads,
+}: {
+  onExpand: () => void;
+  onOpenTerminal?: () => void;
+  onRecentThreadSelect: (thread: RecentSidebarThread) => void;
+  onSearch: () => void;
+  recentThreads: RecentSidebarThread[];
+}) {
+  return (
+    <Box className="kodex-sidebar-collapsed-rail">
+      <Box className="kodex-sidebar-collapsed-header">
+        <SidebarIconButton
+          className="kodex-sidebar-collapsed-button"
+          label={SIDEBAR_TEXT.expandSidebarHandle}
+          onClick={onExpand}
+        >
+          <PanelLeftOpen />
+        </SidebarIconButton>
+      </Box>
+      <Box className="kodex-sidebar-collapsed-actions" aria-label="Collapsed sidebar actions">
+        <SidebarIconButton className="kodex-sidebar-collapsed-button" label={SIDEBAR_TEXT.search} onClick={onSearch}>
+          <Search />
+        </SidebarIconButton>
+        {onOpenTerminal ? (
+          <SidebarIconButton
+            className="kodex-sidebar-collapsed-button"
+            label={SIDEBAR_TEXT.openTerminal}
+            onClick={onOpenTerminal}
+          >
+            <SquareTerminal />
+          </SidebarIconButton>
+        ) : null}
+        <Menu position="right-start" withinPortal>
+          <Menu.Target>
+            <SidebarIconButton
+              className="kodex-sidebar-collapsed-button"
+              label={SIDEBAR_TEXT.recentThreads}
+              tooltip={false}
+            >
+              <MessageSquare size={16} />
+            </SidebarIconButton>
+          </Menu.Target>
+          <Menu.Dropdown aria-label={SIDEBAR_TEXT.recentThreads} className="kodex-sidebar-recents-dropdown">
+            <Menu.Label>{SIDEBAR_TEXT.recents}</Menu.Label>
+            {recentThreads.length > 0 ? (
+              recentThreads.map((recent) => (
+                <Menu.Item key={recent.thread.id} onClick={() => onRecentThreadSelect(recent)}>
+                  {threadDisplayTitle(recent.thread)}
+                </Menu.Item>
+              ))
+            ) : (
+              <Menu.Item disabled>No recent threads</Menu.Item>
+            )}
+          </Menu.Dropdown>
+        </Menu>
+      </Box>
+    </Box>
+  );
+}
 
 function projectDirectoryDisplayPath(projectCwd: string): string {
   const cwd = projectCwd.trim();
@@ -757,6 +867,55 @@ function pinnedThreadBelongsToProject(
 ): boolean {
   const projectId = (thread as { projectId?: unknown }).projectId;
   return (typeof projectId === "string" && projectIds.has(projectId)) || projectCwds.has(thread.cwd);
+}
+
+type RecentSidebarThread = {
+  location: { kind: "chat" } | { kind: "pinned" } | { kind: "project"; projectId: string };
+  thread: ThreadSummary;
+};
+
+function recentSidebarThreads({
+  chatThreads,
+  pinnedThreads,
+  projects,
+  threadsByProjectId,
+}: {
+  chatThreads: ThreadSummary[];
+  pinnedThreads: ThreadSummary[];
+  projects: Project[];
+  threadsByProjectId: ThreadsByProjectId;
+}): RecentSidebarThread[] {
+  const byThreadId = new Map<string, RecentSidebarThread>();
+  for (const [projectId, threads] of Object.entries(threadsByProjectId)) {
+    for (const thread of threads) {
+      byThreadId.set(thread.id, { location: { kind: "project", projectId }, thread });
+    }
+  }
+  for (const thread of chatThreads) {
+    if (!byThreadId.has(thread.id)) {
+      byThreadId.set(thread.id, { location: { kind: "chat" }, thread });
+    }
+  }
+  const projectByCwd = new Map(projects.map((project) => [project.cwd, project.id]));
+  for (const thread of pinnedThreads) {
+    if (byThreadId.has(thread.id)) {
+      continue;
+    }
+    const projectId = projectByCwd.get(thread.cwd);
+    byThreadId.set(thread.id, {
+      location: projectId ? { kind: "project", projectId } : { kind: "pinned" },
+      thread,
+    });
+  }
+  return [...byThreadId.values()]
+    .sort(
+      (left, right) =>
+        right.thread.updatedAt - left.thread.updatedAt ||
+        right.thread.createdAt - left.thread.createdAt ||
+        threadDisplayTitle(left.thread).localeCompare(threadDisplayTitle(right.thread)) ||
+        left.thread.id.localeCompare(right.thread.id),
+    )
+    .slice(0, 10);
 }
 
 function projectsFromPreviewOrder(projects: Project[], previewProjectIds: string[] | null): Project[] {
@@ -850,23 +1009,29 @@ export const ThreadListRow = memo(function ThreadListRow({
     <SidebarRowFrame
       className="kodex-ui-selectable kodex-list-button kodex-thread-list-button"
       leadingContent={
-        <Tooltip label={pinLabel}>
-          <button
-            aria-label={pinLabel}
-            className="kodex-ui-button kodex-ui-icon-button kodex-thread-pin-button"
-            onClick={(event) => {
-              event.stopPropagation();
-              if (isPinned) {
-                onUnpinThread(thread.id);
-              } else {
-                onPinThread(thread.id);
-              }
-            }}
-            type="button"
-          >
-            {isPinned ? <PinOff /> : <Pin />}
-          </button>
-        </Tooltip>
+        <SidebarIconButton
+          className="kodex-thread-pin-button"
+          data-pinned={isPinned ? "true" : undefined}
+          density="compact"
+          label={pinLabel}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (isPinned) {
+              onUnpinThread(thread.id);
+            } else {
+              onPinThread(thread.id);
+            }
+          }}
+        >
+          {isPinned ? (
+            <>
+              <Pin className="kodex-thread-pin-state-icon" />
+              <PinOff className="kodex-thread-pin-action-icon" />
+            </>
+          ) : (
+            <Pin />
+          )}
+        </SidebarIconButton>
       }
       rootProps={{
         "data-active": isSelected ? "true" : undefined,
@@ -913,16 +1078,15 @@ export const ThreadListRow = memo(function ThreadListRow({
             </Tooltip>
           ) : null}
           {showThreadArchiveAction ? (
-            <Tooltip label="Archive thread">
-              <button
-                aria-label={`Archive ${displayTitle}`}
-                className="kodex-ui-button kodex-ui-icon-button kodex-thread-archive-button"
-                onClick={() => onArchiveThread(thread.id)}
-                type="button"
-              >
-                <Archive />
-              </button>
-            </Tooltip>
+            <SidebarIconButton
+              className="kodex-thread-archive-button"
+              density="compact"
+              label={`Archive ${displayTitle}`}
+              tooltip="Archive thread"
+              onClick={() => onArchiveThread(thread.id)}
+            >
+              <Archive />
+            </SidebarIconButton>
           ) : null}
         </>
       }

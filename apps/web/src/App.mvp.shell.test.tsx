@@ -1846,7 +1846,7 @@ describe("MVP shell flows", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /open terminal/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: "Terminal" }).length).toBeGreaterThan(0);
   });
 
   it("keeps a sidebar escape hatch on the root draft chat pane", async () => {
@@ -1911,9 +1911,9 @@ describe("MVP shell flows", () => {
     await userEvent.click(await screen.findByRole("button", { name: /show sidebar/i }));
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "threads");
 
-    const mobileHeader = document.querySelector<HTMLElement>(".kodex-sidebar-mobile-header");
+    const mobileHeader = document.querySelector<HTMLElement>(".kodex-sidebar-header");
     expect(mobileHeader).not.toBeNull();
-    await userEvent.click(within(mobileHeader!).getByRole("button", { name: /open terminal/i }));
+    await userEvent.click(screen.getByRole("button", { name: "Terminal" }));
 
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
     expect(screen.getByRole("region", { name: /terminal pane/i })).toBeInTheDocument();
@@ -2179,12 +2179,12 @@ describe("MVP shell flows", () => {
     const { container } = render(<App />);
     const view = within(container);
 
-    const avatar = await view.findByRole("img", { name: /dev@example\.com/i });
-    expect(avatar).toHaveTextContent("D");
-    fireEvent.click(view.getByRole("button", { name: /account settings/i }));
+    const settingsTrigger = await view.findByRole("button", { name: /account settings/i });
+    fireEvent.click(settingsTrigger);
     await userEvent.click(await view.findByRole("menuitem", { name: /logout/i }));
     expect(gateway.callsFor("POST", "/v1/account/logout")).toHaveLength(1);
-    expect(await view.findByRole("button", { name: /connect chatgpt/i })).toBeInTheDocument();
+    expect(await view.findByRole("button", { name: /account settings/i })).toBeInTheDocument();
+    expect(view.queryByRole("button", { name: /connect chatgpt/i })).not.toBeInTheDocument();
   });
 
 });

@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Box, Button, Group, Loader, Paper, Table, Text, Title, Tooltip } from "@mantine/core";
+import { Badge, Box, Button, Group, Loader, Paper, Table, Text, Title, Tooltip } from "@mantine/core";
 import {
   flexRender,
   getCoreRowModel,
@@ -15,6 +15,7 @@ import type {
   AutomationCreateRequest,
   AutomationUpdateRequest,
 } from "../api/client";
+import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import { EmptyPanel } from "../ui/EmptyPanel";
 import { AutomationEditorModal } from "./AutomationEditorModal";
 import {
@@ -168,14 +169,13 @@ export function AutomationsPane({
     <>
       <Group justify="space-between" wrap="nowrap" className="kodex-thread-header kodex-automations-header">
         <Group gap="xs" wrap="nowrap" className="kodex-thread-heading">
-          <ActionIcon
-            aria-label={AUTOMATIONS_TEXT.showSidebar}
-            className="kodex-thread-sidebar-button"
+          <AdaptiveIconButton
+            className="kodex-automations-sidebar-button"
+            label={AUTOMATIONS_TEXT.showSidebar}
             onClick={onShowMobileSidebar}
-            variant="subtle"
           >
-            <PanelLeftOpen size={17} />
-          </ActionIcon>
+            <PanelLeftOpen />
+          </AdaptiveIconButton>
           <Title className="kodex-thread-title" order={3} size="h5">
             {AUTOMATIONS_TEXT.title}
           </Title>

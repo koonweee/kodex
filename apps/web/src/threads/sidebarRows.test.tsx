@@ -5,7 +5,12 @@ import { Folder, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { SidebarActionDisclosureRow, SidebarSectionDisclosureRow } from "./sidebarRows";
+import {
+  SidebarActionDisclosureRow,
+  SidebarSectionDisclosureRow,
+  SidebarTextActionRow,
+  SidebarTextInputRow,
+} from "./sidebarRows";
 
 describe("sidebar row primitives", () => {
   it("renders a section disclosure row with shared regions and accessible collapse state", async () => {
@@ -71,6 +76,30 @@ describe("sidebar row primitives", () => {
 
     await userEvent.click(toggle);
     expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders sidebar text action and input rows with accessible controls", async () => {
+    const onClick = vi.fn();
+    const onChange = vi.fn();
+
+    renderRow(
+      <>
+        <SidebarTextActionRow icon={<Plus size={14} />} label="Terminal" onClick={onClick} />
+        <SidebarTextInputRow
+          icon={<Plus size={14} />}
+          inputProps={{
+            "aria-label": "Search",
+            onChange: (event) => onChange(event.currentTarget.value),
+          }}
+        />
+      </>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Terminal" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Search" }), "api");
+
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith("api");
   });
 });
 

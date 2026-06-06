@@ -122,12 +122,6 @@
   background: var(--kodex-bg-raised);
 }
 
-.kodex-automation-status-action,
-.kodex-automation-status-action:hover {
-  background: transparent;
-  color: var(--kodex-text-primary);
-}
-
 @media (max-width: 900px) {
   .kodex-automation-table-paper {
     border-radius: var(--kodex-radius-sm);
@@ -277,13 +271,6 @@
   }
 
   .kodex-automations-empty-action {
-    min-height: 44px;
-  }
-
-  .kodex-automations-header .kodex-thread-sidebar-button {
-    width: 44px;
-    min-width: 44px;
-    height: 44px;
     min-height: 44px;
   }
 

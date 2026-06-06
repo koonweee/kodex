@@ -1,10 +1,9 @@
-import { ActionIcon, Alert, Box, Button, Group, Loader, Text, Tooltip } from "@mantine/core";
+import { Alert, Box, Button, Group, Loader, Text } from "@mantine/core";
 import { Plus, RotateCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { terminalWebSocketUrl } from "../../api/client";
 import { errorMessageFrom } from "../../shared/values";
-import { useInputCapabilities } from "../../shared/inputCapabilities";
 import {
   XtermTerminal,
   type TerminalConnectionState,
@@ -14,6 +13,7 @@ import { useGatewayTerminalSession } from "../../terminal/useGatewayTerminalSess
 import { useWorkspace } from "../../workspace/WorkspaceProvider";
 import type { WorkspacePaneComponentProps } from "../../workspace/paneTypes";
 import { paneTargetRecord } from "../../workspace/paneTypes";
+import { AdaptiveIconButton } from "../../ui/AdaptiveIconButton";
 
 const TERMINAL_TEXT = {
   create: "New terminal",
@@ -55,7 +55,6 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
   const [inputSignal, setInputSignal] = useState<TerminalInputSignal | null>(null);
   const [paneError, setPaneError] = useState<string | null>(null);
-  const { hasTouchInput } = useInputCapabilities();
 
   useEffect(() => {
     if (!session || targetTerminalId === session.id || patchingSessionIdRef.current === session.id) {
@@ -112,7 +111,6 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
     await recoverSession();
   }, [recoverSession]);
 
-  const actionSize = hasTouchInput ? "lg" : "sm";
   const terminalError = paneError ?? error ?? connectionMessage;
   const tabStatus = terminalError
     ? "error"
@@ -131,37 +129,29 @@ export function TerminalPane({ pane }: WorkspacePaneComponentProps) {
   const paneHeaderActions = useMemo(
     () => (
       <Group className="kodex-terminal-pane-actions" gap={4} wrap="nowrap">
-        <Tooltip label={TERMINAL_TEXT.create}>
-          <ActionIcon
-            aria-label={TERMINAL_TEXT.create}
+        <AdaptiveIconButton
+          color="gray"
+          disabled={isLoading}
+          label={TERMINAL_TEXT.create}
+          onClick={handleOpenTerminalTab}
+
+        >
+          <Plus />
+        </AdaptiveIconButton>
+        {connectionMessage ? (
+          <AdaptiveIconButton
             color="gray"
             disabled={isLoading}
-            onClick={handleOpenTerminalTab}
-            size={actionSize}
-            type="button"
-            variant="subtle"
+            label={TERMINAL_TEXT.reconnect}
+            onClick={() => void handleReconnect()}
+
           >
-            <Plus size={16} />
-          </ActionIcon>
-        </Tooltip>
-        {connectionMessage ? (
-          <Tooltip label={TERMINAL_TEXT.reconnect}>
-            <ActionIcon
-              aria-label={TERMINAL_TEXT.reconnect}
-              color="gray"
-              disabled={isLoading}
-              onClick={() => void handleReconnect()}
-              size={actionSize}
-              type="button"
-              variant="subtle"
-            >
-              <RotateCw size={15} />
-            </ActionIcon>
-          </Tooltip>
+            <RotateCw />
+          </AdaptiveIconButton>
         ) : null}
       </Group>
     ),
-    [actionSize, connectionMessage, handleOpenTerminalTab, handleReconnect, isLoading],
+    [connectionMessage, handleOpenTerminalTab, handleReconnect, isLoading],
   );
 
   useEffect(() => {

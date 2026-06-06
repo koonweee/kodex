@@ -1,9 +1,10 @@
-import { ActionIcon, Box, Button, Group, Menu, Switch, Text, Tooltip } from "@mantine/core";
+import { Box, Button, Group, Menu, Switch, Text, Tooltip } from "@mantine/core";
 import { AlertCircle, Check, Gauge, X } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useState } from "react";
 
 import type { ModelSummary } from "./api/client";
+import { AdaptiveIconButton } from "./ui/AdaptiveIconButton";
 import { CheckboxMenuItem } from "./ui/CheckboxMenuItem";
 
 export type ComposerSettings = {
@@ -57,11 +58,9 @@ export function ComposerFooterControls({
     <Group className="kodex-composer-footer-controls" gap={6} wrap="nowrap">
       <Group className="kodex-composer-footer-left" gap={6} wrap="nowrap">
         {settingsError ? (
-          <Tooltip label={settingsError}>
-            <ActionIcon aria-label={settingsError} color="red" size="md" type="button" variant="subtle">
-              <AlertCircle size={15} />
-            </ActionIcon>
-          </Tooltip>
+          <AdaptiveIconButton color="red" label={settingsError}>
+            <AlertCircle />
+          </AdaptiveIconButton>
         ) : null}
       </Group>
 
@@ -165,9 +164,9 @@ function MobileMenuHeader({ onClose, title }: { onClose: () => void; title: stri
       <Text fw={700} size="sm">
         {title}
       </Text>
-      <ActionIcon aria-label={`Close ${title}`} onClick={onClose} size="sm" type="button" variant="subtle">
-        <X size={15} />
-      </ActionIcon>
+      <AdaptiveIconButton label={`Close ${title}`} onClick={onClose}>
+        <X />
+      </AdaptiveIconButton>
     </Group>
   );
 }

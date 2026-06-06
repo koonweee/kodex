@@ -1,9 +1,10 @@
 import "../styles/workspace.css";
 
-import { ActionIcon, Alert, Button, Center, Group, Loader, Menu, Stack, Text } from "@mantine/core";
+import { Alert, Button, Center, Group, Loader, Menu, Stack, Text } from "@mantine/core";
 import { PanelLeftOpen, X } from "lucide-react";
 import { useEffect, useMemo } from "react";
 
+import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import { paneTitle } from "./paneTypes";
 import { WorkspacePaneRenderer } from "./paneRegistry";
 import { useWorkspace } from "./WorkspaceProvider";
@@ -75,15 +76,14 @@ export function WorkspaceSinglePaneShell() {
   return (
     <Stack className="kodex-workspace-single-pane-shell" data-testid="workspace-single-pane-shell" gap={0}>
       <Group className="kodex-workspace-single-pane-header" gap={6} wrap="nowrap">
-        <ActionIcon
-          aria-label="Show sidebar"
+        <AdaptiveIconButton
           className="kodex-workspace-single-pane-sidebar-button"
+          label="Show sidebar"
           onClick={onShowMobileSidebar}
-          type="button"
-          variant="subtle"
+
         >
-          <PanelLeftOpen size={17} />
-        </ActionIcon>
+          <PanelLeftOpen />
+        </AdaptiveIconButton>
         <div className="kodex-workspace-single-pane-switcher">
           <Menu position="bottom-start" withinPortal>
             <Menu.Target>
@@ -126,15 +126,14 @@ export function WorkspaceSinglePaneShell() {
         </div>
         <div aria-label="Pane actions" className="kodex-workspace-pane-actions" role="toolbar">
           {canCloseActivePane ? (
-            <ActionIcon
-              aria-label="Close pane"
+            <AdaptiveIconButton
               className="kodex-workspace-single-pane-close-button"
+              label="Close pane"
               onClick={() => closePane(activePane.id, null, { nextActivePaneId })}
-              type="button"
-              variant="subtle"
+
             >
-              <X size={14} />
-            </ActionIcon>
+              <X />
+            </AdaptiveIconButton>
           ) : null}
           {activePaneActions}
         </div>

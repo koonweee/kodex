@@ -10,6 +10,7 @@ import type { MarkdownPreviewRequest } from "../files/types";
 import { ImageThumbnail } from "../images/ImageThumbnail";
 import type { ImageLightboxImage } from "../images/types";
 import { copyTextToClipboard } from "../shared/clipboard";
+import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import { LazyMarkdownContent, localPreviewPath } from "./rendererShared";
 import type { TimelineImage, TimelineItem } from "./reducer";
 
@@ -434,16 +435,17 @@ function MessageToolbar({
     }, 1_300);
   }
 
+  const copyLabel = copied ? "Copied message" : "Copy message";
   const copyButton = (
-    <button
-      aria-label={copied ? "Copied message" : "Copy message"}
-      className="kodex-ui-button kodex-ui-icon-button kodex-message-toolbar-item kodex-message-copy-button"
-      onClick={handleCopy}
-      type="button"
+    <AdaptiveIconButton
+      className="kodex-message-copy-button"
+      density="compact"
       key="copy"
+      label={copyLabel}
+      onClick={handleCopy}
     >
-      {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
-    </button>
+      {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+    </AdaptiveIconButton>
   );
   const timestamp = timestampMs !== undefined ? <MessageToolbarTimestamp key="timestamp" timestampMs={timestampMs} /> : null;
   const items = align === "end" ? [timestamp, copyButton] : [copyButton, timestamp];

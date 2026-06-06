@@ -1,6 +1,15 @@
-import { ActionIcon, Box, Text, Tooltip } from "@mantine/core";
+import { Box, Text } from "@mantine/core";
 import { ChevronRight } from "lucide-react";
-import type { DragEvent as ReactDragEvent, HTMLAttributes, ReactNode } from "react";
+import type {
+  DragEvent as ReactDragEvent,
+  HTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  Ref,
+} from "react";
+
+import { AdaptiveIcon } from "../ui/AdaptiveIcon";
+import { SidebarIconButton } from "./SidebarIconButton";
 
 export type SidebarRowAction = {
   icon: ReactNode;
@@ -44,18 +53,15 @@ export function SidebarRowFrame({
   const rootClassName = ["kodex-sidebar-row", className, rootProps?.className].filter(Boolean).join(" ");
   const leading = leadingContent ?? leadingIcon;
   const trailingActionNodes = trailingActions.map((action) => (
-    <Tooltip key={action.label} label={action.label}>
-      <ActionIcon
-        aria-label={action.label}
-        className="kodex-sidebar-row-action"
-        color="gray"
-        onClick={action.onClick}
-        size="xs"
-        variant="subtle"
-      >
-        {action.icon}
-      </ActionIcon>
-    </Tooltip>
+    <SidebarIconButton
+      className="kodex-sidebar-row-action"
+      density="compact"
+      key={action.label}
+      label={action.label}
+      onClick={action.onClick}
+    >
+      {action.icon}
+    </SidebarIconButton>
   ));
   const trailing = trailingContent ?? trailingActionNodes;
   const hasTrailing = Boolean(trailingContent) || trailingActionNodes.length > 0;
@@ -93,7 +99,11 @@ export function SidebarSectionDisclosureRow({
   trailingActions?: SidebarRowAction[];
 }) {
   return (
-    <SidebarRowFrame className={["kodex-sidebar-section-row", className].filter(Boolean).join(" ")} collapsed={collapsed} trailingActions={trailingActions}>
+    <SidebarRowFrame
+      className={["kodex-sidebar-section-row", className].filter(Boolean).join(" ")}
+      collapsed={collapsed}
+      trailingActions={trailingActions}
+    >
       <button
         aria-expanded={!collapsed}
         aria-label={`${collapsed ? "Expand" : "Collapse"} ${label} section`}
@@ -142,7 +152,9 @@ export function SidebarActionDisclosureRow({
       <button
         aria-expanded={!collapsed}
         aria-label={disclosureLabel}
-        className={["kodex-ui-button kodex-sidebar-row-main kodex-sidebar-item-toggle", mainClassName].filter(Boolean).join(" ")}
+        className={["kodex-ui-button kodex-sidebar-row-main kodex-sidebar-item-toggle", mainClassName]
+          .filter(Boolean)
+          .join(" ")}
         onClick={onToggle}
         type="button"
       >
@@ -152,5 +164,57 @@ export function SidebarActionDisclosureRow({
         <DisclosureChevron />
       </button>
     </SidebarRowFrame>
+  );
+}
+
+export function SidebarTextActionRow({
+  className,
+  icon,
+  label,
+  onClick,
+}: {
+  className?: string;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={["kodex-ui-button kodex-sidebar-text-action-row", className].filter(Boolean).join(" ")}
+      onClick={onClick}
+      type="button"
+    >
+      <AdaptiveIcon className="kodex-sidebar-text-action-icon">{icon}</AdaptiveIcon>
+      <Text component="span" className="kodex-sidebar-text-action-label" fw={400} size="sm" lineClamp={1}>
+        {label}
+      </Text>
+    </button>
+  );
+}
+
+export function SidebarTextInputRow({
+  className,
+  icon,
+  inputRef,
+  inputProps,
+}: {
+  className?: string;
+  icon: ReactNode;
+  inputRef?: Ref<HTMLInputElement>;
+  inputProps: InputHTMLAttributes<HTMLInputElement>;
+}) {
+  return (
+    <div
+      className={["kodex-sidebar-text-action-row kodex-sidebar-text-input-row", className]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <AdaptiveIcon className="kodex-sidebar-text-action-icon">{icon}</AdaptiveIcon>
+      <input
+        {...inputProps}
+        className={["kodex-sidebar-action-input", inputProps.className].filter(Boolean).join(" ")}
+        ref={inputRef}
+      />
+    </div>
   );
 }

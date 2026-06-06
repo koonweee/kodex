@@ -1,6 +1,7 @@
-import { ActionIcon, Box, Button, Text, Tooltip } from "@mantine/core";
+import { Box, Button, Text } from "@mantine/core";
 import { X } from "lucide-react";
 
+import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import { queuedInputFileCount, queuedInputImageCount, queuedInputText, type QueuedSteerRow } from "./types";
 
 const QUEUE_LABEL = "Queued steer messages";
@@ -71,19 +72,16 @@ export function QueuedSteerCard({
                 {submitLabel}
               </Button>
             ) : null}
-            <Tooltip label={ABORT_BUTTON_LABEL}>
-              <ActionIcon
-                aria-label={ABORT_BUTTON_LABEL}
-                className="kodex-queued-steer-abort"
-                disabled={isBusy}
-                size="sm"
-                type="button"
-                variant="subtle"
-                onClick={() => onAbortRow(row)}
-              >
-                <X size={14} />
-              </ActionIcon>
-            </Tooltip>
+            <AdaptiveIconButton
+              className="kodex-queued-steer-abort"
+              density="compact"
+              disabled={isBusy}
+              label={ABORT_BUTTON_LABEL}
+              onClick={() => onAbortRow(row)}
+
+            >
+              <X />
+            </AdaptiveIconButton>
           </Box>
         );
       })}

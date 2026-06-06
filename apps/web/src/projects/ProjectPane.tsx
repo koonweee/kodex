@@ -1,5 +1,4 @@
 import {
-  ActionIcon,
   Alert,
   Badge,
   Box,
@@ -34,6 +33,7 @@ import {
   type ProjectPreview,
   type ProjectPreviewService,
 } from "../api/client";
+import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import { queryKeys } from "../api/queryKeys";
 import { errorMessageFrom } from "../shared/values";
 
@@ -259,9 +259,14 @@ function ServiceRow({
         <StatusBadge value={service.status.reachability} />
       </Table.Td>
       <Table.Td>
-        <ActionIcon aria-label={`Delete ${service.name}`} loading={deleteMutation.isPending} onClick={() => deleteMutation.mutate()} variant="subtle">
-          <Trash2 size={15} />
-        </ActionIcon>
+        <AdaptiveIconButton
+          density="compact"
+          label={`Delete ${service.name}`}
+          loading={deleteMutation.isPending}
+          onClick={() => deleteMutation.mutate()}
+        >
+          <Trash2 />
+        </AdaptiveIconButton>
       </Table.Td>
     </Table.Tr>
   );
@@ -421,9 +426,14 @@ function PreviewCard({
             label="Enabled"
             onChange={(event) => updateMutation.mutate(event.currentTarget.checked)}
           />
-          <ActionIcon aria-label={`Delete ${preview.name}`} loading={deleteMutation.isPending} onClick={() => deleteMutation.mutate()} variant="subtle">
-            <Trash2 size={15} />
-          </ActionIcon>
+          <AdaptiveIconButton
+            density="compact"
+            label={`Delete ${preview.name}`}
+            loading={deleteMutation.isPending}
+            onClick={() => deleteMutation.mutate()}
+          >
+            <Trash2 />
+          </AdaptiveIconButton>
         </Group>
       </Group>
       {preview.status.lastReloadError ? (
@@ -505,9 +515,14 @@ function PreviewRouteRow({
       <Table.Td>{service ? `${service.name} :${service.localPort}` : "Missing service"}</Table.Td>
       <Table.Td>{route.stripPrefix ? "Yes" : "No"}</Table.Td>
       <Table.Td>
-        <ActionIcon aria-label={`Delete route ${route.pathPattern}`} loading={deleteMutation.isPending} onClick={() => deleteMutation.mutate()} variant="subtle">
-          <Trash2 size={15} />
-        </ActionIcon>
+        <AdaptiveIconButton
+          density="compact"
+          label={`Delete route ${route.pathPattern}`}
+          loading={deleteMutation.isPending}
+          onClick={() => deleteMutation.mutate()}
+        >
+          <Trash2 />
+        </AdaptiveIconButton>
       </Table.Td>
     </Table.Tr>
   );

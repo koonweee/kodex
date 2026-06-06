@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Box, Group, Text, Title, Tooltip } from "@mantine/core";
+import { Badge, Box, Group, Text, Title } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { AlertCircle, CheckCircle2, Loader2, PanelRightClose } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -7,6 +7,7 @@ import type { AppSurfaceBridgeRequest, AppSurfaceBridgeResponse, AppSurfaceSessi
 import { errorMessageFrom } from "../shared/values";
 import type { KodexColorSchemeId } from "../theme";
 import { buildGeneratedUiSrcDoc } from "../generatedUi/themeDocument";
+import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 
 const APP_SURFACE_TEXT = {
   close: "Hide app surface",
@@ -192,16 +193,9 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
           ) : null}
         </Group>
         {showPaneClose ? (
-          <Tooltip label={APP_SURFACE_TEXT.close}>
-            <ActionIcon
-              aria-label={APP_SURFACE_TEXT.close}
-              className="kodex-generated-ui-close"
-              onClick={onHide}
-              variant="subtle"
-            >
-              <PanelRightClose size={17} />
-            </ActionIcon>
-          </Tooltip>
+          <AdaptiveIconButton className="kodex-generated-ui-close" label={APP_SURFACE_TEXT.close} onClick={onHide}>
+            <PanelRightClose />
+          </AdaptiveIconButton>
         ) : null}
       </Group>
       {documentError || localError ? (

@@ -11,6 +11,7 @@ import { fileNameFromPath, filePreviewActionForTarget, type FilePreviewAction } 
 import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
 import { copyTextToClipboard } from "../shared/clipboard";
+import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 
 const markdownRemarkPlugins = [remarkGfm, remarkBreaks];
 
@@ -165,15 +166,14 @@ function MarkdownCodeBlock({ children }: { children: ReactNode }) {
       <Code block className="kodex-timeline-code">
         {children}
       </Code>
-      <button
-        aria-label={copied ? "Copied code" : "Copy code"}
-        className="kodex-ui-button kodex-ui-icon-button kodex-code-copy-button"
+      <AdaptiveIconButton
+        className="kodex-code-copy-button"
+        density="compact"
+        label={copied ? "Copied code" : "Copy code"}
         onClick={handleCopy}
-        title={copied ? "Copied code" : "Copy code"}
-        type="button"
       >
-        {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
-      </button>
+        {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+      </AdaptiveIconButton>
     </Box>
   );
 }

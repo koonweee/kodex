@@ -4,6 +4,7 @@ import { lazy, Suspense, useEffect, useRef, useState, type ComponentProps } from
 import type { AutomationsPane as AutomationsPaneComponent } from "../automations/AutomationsPane";
 import type { PreferencesModalProps } from "../PreferencesModal";
 import type { ProjectPane as ProjectPaneComponent } from "../projects/ProjectPane";
+import { useInputCapabilities } from "../shared/inputCapabilities";
 import { WorkspaceSidebar } from "../threads/WorkspaceSidebar";
 import type { ThreadSummary } from "../api/client";
 import { WorkspaceSinglePaneShell } from "../workspace/WorkspaceSinglePaneShell";
@@ -22,7 +23,9 @@ const ProjectPane = lazy(() =>
   import("../projects/ProjectPane").then((module) => ({ default: module.ProjectPane })),
 );
 const NARROW_THREAD_WORKSPACE_QUERY = "(max-width: 900px)";
-const DESKTOP_COLLAPSED_SIDEBAR_WIDTH = 32;
+const DESKTOP_COLLAPSED_SIDEBAR_WIDTH = 44;
+const TOUCH_COLLAPSED_SIDEBAR_WIDTH = 52;
+const DESKTOP_EXPANDED_SIDEBAR_WIDTH = 292;
 
 type KodexShellViewProps = {
   automationsPaneProps: ComponentProps<typeof AutomationsPaneComponent>;
@@ -33,7 +36,6 @@ type KodexShellViewProps = {
   preferencesProps: PreferencesModalProps;
   projectPaneProps: ComponentProps<typeof ProjectPaneComponent>;
   sidebarCollapsed: boolean;
-  sidebarWidth: number;
   useSingleThreadWorkspace: boolean;
   workspaceSidebarProps: ComponentProps<typeof WorkspaceSidebar>;
   workspaceSelectedThreadPaneId: string | null;
@@ -64,15 +66,18 @@ export function KodexShellView({
   preferencesProps,
   projectPaneProps,
   sidebarCollapsed: desktopSidebarCollapsed,
-  sidebarWidth,
   useSingleThreadWorkspace,
   workspaceSidebarProps,
   workspaceSelectedThreadPaneId,
 }: KodexShellViewProps) {
   const mainLabel = mainPane === "automations" ? "Automations" : mainPane === "project" ? "Project" : "Thread workspace";
   const isNarrowThreadWorkspace = useNarrowThreadWorkspace();
+  const useTouchCollapsedSidebarWidth = useInputCapabilities().hasTouchInput;
   const sidebarCollapsed = desktopSidebarCollapsed && !isNarrowThreadWorkspace;
-  const effectiveSidebarWidth = sidebarCollapsed ? DESKTOP_COLLAPSED_SIDEBAR_WIDTH : sidebarWidth;
+  const collapsedSidebarWidth = useTouchCollapsedSidebarWidth
+    ? TOUCH_COLLAPSED_SIDEBAR_WIDTH
+    : DESKTOP_COLLAPSED_SIDEBAR_WIDTH;
+  const effectiveSidebarWidth = sidebarCollapsed ? collapsedSidebarWidth : DESKTOP_EXPANDED_SIDEBAR_WIDTH;
   const rendersSinglePaneWorkspace = mainPane === "thread" && useSingleThreadWorkspace;
 
   return (
