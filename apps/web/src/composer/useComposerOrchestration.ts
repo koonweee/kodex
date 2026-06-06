@@ -53,7 +53,6 @@ type UseComposerOrchestrationParams = {
   canCompose: boolean;
   canComposeOverrideRef?: { current: boolean | undefined };
   composerSettings: ComposerSettings;
-  selectedThreadComposerOverride: ComposerSettings | null;
   draftChatThreadSelected: boolean;
   draftThreadProjectId: string | null;
   isDraftThreadSelected: boolean;
@@ -83,7 +82,6 @@ export function useComposerOrchestration({
   canCompose,
   canComposeOverrideRef,
   composerSettings,
-  selectedThreadComposerOverride,
   draftChatThreadSelected,
   draftThreadProjectId,
   isDraftThreadSelected,
@@ -225,7 +223,7 @@ export function useComposerOrchestration({
       if (selectedThreadId) {
         draftControls.clearText();
         const payload = await buildTurnPayload(selectedThreadId, text, attachments, skillInputs, skillTextElements);
-        const options = selectedThreadComposerOverride ? composerTurnOptions(selectedThreadComposerOverride) : {};
+        const options = composerTurnOptions(composerSettings);
         if (effectiveActiveSelectedTurnId) {
           const queuedInput = await createQueuedInput(selectedThreadId, payload.input, payload.attachments, options);
           onQueuedInputUpsert(queuedInput);
