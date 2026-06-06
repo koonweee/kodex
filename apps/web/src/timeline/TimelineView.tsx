@@ -28,6 +28,8 @@ type TimelineRenderRow = {
   row: TimelineRow;
 };
 
+type TimelineScrollBehavior = "auto" | "smooth";
+
 export function timelineFollowOutputBehavior(isNearBottom: boolean): ReturnType<Exclude<FollowOutput, boolean | string>> {
   return isNearBottom ? "auto" : false;
 }
@@ -62,12 +64,6 @@ export function TimelineView({
   timeline: TimelineState;
 }) {
   const rows = timeline.rows;
-  const initialVirtuosoUsesCustomParent = useRef<boolean | null>(null);
-  const initialVirtuosoThreadId = useRef(threadId);
-  if (initialVirtuosoThreadId.current !== threadId) {
-    initialVirtuosoThreadId.current = threadId;
-    initialVirtuosoUsesCustomParent.current = null;
-  }
   const [expandedWorkRowKeys, setExpandedWorkRowKeys] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
     setExpandedWorkRowKeys(new Set());
@@ -118,11 +114,7 @@ export function TimelineView({
   const approvalsByRowKey = useMemo(() => buildTimelineRowApprovalMap(rows, approvalIndex), [approvalIndex, rows]);
   const rowCount = visibleRows.length;
   const virtuosoScrollParent = scrollParentElement && scrollParentElement.clientHeight > 0 ? scrollParentElement : null;
-  if (rowCount > 0 && initialVirtuosoUsesCustomParent.current === null) {
-    initialVirtuosoUsesCustomParent.current = Boolean(virtuosoScrollParent);
-  }
-  const useVirtuosoInitialBottomPosition = initialVirtuosoUsesCustomParent.current === true;
-  const virtuosoInitialPositionProps = useVirtuosoInitialBottomPosition
+  const virtuosoInitialPositionProps = virtuosoScrollParent
     ? { initialTopMostItemIndex: { index: "LAST" as const, align: "end" as const } }
     : { initialItemCount: Math.min(rowCount, 30) };
   const olderHistoryBoundary = timeline.hasOlderHistory ? (
@@ -146,7 +138,6 @@ export function TimelineView({
     showScrollToBottom,
     virtuosoRef,
   } = useBottomPinnedVirtuosoTimeline({
-    enableHeightFollow: useVirtuosoInitialBottomPosition,
     onReady,
     onOverflowAboveChange,
     rowCount,
@@ -188,7 +179,6 @@ export function TimelineView({
         defaultItemHeight={112}
         followOutput={followOutput}
         increaseViewportBy={{ top: 720, bottom: 720 }}
-        key={useVirtuosoInitialBottomPosition ? "custom-scroll-parent" : "internal-scroll-parent"}
         totalListHeightChanged={handleTotalListHeightChanged}
         {...virtuosoInitialPositionProps}
         itemContent={(index, renderRow = visibleRows[index]) => renderRow ? (
@@ -387,14 +377,12 @@ function HiddenDebugPanel({
 }
 
 function useBottomPinnedVirtuosoTimeline({
-  enableHeightFollow,
   onReady,
   onOverflowAboveChange,
   rowCount,
   scrollParentElement,
   timelineLastSeq,
 }: {
-  enableHeightFollow: boolean;
   onReady: () => void;
   onOverflowAboveChange?: (hasOverflowAbove: boolean) => void;
   rowCount: number;
@@ -402,16 +390,22 @@ function useBottomPinnedVirtuosoTimeline({
   timelineLastSeq: number;
 }) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
-  const nearBottomRef = useRef(true);
+  const isPinnedToBottomRef = useRef(true);
   const initialAlignmentSnapshotRef = useRef<{ rowCount: number; timelineLastSeq: number } | null>(null);
-  const pendingHeightFollowFrame = useRef<number | null>(null);
+  const pendingBottomFollowFrame = useRef<number | null>(null);
+  const showScrollToBottomRef = useRef(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [initialBottomAligned, setInitialBottomAligned] = useState(false);
 
-  const cancelPendingHeightFollow = useCallback(() => {
-    if (pendingHeightFollowFrame.current !== null) {
-      cancelAnimationFrame(pendingHeightFollowFrame.current);
-      pendingHeightFollowFrame.current = null;
+  const setScrollToBottomVisible = useCallback((visible: boolean) => {
+    showScrollToBottomRef.current = visible;
+    setShowScrollToBottom(visible);
+  }, []);
+
+  const cancelPendingBottomFollow = useCallback(() => {
+    if (pendingBottomFollowFrame.current !== null) {
+      cancelAnimationFrame(pendingBottomFollowFrame.current);
+      pendingBottomFollowFrame.current = null;
     }
   }, []);
 
@@ -425,38 +419,64 @@ function useBottomPinnedVirtuosoTimeline({
   const updateNearBottom = useCallback(() => {
     const scrollElement = scrollParentElement;
     if (!scrollElement) {
-      nearBottomRef.current = true;
-      setShowScrollToBottom(false);
+      isPinnedToBottomRef.current = true;
+      setScrollToBottomVisible(false);
       onOverflowAboveChange?.(false);
       return true;
     }
     const distanceFromBottom = getDistanceFromBottom(scrollElement);
     const isNearBottom = distanceFromBottom < 60;
-    nearBottomRef.current = isNearBottom;
+    isPinnedToBottomRef.current = isNearBottom;
     if (!isNearBottom) {
-      cancelPendingHeightFollow();
+      cancelPendingBottomFollow();
     }
-    setShowScrollToBottom(!isNearBottom && rowCount > 0 && distanceFromBottom > 0);
+    setScrollToBottomVisible(!isNearBottom && rowCount > 0 && distanceFromBottom > 0);
     updateOverflowAbove();
     return isNearBottom;
-  }, [cancelPendingHeightFollow, onOverflowAboveChange, rowCount, scrollParentElement, updateOverflowAbove]);
+  }, [cancelPendingBottomFollow, onOverflowAboveChange, rowCount, scrollParentElement, setScrollToBottomVisible, updateOverflowAbove]);
 
-  const scrollToTimelineBottom = useCallback(() => {
+  const scrollToTimelineBottom = useCallback((behavior: TimelineScrollBehavior = "auto") => {
     if (rowCount === 0) {
       return;
     }
     if (scrollParentElement) {
       const top = scrollParentElement.scrollHeight - scrollParentElement.clientHeight;
       if (top > 0) {
-        if (typeof scrollParentElement.scrollTo === "function") {
-          scrollParentElement.scrollTo({ top, behavior: "auto" });
+        if (behavior === "smooth" && typeof scrollParentElement.scrollTo === "function") {
+          scrollParentElement.scrollTo({ top, behavior });
         } else {
           scrollParentElement.scrollTop = top;
         }
       }
     }
-    virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "auto" });
+    virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior });
   }, [rowCount, scrollParentElement]);
+
+  const scheduleBottomFollow = useCallback(
+    (behavior: TimelineScrollBehavior = "auto") => {
+      if (rowCount === 0 || pendingBottomFollowFrame.current !== null) {
+        return;
+      }
+      pendingBottomFollowFrame.current = requestAnimationFrame(() => {
+        if (!isPinnedToBottomRef.current && behavior === "auto") {
+          pendingBottomFollowFrame.current = null;
+          return;
+        }
+        scrollToTimelineBottom(behavior);
+        pendingBottomFollowFrame.current = requestAnimationFrame(() => {
+          pendingBottomFollowFrame.current = null;
+          if (!isPinnedToBottomRef.current && behavior === "auto") {
+            return;
+          }
+          scrollToTimelineBottom(behavior);
+          if (behavior === "auto") {
+            updateNearBottom();
+          }
+        });
+      });
+    },
+    [rowCount, scrollToTimelineBottom, updateNearBottom],
+  );
 
   const markTimelineReady = useCallback(() => {
     setInitialBottomAligned(true);
@@ -464,56 +484,39 @@ function useBottomPinnedVirtuosoTimeline({
   }, [onReady]);
 
   const scrollToBottom = useCallback(() => {
-    nearBottomRef.current = true;
-    setShowScrollToBottom(false);
-
-    scrollToTimelineBottom();
+    isPinnedToBottomRef.current = true;
+    setScrollToBottomVisible(false);
+    cancelPendingBottomFollow();
+    scrollToTimelineBottom("smooth");
     requestAnimationFrame(() => {
-      if (nearBottomRef.current) {
-        scrollToTimelineBottom();
-      }
+      scrollToTimelineBottom("smooth");
       updateNearBottom();
     });
-  }, [scrollToTimelineBottom, updateNearBottom]);
+  }, [cancelPendingBottomFollow, scrollToTimelineBottom, setScrollToBottomVisible, updateNearBottom]);
 
   const handleAtBottomStateChange = useCallback(
     (atBottom: boolean) => {
-      nearBottomRef.current = atBottom;
+      isPinnedToBottomRef.current = atBottom;
       if (!atBottom) {
-        cancelPendingHeightFollow();
+        cancelPendingBottomFollow();
       }
-      setShowScrollToBottom(!atBottom && rowCount > 0);
+      setScrollToBottomVisible(!atBottom && rowCount > 0);
     },
-    [cancelPendingHeightFollow, rowCount],
+    [cancelPendingBottomFollow, rowCount, setScrollToBottomVisible],
   );
 
   const handleTotalListHeightChanged = useCallback(() => {
-    if (!enableHeightFollow || rowCount === 0 || showScrollToBottom || !nearBottomRef.current) {
+    if (rowCount === 0 || showScrollToBottomRef.current || !isPinnedToBottomRef.current) {
       return;
     }
-    if (pendingHeightFollowFrame.current !== null) {
-      return;
-    }
-    pendingHeightFollowFrame.current = requestAnimationFrame(() => {
-      pendingHeightFollowFrame.current = null;
-      if (!nearBottomRef.current || showScrollToBottom) {
-        return;
-      }
-      scrollToTimelineBottom();
-      requestAnimationFrame(() => {
-        if (nearBottomRef.current && !showScrollToBottom) {
-          scrollToTimelineBottom();
-        }
-        updateNearBottom();
-      });
-    });
-  }, [enableHeightFollow, rowCount, scrollToTimelineBottom, showScrollToBottom, updateNearBottom]);
+    scheduleBottomFollow("auto");
+  }, [rowCount, scheduleBottomFollow]);
 
-  useEffect(() => cancelPendingHeightFollow, [cancelPendingHeightFollow]);
+  useEffect(() => cancelPendingBottomFollow, [cancelPendingBottomFollow]);
 
   const followOutput = useCallback<Exclude<FollowOutput, boolean | string>>(
-    (isAtBottom) => timelineFollowOutputBehavior(isAtBottom || (nearBottomRef.current && !showScrollToBottom)),
-    [showScrollToBottom],
+    (isAtBottom) => timelineFollowOutputBehavior(isAtBottom || (isPinnedToBottomRef.current && !showScrollToBottomRef.current)),
+    [],
   );
 
   useEffect(() => {
@@ -536,31 +539,39 @@ function useBottomPinnedVirtuosoTimeline({
     }
 
     if (rowCount === 0) {
-      setShowScrollToBottom(false);
+      isPinnedToBottomRef.current = true;
+      setScrollToBottomVisible(false);
       initialAlignmentSnapshotRef.current = { rowCount, timelineLastSeq };
       markTimelineReady();
       return;
     }
 
-    if (!nearBottomRef.current) {
-      setShowScrollToBottom(true);
+    if (!isPinnedToBottomRef.current) {
+      setScrollToBottomVisible(true);
       initialAlignmentSnapshotRef.current = { rowCount, timelineLastSeq };
       markTimelineReady();
       return;
     }
 
+    scheduleBottomFollow("auto");
+    let readyFrameId: number | null = null;
     const frameId = requestAnimationFrame(() => {
-      scrollToTimelineBottom();
-      updateNearBottom();
       initialAlignmentSnapshotRef.current = { rowCount, timelineLastSeq };
-      markTimelineReady();
+      updateNearBottom();
+      readyFrameId = requestAnimationFrame(markTimelineReady);
     });
-    return () => cancelAnimationFrame(frameId);
+    return () => {
+      cancelAnimationFrame(frameId);
+      if (readyFrameId !== null) {
+        cancelAnimationFrame(readyFrameId);
+      }
+    };
   }, [
     initialBottomAligned,
     markTimelineReady,
     rowCount,
-    scrollToTimelineBottom,
+    scheduleBottomFollow,
+    setScrollToBottomVisible,
     timelineLastSeq,
     updateNearBottom,
   ]);
@@ -579,29 +590,23 @@ function useBottomPinnedVirtuosoTimeline({
     }
 
     if (showScrollToBottom) {
-      nearBottomRef.current = false;
+      isPinnedToBottomRef.current = false;
       return;
     }
 
-    if (nearBottomRef.current) {
-      scrollToTimelineBottom();
-      const frameId = requestAnimationFrame(() => {
-        if (nearBottomRef.current) {
-          scrollToTimelineBottom();
-        }
-        updateNearBottom();
-      });
-      return () => cancelAnimationFrame(frameId);
+    if (isPinnedToBottomRef.current) {
+      scheduleBottomFollow("auto");
+      return;
     }
 
-    setShowScrollToBottom(true);
+    setScrollToBottomVisible(true);
   }, [
     initialBottomAligned,
     rowCount,
-    scrollToTimelineBottom,
+    scheduleBottomFollow,
+    setScrollToBottomVisible,
     showScrollToBottom,
     timelineLastSeq,
-    updateNearBottom,
   ]);
 
   return {
