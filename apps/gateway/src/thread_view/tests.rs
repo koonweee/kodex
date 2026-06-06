@@ -1,5 +1,7 @@
 use super::*;
-use crate::app_server_api::{ThreadTimelineRow, ThreadTimelineWorkDetailRow};
+use crate::app_server_api::{
+    ByteRange, TextElement, ThreadTimelineRow, ThreadTimelineWorkDetailRow,
+};
 
 fn agent_message_item(id: &str, text: &str) -> Value {
     json!({
@@ -144,6 +146,141 @@ async fn session_reconciles_pending_user_input_when_snapshot_materializes_item()
     assert_eq!(timeline.items.len(), 1);
     assert_eq!(timeline.items[0].item_id, "user-1");
     assert_eq!(timeline.live_state, ThreadLiveState::Idle);
+}
+
+#[tokio::test]
+async fn session_reconciles_pending_skill_mention_user_input() {
+    let sessions = ThreadViewStore::default();
+    record_pending_user_input(
+        &sessions,
+        "thread-1",
+        "turn-1",
+        &[
+            UserInput::Text {
+                text: "Run $review-fix".to_string(),
+                text_elements: vec![TextElement {
+                    byte_range: ByteRange { start: 4, end: 15 },
+                    placeholder: Some("$review-fix".to_string()),
+                }],
+            },
+            UserInput::Skill {
+                name: "review-fix".to_string(),
+                path: "/skills/review-fix/SKILL.md".to_string(),
+            },
+        ],
+        &[],
+        1,
+    )
+    .await
+    .unwrap();
+    let completed_turn = ThreadTurnSnapshot {
+        id: "turn-1".to_string(),
+        status: "completed".to_string(),
+        started_at: Some(1),
+        completed_at: Some(2),
+        raw_payload: json!({}),
+        items: vec![ThreadItemSnapshot::from_payload(&json!({
+            "id": "user-1",
+            "type": "userMessage",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Run $review-fix",
+                    "text_elements": [{
+                        "byteRange": {"start": 4, "end": 15},
+                        "placeholder": "$review-fix"
+                    }]
+                },
+                {
+                    "type": "skill",
+                    "name": "review-fix",
+                    "path": "/skills/review-fix/SKILL.md"
+                }
+            ]
+        }))
+        .unwrap()],
+    };
+
+    let timeline = build_thread_timeline(&sessions, "thread-1", &[completed_turn], 2)
+        .await
+        .unwrap();
+
+    assert_eq!(timeline.items.len(), 1);
+    assert_eq!(timeline.items[0].item_id, "user-1");
+    assert_eq!(timeline.items[0].item_type, "userMessage");
+    assert_eq!(timeline.live_state, ThreadLiveState::Idle);
+}
+
+#[tokio::test]
+async fn active_snapshot_reconciles_gateway_stream_user_input_with_skill_mention_by_visible_text() {
+    let sessions = ThreadViewStore::default();
+    let live_item = json!({
+        "id": "9fca8fd8-195e-4fe0-8af9-5e53dcf75638",
+        "type": "userMessage",
+        "content": [
+            {
+                "type": "text",
+                "text": "$implement-review-loop",
+                "text_elements": [{
+                    "byteRange": {"start": 0, "end": 22},
+                    "placeholder": "$implement-review-loop"
+                }]
+            },
+            {
+                "type": "skill",
+                "name": "implement-review-loop",
+                "path": "/Users/example/.codex/skills/implement-review-loop/SKILL.md"
+            }
+        ]
+    });
+    let live_item_snapshot = ThreadItemSnapshot::from_payload(&live_item).unwrap();
+    sessions
+        .with_thread_view("thread-1", 1, |view| {
+            view.upsert_item(
+                "thread-1",
+                "turn-1",
+                live_item,
+                live_item_snapshot,
+                Some("completed"),
+                Some(1),
+            );
+        })
+        .await;
+    let active_turn = ThreadTurnSnapshot {
+        id: "turn-1".to_string(),
+        status: "inProgress".to_string(),
+        started_at: Some(1),
+        completed_at: None,
+        raw_payload: json!({}),
+        items: vec![ThreadItemSnapshot::from_payload(&json!({
+            "id": "item-1",
+            "type": "userMessage",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "$implement-review-loop",
+                    "text_elements": [{
+                        "byteRange": {"start": 0, "end": 22},
+                        "placeholder": "$implement-review-loop"
+                    }]
+                }
+            ]
+        }))
+        .unwrap()],
+    };
+
+    let timeline = build_thread_timeline(&sessions, "thread-1", &[active_turn], 2)
+        .await
+        .unwrap();
+    let user_items = timeline
+        .items
+        .iter()
+        .filter(|item| item.item_type == "userMessage")
+        .collect::<Vec<_>>();
+
+    assert_eq!(user_items.len(), 1);
+    assert_eq!(user_items[0].item_id, "item-1");
+    assert_eq!(timeline.live_state, ThreadLiveState::Streaming);
 }
 
 #[tokio::test]

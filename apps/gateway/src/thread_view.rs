@@ -296,6 +296,11 @@ impl ThreadView {
             {
                 continue;
             }
+            if gateway_stream_user_text_key(&item)
+                .is_some_and(|key| base_pending_user_text_keys.contains(&key))
+            {
+                continue;
+            }
             if gateway_stream_message_content_key(&item)
                 .is_some_and(|key| base_message_content_keys.contains(&key))
             {
@@ -1111,10 +1116,9 @@ fn remove_materialized_pending_match(
         return;
     };
     items.retain(|item| {
-        if !item.item_id.starts_with("pending-user-") {
-            return true;
-        }
-        pending_user_text_key(item).is_none_or(|pending_key| pending_key != key)
+        pending_user_text_key(item)
+            .or_else(|| gateway_stream_user_text_key(item))
+            .is_none_or(|pending_key| pending_key != key)
     });
 }
 
@@ -1153,6 +1157,15 @@ fn pending_user_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
                 &item.payload.item_snapshot.file_attachments,
             )
         })
+}
+
+fn gateway_stream_user_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+    if item.payload.source != TimelineUpdateSource::GatewayStream
+        || !item.item_type.eq_ignore_ascii_case("userMessage")
+    {
+        return None;
+    }
+    materialized_item_text_key(item)
 }
 
 fn materialized_user_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
