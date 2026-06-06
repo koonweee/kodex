@@ -1,10 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DockviewApi } from "dockview";
 
-import { syncWorkspaceIntoDockview } from "./WorkspaceDock";
+import { kodexDockviewTheme, syncWorkspaceIntoDockview } from "./WorkspaceDock";
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
 
 describe("WorkspaceDock sync", () => {
+  it("uses a compact Kodex Dockview theme instead of the default abyss chrome", () => {
+    expect(kodexDockviewTheme.className).toContain("dockview-theme-abyss");
+    expect(kodexDockviewTheme.className).toContain("kodex-dockview-theme");
+    expect(kodexDockviewTheme.gap).toBe(2);
+    expect(kodexDockviewTheme.dndTabIndicator).toBe("line");
+    expect(kodexDockviewTheme.dndPanelOverlay).toBe("group");
+    expect(kodexDockviewTheme.tabAnimation).toBe("smooth");
+  });
+
   it("rebuilds a single-pane workspace instead of hydrating a stale saved split layout", () => {
     const api = fakeDockviewApi([]);
     const suppressEventsRef = { current: false };

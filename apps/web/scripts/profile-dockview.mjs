@@ -303,6 +303,7 @@ function filteredScenarios() {
 function parseCliOptions(args) {
   const options = {
     only: [],
+    colorScheme: null,
     skipBuild: false,
     typingDelayMs: 1,
     typingRepeat: 90,
@@ -314,6 +315,15 @@ function parseCliOptions(args) {
       continue;
     }
     if (arg === "--agent-browser") {
+      continue;
+    }
+    if (arg === "--color-scheme") {
+      options.colorScheme = args[index + 1] ?? "";
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith("--color-scheme=")) {
+      options.colorScheme = arg.slice("--color-scheme=".length);
       continue;
     }
     if (arg === "--only") {
@@ -364,7 +374,7 @@ async function runScenario(baseUrl, scenario) {
   await setServerScenario(baseUrl, scenario.scenario);
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext(contextOptions(scenario));
-  await installPerfObserver(context, scenario.seedWorkspace);
+  await installPerfObserver(context, scenario.seedWorkspace, cliOptions.colorScheme);
   const page = await context.newPage();
   const client = await context.newCDPSession(page);
   const errors = [];
@@ -493,22 +503,23 @@ async function installComposerTypingProbe(page) {
 }
 
 function contextOptions(scenario) {
+  const colorScheme = cliOptions.colorScheme === "paper-light" ? "light" : "dark";
   if (!scenario.mobile) {
     return {
-      colorScheme: "dark",
+      colorScheme,
       deviceScaleFactor: 1,
       viewport: scenario.viewport,
     };
   }
   return {
     ...devices["iPhone 14"],
-    colorScheme: "dark",
+    colorScheme,
     viewport: scenario.viewport,
   };
 }
 
-async function installPerfObserver(context, seedWorkspace) {
-  await context.addInitScript(({ seed }) => {
+async function installPerfObserver(context, seedWorkspace, colorScheme) {
+  await context.addInitScript(({ seed, scheme }) => {
     window.__kodexProfile = {
       longTasks: [],
       layoutShifts: [],
@@ -543,6 +554,9 @@ async function installPerfObserver(context, seedWorkspace) {
     if (window === window.top) {
       try {
         window.localStorage.clear();
+        if (scheme) {
+          window.localStorage.setItem("kodex-color-scheme", scheme);
+        }
         if (seed) {
           window.localStorage.setItem("kodex.workspace.panes.v1", JSON.stringify(seed));
         }
@@ -550,7 +564,7 @@ async function installPerfObserver(context, seedWorkspace) {
         // Storage can be unavailable in restricted profiling contexts.
       }
     }
-  }, { seed: seedWorkspace ?? null });
+  }, { seed: seedWorkspace ?? null, scheme: colorScheme ?? null });
 }
 
 async function collectMetrics(page, client) {

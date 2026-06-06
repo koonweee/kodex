@@ -1,4 +1,11 @@
-import { DockviewReact, type DockviewApi, type DockviewReadyEvent, type IDockviewPanelProps } from "dockview";
+import {
+  DockviewReact,
+  themeAbyss,
+  type DockviewApi,
+  type DockviewReadyEvent,
+  type DockviewTheme,
+  type IDockviewPanelProps,
+} from "dockview";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
@@ -17,6 +24,20 @@ type WorkspaceDockProps = {
   onPaneClose: (paneId: string, layout: unknown) => void;
   workspace: WorkspaceModel;
 };
+
+export const kodexDockviewTheme = {
+  ...themeAbyss,
+  name: "kodex",
+  className: `${themeAbyss.className} kodex-dockview-theme`,
+  gap: 2,
+  edgeGroupCollapsedSize: 34,
+  dndOverlayMounting: "absolute",
+  dndPanelOverlay: "group",
+  dndTabIndicator: "line",
+  dndOverlayBorder: "1px solid var(--kodex-border-accent-soft)",
+  tabAnimation: "smooth",
+  tabGroupIndicator: "none",
+} satisfies DockviewTheme;
 
 export function WorkspaceDock({
   onActivePaneChange,
@@ -98,8 +119,13 @@ export function WorkspaceDock({
   );
 
   return (
-    <div className="kodex-workspace-dock dockview-theme-dark" data-testid="workspace-dock">
-      <DockviewReact components={components} disableFloatingGroups onReady={handleReady} />
+    <div className="kodex-workspace-dock" data-testid="workspace-dock">
+      <DockviewReact
+        components={components}
+        disableFloatingGroups
+        onReady={handleReady}
+        theme={kodexDockviewTheme}
+      />
     </div>
   );
 }

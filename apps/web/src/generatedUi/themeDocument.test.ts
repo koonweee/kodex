@@ -15,6 +15,7 @@ describe("generated UI theme document", () => {
     expect(css).toContain("--kodex-bg-app: #ece6db;");
     expect(css).toContain("--kodex-text-primary: #2f271f;");
     expect(css).toContain("--kodex-bg-panel: var(--kodex-bg-thread-surface);");
+    expect(css).toContain("--kodex-pane-bg: var(--kodex-bg-panel);");
     expect(css).toContain("--kodex-radius-md: 8px;");
   });
 

@@ -41,12 +41,7 @@ export function XtermTerminal({ className, inputSignal, onConnectionStateChange,
       fontSize: hasTouchInput ? 16 : 13,
       minimumContrastRatio: 4.5,
       scrollback: 5000,
-      theme: {
-        background: "#11151f",
-        cursor: "#f8fafc",
-        foreground: "#e5e7eb",
-        selectionBackground: "#40517a",
-      },
+      theme: terminalThemeColors(container),
     });
     const fitAddon = new FitAddon();
     terminalRef.current = terminal;
@@ -128,6 +123,20 @@ export function XtermTerminal({ className, inputSignal, onConnectionStateChange,
   }, [inputSignal]);
 
   return <div className={className} ref={containerRef} />;
+}
+
+export function terminalThemeColors(element: HTMLElement) {
+  const styles = getComputedStyle(element);
+  return {
+    background: cssVariable(styles, "--kodex-terminal-bg", "#11151f"),
+    cursor: cssVariable(styles, "--kodex-text-primary", "#f8fafc"),
+    foreground: cssVariable(styles, "--kodex-text-primary", "#e5e7eb"),
+    selectionBackground: cssVariable(styles, "--kodex-bg-selected-strong", "#40517a"),
+  };
+}
+
+function cssVariable(styles: CSSStyleDeclaration, name: string, fallback: string): string {
+  return styles.getPropertyValue(name).trim() || fallback;
 }
 
 function writeSocketMessage(terminal: Xterm, data: unknown) {

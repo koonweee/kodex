@@ -16,6 +16,7 @@ const GENERATED_UI_FONT_FAMILY =
 
 const GENERATED_UI_SHARED_VARIABLES: Record<string, string> = {
   "--kodex-bg-panel": "var(--kodex-bg-thread-surface)",
+  "--kodex-pane-bg": "var(--kodex-bg-panel)",
   "--kodex-bg-raised": "var(--kodex-bg-composer)",
   "--kodex-bg-raised-muted": "var(--kodex-bg-composer-muted)",
   "--kodex-bg-raised-alt": "var(--kodex-bg-composer-alt)",

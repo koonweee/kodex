@@ -87,6 +87,7 @@ describe("ThemeWorkbench", () => {
       /\.kodex-mantine-button-root:is\(:disabled,\s*\[data-disabled\]\),\s*\.kodex-mantine-action-icon-root:is\(:disabled,\s*\[data-disabled\]\)\s*\{[^}]*opacity:\s*1;/s,
     );
     expect(uiCss).toMatch(/--kodex-bg-disabled-subtle:\s*color-mix\(in srgb,\s*var\(--kodex-text-muted\)\s*6%,\s*transparent\);/);
+    expect(uiCss).toMatch(/--kodex-pane-bg:\s*var\(--kodex-bg-panel\);/);
     expect(mantineComponentsCss).toMatch(
       /\.kodex-mantine-button-root\[data-variant="subtle"\]:is\(:disabled,\s*\[data-disabled\]\),\s*\.kodex-mantine-action-icon-root\[data-variant="subtle"\]:is\(:disabled,\s*\[data-disabled\]\)\s*\{[^}]*background:\s*var\(--kodex-bg-disabled-subtle\);/s,
     );

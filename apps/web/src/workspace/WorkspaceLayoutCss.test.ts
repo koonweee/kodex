@@ -19,8 +19,9 @@ describe("workspace pane layout CSS", () => {
     expect(composerRule).toContain("grid-row: 4;");
     expect(composerRule).toContain("justify-self: center;");
     expect(contentRule).toContain("grid-row: 3;");
-    expect(scrollRule).toContain("padding: 8px 0 20px;");
+    expect(scrollRule).toContain("padding: var(--kodex-pane-edge-space) var(--kodex-pane-edge-space) 20px;");
     expect(statusRule).toContain("display: grid;");
+    expect(statusRule).toContain("padding: 0 calc(var(--kodex-pane-edge-space) + 2px);");
     expect(workspaceCss).not.toContain("--kodex-thread-pane-composer-reserve");
   });
 
@@ -35,25 +36,52 @@ describe("workspace pane layout CSS", () => {
     expect(dockReactPartRule).toContain("height: 100%;");
     expect(dockReactPartRule).toContain("overflow: hidden;");
     expect(dockViewRule).toContain("overflow: hidden;");
-    expect(paneHostRule).toContain("--kodex-workspace-pane-padding: 8px;");
+    expect(paneHostRule).toContain("--kodex-pane-edge-space: 8px;");
+    expect(paneHostRule).toContain("background: var(--kodex-pane-bg);");
     expect(paneHostRule).toContain("box-sizing: border-box;");
     expect(paneHostRule).toContain("height: 100%;");
     expect(paneHostRule).toContain("overflow: hidden;");
-    expect(paneHostRule).toContain("padding: var(--kodex-workspace-pane-padding);");
+    expect(paneHostRule).not.toContain("padding:");
     expect(paneHostRule).toContain("min-height: 0;");
+  });
+
+  it("lets pane content own edge spacing instead of the Dockview host", () => {
+    const headerRule = cssRule(".kodex-thread-pane-header");
+    const composerRule = cssRule(".kodex-thread-pane-existing > .kodex-composer-shell");
+    const terminalPaneRule = cssRule(".kodex-workspace-dock .kodex-terminal-pane");
+
+    expect(headerRule).toContain("padding: 6px calc(var(--kodex-pane-edge-space) + 2px);");
+    expect(composerRule).toContain(
+      "margin: var(--kodex-pane-edge-space) calc(var(--kodex-pane-edge-space) + 4px) calc(var(--kodex-pane-edge-space) + 4px);",
+    );
+    expect(terminalPaneRule).toContain("--kodex-terminal-edge-space: var(--kodex-pane-edge-space);");
+    expect(terminalPaneRule).toContain("--kodex-terminal-bg: var(--kodex-pane-bg);");
   });
 
   it("maps Dockview chrome variables onto Kodex theme tokens", () => {
     const dockRule = cssRuleContaining("--dv-group-view-background-color");
+    const dockBaseRule = cssRule(".kodex-workspace-dock");
 
+    expect(dockRule).toContain(".kodex-workspace-dock .kodex-dockview-theme");
     expect(dockRule).toContain(".kodex-workspace-dock .dockview-theme-abyss");
-    expect(dockRule).toContain("--dv-group-view-background-color: var(--kodex-bg-panel);");
-    expect(dockRule).toContain("--dv-tabs-and-actions-container-background-color: var(--kodex-bg-shell);");
+    expect(dockBaseRule).toContain("--kodex-pane-bg: var(--kodex-bg-panel);");
+    expect(dockRule).toContain("--dv-group-view-background-color: var(--kodex-pane-bg);");
+    expect(dockRule).toContain(
+      "--dv-tabs-and-actions-container-background-color: color-mix(in srgb, var(--kodex-pane-bg) 82%, var(--kodex-bg-shell));",
+    );
+    expect(dockRule).toContain("--dv-tabs-and-actions-container-height: 32px;");
+    expect(dockRule).toContain("--dv-tabs-and-actions-container-font-size: 0.75rem;");
+    expect(dockRule).toContain("--dv-tab-font-size: 0.75rem;");
+    expect(dockRule).toContain("--dv-tab-margin: 2px 2px 0;");
     expect(dockRule).toContain("--dv-activegroup-visiblepanel-tab-color: var(--kodex-text-primary);");
     expect(dockRule).toContain("--dv-activegroup-hiddenpanel-tab-color: var(--kodex-text-secondary);");
     expect(dockRule).toContain("--dv-inactivegroup-hiddenpanel-tab-color: var(--kodex-text-muted);");
     expect(dockRule).toContain("--dv-tab-divider-color: var(--kodex-border-subtle);");
     expect(dockRule).toContain("--dv-paneview-active-outline-color: var(--kodex-border-accent);");
+    expect(dockRule).toContain("--dv-active-sash-color: color-mix(in srgb, var(--kodex-border-accent) 72%, transparent);");
+    expect(dockRule).toContain("--dv-sash-color: color-mix(in srgb, var(--kodex-border-subtle) 48%, transparent);");
+    expect(dockRule).toContain("--dv-drag-over-background-color: color-mix(in srgb, var(--kodex-accent) 12%, transparent);");
+    expect(dockRule).toContain("--dv-drag-over-border: 1px solid var(--kodex-border-accent-soft);");
     expect(dockRule).toContain("--dv-drag-over-border-color: var(--kodex-border-accent-soft);");
     expect(dockRule).toContain("--dv-icon-hover-background-color: var(--kodex-bg-button-hover);");
     expect(dockRule).toContain("--dv-floating-box-shadow: var(--kodex-shadow-floating);");

@@ -162,6 +162,10 @@ describe("GeneratedUiPane", () => {
 
   it("keeps generated UI styling scoped to the workspace pane host", () => {
     expect(generatedUiCss).toMatch(/\.kodex-generated-ui-pane\s*\{[^}]*height:\s*100%;/s);
+    expect(generatedUiCss).toMatch(/\.kodex-generated-ui-pane\s*\{[^}]*--kodex-generated-ui-edge-space:\s*var\(--kodex-pane-edge-space,\s*8px\);/s);
+    expect(generatedUiCss).toMatch(/\.kodex-generated-ui-pane\s*\{[^}]*box-sizing:\s*border-box;/s);
+    expect(generatedUiCss).toMatch(/\.kodex-generated-ui-pane\s*\{[^}]*padding:\s*var\(--kodex-generated-ui-edge-space\);/s);
+    expect(generatedUiCss).toMatch(/\.kodex-generated-ui-pane\s*\{[^}]*background:\s*var\(--kodex-pane-bg\);/s);
     expect(generatedUiCss).toMatch(/\.kodex-generated-ui-frame-wrap\s*\{[^}]*height:\s*100%;/s);
     expect(generatedUiCss).toMatch(/@media \(max-width:\s*900px\)/);
     expect(generatedUiCss).not.toContain(".kodex-generated-ui-surface");

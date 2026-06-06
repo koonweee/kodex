@@ -5,35 +5,53 @@
 }
 
 .kodex-workspace-dock,
+.kodex-workspace-dock .kodex-dockview-theme,
 .kodex-workspace-dock .dockview-theme-abyss,
 .kodex-workspace-dock .dockview-theme-dark,
 .kodex-workspace-dock .dockview-theme-light {
-  --dv-activegroup-hiddenpanel-tab-background-color: var(--kodex-bg-raised-muted);
+  --dv-active-sash-color: color-mix(in srgb, var(--kodex-border-accent) 72%, transparent);
+  --dv-active-sash-transition-delay: 120ms;
+  --dv-active-sash-transition-duration: 120ms;
+  --dv-activegroup-hiddenpanel-tab-background-color: color-mix(in srgb, var(--kodex-pane-bg) 72%, var(--kodex-bg-shell));
   --dv-activegroup-hiddenpanel-tab-color: var(--kodex-text-secondary);
-  --dv-activegroup-visiblepanel-tab-background-color: var(--kodex-bg-panel);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--kodex-pane-bg);
   --dv-activegroup-visiblepanel-tab-color: var(--kodex-text-primary);
-  --dv-drag-over-background-color: color-mix(in srgb, var(--kodex-accent) 20%, transparent);
+  --dv-border-radius: var(--kodex-radius-xs);
+  --dv-context-menu-background-color: var(--kodex-bg-raised);
+  --dv-context-menu-color: var(--kodex-text-primary);
+  --dv-drag-over-background-color: color-mix(in srgb, var(--kodex-accent) 12%, transparent);
+  --dv-drag-over-border: 1px solid var(--kodex-border-accent-soft);
   --dv-drag-over-border-color: var(--kodex-border-accent-soft);
   --dv-dropdown-border-radius: var(--kodex-radius-sm);
   --dv-floating-border: 1px solid var(--kodex-border-subtle);
   --dv-floating-box-shadow: var(--kodex-shadow-floating);
-  --dv-group-view-background-color: var(--kodex-bg-panel);
+  --dv-group-view-background-color: var(--kodex-pane-bg);
   --dv-icon-hover-background-color: var(--kodex-bg-button-hover);
-  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--kodex-bg-raised-muted);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: color-mix(in srgb, var(--kodex-pane-bg) 64%, var(--kodex-bg-shell));
   --dv-inactivegroup-hiddenpanel-tab-color: var(--kodex-text-muted);
-  --dv-inactivegroup-visiblepanel-tab-background-color: var(--kodex-bg-panel);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--kodex-pane-bg);
   --dv-inactivegroup-visiblepanel-tab-color: var(--kodex-text-secondary);
   --dv-paneview-active-outline-color: var(--kodex-border-accent);
   --dv-paneview-header-border-color: var(--kodex-border-subtle);
-  --dv-sash-color: color-mix(in srgb, var(--kodex-border-subtle) 72%, transparent);
+  --dv-sash-border-radius: var(--kodex-radius-xs);
+  --dv-sash-color: color-mix(in srgb, var(--kodex-border-subtle) 48%, transparent);
   --dv-separator-border: var(--kodex-border-subtle);
+  --dv-spacing-padding: 4px;
   --dv-tab-border-radius: var(--kodex-radius-xs);
+  --dv-tab-close-icon-size: 14px;
   --dv-tab-divider-color: var(--kodex-border-subtle);
-  --dv-tabs-and-actions-container-background-color: var(--kodex-bg-shell);
+  --dv-tab-font-size: 0.75rem;
+  --dv-tab-margin: 2px 2px 0;
+  --dv-tabs-and-actions-container-background-color: color-mix(in srgb, var(--kodex-pane-bg) 82%, var(--kodex-bg-shell));
+  --dv-tabs-and-actions-container-font-size: 0.75rem;
+  --dv-tabs-and-actions-container-height: 32px;
   --dv-tabs-container-scrollbar-color: var(--kodex-scroll-button-border);
+  --dv-transition-duration: 120ms;
 }
 
 .kodex-workspace-dock {
+  --kodex-pane-bg: var(--kodex-bg-panel);
+
   background: var(--kodex-bg-app);
   flex: 1 1 auto;
   min-height: 0;
@@ -66,16 +84,15 @@
 }
 
 .kodex-workspace-pane-host {
-  --kodex-workspace-pane-padding: 8px;
+  --kodex-pane-edge-space: 8px;
 
-  background: var(--kodex-bg-app);
+  background: var(--kodex-pane-bg);
   box-sizing: border-box;
   display: block;
   height: 100%;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
-  padding: var(--kodex-workspace-pane-padding);
   width: 100%;
 }
 
@@ -86,7 +103,7 @@
 
 .kodex-workspace-placeholder-pane {
   align-items: center;
-  background: var(--kodex-bg-panel);
+  background: var(--kodex-pane-bg);
   color: var(--kodex-text-primary);
   display: flex;
   gap: 12px;
@@ -134,7 +151,7 @@
 }
 
 .kodex-thread-pane {
-  background: var(--kodex-bg-panel);
+  background: var(--kodex-pane-bg);
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   height: 100%;
@@ -145,7 +162,7 @@
 .kodex-thread-pane-header {
   border-bottom: 1px solid var(--kodex-border-subtle);
   min-height: 42px;
-  padding: 6px 10px;
+  padding: 6px calc(var(--kodex-pane-edge-space) + 2px);
 }
 
 .kodex-thread-pane-title-block {
@@ -217,7 +234,7 @@
   display: grid;
   gap: 6px;
   min-height: 0;
-  padding: 0 10px;
+  padding: 0 calc(var(--kodex-pane-edge-space) + 2px);
 }
 
 .kodex-thread-pane-status:empty {
@@ -228,7 +245,7 @@
 .kodex-thread-pane-scroll {
   min-height: 0;
   overflow: auto;
-  padding: 8px 0 20px;
+  padding: var(--kodex-pane-edge-space) var(--kodex-pane-edge-space) 20px;
 }
 
 .kodex-thread-pane-existing > .kodex-thread-content {
@@ -241,7 +258,7 @@
   align-self: end;
   grid-row: 4;
   justify-self: center;
-  margin: 8px 12px 12px;
+  margin: var(--kodex-pane-edge-space) calc(var(--kodex-pane-edge-space) + 4px) calc(var(--kodex-pane-edge-space) + 4px);
   max-width: min(920px, calc(100% - 24px));
   width: calc(100% - 24px);
 }
@@ -287,8 +304,10 @@
   min-height: 0;
   border: 0;
   border-radius: 0;
-  background: color-mix(in srgb, var(--kodex-bg-app) 96%, black);
+  background: var(--kodex-terminal-bg);
   box-shadow: none;
+  --kodex-terminal-edge-space: var(--kodex-pane-edge-space);
+  --kodex-terminal-bg: var(--kodex-pane-bg);
 }
 
 .kodex-workspace-dock .kodex-terminal-pane .kodex-terminal-header {

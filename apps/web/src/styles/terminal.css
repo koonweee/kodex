@@ -1,4 +1,7 @@
 .kodex-terminal-host {
+  --kodex-terminal-edge-space: 10px;
+  --kodex-terminal-bg: color-mix(in srgb, var(--kodex-bg-app) 96%, black);
+
   position: fixed;
   inset-inline: 12px;
   bottom: max(12px, env(safe-area-inset-bottom));
@@ -10,13 +13,13 @@
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--kodex-border-subtle) 88%, transparent);
   border-radius: var(--kodex-radius-md);
-  background: color-mix(in srgb, var(--kodex-bg-app) 96%, black);
+  background: var(--kodex-terminal-bg);
   box-shadow: var(--kodex-shadow-strong);
 }
 
 .kodex-terminal-header {
   min-height: 44px;
-  padding: 8px 10px 8px 12px;
+  padding: 8px var(--kodex-terminal-edge-space) 8px calc(var(--kodex-terminal-edge-space) + 2px);
   border-bottom: 1px solid color-mix(in srgb, var(--kodex-border-subtle) 72%, transparent);
 }
 
@@ -58,7 +61,7 @@
   min-width: 0;
   overflow-x: auto;
   border-bottom: 1px solid color-mix(in srgb, var(--kodex-border-subtle) 64%, transparent);
-  padding: 6px 10px;
+  padding: 6px var(--kodex-terminal-edge-space);
   scrollbar-width: none;
 }
 
@@ -89,7 +92,7 @@
 .kodex-terminal-body {
   flex: 1 1 auto;
   min-height: 0;
-  background: var(--kodex-bg-command);
+  background: var(--kodex-terminal-bg);
 }
 
 .kodex-terminal-loading {
@@ -103,12 +106,13 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
+  background: var(--kodex-terminal-bg);
   touch-action: pan-y;
 }
 
 .kodex-terminal-viewport .xterm {
   height: 100%;
-  padding: 8px 10px;
+  padding: 8px var(--kodex-terminal-edge-space);
 }
 
 .kodex-terminal-viewport .xterm-viewport {
