@@ -1,6 +1,6 @@
 import { ActionIcon, Badge, Box, Button, Group, Loader, Menu, Modal, Skeleton, Switch, Text, TextInput, Title } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, Archive, CopyPlus, MoreHorizontal, PanelLeftOpen, Pencil, Pin, PinOff, Sparkles } from "lucide-react";
+import { AlertCircle, Archive, CopyPlus, MoreHorizontal, Pencil, Pin, PinOff, Sparkles } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
 
 import type { EventEnvelope, ThreadSummary } from "../../api/client";
@@ -39,31 +39,9 @@ const TimelineView = lazy(() =>
 );
 
 export function ThreadPane({ isActive, pane }: WorkspacePaneComponentProps) {
-  const { errorMessage, onShowMobileSidebar, renderThreadComposer, renderThreadPane, setPaneHeaderActions, updatePane, workspace } = useWorkspace();
+  const { errorMessage, renderThreadComposer, renderThreadPane, updatePane, workspace } = useWorkspace();
   const paneIsActive = isActive || workspace?.activePaneId === pane.id;
   const target = paneTargetRecord(pane);
-  const draftPaneActions = useMemo(
-    () =>
-      target.mode === "existing" ? null : (
-        <ActionIcon
-          aria-label="Show sidebar"
-          className="kodex-thread-sidebar-button"
-          onClick={onShowMobileSidebar}
-          size="sm"
-          variant="subtle"
-        >
-          <PanelLeftOpen size={17} />
-        </ActionIcon>
-      ),
-    [onShowMobileSidebar, target.mode],
-  );
-  useEffect(() => {
-    if (target.mode === "existing") {
-      return;
-    }
-    setPaneHeaderActions(pane.id, draftPaneActions);
-    return () => setPaneHeaderActions(pane.id, null);
-  }, [draftPaneActions, pane.id, setPaneHeaderActions, target.mode]);
   const materializeThreadPane = useCallback(
     (threadId: string, title?: string | null) => {
       void updatePane(pane.id, {
@@ -132,6 +110,8 @@ function ExistingThreadPane({
   const [entry, setEntry] = useState<TimelineEntry>(idleTimelineEntry);
   const [paneErrorMessage, setPaneErrorMessage] = useState<string | null>(null);
   const [scrollParentElement, setScrollParentElement] = useState<HTMLDivElement | null>(null);
+  const [timelineOverflowAbove, setTimelineOverflowAbove] = useState(false);
+  const [timelineOverflowBelow, setTimelineOverflowBelow] = useState(false);
   const [thread, setThread] = useState<ThreadSummary | null>(seededThread);
   const [timeline, setTimeline] = useState<TimelineState>(() => createTimelineState());
   const refreshInFlightRef = useRef(false);
@@ -254,6 +234,8 @@ function ExistingThreadPane({
     setTimeline(createTimelineState());
     setEntry({ phase: "loadingSnapshot", threadId });
     setThread(seededThread);
+    setTimelineOverflowAbove(false);
+    setTimelineOverflowBelow(false);
     setPaneErrorMessage(null);
     void refreshSnapshot();
   }, [cancelQueuedTimelineEvents, clearRetrySnapshotTimer, refreshSnapshot, threadId]);
@@ -385,15 +367,6 @@ function ExistingThreadPane({
       const customHeaderActions = threadChromeState ? renderThreadPaneHeaderActions?.(pane, threadChromeState) : null;
       return (
         <Group className="kodex-thread-pane-actions" gap={4} wrap="nowrap">
-          <ActionIcon
-            aria-label="Show sidebar"
-            className="kodex-thread-sidebar-button"
-            onClick={onShowMobileSidebar}
-            size="sm"
-            variant="subtle"
-          >
-            <PanelLeftOpen size={17} />
-          </ActionIcon>
           {entry.phase === "loadingSnapshot" || entry.phase === "refreshingSnapshot" ? (
             <Badge leftSection={<Loader size={10} />} variant="light">
               Syncing
@@ -402,20 +375,6 @@ function ExistingThreadPane({
           {!isUnavailable ? (
             <>
               {customHeaderActions}
-              <ActionIcon
-                aria-label="Duplicate pane"
-                onClick={() =>
-                  void openThreadPane(threadId, title, {
-                    duplicate: true,
-                    placement: { sourcePaneId: pane.id },
-                  })
-                }
-                size="sm"
-                title="Duplicate pane"
-                variant="subtle"
-              >
-                <CopyPlus size={16} />
-              </ActionIcon>
               {appSurfaceSession ? (
                 <ActionIcon
                   aria-label="Open generated UI"
@@ -431,17 +390,21 @@ function ExistingThreadPane({
                   <Sparkles size={16} />
                 </ActionIcon>
               ) : null}
-              {thread ? (
-                <ThreadActionsMenu
-                  onArchiveThread={threadActions.onArchiveThread}
-                  onPinThread={threadActions.onPinThread}
-                  onRenameThread={() => setRenameModalOpen(true)}
-                  onSetThread={setThread}
-                  onSetThreadNotificationsEnabled={threadActions.onSetThreadNotificationsEnabled}
-                  onUnpinThread={threadActions.onUnpinThread}
-                  thread={thread}
-                />
-              ) : null}
+              <ThreadActionsMenu
+                onDuplicatePane={() =>
+                  void openThreadPane(threadId, title, {
+                    duplicate: true,
+                    placement: { sourcePaneId: pane.id },
+                  })
+                }
+                onArchiveThread={threadActions.onArchiveThread}
+                onPinThread={threadActions.onPinThread}
+                onRenameThread={() => setRenameModalOpen(true)}
+                onSetThread={setThread}
+                onSetThreadNotificationsEnabled={threadActions.onSetThreadNotificationsEnabled}
+                onUnpinThread={threadActions.onUnpinThread}
+                thread={thread}
+              />
             </>
           ) : null}
         </Group>
@@ -452,7 +415,6 @@ function ExistingThreadPane({
       appSurfaceSession,
       isActive,
       isUnavailable,
-      onShowMobileSidebar,
       openGeneratedUiPane,
       openThreadPane,
       pane,
@@ -560,29 +522,37 @@ function ExistingThreadPane({
       ) : (
         <Box className="kodex-thread-content" data-subagent-sidebar={paneAside ? "open" : "closed"}>
           <div
-            className="kodex-thread-pane-scroll kodex-timeline-scroll"
-            data-entry-phase={entry.phase}
-            ref={setScrollParentElement}
+            className="kodex-thread-scroll-frame"
+            data-overflow-above={timelineOverflowAbove ? "true" : undefined}
+            data-overflow-below={timelineOverflowBelow ? "true" : undefined}
           >
-            {isInitialSnapshotLoading ? (
-              <TimelineLoadingSkeleton />
-            ) : (
-              <Suspense fallback={<TimelineLoadingSkeleton />}>
-                <TimelineView
-                  approvals={threadApprovals}
-                  imagePreviewUrlsByPath={imagePreviewUrlsByPath}
-                  onApprovalDecision={onApprovalDecision}
-                  onImageOpen={onImageOpen}
-                  onLoadOlderHistory={loadOlderHistory}
-                  onMarkdownOpen={onMarkdownOpen}
-                  onReady={() => {}}
-                  scrollParentElement={scrollParentElement}
-                  showDebug={showDebugEvents}
-                  threadId={threadId}
-                  timeline={timeline}
-                />
-              </Suspense>
-            )}
+            <div
+              className="kodex-thread-pane-scroll kodex-timeline-scroll"
+              data-entry-phase={entry.phase}
+              ref={setScrollParentElement}
+            >
+              {isInitialSnapshotLoading ? (
+                <TimelineLoadingSkeleton />
+              ) : (
+                <Suspense fallback={<TimelineLoadingSkeleton />}>
+                  <TimelineView
+                    approvals={threadApprovals}
+                    imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+                    onApprovalDecision={onApprovalDecision}
+                    onImageOpen={onImageOpen}
+                    onLoadOlderHistory={loadOlderHistory}
+                    onMarkdownOpen={onMarkdownOpen}
+                    onOverflowAboveChange={setTimelineOverflowAbove}
+                    onOverflowBelowChange={setTimelineOverflowBelow}
+                    onReady={() => {}}
+                    scrollParentElement={scrollParentElement}
+                    showDebug={showDebugEvents}
+                    threadId={threadId}
+                    timeline={timeline}
+                  />
+                </Suspense>
+              )}
+            </div>
           </div>
           {paneAside}
         </Box>
@@ -637,6 +607,7 @@ function stringOrNull(value: unknown): string | null {
 }
 
 function ThreadActionsMenu({
+  onDuplicatePane,
   onArchiveThread,
   onPinThread,
   onRenameThread,
@@ -645,15 +616,16 @@ function ThreadActionsMenu({
   onUnpinThread,
   thread,
 }: {
+  onDuplicatePane: () => void;
   onArchiveThread?: (threadId: string) => void;
   onPinThread?: (threadId: string) => void;
   onRenameThread: () => void;
   onSetThread: Dispatch<SetStateAction<ThreadSummary | null>>;
   onSetThreadNotificationsEnabled?: (threadId: string, enabled: boolean) => void;
   onUnpinThread?: (threadId: string) => void;
-  thread: ThreadSummary;
+  thread: ThreadSummary | null;
 }) {
-  const notificationsEnabled = thread.notificationsEnabled !== false;
+  const notificationsEnabled = thread?.notificationsEnabled !== false;
   return (
     <Menu position="bottom-end" withinPortal>
       <Menu.Target>
@@ -662,58 +634,65 @@ function ThreadActionsMenu({
         </ActionIcon>
       </Menu.Target>
       <Menu.Dropdown aria-label="Thread actions">
-        <Menu.Item
-          leftSection={thread.pinnedAt ? <PinOff size={14} /> : <Pin size={14} />}
-          onClick={() => {
-            if (thread.pinnedAt) {
-              onUnpinThread?.(thread.id);
-              onSetThread((current) => (current ? { ...current, pinnedAt: null } : current));
-              return;
-            }
-            onPinThread?.(thread.id);
-            onSetThread((current) =>
-              current ? { ...current, pinnedAt: new Date().toISOString() } : current,
-            );
-          }}
-        >
-          {thread.pinnedAt ? "Unpin thread" : "Pin thread"}
+        <Menu.Item leftSection={<CopyPlus size={14} />} onClick={onDuplicatePane}>
+          Duplicate pane
         </Menu.Item>
-        <Menu.Item leftSection={<Pencil size={14} />} onClick={onRenameThread}>
-          Rename thread
-        </Menu.Item>
-        <Menu.Item
-          aria-checked={notificationsEnabled}
-          closeMenuOnClick={false}
-          onClick={() => {
-            const nextEnabled = !notificationsEnabled;
-            onSetThreadNotificationsEnabled?.(thread.id, nextEnabled);
-            onSetThread((current) =>
-              current ? { ...current, notificationsEnabled: nextEnabled } : current,
-            );
-          }}
-          rightSection={
-            <Switch
-              aria-hidden="true"
-              checked={notificationsEnabled}
-              readOnly
-              size="xs"
-              style={{ pointerEvents: "none" }}
-              tabIndex={-1}
-            />
-          }
-          role="menuitemcheckbox"
-        >
-          Notifications
-        </Menu.Item>
-        {onArchiveThread ? (
-          <Menu.Item
-            leftSection={<Archive size={14} />}
-            onClick={() => {
-              onArchiveThread(thread.id);
-            }}
-          >
-            Archive thread
-          </Menu.Item>
+        {thread ? (
+          <>
+            <Menu.Item
+              leftSection={thread.pinnedAt ? <PinOff size={14} /> : <Pin size={14} />}
+              onClick={() => {
+                if (thread.pinnedAt) {
+                  onUnpinThread?.(thread.id);
+                  onSetThread((current) => (current ? { ...current, pinnedAt: null } : current));
+                  return;
+                }
+                onPinThread?.(thread.id);
+                onSetThread((current) =>
+                  current ? { ...current, pinnedAt: new Date().toISOString() } : current,
+                );
+              }}
+            >
+              {thread.pinnedAt ? "Unpin thread" : "Pin thread"}
+            </Menu.Item>
+            <Menu.Item leftSection={<Pencil size={14} />} onClick={onRenameThread}>
+              Rename thread
+            </Menu.Item>
+            <Menu.Item
+              aria-checked={notificationsEnabled}
+              closeMenuOnClick={false}
+              onClick={() => {
+                const nextEnabled = !notificationsEnabled;
+                onSetThreadNotificationsEnabled?.(thread.id, nextEnabled);
+                onSetThread((current) =>
+                  current ? { ...current, notificationsEnabled: nextEnabled } : current,
+                );
+              }}
+              rightSection={
+                <Switch
+                  aria-hidden="true"
+                  checked={notificationsEnabled}
+                  readOnly
+                  size="xs"
+                  style={{ pointerEvents: "none" }}
+                  tabIndex={-1}
+                />
+              }
+              role="menuitemcheckbox"
+            >
+              Notifications
+            </Menu.Item>
+            {onArchiveThread ? (
+              <Menu.Item
+                leftSection={<Archive size={14} />}
+                onClick={() => {
+                  onArchiveThread(thread.id);
+                }}
+              >
+                Archive thread
+              </Menu.Item>
+            ) : null}
+          </>
         ) : null}
       </Menu.Dropdown>
     </Menu>

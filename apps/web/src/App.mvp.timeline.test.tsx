@@ -61,7 +61,8 @@ function activeSendButton() {
 }
 
 async function openSecondThreadInAdditionalPane() {
-  await userEvent.click(screen.getByRole("button", { name: /duplicate pane/i }));
+  await userEvent.click(screen.getByRole("button", { name: /thread actions/i }));
+  await userEvent.click(await screen.findByRole("menuitem", { name: /duplicate pane/i }));
   await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /second thread/i }));
 }
 
@@ -248,7 +249,6 @@ describe("MVP timeline flows", () => {
     await openSecondThreadInAdditionalPane();
     expect(await screen.findByText(/second snapshot/i)).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: /duplicate pane/i })).toHaveLength(3);
       expect(screen.getAllByRole("button", { name: /thread actions/i })).toHaveLength(3);
     });
     const firstThreadDetailCalls = gateway.callsFor("GET", "/v1/threads/thread-1").length;

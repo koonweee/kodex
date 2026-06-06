@@ -39,6 +39,8 @@ export function TimelineView({
   onImageOpen,
   onLoadOlderHistory,
   onMarkdownOpen,
+  onOverflowAboveChange,
+  onOverflowBelowChange,
   onReady,
   scrollParentElement,
   showDebug,
@@ -51,6 +53,8 @@ export function TimelineView({
   onImageOpen: (image: ImageLightboxImage) => void;
   onLoadOlderHistory?: () => void;
   onMarkdownOpen?: (request: MarkdownPreviewRequest) => void;
+  onOverflowAboveChange?: (hasOverflowAbove: boolean) => void;
+  onOverflowBelowChange?: (hasOverflowBelow: boolean) => void;
   onReady: () => void;
   scrollParentElement: HTMLDivElement | null;
   showDebug: boolean;
@@ -129,10 +133,15 @@ export function TimelineView({
     virtuosoRef,
   } = useBottomPinnedVirtuosoTimeline({
     onReady,
+    onOverflowAboveChange,
     rowCount,
     scrollParentElement,
     timelineLastSeq: timeline.lastSeq,
   });
+  useEffect(() => {
+    onOverflowBelowChange?.(showScrollToBottom);
+    return () => onOverflowBelowChange?.(false);
+  }, [onOverflowBelowChange, showScrollToBottom]);
 
   if (rowCount === 0) {
     return (
@@ -362,11 +371,13 @@ function HiddenDebugPanel({
 
 function useBottomPinnedVirtuosoTimeline({
   onReady,
+  onOverflowAboveChange,
   rowCount,
   scrollParentElement,
   timelineLastSeq,
 }: {
   onReady: () => void;
+  onOverflowAboveChange?: (hasOverflowAbove: boolean) => void;
   rowCount: number;
   scrollParentElement: HTMLDivElement | null;
   timelineLastSeq: number;
@@ -377,19 +388,28 @@ function useBottomPinnedVirtuosoTimeline({
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [initialBottomAligned, setInitialBottomAligned] = useState(false);
 
+  const updateOverflowAbove = useCallback(() => {
+    const scrollElement = scrollParentElement;
+    const hasOverflowAbove = Boolean(scrollElement && rowCount > 0 && scrollElement.scrollTop > 8);
+    onOverflowAboveChange?.(hasOverflowAbove);
+    return hasOverflowAbove;
+  }, [onOverflowAboveChange, rowCount, scrollParentElement]);
+
   const updateNearBottom = useCallback(() => {
     const scrollElement = scrollParentElement;
     if (!scrollElement) {
       nearBottomRef.current = true;
       setShowScrollToBottom(false);
+      onOverflowAboveChange?.(false);
       return true;
     }
     const distanceFromBottom = getDistanceFromBottom(scrollElement);
     const isNearBottom = distanceFromBottom < 60;
     nearBottomRef.current = isNearBottom;
     setShowScrollToBottom(!isNearBottom && rowCount > 0 && distanceFromBottom > 0);
+    updateOverflowAbove();
     return isNearBottom;
-  }, [rowCount, scrollParentElement]);
+  }, [onOverflowAboveChange, rowCount, scrollParentElement, updateOverflowAbove]);
 
   const scrollToTimelineBottom = useCallback(() => {
     if (rowCount === 0) {
@@ -447,8 +467,11 @@ function useBottomPinnedVirtuosoTimeline({
 
     updateNearBottom();
     scrollElement.addEventListener("scroll", updateNearBottom, { passive: true });
-    return () => scrollElement.removeEventListener("scroll", updateNearBottom);
-  }, [scrollParentElement, updateNearBottom]);
+    return () => {
+      scrollElement.removeEventListener("scroll", updateNearBottom);
+      onOverflowAboveChange?.(false);
+    };
+  }, [onOverflowAboveChange, scrollParentElement, updateNearBottom]);
 
   useEffect(() => {
     if (initialBottomAligned) {

@@ -302,6 +302,8 @@ export function visibleDockviewPanelIds(api: Pick<DockviewApi, "groups" | "activ
 }
 
 function WorkspaceDockPane({ params }: IDockviewPanelProps<DockviewPaneParams>) {
+  const { focusPulseByPaneId } = useWorkspace();
+  const focusPulseToken = focusPulseByPaneId[params.pane.id] ?? 0;
   return (
     <div className="kodex-workspace-pane-host" data-pane-kind={params.pane.kind}>
       <WorkspacePaneRenderer
@@ -309,6 +311,13 @@ function WorkspaceDockPane({ params }: IDockviewPanelProps<DockviewPaneParams>) 
         pane={params.pane}
         isActive={params.activePaneId === params.pane.id}
       />
+      {focusPulseToken ? (
+        <span
+          aria-hidden="true"
+          className="kodex-workspace-pane-focus-pulse"
+          key={focusPulseToken}
+        />
+      ) : null}
     </div>
   );
 }

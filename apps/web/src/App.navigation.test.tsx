@@ -8,6 +8,7 @@ import {
   baseRoutes,
   mockGateway,
   secondThread,
+  setInitialWorkspacePaneState,
   thread,
   threadDetail,
 } from "./test/mvpAppHarness";
@@ -21,6 +22,19 @@ function emitPopstate(path: string) {
     window.history.pushState(null, "", path);
     window.dispatchEvent(new PopStateEvent("popstate"));
   });
+}
+
+function stubNarrowViewport() {
+  vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
+    matches: query === "(max-width: 900px)",
+    media: query,
+    onchange: null,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => false,
+  }));
 }
 
 function deferred<T>() {
@@ -71,6 +85,39 @@ describe("deep link navigation", () => {
       );
     });
     expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(1);
+  });
+
+  it("opens a mobile deep-linked thread when the persisted workspace starts on a draft pane", async () => {
+    stubNarrowViewport();
+    goTo("/threads/thread-2");
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+        "GET /v1/threads/thread-2": threadDetail(secondThread),
+      }),
+    );
+    setInitialWorkspacePaneState({
+      activePaneId: "pane-draft",
+      dockviewLayout: {
+        panes: [{ id: "pane-draft" }],
+      },
+      panes: [
+        {
+          id: "pane-draft",
+          kind: "thread",
+          target: { mode: "draft", projectId: null },
+          title: "Draft thread",
+        },
+      ],
+      schemaVersion: 1,
+    });
+
+    render(<App />);
+
+    const main = screen.getByRole("main", { name: /thread/i });
+    expect(await within(main).findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+    expect(main.querySelector(".kodex-workspace-dock")).not.toBeInTheDocument();
+    expect(main.querySelector(".kodex-workspace-single-pane-shell")).toBeInTheDocument();
   });
 
   it("shows representative timeline skeleton rows while a selected thread snapshot loads", async () => {
@@ -225,6 +272,7 @@ describe("deep link navigation", () => {
   });
 
   it("uses mobile panel route state so back navigation can return from a thread to the selector", async () => {
+    stubNarrowViewport();
     goTo("/");
     mockGateway(
       baseRoutes({

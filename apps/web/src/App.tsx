@@ -11,6 +11,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
 } from "react";
 
 import { useApprovalsState } from "./approvals/useApprovalsState";
@@ -28,7 +29,6 @@ import {
   deleteAutomation,
   getCapabilities,
   getRateLimits,
-  getThreadAppSurface,
   listAutomations,
   listChatThreadsPage,
   listQueuedInputs,
@@ -77,7 +77,6 @@ import type { ImageLightboxImage } from "./images/types";
 import { useKodexNotifications } from "./notifications/useKodexNotifications";
 import { PwaLifecycle } from "./pwa/PwaLifecycle";
 import type { PreferenceSection } from "./PreferencesModal";
-import { ThreadAppSurfacePane } from "./panes/generatedUi/GeneratedUiWorkspacePane";
 import {
   applyKodexColorScheme,
   createKodexMantineTheme,
@@ -538,7 +537,6 @@ function KodexShell({
   const [paneImagePreviewUrlsByPath, setPaneImagePreviewUrlsByPath] = useState<Record<string, string>>({});
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesSection, setPreferencesSection] = useState<PreferenceSection>("appearance");
-  const [narrowAppSurfaceThreadId, setNarrowAppSurfaceThreadId] = useState<string | null>(null);
   const [hoveredThreadActionId, setHoveredThreadActionId] = useState<string | null>(null);
   const [timelineScrollElement, setTimelineScrollElement] = useState<HTMLDivElement | null>(null);
   const [threadPaneSnapshotReadyIds, setThreadPaneSnapshotReadyIds] = useState<Set<string>>(new Set());
@@ -596,6 +594,7 @@ function KodexShell({
     mobilePanel,
     routeSelectedThread,
     routeSelectedThreadRef,
+    routeThreadPaneId,
     selectMaterializedThread,
     selectProject,
     selectedMainPane,
@@ -859,23 +858,6 @@ function KodexShell({
     },
   });
   const selectedThreadSubagents = selectedThreadSubagentsQuery.data ?? EMPTY_SUBAGENTS;
-  const selectedAppSurfaceQuery = useQuery({
-    enabled: useSingleThreadWorkspace && selectedMainPane === "thread" && selectedThreadId !== null,
-    queryKey: selectedThreadId ? queryKeys.appSurface(selectedThreadId) : ["threads", "none", "app-surface"],
-    queryFn: () => {
-      if (!selectedThreadId) {
-        return null;
-      }
-      return getThreadAppSurface(selectedThreadId);
-    },
-  });
-  const selectedAppSurfaceSession = selectedAppSurfaceQuery.data ?? null;
-  const narrowAppSurfaceVisible =
-    useSingleThreadWorkspace &&
-    selectedMainPane === "thread" &&
-    selectedThreadId !== null &&
-    narrowAppSurfaceThreadId === selectedThreadId &&
-    selectedAppSurfaceSession !== null;
   const selectedQueuedInputs = selectedThreadId ? selectedQueuedInputsQuery.data ?? EMPTY_QUEUED_INPUTS : EMPTY_QUEUED_INPUTS;
   const automations = automationsQuery.data ?? EMPTY_AUTOMATIONS;
   const usageLimitSnapshot = rateLimitsQuery.data ?? null;
@@ -1793,6 +1775,30 @@ function KodexShell({
       upsertQueuedInput,
     ],
   );
+  const renderWorkspaceThreadPaneAside = useCallback<
+    NonNullable<ComponentProps<typeof WorkspaceProvider>["renderThreadPaneAside"]>
+  >(
+    (_pane, state) => (state.isActive && state.thread.id === selectedThreadId ? subagentViewer : null),
+    [selectedThreadId, subagentViewer],
+  );
+  const renderWorkspaceThreadPaneHeaderActions = useCallback<
+    NonNullable<ComponentProps<typeof WorkspaceProvider>["renderThreadPaneHeaderActions"]>
+  >(
+    (_pane, state) =>
+      state.isActive && state.thread.id === selectedThreadId && selectedThreadSubagents.length > 0 ? (
+        <Tooltip label={subagentSidebarOpen ? "Hide subagents" : "Show subagents"}>
+          <ActionIcon
+            aria-label={subagentSidebarOpen ? "Hide subagents" : "Show subagents"}
+            aria-pressed={subagentSidebarOpen ? "true" : "false"}
+            onClick={() => setSubagentSidebarOpen((current) => !current)}
+            variant={subagentSidebarOpen ? "light" : "subtle"}
+          >
+            <Bot size={17} />
+          </ActionIcon>
+        </Tooltip>
+      ) : null,
+    [selectedThreadId, selectedThreadSubagents.length, subagentSidebarOpen],
+  );
   return (
     <>
       <WorkspaceProvider
@@ -1812,23 +1818,8 @@ function KodexShell({
         publishThreadPaneTimelineAction={publishThreadPaneTimelineAction}
         renderThreadComposer={renderWorkspaceThreadComposer}
         threadSummariesById={threadSummariesById}
-        renderThreadPaneAside={(_pane, state) =>
-          state.isActive && state.thread.id === selectedThreadId ? subagentViewer : null
-        }
-        renderThreadPaneHeaderActions={(_pane, state) =>
-          state.isActive && state.thread.id === selectedThreadId && selectedThreadSubagents.length > 0 ? (
-            <Tooltip label={subagentSidebarOpen ? "Hide subagents" : "Show subagents"}>
-              <ActionIcon
-                aria-label={subagentSidebarOpen ? "Hide subagents" : "Show subagents"}
-                aria-pressed={subagentSidebarOpen ? "true" : "false"}
-                onClick={() => setSubagentSidebarOpen((current) => !current)}
-                variant={subagentSidebarOpen ? "light" : "subtle"}
-              >
-                <Bot size={17} />
-              </ActionIcon>
-            </Tooltip>
-          ) : null
-        }
+        renderThreadPaneAside={renderWorkspaceThreadPaneAside}
+        renderThreadPaneHeaderActions={renderWorkspaceThreadPaneHeaderActions}
         showDebugEvents={showDebugEvents}
         subscribeThreadPaneTimelineAction={subscribeThreadPaneTimelineAction}
         threadActions={workspaceThreadActions}
@@ -1846,25 +1837,7 @@ function KodexShell({
           onUpdateAutomation: handleUpdateAutomation,
           threadOptions: automationTargetThreadOptions,
         }}
-          composerPanelProps={{
-          activeSelectedTurnId, attachmentInputRef, canCompose, composerDraftKey, composerResetToken, composerSettings, composerSettingsError,
-          composerCwd, composerDraftStore: composerDraftStoreRef.current, composerShellRef, contextUsage: selectedContextUsage, currentProjectName: selectedProject?.name ?? null,
-          draftProjectSelector: isDraftThreadSelected
-            ? {
-                onChange: stableHandleDraftProjectChange,
-                projects: orderedProjects,
-                value: draftChatThreadSelected ? null : draftThreadProjectId,
-              }
-            : undefined,
-          selectedGitBranch: selectedThread?.gitInfo?.branch ?? null, isDraftThreadSelected, isDraftComposerTransitioning, isComposerDragActive,
-          isComposerSubmitting, isQueuedTurnStartPending, isSelectedTimelineReady, skillsInvalidationGeneration, models,
-          onAbortQueuedSteer: handleAbortQueuedSteer, onAttachmentInputChange: handleAttachmentInputChange,
-          onComposerDragLeave: handleComposerDragLeave, onComposerDragOver: handleComposerDragOver, onComposerDrop: handleComposerDrop,
-          onComposerKeyDown: handleComposerKeyDown, onComposerPaste: handleComposerPaste, onComposerSettingsChange: handleComposerSettingsChange,
-          onImageOpen: setLightboxImage, onRemovePendingAttachment: removePendingAttachment, onStopTurn: handleStopTurn,
-          onSubmitQueuedSteer: handleSubmitQueuedSteer, onSubmitTurn: handleSubmitTurn, pendingAttachments, queuedSteerRows,
-          selectedThreadPresent: selectedThread !== null || isSelectedTimelineLoading,
-        }}
+        isDraftThreadSelected={isDraftThreadSelected}
         isSidebarResizing={isSidebarResizing}
         mainPane={selectedMainPane}
         mobilePanel={mobilePanel}
@@ -1876,43 +1849,9 @@ function KodexShell({
           onShowMobileSidebar: handleShowMobileSidebar,
           project: selectedProjectPane,
         }}
-          narrowAppSurfacePane={
-            narrowAppSurfaceVisible ? (
-              <ThreadAppSurfacePane
-                colorSchemeId={colorSchemeId}
-                emptyTitle={selectedAppSurfaceSession.title}
-                onHide={() => setNarrowAppSurfaceThreadId(null)}
-                threadId={selectedThreadId}
-              />
-            ) : null
-          }
           sidebarWidth={sidebarWidth}
           sidebarCollapsed={sidebarCollapsed}
           useSingleThreadWorkspace={useSingleThreadWorkspace}
-          threadPanelProps={{
-          generatedUiAvailable: selectedAppSurfaceSession !== null,
-          generatedUiHidden: !narrowAppSurfaceVisible,
-          errorMessage, imagePreviewUrlsByPath: mergedImagePreviewUrlsByPath, isDraftThreadSelected, isSelectedTimelineLoading,
-          onGeneratedUiHide: () => setNarrowAppSurfaceThreadId(null),
-          onGeneratedUiShow: selectedThreadId ? () => setNarrowAppSurfaceThreadId(selectedThreadId) : undefined,
-          onArchiveThread: handleArchiveSelectedThread, onApprovalDecision: handleApprovalDecision, onImageOpen: setLightboxImage,
-          onMarkdownOpen: handleOpenMarkdownPreview,
-          onPinThread: stableHandlePinThread,
-          onRenameThread: stableHandleRenameThread,
-          onSetThreadNotificationsEnabled: stableHandleSetThreadNotificationsEnabled,
-          onShowMobileSidebar: handleShowMobileSidebar, onTimelineReady: handleTimelineReadyForSelectedThread,
-          onSubagentSidebarToggle: () => setSubagentSidebarOpen((current) => !current),
-          onLoadOlderHistory: loadOlderHistory,
-          onUnpinThread: stableHandleUnpinThread, pendingTitleThreadIds,
-          scrollParentElement: timelineScrollElement, selectedThread, selectedThreadApprovals, selectedThreadTitle,
-          selectedThreadUnavailableId: unavailableThreadId,
-          selectedTimelineEntry, setTimelineScrollElement, showDebugEvents,
-          subagentSidebarOpen,
-          subagentToggleVisible: selectedThreadSubagents.length > 0,
-          subagentViewer,
-          threadSyncNotice,
-          timeline,
-        }}
           workspaceSidebarProps={{
           account, approvals, chatThreads: sidebarChatThreads, dataState: sidebarDataState, hoveredThreadActionId, isSidebarResizing, loginState,
           chatThreadsHasMore: chatThreadsNextCursor !== null,
@@ -1934,7 +1873,7 @@ function KodexShell({
           showDebugEvents, sidebarWidth, threadsByProjectId: sidebarThreadsByProjectId, usageLimitLines,
         }}
         workspaceSelectedThreadPaneId={
-          selectedMainPane === "thread" && !isSelectedThreadSnapshotDeferred ? selectedThreadId ?? unavailableThreadId : null
+          selectedMainPane === "thread" && !isSelectedThreadSnapshotDeferred ? routeThreadPaneId ?? unavailableThreadId : null
         }
         />
       </WorkspaceProvider>

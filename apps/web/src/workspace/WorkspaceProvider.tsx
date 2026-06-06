@@ -59,6 +59,8 @@ type ThreadPaneChromeState = {
 };
 
 export type WorkspacePaneTabStatus = "connected" | "connecting" | "error" | "closed";
+type WorkspacePaneCloseOptions = { nextActivePaneId?: string | null };
+type WorkspacePaneFocusOptions = { pulse?: boolean };
 type WorkspaceTerminalOpenOptions = WorkspacePaneOpenOptions & { command?: string | null; cwd?: string | null };
 
 type WorkspaceProviderProps = {
@@ -89,10 +91,11 @@ type WorkspaceProviderProps = {
 
 type WorkspaceContextValue = {
   approvals: Approval[];
-  closePane: (paneId: string, dockviewLayout: unknown) => void;
+  closePane: (paneId: string, dockviewLayout: unknown, options?: WorkspacePaneCloseOptions) => void;
   duplicatePane: (paneId: string) => void;
   errorMessage: string | null;
-  focusPane: (paneId: string | null) => void;
+  focusPane: (paneId: string | null, options?: WorkspacePaneFocusOptions) => void;
+  focusPulseByPaneId: Record<string, number>;
   imagePreviewUrlsByPath: Record<string, string>;
   isLoading: boolean;
   onApprovalDecision: (approval: Approval, decision: ApprovalResponse) => void;
@@ -172,9 +175,11 @@ export function WorkspaceProvider({
   const [paneHeaderActionsById, setPaneHeaderActionsById] = useState<Record<string, ReactNode>>({});
   const [panePlacementHintsById, setPanePlacementHintsById] = useState<WorkspacePanePlacementHintsById>({});
   const [paneTabStatusById, setPaneTabStatusById] = useState<Record<string, WorkspacePaneTabStatus>>({});
+  const [focusPulseByPaneId, setFocusPulseByPaneId] = useState<Record<string, number>>({});
   const [visiblePaneIds, setVisiblePaneIds] = useState<string[]>([]);
   const [workspace, setWorkspace] = useState<WorkspaceModel>(() => ensureWorkspaceHasActivePane(paneStore.load()));
   const [workspaceError, setWorkspaceError] = useState<Error | null>(null);
+  const nextFocusPulseRef = useRef(0);
   const workspaceRef = useRef(workspace);
 
   useEffect(() => {
@@ -187,6 +192,18 @@ export function WorkspaceProvider({
 
   useEffect(() => {
     const paneIds = new Set(workspace.panes.map((pane) => pane.id));
+    setFocusPulseByPaneId((current) => {
+      let changed = false;
+      const next: Record<string, number> = {};
+      for (const [paneId, token] of Object.entries(current)) {
+        if (paneIds.has(paneId)) {
+          next[paneId] = token;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
     setPanePlacementHintsById((current) => {
       let changed = false;
       const next: WorkspacePanePlacementHintsById = {};
@@ -241,6 +258,15 @@ export function WorkspaceProvider({
 
   const onVisiblePaneIdsChange = useCallback((paneIds: string[]) => {
     setVisiblePaneIds((current) => (sameStringArray(current, paneIds) ? current : paneIds));
+  }, []);
+
+  const pulsePane = useCallback((paneId: string | null) => {
+    if (!paneId) {
+      return;
+    }
+    nextFocusPulseRef.current += 1;
+    const token = nextFocusPulseRef.current;
+    setFocusPulseByPaneId((current) => ({ ...current, [paneId]: token }));
   }, []);
 
   const visibleThreadIds = useMemo(
@@ -366,7 +392,10 @@ export function WorkspaceProvider({
     });
   }, []);
 
-  const focusPane = useCallback((paneId: string | null) => {
+  const focusPane = useCallback((paneId: string | null, options: WorkspacePaneFocusOptions = {}) => {
+    if (options.pulse) {
+      pulsePane(paneId);
+    }
     setWorkspace((current) => {
       if (current.activePaneId === paneId) {
         return current;
@@ -376,9 +405,9 @@ export function WorkspaceProvider({
         activePaneId: paneId,
       });
     });
-  }, []);
+  }, [pulsePane]);
 
-  const closePane = useCallback((paneId: string, dockviewLayout: unknown) => {
+  const closePane = useCallback((paneId: string, dockviewLayout: unknown, options: WorkspacePaneCloseOptions = {}) => {
     const paneToClose = workspace.panes.find((pane) => pane.id === paneId) ?? null;
     if (paneToClose?.kind === "terminal" && typeof paneToClose.target.terminalId === "string") {
       void deleteTerminalSession(paneToClose.target.terminalId).catch((error: unknown) => {
@@ -391,8 +420,12 @@ export function WorkspaceProvider({
         return current;
       }
       const panes = remainingPanes.length > 0 ? remainingPanes : [createDraftThreadPane()];
+      const requestedNextActivePaneId =
+        options.nextActivePaneId && panes.some((pane) => pane.id === options.nextActivePaneId)
+          ? options.nextActivePaneId
+          : null;
       const activePaneId = current.activePaneId === paneId
-        ? panes[0]?.id ?? null
+        ? requestedNextActivePaneId ?? panes[0]?.id ?? null
         : panes.some((pane) => pane.id === current.activePaneId)
           ? current.activePaneId
           : panes[0]?.id ?? null;
@@ -470,6 +503,7 @@ export function WorkspaceProvider({
     setWorkspace((current) => {
       const existing = findExistingPane(current.panes);
       if (existing) {
+        pulsePane(existing.id);
         const nextPanes = pane.title && !existing.title
           ? current.panes.map((candidate) =>
               candidate.id === existing.id ? ({ ...candidate, title: pane.title } as WorkspacePane) : candidate,
@@ -492,7 +526,7 @@ export function WorkspaceProvider({
         panes: [...current.panes, pane],
       };
     });
-  }, [appendPane, recordPanePlacementHint]);
+  }, [appendPane, pulsePane, recordPanePlacementHint]);
 
   const duplicatePane = useCallback((paneId: string) => {
     const sourcePane = workspaceRef.current.panes.find((candidate) => candidate.id === paneId);
@@ -589,6 +623,7 @@ export function WorkspaceProvider({
       duplicatePane,
       errorMessage,
       focusPane,
+      focusPulseByPaneId,
       imagePreviewUrlsByPath,
       isLoading: false,
       onApprovalDecision,
@@ -636,6 +671,7 @@ export function WorkspaceProvider({
       duplicatePane,
       errorMessage,
       focusPane,
+      focusPulseByPaneId,
       imagePreviewUrlsByPath,
       onApprovalDecision,
       onImageOpen,

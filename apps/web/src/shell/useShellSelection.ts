@@ -21,6 +21,7 @@ export type ShellSelectionState = {
   draftThreadProjectId: string | null;
   mobilePanel: MobilePanel;
   routeSelectedThread: ThreadSummary | null;
+  routeThreadPaneId: string | null;
   selectedMainPane: KodexMainPane;
   selectedProjectId: string | null;
   selectedProjectPaneId: string | null;
@@ -84,6 +85,7 @@ export function useShellSelection({
   const [selectedProjectPaneId, setSelectedProjectPaneId] = useState<string | null>(initialRoute.projectId ?? null);
   const [selectedThreadId, setSelectedThreadIdState] = useState<string | null>(initialRoute.threadId);
   const [routeSelectedThread, setRouteSelectedThread] = useState<ThreadSummary | null>(null);
+  const [routeThreadPaneId, setRouteThreadPaneId] = useState<string | null>(initialRoute.threadId);
   const [unavailableThreadId, setUnavailableThreadId] = useState<string | null>(null);
   const [draftChatThreadSelected, setDraftChatThreadSelected] = useState(initialRoute.threadId === null);
   const [draftThreadProjectId, setDraftThreadProjectId] = useState<string | null>(null);
@@ -219,6 +221,7 @@ export function useShellSelection({
   ]);
 
   const selectProject = useCallback((projectId: string) => {
+    setRouteThreadPaneId(null);
     setSelectedMainPane("thread");
     setSelectedProjectPaneId(null);
     setSelectedProjectIdWithRef(projectId);
@@ -241,6 +244,7 @@ export function useShellSelection({
   ]);
 
   const handleCreateThread = useCallback((projectId: string) => {
+    setRouteThreadPaneId(null);
     setSelectedMainPane("thread");
     setSelectedProjectPaneId(null);
     pushKodexRoute({ panel: null, threadId: null });
@@ -256,6 +260,7 @@ export function useShellSelection({
   }, [clearTimelineEntry, resetComposerDraft, setRouteSelectedThreadState, setSelectedProjectIdWithRef, setSelectedThreadIdWithRef]);
 
   const handleCreateChat = useCallback(() => {
+    setRouteThreadPaneId(null);
     setSelectedMainPane("thread");
     setSelectedProjectPaneId(null);
     pushKodexRoute({ panel: null, threadId: null });
@@ -283,6 +288,7 @@ export function useShellSelection({
   ]);
 
   const handleDraftProjectChange = useCallback((projectId: string | null) => {
+    setRouteThreadPaneId(null);
     setSelectedMainPane("thread");
     setSelectedProjectPaneId(null);
     pushKodexRoute({ panel: null, threadId: null });
@@ -318,25 +324,30 @@ export function useShellSelection({
   ]);
 
   const handleSelectThread = useCallback((projectId: string, threadId: string) => {
+    setRouteThreadPaneId(null);
     pushKodexRoute({ panel: null, threadId: null });
     selectKnownProjectThread(projectId, threadId);
   }, [selectKnownProjectThread]);
 
   const handleSelectChatThread = useCallback((threadId: string) => {
+    setRouteThreadPaneId(null);
     pushKodexRoute({ panel: null, threadId: null });
     selectKnownChatThread(threadId);
   }, [selectKnownChatThread]);
 
   const handleSelectPinnedThread = useCallback((threadId: string) => {
+    setRouteThreadPaneId(null);
     pushKodexRoute({ panel: null, threadId: null });
     selectKnownPinnedThread(threadId);
   }, [selectKnownPinnedThread]);
 
   const handleFocusWorkspaceThreadPane = useCallback((threadId: string) => {
+    setRouteThreadPaneId(null);
     selectRouteThread(threadId);
   }, [selectRouteThread]);
 
   const handleSelectAutomations = useCallback(() => {
+    setRouteThreadPaneId(null);
     pushKodexRoute({ panel: null, threadId: null, view: "automations" });
     setMobilePanel("chat");
     setSelectedMainPane("automations");
@@ -344,6 +355,7 @@ export function useShellSelection({
   }, []);
 
   const handleSelectProjectSettings = useCallback((projectId: string) => {
+    setRouteThreadPaneId(null);
     pushKodexRoute({ panel: null, projectId, threadId: null, view: "project" });
     setMobilePanel("chat");
     setSelectedMainPane("project");
@@ -366,6 +378,7 @@ export function useShellSelection({
     resetDraftComposer?: boolean;
     replaceRoute?: boolean;
   }) => {
+    setRouteThreadPaneId(null);
     clearTimelineEntry();
     setSelectedThreadIdWithRef(null);
     setRouteSelectedThreadState(null);
@@ -399,6 +412,7 @@ export function useShellSelection({
   ]);
 
   const selectMaterializedThread = useCallback(({ projectId, thread }: { projectId: string | null; thread: ThreadSummary }) => {
+    setRouteThreadPaneId(null);
     setDraftChatThreadSelected(false);
     setDraftThreadProjectId(null);
     setSelectedProjectIdWithRef(projectId);
@@ -416,12 +430,14 @@ export function useShellSelection({
 
   const applyBrowserRoute = useCallback((route: KodexRoute) => {
     if (route.view === "automations") {
+      setRouteThreadPaneId(null);
       setMobilePanel(route.panel ?? "chat");
       setSelectedMainPane("automations");
       setSelectedProjectPaneId(null);
       return;
     }
     if (route.view === "project" && route.projectId) {
+      setRouteThreadPaneId(null);
       setMobilePanel(route.panel ?? "chat");
       setSelectedMainPane("project");
       setSelectedProjectPaneId(route.projectId);
@@ -437,6 +453,7 @@ export function useShellSelection({
     setSelectedMainPane("thread");
     setSelectedProjectPaneId(null);
     if (!route.threadId) {
+      setRouteThreadPaneId(null);
       setMobilePanel(route.panel ?? "chat");
       setSelectedProjectIdWithRef(null);
       setSelectedThreadIdWithRef(null);
@@ -447,6 +464,7 @@ export function useShellSelection({
       clearTimelineEntry();
       return;
     }
+    setRouteThreadPaneId(route.threadId);
     if (route.threadId === selectedThreadIdRef.current) {
       setMobilePanel(route.panel ?? "chat");
       return;
@@ -505,6 +523,7 @@ export function useShellSelection({
     mobilePanel,
     routeSelectedThread,
     routeSelectedThreadRef,
+    routeThreadPaneId,
     selectMaterializedThread,
     selectProject,
     selectedMainPane,

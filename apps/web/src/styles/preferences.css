@@ -319,6 +319,14 @@
     height: calc(100dvh - 24px) !important;
   }
 
+  .kodex-shell[data-mobile-panel="chat"] .kodex-main[data-single-pane-workspace="true"] {
+    padding: 0 !important;
+  }
+
+  .kodex-main-stack[data-single-pane-workspace="true"] {
+    height: 100dvh !important;
+  }
+
   .kodex-thread-sidebar-button {
     display: inline-flex;
     width: 32px;

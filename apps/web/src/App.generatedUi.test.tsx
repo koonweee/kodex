@@ -22,7 +22,7 @@ describe("app surface pane integration", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows the selected thread app surface as the single narrow main pane", async () => {
+  it("opens the selected thread app surface as a narrow workspace pane", async () => {
     vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
       matches: query === "(max-width: 900px)",
       media: query,
@@ -44,17 +44,23 @@ describe("app surface pane integration", () => {
 
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
     expect(document.querySelector(".kodex-workspace-dock")).not.toBeInTheDocument();
-    await userEvent.click(await screen.findByRole("button", { name: /show app surface/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /open generated ui/i }));
 
     expect(await screen.findByTitle(/app surface: generated mockups/i)).toBeInTheDocument();
     expect(document.querySelector(".kodex-workspace-dock")).not.toBeInTheDocument();
     expect(document.querySelector(".dockview")).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/message composer/i)).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /hide app surface/i }));
+    await userEvent.click(screen.getByRole("button", { name: /switch workspace pane/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /implement frontend$/i }));
 
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toBeInTheDocument();
+
+    await userEvent.click(await screen.findByRole("button", { name: /open generated ui/i }));
+
+    expect(await screen.findByTitle(/app surface: generated mockups/i)).toBeInTheDocument();
+    expect(screen.getAllByTitle(/app surface: generated mockups/i)).toHaveLength(1);
   });
 
   it("renders generated UI as a workspace pane and subscribes once for the target thread", async () => {

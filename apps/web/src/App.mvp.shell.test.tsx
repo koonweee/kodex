@@ -27,6 +27,19 @@ function clickMenuItem(name: RegExp) {
   return clickMenuItemWithDeps(name, screen, waitFor, fireEvent);
 }
 
+function stubNarrowViewport() {
+  vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
+    matches: query === "(max-width: 900px)",
+    media: query,
+    onchange: null,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => false,
+  }));
+}
+
 async function notificationMenuItem(name: RegExp) {
   let item: HTMLElement | undefined;
   await waitFor(() => {
@@ -59,6 +72,12 @@ function activeComposer() {
 
 function activeSendButton() {
   return within(activeThreadPane()).getByRole("button", { name: /send message/i });
+}
+
+async function openNewChatFromSidebar() {
+  const workspaceNav = screen.getByRole("navigation", { name: /workspace/i });
+  await userEvent.click(within(workspaceNav).getByRole("button", { name: /^chats$/i }));
+  await userEvent.click(within(workspaceNav).getByRole("button", { name: /^new chat$/i }));
 }
 
 function deferred<T>() {
@@ -433,6 +452,7 @@ describe("MVP shell flows", () => {
   });
 
   it("creates chat threads from the first message without a project thread request", async () => {
+    window.history.replaceState(null, "", "/");
     const chatThread = {
       ...thread,
       id: "chat-thread-1",
@@ -455,7 +475,7 @@ describe("MVP shell flows", () => {
 
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /start new chat from desktop header/i }));
+    await openNewChatFromSidebar();
     expect(gateway.callsFor("POST", "/v1/chats/threads")).toHaveLength(0);
     expect(within(screen.getByRole("main", { name: /thread/i })).queryByRole("heading", { name: /new thread/i })).not.toBeInTheDocument();
 
@@ -477,20 +497,21 @@ describe("MVP shell flows", () => {
     ).toBeInTheDocument();
   });
 
-  it("opens the root draft chat page from the desktop sidebar header", async () => {
+  it("opens the root draft chat page from the desktop Chats scope create action", async () => {
     window.history.replaceState(null, "", "/threads/thread-1");
     mockGateway(baseRoutes());
 
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /start new chat from desktop header/i }));
+    await openNewChatFromSidebar();
 
     expect(window.location.pathname).toBe("/");
     expect(activeComposer()).toBeEnabled();
   });
 
   it("keeps a locally created chat when the initial chat list resolves late", async () => {
+    window.history.replaceState(null, "", "/");
     const initialChatThreads = deferred<unknown>();
     const chatThread = {
       ...thread,
@@ -514,7 +535,7 @@ describe("MVP shell flows", () => {
 
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /start new chat from desktop header/i }));
+    await openNewChatFromSidebar();
     await userEvent.type(activeComposer(), "Keep local chat");
     await userEvent.click(activeSendButton());
 
@@ -1718,6 +1739,7 @@ describe("MVP shell flows", () => {
   });
 
   it("provides compact narrow viewport navigation without a panel switcher", async () => {
+    stubNarrowViewport();
     mockGateway(baseRoutes());
 
     render(<App />);
@@ -1737,16 +1759,7 @@ describe("MVP shell flows", () => {
   });
 
   it("uses the single-thread main pane without Dockview chrome on narrow viewports", async () => {
-    vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
-      matches: query === "(max-width: 900px)",
-      media: query,
-      onchange: null,
-      addEventListener: () => undefined,
-      removeEventListener: () => undefined,
-      addListener: () => undefined,
-      removeListener: () => undefined,
-      dispatchEvent: () => false,
-    }));
+    stubNarrowViewport();
     mockGateway(
       baseRoutes({
         "GET /v1/threads": {
@@ -1780,16 +1793,8 @@ describe("MVP shell flows", () => {
   });
 
   it("uses the active workspace thread pane as the narrow viewport display pane", async () => {
-    vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
-      matches: query === "(max-width: 900px)",
-      media: query,
-      onchange: null,
-      addEventListener: () => undefined,
-      removeEventListener: () => undefined,
-      addListener: () => undefined,
-      removeListener: () => undefined,
-      dispatchEvent: () => false,
-    }));
+    stubNarrowViewport();
+    window.history.replaceState(null, "", "/");
     mockGateway(
       baseRoutes({
         "GET /v1/threads": {
@@ -1860,6 +1865,7 @@ describe("MVP shell flows", () => {
   });
 
   it("keeps a sidebar escape hatch on the root draft chat pane", async () => {
+    stubNarrowViewport();
     window.history.replaceState(null, "", "/");
     mockGateway(
       baseRoutes({
@@ -1869,7 +1875,7 @@ describe("MVP shell flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("button", { name: /start new chat from mobile header/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /show sidebar/i })).toBeInTheDocument();
     const main = screen.getByRole("main", { name: /thread/i });
     expect(within(main).getByRole("button", { name: /show sidebar/i })).toBeInTheDocument();
 
@@ -1878,6 +1884,7 @@ describe("MVP shell flows", () => {
   });
 
   it("can close the narrow viewport sidebar without selecting a thread", async () => {
+    stubNarrowViewport();
     mockGateway(baseRoutes());
 
     render(<App />);
@@ -1889,7 +1896,47 @@ describe("MVP shell flows", () => {
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
   });
 
+  it("focuses an existing terminal pane and closes the narrow viewport sidebar", async () => {
+    stubNarrowViewport();
+    mockGateway(baseRoutes());
+    setInitialWorkspacePaneState({
+      activePaneId: "pane-thread-1",
+      dockviewLayout: {
+        panes: [{ id: "pane-thread-1" }, { id: "pane-terminal-1" }],
+      },
+      panes: [
+        {
+          id: "pane-thread-1",
+          kind: "thread",
+          target: { mode: "existing", threadId: "thread-1" },
+          title: "Implement frontend",
+        },
+        {
+          id: "pane-terminal-1",
+          kind: "terminal",
+          target: { terminalId: "terminal-1" },
+          title: "Terminal",
+        },
+      ],
+      schemaVersion: 1,
+    });
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /show sidebar/i }));
+    expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "threads");
+
+    const mobileHeader = document.querySelector<HTMLElement>(".kodex-sidebar-mobile-header");
+    expect(mobileHeader).not.toBeNull();
+    await userEvent.click(within(mobileHeader!).getByRole("button", { name: /open terminal/i }));
+
+    expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
+    expect(screen.getByRole("region", { name: /terminal pane/i })).toBeInTheDocument();
+    expect(document.querySelectorAll(".kodex-terminal-host")).toHaveLength(1);
+  });
+
   it("creates a chat from the narrow viewport Chats scope create action", async () => {
+    stubNarrowViewport();
     const chatThread = {
       ...thread,
       id: "chat-thread-1",
@@ -1914,7 +1961,7 @@ describe("MVP shell flows", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: /show sidebar/i }));
     await userEvent.click(screen.getByRole("button", { name: /^chats$/i }));
-    await userEvent.click(screen.getByRole("button", { name: /start new chat from mobile header/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^new chat$/i }));
 
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
     expect(window.location.pathname).toBe("/");
@@ -1929,16 +1976,7 @@ describe("MVP shell flows", () => {
   });
 
   it("returns narrow viewport navigation to chat after selecting or creating a thread", async () => {
-    vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
-      matches: query === "(max-width: 900px)",
-      media: query,
-      onchange: null,
-      addEventListener: () => undefined,
-      removeEventListener: () => undefined,
-      addListener: () => undefined,
-      removeListener: () => undefined,
-      dispatchEvent: () => false,
-    }));
+    stubNarrowViewport();
     mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },

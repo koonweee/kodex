@@ -127,6 +127,8 @@ export function ThreadPanel({
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renamePending, setRenamePending] = useState(false);
+  const [timelineOverflowAbove, setTimelineOverflowAbove] = useState(false);
+  const [timelineOverflowBelow, setTimelineOverflowBelow] = useState(false);
   const [visibleThreadSyncNotice, setVisibleThreadSyncNotice] = useState<ThreadSyncNotice | null>(null);
   const generatedUiAction = generatedUiAvailable
     ? generatedUiHidden
@@ -168,6 +170,11 @@ export function ThreadPanel({
     }, THREAD_SYNC_TOAST_VISIBLE_MS);
     return () => window.clearTimeout(timeout);
   }, [threadSyncNotice?.message, threadSyncNotice?.tone]);
+
+  useEffect(() => {
+    setTimelineOverflowAbove(false);
+    setTimelineOverflowBelow(false);
+  }, [selectedThread?.id]);
 
   function closeRenameModal() {
     if (renamePending) {
@@ -368,30 +375,38 @@ export function ThreadPanel({
           {selectedThread || isSelectedTimelineLoading ? (
             <Box className="kodex-thread-content" data-subagent-sidebar={subagentViewer ? "open" : "closed"}>
               <Box
-                className="kodex-timeline-scroll"
-                data-entry-phase={selectedTimelineEntry.phase}
-                ref={setTimelineScrollElement}
+                className="kodex-thread-scroll-frame"
+                data-overflow-above={timelineOverflowAbove ? "true" : undefined}
+                data-overflow-below={timelineOverflowBelow ? "true" : undefined}
               >
-                {isSelectedTimelineLoading ? (
-                  <TimelineLoadingSkeleton />
-                ) : selectedThread ? (
-                  <Suspense fallback={<TimelineLoadingSkeleton />}>
-                    <TimelineView
-                      key={selectedThread.id}
-                      approvals={selectedThreadApprovals}
-                      onReady={onTimelineReady}
-                      onApprovalDecision={onApprovalDecision}
-                      onImageOpen={onImageOpen}
-                      onLoadOlderHistory={onLoadOlderHistory}
-                      onMarkdownOpen={onMarkdownOpen}
-                      imagePreviewUrlsByPath={imagePreviewUrlsByPath}
-                      scrollParentElement={scrollParentElement}
-                      showDebug={showDebugEvents}
-                      threadId={selectedThread.id}
-                      timeline={timeline}
-                    />
-                  </Suspense>
-                ) : null}
+                <Box
+                  className="kodex-timeline-scroll"
+                  data-entry-phase={selectedTimelineEntry.phase}
+                  ref={setTimelineScrollElement}
+                >
+                  {isSelectedTimelineLoading ? (
+                    <TimelineLoadingSkeleton />
+                  ) : selectedThread ? (
+                    <Suspense fallback={<TimelineLoadingSkeleton />}>
+                      <TimelineView
+                        key={selectedThread.id}
+                        approvals={selectedThreadApprovals}
+                        onReady={onTimelineReady}
+                        onApprovalDecision={onApprovalDecision}
+                        onImageOpen={onImageOpen}
+                        onLoadOlderHistory={onLoadOlderHistory}
+                        onMarkdownOpen={onMarkdownOpen}
+                        onOverflowAboveChange={setTimelineOverflowAbove}
+                        onOverflowBelowChange={setTimelineOverflowBelow}
+                        imagePreviewUrlsByPath={imagePreviewUrlsByPath}
+                        scrollParentElement={scrollParentElement}
+                        showDebug={showDebugEvents}
+                        threadId={selectedThread.id}
+                        timeline={timeline}
+                      />
+                    </Suspense>
+                  ) : null}
+                </Box>
               </Box>
               {subagentViewer}
             </Box>

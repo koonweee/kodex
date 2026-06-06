@@ -49,6 +49,9 @@ describe("WorkspaceProvider pane commands", () => {
       expect(screen.getByTestId("active-pane")).toHaveTextContent("pane-thread-1");
     });
     expect(screen.getByTestId("pane-count")).toHaveTextContent("2");
+    expect(JSON.parse(screen.getByTestId("focus-pulses").textContent ?? "{}")).toMatchObject({
+      "pane-thread-1": expect.any(Number),
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Duplicate thread" }));
 
@@ -72,6 +75,9 @@ describe("WorkspaceProvider pane commands", () => {
       expect(screen.getByTestId("active-pane")).toHaveTextContent("pane-terminal-1");
     });
     expect(screen.getByTestId("pane-count")).toHaveTextContent("2");
+    expect(JSON.parse(screen.getByTestId("focus-pulses").textContent ?? "{}")).toMatchObject({
+      "pane-terminal-1": expect.any(Number),
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
 
@@ -88,6 +94,21 @@ describe("WorkspaceProvider pane commands", () => {
       expect(store.getState().panes.some((pane) => pane.id === "pane-terminal-1")).toBe(false);
     });
     expect(deleteTerminalSession).toHaveBeenCalledWith("terminal-1");
+  });
+
+  it("focuses an existing generated UI pane for the same latest thread surface", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      threadPane("pane-thread-1", "thread-1", "Thread 1"),
+      generatedUiPane("pane-ui-1", "thread-1"),
+    ], "pane-thread-1"));
+    renderProvider(store);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open generated UI" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("active-pane")).toHaveTextContent("pane-ui-1");
+    });
+    expect(screen.getByTestId("pane-count")).toHaveTextContent("2");
   });
 
   it("does not retarget an active draft thread pane when opening an existing thread", async () => {
@@ -207,6 +228,7 @@ function CommandHarness() {
     <>
       <span data-testid="pane-count">{workspace.workspace.panes.length}</span>
       <span data-testid="active-pane">{workspace.workspace.activePaneId ?? "none"}</span>
+      <span data-testid="focus-pulses">{JSON.stringify(workspace.focusPulseByPaneId)}</span>
       <span data-testid="pane-placement-hints">{JSON.stringify(workspace.panePlacementHintsById)}</span>
       <button type="button" onClick={() => void workspace.openThreadPane("thread-1", "Thread 1")}>
         Open thread
@@ -219,6 +241,9 @@ function CommandHarness() {
       </button>
       <button type="button" onClick={() => void workspace.openTerminalPane()}>
         Open terminal
+      </button>
+      <button type="button" onClick={() => void workspace.openGeneratedUiPane("thread-1", "Generated UI")}>
+        Open generated UI
       </button>
       <button type="button" onClick={() => void workspace.openNewTerminalPane()}>
         New terminal
