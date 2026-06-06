@@ -92,9 +92,10 @@ describe("WorkspaceSidebar project reorder", () => {
       projectFormOpen: true,
     });
 
-    expect(screen.getByRole("button", { name: "Start new chat from desktop header" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start new chat from desktop header" })).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Add project" })).toHaveLength(2);
-    fireEvent.click(screen.getByRole("button", { name: "Start new chat from desktop header" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chats" }));
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
     expect(onCreateChat).toHaveBeenCalledTimes(1);
 
     expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument();

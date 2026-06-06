@@ -42,11 +42,6 @@
 
 .kodex-sidebar-desktop-header .kodex-sidebar-search {
   min-width: 0;
-  margin-right: 4px;
-}
-
-.kodex-sidebar-desktop-action {
-  flex: 0 0 auto;
 }
 
 .kodex-sidebar-header-actions {

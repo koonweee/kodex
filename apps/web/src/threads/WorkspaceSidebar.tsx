@@ -77,8 +77,6 @@ const SIDEBAR_TEXT = {
   projects: "Projects",
   resizeSidebarLabel: "Resize workspace sidebar",
   search: "Search",
-  startNewChatDesktop: "Start new chat from desktop header",
-  startNewChatMobile: "Start new chat from mobile header",
   showThread: "Show thread",
   showLessThreads: "Show less",
   showMoreError: "Could not load more threads",
@@ -365,11 +363,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     });
   }
 
-  function handleHeaderCreateChat() {
-    setSidebarScope("chats");
-    onCreateChat();
-  }
-
   return (
     <AppShell.Navbar
       aria-label={SIDEBAR_TEXT.workspaceLabel}
@@ -396,22 +389,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 value={searchQuery}
                 variant="unstyled"
               />
-              <Group className="kodex-sidebar-header-actions" gap={2} wrap="nowrap">
-                {onOpenTerminal ? <GatewayTerminalLauncher onOpen={onOpenTerminal} size="xs" /> : null}
-                <Tooltip label={SIDEBAR_TEXT.newChat}>
-                  <ActionIcon
-                    aria-label={SIDEBAR_TEXT.startNewChatDesktop}
-                    className="kodex-sidebar-desktop-action"
-                    color="gray"
-                    onClick={handleHeaderCreateChat}
-                    size="xs"
-                    type="button"
-                    variant="subtle"
-                  >
-                    <SquarePen size={14} />
-                  </ActionIcon>
-                </Tooltip>
-              </Group>
+              {onOpenTerminal ? (
+                <Group className="kodex-sidebar-header-actions" gap={2} wrap="nowrap">
+                  <GatewayTerminalLauncher onOpen={onOpenTerminal} size="xs" />
+                </Group>
+              ) : null}
             </Box>
             <Box className="kodex-sidebar-mobile-header">
               <TextInput
@@ -425,22 +407,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                 value={searchQuery}
                 variant="unstyled"
               />
-              <Group className="kodex-sidebar-header-actions" gap={2} wrap="nowrap">
-                {onOpenTerminal ? <GatewayTerminalLauncher onOpen={onOpenTerminal} size="md" /> : null}
-                <Tooltip label={SIDEBAR_TEXT.newChat}>
-                  <ActionIcon
-                    aria-label={SIDEBAR_TEXT.startNewChatMobile}
-                    className="kodex-sidebar-mobile-action"
-                    color="gray"
-                    onClick={handleHeaderCreateChat}
-                    size="md"
-                    type="button"
-                    variant="subtle"
-                  >
-                    <SquarePen size={17} />
-                  </ActionIcon>
-                </Tooltip>
-              </Group>
+              {onOpenTerminal ? (
+                <Group className="kodex-sidebar-header-actions" gap={2} wrap="nowrap">
+                  <GatewayTerminalLauncher onOpen={onOpenTerminal} size="md" />
+                </Group>
+              ) : null}
               <Tooltip label={SIDEBAR_TEXT.showThread}>
                 <ActionIcon
                   aria-label={SIDEBAR_TEXT.showThread}
