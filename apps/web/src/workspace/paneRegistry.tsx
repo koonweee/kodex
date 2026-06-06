@@ -1,4 +1,4 @@
-import { Code2, MessageSquareText, TerminalSquare } from "lucide-react";
+import { MessageSquareText, Sparkles, TerminalSquare } from "lucide-react";
 import type { ReactElement } from "react";
 
 import { GeneratedUiWorkspacePane } from "../panes/generatedUi/GeneratedUiWorkspacePane";
@@ -20,7 +20,7 @@ export const paneRegistry: Record<WorkspacePaneType, PaneDefinition> = {
     title: (pane) => pane.title ?? (paneTargetRecord(pane).mode === "draft" ? "Draft Thread" : "Thread"),
   },
   generatedUi: {
-    icon: Code2,
+    icon: Sparkles,
     component: GeneratedUiWorkspacePane,
     title: (pane) => pane.title ?? "Generated UI",
   },

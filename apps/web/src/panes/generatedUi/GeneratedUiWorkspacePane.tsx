@@ -1,6 +1,6 @@
 import { Alert, Loader } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, Code2 } from "lucide-react";
+import { AlertCircle, Sparkles } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 import {
@@ -229,7 +229,7 @@ function GeneratedUiEmptyState({ detail, title }: { detail: string; title: strin
   return (
     <section className="kodex-workspace-placeholder-pane" data-pane-kind="generatedUi">
       <div className="kodex-workspace-placeholder-icon" aria-hidden="true">
-        <Code2 size={18} strokeWidth={1.8} />
+        <Sparkles size={18} strokeWidth={1.8} />
       </div>
       <div className="kodex-workspace-placeholder-copy">
         <span className="kodex-workspace-placeholder-eyebrow">Generated UI</span>
