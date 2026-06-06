@@ -166,7 +166,7 @@ export function TimelineView({
         increaseViewportBy={{ top: 720, bottom: 720 }}
         initialItemCount={Math.min(rowCount, 30)}
         itemContent={(index, renderRow = visibleRows[index]) => renderRow ? (
-          <Box className="kodex-timeline-virtual-row kodex-main-column" data-index={index}>
+          <Box className="kodex-timeline-virtual-row kodex-thread-column" data-index={index}>
             <TimelineRowView
               approvals={approvalsByRowKey.get(renderRow.row.key) ?? EMPTY_APPROVALS}
               imagePreviewUrlsByPath={imagePreviewUrlsByPath}
@@ -227,7 +227,7 @@ function OlderHistoryBoundary({
     <Box
       aria-busy={isLoading ? "true" : undefined}
       aria-label="Older history boundary"
-      className="kodex-main-column"
+      className="kodex-thread-column"
       component="section"
     >
       <Button
@@ -305,7 +305,7 @@ function PendingRequestSummaryStack({ requests }: { requests: PendingTimelineReq
     return null;
   }
   return (
-    <Stack gap="xs" className="kodex-thread-approvals kodex-main-column">
+    <Stack gap="xs" className="kodex-thread-approvals kodex-thread-column">
       {requests.map((request) => (
         <Box className="kodex-approval-card" key={request.id}>
           <Text fw={600} size="sm">
@@ -339,7 +339,7 @@ function HiddenDebugPanel({
     return null;
   }
   return (
-    <Box className="kodex-hidden-debug-panel kodex-main-column">
+    <Box className="kodex-hidden-debug-panel kodex-thread-column">
       <details>
         <summary>Hidden debug events</summary>
         <Stack gap={8} mt={8}>

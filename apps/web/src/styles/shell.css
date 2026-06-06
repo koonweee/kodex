@@ -109,6 +109,8 @@
 }
 
 .kodex-main-stack {
+  --kodex-thread-column-max: 900px;
+
   position: relative;
   box-sizing: border-box;
   width: 100%;
@@ -120,6 +122,20 @@
   background: var(--kodex-bg-panel);
   box-shadow: none;
   overflow: hidden;
+}
+
+.kodex-thread-column {
+  box-sizing: border-box;
+  width: min(
+    calc(
+      100% - var(--kodex-thread-column-inline-gutter, 0px) -
+        var(--kodex-thread-column-inline-gutter, 0px)
+    ),
+    var(--kodex-thread-column-max, 900px)
+  );
+  max-width: 100%;
+  margin-right: auto;
+  margin-left: auto;
 }
 
 .kodex-thread-header {
@@ -192,15 +208,14 @@
 .kodex-timeline-scroll {
   position: relative;
   box-sizing: border-box;
-  width: calc(100% + 16px);
+  width: 100%;
   max-width: none;
   min-height: 0;
   min-width: 0;
   flex: 1;
-  margin-right: -16px;
-  padding-right: 16px;
   overflow: auto;
   overflow-anchor: none;
+  scrollbar-gutter: stable both-edges;
 }
 
 .kodex-timeline-scroll[data-entry-phase="loadingSnapshot"] {
@@ -261,7 +276,7 @@
   overflow-anchor: none;
 }
 
-.kodex-subagent-timeline-scroll .kodex-main-column {
+.kodex-subagent-timeline-scroll .kodex-thread-column {
   max-width: 100%;
 }
 

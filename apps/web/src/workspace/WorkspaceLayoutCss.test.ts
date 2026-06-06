@@ -18,6 +18,9 @@ describe("workspace pane layout CSS", () => {
     expect(composerRule).toContain("align-self: end;");
     expect(composerRule).toContain("grid-row: 3;");
     expect(composerRule).toContain("justify-self: center;");
+    expect(composerRule).toContain("--kodex-thread-column-inline-gutter: var(--kodex-pane-edge-space);");
+    expect(composerRule).not.toContain("max-width: min(920px");
+    expect(composerRule).not.toContain("width: calc(100% - 24px);");
     expect(contentRule).toContain("grid-row: 2;");
     expect(scrollRule).toContain("padding: var(--kodex-pane-edge-space) var(--kodex-pane-edge-space) 20px;");
     expect(statusRule).toContain("display: grid;");
@@ -50,7 +53,7 @@ describe("workspace pane layout CSS", () => {
     const terminalPaneRule = cssRule(".kodex-workspace-dock .kodex-terminal-pane");
 
     expect(composerRule).toContain(
-      "margin: var(--kodex-pane-edge-space) calc(var(--kodex-pane-edge-space) + 4px) calc(var(--kodex-pane-edge-space) + 4px);",
+      "margin-block: var(--kodex-pane-edge-space) calc(var(--kodex-pane-edge-space) + 4px);",
     );
     expect(terminalPaneRule).toContain("--kodex-terminal-edge-space: var(--kodex-pane-edge-space);");
     expect(terminalPaneRule).toContain("--kodex-terminal-bg: var(--kodex-pane-bg);");
@@ -120,7 +123,7 @@ describe("workspace pane layout CSS", () => {
     expect(cssRule(".kodex-thread-pane-empty")).toContain("grid-template-rows: minmax(0, 1fr);");
     expect(cssRule(".kodex-thread-pane-empty-body")).toContain("align-content: center;");
     expect(cssRule(".kodex-thread-pane-empty-body > .kodex-composer-shell")).toContain(
-      "width: min(920px, calc(100% - 24px));",
+      "--kodex-thread-column-inline-gutter: 12px;",
     );
   });
 });

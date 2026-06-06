@@ -194,7 +194,7 @@ export function AutomationsPane({
           </Button>
         </Tooltip>
       </Group>
-      <Box className="kodex-automations-pane kodex-main-column">
+      <Box className="kodex-automations-pane">
         {automations.length === 0 && !isLoading ? (
           <Box className="kodex-automations-empty">
             <EmptyPanel

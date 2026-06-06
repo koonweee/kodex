@@ -312,6 +312,8 @@
 }
 
 .kodex-thread-pane {
+  --kodex-thread-column-max: 900px;
+
   background: var(--kodex-pane-bg);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
@@ -382,12 +384,12 @@
 }
 
 .kodex-thread-pane-existing > .kodex-composer-shell {
+  --kodex-thread-column-inline-gutter: var(--kodex-pane-edge-space);
+
   align-self: end;
   grid-row: 3;
   justify-self: center;
-  margin: var(--kodex-pane-edge-space) calc(var(--kodex-pane-edge-space) + 4px) calc(var(--kodex-pane-edge-space) + 4px);
-  max-width: min(920px, calc(100% - 24px));
-  width: calc(100% - 24px);
+  margin-block: var(--kodex-pane-edge-space) calc(var(--kodex-pane-edge-space) + 4px);
 }
 
 .kodex-thread-pane-loading {
@@ -417,8 +419,7 @@
 }
 
 .kodex-thread-pane-empty-body > .kodex-composer-shell {
-  max-width: min(920px, calc(100% - 24px));
-  width: min(920px, calc(100% - 24px));
+  --kodex-thread-column-inline-gutter: 12px;
 }
 
 .kodex-workspace-dock .kodex-terminal-pane {

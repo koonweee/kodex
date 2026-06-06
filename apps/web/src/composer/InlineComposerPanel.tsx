@@ -123,7 +123,7 @@ export function InlineComposerPanel({
   return (
     <Box
       ref={setComposerShellNode}
-      className="kodex-composer-shell kodex-main-column"
+      className="kodex-composer-shell kodex-thread-column"
       data-inline-density={density}
       data-entry-ready={isEntryPending ? "false" : "true"}
       data-drag-active={isComposerDragActive ? "true" : "false"}

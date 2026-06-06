@@ -84,7 +84,7 @@ export function ThreadApprovalStack({
   onDecision: (approval: Approval, decision: ApprovalResponse) => void;
 }) {
   return (
-    <Stack gap="xs" className="kodex-thread-approvals kodex-main-column">
+    <Stack gap="xs" className="kodex-thread-approvals kodex-thread-column">
       {approvals.map((approval) => (
         <ApprovalCard approval={approval} key={approval.id} onDecision={onDecision} />
       ))}

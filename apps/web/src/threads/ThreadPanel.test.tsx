@@ -51,7 +51,7 @@ describe("ThreadPanel", () => {
     const noticeText = screen.getByText(/selected thread stream disconnected/i);
     const notice = noticeText.closest('[role="status"]');
     expect(notice).toHaveClass("kodex-thread-sync-toast");
-    expect(notice).not.toHaveClass("kodex-main-column");
+    expect(notice).not.toHaveClass("kodex-thread-column");
 
     act(() => {
       vi.advanceTimersByTime(4500);

@@ -722,7 +722,7 @@ function ThreadActionsMenu({
 
 function ThreadUnavailablePane({ onBrowseThreads }: { onBrowseThreads: () => void }) {
   return (
-    <Box className="kodex-thread-empty kodex-main-column">
+    <Box className="kodex-thread-empty kodex-thread-column">
       <EmptyPanel
         icon={<AlertCircle size={22} />}
         title="Thread not found or unavailable"
@@ -748,7 +748,7 @@ function TimelineLoadingSkeleton() {
     <Box
       aria-busy="true"
       aria-label="Loading thread timeline"
-      className="kodex-timeline-loading kodex-main-column"
+      className="kodex-timeline-loading kodex-thread-column"
       role="status"
     >
       <SkeletonUserBubble lines={["full", "short"]} />
@@ -817,7 +817,7 @@ function DraftThreadPane({
 function ThreadPaneErrorMessage({ message }: { message: string }) {
   return (
     <Badge
-      className="kodex-main-column kodex-thread-pane-error"
+      className="kodex-thread-column kodex-thread-pane-error"
       color="red"
       data-tone="danger"
       leftSection={<AlertCircle size={12} />}

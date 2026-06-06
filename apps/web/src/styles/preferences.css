@@ -362,12 +362,3 @@
     max-height: none;
   }
 }
-
-@media (min-width: 901px) {
-  .kodex-main-column {
-    width: 100%;
-    max-width: 900px;
-    margin-right: auto;
-    margin-left: auto;
-  }
-}

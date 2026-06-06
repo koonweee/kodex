@@ -236,7 +236,7 @@ export function ThreadPanel({
       </Modal>
       {errorMessage ? (
         <Badge
-          className="kodex-main-column"
+          className="kodex-thread-column"
           data-tone="danger"
           role="alert"
           variant="light"
@@ -264,7 +264,7 @@ export function ThreadPanel({
             onShowMobileSidebar={onShowMobileSidebar}
             title={THREAD_PANEL_TEXT.threadUnavailableTitle}
           />
-          <Box className="kodex-thread-empty kodex-main-column">
+          <Box className="kodex-thread-empty kodex-thread-column">
             <EmptyPanel
               icon={<AlertCircle size={22} />}
               title={THREAD_PANEL_TEXT.threadUnavailableTitle}
@@ -403,7 +403,7 @@ export function ThreadPanel({
             onShowMobileSidebar={onShowMobileSidebar}
             title={THREAD_PANEL_TEXT.threadTimelineTitle}
           />
-          <Box className="kodex-thread-empty kodex-main-column">
+          <Box className="kodex-thread-empty kodex-thread-column">
             <EmptyPanel
               icon={<PanelRightOpen size={22} />}
               title="No thread selected"
@@ -432,7 +432,7 @@ function TimelineLoadingSkeleton() {
     <Box
       aria-busy="true"
       aria-label="Loading thread timeline"
-      className="kodex-timeline-loading kodex-main-column"
+      className="kodex-timeline-loading kodex-thread-column"
       role="status"
     >
       <SkeletonUserBubble lines={["full", "short"]} />
