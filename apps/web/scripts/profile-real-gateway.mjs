@@ -46,12 +46,13 @@ async function loadThreadTargets() {
     ?? projects.find((project) => project.name === "kodex")
     ?? projects[0]
     ?? null;
-  const projectThreads = kodexProject ? sidebar.projectThreads?.[kodexProject.id]?.threads ?? [] : [];
+  const chatThreads = filterExcludedThreads(sidebar.chatThreads?.threads ?? []);
+  const projectThreads = filterExcludedThreads(kodexProject ? sidebar.projectThreads?.[kodexProject.id]?.threads ?? [] : []);
   const idleProjectThreads = projectThreads.filter((thread) => thread.status !== "active");
-  const primaryThread = idleProjectThreads[0] ?? projectThreads[0] ?? sidebar.chatThreads?.threads?.[0] ?? null;
+  const primaryThread = idleProjectThreads[0] ?? projectThreads[0] ?? chatThreads[0] ?? null;
   const paneThreads = uniqueThreads([primaryThread, ...idleProjectThreads, ...projectThreads]).slice(0, 4);
   const generatedUiThread = [
-    ...(sidebar.chatThreads?.threads ?? []),
+    ...chatThreads,
     ...projectThreads,
   ].find((thread) => /generated ui|mcp.*ui|budget data/i.test(`${thread.name ?? ""} ${thread.preview ?? ""}`)) ?? null;
 
@@ -198,6 +199,9 @@ async function runScenario(scenario) {
   });
 
   await client.send("Performance.enable").catch(() => undefined);
+  if (cliOptions.cpuThrottleRate !== 1) {
+    await client.send("Emulation.setCPUThrottlingRate", { rate: cliOptions.cpuThrottleRate }).catch(() => undefined);
+  }
   const tracePath = path.join(OUT_DIR, `${scenario.id}.trace.json`);
   const screenshotPath = path.join(OUT_DIR, `${scenario.id}.png`);
   const startedAt = Date.now();
@@ -669,6 +673,8 @@ function summarizeTargets(targets) {
 function parseCliOptions(args) {
   const options = {
     baseUrl: "http://127.0.0.1:8787",
+    cpuThrottleRate: 1,
+    excludeThreadPattern: null,
     only: [],
     streamWaitMs: 12000,
     typingDelayMs: 1,
@@ -683,6 +689,24 @@ function parseCliOptions(args) {
     }
     if (arg.startsWith("--base-url=")) {
       options.baseUrl = arg.slice("--base-url=".length);
+      continue;
+    }
+    if (arg === "--cpu-throttle") {
+      options.cpuThrottleRate = positiveNumberOption(args[index + 1], "--cpu-throttle");
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith("--cpu-throttle=")) {
+      options.cpuThrottleRate = positiveNumberOption(arg.slice("--cpu-throttle=".length), "--cpu-throttle");
+      continue;
+    }
+    if (arg === "--exclude-thread-pattern") {
+      options.excludeThreadPattern = args[index + 1] ?? "";
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith("--exclude-thread-pattern=")) {
+      options.excludeThreadPattern = arg.slice("--exclude-thread-pattern=".length);
       continue;
     }
     if (arg === "--only") {
@@ -726,6 +750,17 @@ function parseCliOptions(args) {
   return options;
 }
 
+function filterExcludedThreads(threads) {
+  if (!cliOptions.excludeThreadPattern) {
+    return threads;
+  }
+  const excludePattern = new RegExp(cliOptions.excludeThreadPattern, "i");
+  return threads.filter((thread) => {
+    const searchableText = `${thread.id ?? ""} ${thread.name ?? ""} ${thread.preview ?? ""}`;
+    return !excludePattern.test(searchableText);
+  });
+}
+
 function splitListOption(value) {
   return value.split(",").map((item) => item.trim()).filter(Boolean);
 }
@@ -734,6 +769,14 @@ function numberOption(value, name) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) {
     throw new Error(`${name} must be a non-negative number.`);
+  }
+  return parsed;
+}
+
+function positiveNumberOption(value, name) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    throw new Error(`${name} must be a number greater than or equal to 1.`);
   }
   return parsed;
 }
