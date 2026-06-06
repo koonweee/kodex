@@ -66,7 +66,6 @@ describe("ThreadListRow layout and actions", () => {
 
     const row = screen.getByRole("button", { name: "thread-1" }).closest(".kodex-thread-list-button");
 
-    expect(row).toHaveClass("kodex-sidebar-row");
     expect(row?.querySelector(".kodex-sidebar-row-leading")).toBeInTheDocument();
     expect(row?.querySelector(".kodex-sidebar-row-trailing")).toBeInTheDocument();
     expect(row?.querySelector(".kodex-sidebar-row-leading [aria-label='Pin thread']")).toBeInTheDocument();

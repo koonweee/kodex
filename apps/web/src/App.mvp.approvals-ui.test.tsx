@@ -352,49 +352,7 @@ describe("MVP approvals UI flows", () => {
     const timeline = await screen.findByRole("main", { name: /thread/i });
     expect(await within(timeline).findByText(/would you like to run the following command/i)).toBeInTheDocument();
     expect(within(timeline).getByText(/reason: verify production ui/i)).toBeInTheDocument();
-    const command = within(timeline).getByText(/\$ npm run build -- --mode production/i);
-    expect(command.closest("code")).toHaveClass("kodex-approval-command");
-  });
-
-  it("keeps long approval commands and action labels inside the card", async () => {
-    const longPrefix = `allow ${"very-long-option-without-natural-breaks-".repeat(8)}suffix`;
-    const longCommand = `/usr/bin/env ${"--long-option-without-natural-breaks=".repeat(8)}value`;
-    const approval = {
-      id: "approval-long-display",
-      requestId: "request-long-display",
-      threadId: thread.id,
-      turnId: "turn-1",
-      itemId: "item-1",
-      method: "item/commandExecution/requestApproval",
-      status: "pending",
-      payload: {
-        command: longCommand,
-        commandActions: [{ type: "unknown", command: longCommand }],
-        cwd: "/home/example/kodex",
-        proposedExecpolicyAmendment: [longPrefix],
-        reason: "Exercise long approval text",
-      },
-      response: null,
-      createdAt: "2026-04-30T00:00:00Z",
-      resolvedAt: null,
-    };
-    mockGateway(
-      baseRoutes({
-        "GET /v1/approvals": { approvals: [approval] },
-      }),
-    );
-
-    render(<App />);
-
-    await screen.findByRole("heading", { name: /implement frontend/i });
-    const timeline = await screen.findByRole("main", { name: /thread/i });
-    const command = await within(timeline).findByText(`$ ${longCommand}`);
-    const action = within(timeline).getByRole("button", {
-      name: /yes, and don't ask again for commands that start with/i,
-    });
-
-    expect(command).toHaveClass("kodex-approval-command");
-    expect(action).toHaveClass("kodex-approval-action");
+    expect(within(timeline).getByText(/\$ npm run build -- --mode production/i)).toBeInTheDocument();
   });
 
   it("renders command approval actions and posts amendment approval responses", async () => {

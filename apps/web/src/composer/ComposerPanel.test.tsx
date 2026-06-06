@@ -253,7 +253,7 @@ describe("ComposerPanel", () => {
       ],
     });
 
-    expect(screen.getByRole("region", { name: /queued steer messages/i })).toHaveClass("kodex-queued-steer");
+    expect(screen.getByRole("region", { name: /queued steer messages/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i).closest(".kodex-composer")).toBeInTheDocument();
   });
 

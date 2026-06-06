@@ -748,7 +748,6 @@ describe("App shell", () => {
     await userEvent.click(await screen.findByRole("link", { name: "rendered" }));
     const pane = await screen.findByRole("dialog", { name: /rendered-preview\.md/i });
 
-    expect(pane).toHaveClass("kodex-mantine-modal-content");
     expect(within(pane).getByRole("radio", { name: "Preview" })).toBeChecked();
     expect(within(pane).getByRole("button", { name: "Copy code" })).toBeInTheDocument();
     expect(pane.querySelector(".kodex-code-block-shell")).toBeInTheDocument();

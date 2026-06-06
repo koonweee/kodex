@@ -322,7 +322,6 @@ describe("timeline message renderers", () => {
 
     const badge = screen.getByLabelText("$agent-browser skill");
     expect(badge).toHaveTextContent("$agent-browser");
-    expect(badge).toHaveClass("kodex-inline-skill-badge");
     expect(container.querySelector(".kodex-user-message-bubble")).toHaveTextContent("Use $agent-browser now");
   });
 

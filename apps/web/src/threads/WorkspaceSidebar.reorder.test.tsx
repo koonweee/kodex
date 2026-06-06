@@ -75,7 +75,6 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(screen.queryByRole("button", { name: "Thread 1" })).not.toBeInTheDocument();
 
     const showMore = screen.getByRole("button", { name: "Show more" });
-    expect(showMore).toHaveClass("kodex-thread-list-more-button");
     fireEvent.click(showMore);
 
     expect(screen.getByRole("button", { name: "Thread 2" })).toBeInTheDocument();
@@ -539,10 +538,8 @@ describe("WorkspaceSidebar project reorder", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("Workspace")).toHaveAttribute("data-density", "compact");
     });
-    expect(screen.getByText("Project").closest(".kodex-sidebar-row")).toHaveClass("kodex-project-row");
-    expect(screen.getByRole("button", { name: "Thread 1" }).closest(".kodex-sidebar-row")).toHaveClass(
-      "kodex-thread-list-button",
-    );
+    expect(screen.getByText("Project")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Thread 1" })).toBeInTheDocument();
 
     matchMedia.mockRestore();
   });

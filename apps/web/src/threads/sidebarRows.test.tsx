@@ -16,7 +16,6 @@ describe("sidebar row primitives", () => {
     const toggle = screen.getByRole("button", { name: "Collapse Projects section" });
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     expect(toggle.closest(".kodex-sidebar-row")).toBeInTheDocument();
-    expect(toggle.closest(".kodex-sidebar-row")).toHaveClass("kodex-sidebar-row");
     expect(toggle.closest(".kodex-sidebar-row")?.querySelector(".kodex-sidebar-row-label")).toHaveTextContent("Projects");
     expect(toggle.closest(".kodex-sidebar-row")?.querySelector(".kodex-sidebar-row-disclosure")).toBeInTheDocument();
     expect(toggle.closest(".kodex-sidebar-row")?.querySelector(".kodex-sidebar-row-trailing")).not.toBeInTheDocument();

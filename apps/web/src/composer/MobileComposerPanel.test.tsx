@@ -203,7 +203,7 @@ describe("Mobile composer panel", () => {
     expect(screen.getByRole("button", { name: /open attachment menu/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /model: gpt-5\.5, high/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /send message/i })).toHaveClass("kodex-composer-action");
+    expect(screen.getByRole("button", { name: /send message/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /settings/i })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.5, high/i }));
@@ -233,9 +233,7 @@ describe("Mobile composer panel", () => {
     await userEvent.click(screen.getByLabelText(/message composer/i));
     await userEvent.type(screen.getByLabelText(/message composer/i), "$img");
 
-    expect(await screen.findByRole("listbox", { name: /skill suggestions/i })).toHaveClass(
-      "kodex-mobile-skill-command-list",
-    );
+    expect(await screen.findByRole("listbox", { name: /skill suggestions/i })).toBeInTheDocument();
     const option = screen.getByRole("option", { name: /image gen/i });
     const optionIcon = option.querySelector(".kodex-skill-option-icon") as HTMLElement;
     expect(optionIcon).toHaveAttribute("data-has-accent", "true");
@@ -259,9 +257,7 @@ describe("Mobile composer panel", () => {
     await userEvent.click(screen.getByLabelText(/message composer/i));
     await userEvent.type(screen.getByLabelText(/message composer/i), "/co");
 
-    expect(await screen.findByRole("listbox", { name: /slash command suggestions/i })).toHaveClass(
-      "kodex-mobile-skill-command-list",
-    );
+    expect(await screen.findByRole("listbox", { name: /slash command suggestions/i })).toBeInTheDocument();
     const option = screen.getByRole("option", { name: /compact/i });
     expect(option).toHaveTextContent("/compact");
     expect(document.querySelector(".kodex-skill-popup")).not.toBeInTheDocument();

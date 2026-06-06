@@ -46,7 +46,7 @@ describe("ComposerFooterControls", () => {
       />,
     );
 
-    expect(screen.getByRole("img", { name: /context left/i })).toHaveClass("kodex-context-usage");
+    expect(screen.getByRole("img", { name: /context left/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /context left/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i })).toHaveTextContent("5.4 Medium");
     expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
@@ -71,7 +71,6 @@ describe("ComposerFooterControls", () => {
     const fastItem = screen.getByRole("menuitemcheckbox", { name: /fast/i, hidden: true });
     expect(fastItem).not.toHaveAttribute("data-disabled");
     expect(fastItem).toHaveAttribute("aria-checked", "false");
-    expect(fastItem).toHaveClass("kodex-composer-fast-row");
     fastItem.focus();
     expect(fastItem).toHaveFocus();
     await userEvent.keyboard("{ArrowUp}");

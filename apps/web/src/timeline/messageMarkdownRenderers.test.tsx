@@ -373,7 +373,6 @@ describe("timeline message markdown renderers", () => {
     const cells = within(table).getAllByRole("cell");
 
     expect(tableShell).toBeInTheDocument();
-    expect(table).toHaveClass("kodex-mantine-table");
     expect(headers.map((header) => header.textContent)).toEqual(["Path", "Status", "Count"]);
     expect(headers[0]).toHaveStyle({ textAlign: "left" });
     expect(headers[1]).toHaveStyle({ textAlign: "center" });

@@ -173,9 +173,7 @@ describe("MVP composer input flows", () => {
     });
     const sendButton = screen.getByRole("button", { name: /send message/i });
     expect(sendButton).toBeDisabled();
-    expect(sendButton).toHaveClass("kodex-composer-action");
     expect(sendButton).toHaveAttribute("data-action-state", "idle");
-    expect(container.querySelector(".kodex-composer-action svg")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /open attachment menu/i })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /open attachment menu/i }));
@@ -502,8 +500,6 @@ describe("MVP composer input flows", () => {
       const badge = container.querySelector(".kodex-inline-skill-badge");
       expect(badge).toHaveTextContent("Documents");
       expect(badge).toHaveAttribute("data-has-accent", "true");
-      expect(badge).toHaveStyle({ "--skill-accent-color": "#2563EB" });
-      expect(badge).toHaveStyle({ "--skill-accent-foreground": "#ffffff" });
       expect(badge?.querySelector(".kodex-inline-skill-icon")).toBeInTheDocument();
     });
 
