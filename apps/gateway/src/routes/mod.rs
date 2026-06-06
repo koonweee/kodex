@@ -8071,6 +8071,7 @@ mod tests {
                             "title": "MCP-style dashboard",
                             "html": "<!doctype html><button id=\"send\">Send</button>",
                             "fallbackContent": "Dashboard fallback",
+                            "presentation": "focus",
                             "displayModes": ["inline"],
                             "csp": {
                                 "connectDomains": [],
@@ -8129,6 +8130,40 @@ mod tests {
         assert_eq!(upsert_event.payload["id"], session_id);
         assert_eq!(upsert_event.payload["provider"], "generated");
         assert!(upsert_event.payload.get("html").is_none());
+
+        let presentation_event =
+            recv_event_kind(&mut events, "app_surface.presentation_requested").await;
+        assert_eq!(presentation_event.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(presentation_event.payload["action"], "focus");
+        assert_eq!(presentation_event.payload["sessionId"], session_id);
+        assert_eq!(presentation_event.payload["title"], "MCP-style dashboard");
+
+        let presentation = app
+            .clone()
+            .oneshot(
+                Request::post("/v1/self-control/threads/thread-1/app-surface/presentation")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "action": "open",
+                            "source": {
+                                "sourceThreadId": "source-thread",
+                                "sourceTurnId": "source-turn",
+                                "sourceToolCallId": "app-surface-tool",
+                                "requestedBy": "agent",
+                                "reason": "show app surface without focus"
+                            }
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(presentation.status(), StatusCode::OK);
+        let presentation = response_json(presentation).await;
+        assert_eq!(presentation["request"]["action"], "open");
+        assert_eq!(presentation["request"]["sessionId"], session_id);
 
         let read = app
             .clone()

@@ -13,9 +13,11 @@ Generated UI should justify its presence. Use it when layout, visual grouping, d
 
 - Use `open_app_surface` to create the pane.
 - Use `update_app_surface` when the user asks for a revision, follows a generated UI action, or needs the pane to reflect new data.
+- Pass `presentation: "open"` when the browser should open the pane without switching focus, or `presentation: "focus"` when the new or updated pane should become the active workspace pane. Omit `presentation` for background/non-disruptive updates.
+- Use `show_app_surface` with `action: "open"` or `action: "focus"` to open or focus the latest existing pane without replacing its content.
 - Use `get_app_surface` only when you need to inspect the current pane metadata.
 - Use `archive_app_surface` when the user asks to dismiss or remove the generated UI.
-- Treat `open_generated_ui`, `update_generated_ui`, `get_generated_ui`, and `archive_generated_ui` as compatibility aliases.
+- Treat `open_generated_ui`, `update_generated_ui`, `get_generated_ui`, `show_generated_ui`, and `archive_generated_ui` as compatibility aliases.
 - Pair every open or update with a short assistant message that says what the pane is for.
 - Treat the MCP tool schemas and validation errors as the source of truth for required fields and limits. Do not restate or invent a parallel schema in the skill.
 

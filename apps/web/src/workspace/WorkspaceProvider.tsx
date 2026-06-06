@@ -183,6 +183,7 @@ export function WorkspaceProvider({
   const [workspace, setWorkspace] = useState<WorkspaceModel>(() => ensureWorkspaceHasActivePane(paneStore.load()));
   const [workspaceError, setWorkspaceError] = useState<Error | null>(null);
   const nextFocusPulseRef = useRef(0);
+  const appSurfacePresentationHandlerRef = useRef<(event: EventEnvelope) => void>(() => undefined);
   const workspaceRef = useRef(workspace);
 
   useEffect(() => {
@@ -308,6 +309,7 @@ export function WorkspaceProvider({
         for (const handler of liveEventHandlersRef.current) {
           handler(event);
         }
+        appSurfacePresentationHandlerRef.current(event);
       },
     });
     client.connect();
@@ -511,9 +513,10 @@ export function WorkspaceProvider({
   ) => {
     recordPanePlacementHint(pane.id, intent, options);
     setWorkspace((current) => {
+      const shouldActivate = options.activate !== false || !hasPaneId(current, current.activePaneId);
       return {
         ...current,
-        activePaneId: pane.id,
+        activePaneId: shouldActivate ? pane.id : current.activePaneId,
         dockviewLayout: null,
         panes: [...current.panes, pane],
       };
@@ -530,6 +533,7 @@ export function WorkspaceProvider({
       appendPane(pane, intent, options);
       return;
     }
+    const shouldActivate = options.activate !== false;
     const current = workspaceRef.current;
     if (!findExistingPane(current.panes)) {
       recordPanePlacementHint(pane.id, intent, options);
@@ -537,25 +541,27 @@ export function WorkspaceProvider({
     setWorkspace((current) => {
       const existing = findExistingPane(current.panes);
       if (existing) {
-        pulsePane(existing.id);
+        if (shouldActivate) {
+          pulsePane(existing.id);
+        }
         const nextPanes = pane.title && !existing.title
           ? current.panes.map((candidate) =>
               candidate.id === existing.id ? ({ ...candidate, title: pane.title } as WorkspacePane) : candidate,
             )
           : current.panes;
-        if (current.activePaneId === existing.id && nextPanes === current.panes) {
+        if ((!shouldActivate || current.activePaneId === existing.id) && nextPanes === current.panes) {
           return current;
         }
         return {
           ...current,
           panes: nextPanes,
-          activePaneId: existing.id,
+          activePaneId: shouldActivate ? existing.id : current.activePaneId,
         };
       }
 
       return {
         ...current,
-        activePaneId: pane.id,
+        activePaneId: shouldActivate || !hasPaneId(current, current.activePaneId) ? pane.id : current.activePaneId,
         dockviewLayout: null,
         panes: [...current.panes, pane],
       };
@@ -649,6 +655,23 @@ export function WorkspaceProvider({
     },
     [appendPane],
   );
+
+  useEffect(() => {
+    appSurfacePresentationHandlerRef.current = (event: EventEnvelope) => {
+      const request = appSurfacePresentationRequestFromEvent(event);
+      if (!request) {
+        return;
+      }
+      void openGeneratedUiPane(request.threadId, request.title ?? "Generated UI", {
+        activate: request.action === "focus",
+      }).catch((error: unknown) => {
+        console.error("Failed to apply app surface presentation request", error);
+      });
+    };
+    return () => {
+      appSurfacePresentationHandlerRef.current = () => undefined;
+    };
+  }, [openGeneratedUiPane]);
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
@@ -790,6 +813,31 @@ function visibleThreadIdsForPaneIds(panes: WorkspacePane[], paneIds: string[]): 
 
 function sameStringArray(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function hasPaneId(workspace: WorkspaceModel, paneId: string | null | undefined): boolean {
+  return Boolean(paneId && workspace.panes.some((pane) => pane.id === paneId));
+}
+
+function appSurfacePresentationRequestFromEvent(event: EventEnvelope): {
+  action: "focus" | "open";
+  threadId: string;
+  title: string | null;
+} | null {
+  if (event.kind !== "app_surface.presentation_requested" || !event.payload || typeof event.payload !== "object") {
+    return null;
+  }
+  const payload = event.payload as { action?: unknown; threadId?: unknown; title?: unknown };
+  const action = payload.action === "focus" || payload.action === "open" ? payload.action : null;
+  const threadId = typeof payload.threadId === "string" ? payload.threadId : event.threadId;
+  if (!action || !threadId) {
+    return null;
+  }
+  return {
+    action,
+    threadId,
+    title: typeof payload.title === "string" && payload.title.trim().length > 0 ? payload.title : null,
+  };
 }
 
 function stableJsonKey(value: unknown): string {

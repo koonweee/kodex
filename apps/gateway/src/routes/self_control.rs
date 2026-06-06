@@ -32,7 +32,9 @@ use crate::{
     queue,
     routes::{
         app_surfaces::{
-            broadcast_app_surface_event, session_dto as app_surface_session_dto,
+            broadcast_app_surface_event, broadcast_app_surface_presentation_request,
+            session_dto as app_surface_session_dto, AppSurfacePresentationAction,
+            AppSurfacePresentationRequestDto, AppSurfacePresentationResponse,
             AppSurfaceSessionReadResponse, AppSurfaceSessionResponse, APP_SURFACE_ARCHIVED_EVENT,
             APP_SURFACE_UPSERTED_EVENT,
         },
@@ -68,11 +70,11 @@ use crate::{
     schema::validate_approval_response,
     skills,
     store::{
-        AppSurfaceCsp, AppSurfaceGrants, AppSurfaceProvider, AppSurfaceSessionUpsert, Approval,
-        AutomationStatus, AutomationUpdate, NewAutomation, NewEvent, NewProjectPreview,
-        NewProjectPreviewRoute, NewProjectPreviewService, Project, ProjectPreview,
-        ProjectPreviewRouteUpdate, ProjectPreviewService, ProjectPreviewServiceUpdate,
-        ProjectPreviewUpdate, QueuedInput,
+        AppSurfaceCsp, AppSurfaceGrants, AppSurfaceProvider, AppSurfaceSessionStatus,
+        AppSurfaceSessionUpsert, Approval, AutomationStatus, AutomationUpdate, NewAutomation,
+        NewEvent, NewProjectPreview, NewProjectPreviewRoute, NewProjectPreviewService, Project,
+        ProjectPreview, ProjectPreviewRouteUpdate, ProjectPreviewService,
+        ProjectPreviewServiceUpdate, ProjectPreviewUpdate, QueuedInput,
     },
 };
 
@@ -127,6 +129,10 @@ pub fn router() -> Router<AppState> {
             get(get_self_control_app_surface)
                 .post(upsert_self_control_generated_app_surface)
                 .delete(archive_self_control_app_surface),
+        )
+        .route(
+            "/v1/self-control/threads/{thread_id}/app-surface/presentation",
+            post(request_self_control_app_surface_presentation),
         )
         .route(
             "/v1/self-control/threads/{thread_id}/attach",
@@ -478,6 +484,8 @@ pub struct SelfControlGeneratedUiUpsertRequest {
     pub title: String,
     pub html: String,
     #[serde(default)]
+    pub presentation: Option<AppSurfacePresentationAction>,
+    #[serde(default)]
     pub source: SelfControlSource,
     #[serde(default)]
     pub max_self_control_depth: Option<u8>,
@@ -490,6 +498,8 @@ pub struct SelfControlGeneratedAppSurfaceUpsertRequest {
     pub html: String,
     pub fallback_content: String,
     #[serde(default)]
+    pub presentation: Option<AppSurfacePresentationAction>,
+    #[serde(default)]
     pub display_modes: Vec<String>,
     #[serde(default)]
     pub csp: AppSurfaceCsp,
@@ -497,6 +507,16 @@ pub struct SelfControlGeneratedAppSurfaceUpsertRequest {
     pub grants: AppSurfaceGrants,
     #[serde(default)]
     pub provenance: Value,
+    #[serde(default)]
+    pub source: SelfControlSource,
+    #[serde(default)]
+    pub max_self_control_depth: Option<u8>,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SelfControlAppSurfacePresentationRequest {
+    pub action: AppSurfacePresentationAction,
     #[serde(default)]
     pub source: SelfControlSource,
     #[serde(default)]
@@ -577,6 +597,18 @@ pub async fn upsert_self_control_generated_app_surface(
         })
         .await?;
     broadcast_app_surface_event(&state, APP_SURFACE_UPSERTED_EVENT, &session).await?;
+    if let Some(action) = request.presentation {
+        broadcast_app_surface_presentation_request(
+            &state,
+            app_surface_presentation_request(
+                action,
+                &thread_id,
+                Some(&session.id),
+                Some(&session.title),
+            ),
+        )
+        .await?;
+    }
     audit_self_control(
         &state,
         None,
@@ -586,7 +618,8 @@ pub async fn upsert_self_control_generated_app_surface(
             "source": request.source.to_value(),
             "sessionId": session.id,
             "revision": session.revision,
-            "provider": "generated"
+            "provider": "generated",
+            "presentation": request.presentation.map(|action| action.as_str())
         }),
     )
     .await?;
@@ -637,6 +670,18 @@ pub async fn upsert_self_control_generated_ui(
         })
         .await?;
     broadcast_app_surface_event(&state, APP_SURFACE_UPSERTED_EVENT, &session).await?;
+    if let Some(action) = request.presentation {
+        broadcast_app_surface_presentation_request(
+            &state,
+            app_surface_presentation_request(
+                action,
+                &thread_id,
+                Some(&session.id),
+                Some(&session.title),
+            ),
+        )
+        .await?;
+    }
     audit_self_control(
         &state,
         None,
@@ -647,13 +692,73 @@ pub async fn upsert_self_control_generated_ui(
             "sessionId": session.id,
             "revision": session.revision,
             "provider": "generated",
-            "compatAlias": "generated-ui"
+            "compatAlias": "generated-ui",
+            "presentation": request.presentation.map(|action| action.as_str())
         }),
     )
     .await?;
     Ok(Json(GeneratedUiSessionResponse {
         session: session_dto(session),
     }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/self-control/threads/{threadId}/app-surface/presentation",
+    summary = "Open or focus the latest app surface pane through self-control",
+    request_body = SelfControlAppSurfacePresentationRequest,
+    responses((status = 200, body = AppSurfacePresentationResponse))
+)]
+pub async fn request_self_control_app_surface_presentation(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+    Json(request): Json<SelfControlAppSurfacePresentationRequest>,
+) -> ApiResult<Json<AppSurfacePresentationResponse>> {
+    enforce_self_control_depth(request.max_self_control_depth)?;
+    let session = state
+        .store
+        .latest_app_surface_session(&thread_id)
+        .await?
+        .filter(|session| session.status != AppSurfaceSessionStatus::Archived)
+        .ok_or_else(|| ApiError::NotFound(format!("app surface for thread {thread_id}")))?;
+    let presentation = app_surface_presentation_request(
+        request.action,
+        &thread_id,
+        Some(&session.id),
+        Some(&session.title),
+    );
+    broadcast_app_surface_presentation_request(&state, presentation.clone()).await?;
+    audit_self_control(
+        &state,
+        None,
+        Some(&thread_id),
+        "self_control.app_surface_presentation_requested",
+        json!({
+            "source": request.source.to_value(),
+            "sessionId": session.id,
+            "revision": session.revision,
+            "provider": session.provider.as_str(),
+            "presentation": request.action.as_str()
+        }),
+    )
+    .await?;
+    Ok(Json(AppSurfacePresentationResponse {
+        request: presentation,
+    }))
+}
+
+fn app_surface_presentation_request(
+    action: AppSurfacePresentationAction,
+    thread_id: &str,
+    session_id: Option<&str>,
+    title: Option<&str>,
+) -> AppSurfacePresentationRequestDto {
+    AppSurfacePresentationRequestDto {
+        thread_id: thread_id.to_string(),
+        session_id: session_id.map(str::to_string),
+        action,
+        title: title.map(str::to_string),
+    }
 }
 
 #[utoipa::path(

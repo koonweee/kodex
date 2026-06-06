@@ -2,17 +2,24 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { deleteTerminalSession } from "../api/client";
+import type { EventEnvelope } from "../api/client";
 import { createMemoryWorkspacePaneStore } from "./paneStore";
 import type { WorkspacePane, WorkspacePaneState } from "./paneTypes";
 import { WorkspaceProvider, useWorkspace } from "./WorkspaceProvider";
 
-const streamClients: Array<{ close: ReturnType<typeof vi.fn>; connect: ReturnType<typeof vi.fn>; threadIds: string[] }> = [];
+const streamClients: Array<{
+  close: ReturnType<typeof vi.fn>;
+  connect: ReturnType<typeof vi.fn>;
+  emit: (event: EventEnvelope) => void;
+  threadIds: string[];
+}> = [];
 
 vi.mock("../events/stream", () => ({
-  createEventStreamClient: vi.fn((options: { threadIds?: string[] }) => {
+  createEventStreamClient: vi.fn((options: { onEvent?: (event: EventEnvelope) => void; threadIds?: string[] }) => {
     const client = {
       close: vi.fn(),
       connect: vi.fn(),
+      emit: (event: EventEnvelope) => options.onEvent?.(event),
       threadIds: options.threadIds ?? [],
     };
     streamClients.push(client);
@@ -109,6 +116,46 @@ describe("WorkspaceProvider pane commands", () => {
       expect(screen.getByTestId("active-pane")).toHaveTextContent("pane-ui-1");
     });
     expect(screen.getByTestId("pane-count")).toHaveTextContent("2");
+  });
+
+  it("can open a generated UI pane without activating it", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      threadPane("pane-thread-1", "thread-1", "Thread 1"),
+    ], "pane-thread-1"));
+    renderProvider(store);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open generated UI quietly" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pane-count")).toHaveTextContent("2");
+    });
+    expect(screen.getByTestId("active-pane")).toHaveTextContent("pane-thread-1");
+    expect(store.getState().panes.some((pane) => pane.kind === "generatedUi")).toBe(true);
+  });
+
+  it("applies app surface presentation requests from the workspace stream", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      threadPane("pane-thread-1", "thread-1", "Thread 1"),
+    ], "pane-thread-1"));
+    renderProvider(store);
+
+    await waitFor(() => {
+      expect(streamClients[0]?.connect).toHaveBeenCalled();
+    });
+
+    streamClients[0].emit(appSurfacePresentationEvent("open", 1));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pane-count")).toHaveTextContent("2");
+    });
+    expect(screen.getByTestId("active-pane")).toHaveTextContent("pane-thread-1");
+
+    streamClients[0].emit(appSurfacePresentationEvent("focus", 2));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("active-pane")).not.toHaveTextContent("pane-thread-1");
+    });
+    expect(store.getState().panes.filter((pane) => pane.kind === "generatedUi")).toHaveLength(1);
   });
 
   it("does not retarget an active draft thread pane when opening an existing thread", async () => {
@@ -245,6 +292,9 @@ function CommandHarness() {
       <button type="button" onClick={() => void workspace.openGeneratedUiPane("thread-1", "Generated UI")}>
         Open generated UI
       </button>
+      <button type="button" onClick={() => void workspace.openGeneratedUiPane("thread-1", "Generated UI", { activate: false })}>
+        Open generated UI quietly
+      </button>
       <button type="button" onClick={() => void workspace.openNewTerminalPane()}>
         New terminal
       </button>
@@ -259,6 +309,26 @@ function CommandHarness() {
       </button>
     </>
   );
+}
+
+function appSurfacePresentationEvent(action: "focus" | "open", seq: number): EventEnvelope {
+  return {
+    codexMethod: null,
+    id: `event-app-surface-presentation-${seq}`,
+    itemId: null,
+    kind: "app_surface.presentation_requested",
+    payload: {
+      action,
+      sessionId: "session-1",
+      threadId: "thread-1",
+      title: "Generated UI",
+    },
+    projectId: null,
+    receivedAt: "2026-05-01T00:00:00Z",
+    seq,
+    threadId: "thread-1",
+    turnId: null,
+  };
 }
 
 function workspaceState(panes: WorkspacePane[], activePaneId: string | null = panes[0]?.id ?? null): WorkspacePaneState {

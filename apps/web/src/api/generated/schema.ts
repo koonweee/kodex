@@ -1158,6 +1158,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/self-control/threads/{threadId}/app-surface/presentation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open or focus the latest app surface pane through self-control */
+        post: operations["request_self_control_app_surface_presentation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/self-control/threads/{threadId}/archive": {
         parameters: {
             query?: never;
@@ -2080,6 +2097,17 @@ export interface components {
             canUpdateModelContext?: boolean;
             resources?: components["schemas"]["AppSurfaceResourceGrant"][];
             tools?: components["schemas"]["AppSurfaceToolGrant"][];
+        };
+        /** @enum {string} */
+        AppSurfacePresentationAction: "open" | "focus";
+        AppSurfacePresentationRequestDto: {
+            action: components["schemas"]["AppSurfacePresentationAction"];
+            sessionId?: string | null;
+            threadId: string;
+            title?: string | null;
+        };
+        AppSurfacePresentationResponse: {
+            request: components["schemas"]["AppSurfacePresentationRequestDto"];
         };
         /** @enum {string} */
         AppSurfaceProvider: "mcp" | "generated";
@@ -3032,6 +3060,12 @@ export interface components {
         RenameThreadResponse: {
             thread: components["schemas"]["ThreadSummary"];
         };
+        SelfControlAppSurfacePresentationRequest: {
+            action: components["schemas"]["AppSurfacePresentationAction"];
+            /** Format: int32 */
+            maxSelfControlDepth?: number | null;
+            source?: components["schemas"]["SelfControlSource"];
+        };
         /** @enum {string} */
         SelfControlApplyAction: "created" | "updated" | "unchanged" | "deletedSkipped";
         SelfControlApplyChange: {
@@ -3139,6 +3173,7 @@ export interface components {
             html: string;
             /** Format: int32 */
             maxSelfControlDepth?: number | null;
+            presentation?: null | components["schemas"]["AppSurfacePresentationAction"];
             provenance?: unknown;
             source?: components["schemas"]["SelfControlSource"];
             title: string;
@@ -3147,6 +3182,7 @@ export interface components {
             html: string;
             /** Format: int32 */
             maxSelfControlDepth?: number | null;
+            presentation?: null | components["schemas"]["AppSurfacePresentationAction"];
             source?: components["schemas"]["SelfControlSource"];
             title: string;
         };
@@ -5771,6 +5807,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AppSurfaceSessionReadResponse"];
+                };
+            };
+        };
+    };
+    request_self_control_app_surface_presentation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfControlAppSurfacePresentationRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppSurfacePresentationResponse"];
                 };
             };
         };

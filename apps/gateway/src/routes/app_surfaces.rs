@@ -29,6 +29,7 @@ pub const APP_SURFACE_ARCHIVED_EVENT: &str = "app_surface.session_archived";
 pub const APP_SURFACE_ERROR_EVENT: &str = "app_surface.session_error";
 pub const APP_SURFACE_BRIDGE_CALL_EVENT: &str = "app_surface.bridge_call";
 pub const APP_SURFACE_MODEL_CONTEXT_UPDATED_EVENT: &str = "app_surface.model_context_updated";
+pub const APP_SURFACE_PRESENTATION_REQUESTED_EVENT: &str = "app_surface.presentation_requested";
 pub const APP_SURFACE_BRIDGE_APPROVAL_METHOD: &str = "appSurface/bridge/requestApproval";
 
 const MAX_BRIDGE_MESSAGE_BYTES: usize = 16 * 1024;
@@ -87,6 +88,37 @@ pub struct AppSurfaceSessionReadResponse {
 #[serde(rename_all = "camelCase")]
 pub struct AppSurfaceSessionResponse {
     pub session: AppSurfaceSessionDto,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AppSurfacePresentationAction {
+    Open,
+    Focus,
+}
+
+impl AppSurfacePresentationAction {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Focus => "focus",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSurfacePresentationRequestDto {
+    pub thread_id: String,
+    pub session_id: Option<String>,
+    pub action: AppSurfacePresentationAction,
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSurfacePresentationResponse {
+    pub request: AppSurfacePresentationRequestDto,
 }
 
 #[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
@@ -668,6 +700,26 @@ pub(crate) async fn broadcast_app_surface_event(
     let event = app_surface_payload_event(state, kind, session).await?;
     let _ = state.events.send(event);
     Ok(())
+}
+
+pub(crate) async fn broadcast_app_surface_presentation_request(
+    state: &AppState,
+    request: AppSurfacePresentationRequestDto,
+) -> ApiResult<EventEnvelope> {
+    let event = state
+        .store
+        .append_event(NewEvent {
+            project_id: None,
+            thread_id: Some(request.thread_id.clone()),
+            turn_id: None,
+            item_id: None,
+            kind: APP_SURFACE_PRESENTATION_REQUESTED_EVENT.to_string(),
+            codex_method: None,
+            payload: serde_json::to_value(request)?,
+        })
+        .await?;
+    let _ = state.events.send(event.clone());
+    Ok(event)
 }
 
 pub(crate) async fn app_surface_payload_event(

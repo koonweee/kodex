@@ -337,6 +337,8 @@ pub struct GeneratedUiToolParams {
     pub title: String,
     pub html: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<AppSurfacePresentationAction>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_self_control_depth: Option<u8>,
@@ -368,6 +370,8 @@ pub struct AppSurfaceToolParams {
     pub title: String,
     pub html: String,
     pub fallback_content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<AppSurfacePresentationAction>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub display_modes: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -389,6 +393,30 @@ pub struct AppSurfaceToolParams {
 pub struct AppSurfaceThreadToolParams {
     #[serde(default, alias = "thread_id", skip_serializing_if = "Option::is_none")]
     pub thread_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum AppSurfacePresentationAction {
+    Open,
+    Focus,
+}
+
+fn default_app_surface_presentation_action() -> AppSurfacePresentationAction {
+    AppSurfacePresentationAction::Focus
+}
+
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSurfacePresentationToolParams {
+    #[serde(default, alias = "thread_id", skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+    #[serde(default = "default_app_surface_presentation_action")]
+    pub action: AppSurfacePresentationAction,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_self_control_depth: Option<u8>,
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
@@ -776,7 +804,7 @@ impl KodexControlMcp {
     }
 
     #[tool(
-        description = "Open a generated app surface in the invoking Kodex thread by default, or an explicit threadId. App surfaces render MCP App-compatible HTML in the shared pane and may use the JSON-RPC bridge according to declared grants. Use when visual layout, direct manipulation, branching choices, comparison, preview, questionnaires, dashboards, or repeated actions are clearer than chat alone. Provide meaningful fallbackContent for text-only hosts."
+        description = "Open a generated app surface in the invoking Kodex thread by default, or an explicit threadId. App surfaces render MCP App-compatible HTML in the shared pane and may use the JSON-RPC bridge according to declared grants. Use when visual layout, direct manipulation, branching choices, comparison, preview, questionnaires, dashboards, or repeated actions are clearer than chat alone. Provide meaningful fallbackContent for text-only hosts. Optional presentation controls whether the browser should open the pane without switching focus (\"open\") or switch focus to it (\"focus\") when this revision arrives; omit presentation for a non-disruptive content update only."
     )]
     async fn open_app_surface(
         &self,
@@ -787,7 +815,7 @@ impl KodexControlMcp {
     }
 
     #[tool(
-        description = "Replace the latest generated app-surface revision for the invoking Kodex thread by default, or an explicit threadId. Use when the pane needs new embedded data, revised controls, or the next step of a workflow. Provide meaningful fallbackContent and declare any bridge grants explicitly."
+        description = "Replace the latest generated app-surface revision for the invoking Kodex thread by default, or an explicit threadId. Use when the pane needs new embedded data, revised controls, or the next step of a workflow. Provide meaningful fallbackContent and declare any bridge grants explicitly. Optional presentation controls whether the browser should open the pane without switching focus (\"open\") or switch focus to it (\"focus\") when this revision arrives; omit presentation for a non-disruptive content update only."
     )]
     async fn update_app_surface(
         &self,
@@ -816,6 +844,17 @@ impl KodexControlMcp {
     }
 
     #[tool(
+        description = "Open or focus the latest app-surface pane for the invoking Kodex thread by default, or an explicit threadId. Use action \"open\" to make the pane available without switching focus, or \"focus\" to switch the user's workspace to it."
+    )]
+    async fn show_app_surface(
+        &self,
+        Parameters(params): Parameters<AppSurfacePresentationToolParams>,
+        meta: Meta,
+    ) -> Result<CallToolResult, McpError> {
+        show_app_surface_tool(self, params, meta).await
+    }
+
+    #[tool(
         description = "Archive the latest app surface for the invoking Kodex thread by default, or for an explicit threadId override"
     )]
     async fn archive_app_surface(
@@ -839,7 +878,7 @@ impl KodexControlMcp {
     }
 
     #[tool(
-        description = "Open a generated UI pane for the invoking Kodex thread by default, or for an explicit threadId override when intentionally targeting another thread. Use only when it creates a richer experience than chat alone through visual grouping, branching choices, comparison, preview, direct manipulation, progressive disclosure, or repeated actions. Generated UI may include both local UI interactions and conversational actions. Buttons are not inherently prompts: prefer local UI interactions when behavior can be handled inside the HTML with already-available data, such as modals, row expansion, tabs, chart filters or toggles, unit switches, breakdowns, or visualization views; these should not submit messages. Use conversational actions when interaction requires Codex, tools, external data, persistence, workflow continuation, or an explicit user decision, such as questionnaire answers, plan approval, investigation, visualization regeneration, automation updates, or follow-up artifacts. When an action is intended to involve Codex again, submit a standalone human-readable message plus optional compact JSON metadata. In iframe HTML, prefer the injected helper `window.kodex.submitMessage(message, metadata)`. The raw postMessage contract is `{ type: \"kodex.generatedUi.submit\", message: \"human-readable message\", metadata: { ... } }`; the host also sends `kodex.generatedUi.submit.result` ack/error messages. Pair every open with a short assistant message. Strongly prefer a theme-native UI unless the user explicitly asks for a distinct visual style: use Kodex semantic CSS variables for body, surfaces, cards, text, borders, buttons, charts, status colors, shadows, focus rings, and radii; avoid inventing custom palettes, gradients, stock dashboard chrome, or hard-coded color schemes for ordinary generated UIs. Keep the UI responsive, and keep HTML self-contained because v1 blocks external network by default."
+        description = "Open a generated UI pane for the invoking Kodex thread by default, or for an explicit threadId override when intentionally targeting another thread. Use only when it creates a richer experience than chat alone through visual grouping, branching choices, comparison, preview, direct manipulation, progressive disclosure, or repeated actions. Optional presentation controls whether the browser should open the pane without switching focus (\"open\") or switch focus to it (\"focus\") when this revision arrives; omit presentation for a non-disruptive content update only. Generated UI may include both local UI interactions and conversational actions. Buttons are not inherently prompts: prefer local UI interactions when behavior can be handled inside the HTML with already-available data, such as modals, row expansion, tabs, chart filters or toggles, unit switches, breakdowns, or visualization views; these should not submit messages. Use conversational actions when interaction requires Codex, tools, external data, persistence, workflow continuation, or an explicit user decision, such as questionnaire answers, plan approval, investigation, visualization regeneration, automation updates, or follow-up artifacts. When an action is intended to involve Codex again, submit a standalone human-readable message plus optional compact JSON metadata. In iframe HTML, prefer the injected helper `window.kodex.submitMessage(message, metadata)`. The raw postMessage contract is `{ type: \"kodex.generatedUi.submit\", message: \"human-readable message\", metadata: { ... } }`; the host also sends `kodex.generatedUi.submit.result` ack/error messages. Pair every open with a short assistant message. Strongly prefer a theme-native UI unless the user explicitly asks for a distinct visual style: use Kodex semantic CSS variables for body, surfaces, cards, text, borders, buttons, charts, status colors, shadows, focus rings, and radii; avoid inventing custom palettes, gradients, stock dashboard chrome, or hard-coded color schemes for ordinary generated UIs. Keep the UI responsive, and keep HTML self-contained because v1 blocks external network by default."
     )]
     async fn open_generated_ui(
         &self,
@@ -850,7 +889,7 @@ impl KodexControlMcp {
     }
 
     #[tool(
-        description = "Replace the latest generated UI pane revision for the invoking Kodex thread by default, or for an explicit threadId override when intentionally targeting another thread. Use this after a local UI view needs new embedded data, the user submits a conversational action, asks a follow-up, requests a revised mockup, or needs the next step of a workflow. Generated UI may include both local UI interactions and conversational actions. Buttons are not inherently prompts: prefer local UI interactions for embedded-data behavior such as modals, tabs, filters, chart toggles, unit switches, drilldowns, or progressive disclosure; these should not submit messages. Use conversational actions when interaction requires Codex, tools, external data, persistence, workflow continuation, or an explicit user decision, such as submitting answers, approving a plan, investigating, regenerating a visualization, updating automation, or creating a follow-up artifact. When an action is intended to involve Codex again, submit a standalone human-readable message plus optional compact JSON metadata. In iframe HTML, prefer the injected helper `window.kodex.submitMessage(message, metadata)`. The raw postMessage contract is `{ type: \"kodex.generatedUi.submit\", message: \"human-readable message\", metadata: { ... } }`; the host also sends `kodex.generatedUi.submit.result` ack/error messages. Strongly prefer a theme-native UI unless the user explicitly asks for a distinct visual style: use Kodex semantic CSS variables for body, surfaces, cards, text, borders, buttons, charts, status colors, shadows, focus rings, and radii; avoid inventing custom palettes, gradients, stock dashboard chrome, or hard-coded color schemes for ordinary generated UIs. Keep HTML self-contained, responsive, and bounded."
+        description = "Replace the latest generated UI pane revision for the invoking Kodex thread by default, or for an explicit threadId override when intentionally targeting another thread. Use this after a local UI view needs new embedded data, the user submits a conversational action, asks a follow-up, requests a revised mockup, or needs the next step of a workflow. Optional presentation controls whether the browser should open the pane without switching focus (\"open\") or switch focus to it (\"focus\") when this revision arrives; omit presentation for a non-disruptive content update only. Generated UI may include both local UI interactions and conversational actions. Buttons are not inherently prompts: prefer local UI interactions for embedded-data behavior such as modals, tabs, filters, chart toggles, unit switches, drilldowns, or progressive disclosure; these should not submit messages. Use conversational actions when interaction requires Codex, tools, external data, persistence, workflow continuation, or an explicit user decision, such as submitting answers, approving a plan, investigating, regenerating a visualization, updating automation, or creating a follow-up artifact. When an action is intended to involve Codex again, submit a standalone human-readable message plus optional compact JSON metadata. In iframe HTML, prefer the injected helper `window.kodex.submitMessage(message, metadata)`. The raw postMessage contract is `{ type: \"kodex.generatedUi.submit\", message: \"human-readable message\", metadata: { ... } }`; the host also sends `kodex.generatedUi.submit.result` ack/error messages. Strongly prefer a theme-native UI unless the user explicitly asks for a distinct visual style: use Kodex semantic CSS variables for body, surfaces, cards, text, borders, buttons, charts, status colors, shadows, focus rings, and radii; avoid inventing custom palettes, gradients, stock dashboard chrome, or hard-coded color schemes for ordinary generated UIs. Keep HTML self-contained, responsive, and bounded."
     )]
     async fn update_generated_ui(
         &self,
@@ -876,6 +915,17 @@ impl KodexControlMcp {
             ))
             .await?,
         ))
+    }
+
+    #[tool(
+        description = "Open or focus the latest generated UI pane for the invoking Kodex thread by default, or an explicit threadId. This is a compatibility alias for show_app_surface."
+    )]
+    async fn show_generated_ui(
+        &self,
+        Parameters(params): Parameters<AppSurfacePresentationToolParams>,
+        meta: Meta,
+    ) -> Result<CallToolResult, McpError> {
+        show_app_surface_tool(self, params, meta).await
     }
 
     #[tool(
@@ -1772,6 +1822,7 @@ async fn upsert_generated_ui_tool(
             title: params.title,
             html: params.html,
             fallback_content,
+            presentation: params.presentation,
             display_modes: Vec::new(),
             csp: None,
             grants: Some(json!({"canSendMessage": true})),
@@ -1798,6 +1849,28 @@ async fn upsert_app_surface_tool(
 ) -> Result<CallToolResult, McpError> {
     Ok(json_tool_result(
         upsert_app_surface_value(service, params, meta).await?,
+    ))
+}
+
+async fn show_app_surface_tool(
+    service: &KodexControlMcp,
+    params: AppSurfacePresentationToolParams,
+    meta: Meta,
+) -> Result<CallToolResult, McpError> {
+    let thread_id = resolve_app_surface_thread_id(params.thread_id.clone(), &meta)?;
+    let mut body = json_object(params)?;
+    body.remove("threadId");
+    normalize_self_control_source_shorthand(&mut body)?;
+    Ok(json_tool_result(
+        service
+            .post_json(
+                &format!(
+                    "/v1/self-control/threads/{}/app-surface/presentation",
+                    path_segment(&thread_id)
+                ),
+                Value::Object(body),
+            )
+            .await?,
     ))
 }
 
@@ -2195,6 +2268,11 @@ mod tests {
                 "fallbackContent",
             ],
         );
+        assert_tool_description_contains(
+            &tools,
+            "show_app_surface",
+            &["action \"open\"", "or \"focus\""],
+        );
         assert_tool_requires(&tools, "open_generated_ui", &["title", "html"]);
         assert_tool_does_not_require(&tools, "open_generated_ui", "threadId");
         assert_tool_description_contains(
@@ -2227,6 +2305,7 @@ mod tests {
                 "avoid inventing custom palettes",
             ],
         );
+        assert_tool_description_contains(&tools, "show_generated_ui", &["show_app_surface"]);
         assert_tool_requires(&tools, "pause_automation", &["automationId"]);
         assert_tool_requires(&tools, "resume_automation", &["automationId"]);
         let status_resource = client
