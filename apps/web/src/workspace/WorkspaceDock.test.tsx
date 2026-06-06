@@ -5,12 +5,14 @@ import { describe, expect, it, vi } from "vitest";
 import type { DockviewApi } from "dockview";
 
 import {
+  WorkspaceDefaultTab,
   WorkspaceRightHeaderActions,
   WorkspaceTabOverflowActions,
   kodexDockviewTheme,
   syncWorkspaceIntoDockview,
   visibleDockviewPanelIds,
 } from "./WorkspaceDock";
+import { createMemoryWorkspacePaneStore } from "./paneStore";
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
 import { WorkspaceProvider, useWorkspace } from "./WorkspaceProvider";
 
@@ -32,6 +34,25 @@ describe("WorkspaceDock sync", () => {
 
     expect(await screen.findByRole("toolbar", { name: "Pane actions" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Thread overflow" })).toBeInTheDocument();
+  });
+
+  it("renders registered pane title adornments beside the desktop tab name", async () => {
+    const workspacePane = pane("pane-thread", "thread", { mode: "existing", threadId: "thread-1" }, "First thread");
+
+    render(
+      <WorkspaceProvider paneStore={createMemoryWorkspacePaneStore({
+        activePaneId: "pane-thread",
+        dockviewLayout: null,
+        panes: [workspacePane],
+        schemaVersion: 1,
+      })}>
+        <PaneAdornmentHarness activePaneId="pane-thread" pane={workspacePane} />
+      </WorkspaceProvider>,
+    );
+
+    expect(screen.getByText("First thread")).toBeInTheDocument();
+    expect(await screen.findByRole("status", { name: "Pane syncing" })).toBeInTheDocument();
+    expect(screen.getByTestId("thread-sync-spinner")).toBeInTheDocument();
   });
 
   it("renders a dropdown for measured overflow tabs and focuses the chosen panel", async () => {
@@ -268,6 +289,27 @@ function PaneActionHarness({ activePaneId }: { activePaneId: string }) {
       headerPosition="top"
       isGroupActive
       panels={[]}
+    />
+  );
+}
+
+function PaneAdornmentHarness({ activePaneId, pane }: { activePaneId: string; pane: WorkspacePane }) {
+  const { setPaneHeaderAdornment } = useWorkspace();
+  useEffect(() => {
+    setPaneHeaderAdornment(activePaneId, <span data-testid="thread-sync-spinner" />);
+    return () => setPaneHeaderAdornment(activePaneId, null);
+  }, [activePaneId, setPaneHeaderAdornment]);
+  return (
+    <WorkspaceDefaultTab
+      api={{
+        close: vi.fn(),
+        id: activePaneId,
+        onDidTitleChange: () => ({ dispose: vi.fn() }),
+        title: pane.title ?? activePaneId,
+      } as never}
+      containerApi={{} as never}
+      params={{ activePaneId, pane }}
+      tabLocation="header"
     />
   );
 }

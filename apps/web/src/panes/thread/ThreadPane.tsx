@@ -99,6 +99,7 @@ function ExistingThreadPane({
     renderThreadPaneAside,
     renderThreadPaneHeaderActions,
     setPaneHeaderActions,
+    setPaneHeaderAdornment,
     showDebugEvents,
     subscribeLiveEvent,
     subscribeThreadPaneTimelineAction,
@@ -362,16 +363,23 @@ function ExistingThreadPane({
   const threadChromeState = thread ? { isActive, thread, threadId } : null;
   const paneAside = threadChromeState ? renderThreadPaneAside?.(pane, threadChromeState) : null;
   const appSurfaceSession = appSurfaceQuery.data ?? null;
+  const isSnapshotSyncing = entry.phase === "loadingSnapshot" || entry.phase === "refreshingSnapshot";
+  const paneHeaderAdornment = useMemo(
+    () =>
+      isSnapshotSyncing ? (
+        <Loader
+          aria-hidden="true"
+          className="kodex-thread-pane-title-spinner"
+          size={12}
+        />
+      ) : null,
+    [isSnapshotSyncing],
+  );
   const paneHeaderActions = useMemo(
     () => {
       const customHeaderActions = threadChromeState ? renderThreadPaneHeaderActions?.(pane, threadChromeState) : null;
       return (
         <Group className="kodex-thread-pane-actions" gap={4} wrap="nowrap">
-          {entry.phase === "loadingSnapshot" || entry.phase === "refreshingSnapshot" ? (
-            <Badge leftSection={<Loader size={10} />} variant="light">
-              Syncing
-            </Badge>
-          ) : null}
           {!isUnavailable ? (
             <>
               {customHeaderActions}
@@ -411,7 +419,6 @@ function ExistingThreadPane({
       );
     },
     [
-      entry.phase,
       appSurfaceSession,
       isActive,
       isUnavailable,
@@ -428,6 +435,11 @@ function ExistingThreadPane({
       title,
     ],
   );
+
+  useEffect(() => {
+    setPaneHeaderAdornment(pane.id, paneHeaderAdornment);
+    return () => setPaneHeaderAdornment(pane.id, null);
+  }, [pane.id, paneHeaderAdornment, setPaneHeaderAdornment]);
 
   useEffect(() => {
     setPaneHeaderActions(pane.id, paneHeaderActions);

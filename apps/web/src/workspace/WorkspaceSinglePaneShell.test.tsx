@@ -115,11 +115,25 @@ describe("WorkspaceSinglePaneShell", () => {
     expect(screen.getByRole("button", { name: "Close pane" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Thread overflow" })).toBeInTheDocument();
   });
+
+  it("renders registered pane title adornments beside the mobile pane name", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      threadPane("pane-thread-1", "thread-1", "First thread"),
+    ]));
+
+    renderShell(store, { adornmentPaneId: "pane-thread-1" });
+
+    const switcher = screen.getByRole("button", { name: /switch workspace pane/i });
+    expect(within(switcher).getByText("First thread")).toBeInTheDocument();
+    expect(within(switcher).getByRole("status", { name: "Pane syncing" })).toBeInTheDocument();
+    expect(within(switcher).getByTestId("thread-sync-spinner")).toBeInTheDocument();
+  });
 });
 
 function renderShell(
   paneStore: ReturnType<typeof createMemoryWorkspacePaneStore>,
   options: {
+    adornmentPaneId?: string;
     actionPaneId?: string;
     onShowMobileSidebar?: () => void;
     onVisibleThreadIdsChange?: (threadIds: string[]) => void;
@@ -132,11 +146,21 @@ function renderShell(
         onVisibleThreadIdsChange={options.onVisibleThreadIdsChange}
         paneStore={paneStore}
       >
+        {options.adornmentPaneId ? <PaneAdornmentHarness paneId={options.adornmentPaneId} /> : null}
         {options.actionPaneId ? <PaneActionHarness paneId={options.actionPaneId} /> : null}
         <WorkspaceSinglePaneShell />
       </WorkspaceProvider>
     </MantineProvider>,
   );
+}
+
+function PaneAdornmentHarness({ paneId }: { paneId: string }) {
+  const { setPaneHeaderAdornment } = useWorkspace();
+  useEffect(() => {
+    setPaneHeaderAdornment(paneId, <span data-testid="thread-sync-spinner" />);
+    return () => setPaneHeaderAdornment(paneId, null);
+  }, [paneId, setPaneHeaderAdornment]);
+  return null;
 }
 
 function PaneActionHarness({ paneId }: { paneId: string }) {

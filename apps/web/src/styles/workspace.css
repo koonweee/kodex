@@ -169,6 +169,43 @@
   white-space: nowrap;
 }
 
+.kodex-workspace-dock .kodex-workspace-tab-content,
+.kodex-workspace-single-pane-title {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.kodex-workspace-tab-title,
+.kodex-workspace-single-pane-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kodex-workspace-pane-title-adornment {
+  align-items: center;
+  color: var(--kodex-text-secondary);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 14px;
+  justify-content: center;
+  width: 14px;
+}
+
+.kodex-workspace-pane-title-adornment .kodex-thread-pane-title-spinner {
+  display: block;
+}
+
+.kodex-workspace-tab-close-icon {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+}
+
 .kodex-workspace-terminal-tab .dv-default-tab-content {
   align-items: center;
   display: inline-flex;
@@ -358,6 +395,10 @@
   min-width: 0;
   text-align: left;
   width: 100%;
+}
+
+.kodex-workspace-single-pane-switcher-button .kodex-workspace-single-pane-title {
+  display: flex;
 }
 
 .kodex-workspace-single-pane-switcher-button:hover,

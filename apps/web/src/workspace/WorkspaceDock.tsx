@@ -10,7 +10,8 @@ import {
   type DockviewTheme,
   type IDockviewPanelProps,
 } from "dockview";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type HTMLAttributes, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
 import type { WorkspacePanePlacementDirection, WorkspacePanePlacementHintsById } from "./panePlacement";
@@ -22,6 +23,14 @@ import { hasDockviewPanels, layoutMatchesWorkspacePanes } from "./workspaceLayou
 type DockviewPaneParams = {
   activePaneId: string | null;
   pane: WorkspacePane;
+};
+
+type DockviewTabRuntimeProps = IDockviewPanelHeaderProps<DockviewPaneParams> & {
+  closeActionOverride?: () => void;
+  hideClose?: boolean;
+  onPointerDown?: (event: PointerEvent<HTMLDivElement>) => void;
+  onPointerLeave?: (event: PointerEvent<HTMLDivElement>) => void;
+  onPointerUp?: (event: PointerEvent<HTMLDivElement>) => void;
 };
 
 type WorkspaceDockProps = {
@@ -186,16 +195,128 @@ export function WorkspaceDock({
 }
 
 export function WorkspaceDefaultTab(props: IDockviewPanelHeaderProps<DockviewPaneParams>) {
-  const { paneTabStatusById } = useWorkspace();
+  const { paneHeaderAdornmentsById, paneTabStatusById } = useWorkspace();
   const pane = props.params.pane;
+  const headerAdornment = paneHeaderAdornmentsById[props.api.id] ?? null;
   const terminalStatus = pane.kind === "terminal" ? paneTabStatusById[props.api.id] : undefined;
   const tabClassName = [
     "kodex-workspace-tab",
     pane.kind === "terminal" ? "kodex-workspace-terminal-tab" : null,
     terminalStatus ? `kodex-workspace-terminal-tab-${terminalStatus}` : null,
+    headerAdornment ? "kodex-workspace-tab-with-adornment" : null,
   ].filter(Boolean).join(" ");
 
-  return <DockviewDefaultTab {...props} className={tabClassName} />;
+  if (!headerAdornment) {
+    return <DockviewDefaultTab {...props} className={tabClassName} />;
+  }
+
+  return (
+    <WorkspaceTabWithAdornment
+      {...props}
+      adornment={headerAdornment}
+      className={tabClassName}
+    />
+  );
+}
+
+function WorkspaceTabWithAdornment({
+  adornment,
+  className,
+  ...props
+}: IDockviewPanelHeaderProps<DockviewPaneParams> & { adornment: ReactNode; className: string }) {
+  const {
+    api,
+    closeActionOverride,
+    containerApi: _containerApi,
+    hideClose,
+    onPointerDown,
+    onPointerLeave,
+    onPointerUp,
+    params: _params,
+    tabLocation: _tabLocation,
+    ...rest
+  } = props as DockviewTabRuntimeProps;
+  const title = useDockviewPanelTitle(api);
+  const isMiddleMouseButton = useRef(false);
+  const restProps = rest as HTMLAttributes<HTMLDivElement>;
+  const mergedClassName = [restProps.className, className, "dv-default-tab"].filter(Boolean).join(" ");
+
+  const onClose = useCallback((event: MouseEvent<HTMLElement> | PointerEvent<HTMLElement>) => {
+    event.preventDefault();
+    if (closeActionOverride) {
+      closeActionOverride();
+      return;
+    }
+    api.close();
+  }, [api, closeActionOverride]);
+
+  const onClosePointerDown = useCallback((event: PointerEvent<HTMLElement>) => {
+    event.preventDefault();
+  }, []);
+
+  const handlePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    isMiddleMouseButton.current = event.button === 1;
+    onPointerDown?.(event);
+  }, [onPointerDown]);
+
+  const handlePointerUp = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (isMiddleMouseButton.current && event.button === 1 && !hideClose) {
+      isMiddleMouseButton.current = false;
+      onClose(event);
+    }
+    onPointerUp?.(event);
+  }, [hideClose, onClose, onPointerUp]);
+
+  const handlePointerLeave = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    isMiddleMouseButton.current = false;
+    onPointerLeave?.(event);
+  }, [onPointerLeave]);
+
+  return (
+    <div
+      {...restProps}
+      className={mergedClassName}
+      data-testid="dockview-dv-default-tab"
+      onPointerDown={handlePointerDown}
+      onPointerLeave={handlePointerLeave}
+      onPointerUp={handlePointerUp}
+    >
+      <span className="dv-default-tab-content kodex-workspace-tab-content">
+        <span className="kodex-workspace-tab-title">{title}</span>
+        <span
+          aria-label="Pane syncing"
+          className="kodex-workspace-pane-title-adornment"
+          role="status"
+          title="Pane syncing"
+        >
+          {adornment}
+        </span>
+      </span>
+      {!hideClose ? (
+        <div className="dv-default-tab-action" onClick={onClose} onPointerDown={onClosePointerDown}>
+          <span aria-hidden="true" className="dv-react-part kodex-workspace-tab-close-icon">
+            <X size={11} strokeWidth={2.2} />
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function useDockviewPanelTitle(api: IDockviewPanelHeaderProps<DockviewPaneParams>["api"]) {
+  const [title, setTitle] = useState(api.title);
+  useEffect(() => {
+    const disposable = api.onDidTitleChange((event) => {
+      setTitle(event.title);
+    });
+    if (title !== api.title) {
+      setTitle(api.title);
+    }
+    return () => {
+      disposable.dispose();
+    };
+  }, [api, title]);
+  return title;
 }
 
 export function WorkspaceRightHeaderActions({ activePanel }: IDockviewHeaderActionsProps) {

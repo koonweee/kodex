@@ -110,6 +110,7 @@ type WorkspaceContextValue = {
   openNewTerminalPane: (options?: WorkspaceTerminalOpenOptions) => Promise<void>;
   openTerminalPane: (options?: WorkspaceTerminalOpenOptions) => Promise<void>;
   openThreadPane: (threadId: string, title?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
+  paneHeaderAdornmentsById: Record<string, ReactNode>;
   paneHeaderActionsById: Record<string, ReactNode>;
   panePlacementHintsById: WorkspacePanePlacementHintsById;
   paneTabStatusById: Record<string, WorkspacePaneTabStatus>;
@@ -123,6 +124,7 @@ type WorkspaceContextValue = {
   subscribeLiveEvent: (handler: WorkspaceLiveEventHandler) => () => void;
   subscribeThreadPaneTimelineAction: (handler: ThreadPaneTimelineActionHandler) => () => void;
   clearPanePlacementHints: (paneIds: string[]) => void;
+  setPaneHeaderAdornment: (paneId: string, adornment: ReactNode | null) => void;
   setPaneHeaderActions: (paneId: string, actions: ReactNode | null) => void;
   setPaneTabStatus: (paneId: string, status: WorkspacePaneTabStatus | null) => void;
   threadSummariesById: Record<string, ThreadSummary>;
@@ -172,6 +174,7 @@ export function WorkspaceProvider({
   const liveEventCursorRef = useRef<number | undefined>(undefined);
   const liveEventHandlersRef = useRef(new Set<WorkspaceLiveEventHandler>());
   const onLiveEventRef = useRef(onLiveEvent);
+  const [paneHeaderAdornmentsById, setPaneHeaderAdornmentsById] = useState<Record<string, ReactNode>>({});
   const [paneHeaderActionsById, setPaneHeaderActionsById] = useState<Record<string, ReactNode>>({});
   const [panePlacementHintsById, setPanePlacementHintsById] = useState<WorkspacePanePlacementHintsById>({});
   const [paneTabStatusById, setPaneTabStatusById] = useState<Record<string, WorkspacePaneTabStatus>>({});
@@ -220,6 +223,18 @@ export function WorkspaceProvider({
 
   useEffect(() => {
     const paneIds = new Set(workspace.panes.map((pane) => pane.id));
+    setPaneHeaderAdornmentsById((current) => {
+      let changed = false;
+      const next: Record<string, ReactNode> = {};
+      for (const [paneId, adornment] of Object.entries(current)) {
+        if (paneIds.has(paneId)) {
+          next[paneId] = adornment;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
     setPaneTabStatusById((current) => {
       let changed = false;
       const next: Record<string, WorkspacePaneTabStatus> = {};
@@ -304,6 +319,25 @@ export function WorkspaceProvider({
     return () => {
       liveEventHandlersRef.current.delete(handler);
     };
+  }, []);
+
+  const setPaneHeaderAdornment = useCallback((paneId: string, adornment: ReactNode | null) => {
+    setPaneHeaderAdornmentsById((current) => {
+      if (adornment === null) {
+        if (!Object.prototype.hasOwnProperty.call(current, paneId)) {
+          return current;
+        }
+        const { [paneId]: _removed, ...rest } = current;
+        return rest;
+      }
+      if (current[paneId] === adornment) {
+        return current;
+      }
+      return {
+        ...current,
+        [paneId]: adornment,
+      };
+    });
   }, []);
 
   const setPaneHeaderActions = useCallback((paneId: string, actions: ReactNode | null) => {
@@ -638,6 +672,7 @@ export function WorkspaceProvider({
       openNewTerminalPane,
       openTerminalPane,
       openThreadPane,
+      paneHeaderAdornmentsById,
       paneHeaderActionsById,
       panePlacementHintsById,
       paneTabStatusById,
@@ -657,6 +692,7 @@ export function WorkspaceProvider({
       subscribeLiveEvent,
       subscribeThreadPaneTimelineAction,
       clearPanePlacementHints,
+      setPaneHeaderAdornment,
       setPaneHeaderActions,
       setPaneTabStatus,
       threadSummariesById,
@@ -685,6 +721,7 @@ export function WorkspaceProvider({
       openNewTerminalPane,
       openTerminalPane,
       openThreadPane,
+      paneHeaderAdornmentsById,
       paneHeaderActionsById,
       panePlacementHintsById,
       paneTabStatusById,
@@ -698,6 +735,7 @@ export function WorkspaceProvider({
       subscribeLiveEvent,
       subscribeThreadPaneTimelineAction,
       clearPanePlacementHints,
+      setPaneHeaderAdornment,
       setPaneHeaderActions,
       setPaneTabStatus,
       threadSummariesById,

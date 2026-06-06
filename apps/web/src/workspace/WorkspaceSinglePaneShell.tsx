@@ -16,6 +16,7 @@ export function WorkspaceSinglePaneShell() {
     onShowMobileSidebar,
     onVisiblePaneIdsChange,
     focusPulseByPaneId,
+    paneHeaderAdornmentsById,
     paneHeaderActionsById,
     workspace,
     workspaceError,
@@ -27,6 +28,7 @@ export function WorkspaceSinglePaneShell() {
     return workspace.panes[0] ?? null;
   }, [workspace.activePaneId, workspace.panes]);
   const activePaneTitle = activePane ? paneTitle(activePane) : "Workspace";
+  const activePaneAdornment = activePane ? paneHeaderAdornmentsById[activePane.id] ?? null : null;
   const activePaneActions = activePane ? paneHeaderActionsById[activePane.id] : null;
   const focusPulseToken = activePane ? focusPulseByPaneId[activePane.id] ?? 0 : 0;
   const isOnlyDefaultDraftPane =
@@ -92,9 +94,21 @@ export function WorkspaceSinglePaneShell() {
                 type="button"
                 variant="subtle"
               >
-                <Text component="span" truncate>
-                  {activePaneTitle}
-                </Text>
+                <span className="kodex-workspace-single-pane-title">
+                  <Text className="kodex-workspace-single-pane-title-text" component="span" truncate>
+                    {activePaneTitle}
+                  </Text>
+                  {activePaneAdornment ? (
+                    <span
+                      aria-label="Pane syncing"
+                      className="kodex-workspace-pane-title-adornment"
+                      role="status"
+                      title="Pane syncing"
+                    >
+                      {activePaneAdornment}
+                    </span>
+                  ) : null}
+                </span>
               </Button>
             </Menu.Target>
             <Menu.Dropdown aria-label="Workspace panes" className="kodex-workspace-single-pane-menu">
