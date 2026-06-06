@@ -35,8 +35,11 @@ describe("workspace pane layout CSS", () => {
     expect(dockReactPartRule).toContain("height: 100%;");
     expect(dockReactPartRule).toContain("overflow: hidden;");
     expect(dockViewRule).toContain("overflow: hidden;");
+    expect(paneHostRule).toContain("--kodex-workspace-pane-padding: 8px;");
+    expect(paneHostRule).toContain("box-sizing: border-box;");
     expect(paneHostRule).toContain("height: 100%;");
     expect(paneHostRule).toContain("overflow: hidden;");
+    expect(paneHostRule).toContain("padding: var(--kodex-workspace-pane-padding);");
     expect(paneHostRule).toContain("min-height: 0;");
   });
 

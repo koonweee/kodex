@@ -66,12 +66,16 @@
 }
 
 .kodex-workspace-pane-host {
+  --kodex-workspace-pane-padding: 8px;
+
+  background: var(--kodex-bg-app);
   box-sizing: border-box;
   display: block;
   height: 100%;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+  padding: var(--kodex-workspace-pane-padding);
   width: 100%;
 }
 
