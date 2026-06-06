@@ -23,6 +23,7 @@ const ProjectPane = lazy(() =>
   import("../projects/ProjectPane").then((module) => ({ default: module.ProjectPane })),
 );
 const NARROW_THREAD_WORKSPACE_QUERY = "(max-width: 900px)";
+const DESKTOP_COLLAPSED_SIDEBAR_WIDTH = 32;
 
 type KodexShellViewProps = {
   automationsPaneProps: ComponentProps<typeof AutomationsPaneComponent>;
@@ -33,6 +34,7 @@ type KodexShellViewProps = {
   narrowAppSurfacePane?: ReactNode;
   preferencesProps: PreferencesModalProps;
   projectPaneProps: ComponentProps<typeof ProjectPaneComponent>;
+  sidebarCollapsed: boolean;
   sidebarWidth: number;
   threadPanelProps: ComponentProps<typeof ThreadPanel>;
   useSingleThreadWorkspace: boolean;
@@ -65,6 +67,7 @@ export function KodexShellView({
   narrowAppSurfacePane,
   preferencesProps,
   projectPaneProps,
+  sidebarCollapsed: desktopSidebarCollapsed,
   sidebarWidth,
   threadPanelProps,
   useSingleThreadWorkspace,
@@ -72,17 +75,23 @@ export function KodexShellView({
   workspaceSelectedThreadPaneId,
 }: KodexShellViewProps) {
   const mainLabel = mainPane === "automations" ? "Automations" : mainPane === "project" ? "Project" : "Thread workspace";
+  const isNarrowThreadWorkspace = useNarrowThreadWorkspace();
+  const sidebarCollapsed = desktopSidebarCollapsed && !isNarrowThreadWorkspace;
+  const effectiveSidebarWidth = sidebarCollapsed ? DESKTOP_COLLAPSED_SIDEBAR_WIDTH : sidebarWidth;
 
   return (
     <AppShell
-      navbar={{ width: sidebarWidth, breakpoint: "sm" }}
+      navbar={{ width: effectiveSidebarWidth, breakpoint: "sm" }}
       padding="md"
       className="kodex-shell"
       data-mobile-panel={mobilePanel}
+      data-sidebar-collapsed={sidebarCollapsed ? "true" : undefined}
       data-sidebar-resizing={isSidebarResizing ? "true" : undefined}
     >
       <WorkspaceSidebarWithPaneActions
         {...workspaceSidebarProps}
+        sidebarCollapsed={sidebarCollapsed}
+        sidebarWidth={effectiveSidebarWidth}
         useSingleThreadMode={useSingleThreadWorkspace}
         workspaceSelectedThreadPaneId={workspaceSelectedThreadPaneId}
       />

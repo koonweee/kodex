@@ -73,10 +73,20 @@ export function XtermTerminal({ className, inputSignal, onConnectionStateChange,
         socket.send(encodeTerminalStdin(data));
       }
     });
+    const themeObserver =
+      typeof MutationObserver === "function"
+        ? new MutationObserver(() => {
+            terminal.options.theme = terminalThemeColors(container);
+          })
+        : null;
     const resizeObserver =
       typeof ResizeObserver === "function" ? new ResizeObserver(() => requestAnimationFrame(fitTerminal)) : null;
     const visualViewport = window.visualViewport;
 
+    themeObserver?.observe(document.documentElement, {
+      attributeFilter: ["data-kodex-color-scheme", "data-mantine-color-scheme"],
+      attributes: true,
+    });
     resizeObserver?.observe(container);
     window.addEventListener("orientationchange", fitTerminal);
     window.addEventListener("resize", fitTerminal);
@@ -96,6 +106,7 @@ export function XtermTerminal({ className, inputSignal, onConnectionStateChange,
 
     return () => {
       dataDisposable.dispose();
+      themeObserver?.disconnect();
       resizeObserver?.disconnect();
       window.removeEventListener("orientationchange", fitTerminal);
       window.removeEventListener("resize", fitTerminal);

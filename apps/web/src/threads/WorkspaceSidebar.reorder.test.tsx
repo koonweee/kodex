@@ -109,6 +109,25 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(screen.queryByRole("button", { name: "Thread 2" })).not.toBeInTheDocument();
   });
 
+  it("collapses desktop sidebar content behind a persistent resize handle", () => {
+    renderSidebar({
+      projects: [projectSummary("project-1", "Project")],
+      sidebarCollapsed: true,
+      sidebarWidth: 32,
+      threadsByProjectId: {
+        "project-1": [threadSummary(1)],
+      },
+    });
+
+    expect(screen.getByLabelText("Workspace")).toHaveAttribute("data-collapsed", "true");
+    expect(screen.getByRole("separator", { name: "Expand workspace sidebar" })).toHaveAttribute(
+      "data-collapsed",
+      "true",
+    );
+    expect(screen.queryByLabelText("Search")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Projects" })).not.toBeInTheDocument();
+  });
+
   it("shows local loading and error states for cursor-backed project pagination", () => {
     const onLoadMoreProjectThreads = vi.fn();
     const { rerender } = renderSidebar({
@@ -155,6 +174,7 @@ describe("WorkspaceSidebar project reorder", () => {
             onSelectProjectSettings={vi.fn()}
             onSelectThread={vi.fn()}
             onShowDebugEventsChange={vi.fn()}
+            onSidebarExpandClick={vi.fn()}
             onSidebarResizeKeyDown={vi.fn()}
             onSidebarResizePointerDown={vi.fn()}
             onThreadActionHoverChange={vi.fn()}
@@ -609,6 +629,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
           onSelectProjectSettings={vi.fn()}
           onSelectThread={vi.fn()}
           onShowDebugEventsChange={vi.fn()}
+          onSidebarExpandClick={vi.fn()}
           onSidebarResizeKeyDown={vi.fn()}
           onSidebarResizePointerDown={vi.fn()}
           onThreadActionHoverChange={vi.fn()}

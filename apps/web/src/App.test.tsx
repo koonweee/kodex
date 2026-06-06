@@ -504,6 +504,32 @@ describe("App shell", () => {
     expect(screen.getByRole("navigation", { name: /workspace/i })).toHaveStyle({ width: "420px" });
   });
 
+  it("collapses the workspace sidebar when resizing below the minimum and restores it by dragging right", async () => {
+    mockGateway({
+      "GET /v1/projects": { projects: [] },
+      "GET /v1/approvals": { approvals: [] },
+      "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
+    });
+
+    renderApp();
+
+    const resizeHandle = screen.getByRole("separator", { name: /resize workspace sidebar/i });
+    fireEvent.pointerDown(resizeHandle, { clientX: 292, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 260, pointerId: 1 });
+    fireEvent.pointerUp(window, { pointerId: 1 });
+
+    const expandHandle = screen.getByRole("separator", { name: /expand workspace sidebar/i });
+    expect(expandHandle).toHaveAttribute("aria-valuenow", "32");
+    expect(screen.queryByLabelText("Search")).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /workspace/i })).toHaveStyle({ width: "32px" });
+
+    fireEvent.click(expandHandle);
+
+    expect(screen.getByRole("separator", { name: /resize workspace sidebar/i })).toHaveAttribute("aria-valuenow", "292");
+    expect(screen.getByRole("navigation", { name: /workspace/i })).toHaveStyle({ width: "292px" });
+    expect(screen.getAllByLabelText("Search")).toHaveLength(2);
+  });
+
   it("keeps unified pane chrome and composer outside the timeline scroll region and toggles debug events locally", async () => {
     mockGateway({
       "GET /v1/projects": {

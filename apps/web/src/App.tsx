@@ -985,7 +985,9 @@ function KodexShell({
   const {
     handleSidebarResizeKeyDown,
     handleSidebarResizePointerDown,
+    handleSidebarExpandClick,
     isSidebarResizing,
+    sidebarCollapsed,
     sidebarWidth,
   } = useSidebarResize();
   const activeSelectedTurnId = selectedThread !== null ? timeline.activeTurnId : null;
@@ -1885,6 +1887,7 @@ function KodexShell({
             ) : null
           }
           sidebarWidth={sidebarWidth}
+          sidebarCollapsed={sidebarCollapsed}
           useSingleThreadWorkspace={useSingleThreadWorkspace}
           threadPanelProps={{
           generatedUiAvailable: selectedAppSurfaceSession !== null,
@@ -1922,7 +1925,7 @@ function KodexShell({
           onProjectFormOpenChange: setProjectFormOpen, onReorderProjects: handleReorderProjects, onSelectChatThread: stableHandleSelectChatThread,
           onSelectAutomations: stableHandleSelectAutomations, onSelectPinnedThread: stableHandleSelectPinnedThread, onSelectProjectSettings: stableHandleSelectProjectSettings, onSelectThread: stableHandleSelectThread, onUnpinThread: stableHandleUnpinThread,
           onShowThread: handleShowMobileThread, onShowDebugEventsChange: setShowDebugEvents, onSidebarResizeKeyDown: handleSidebarResizeKeyDown,
-          onSidebarResizePointerDown: handleSidebarResizePointerDown, onThreadActionHoverChange: setHoveredThreadActionId,
+          onSidebarExpandClick: handleSidebarExpandClick, onSidebarResizePointerDown: handleSidebarResizePointerDown, onThreadActionHoverChange: setHoveredThreadActionId,
           pinnedThreads: sidebarPinnedThreads,
           pendingTitleThreadIds, projectCwd, projectDirectoryCreatePending: projectDirectoryCreateCwd === projectCwd.trim() && projectCwd.trim().length > 0,
           projectThreadHasMoreById: Object.fromEntries(Object.entries(projectThreadNextCursors).map(([projectId, cursor]) => [projectId, cursor !== null])),

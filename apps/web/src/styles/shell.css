@@ -4,6 +4,10 @@
   background: var(--kodex-bg-shell);
 }
 
+.kodex-sidebar[data-collapsed="true"] {
+  padding: 0;
+}
+
 .kodex-sidebar-resize-handle {
   position: absolute;
   top: 0;
@@ -16,6 +20,12 @@
   background: transparent;
   cursor: col-resize;
   touch-action: none;
+}
+
+.kodex-sidebar-resize-handle::before {
+  position: absolute;
+  display: none;
+  content: "";
 }
 
 .kodex-sidebar-resize-handle::after {
@@ -39,10 +49,54 @@
   outline-offset: -2px;
 }
 
+.kodex-sidebar-resize-handle[data-collapsed="true"] {
+  top: 50%;
+  right: auto;
+  bottom: auto;
+  left: 50%;
+  width: 18px;
+  height: 56px;
+  border: 1px solid var(--kodex-border-subtle);
+  border-radius: var(--kodex-radius-sm);
+  background: var(--kodex-bg-raised-muted);
+  cursor: e-resize;
+  transform: translate(-50%, -50%);
+}
+
+.kodex-sidebar-resize-handle[data-collapsed="true"]::before,
+.kodex-sidebar-resize-handle[data-collapsed="true"]::after {
+  top: 16px;
+  bottom: 16px;
+  display: block;
+  width: 1px;
+  background: var(--kodex-text-muted);
+  opacity: 0.74;
+}
+
+.kodex-sidebar-resize-handle[data-collapsed="true"]::before {
+  left: 7px;
+}
+
+.kodex-sidebar-resize-handle[data-collapsed="true"]::after {
+  right: 7px;
+}
+
+.kodex-sidebar-resize-handle[data-collapsed="true"]:hover,
+.kodex-sidebar-resize-handle[data-collapsed="true"]:focus-visible,
+.kodex-shell[data-sidebar-resizing="true"] .kodex-sidebar-resize-handle[data-collapsed="true"] {
+  border-color: var(--kodex-border-strong);
+  background: var(--kodex-bg-button-hover);
+}
+
 .kodex-shell[data-sidebar-resizing="true"],
 .kodex-shell[data-sidebar-resizing="true"] * {
   cursor: col-resize;
   user-select: none;
+}
+
+.kodex-shell[data-sidebar-collapsed="true"][data-sidebar-resizing="true"],
+.kodex-shell[data-sidebar-collapsed="true"][data-sidebar-resizing="true"] * {
+  cursor: e-resize;
 }
 
 .kodex-main {
@@ -51,6 +105,7 @@
   padding-bottom: calc(var(--app-shell-padding) / 2);
   padding-left: var(--app-shell-navbar-offset);
   background: var(--kodex-bg-shell);
+  transition: padding-left 180ms ease;
 }
 
 .kodex-main-stack {

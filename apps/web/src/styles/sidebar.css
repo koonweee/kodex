@@ -15,6 +15,9 @@
   --kodex-sidebar-icon-size: 15px;
   --kodex-sidebar-leading-rail-size: 18px;
   --kodex-sidebar-row-height: 28px;
+
+  overflow: hidden;
+  transition: width 180ms ease;
 }
 
 .kodex-sidebar[data-density="touch"] {
