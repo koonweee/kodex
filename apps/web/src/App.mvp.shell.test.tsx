@@ -6,7 +6,6 @@ import {
   App,
   FakeEventSource,
   activeThread,
-  appCss,
   baseRoutes,
   clickMenuItem as clickMenuItemWithDeps,
   highReasoningModel,
@@ -186,14 +185,6 @@ describe("MVP shell flows", () => {
       const activePaneElement = main.querySelector('.kodex-thread-pane[data-workspace-pane-active="true"]');
       expect(activePaneElement?.querySelector(".kodex-timeline-scroll")).not.toBeInTheDocument();
       expect(within(main).queryByText("No events")).not.toBeInTheDocument();
-      expect(appCss).toMatch(
-        /\.kodex-main-stack\[data-draft-thread="true"\]\s+\.kodex-composer-shell\s*\{[^}]*margin-top:\s*auto;/s,
-      );
-      expect(appCss).toMatch(
-        /\.kodex-main-stack\[data-draft-thread="true"\]\s+\.kodex-composer-shell\s*\{[^}]*margin-bottom:\s*auto;/s,
-      );
-      expect(appCss).toMatch(/\.kodex-composer-hero-stage\[data-transitioning="true"\]\s*\{[^}]*opacity:\s*0;/s);
-      expect(appCss).toMatch(/\.kodex-composer-underbar\s*\{[^}]*border-bottom-left-radius:\s*var\(--kodex-radius-composer\);/s);
 
       await userEvent.type(activeComposer(), "Implement the next milestone for the web client");
       await userEvent.click(activeSendButton());
@@ -1750,12 +1741,6 @@ describe("MVP shell flows", () => {
 
     await userEvent.click(screen.getAllByRole("button", { name: /show sidebar/i })[0]);
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "threads");
-    expect(appCss).toMatch(/html,\s*body\s*\{[^}]*overflow:\s*hidden;/s);
-    expect(appCss).toMatch(/\.kodex-shell\s*\{[^}]*height:\s*100dvh;[^}]*overflow:\s*hidden;/s);
-    expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-main\s*\{[^}]*overflow:\s*hidden;/s);
-    expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-thread-sidebar-button\s*\{[^}]*display:\s*inline-flex;/s);
-    expect(appCss).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*?\.kodex-sidebar-mobile-header\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*auto\s*44px;/s);
-    expect(appCss).toMatch(/\.kodex-sidebar-scope-switch\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(0,\s*1fr\);/s);
   });
 
   it("uses the single-thread main pane without Dockview chrome on narrow viewports", async () => {

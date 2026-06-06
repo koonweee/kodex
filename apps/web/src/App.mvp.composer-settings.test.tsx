@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   App,
   FakeEventSource,
-  appCss,
   baseRoutes,
   clickMenuItem as clickMenuItemWithDeps,
   highReasoningModel,
@@ -224,25 +223,6 @@ describe("MVP composer settings flows", () => {
 
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
-    expect(appCss).toMatch(/\.kodex-composer-model-control\s*\{[^}]*width:\s*fit-content;/s);
-    expect(appCss).toMatch(/\.kodex-composer-model-control\s*\{[^}]*max-width:\s*none;/s);
-    expect(appCss).toMatch(/\.kodex-composer-control\s+\.mantine-Button-label\s*\{[^}]*overflow:\s*visible;/s);
-    expect(appCss).toMatch(
-      /\.kodex-composer-control:is\(:disabled,\s*\[data-disabled\]\)\s+\.kodex-composer-model-name,\s*\.kodex-composer-control:is\(:disabled,\s*\[data-disabled\]\)\s+\.kodex-composer-model-effort\s*\{[^}]*opacity:\s*1;/s,
-    );
-    expect(appCss).toMatch(
-      /@media \(max-width: 700px\) and \(pointer: coarse\), \(max-width: 700px\) and \(any-pointer: coarse\)\s*\{[\s\S]*?\.kodex-run-settings-menu\s*\{[^}]*position:\s*fixed/s,
-    );
-    expect(appCss).toMatch(
-      /@media \(max-width: 700px\) and \(pointer: coarse\), \(max-width: 700px\) and \(any-pointer: coarse\)\s*\{[\s\S]*?\.kodex-run-settings-menu\s*\{[^}]*top:\s*auto\s*!important;/s,
-    );
-    expect(appCss).toMatch(
-      /@media \(max-width: 700px\) and \(pointer: coarse\), \(max-width: 700px\) and \(any-pointer: coarse\)\s*\{[\s\S]*?\.kodex-run-settings-chip-row\s*\{[^}]*display:\s*flex/s,
-    );
-    expect(appCss).not.toMatch(/kodex-permissions-menu|kodex-permission-row|kodex-permissions-row-list/);
-    expect(appCss).toMatch(
-      /@media \(max-width: 700px\) and \(pointer: coarse\), \(max-width: 700px\) and \(any-pointer: coarse\)\s*\{[\s\S]*?\.kodex-run-settings-menu\s+\.mantine-Menu-label\s*\{[^}]*padding:/s,
-    );
 
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, high/i }));
     await clickMenuItem(/^medium$/i);

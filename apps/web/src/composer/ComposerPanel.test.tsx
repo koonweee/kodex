@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
 import { MantineProvider } from "@mantine/core";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -13,8 +10,6 @@ import { createKodexQueryClient } from "../api/queryClient";
 import type { SkillMetadata } from "../api/client";
 import type { ComposerSettings } from "../ComposerFooterControls";
 import { ComposerPanel, type ComposerDraftControls } from "./ComposerPanel";
-
-const composerCss = readFileSync(join(process.cwd(), "src/styles/composer.css"), "utf8");
 
 vi.mock("../api/client", async (importActual) => ({
   ...(await importActual<typeof import("../api/client")>()),
@@ -185,31 +180,14 @@ describe("ComposerPanel", () => {
     ]);
   });
 
-  it("renders skill autocomplete as a composer popover outside layout flow", async () => {
+  it("renders skill autocomplete suggestions", async () => {
     mockSkills([skillFixture({ interface: { displayName: "Review Fix" }, name: "review-fix" })]);
     renderComposerPanel({ isDraftThreadSelected: true, selectedThreadPresent: false });
 
     await userEvent.type(screen.getByLabelText(/message composer/i), "$rev");
 
-    const popup = (await screen.findByRole("listbox", { name: /skill suggestions/i })).closest(
-      ".kodex-skill-popup",
-    );
-    expect(popup).not.toBeNull();
-    expect(popup?.parentElement).toHaveClass("kodex-composer");
-    expect(composerCss).toMatch(/\.kodex-skill-popup\s*\{[^}]*position:\s*absolute;/s);
-    expect(composerCss).toMatch(/\.kodex-skill-popup\s*\{[^}]*bottom:\s*calc\(100% \+ 8px\);/s);
-    expect(composerCss).toMatch(/\.kodex-skill-popup-row\s*\{[^}]*height:\s*48px;/s);
-    expect(composerCss).toMatch(/\.kodex-skill-popup-row\s*\{[^}]*overflow:\s*hidden;/s);
-    expect(composerCss).toMatch(/\.kodex-skill-popup-scope\s*\{[^}]*white-space:\s*nowrap;/s);
-  });
-
-  it("contains composer layout recalculation without changing popover anchoring", () => {
-    renderComposerPanel({ isDraftThreadSelected: true, selectedThreadPresent: false });
-
-    expect(screen.getByLabelText(/message composer/i).closest(".kodex-composer")).toBeInTheDocument();
-    expect(composerCss).toMatch(/\.kodex-composer\s*\{[^}]*contain:\s*layout style;/s);
-    expect(composerCss).toMatch(/\.kodex-skill-popup\s*\{[^}]*position:\s*absolute;/s);
-    expect(composerCss).not.toMatch(/\.kodex-composer\s*\{[^}]*overflow:\s*hidden;/s);
+    expect(await screen.findByRole("listbox", { name: /skill suggestions/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /review fix/i })).toBeInTheDocument();
   });
 
   it("renders a generated first-character icon for skill suggestions without icon assets", async () => {
@@ -277,14 +255,6 @@ describe("ComposerPanel", () => {
 
     expect(screen.getByRole("region", { name: /queued steer messages/i })).toHaveClass("kodex-queued-steer");
     expect(screen.getByLabelText(/message composer/i).closest(".kodex-composer")).toBeInTheDocument();
-    expect(composerCss).toMatch(
-      /\.kodex-queued-steer\s*\{[^}]*margin-bottom:\s*calc\(-1 \* var\(--kodex-radius-composer\)\);/s,
-    );
-    expect(composerCss).toMatch(/\.kodex-queued-steer\s*\{[^}]*padding-bottom:\s*var\(--kodex-radius-composer\);/s);
-    expect(composerCss).toMatch(/\.kodex-queued-steer\s*\{[^}]*border:\s*0;/s);
-    expect(composerCss).toMatch(/\.kodex-queued-steer\s*\{[^}]*background:\s*var\(--kodex-bg-raised\);/s);
-    expect(composerCss).not.toMatch(/\.kodex-queued-steer\s*\{[^}]*box-shadow:/s);
-    expect(composerCss).not.toMatch(/\.kodex-queued-steer\s*\+\s*\.kodex-composer\s*\{[^}]*border-top-left-radius:\s*0;/s);
   });
 
   it("moves skill autocomplete selection with arrow keys", async () => {

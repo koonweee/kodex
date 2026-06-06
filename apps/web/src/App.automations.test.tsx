@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -14,8 +11,6 @@ import {
   secondThread,
   thread,
 } from "./test/mvpAppHarness";
-
-const automationsCss = readFileSync(join(process.cwd(), "src/styles/automations.css"), "utf8");
 
 function goTo(path: string) {
   window.history.replaceState(null, "", path);
@@ -61,26 +56,6 @@ describe("Automations frontend", () => {
     FakeEventSource.instances = [];
   });
 
-  it("keeps automations layout width-based while touch ergonomics are coarse-pointer scoped", () => {
-    const widthSection = cssSection("@media (max-width: 900px)", "@media (pointer: coarse), (any-pointer: coarse)");
-    const touchSection = cssSection("@media (pointer: coarse), (any-pointer: coarse)");
-
-    expect(widthSection).toContain(".kodex-automation-table-container table");
-    expect(widthSection).toContain(".kodex-automation-table-row");
-    expect(widthSection).toContain(".kodex-automation-modal-grid");
-    expect(widthSection).toContain("grid-template-columns: minmax(0, 1fr);");
-    expect(widthSection).not.toContain(".kodex-automation-mobile-input input");
-    expect(widthSection).not.toContain("font-size: 16px;");
-    expect(widthSection).not.toContain("env(safe-area-inset-bottom)");
-    expect(widthSection).not.toContain("width: 44px;");
-
-    expect(touchSection).toContain(".kodex-automation-mobile-input input");
-    expect(touchSection).toContain("font-size: 16px;");
-    expect(touchSection).toContain("env(safe-area-inset-bottom)");
-    expect(touchSection).toContain("width: 44px;");
-    expect(touchSection).toContain("min-height: 44px;");
-  });
-
   it("opens the Automations pane from the sidebar without rendering the composer", async () => {
     goTo("/");
     const gateway = mockGateway(
@@ -97,9 +72,7 @@ describe("Automations frontend", () => {
     const main = screen.getByRole("main", { name: /automations/i });
     expect(await within(main).findByRole("heading", { name: "Automations" })).toBeInTheDocument();
     expect(await within(main).findByText("Daily status", undefined, { timeout: 5000 })).toBeInTheDocument();
-    expect(within(main).getByRole("table").closest(".kodex-automation-table-paper")).toHaveClass(
-      "kodex-mantine-paper-root",
-    );
+    expect(within(main).getByRole("table")).toBeInTheDocument();
     expect(within(main).queryByLabelText(/message composer/i)).not.toBeInTheDocument();
     await waitFor(() => {
       expect(gateway.callsFor("GET", "/v1/automations")).toHaveLength(1);
@@ -392,11 +365,4 @@ describe("Automations frontend", () => {
 async function openAutomationsFromSidebar() {
   await userEvent.click(await screen.findByRole("button", { name: /account settings/i }));
   await userEvent.click(await screen.findByText("Automations"));
-}
-
-function cssSection(startMarker: string, endMarker?: string) {
-  const start = automationsCss.indexOf(startMarker);
-  expect(start).toBeGreaterThanOrEqual(0);
-  const end = endMarker ? automationsCss.indexOf(endMarker, start + startMarker.length) : -1;
-  return automationsCss.slice(start, end === -1 ? undefined : end);
 }

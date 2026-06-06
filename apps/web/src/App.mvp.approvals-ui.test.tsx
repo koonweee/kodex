@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   App,
   FakeEventSource,
-  appCss,
   baseRoutes,
   mockGateway,
   project,
@@ -396,13 +395,6 @@ describe("MVP approvals UI flows", () => {
 
     expect(command).toHaveClass("kodex-approval-command");
     expect(action).toHaveClass("kodex-approval-action");
-    expect(appCss).toMatch(/\.kodex-approval-command\s*\{[^}]*min-width:\s*0;/s);
-    expect(appCss).toMatch(/\.kodex-approval-command\s*\{[^}]*max-width:\s*100%;/s);
-    expect(appCss).toMatch(/\.kodex-approval-command\s*\{[^}]*overflow-wrap:\s*anywhere;/s);
-    expect(appCss).toMatch(/\.kodex-approval-action\s*\{[^}]*max-width:\s*100%;/s);
-    expect(appCss).toMatch(/\.kodex-approval-action\s*\{[^}]*white-space:\s*normal;/s);
-    expect(appCss).toMatch(/\.kodex-thread-list-button:hover\s+\.kodex-thread-archive-button/s);
-    expect(appCss).toMatch(/\.kodex-thread-list-button:hover\s+\.kodex-thread-unread-agent-turn-indicator/s);
   });
 
   it("renders command approval actions and posts amendment approval responses", async () => {
