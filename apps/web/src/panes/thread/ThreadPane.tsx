@@ -1,9 +1,11 @@
 import { ActionIcon, Badge, Box, Button, Group, Loader, Menu, Modal, Skeleton, Switch, Text, TextInput, Title } from "@mantine/core";
+import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, Archive, CopyPlus, MoreHorizontal, PanelLeftOpen, PanelRightOpen, Pencil, Pin, PinOff } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
 
 import type { EventEnvelope, ThreadSummary } from "../../api/client";
-import { getThreadDetail, getThreadTimelinePage } from "../../api/client";
+import { getThreadAppSurface, getThreadDetail, getThreadTimelinePage } from "../../api/client";
+import { queryKeys } from "../../api/queryKeys";
 import { recordReducerBatch } from "../../events/liveDiagnostics";
 import { errorMessageFrom } from "../../shared/values";
 import { applyTimelineEventBatch, coalesceTimelineEventBatch } from "../../timeline/batch";
@@ -143,6 +145,10 @@ function ExistingThreadPane({
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renamePending, setRenamePending] = useState(false);
   const retrySnapshotTimerRef = useRef<number | null>(null);
+  const appSurfaceQuery = useQuery({
+    queryKey: queryKeys.appSurface(threadId),
+    queryFn: () => getThreadAppSurface(threadId),
+  });
 
   const clearRetrySnapshotTimer = useCallback(() => {
     if (retrySnapshotTimerRef.current !== null) {
@@ -373,6 +379,7 @@ function ExistingThreadPane({
   const title = isUnavailable ? "Thread not found or unavailable" : paneTitle ?? (thread ? threadDisplayTitle(thread) : threadId);
   const threadChromeState = thread ? { isActive, thread, threadId } : null;
   const paneAside = threadChromeState ? renderThreadPaneAside?.(pane, threadChromeState) : null;
+  const appSurfaceSession = appSurfaceQuery.data ?? null;
   const paneHeaderActions = useMemo(
     () => {
       const customHeaderActions = threadChromeState ? renderThreadPaneHeaderActions?.(pane, threadChromeState) : null;
@@ -409,19 +416,21 @@ function ExistingThreadPane({
               >
                 <CopyPlus size={16} />
               </ActionIcon>
-              <ActionIcon
-                aria-label="Open generated UI"
-                onClick={() =>
-                  void openGeneratedUiPane(threadId, `${title} UI`, {
-                    placement: { sourcePaneId: pane.id },
-                  })
-                }
-                size="sm"
-                title="Open generated UI"
-                variant="subtle"
-              >
-                <PanelRightOpen size={16} />
-              </ActionIcon>
+              {appSurfaceSession ? (
+                <ActionIcon
+                  aria-label="Open generated UI"
+                  onClick={() =>
+                    void openGeneratedUiPane(threadId, `${title} UI`, {
+                      placement: { sourcePaneId: pane.id },
+                    })
+                  }
+                  size="sm"
+                  title="Open generated UI"
+                  variant="subtle"
+                >
+                  <PanelRightOpen size={16} />
+                </ActionIcon>
+              ) : null}
               {thread ? (
                 <ThreadActionsMenu
                   onArchiveThread={threadActions.onArchiveThread}
@@ -440,6 +449,7 @@ function ExistingThreadPane({
     },
     [
       entry.phase,
+      appSurfaceSession,
       isActive,
       isUnavailable,
       onShowMobileSidebar,

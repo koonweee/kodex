@@ -77,6 +77,33 @@ describe("app surface pane integration", () => {
     });
   });
 
+  it("only shows the workspace generated UI action when the thread has an app surface", async () => {
+    const gateway = mockGateway(baseRoutes());
+
+    render(<App />);
+
+    expect(await screen.findByText("Hello from Codex")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(gateway.callsFor("GET", "/v1/threads/thread-1/app-surface")).toHaveLength(1);
+    });
+    expect(screen.queryByRole("button", { name: /open generated ui/i })).not.toBeInTheDocument();
+  });
+
+  it("opens a workspace generated UI pane from threads with app surfaces", async () => {
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads/thread-1/app-surface": { session: appSurfaceSession() },
+        "GET /v1/app-surfaces/session-1/document": appSurfaceDocument,
+      }),
+    );
+
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /open generated ui/i }));
+
+    expect(await screen.findByTitle(/app surface: generated mockups/i)).toBeInTheDocument();
+  });
+
   it("converges generated UI revisions and archived state from the workspace stream", async () => {
     mockGateway(
       baseRoutes({
