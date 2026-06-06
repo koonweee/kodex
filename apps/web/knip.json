@@ -1,14 +1,18 @@
 {
   "$schema": "./node_modules/knip/schema.json",
   "entry": [
-    "src/sw.ts",
+    "src/main.tsx!",
+    "src/sw.ts!",
     "src/**/*.{test,spec}.{ts,tsx}",
     "tests/**/*.ts",
     "pw-local.config.ts",
     "scripts/**/*.mjs"
   ],
   "project": [
-    "src/**/*.{ts,tsx}",
+    "src/**/*.{ts,tsx}!",
+    "!src/**/*.{test,spec}.{ts,tsx}!",
+    "!src/test/**!",
+    "!src/**/testBuilders.ts!",
     "tests/**/*.ts",
     "scripts/**/*.mjs"
   ],

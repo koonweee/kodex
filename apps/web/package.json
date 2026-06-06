@@ -13,7 +13,7 @@
     "test:e2e": "playwright test",
     "trim": "npm run trim:types && npm run trim:deps",
     "trim:types": "tsc -p tsconfig.trim.json",
-    "trim:deps": "knip --config knip.json",
+    "trim:deps": "knip --config knip.json --production --include files,dependencies,unlisted,binaries,duplicates",
     "generate:api": "openapi-typescript http://127.0.0.1:8787/openapi.json -o src/api/generated/schema.ts"
   },
   "dependencies": {
