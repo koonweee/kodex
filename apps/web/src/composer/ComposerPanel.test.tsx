@@ -203,6 +203,15 @@ describe("ComposerPanel", () => {
     expect(composerCss).toMatch(/\.kodex-skill-popup-scope\s*\{[^}]*white-space:\s*nowrap;/s);
   });
 
+  it("contains composer layout recalculation without changing popover anchoring", () => {
+    renderComposerPanel({ isDraftThreadSelected: true, selectedThreadPresent: false });
+
+    expect(screen.getByLabelText(/message composer/i).closest(".kodex-composer")).toBeInTheDocument();
+    expect(composerCss).toMatch(/\.kodex-composer\s*\{[^}]*contain:\s*layout style;/s);
+    expect(composerCss).toMatch(/\.kodex-skill-popup\s*\{[^}]*position:\s*absolute;/s);
+    expect(composerCss).not.toMatch(/\.kodex-composer\s*\{[^}]*overflow:\s*hidden;/s);
+  });
+
   it("renders a generated first-character icon for skill suggestions without icon assets", async () => {
     mockSkills([
       skillFixture({

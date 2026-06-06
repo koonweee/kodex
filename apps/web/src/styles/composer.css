@@ -42,6 +42,7 @@
 .kodex-composer {
   position: relative;
   z-index: 1;
+  contain: layout style;
   display: grid;
   grid-template-rows: auto auto auto;
   gap: 0;

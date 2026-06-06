@@ -116,6 +116,7 @@ describe("Mobile composer panel", () => {
     expect(mobileComposerCss).toMatch(
       /\.kodex-mobile-composer-expanded-body\s*\{[^}]*padding:\s*10px 12px calc\(12px \+ env\(safe-area-inset-bottom\)\);/s,
     );
+    expect(mobileComposerCss).toMatch(/\.kodex-mobile-composer-expanded-body\s*\{[^}]*contain:\s*layout style;/s);
   });
 
   it("preserves draft text when collapsing back to inline mode", async () => {
