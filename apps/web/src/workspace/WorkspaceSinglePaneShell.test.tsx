@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useEffect } from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -48,7 +48,7 @@ describe("WorkspaceSinglePaneShell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /show sidebar/i }));
     expect(onShowMobileSidebar).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: /close active pane/i })).toBeInTheDocument();
+    expect(within(screen.getByRole("toolbar", { name: "Pane actions" })).getByRole("button", { name: /close pane/i })).toBeInTheDocument();
   });
 
   it("closes the active pane and focuses the next pane without opening the switcher", async () => {
@@ -60,7 +60,7 @@ describe("WorkspaceSinglePaneShell", () => {
 
     renderShell(store);
 
-    fireEvent.click(screen.getByRole("button", { name: /close active pane/i }));
+    fireEvent.click(screen.getByRole("button", { name: /close pane/i }));
 
     await waitFor(() => {
       expect(store.getState().activePaneId).toBe("pane-thread-3");
@@ -79,7 +79,7 @@ describe("WorkspaceSinglePaneShell", () => {
 
     renderShell(store, { onVisibleThreadIdsChange });
 
-    fireEvent.click(screen.getByRole("button", { name: /close active pane/i }));
+    fireEvent.click(screen.getByRole("button", { name: /close pane/i }));
 
     await waitFor(() => {
       expect(store.getState().panes).toHaveLength(1);
@@ -90,6 +90,18 @@ describe("WorkspaceSinglePaneShell", () => {
     await waitFor(() => {
       expect(onVisibleThreadIdsChange).toHaveBeenLastCalledWith([]);
     });
+    expect(screen.queryByRole("button", { name: /close pane/i })).not.toBeInTheDocument();
+  });
+
+  it("hides the close action for the only default new chat pane", () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      draftThreadPane("pane-draft-1", "New chat"),
+    ]));
+
+    renderShell(store);
+
+    expect(screen.getAllByText("New chat")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: /close pane/i })).not.toBeInTheDocument();
   });
 
   it("renders active pane actions in the shared mobile header", async () => {
@@ -100,6 +112,7 @@ describe("WorkspaceSinglePaneShell", () => {
     renderShell(store, { actionPaneId: "pane-thread-1" });
 
     expect(await screen.findByRole("toolbar", { name: "Pane actions" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close pane" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Thread overflow" })).toBeInTheDocument();
   });
 });
@@ -151,6 +164,15 @@ function threadPane(id: string, threadId: string, title: string): WorkspacePane 
     id,
     kind: "thread",
     target: { mode: "existing", threadId },
+    title,
+  };
+}
+
+function draftThreadPane(id: string, title: string): WorkspacePane {
+  return {
+    id,
+    kind: "thread",
+    target: { mode: "draft" },
     title,
   };
 }

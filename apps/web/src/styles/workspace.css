@@ -314,50 +314,56 @@
   align-items: center;
   column-gap: 6px;
   min-width: 0;
-  min-height: 38px;
+  min-height: 44px;
   border-bottom: 1px solid var(--kodex-border-subtle);
-  padding: 4px 6px;
+  padding: 4px 8px;
   background: color-mix(in srgb, var(--kodex-pane-bg) 86%, var(--kodex-bg-shell));
 }
 
-.kodex-workspace-single-pane-sidebar-button {
+.kodex-workspace-single-pane-sidebar-button,
+.kodex-workspace-single-pane-close-button {
   flex: 0 0 auto;
+  min-width: 36px;
+  width: 36px;
+  min-height: 36px;
+  height: 36px;
 }
 
 .kodex-workspace-single-pane-switcher {
-  position: relative;
   min-width: 0;
   width: 100%;
 }
 
 .kodex-workspace-single-pane-header .kodex-workspace-pane-actions {
   grid-column: 4;
+  padding: 0;
+  width: auto;
 }
 
 .kodex-workspace-single-pane-switcher-button {
+  align-items: center;
+  color: var(--kodex-text-primary);
+  justify-content: flex-start;
+  padding-right: 8px;
   width: 100%;
-  padding-right: 52px;
+}
+
+.kodex-workspace-single-pane-switcher-button .kodex-mantine-button-inner {
+  justify-content: flex-start;
+  width: 100%;
 }
 
 .kodex-workspace-single-pane-switcher-button .kodex-mantine-button-label {
+  display: block;
   min-width: 0;
+  text-align: left;
+  width: 100%;
 }
 
-.kodex-workspace-single-pane-close-button {
-  position: absolute;
-  top: 50%;
-  right: 24px;
-  z-index: 2;
-  transform: translateY(-50%);
-}
-
-.kodex-workspace-single-pane-chevron {
-  position: absolute;
-  top: 50%;
-  right: 7px;
-  color: var(--kodex-text-secondary);
-  pointer-events: none;
-  transform: translateY(-50%);
+.kodex-workspace-single-pane-switcher-button:hover,
+.kodex-workspace-single-pane-switcher-button:focus-visible,
+.kodex-workspace-single-pane-switcher-button[aria-expanded="true"] {
+  color: var(--kodex-text-primary);
 }
 
 .kodex-workspace-single-pane-menu {

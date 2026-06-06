@@ -1,7 +1,7 @@
 import "../styles/workspace.css";
 
 import { ActionIcon, Alert, Button, Center, Group, Loader, Menu, Stack, Text } from "@mantine/core";
-import { ChevronDown, PanelLeftOpen, X } from "lucide-react";
+import { PanelLeftOpen, X } from "lucide-react";
 import { useEffect, useMemo } from "react";
 
 import { paneTitle } from "./paneTypes";
@@ -29,6 +29,13 @@ export function WorkspaceSinglePaneShell() {
   const activePaneTitle = activePane ? paneTitle(activePane) : "Workspace";
   const activePaneActions = activePane ? paneHeaderActionsById[activePane.id] : null;
   const focusPulseToken = activePane ? focusPulseByPaneId[activePane.id] ?? 0 : 0;
+  const isOnlyDefaultDraftPane =
+    workspace.panes.length === 1 &&
+    activePane?.kind === "thread" &&
+    activePane.target.mode === "draft" &&
+    !activePane.target.projectId &&
+    activePane.title === "New chat";
+  const canCloseActivePane = Boolean(activePane && !isOnlyDefaultDraftPane);
   const nextActivePaneId = useMemo(() => {
     if (!activePane) {
       return null;
@@ -70,7 +77,6 @@ export function WorkspaceSinglePaneShell() {
           aria-label="Show sidebar"
           className="kodex-workspace-single-pane-sidebar-button"
           onClick={onShowMobileSidebar}
-          size="sm"
           type="button"
           variant="subtle"
         >
@@ -82,7 +88,6 @@ export function WorkspaceSinglePaneShell() {
               <Button
                 aria-label="Switch workspace pane"
                 className="kodex-workspace-single-pane-switcher-button"
-                justify="space-between"
                 size="compact-sm"
                 type="button"
                 variant="subtle"
@@ -104,26 +109,19 @@ export function WorkspaceSinglePaneShell() {
               ))}
             </Menu.Dropdown>
           </Menu>
-          <ActionIcon
-            aria-label="Close active pane"
-            className="kodex-workspace-single-pane-close-button"
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              closePane(activePane.id, null, { nextActivePaneId });
-            }}
-            onPointerDown={(event) => {
-              event.stopPropagation();
-            }}
-            size="sm"
-            type="button"
-            variant="subtle"
-          >
-            <X size={14} />
-          </ActionIcon>
-          <ChevronDown aria-hidden="true" className="kodex-workspace-single-pane-chevron" size={15} />
         </div>
         <div aria-label="Pane actions" className="kodex-workspace-pane-actions" role="toolbar">
+          {canCloseActivePane ? (
+            <ActionIcon
+              aria-label="Close pane"
+              className="kodex-workspace-single-pane-close-button"
+              onClick={() => closePane(activePane.id, null, { nextActivePaneId })}
+              type="button"
+              variant="subtle"
+            >
+              <X size={14} />
+            </ActionIcon>
+          ) : null}
           {activePaneActions}
         </div>
       </Group>
