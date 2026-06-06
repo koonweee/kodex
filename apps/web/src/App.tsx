@@ -585,6 +585,7 @@ function KodexShell({
     handleCreateChat,
     handleCreateThread,
     handleDraftProjectChange,
+    handleFocusWorkspaceThreadPane,
     handleSelectAutomations,
     handleSelectChatThread,
     handleSelectPinnedThread,
@@ -1724,6 +1725,12 @@ function KodexShell({
       return changed ? next : current;
     });
   });
+  const handleWorkspaceFocusThreadPane = useEventCallback((threadId: string) => {
+    if (selectedMainPane !== "thread") {
+      return;
+    }
+    handleFocusWorkspaceThreadPane(threadId);
+  });
   const renderWorkspaceThreadComposer = useCallback(
     (pane: WorkspacePane, paneState: ThreadComposerState) => (
       <ThreadPaneComposerBridge
@@ -1779,6 +1786,7 @@ function KodexShell({
         errorMessage={errorMessage}
         imagePreviewUrlsByPath={mergedImagePreviewUrlsByPath}
         onApprovalDecision={handleApprovalDecision}
+        onFocusThreadPane={handleWorkspaceFocusThreadPane}
         onImageOpen={setLightboxImage}
         onLiveEvent={handleWorkspaceLiveEvent}
         onMarkdownOpen={handleOpenMarkdownPreview}

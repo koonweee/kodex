@@ -34,6 +34,7 @@ export type ShellSelectionActions = {
   handleCreateChat: () => void;
   handleCreateThread: (projectId: string) => void;
   handleDraftProjectChange: (projectId: string | null) => void;
+  handleFocusWorkspaceThreadPane: (threadId: string) => void;
   handleSelectAutomations: () => void;
   handleSelectChatThread: (threadId: string) => void;
   handleSelectPinnedThread: (threadId: string) => void;
@@ -331,6 +332,10 @@ export function useShellSelection({
     selectKnownPinnedThread(threadId);
   }, [selectKnownPinnedThread]);
 
+  const handleFocusWorkspaceThreadPane = useCallback((threadId: string) => {
+    selectRouteThread(threadId);
+  }, [selectRouteThread]);
+
   const handleSelectAutomations = useCallback(() => {
     pushKodexRoute({ panel: null, threadId: null, view: "automations" });
     setMobilePanel("chat");
@@ -491,6 +496,7 @@ export function useShellSelection({
     handleCreateChat,
     handleCreateThread,
     handleDraftProjectChange,
+    handleFocusWorkspaceThreadPane,
     handleSelectAutomations,
     handleSelectChatThread,
     handleSelectPinnedThread,

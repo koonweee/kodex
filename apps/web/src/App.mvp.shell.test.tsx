@@ -15,6 +15,7 @@ import {
   projectionPatchEvent,
   requestJson,
   secondThread,
+  setInitialWorkspacePaneState,
   snapshotItem,
   snapshotTurn,
   thread,
@@ -1774,6 +1775,61 @@ describe("MVP shell flows", () => {
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
     expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
     expect(await screen.findByText(/second thread snapshot/i)).toBeInTheDocument();
+    expect(main.querySelector(".kodex-workspace-dock")).not.toBeInTheDocument();
+    expect(main.querySelector(".dockview")).not.toBeInTheDocument();
+  });
+
+  it("uses the active workspace thread pane as the narrow viewport display pane", async () => {
+    vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
+      matches: query === "(max-width: 900px)",
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
+    mockGateway(
+      baseRoutes({
+        "GET /v1/threads": {
+          threads: [thread, secondThread],
+          nextCursor: null,
+          backwardsCursor: null,
+          rawPayload: {},
+        },
+        "GET /v1/threads/thread-2": threadDetail(secondThread, [
+          snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Active pane snapshot" })]),
+        ]),
+      }),
+    );
+    setInitialWorkspacePaneState({
+      activePaneId: "pane-thread-2",
+      dockviewLayout: {
+        panes: [{ id: "pane-thread-1" }, { id: "pane-thread-2" }],
+      },
+      panes: [
+        {
+          id: "pane-thread-1",
+          kind: "thread",
+          target: { mode: "existing", threadId: "thread-1" },
+          title: "Implement frontend",
+        },
+        {
+          id: "pane-thread-2",
+          kind: "thread",
+          target: { mode: "existing", threadId: "thread-2" },
+          title: "Second thread",
+        },
+      ],
+      schemaVersion: 1,
+    });
+
+    render(<App />);
+
+    const main = screen.getByRole("main", { name: /thread/i });
+    expect(await within(main).findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+    expect(await within(main).findByText(/active pane snapshot/i)).toBeInTheDocument();
     expect(main.querySelector(".kodex-workspace-dock")).not.toBeInTheDocument();
     expect(main.querySelector(".dockview")).not.toBeInTheDocument();
   });
