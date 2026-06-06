@@ -646,7 +646,10 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
   if (patch.scope === "full_snapshot" && Array.isArray(fullRows)) {
     const currentIndexes = createEmptyTimelineIndexes();
     const mapped = canonicalTimelineRowsToViewRows(threadId, fullRows, currentIndexes);
-    const rows = preserveUnconfirmedOptimisticUserRows(state.rows, mapped.rows);
+    const rows = preserveUnconfirmedOptimisticUserRows(
+      removeOptimisticUserRowsCoveredByCanonicalRows(state.rows, mapped.rows),
+      mapped.rows,
+    );
     const indexes = createEmptyTimelineIndexes();
     for (const row of rows) {
       addTimelineRowItemsToIndexes(row, indexes);
@@ -686,22 +689,31 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
 }
 
 function removeOptimisticUserRowsCoveredByCanonicalRows(currentRows: TimelineRow[], canonicalRows: TimelineRow[]): TimelineRow[] {
-  const canonicalUserTexts = new Set<string>();
+  const canonicalUserTextCounts = new Map<string, number>();
   for (const row of canonicalRows) {
     for (const item of timelineItemsForRow(row)) {
       if (item.source !== "optimistic" && item.kind === "user_message" && item.text) {
-        canonicalUserTexts.add(item.text);
+        canonicalUserTextCounts.set(item.text, (canonicalUserTextCounts.get(item.text) ?? 0) + 1);
       }
     }
   }
-  if (canonicalUserTexts.size === 0) {
+  if (canonicalUserTextCounts.size === 0) {
     return currentRows;
   }
   return currentRows.filter((row) => {
     if (row.type !== "item" || row.item.source !== "optimistic" || row.item.kind !== "user_message" || !row.item.text) {
       return true;
     }
-    return !canonicalUserTexts.has(row.item.text);
+    const canonicalCount = canonicalUserTextCounts.get(row.item.text) ?? 0;
+    if (canonicalCount === 0) {
+      return true;
+    }
+    if (canonicalCount === 1) {
+      canonicalUserTextCounts.delete(row.item.text);
+    } else {
+      canonicalUserTextCounts.set(row.item.text, canonicalCount - 1);
+    }
+    return false;
   });
 }
 

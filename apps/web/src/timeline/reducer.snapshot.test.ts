@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import type { EventEnvelope, ThreadViewResponse } from "../api/client";
-import { applyLiveTimelineUpdate, applyTimelineHistoryWindow, applyTimelineSnapshot, canApplyThreadViewItemDelta, createTimelineState } from "./reducer";
+import {
+  addOptimisticUserMessage,
+  applyLiveTimelineUpdate,
+  applyTimelineHistoryWindow,
+  applyTimelineSnapshot,
+  canApplyThreadViewItemDelta,
+  createTimelineState,
+} from "./reducer";
 
 describe("timeline canonical snapshots and patches", () => {
   it("renders canonical snapshot items in gateway display order", () => {
@@ -73,6 +80,74 @@ describe("timeline canonical snapshots and patches", () => {
 
     expect(state.items.map((item) => item.text)).toEqual(["Canonical answer"]);
     expect(state.hiddenItems).toEqual([]);
+  });
+
+  it("removes optimistic user rows covered by canonical full snapshot rows", () => {
+    let state = addOptimisticUserMessage(createTimelineState(), {
+      clientRequestId: "request-1",
+      skillMentions: [],
+      text: "Queued follow-up",
+      threadId: "thread-1",
+    });
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
+      viewRevision: 2,
+      activeTurnId: "turn-2",
+      liveState: "streaming",
+      items: [
+        timelineItem({
+          id: "projection-turn-2-user-1",
+          itemId: "user-1",
+          itemType: "userMessage",
+          text: "Queued follow-up",
+          turnId: "turn-2",
+        }),
+        timelineItem({
+          id: "projection-turn-2-agent-1",
+          itemId: "agent-1",
+          text: "Working",
+          displayOrder: 2,
+          status: "running",
+          turnId: "turn-2",
+        }),
+      ],
+    }));
+
+    expect(state.items.map((item) => item.text)).toEqual(["Queued follow-up", "Working"]);
+    expect(state.items.filter((item) => item.source === "optimistic")).toEqual([]);
+  });
+
+  it("removes only one optimistic row per matching canonical user row", () => {
+    let state = addOptimisticUserMessage(createTimelineState(), {
+      clientRequestId: "request-1",
+      skillMentions: [],
+      text: "Repeat this",
+      threadId: "thread-1",
+    });
+    state = addOptimisticUserMessage(state, {
+      clientRequestId: "request-2",
+      skillMentions: [],
+      text: "Repeat this",
+      threadId: "thread-1",
+    });
+
+    state = applyLiveTimelineUpdate(state, projectionPatchEvent({
+      viewRevision: 2,
+      activeTurnId: "turn-2",
+      liveState: "streaming",
+      items: [
+        timelineItem({
+          id: "projection-turn-2-user-1",
+          itemId: "user-1",
+          itemType: "userMessage",
+          text: "Repeat this",
+          turnId: "turn-2",
+        }),
+      ],
+    }));
+
+    expect(state.items.map((item) => item.text)).toEqual(["Repeat this", "Repeat this"]);
+    expect(state.items.filter((item) => item.source === "optimistic")).toHaveLength(1);
   });
 
   it("replaces hidden diagnostic items for affected turn patches only", () => {
