@@ -11,6 +11,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "trim": "npm run trim:types && npm run trim:deps",
+    "trim:types": "tsc -p tsconfig.trim.json",
+    "trim:deps": "knip --config knip.json",
     "generate:api": "openapi-typescript http://127.0.0.1:8787/openapi.json -o src/api/generated/schema.ts"
   },
   "dependencies": {
@@ -42,12 +45,13 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.0",
     "jsdom": "^27.2.0",
+    "knip": "^6.16.0",
     "openapi-typescript": "^7.10.1",
     "typescript": "^5.9.3",
     "vite": "^7.2.4",
     "vite-plugin-pwa": "^1.3.0",
     "vitest": "^4.0.14",
-    "ws": "^8.20.0",
-    "workbox-precaching": "^7.4.1"
+    "workbox-precaching": "^7.4.1",
+    "ws": "^8.20.0"
   }
 }

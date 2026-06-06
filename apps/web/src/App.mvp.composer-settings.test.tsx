@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   App,
   FakeEventSource,
-  activeThread,
   appCss,
   baseRoutes,
   clickMenuItem as clickMenuItemWithDeps,
@@ -16,7 +15,6 @@ import {
   secondThread,
   thread,
   threadDetail,
-  timelineElement,
 } from "./test/mvpAppHarness";
 
 function clickMenuItem(name: RegExp) {
@@ -102,7 +100,7 @@ describe("MVP composer settings flows", () => {
 
     render(<App />);
 
-    const modelButton = await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
+    await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
     await waitFor(() => {
       expect(FakeEventSource.instances.some((instance) => streamIncludesThread(instance, "thread-1"))).toBe(true);
     });
@@ -306,7 +304,7 @@ describe("MVP composer settings flows", () => {
 
   it("uses last turn token usage instead of cumulative usage for context left", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    const gateway = mockGateway(
+    mockGateway(
       baseRoutes({
         "GET /v1/events": { events: [] },
       }),
@@ -541,7 +539,8 @@ describe("MVP composer settings flows", () => {
 
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /start new chat from desktop header/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^chats$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^new chat$/i }));
     await userEvent.type(getActiveComposer(), "Use global defaults");
     await userEvent.click(getActiveSendButton());
 

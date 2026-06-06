@@ -46,19 +46,6 @@ export function eventStatus(event: EventEnvelope): TimelineStatus {
   return "running";
 }
 
-export function isLifecycleEvent(event: EventEnvelope): boolean {
-  if (event.itemId) {
-    return false;
-  }
-  const method = event.codexMethod ?? "";
-  return (
-    method.startsWith("turn/") ||
-    method.startsWith("thread/") ||
-    method.includes("token") ||
-    method.includes("usage") ||
-    !method
-  );
-}
 
 export function isWarningEvent(event: EventEnvelope): boolean {
   const source = `${event.kind} ${event.codexMethod ?? ""}`.toLowerCase();

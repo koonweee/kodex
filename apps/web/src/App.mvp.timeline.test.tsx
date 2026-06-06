@@ -8,15 +8,11 @@ import {
   App,
   FakeEventSource,
   activeThread,
-  appCss,
   baseRoutes,
   canonicalRowsFromSnapshotItems,
-  clickMenuItem as clickMenuItemWithDeps,
-  highReasoningModel,
   mockGateway,
   project,
   projectionPatchEvent,
-  requestJson,
   secondThread,
   snapshotItem,
   snapshotTurn,
@@ -24,10 +20,6 @@ import {
   threadDetail,
   timelineElement,
 } from "./test/mvpAppHarness";
-
-function clickMenuItem(name: RegExp) {
-  return clickMenuItemWithDeps(name, screen, waitFor, fireEvent);
-}
 
 type FakeEventSourceInstance = InstanceType<typeof FakeEventSource>;
 

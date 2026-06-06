@@ -99,11 +99,6 @@ export function useSelectedThreadTimeline({
     setTimeline(createTimelineState());
   }
 
-  function beginEntry(threadId: string) {
-    setTimeline(createTimelineState());
-    setTimelineEntry({ phase: "loadingSnapshot", threadId });
-  }
-
   function markEntryStreaming(threadId: string) {
     setTimelineEntry((current) => (current.threadId === threadId ? { phase: "streamingLive", threadId } : current));
   }

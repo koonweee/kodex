@@ -4,7 +4,7 @@ export function unreadAgentMessageBadgeCount(threadGroups: Array<readonly Thread
   return unreadAgentMessageThreads(threadGroups).length;
 }
 
-export function unreadAgentMessageThreads(threadGroups: Array<readonly ThreadSummary[]>): ThreadSummary[] {
+function unreadAgentMessageThreads(threadGroups: Array<readonly ThreadSummary[]>): ThreadSummary[] {
   const unreadById = new Map<string, ThreadSummary>();
   for (const group of threadGroups) {
     for (const thread of group) {

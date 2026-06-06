@@ -4,7 +4,7 @@ import { asRecord, stringValue } from "../shared/values";
 export type LiveStreamName = "global" | "selected";
 export type SelectedThreadSnapshotRefreshReason = "initial" | "refreshRequired" | "streamReconnect" | "deltaMiss";
 export type SelectedThreadDeltaMissRelation = "patchEarlierInBatch" | "patchLaterInBatch" | "noPatchInBatch";
-export type SelectedThreadDeltaMissState = "notIndexed" | "indexedButNotAppendable";
+type SelectedThreadDeltaMissState = "notIndexed" | "indexedButNotAppendable";
 
 export type SelectedThreadDeltaMissSample = {
   batchSize: number;

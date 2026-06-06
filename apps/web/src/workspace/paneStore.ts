@@ -1,7 +1,7 @@
 import type { GeneratedUiPaneTarget, TerminalPaneTarget, ThreadPaneTarget, WorkspaceModel, WorkspacePane, WorkspacePaneState } from "./paneTypes";
 
-export const WORKSPACE_PANE_STATE_VERSION = 1;
-export const WORKSPACE_PANE_STORAGE_KEY = "kodex.workspace.panes.v1";
+const WORKSPACE_PANE_STATE_VERSION = 1;
+const WORKSPACE_PANE_STORAGE_KEY = "kodex.workspace.panes.v1";
 
 export type WorkspacePaneStoreAdapter = {
   load: () => WorkspacePaneState;

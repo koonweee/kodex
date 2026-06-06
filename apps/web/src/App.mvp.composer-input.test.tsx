@@ -6,10 +6,8 @@ import {
   App,
   FakeEventSource,
   activeThread,
-  appCss,
   baseRoutes,
   clickMenuItem as clickMenuItemWithDeps,
-  highReasoningModel,
   mockGateway,
   project,
   projectionPatchEvent,
@@ -856,7 +854,7 @@ describe("MVP composer input flows", () => {
       schemaVersion: 1,
     });
 
-    const { container } = render(<App />);
+    render(<App />);
 
     const firstThreadButton = await within(workspaceNavigation()).findByRole("button", { name: /implement frontend/i });
     const firstThreadRow = firstThreadButton.closest(".kodex-thread-list-button");

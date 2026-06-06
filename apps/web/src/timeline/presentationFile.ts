@@ -21,7 +21,7 @@ export function fileChangeSummary(value: unknown): { action: string; diff: strin
   };
 }
 
-export function fileChangeEntries(value: unknown): FileChangeEntry[] {
+function fileChangeEntries(value: unknown): FileChangeEntry[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -49,42 +49,7 @@ export function fileChangeEntries(value: unknown): FileChangeEntry[] {
   return entries;
 }
 
-export function fileChangeEntriesFromTimelineItem(item: {
-  action?: string;
-  id?: string;
-  output?: string;
-  path?: string;
-  payload?: unknown;
-}): FileChangeEntry[] {
-  const payload = payloadRecord(item.payload);
-  const payloadItem = payloadRecord(payload?.item) ?? payload;
-  const structuredEntries = fileChangeEntries(payloadItem?.changes).map((entry) => ({
-    ...entry,
-    itemId: item.id,
-  }));
-  if (structuredEntries.length > 0) {
-    return structuredEntries;
-  }
-  const action = fileChangeActionLabel(item.action);
-  const diff = stringValue(item.output);
-  const path = stringValue(item.path) || stringValue(payloadItem?.path);
-  if (!path && !action) {
-    return [];
-  }
-  const counts = diffLineCounts(diff);
-  return [
-    {
-      action,
-      additions: counts.additions,
-      deletions: counts.deletions,
-      diff,
-      itemId: item.id,
-      path,
-    },
-  ];
-}
-
-export function fileChangeActionLabel(value: unknown): string {
+function fileChangeActionLabel(value: unknown): string {
   return uniqueValues(fileChangeActionParts(value).map(fileChangeActionPartLabel).filter(Boolean)).join(", ");
 }
 

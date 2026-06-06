@@ -71,8 +71,10 @@ Commands:
 ```bash
 cargo fmt
 cargo test
+./tools/trim-backend.sh
 cd apps/web && npm test
 cd apps/web && npm run build
+./tools/trim-frontend.sh
 cargo run -p kodex-gateway
 apps/gateway/scripts/generate-app-server-schema.sh
 ```
@@ -287,12 +289,15 @@ npm run dev
 npm test
 npm run test:e2e
 npm run build
+npm run trim
 npm run generate:api
 ```
 
 The Vite dev server runs on `127.0.0.1:5173` and proxies `/v1` plus `/openapi.json` to the default gateway at `127.0.0.1:8787`. To proxy to another local gateway port during development, set `VITE_KODEX_PROXY_TARGET`. To bypass the Vite proxy and call another gateway origin directly, set `VITE_KODEX_API_BASE_URL`.
 
 Playwright E2E tests run against mocked gateway responses and start their own Vite server on `127.0.0.1:5174`.
+
+Unused-code checks are split by stack. Run `./tools/trim-backend.sh` from the repo root for Rust unused lints plus `cargo-machete` dependency analysis. Run `./tools/trim-frontend.sh` from the repo root, or `npm run trim` inside `apps/web`, for strict TypeScript unused local/parameter checks and Knip unused file/export/dependency analysis.
 
 The web app is built as an installable PWA. The service worker precaches built static assets only; API routes, SSE, OpenAPI, uploads, and file previews stay network-owned. Long-open tabs or installed PWA windows may show an update banner when a newer static bundle is waiting; choosing Update activates the new bundle and reloads the page. This prompt is browser-local UI state, not gateway-owned shared state. App badge updates use gateway-owned unread completed-agent-turn state and silently no-op in browsers without the Badging API.
 

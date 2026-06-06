@@ -51,7 +51,7 @@ export function fileExtension(attachment: TimelineFileAttachment): string {
   return extension.replace(/^\./, "").toLocaleLowerCase();
 }
 
-export function fileExtensionFromName(fileName: string): string {
+function fileExtensionFromName(fileName: string): string {
   return extensionFromFileName(fileName).replace(/^\./, "").toLocaleLowerCase();
 }
 

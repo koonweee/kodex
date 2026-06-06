@@ -1,6 +1,6 @@
 import type { WorkspaceModel } from "./paneTypes";
 
-export type WorkspacePaneSplitDirection = "above" | "below" | "left" | "right";
+type WorkspacePaneSplitDirection = "above" | "below" | "left" | "right";
 export type WorkspacePanePlacementDirection = WorkspacePaneSplitDirection | "within";
 
 export type WorkspacePanePlacementHint = {

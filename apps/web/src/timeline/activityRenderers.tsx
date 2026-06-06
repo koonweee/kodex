@@ -17,7 +17,6 @@ import {
   MessageText,
   payloadValue,
   sentenceCase,
-  statusTone,
   TimelineIcon,
   timelineItemLabels,
   titleCase,

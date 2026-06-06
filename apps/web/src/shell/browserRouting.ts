@@ -11,7 +11,7 @@ export function currentKodexRoute(): KodexRoute {
   return parseKodexLocation(window.location);
 }
 
-export function currentLocationPath(): string {
+function currentLocationPath(): string {
   return `${window.location.pathname}${window.location.search}`;
 }
 

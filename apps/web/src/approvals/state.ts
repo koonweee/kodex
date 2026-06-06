@@ -5,10 +5,6 @@ export function isApprovalEvent(event: EventEnvelope): boolean {
   return event.kind === "approval.created" || event.kind === "approval.resolved";
 }
 
-export function applyApprovalEvents(current: Approval[], events: EventEnvelope[]): Approval[] {
-  return events.reduce(applyApprovalEvent, current);
-}
-
 export function applyApprovalEvent(current: Approval[], event: EventEnvelope): Approval[] {
   const approval = approvalFromPayload(event.payload);
   if (!approval) {

@@ -16,7 +16,7 @@ vi.mock("react-markdown", async (importOriginal) => {
   };
 });
 
-import { TimelineActivityGroupRenderer, TimelineFileChangesRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
+import { TimelineItemRenderer } from "./renderers";
 import type { MarkdownPreviewRequest } from "../files/types";
 import { createKodexMantineTheme, getKodexColorScheme } from "../theme";
 import type { TimelineItem } from "./reducer";
@@ -42,18 +42,6 @@ function mockClipboardWriteText() {
     value: { writeText },
   });
   return writeText;
-}
-
-function mockMissingClipboardWriteText() {
-  Object.defineProperty(navigator, "clipboard", {
-    configurable: true,
-    value: undefined,
-  });
-}
-
-function openDetails(details: HTMLDetailsElement) {
-  details.open = true;
-  fireEvent(details, new Event("toggle"));
 }
 
 describe("timeline message markdown renderers", () => {

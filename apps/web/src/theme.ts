@@ -31,7 +31,7 @@ export const KODEX_COLOR_SCHEMES: KodexColorScheme[] = KODEX_COLOR_SCHEME_DEFINI
 
 const COLOR_SCHEME_BY_ID = new Map(KODEX_COLOR_SCHEMES.map((scheme) => [scheme.id, scheme]));
 
-export { DEFAULT_KODEX_COLOR_SCHEME_ID, KODEX_COLOR_SCHEME_STORAGE_KEY, type KodexColorSchemeId };
+export { DEFAULT_KODEX_COLOR_SCHEME_ID, type KodexColorSchemeId };
 
 export function getKodexColorScheme(colorSchemeId: KodexColorSchemeId): KodexColorScheme {
   return COLOR_SCHEME_BY_ID.get(colorSchemeId) ?? COLOR_SCHEME_BY_ID.get(DEFAULT_KODEX_COLOR_SCHEME_ID)!;
@@ -68,11 +68,6 @@ export function applyKodexColorScheme(
 ) {
   root.setAttribute("data-kodex-color-scheme", colorScheme.id);
   root.setAttribute("data-mantine-color-scheme", colorScheme.mode);
-}
-
-export function clearKodexColorScheme(root: HTMLElement) {
-  root.removeAttribute("data-kodex-color-scheme");
-  root.removeAttribute("data-mantine-color-scheme");
 }
 
 export function initializeKodexColorScheme(root: HTMLElement = document.documentElement): KodexColorSchemeId {

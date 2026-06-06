@@ -1,26 +1,17 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   App,
   FakeEventSource,
-  activeThread,
-  appCss,
   baseRoutes,
-  clickMenuItem as clickMenuItemWithDeps,
-  highReasoningModel,
   mockGateway,
   project,
-  requestJson,
   secondThread,
   thread,
   timelineElement,
 } from "./test/mvpAppHarness";
-
-function clickMenuItem(name: RegExp) {
-  return clickMenuItemWithDeps(name, screen, waitFor, fireEvent);
-}
 
 function activeWorkspaceStream(threadId?: string) {
   return [...FakeEventSource.instances].reverse().find((instance) => {

@@ -53,7 +53,6 @@ import {
   type QueuedInput,
   type ThreadSubagentSummary,
   type ThreadSummary,
-  type TimelineSkillMention,
 } from "./api/client";
 import { queryClient } from "./api/queryClient";
 import { queryKeys } from "./api/queryKeys";
@@ -91,7 +90,6 @@ import {
   clearAvailableThreadTitles,
   markThreadTitlePending,
   optimisticThreadSummary,
-  threadDisplayTitle,
   withPinnedProjectThreads,
   withoutPinnedThreads,
   type ThreadsByProjectId,
@@ -127,13 +125,7 @@ import { useThreadMetadata } from "./threads/useThreadMetadata";
 import { useThreadReadState } from "./threads/useThreadReadState";
 import { useThreadViewPresence } from "./threads/useThreadViewPresence";
 import { paneTargetRecord } from "./workspace/paneTypes";
-import {
-  addOptimisticUserMessage,
-  createTimelineState,
-  markOptimisticUserMessageSent,
-  removeOptimisticUserMessage,
-  type TimelineState,
-} from "./timeline/reducer";
+import { createTimelineState, type TimelineState } from "./timeline/reducer";
 import { errorMessageFrom } from "./shared/values";
 import { createClientRequestId } from "./shared/id";
 import { KodexShellView, useNarrowThreadWorkspace } from "./shell/KodexShellView";
@@ -155,7 +147,6 @@ import type { WorkspacePaneStoreAdapter } from "./workspace/paneStore";
 import type { WorkspacePane } from "./workspace/paneTypes";
 import "./App.css";
 
-const NEW_THREAD_TITLE = "New thread";
 const DRAFT_COMPOSER_TRANSITION_MS = 280;
 const EMPTY_AUTOMATIONS: Automation[] = [];
 const EMPTY_PROJECTS: Project[] = [];
@@ -521,8 +512,8 @@ function KodexShell({
   const [projectOrderIds, setProjectOrderIds] = useState<string[] | null>(() => loadSidebarProjectOrder());
   const [pendingTitleThreadIds, setPendingTitleThreadIds] = useState<Set<string>>(new Set());
   const [materializingThreadIds, setMaterializingThreadIds] = useState<Set<string>>(new Set());
-  const [timeline, setTimeline] = useState<TimelineState>(createTimelineState());
-  const [timelineEntry, setTimelineEntry] = useState<TimelineEntry>(() =>
+  const [, setTimeline] = useState<TimelineState>(createTimelineState());
+  const [, setTimelineEntry] = useState<TimelineEntry>(() =>
     initialRoute.threadId ? { phase: "loadingSnapshot", threadId: initialRoute.threadId } : idleTimelineEntry,
   );
   const [projectFormOpen, setProjectFormOpen] = useState(false);
@@ -530,7 +521,7 @@ function KodexShell({
   const [projectDirectoryCreateCwd, setProjectDirectoryCreateCwd] = useState<string | null>(null);
   const [showDebugEvents, setShowDebugEvents] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [threadSyncNotice, setThreadSyncNotice] = useState<ThreadSyncNotice | null>(null);
+  const [, setThreadSyncNotice] = useState<ThreadSyncNotice | null>(null);
   const [lightboxImage, setLightboxImage] = useState<ImageLightboxImage | null>(null);
   const [markdownPreview, setMarkdownPreview] = useState<MarkdownPreviewRequest | null>(null);
   const [paneComposerSettingsError, setPaneComposerSettingsError] = useState<string | null>(null);
@@ -538,11 +529,10 @@ function KodexShell({
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesSection, setPreferencesSection] = useState<PreferenceSection>("appearance");
   const [hoveredThreadActionId, setHoveredThreadActionId] = useState<string | null>(null);
-  const [timelineScrollElement, setTimelineScrollElement] = useState<HTMLDivElement | null>(null);
   const [threadPaneSnapshotReadyIds, setThreadPaneSnapshotReadyIds] = useState<Set<string>>(new Set());
   const [subagentSidebarOpen, setSubagentSidebarOpen] = useState(false);
   const [selectedSubagentThreadId, setSelectedSubagentThreadId] = useState<string | null>(null);
-  const [composerResetToken, setComposerResetToken] = useState(0);
+  const [, setComposerResetToken] = useState(0);
   const [skillsInvalidationGeneration, setSkillsInvalidationGeneration] = useState(0);
   const approvalsRef = useRef<Approval[]>([]);
   const attachingThreadIdsRef = useRef<Set<string>>(new Set());
@@ -558,11 +548,6 @@ function KodexShell({
   const projectThreadLoadingCursorsRef = useRef<Record<string, string>>({});
   const composerShellRef = useRef<HTMLDivElement | null>(null);
   const composerDraftStoreRef = useRef<ComposerDraftStore>(new Map());
-  const selectedPaneActiveTurnIdRef = useRef<string | null | undefined>(undefined);
-  const selectedPaneCanComposeRef = useRef<boolean | undefined>(undefined);
-  const selectedComposerPaneMaterializeRef = useRef<((threadId: string, title?: string | null) => void) | undefined>(
-    undefined,
-  );
   const activeDraftComposerPaneIdRef = useRef<string | null>(null);
   const activeDraftComposerThreadIdRef = useRef<string | null>(null);
   const threadPaneTimelineActionHandlersRef = useRef(new Set<ThreadPaneTimelineActionHandler>());
@@ -584,7 +569,6 @@ function KodexShell({
     draftThreadProjectId,
     handleCreateChat,
     handleCreateThread,
-    handleDraftProjectChange,
     handleFocusWorkspaceThreadPane,
     handleSelectAutomations,
     handleSelectChatThread,
@@ -750,23 +734,6 @@ function KodexShell({
       );
     },
   });
-  const selectedQueuedInputsThreadId = selectedThreadId;
-  const selectedQueuedInputsQuery = useQuery({
-    enabled: selectedQueuedInputsThreadId !== null,
-    queryKey: selectedQueuedInputsThreadId ? queryKeys.queuedInputs(selectedQueuedInputsThreadId) : ["queued-inputs", "none"],
-    queryFn: async () => {
-      const threadId = selectedQueuedInputsThreadId;
-      if (!threadId) {
-        return [];
-      }
-      const snapshot = await listQueuedInputs(threadId);
-      return mergeQueuedInputData(
-        queryClientForShell.getQueryData<QueuedInput[]>(queryKeys.queuedInputs(threadId)),
-        snapshot,
-        queryClientForShell.getQueryData<string[]>(queryKeys.queuedInputTombstones(threadId)) ?? [],
-      );
-    },
-  });
   const rateLimitsQuery = useQuery({
     queryKey: queryKeys.rateLimits,
     queryFn: async () => {
@@ -817,7 +784,6 @@ function KodexShell({
   const pinnedThreads = pinnedThreadsQuery.data ?? EMPTY_THREADS;
   const selectedProjectThreads = selectedProjectId ? threadsByProjectId[selectedProjectId] ?? EMPTY_THREADS : EMPTY_THREADS;
   const flatProjectThreads = useMemo(() => Object.values(threadsByProjectId).flat(), [threadsByProjectId]);
-  const selectedProject = selectedProjectId ? orderedProjects.find((project) => project.id === selectedProjectId) ?? null : null;
   const selectedProjectPane =
     selectedProjectPaneId ? orderedProjects.find((project) => project.id === selectedProjectPaneId) ?? null : null;
   const selectedThread =
@@ -837,13 +803,8 @@ function KodexShell({
     }
     return summaries;
   }, [chatThreads, flatProjectThreads, pinnedThreads, routeSelectedThread]);
-  const selectedTimelineEntry =
-    selectedThreadId !== null && timelineEntry.threadId === selectedThreadId ? timelineEntry : idleTimelineEntry;
   const isSelectedThreadSnapshotDeferred =
     selectedThreadId !== null && materializingThreadIds.has(selectedThreadId);
-  const isSelectedTimelineLoading = selectedTimelineEntry.phase === "loadingSnapshot";
-  const isSelectedTimelineReady =
-    selectedTimelineEntry.phase === "streamingLive" || selectedTimelineEntry.phase === "refreshingSnapshot";
   const isDraftThreadSelected =
     draftChatThreadSelected || (draftThreadProjectId !== null && draftThreadProjectId === selectedProjectId);
   const selectedThreadSubagentsQuery = useQuery({
@@ -858,7 +819,6 @@ function KodexShell({
     },
   });
   const selectedThreadSubagents = selectedThreadSubagentsQuery.data ?? EMPTY_SUBAGENTS;
-  const selectedQueuedInputs = selectedThreadId ? selectedQueuedInputsQuery.data ?? EMPTY_QUEUED_INPUTS : EMPTY_QUEUED_INPUTS;
   const automations = automationsQuery.data ?? EMPTY_AUTOMATIONS;
   const usageLimitSnapshot = rateLimitsQuery.data ?? null;
   const automationTargetThreadOptions = useMemo(
@@ -873,9 +833,7 @@ function KodexShell({
   const {
     approvals,
     applyApprovalEventWithTombstone,
-    applyApprovalEventsWithTombstone,
     handleApprovalDecision,
-    selectedThreadApprovals,
     setApprovals,
   } = useApprovalsState({ selectedThreadId });
   approvalsRef.current = approvals;
@@ -912,10 +870,8 @@ function KodexShell({
     composerSettings,
     composerSettingsError,
     draftComposerEditedRef,
-    handleComposerSettingsChange,
     hydrateComposerDefaults,
     models,
-    selectedThreadComposerOverride,
   } = useComposerSettingsState({
     draftChatThreadSelected,
     onError: reportError,
@@ -956,9 +912,7 @@ function KodexShell({
   });
   const {
     applyThreadMetadataEvent,
-    applyThreadMetadataEvents,
     contextUsageByThreadId,
-    selectedContextUsage,
   } = useThreadMetadata({
     selectedThreadId,
     setPendingTitleThreadIds,
@@ -972,78 +926,11 @@ function KodexShell({
     sidebarCollapsed,
     sidebarWidth,
   } = useSidebarResize();
-  const activeSelectedTurnId = selectedThread !== null ? timeline.activeTurnId : null;
-  const composerDraftKey =
-    selectedThreadId ??
-    (draftChatThreadSelected
-      ? "draft:chat"
-      : draftThreadProjectId
-        ? `draft:project:${draftThreadProjectId}`
-        : "draft:none");
-  const draftComposerProject = draftThreadProjectId
-    ? orderedProjects.find((project) => project.id === draftThreadProjectId) ?? null
-    : null;
-  const composerCwd =
-    selectedThread?.cwd ??
-    (isDraftThreadSelected && !draftChatThreadSelected
-      ? draftComposerProject?.cwd ?? selectedProject?.cwd ?? null
-      : null);
-  const canCompose = selectedMainPane === "thread" || selectedThread !== null || isSelectedTimelineLoading || isDraftThreadSelected;
-  const {
-    attachmentInputRef,
-    handleAbortQueuedSteer,
-    handleAttachmentInputChange,
-    handleComposerDragLeave,
-    handleComposerDragOver,
-    handleComposerDrop,
-    handleComposerKeyDown,
-    handleComposerPaste,
-    handleStopTurn,
-    handleSubmitQueuedSteer,
-    handleSubmitTurn,
-    imagePreviewUrlsByPath,
-    isComposerDragActive,
-    isComposerSubmitting,
-    isQueuedTurnStartPending,
-    pendingAttachments,
-    queuedSteerRows,
-    removePendingAttachment,
-  } = useComposerOrchestration({
-    activeSelectedTurnId,
-    activeSelectedTurnIdOverrideRef: selectedPaneActiveTurnIdRef,
-    canComposeOverrideRef: selectedPaneCanComposeRef,
-    canCompose,
-    composerSettings,
-    selectedThreadComposerOverride,
-    draftChatThreadSelected,
-    draftThreadProjectId,
-    isDraftThreadSelected,
-    onCreateDraftThread: createDraftThreadFromComposer,
-    onError: reportError,
-    onOptimisticUserMessageRemoved: removeOptimisticTimelineUserMessage,
-    onOptimisticUserMessageSent: markOptimisticTimelineUserMessageSent,
-    onOptimisticUserMessageStarted: addOptimisticTimelineUserMessage,
-    onQueuedInputDeleted: removeQueuedInput,
-    onQueuedInputUpsert: upsertQueuedInput,
-    onThreadMaterialized: (threadId) => {
-      markThreadMaterialized(threadId);
-      selectedComposerPaneMaterializeRef.current?.(threadId, null);
-    },
-    onThreadTurnStartFailed: markThreadIdle,
-    onThreadTurnStarted: markThreadActive,
-    queuedSteerRows: selectedQueuedInputs,
-    selectedProjectId,
-    selectedThreadId,
-  });
+  const imagePreviewUrlsByPath = {};
   const mergedImagePreviewUrlsByPath = useMemo(
     () => ({ ...imagePreviewUrlsByPath, ...paneImagePreviewUrlsByPath }),
-    [imagePreviewUrlsByPath, paneImagePreviewUrlsByPath],
+    [paneImagePreviewUrlsByPath],
   );
-  const selectedThreadTitle = selectedThread
-    ? pendingTitleThreadIds.has(selectedThread.id)
-      ? NEW_THREAD_TITLE
-      : threadDisplayTitle(selectedThread)
-    : NEW_THREAD_TITLE;
   const usageLimitLines = useMemo(() => formatUsageLimitLines(usageLimitSnapshot), [usageLimitSnapshot]);
 
   useEffect(() => {
@@ -1191,7 +1078,7 @@ function KodexShell({
     selectedThread,
   });
 
-  const { loadOlderHistory } = useSelectedThreadTimeline({
+  useSelectedThreadTimeline({
     isSelectedThreadSnapshotDeferred,
     onApprovalEvent: applyApprovalEventWithTombstone,
     onError: (error) => {
@@ -1212,10 +1099,6 @@ function KodexShell({
   function clearTimelineEntry() {
     setTimelineEntry(idleTimelineEntry);
     setTimeline(createTimelineState());
-  }
-
-  function clearTimelineEntryForThread(threadId: string) {
-    setTimelineEntry((current) => (current.threadId === threadId ? idleTimelineEntry : current));
   }
 
   function beginTimelineEntry(threadId: string) {
@@ -1331,48 +1214,6 @@ function KodexShell({
     );
   }
 
-  function addOptimisticTimelineUserMessage({
-    skillMentions,
-    text,
-    threadId,
-  }: {
-    skillMentions: TimelineSkillMention[];
-    text: string;
-    threadId: string;
-  }): string | null {
-    const shouldUpdateSelectedTimeline = selectedThreadIdRef.current === threadId;
-    if (!shouldUpdateSelectedTimeline && threadPaneTimelineActionHandlersRef.current.size === 0) {
-      return null;
-    }
-    const clientRequestId = createClientRequestId();
-    publishThreadPaneTimelineAction?.({
-      clientRequestId,
-      kind: "optimistic_user_started",
-      skillMentions,
-      text,
-      threadId,
-    });
-    if (shouldUpdateSelectedTimeline) {
-      setTimeline((current) => addOptimisticUserMessage(current, {
-        clientRequestId,
-        skillMentions,
-        text,
-        threadId,
-      }));
-    }
-    return clientRequestId;
-  }
-
-  function markOptimisticTimelineUserMessageSent(clientRequestId: string) {
-    publishThreadPaneTimelineAction({ clientRequestId, kind: "optimistic_user_sent" });
-    setTimeline((current) => markOptimisticUserMessageSent(current, clientRequestId));
-  }
-
-  function removeOptimisticTimelineUserMessage(clientRequestId: string) {
-    publishThreadPaneTimelineAction({ clientRequestId, kind: "optimistic_user_removed" });
-    setTimeline((current) => removeOptimisticUserMessage(current, clientRequestId));
-  }
-
   async function handleArchiveThread(threadId = selectedThreadIdRef.current) {
     if (!threadId) {
       return;
@@ -1409,10 +1250,6 @@ function KodexShell({
 
   async function handleDeleteAutomation(automationId: string) {
     await deleteAutomationMutation.mutateAsync(automationId);
-  }
-
-  function handleTimelineReady(threadId: string) {
-    setTimelineEntry((current) => (current.threadId === threadId ? { phase: "streamingLive", threadId } : current));
   }
 
   function handleSelectedThreadSnapshot(thread: ThreadSummary) {
@@ -1509,7 +1346,6 @@ function KodexShell({
     setComposerResetToken((current) => current + 1);
   }
 
-  const handleArchiveSelectedThread = useEventCallback(() => void handleArchiveThread());
   const handleArchiveThreadById = useEventCallback((threadId: string) => void handleArchiveThread(threadId));
   const handleCloseLightbox = useEventCallback(() => setLightboxImage(null));
   const handleCloseMarkdownPreview = useEventCallback(() => setMarkdownPreview(null));
@@ -1542,16 +1378,9 @@ function KodexShell({
   });
   const handleClosePreferences = useEventCallback(() => setPreferencesOpen(false));
   const handleOpenPreferences = useEventCallback(() => setPreferencesOpen(true));
-  const handleTimelineReadyForSelectedThread = useEventCallback(() => {
-    const threadId = selectedThreadIdRef.current;
-    if (threadId) {
-      handleTimelineReady(threadId);
-    }
-  });
   const stableHandleCreateProject = useEventCallback(handleCreateProject);
   const stableHandleCreateChat = useEventCallback(handleCreateChat);
   const stableHandleCreateThread = useEventCallback(handleCreateThread);
-  const stableHandleDraftProjectChange = useEventCallback(handleDraftProjectChange);
   const stableHandlePinThread = useEventCallback((threadId: string) => void handlePinThread(threadId));
   const stableHandleRenameThread = useEventCallback((threadId: string, name: string) =>
     handleRenameThread(threadId, name),

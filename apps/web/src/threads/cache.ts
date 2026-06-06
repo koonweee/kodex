@@ -201,10 +201,6 @@ export function mergeChatThreadData(
   return [...current.filter((thread) => !loadedIds.has(thread.id)), ...mergedLoadedThreads];
 }
 
-export function setPinnedThreadSnapshot(queryClient: QueryClient, loadedThreads: ThreadSummary[]) {
-  queryClient.setQueryData<ThreadSummary[]>(queryKeys.pinnedThreads, loadedThreads);
-}
-
 export function mergePinnedThreadData(
   beforeSnapshot: ThreadSummary[] | undefined,
   current: ThreadSummary[] | undefined,
@@ -246,10 +242,6 @@ export function pinnedTombstonesAddedDuringSnapshot(
 ): string[] {
   const beforeIds = new Set(beforeSnapshot ?? []);
   return (current ?? []).filter((threadId) => !beforeIds.has(threadId));
-}
-
-export function setProjectThreadSnapshot(queryClient: QueryClient, projectId: string, loadedThreads: ThreadSummary[]) {
-  queryClient.setQueryData<ThreadSummary[]>(queryKeys.projectThreads(projectId), loadedThreads);
 }
 
 export function findCachedThread(queryClient: QueryClient, threadId: string): ThreadSummary | null {

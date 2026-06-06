@@ -13,7 +13,7 @@ type PaneDefinition = {
   title: (pane: WorkspacePane) => string;
 };
 
-export const paneRegistry: Record<WorkspacePaneType, PaneDefinition> = {
+const paneRegistry: Record<WorkspacePaneType, PaneDefinition> = {
   thread: {
     icon: MessageSquareText,
     component: ThreadPane,
@@ -35,20 +35,4 @@ export function WorkspacePaneRenderer({ pane, isActive }: WorkspacePaneComponent
   const definition = paneRegistry[pane.kind];
   const Component = definition.component;
   return <Component pane={pane} isActive={isActive} />;
-}
-
-function PlaceholderPane({ pane, eyebrow, detail }: { pane: WorkspacePane; eyebrow: string; detail: string }) {
-  const Icon = paneRegistry[pane.kind].icon;
-  return (
-    <section className="kodex-workspace-placeholder-pane" data-pane-kind={pane.kind}>
-      <div className="kodex-workspace-placeholder-icon" aria-hidden="true">
-        <Icon size={18} strokeWidth={1.8} />
-      </div>
-      <div className="kodex-workspace-placeholder-copy">
-        <span className="kodex-workspace-placeholder-eyebrow">{eyebrow}</span>
-        <strong>{paneRegistry[pane.kind].title(pane)}</strong>
-        <span>{detail}</span>
-      </div>
-    </section>
-  );
 }

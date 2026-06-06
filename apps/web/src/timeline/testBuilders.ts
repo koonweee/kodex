@@ -1,4 +1,3 @@
-import type { Approval } from "../api/client";
 import type { TimelineFileChangesRow, TimelineItem, TimelineRow, TimelineState } from "./reducer";
 
 export function timelineItem(overrides: Partial<TimelineItem> = {}): TimelineItem {
@@ -105,22 +104,5 @@ function fileChangesRow(items: TimelineItem[]): TimelineFileChangesRow {
       itemIds: [item.id],
       path: item.path ?? "unknown",
     })),
-  };
-}
-
-export function approval(overrides: Partial<Approval> = {}): Approval {
-  return {
-    createdAt: "2026-04-30T00:00:00Z",
-    id: "approval-1",
-    itemId: null,
-    method: "item/commandExecution/requestApproval",
-    payload: {},
-    requestId: "request-1",
-    resolvedAt: null,
-    response: null,
-    status: "pending",
-    threadId: "thread-1",
-    turnId: "turn-1",
-    ...overrides,
   };
 }

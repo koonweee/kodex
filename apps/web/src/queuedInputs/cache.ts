@@ -43,7 +43,7 @@ export function deleteCachedQueuedInput(queryClient: QueryClient, threadId: stri
   );
 }
 
-export function sortQueuedInputs(rows: QueuedInput[]): QueuedInput[] {
+function sortQueuedInputs(rows: QueuedInput[]): QueuedInput[] {
   return [...rows].sort(compareQueuedInputs);
 }
 

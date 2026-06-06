@@ -42,7 +42,7 @@ export function getUnanchoredApprovals(rows: TimelineRow[], approvalIndex: Timel
   return approvalIndex.approvals.filter((approval) => !hasApprovalItemAnchor(approval) || !renderedItemIds.has(approval.itemId));
 }
 
-export function timelineRowItemIds(row: TimelineRow): string[] {
+function timelineRowItemIds(row: TimelineRow): string[] {
   if (row.type === "item") {
     return [row.item.id];
   }

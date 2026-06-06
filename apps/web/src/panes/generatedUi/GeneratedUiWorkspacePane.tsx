@@ -45,7 +45,7 @@ export function GeneratedUiWorkspacePane({ pane }: WorkspacePaneComponentProps) 
   );
 }
 
-export function ThreadAppSurfacePane({
+function ThreadAppSurfacePane({
   colorSchemeId,
   emptyTitle = "Generated UI",
   onHide,

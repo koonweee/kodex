@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -16,10 +16,8 @@ vi.mock("react-markdown", async (importOriginal) => {
   };
 });
 
-import { TimelineActivityGroupRenderer, TimelineFileChangesRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
+import { TimelineItemRenderer } from "./renderers";
 import { filePreviewUrl } from "../api/client";
-import type { MarkdownPreviewRequest } from "../files/types";
-import { createKodexMantineTheme, getKodexColorScheme } from "../theme";
 import type { TimelineItem } from "./reducer";
 
 function item(overrides: Partial<TimelineItem>): TimelineItem {
@@ -50,11 +48,6 @@ function mockMissingClipboardWriteText() {
     configurable: true,
     value: undefined,
   });
-}
-
-function openDetails(details: HTMLDetailsElement) {
-  details.open = true;
-  fireEvent(details, new Event("toggle"));
 }
 
 describe("timeline message renderers", () => {

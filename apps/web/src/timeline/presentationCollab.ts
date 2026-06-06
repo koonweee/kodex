@@ -97,7 +97,7 @@ export function collabAgentPresentation(
   };
 }
 
-export function collabAgentDisplayName({
+function collabAgentDisplayName({
   existingNames,
   nickname,
   prior,
@@ -150,7 +150,7 @@ export function collabAgentDisplayName({
   };
 }
 
-export function collabAgentStatusLabel(status: string): string {
+function collabAgentStatusLabel(status: string): string {
   const normalized = status.trim();
   if (normalized === "pendingInit") {
     return "Pending init";

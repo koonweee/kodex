@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/knip/schema.json",
+  "entry": [
+    "src/sw.ts",
+    "src/**/*.{test,spec}.{ts,tsx}",
+    "tests/**/*.ts",
+    "pw-local.config.ts",
+    "scripts/**/*.mjs"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "tests/**/*.ts",
+    "scripts/**/*.mjs"
+  ],
+  "ignoreIssues": {
+    "src/api/generated/**": [
+      "exports",
+      "types"
+    ]
+  },
+  "ignoreBinaries": [
+    "agent-browser"
+  ]
+}

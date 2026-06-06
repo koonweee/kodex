@@ -1,15 +1,12 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   App,
   FakeEventSource,
-  activeThread,
   appCss,
   baseRoutes,
-  clickMenuItem as clickMenuItemWithDeps,
-  highReasoningModel,
   mockGateway,
   project,
   requestJson,
@@ -18,12 +15,7 @@ import {
   snapshotTurn,
   thread,
   threadDetail,
-  timelineElement,
 } from "./test/mvpAppHarness";
-
-function clickMenuItem(name: RegExp) {
-  return clickMenuItemWithDeps(name, screen, waitFor, fireEvent);
-}
 
 describe("MVP approvals UI flows", () => {
   afterEach(() => {

@@ -134,7 +134,7 @@ type WorkspaceContextValue = {
   workspaceError: Error | null;
 };
 
-export type WorkspaceThreadActions = {
+type WorkspaceThreadActions = {
   onArchiveThread?: (threadId: string) => void;
   onPinThread?: (threadId: string) => void;
   onRenameThread?: (threadId: string, name: string) => Promise<void>;

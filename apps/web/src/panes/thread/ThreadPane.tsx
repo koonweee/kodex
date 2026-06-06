@@ -1,4 +1,4 @@
-import { ActionIcon, Badge, Box, Button, Group, Loader, Menu, Modal, Skeleton, Switch, Text, TextInput, Title } from "@mantine/core";
+import { ActionIcon, Badge, Box, Button, Group, Loader, Menu, Modal, Skeleton, Switch, TextInput, Title } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, Archive, CopyPlus, MoreHorizontal, Pencil, Pin, PinOff, Sparkles } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";

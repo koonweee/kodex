@@ -1,6 +1,6 @@
 import type { Project } from "../api/client";
 
-export const SIDEBAR_PROJECT_ORDER_STORAGE_KEY = "kodex.sidebar.projectOrder";
+const SIDEBAR_PROJECT_ORDER_STORAGE_KEY = "kodex.sidebar.projectOrder";
 
 export function loadSidebarProjectOrder(storage: Storage | null = browserStorage()): string[] | null {
   if (!storage) {

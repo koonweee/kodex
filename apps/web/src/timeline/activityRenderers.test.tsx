@@ -16,9 +16,7 @@ vi.mock("react-markdown", async (importOriginal) => {
   };
 });
 
-import { TimelineActivityGroupRenderer, TimelineFileChangesRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
-import type { MarkdownPreviewRequest } from "../files/types";
-import { createKodexMantineTheme, getKodexColorScheme } from "../theme";
+import { TimelineActivityGroupRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
 import type { TimelineItem } from "./reducer";
 
 function item(overrides: Partial<TimelineItem>): TimelineItem {
@@ -33,22 +31,6 @@ function item(overrides: Partial<TimelineItem>): TimelineItem {
     debugEvents: [],
     ...overrides,
   };
-}
-
-function mockClipboardWriteText() {
-  const writeText = vi.fn().mockResolvedValue(undefined);
-  Object.defineProperty(navigator, "clipboard", {
-    configurable: true,
-    value: { writeText },
-  });
-  return writeText;
-}
-
-function mockMissingClipboardWriteText() {
-  Object.defineProperty(navigator, "clipboard", {
-    configurable: true,
-    value: undefined,
-  });
 }
 
 function openDetails(details: HTMLDetailsElement) {

@@ -45,7 +45,7 @@ export function startAtIsoFromLocalInput(value: string): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-export function repeatEverySeconds(value: number, unit: AutomationFormValues["repeatUnit"]): number {
+function repeatEverySeconds(value: number, unit: AutomationFormValues["repeatUnit"]): number {
   const multiplier = unit === "hours" ? 60 * 60 : unit === "minutes" ? 60 : 1;
   return value * multiplier;
 }

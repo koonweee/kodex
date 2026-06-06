@@ -9,7 +9,7 @@ const GENERATED_UI_EVENTS = new Set([
   "generated_ui.session_archived",
 ]);
 
-export function isGeneratedUiEvent(event: EventEnvelope): boolean {
+function isGeneratedUiEvent(event: EventEnvelope): boolean {
   return GENERATED_UI_EVENTS.has(event.kind);
 }
 

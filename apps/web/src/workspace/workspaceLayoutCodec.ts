@@ -2,7 +2,7 @@ import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
 
 type LayoutObject = Record<string, unknown>;
 
-export function isRecord(value: unknown): value is LayoutObject {
+function isRecord(value: unknown): value is LayoutObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 

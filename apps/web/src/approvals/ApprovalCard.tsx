@@ -18,10 +18,6 @@ import {
   type ApprovalActionSpec,
 } from "./actions";
 
-export { approvalParsedActions, approvalTitle } from "./payload";
-export { approvalActionSpecs } from "./actions";
-export type { ApprovalActionSpec } from "./actions";
-
 export type ApprovalAction = Omit<ApprovalActionSpec, "icon"> & {
   icon: ReactNode;
 };
@@ -92,7 +88,7 @@ export function ThreadApprovalStack({
   );
 }
 
-export function approvalActions(approval: Approval): ApprovalAction[] {
+function approvalActions(approval: Approval): ApprovalAction[] {
   return approvalActionSpecs(approval).map(renderableApprovalAction);
 }
 

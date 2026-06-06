@@ -5,7 +5,7 @@ import type { TimelineState } from "./reducer";
 
 export type TimelineEventQueueReducer = (current: TimelineState, events: EventEnvelope[]) => TimelineState;
 
-export const DEFAULT_TIMELINE_EVENT_FLUSH_DELAY_MS = 64;
+const DEFAULT_TIMELINE_EVENT_FLUSH_DELAY_MS = 64;
 
 export function useTimelineEventQueue({
   flushDelayMs = defaultTimelineEventFlushDelayMs(),

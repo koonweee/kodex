@@ -15,12 +15,9 @@ export type EventEnvelope = components["schemas"]["EventEnvelope"];
 export type AppSurfaceBridgeRequest = components["schemas"]["AppSurfaceBridgeRequest"];
 export type AppSurfaceBridgeResponse = components["schemas"]["AppSurfaceBridgeResponse"];
 export type AppSurfaceSession = components["schemas"]["AppSurfaceSessionDto"];
-export type AppSurfaceSessionReadResponse = components["schemas"]["AppSurfaceSessionReadResponse"];
 export type GeneratedUiSession = components["schemas"]["GeneratedUiSessionDto"];
-export type GeneratedUiSessionReadResponse = components["schemas"]["GeneratedUiSessionReadResponse"];
 export type GeneratedUiSubmitRequest = components["schemas"]["GeneratedUiSubmitRequest"];
 export type GeneratedUiSubmitResponse = components["schemas"]["GeneratedUiSubmitResponse"];
-export type LoginStartResponse = components["schemas"]["LoginStartResponse"];
 export type KodexControlPluginInstallResponse = components["schemas"]["KodexControlPluginInstallResponse"];
 export type KodexControlPluginStatusResponse = components["schemas"]["KodexControlPluginStatusResponse"];
 export type ConfiguredMcpServer = components["schemas"]["ConfiguredMcpServer"];
@@ -34,22 +31,18 @@ export type McpServerListResponse = components["schemas"]["McpServerListResponse
 export type McpServerStatus = components["schemas"]["McpServerStatus"];
 export type ModelSummary = components["schemas"]["ModelSummary"];
 export type PendingTimelineRequestSummary = components["schemas"]["PendingTimelineRequestSummary"];
-export type PermissionProfileListResponse = components["schemas"]["PermissionProfileListResponse"];
 export type PermissionProfileSummary = components["schemas"]["PermissionProfileSummary"];
 export type Project = components["schemas"]["Project"];
 export type PreviewCreateRequest = components["schemas"]["PreviewCreateRequest"];
 export type PreviewListResponse = components["schemas"]["PreviewListResponse"];
 export type PreviewRouteCreateRequest = components["schemas"]["PreviewRouteCreateRequest"];
-export type PreviewRouteUpdateRequest = components["schemas"]["PreviewRouteUpdateRequest"];
 export type PreviewServiceCreateRequest = components["schemas"]["PreviewServiceCreateRequest"];
-export type PreviewServiceUpdateRequest = components["schemas"]["PreviewServiceUpdateRequest"];
 export type PreviewSubsystemStatus = components["schemas"]["PreviewSubsystemStatus"];
 export type PreviewUpdateRequest = components["schemas"]["PreviewUpdateRequest"];
 export type ProjectPreview = components["schemas"]["ProjectPreviewDto"];
 export type ProjectPreviewRoute = components["schemas"]["ProjectPreviewRouteDto"];
 export type ProjectPreviewService = components["schemas"]["ProjectPreviewServiceDto"];
 export type QueuedInput = components["schemas"]["QueuedInput"];
-export type QueuedInputCreateRequest = components["schemas"]["QueuedInputCreateRequest"];
 export type RateLimitSnapshot = components["schemas"]["RateLimitSnapshot"];
 export type RateLimitWindow = components["schemas"]["RateLimitWindow"];
 export type RateLimitsResponse = components["schemas"]["RateLimitsResponse"];
@@ -60,7 +53,6 @@ export type ThreadReadStateUpdate = components["schemas"]["ThreadReadStateUpdate
 export type ThreadSettingsUpdateRequest = components["schemas"]["ThreadSettingsUpdateRequest"];
 export type ThreadSettingsUpdateResponse = components["schemas"]["ThreadSettingsUpdateResponse"];
 export type ThreadNotificationSettingsResponse = components["schemas"]["ThreadNotificationSettingsResponse"];
-export type ThreadViewPresenceRequest = components["schemas"]["ThreadViewPresenceRequest"];
 export type ThreadViewPresenceSnapshotRequest = components["schemas"]["ThreadViewPresenceSnapshotRequest"];
 export type ThreadAttachResponse = components["schemas"]["ThreadAttachResponse"];
 export type ThreadListResponse = components["schemas"]["ThreadListResponse"];
@@ -68,46 +60,32 @@ export type SidebarThreadSummary = components["schemas"]["SidebarThreadSummary"]
 export type SidebarThreadsResponse = components["schemas"]["SidebarThreadsResponse"];
 export type ThreadViewResponse = components["schemas"]["ThreadViewResponse"];
 export type ThreadViewThreadSummary = components["schemas"]["ThreadViewThreadSummary"];
-export type RenameThreadRequest = components["schemas"]["RenameThreadRequest"];
-export type ThreadSubagentListResponse = components["schemas"]["ThreadSubagentListResponse"];
 export type ThreadSubagentSummary = components["schemas"]["ThreadSubagentSummary"];
 export type TextElement = components["schemas"]["TextElement"];
-export type ThreadCommandResponse = components["schemas"]["ThreadCommandResponse"];
 export type ThreadSummary = components["schemas"]["ThreadSummary"];
 export type ThreadTimelineFileChangeEntry = components["schemas"]["ThreadTimelineFileChangeEntry"];
 export type ThreadTimelineRow = components["schemas"]["ThreadTimelineRow"];
 export type ThreadTimelineSnapshot = components["schemas"]["ThreadTimelineSnapshot"];
 export type ThreadTimelineSnapshotItem = components["schemas"]["ThreadTimelineSnapshotItem"];
 export type ThreadTimelineWorkDetailRow = components["schemas"]["ThreadTimelineWorkDetailRow"];
-export type ThreadTimelineWorkSummary = components["schemas"]["ThreadTimelineWorkSummary"];
 export type ThreadTimelineWindowPage = components["schemas"]["ThreadTimelineWindowPage"];
 export type ThreadInputResponse = components["schemas"]["ThreadInputResponse"];
 export type ThreadInterruptCurrentResponse = components["schemas"]["ThreadInterruptCurrentResponse"];
 export type ThreadCompactResponse = components["schemas"]["ThreadCompactResponse"];
 export type TimelineSkillMention = components["schemas"]["TimelineSkillMention"];
-export type TimelineItemDeltaPayload = components["schemas"]["TimelineItemDeltaPayload"];
-export type TimelineItemUpsertPayload = components["schemas"]["TimelineItemUpsertPayload"];
-export type TimelineLiveState = components["schemas"]["ThreadLiveState"];
 export type ThreadViewPatch = components["schemas"]["ThreadViewPatch"];
-export type TimelineThreadMetadataPayload = components["schemas"]["TimelineThreadMetadataPayload"];
-export type TimelineThreadStatusPayload = components["schemas"]["TimelineThreadStatusPayload"];
-export type TimelineTurnUpsertPayload = components["schemas"]["TimelineTurnUpsertPayload"];
-export type TimelineUpdateSource = components["schemas"]["TimelineUpdateSource"];
 export type UserInput = components["schemas"]["UserInput"];
 export type ImageUpload = components["schemas"]["ImageUpload"];
 export type TimelineFileAttachment = components["schemas"]["TimelineFileAttachment"];
 export type CreateThreadOptions = Omit<components["schemas"]["CreateThreadRequest"], "payload" | "projectId">;
 export type TurnStartOptions = Omit<components["schemas"]["TurnStartRequest"], "input" | "attachments">;
 export type NotificationStatusResponse = components["schemas"]["NotificationStatusResponse"];
-export type PushSubscriptionDeleteResponse = components["schemas"]["PushSubscriptionDeleteResponse"];
 export type PushSubscriptionUpsertResponse = components["schemas"]["PushSubscriptionUpsertResponse"];
 export type CurrentPushSubscriptionStatusResponse = components["schemas"]["CurrentPushSubscriptionResponse"];
 export type TestNotificationResponse = components["schemas"]["TestNotificationResponse"];
 export type CreateTerminalSession = components["schemas"]["CreateTerminalSession"];
 export type TerminalDeleteResponse = components["schemas"]["TerminalDeleteResponse"];
 export type TerminalSessionInfo = components["schemas"]["TerminalSessionInfo"];
-export type TerminalSessionListResponse = components["schemas"]["TerminalSessionListResponse"];
-export type TerminalSessionResponse = components["schemas"]["TerminalSessionResponse"];
 
 type GatewayErrorBody = {
   message?: unknown;
@@ -118,7 +96,7 @@ const api = createClient<paths>({
   fetch: (request) => globalThis.fetch(request),
 });
 
-export function getApiBaseUrl(): string {
+function getApiBaseUrl(): string {
   if (import.meta.env.VITE_KODEX_API_BASE_URL) {
     return import.meta.env.VITE_KODEX_API_BASE_URL;
   }
@@ -202,20 +180,6 @@ export async function createProjectPreviewService(
   return response.service;
 }
 
-export async function updateProjectPreviewService(
-  projectId: string,
-  serviceId: string,
-  request: PreviewServiceUpdateRequest,
-): Promise<ProjectPreviewService> {
-  const response = await unwrap(
-    api.PATCH("/v1/projects/{projectId}/preview-services/{serviceId}", {
-      params: { path: { projectId, serviceId } },
-      body: request,
-    }),
-  );
-  return response.service;
-}
-
 export async function deleteProjectPreviewService(projectId: string, serviceId: string): Promise<void> {
   await unwrap(
     api.DELETE("/v1/projects/{projectId}/preview-services/{serviceId}", {
@@ -271,21 +235,6 @@ export async function createProjectPreviewRoute(
   return response.route;
 }
 
-export async function updateProjectPreviewRoute(
-  projectId: string,
-  previewId: string,
-  routeId: string,
-  request: PreviewRouteUpdateRequest,
-): Promise<ProjectPreviewRoute> {
-  const response = await unwrap(
-    api.PATCH("/v1/projects/{projectId}/previews/{previewId}/routes/{routeId}", {
-      params: { path: { projectId, previewId, routeId } },
-      body: request,
-    }),
-  );
-  return response.route;
-}
-
 export async function deleteProjectPreviewRoute(
   projectId: string,
   previewId: string,
@@ -313,11 +262,6 @@ export async function listThreadsPage(
   );
 }
 
-export async function listThreads(projectId: string): Promise<ThreadSummary[]> {
-  const response = await listThreadsPage(projectId);
-  return response.threads;
-}
-
 export async function getSidebarThreads(): Promise<SidebarThreadsResponse> {
   return unwrap(api.GET("/v1/sidebar/threads"));
 }
@@ -330,11 +274,6 @@ export async function listChatThreadsPage(
       params: { query: { cursor: options.cursor ?? undefined, limit: options.limit ?? undefined } },
     }),
   );
-}
-
-export async function listChatThreads(): Promise<ThreadSummary[]> {
-  const response = await listChatThreadsPage();
-  return response.threads;
 }
 
 export async function listPinnedThreads(): Promise<ThreadSummary[]> {
@@ -355,21 +294,8 @@ export async function createChatThread(
   return response.thread;
 }
 
-export async function resumeThread(threadId: string): Promise<ThreadCommandResponse> {
-  return unwrap(
-    api.POST("/v1/threads/{threadId}/resume", { params: { path: { threadId } }, body: {} }),
-  );
-}
-
 export async function attachThread(threadId: string): Promise<ThreadAttachResponse> {
   return unwrap(api.POST("/v1/threads/{threadId}/attach", { params: { path: { threadId } } }));
-}
-
-export async function forkThread(threadId: string): Promise<ThreadSummary> {
-  const response = await unwrap(
-    api.POST("/v1/threads/{threadId}/fork", { params: { path: { threadId } }, body: {} }),
-  );
-  return response.thread;
 }
 
 export async function getThreadDetail(threadId: string): Promise<ThreadViewResponse> {
@@ -397,13 +323,6 @@ export async function listThreadSubagents(threadId: string): Promise<ThreadSubag
   return response.subagents;
 }
 
-export async function getThreadGeneratedUi(threadId: string): Promise<GeneratedUiSession | null> {
-  const response = await unwrap(
-    api.GET("/v1/threads/{threadId}/generated-ui", { params: { path: { threadId } } }),
-  );
-  return response.session ?? null;
-}
-
 export async function getThreadAppSurface(threadId: string): Promise<AppSurfaceSession | null> {
   const response = await unwrap(
     api.GET("/v1/threads/{threadId}/app-surface", { params: { path: { threadId } } }),
@@ -417,18 +336,6 @@ export async function callAppSurfaceBridge(
 ): Promise<AppSurfaceBridgeResponse> {
   return unwrap(
     api.POST("/v1/app-surfaces/{sessionId}/bridge", {
-      params: { path: { sessionId } },
-      body: request,
-    }),
-  );
-}
-
-export async function submitGeneratedUiSession(
-  sessionId: string,
-  request: GeneratedUiSubmitRequest,
-): Promise<GeneratedUiSubmitResponse> {
-  return unwrap(
-    api.POST("/v1/generated-ui/sessions/{sessionId}/submit", {
       params: { path: { sessionId } },
       body: request,
     }),
@@ -490,18 +397,6 @@ export async function markThreadSeen(threadId: string, seenCompletedAgentTurnSeq
   return unwrap(api.POST("/v1/threads/{threadId}/seen", { params: { path: { threadId } }, body }));
 }
 
-export async function updateThreadViewPresence(
-  threadId: string,
-  request: ThreadViewPresenceRequest,
-): Promise<void> {
-  await unwrapNoContent(
-    api.POST("/v1/threads/{threadId}/view-presence", {
-      params: { path: { threadId } },
-      body: request,
-    }),
-  );
-}
-
 export async function replaceThreadViewPresence(
   request: ThreadViewPresenceSnapshotRequest,
 ): Promise<void> {
@@ -512,24 +407,10 @@ export async function replaceThreadViewPresence(
   );
 }
 
-export function threadViewPresenceUrl(threadId: string): string {
-  const route = `/v1/threads/${encodeURIComponent(threadId)}/view-presence`;
-  const apiBaseUrl = getApiBaseUrl();
-  return apiBaseUrl ? `${apiBaseUrl}${route}` : route;
-}
-
-export function threadViewPresenceSnapshotUrl(): string {
+function threadViewPresenceSnapshotUrl(): string {
   const route = "/v1/thread-view-presence";
   const apiBaseUrl = getApiBaseUrl();
   return apiBaseUrl ? `${apiBaseUrl}${route}` : route;
-}
-
-export function sendThreadViewPresenceBeacon(threadId: string, request: ThreadViewPresenceRequest): boolean {
-  if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") {
-    return false;
-  }
-  const body = new Blob([JSON.stringify(request)], { type: "application/json" });
-  return navigator.sendBeacon(threadViewPresenceUrl(threadId), body);
 }
 
 export function sendThreadViewPresenceSnapshotBeacon(request: ThreadViewPresenceSnapshotRequest): boolean {
@@ -571,14 +452,6 @@ export async function upsertPushSubscription(
         },
         userAgent,
       },
-    }),
-  );
-}
-
-export async function deletePushSubscription(subscriptionId: string): Promise<PushSubscriptionDeleteResponse> {
-  return unwrap(
-    api.DELETE("/v1/notifications/subscriptions/{subscriptionId}", {
-      params: { path: { subscriptionId } },
     }),
   );
 }
@@ -710,14 +583,6 @@ export async function deleteAutomation(automationId: string): Promise<void> {
   await unwrap(
     api.DELETE("/v1/automations/{automationId}", {
       params: { path: { automationId } },
-    }),
-  );
-}
-
-export async function interruptTurn(threadId: string, turnId: string): Promise<void> {
-  await unwrap(
-    api.POST("/v1/threads/{threadId}/turns/{turnId}/interrupt", {
-      params: { path: { threadId, turnId } },
     }),
   );
 }

@@ -28,63 +28,6 @@ export function clearAvailableThreadTitles(current: Set<string>, threads: Thread
   return next ?? current;
 }
 
-export function prependThreadForProject(
-  current: ThreadsByProjectId,
-  projectId: string,
-  thread: ThreadSummary,
-): ThreadsByProjectId {
-  return {
-    ...current,
-    [projectId]: [thread, ...(current[projectId] ?? [])],
-  };
-}
-
-export function removeThreadFromProjects(current: ThreadsByProjectId, threadId: string): ThreadsByProjectId {
-  let changed = false;
-  const next: ThreadsByProjectId = {};
-
-  for (const [projectId, threads] of Object.entries(current)) {
-    const projectThreads = threads.filter((thread) => thread.id !== threadId);
-    next[projectId] = projectThreads;
-    changed ||= projectThreads.length !== threads.length;
-  }
-
-  return changed ? next : current;
-}
-
-export function removeThreadFromList(current: ThreadSummary[], threadId: string): ThreadSummary[] {
-  const next = current.filter((thread) => thread.id !== threadId);
-  return next.length === current.length ? current : next;
-}
-
-export function replaceThreadInProjects(
-  current: ThreadsByProjectId,
-  thread: ThreadSummary,
-  fallbackProjectId: string | null,
-): ThreadsByProjectId {
-  const projectId = projectIdForThread(current, thread, fallbackProjectId);
-  if (!projectId) {
-    return current;
-  }
-
-  return {
-    ...current,
-    [projectId]: (current[projectId] ?? []).map((item) => (item.id === thread.id ? thread : item)),
-  };
-}
-
-export function replaceThreadInList(current: ThreadSummary[], thread: ThreadSummary): ThreadSummary[] {
-  let changed = false;
-  const next = current.map((item) => {
-    if (item.id !== thread.id) {
-      return item;
-    }
-    changed = true;
-    return thread;
-  });
-  return changed ? next : current;
-}
-
 export function threadById(current: ThreadsByProjectId, threadId: string): ThreadSummary | null {
   for (const threads of Object.values(current)) {
     const thread = threads.find((item) => item.id === threadId);
@@ -93,68 +36,6 @@ export function threadById(current: ThreadsByProjectId, threadId: string): Threa
     }
   }
   return null;
-}
-
-export function updateThreadReadStateInProjects(
-  current: ThreadsByProjectId,
-  threadId: string,
-  update: (thread: ThreadSummary) => Partial<ThreadSummary>,
-): ThreadsByProjectId {
-  let changed = false;
-  const next: ThreadsByProjectId = {};
-
-  for (const [projectId, threads] of Object.entries(current)) {
-    next[projectId] = threads.map((thread) => {
-      if (thread.id !== threadId) {
-        return thread;
-      }
-      changed = true;
-      return { ...thread, ...update(thread) };
-    });
-  }
-
-  return changed ? next : current;
-}
-
-export function updateThreadReadStateInList(
-  current: ThreadSummary[],
-  threadId: string,
-  update: (thread: ThreadSummary) => Partial<ThreadSummary>,
-): ThreadSummary[] {
-  let changed = false;
-  const next = current.map((thread) => {
-    if (thread.id !== threadId) {
-      return thread;
-    }
-    changed = true;
-    return { ...thread, ...update(thread) };
-  });
-  return changed ? next : current;
-}
-
-export function updateThreadNameInProjects(
-  current: ThreadsByProjectId,
-  threadId: string,
-  name: string,
-): ThreadsByProjectId {
-  let changed = false;
-  const next: ThreadsByProjectId = {};
-
-  for (const [projectId, threads] of Object.entries(current)) {
-    next[projectId] = threads.map((thread) => {
-      if (thread.id !== threadId) {
-        return thread;
-      }
-      changed = true;
-      return { ...thread, name };
-    });
-  }
-
-  return changed ? next : current;
-}
-
-export function updateThreadNameInList(current: ThreadSummary[], threadId: string, name: string): ThreadSummary[] {
-  return updateThreadReadStateInList(current, threadId, () => ({ name }));
 }
 
 export function threadDisplayTitle(thread: ThreadSummary): string {
@@ -216,17 +97,6 @@ export function sortProjectThreadsForSidebar(
 
 export function withoutPinnedThreads(threads: ThreadSummary[]): ThreadSummary[] {
   return threads.filter((thread) => !threadPinnedAt(thread));
-}
-
-export function withoutPinnedProjectThreads(current: ThreadsByProjectId): ThreadsByProjectId {
-  let changed = false;
-  const next: ThreadsByProjectId = {};
-  for (const [projectId, threads] of Object.entries(current)) {
-    const filtered = withoutPinnedThreads(threads);
-    next[projectId] = filtered;
-    changed ||= filtered.length !== threads.length;
-  }
-  return changed ? next : current;
 }
 
 export function withPinnedProjectThreads(
@@ -343,19 +213,6 @@ function projectIdForPinnedThread(
 
 function threadStatusNeedsApproval(thread: ThreadSummary): boolean {
   return typeof thread.status === "string" && thread.status.toLowerCase().includes("approval");
-}
-
-function projectIdForThread(
-  current: ThreadsByProjectId,
-  thread: ThreadSummary,
-  fallbackProjectId: string | null,
-): string | null {
-  const explicitProjectId = stringValue((thread as { projectId?: unknown }).projectId);
-  if (explicitProjectId) {
-    return explicitProjectId;
-  }
-
-  return Object.entries(current).find(([, threads]) => threads.some((item) => item.id === thread.id))?.[0] ?? fallbackProjectId;
 }
 
 function threadNameTitle(thread: ThreadSummary): string | null {

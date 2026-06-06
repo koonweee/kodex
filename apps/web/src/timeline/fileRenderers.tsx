@@ -69,7 +69,7 @@ export function FileChangeBlock({ item }: { item: TimelineItem }) {
   );
 }
 
-export function FileDiffFallback({ diff }: { diff: string }) {
+function FileDiffFallback({ diff }: { diff: string }) {
   return (
     <Code block className="kodex-timeline-output">
       {diff}

@@ -32,11 +32,9 @@ import {
   timelineTurnById,
   type TimelineCollabAgent,
   type TimelineCollabAgentPresentation,
-  type TimelineImage,
   type TimelineItem,
   type TimelineRow,
   type TimelineState,
-  type TimelineTurn,
   type WebSearchAction,
   type TimelineDraft,
 } from "./state";
@@ -50,18 +48,12 @@ type ThreadViewPatchPayload = Omit<ThreadViewPatch, "scope" | "rows"> & {
 
 export { createTimelineState } from "./state";
 export type {
-  TimelineConfirmationState,
-  TimelineCollabAgent,
-  TimelineCollabAgentPresentation,
   TimelineFileChangesRow,
   TimelineImage,
   TimelineItem,
-  TimelineItemSource,
   TimelineRow,
   TimelineFileChangeEntry,
   TimelineState,
-  TimelineStatus,
-  TimelineTurn,
   TimelineWorkRow,
   WebSearchAction,
 } from "./state";
@@ -83,8 +75,6 @@ export function applyLiveTimelineUpdate(state: TimelineState, event: EventEnvelo
   }
   return withTimelineLastSeq(state, Math.max(state.lastSeq, event.seq));
 }
-
-export const applyTimelineEvent = applyLiveTimelineUpdate;
 
 export function canApplyThreadViewItemDelta(state: TimelineState, event: EventEnvelope): boolean {
   if (event.kind !== "thread_view.item_delta" || event.seq < state.lastSeq) {
@@ -139,7 +129,7 @@ export function resetTimelineReducerInstrumentationForTest() {
   reducerInstrumentation.turnPatchIndexedRows = 0;
 }
 
-export function applyDebugEvent(state: TimelineState, event: EventEnvelope): TimelineState {
+function applyDebugEvent(state: TimelineState, event: EventEnvelope): TimelineState {
   const item = createDiagnosticItem(event);
   const existingRows = state.rows.filter((row) => row.key !== `diagnostic-${item.id}`);
   const diagnosticRow: TimelineRow = {
@@ -827,25 +817,6 @@ function withSnapshotTurnMetadata(state: TimelineState, snapshot: ThreadViewResp
   return createTimelineStateFromDraft(next);
 }
 
-function withCanonicalSnapshotLiveState(
-  state: TimelineState,
-  timeline: ThreadTimelineSnapshot,
-  lastSeq: number,
-): TimelineState {
-  return createTimelineStateFromDraft({
-    activeTurnId: timeline.activeTurnId ?? null,
-    indexes: prepareTimelineIndexesForUpdate(indexesForState(state)),
-    rows: state.rows,
-    pendingApprovalRequests: timeline.pendingApprovalRequests ?? [],
-    pendingUserInputRequests: timeline.pendingUserInputRequests ?? [],
-    olderCursor: state.olderCursor,
-    hasOlderHistory: state.hasOlderHistory,
-    isLoadingOlderHistory: state.isLoadingOlderHistory,
-    lastSeq,
-    viewRevision: Math.max(state.viewRevision, timeline.viewRevision ?? 0),
-  });
-}
-
 function withProjectionPatchLiveState(state: TimelineState, patch: ThreadViewPatchPayload, eventSeq: number): TimelineState {
   const next = timelineDraftFromState(state);
   for (const turn of patch.turns ?? []) {
@@ -938,46 +909,6 @@ function preserveUnconfirmedOptimisticUserRows(currentRows: TimelineRow[], canon
     ...canonicalRows,
     ...currentRows.filter((row) => row.type === "item" && row.item.source === "optimistic" && row.item.confirmationState === "sending"),
   ];
-}
-
-function applyPresentedCanonicalItem(
-  next: TimelineDraft,
-  event: EventEnvelope,
-  presentation: TimelinePresentationItem,
-): TimelineState {
-  if (presentation.hidden) {
-    addHiddenDebugItem(next, event, presentation.text);
-    return createTimelineStateFromDraft(next);
-  }
-
-  const existing = timelineItemById(next.indexes, presentation.item.id);
-  if (existing) {
-    next.indexes.itemUpdatesById.set(presentation.item.id, mergeTimelineItem(existing, presentation.item, event));
-  } else {
-    const sameServerItem = matchingAppServerItemByServerId(next, presentation.item);
-    if (sameServerItem) {
-      removeItem(next, sameServerItem.id);
-    }
-    addItem(next, presentation.item);
-    addToTurn(next, presentation.item);
-  }
-  compactTimelineStores(next.indexes);
-
-  return createTimelineStateFromDraft(next);
-}
-
-function matchingAppServerItemByServerId(state: TimelineDraft, incoming: TimelineItem): TimelineItem | undefined {
-  if (!incoming.serverItemId) {
-    return undefined;
-  }
-  return timelineItems(state.indexes).find(
-    (item) =>
-      item.id !== incoming.id &&
-      item.source === "app_server" &&
-      item.kind === incoming.kind &&
-      item.turnId === incoming.turnId &&
-      item.serverItemId === incoming.serverItemId,
-  );
 }
 
 function mergeTimelineItem(existing: TimelineItem, incoming: TimelineItem, event: EventEnvelope): TimelineItem {
@@ -1106,41 +1037,6 @@ function addItem(state: TimelineDraft, item: TimelineItem) {
     .map((itemId, index) => ({ itemId, index, item: timelineItemById(state.indexes, itemId) }))
     .sort((left, right) => (left.item?.displayOrder ?? 0) - (right.item?.displayOrder ?? 0) || left.index - right.index)
     .map(({ itemId }) => itemId);
-}
-
-function removeItem(state: TimelineDraft, itemId: string) {
-  const item = timelineItemById(state.indexes, itemId);
-  state.indexes.itemIds = state.indexes.itemIds.filter((candidateId) => candidateId !== itemId);
-  state.indexes.itemUpdatesById.delete(itemId);
-  state.indexes.pendingItemById.delete(itemId);
-  if (!item?.turnId) {
-    return;
-  }
-  const turn = timelineTurnById(state.indexes, item.turnId);
-  if (!turn) {
-    return;
-  }
-  const itemIds = turn.itemIds.filter((candidateId) => candidateId !== itemId);
-  if (itemIds.length > 0) {
-    state.indexes.turnUpdatesById.set(item.turnId, { ...turn, itemIds });
-    return;
-  }
-  state.indexes.turnIds = state.indexes.turnIds.filter((turnId) => turnId !== item.turnId);
-  state.indexes.turnUpdatesById.delete(item.turnId);
-}
-
-function addHiddenDebugItem(state: TimelineDraft, event: EventEnvelope, text?: string) {
-  state.indexes.hiddenItems = [
-    ...state.indexes.hiddenItems,
-    {
-      ...createDiagnosticItem({
-        ...event,
-        kind: "gateway.warning",
-        payload: { message: text || event.codexMethod || event.kind },
-      }),
-      id: `debug-${event.itemId ?? event.id}`,
-    },
-  ];
 }
 
 function addToTurn(state: TimelineDraft, item: TimelineItem) {

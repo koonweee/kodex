@@ -38,7 +38,7 @@ export function projectPath(projectId: string, options: { panel?: MobilePanel | 
   return routePath({ panel: options.panel ?? null, projectId, threadId: null, view: "project" });
 }
 
-export function routePath(route: KodexRoute): string {
+function routePath(route: KodexRoute): string {
   const path =
     route.view === "automations"
       ? "/automations"
@@ -53,15 +53,6 @@ export function routePath(route: KodexRoute): string {
   }
   const search = query.toString();
   return search ? `${path}?${search}` : path;
-}
-
-export function isOwnedKodexRoute(location: Pick<Location, "pathname">): boolean {
-  return (
-    location.pathname === "/" ||
-    location.pathname === "/automations" ||
-    projectIdFromPath(location.pathname) !== null ||
-    threadIdFromPath(location.pathname) !== null
-  );
 }
 
 function panelFromSearch(search: string): MobilePanel | null {

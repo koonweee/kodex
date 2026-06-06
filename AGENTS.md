@@ -25,6 +25,7 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - Do not mix unrelated changes in a commit.
 - Do not commit generated output, user-owned changes, or unrelated workspace changes unless they are part of the current task.
 - When changing `plugins/kodex-control`, update `.codex-plugin/plugin.json` with a Codex cachebuster version suffix before reinstalling so the installed plugin cache refreshes. Prefer `python3 /Users/example/.codex/skills/.system/plugin-creator/scripts/update_plugin_cachebuster.py plugins/kodex-control`, which preserves the base version and rewrites only the `+codex...` suffix.
+- Before pushing, run the relevant trim script for changed code and remove unused code/dependencies surfaced by it to keep the codebase maintainable: `./tools/trim-backend.sh` for Rust changes and `./tools/trim-frontend.sh` or `cd apps/web && npm run trim` for frontend changes. If a trim script reports pre-existing unrelated findings, do not broaden the cleanup without user agreement; document the remaining findings.
 - Before pushing, check `target` size with `du -sh target 2>/dev/null`; if it is over 6 GB, run `cargo clean` before pushing.
 - Do not mark a milestone complete until its exit conditions are met.
 
@@ -32,6 +33,7 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 
 - Format Rust code with `cargo fmt`.
 - Run backend tests with `cargo test`.
+- Check backend unused code and dependencies with `./tools/trim-backend.sh`.
 - Start the gateway with `cargo run -p kodex-gateway`.
 - Inspect generated API contract at `GET /openapi.json`; local API docs are served at `GET /docs`.
 - The default database is `~/.kodex/gateway.db`; use `KODEX_DATABASE_PATH` or `KODEX_DATA_DIR` for local overrides.
@@ -45,6 +47,7 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - Run frontend unit/component tests with `cd apps/web && npm test`.
 - Run frontend Playwright flows with `cd apps/web && npm run test:e2e`.
 - Build frontend assets with `cd apps/web && npm run build`.
+- Check frontend unused files, exports, dependencies, locals, and parameters with `./tools/trim-frontend.sh` from the repo root, or `cd apps/web && npm run trim`.
 - Regenerate frontend OpenAPI types with a gateway running, then `cd apps/web && npm run generate:api`.
 - The generated OpenAPI TypeScript output is committed at `apps/web/src/api/generated/schema.ts`; do not hand-write duplicate gateway DTO interfaces.
 

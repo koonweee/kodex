@@ -27,7 +27,7 @@ export function browserPushNotificationsSupported(): boolean {
   );
 }
 
-export function cleanupLegacyPushSubscriptionId(): void {
+function cleanupLegacyPushSubscriptionId(): void {
   if (typeof localStorage === "undefined") {
     return;
   }

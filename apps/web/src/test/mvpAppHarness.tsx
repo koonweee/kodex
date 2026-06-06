@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { useRef } from "react";
 import { VirtuosoMockContext } from "react-virtuoso";
-import { expect, vi } from "vitest";
+import { expect } from "vitest";
 
 import { App as KodexApp } from "../App";
 import { createKodexQueryClient } from "../api/queryClient";
@@ -685,7 +685,6 @@ export {
   activeThread,
   appCss,
   baseRoutes,
-  capabilities,
   clickMenuItem,
   canonicalRowsFromSnapshotItems,
   highReasoningModel,

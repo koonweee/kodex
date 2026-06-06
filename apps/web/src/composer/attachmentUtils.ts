@@ -1,7 +1,3 @@
-import type { UserInput } from "../api/client";
-import type { TimelineImage } from "../timeline/reducer";
-import type { PendingAttachment } from "./types";
-
 export function hasFiles(dataTransfer: DataTransfer) {
   return filesFromDataTransfer(dataTransfer).length > 0;
 }
@@ -28,27 +24,4 @@ export function revokeObjectUrl(objectUrl: string) {
   if (objectUrl && typeof URL.revokeObjectURL === "function") {
     URL.revokeObjectURL(objectUrl);
   }
-}
-
-export function attachmentPreviewImages(attachments: PendingAttachment[]): TimelineImage[] {
-  const images: TimelineImage[] = [];
-  for (const attachment of attachments) {
-    if (attachment.kind === "image" && attachment.objectUrl) {
-      images.push({ url: attachment.objectUrl });
-    }
-  }
-  return images;
-}
-
-export function userInputImages(input: UserInput[]): TimelineImage[] {
-  const images: TimelineImage[] = [];
-  for (const item of input) {
-    if (item.type === "localImage") {
-      images.push({ path: item.path });
-    }
-    if (item.type === "image") {
-      images.push({ url: item.url });
-    }
-  }
-  return images;
 }

@@ -15,7 +15,6 @@ import {
   eventItem,
   eventStatus,
   isErrorEvent,
-  isLifecycleEvent,
   isWarningEvent,
   payloadRecord,
   stringValue,
@@ -27,7 +26,7 @@ import { actionLabel, webSearchAction } from "./presentationWeb";
 export type TimelinePresentationItem = { item: TimelineItem; hidden?: boolean; text?: string };
 export type TimelinePresentationOptions = { collabAgentNames?: CollabAgentNameMap };
 
-export { createBaseItem, eventStatus, isErrorEvent, isLifecycleEvent, isWarningEvent, mergeImages };
+export { isErrorEvent, isWarningEvent, mergeImages };
 
 export function createPresentationItem(
   event: EventEnvelope,

@@ -28,7 +28,7 @@ export type ComposerDraftControls = {
   restoreText: (text: string) => void;
 };
 
-export type ComposerProjectOption = {
+type ComposerProjectOption = {
   id: string;
   name: string;
 };

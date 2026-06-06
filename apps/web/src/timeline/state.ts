@@ -7,8 +7,8 @@ import type {
 } from "../api/client";
 
 export type TimelineStatus = "running" | "completed" | "failed" | "waiting" | "cancelled" | "approval_required";
-export type TimelineItemSource = "app_server" | "optimistic";
-export type TimelineConfirmationState = "uploading" | "sending" | "sent" | "failed";
+type TimelineItemSource = "app_server" | "optimistic";
+type TimelineConfirmationState = "uploading" | "sending" | "sent" | "failed";
 
 export type WebSearchAction =
   | { kind: "search"; query: string }
@@ -80,11 +80,11 @@ export type TimelineTurn = {
   completedAtMs?: number;
 };
 
-export type TimelineRowDivider = "final_response";
+type TimelineRowDivider = "final_response";
 
 export type TimelineFileChangeEntry = ThreadTimelineFileChangeEntry;
 
-export type TimelineItemRow = {
+type TimelineItemRow = {
   type: "item";
   key: string;
   turnKey: string;
@@ -94,7 +94,7 @@ export type TimelineItemRow = {
   dividerBefore?: TimelineRowDivider;
 };
 
-export type TimelineActivityRow = {
+type TimelineActivityRow = {
   type: "activity";
   key: string;
   turnKey: string;
@@ -291,10 +291,6 @@ export function timelineItemById(indexes: TimelineIndexes, itemId: string): Time
   return indexes.itemUpdatesById.get(itemId) ?? indexes.itemById.get(itemId);
 }
 
-export function pendingTimelineItemById(indexes: TimelineIndexes, itemId: string): TimelineItem | undefined {
-  return indexes.pendingItemById.get(itemId);
-}
-
 export function timelineTurnById(indexes: TimelineIndexes, turnId: string): TimelineTurn | undefined {
   return indexes.turnUpdatesById.get(turnId) ?? indexes.turnById.get(turnId);
 }
@@ -303,24 +299,12 @@ export function timelineItems(indexes: TimelineIndexes): TimelineItem[] {
   return orderedItems(indexes.itemIds, indexes);
 }
 
-export function timelineRows(indexes: TimelineIndexes): TimelineRow[] {
-  return orderedRows(indexes.rowKeys, indexes);
-}
-
 export function timelineRowByKey(indexes: TimelineIndexes, rowKey: string): TimelineRow | undefined {
   return indexes.rowByKey.get(rowKey);
 }
 
 export function timelineRowKeysByItemId(indexes: TimelineIndexes, itemId: string): string[] {
   return [...(indexes.rowKeysByItemId.get(itemId) ?? [])];
-}
-
-export function timelineRowKeysByTurnId(indexes: TimelineIndexes, turnId: string): string[] {
-  return [...(indexes.rowKeysByTurnId.get(turnId) ?? [])];
-}
-
-export function optimisticUserRowKeysByText(indexes: TimelineIndexes, text: string): string[] {
-  return [...(indexes.optimisticUserRowKeysByText.get(text) ?? [])];
 }
 
 function buildTimelineIndexes(state: TimelineState): TimelineIndexes {
@@ -395,7 +379,7 @@ function syncRowsToIndexes(indexes: TimelineIndexes, rows: TimelineRow[]) {
   }
 }
 
-export function indexTimelineRow(indexes: TimelineIndexes, row: TimelineRow) {
+function indexTimelineRow(indexes: TimelineIndexes, row: TimelineRow) {
   if (row.turnId) {
     addSetValue(indexes.rowKeysByTurnId, row.turnId, row.key);
   }
@@ -410,22 +394,7 @@ export function indexTimelineRow(indexes: TimelineIndexes, row: TimelineRow) {
   }
 }
 
-export function unindexTimelineRow(indexes: TimelineIndexes, row: TimelineRow) {
-  if (row.turnId) {
-    deleteSetValue(indexes.rowKeysByTurnId, row.turnId, row.key);
-  }
-  for (const item of timelineRowItems(row)) {
-    deleteSetValue(indexes.rowKeysByItemId, item.id, row.key);
-    if (item.serverItemId) {
-      deleteSetValue(indexes.rowKeysByItemId, item.serverItemId, row.key);
-    }
-    if (item.source === "optimistic" && item.kind === "user_message" && item.text) {
-      deleteSetValue(indexes.optimisticUserRowKeysByText, item.text, row.key);
-    }
-  }
-}
-
-export function timelineRowItems(row: TimelineRow): TimelineItem[] {
+function timelineRowItems(row: TimelineRow): TimelineItem[] {
   if (row.type === "item") {
     return [row.item];
   }
@@ -445,17 +414,6 @@ function addSetValue(target: Map<string, Set<string>>, key: string, value: strin
     return;
   }
   target.set(key, new Set([value]));
-}
-
-function deleteSetValue(target: Map<string, Set<string>>, key: string, value: string) {
-  const existing = target.get(key);
-  if (!existing) {
-    return;
-  }
-  existing.delete(value);
-  if (existing.size === 0) {
-    target.delete(key);
-  }
 }
 
 function cloneRowKeySetMap(source: Map<string, Set<string>>): Map<string, Set<string>> {

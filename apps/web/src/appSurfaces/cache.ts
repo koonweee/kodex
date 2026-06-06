@@ -10,7 +10,7 @@ const APP_SURFACE_EVENTS = new Set([
   "app_surface.session_error",
 ]);
 
-export function isAppSurfaceEvent(event: EventEnvelope): boolean {
+function isAppSurfaceEvent(event: EventEnvelope): boolean {
   return APP_SURFACE_EVENTS.has(event.kind);
 }
 
