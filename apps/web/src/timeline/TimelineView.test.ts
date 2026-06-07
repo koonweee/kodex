@@ -4,6 +4,7 @@ import {
   getDistanceFromBottom,
   getScrollElementBottomTop,
   isTimelineNearBottom,
+  shouldScrollElementToBottom,
   timelineFollowOutputBehavior,
 } from "./scrollPolicy";
 
@@ -27,5 +28,10 @@ describe("timeline scroll policy", () => {
   it("uses the scroll parent's actual maximum scroll top", () => {
     expect(getScrollElementBottomTop({ clientHeight: 400, scrollHeight: 3_620 })).toBe(3_220);
     expect(getScrollElementBottomTop({ clientHeight: 400, scrollHeight: 320 })).toBe(0);
+  });
+
+  it("skips bottom scroll writes when already at the actual bottom", () => {
+    expect(shouldScrollElementToBottom({ clientHeight: 400, scrollHeight: 3_620, scrollTop: 3_220 })).toBe(false);
+    expect(shouldScrollElementToBottom({ clientHeight: 400, scrollHeight: 3_620, scrollTop: 3_218 })).toBe(true);
   });
 });

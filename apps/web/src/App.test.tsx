@@ -889,6 +889,7 @@ describe("App shell", () => {
     expect(screen.queryByRole("button", { name: /scroll to bottom/i })).not.toBeInTheDocument();
 
     act(() => {
+      fireEvent.wheel(scrollRegion);
       scrollRegion.scrollTop = 600;
       scrollRegion.dispatchEvent(new Event("scroll"));
     });
@@ -1048,6 +1049,7 @@ describe("App shell", () => {
       scrollTop: { configurable: true, writable: true, value: 3200 },
     });
     fireEvent.scroll(scrollRegion);
+    fireEvent.wheel(scrollRegion);
     scrollRegion.scrollTop = 600;
     fireEvent.scroll(scrollRegion);
     expect(await screen.findByRole("button", { name: /scroll to bottom/i })).toBeInTheDocument();
@@ -1125,6 +1127,7 @@ describe("App shell", () => {
       scrollTop: { configurable: true, writable: true, value: 3200 },
     });
     fireEvent.scroll(scrollRegion);
+    fireEvent.wheel(scrollRegion);
     scrollRegion.scrollTop = 600;
     fireEvent.scroll(scrollRegion);
     expect(await screen.findByRole("button", { name: /scroll to bottom/i })).toBeInTheDocument();
