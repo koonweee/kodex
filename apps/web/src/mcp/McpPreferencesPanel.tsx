@@ -1,6 +1,6 @@
 import { Alert, Box, Button, Group, Loader, Stack, Text } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, RotateCw, Server } from "lucide-react";
+import { RotateCw, Server } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
@@ -116,20 +116,6 @@ export function McpPreferencesPanel() {
           </Button>
           <Button onClick={() => setInstallMode("add")} size="xs" type="button" variant="light">
             Add server
-          </Button>
-          <Button
-            aria-label="Refresh MCP servers"
-            disabled={serversQuery.isFetching || configuredQuery.isFetching}
-            leftSection={<RefreshCw size={15} />}
-            onClick={() => {
-              void serversQuery.refetch();
-              void configuredQuery.refetch();
-            }}
-            size="xs"
-            type="button"
-            variant="subtle"
-          >
-            Refresh
           </Button>
         </Group>
       </Group>

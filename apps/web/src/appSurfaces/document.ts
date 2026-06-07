@@ -15,6 +15,7 @@ const APP_SURFACE_FONT_FAMILY =
 const APP_SURFACE_SHARED_VARIABLES: Record<string, string> = {
   "--kodex-bg-panel": "var(--kodex-bg-thread-surface)",
   "--kodex-pane-bg": "var(--kodex-bg-panel)",
+  "--kodex-app-surface-bg": "var(--kodex-bg-panel)",
   "--kodex-bg-raised": "var(--kodex-bg-composer)",
   "--kodex-bg-raised-muted": "var(--kodex-bg-composer-muted)",
   "--kodex-bg-raised-alt": "var(--kodex-bg-composer-alt)",
@@ -38,23 +39,30 @@ export function buildAppSurfaceResourceHtml(
   colorSchemeId: KodexColorSchemeId,
   csp?: AppSurfaceDocumentCsp,
 ): string {
-  const headInjection = appSurfaceHeadInjection(colorSchemeId, csp);
+  const headBootstrap = appSurfaceHeadBootstrap(csp);
+  const themeInjection = appSurfaceThemeInjection(colorSchemeId);
   const headMatch = html.match(/<head\b[^>]*>/i);
   if (headMatch?.index !== undefined) {
-    const insertAt = headMatch.index + headMatch[0].length;
-    return `${html.slice(0, insertAt)}\n${headInjection}${html.slice(insertAt)}`;
+    const bootstrapAt = headMatch.index + headMatch[0].length;
+    const withBootstrap = `${html.slice(0, bootstrapAt)}\n${headBootstrap}${html.slice(bootstrapAt)}`;
+    const headCloseMatch = withBootstrap.match(/<\/head\s*>/i);
+    if (headCloseMatch?.index !== undefined) {
+      return `${withBootstrap.slice(0, headCloseMatch.index)}\n${themeInjection}\n${withBootstrap.slice(headCloseMatch.index)}`;
+    }
+    return `${withBootstrap}\n${themeInjection}`;
   }
 
   const htmlMatch = html.match(/<html\b[^>]*>/i);
   if (htmlMatch?.index !== undefined) {
     const insertAt = htmlMatch.index + htmlMatch[0].length;
-    return `${html.slice(0, insertAt)}\n<head>\n${headInjection}\n</head>${html.slice(insertAt)}`;
+    return `${html.slice(0, insertAt)}\n<head>\n${headBootstrap}\n${themeInjection}\n</head>${html.slice(insertAt)}`;
   }
 
   return `<!doctype html>
 <html lang="en">
 <head>
-${headInjection}
+${headBootstrap}
+${themeInjection}
 </head>
 <body>
 ${html}
@@ -73,7 +81,12 @@ export function buildAppSurfaceThemeCss(colorSchemeId: KodexColorSchemeId): stri
     .map(([name, value]) => `  ${name}: ${value};`)
     .join("\n");
 
-  return `:root {\n  color-scheme: ${colorScheme.mode};\n${cssVariables}\n}\n\nbody {\n  font-family: var(--kodex-font-family);\n}`;
+  return `:root {\n  color-scheme: ${colorScheme.mode};\n${cssVariables}\n}\n\nhtml {\n  min-height: 100%;\n  min-height: 100vh;\n  background: var(--kodex-app-surface-bg) !important;\n}\n\nbody {\n  min-height: 100%;\n  min-height: 100vh;\n  margin: 0;\n  background: var(--kodex-app-surface-bg) !important;\n  color: var(--kodex-text-primary);\n  font-family: var(--kodex-font-family);\n}`;
+}
+
+export function appSurfaceBackgroundColor(colorSchemeId: KodexColorSchemeId): string {
+  const colorScheme = getKodexColorSchemeDefinition(colorSchemeId);
+  return colorScheme.rootVariables["--kodex-bg-thread-surface"] ?? colorScheme.rootVariables["--kodex-bg-app"] ?? "#151515";
 }
 
 export function buildAppSurfaceDocumentCsp(csp?: AppSurfaceDocumentCsp): string {
@@ -97,13 +110,16 @@ export function buildAppSurfaceDocumentCsp(csp?: AppSurfaceDocumentCsp): string 
   ].join("; ");
 }
 
-function appSurfaceHeadInjection(colorSchemeId: KodexColorSchemeId, csp?: AppSurfaceDocumentCsp): string {
+function appSurfaceHeadBootstrap(csp?: AppSurfaceDocumentCsp): string {
   return `<meta http-equiv="Content-Security-Policy" content="${escapeHtmlAttribute(buildAppSurfaceDocumentCsp(csp))}">
 <meta name="color-scheme" content="dark light">
 <script id="kodex-app-surface-bridge">
 ${APP_SURFACE_BRIDGE_SCRIPT}
-</script>
-<style id="kodex-app-surface-theme">
+</script>`;
+}
+
+function appSurfaceThemeInjection(colorSchemeId: KodexColorSchemeId): string {
+  return `<style id="kodex-app-surface-theme">
 ${buildAppSurfaceThemeCss(colorSchemeId)}
 </style>`;
 }

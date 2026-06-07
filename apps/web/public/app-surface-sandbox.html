@@ -8,6 +8,7 @@
     html,
     body,
     iframe {
+      background: transparent;
       border: 0;
       height: 100%;
       margin: 0;
@@ -68,6 +69,10 @@
         return features.map((feature) => `${feature} *`).join("; ");
       }
 
+      function surfaceBackgroundColor(value) {
+        return typeof value === "string" && value.trim() ? value.trim() : "#151515";
+      }
+
       window.addEventListener("message", (event) => {
         if (event.source === appFrame?.contentWindow) {
           return;
@@ -79,6 +84,10 @@
         if (data.method === SANDBOX_RESOURCE_READY) {
           const params = isRecord(data.params) ? data.params : {};
           const frame = ensureFrame();
+          const backgroundColor = surfaceBackgroundColor(params.backgroundColor);
+          document.documentElement.style.background = backgroundColor;
+          document.body.style.background = backgroundColor;
+          frame.style.background = backgroundColor;
           frame.setAttribute("sandbox", typeof params.sandbox === "string" ? params.sandbox : "allow-scripts allow-forms");
           const allow = permissionsAllowAttribute(params.permissions);
           if (allow) {

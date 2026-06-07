@@ -689,6 +689,7 @@ describe("PreferencesModal MCP tab", () => {
     renderPreferences("mcp");
 
     expect((await screen.findAllByText("docs")).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /refresh mcp servers/i })).not.toBeInTheDocument();
     expect(screen.getByText("1 tools · 1 resources · 1 templates")).toBeInTheDocument();
     expect(screen.getByText("lookup")).toBeInTheDocument();
     expect(screen.getByText("Doc Template")).toBeInTheDocument();

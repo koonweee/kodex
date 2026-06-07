@@ -71,7 +71,8 @@
 @media (max-width: 900px) {
   .kodex-app-surface-pane {
     width: 100%;
-    height: calc(100dvh - env(safe-area-inset-top));
+    height: 100%;
+    min-height: 0;
     border-left: 0;
     padding: 0;
     background: var(--kodex-bg-shell);

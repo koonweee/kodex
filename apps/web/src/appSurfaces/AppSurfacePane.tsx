@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AppSurfaceBridgeRequest, AppSurfaceBridgeResponse, AppSurfaceSession } from "../api/client";
 import { errorMessageFrom } from "../shared/values";
 import type { KodexColorSchemeId } from "../theme";
-import { buildAppSurfaceResourceHtml } from "./document";
+import { appSurfaceBackgroundColor, buildAppSurfaceResourceHtml } from "./document";
 
 const APP_SURFACE_TEXT = {
   documentLoadError: "App surface document failed to load.",
@@ -63,8 +63,8 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
       return;
     }
     postedToolNotificationsRef.current = false;
-    postProxyResource(iframeRef.current?.contentWindow ?? null, session, resourceHtml);
-  }, [resourceHtml, session]);
+    postProxyResource(iframeRef.current?.contentWindow ?? null, session, resourceHtml, appSurfaceBackgroundColor(colorSchemeId));
+  }, [colorSchemeId, resourceHtml, session]);
 
   const markProxyReady = useCallback(() => {
     proxyReadyRef.current = true;
@@ -433,7 +433,7 @@ function sameMachineFallbackHost(current: URL): string | null {
   return current.hostname ? "127.0.0.1" : null;
 }
 
-function postProxyResource(target: Window | null, session: AppSurfaceSession, html: string) {
+function postProxyResource(target: Window | null, session: AppSurfaceSession, html: string, backgroundColor: string) {
   if (!target) {
     return;
   }
@@ -442,6 +442,7 @@ function postProxyResource(target: Window | null, session: AppSurfaceSession, ht
       jsonrpc: "2.0",
       method: APP_SURFACE_SANDBOX_RESOURCE_READY,
       params: {
+        backgroundColor,
         csp: session.csp,
         html,
         permissions: session.permissions,

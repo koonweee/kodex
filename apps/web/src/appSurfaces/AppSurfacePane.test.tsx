@@ -107,6 +107,7 @@ describe("AppSurfacePane", () => {
           jsonrpc: "2.0",
           method: "ui/notifications/sandbox-resource-ready",
           params: expect.objectContaining({
+            backgroundColor: "#fcfaf4",
             html: expect.stringContaining("kodex-app-surface-theme"),
           }),
         }),
