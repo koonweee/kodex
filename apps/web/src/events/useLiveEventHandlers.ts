@@ -6,7 +6,6 @@ import { applyMcpLifecycleEvent } from "../api/mcpCache";
 import { queryKeys } from "../api/queryKeys";
 import { applyAppSurfaceEvent } from "../appSurfaces/cache";
 import { applyCachedAutomationEvent } from "../automations/cache";
-import { applyGeneratedUiEvent } from "../generatedUi/cache";
 import type { ThreadSubagentDiscoveryEvent, ThreadUpsert } from "../threads/events";
 import { routeSelectedThreadLiveEvent, type LiveEventRouteHandlers } from "./liveRouting";
 
@@ -71,10 +70,6 @@ export function useLiveEventHandlers({
       applyMcpLifecycleEvent(queryClient, event);
     }
 
-    function applyGeneratedUiStreamEvent(event: EventEnvelope) {
-      applyGeneratedUiEvent(queryClient, event);
-    }
-
     function applyAppSurfaceStreamEvent(event: EventEnvelope) {
       applyAppSurfaceEvent(queryClient, event);
     }
@@ -103,7 +98,6 @@ export function useLiveEventHandlers({
       applyUsageLimitSnapshot: applyLiveUsageLimitSnapshot,
       applyApprovalEvent,
       applyAppSurfaceEvent: applyAppSurfaceStreamEvent,
-      applyGeneratedUiEvent: applyGeneratedUiStreamEvent,
       applySkillsChangedEvent,
       applyMcpLifecycleEvent: applyMcpLifecycleStreamEvent,
     };

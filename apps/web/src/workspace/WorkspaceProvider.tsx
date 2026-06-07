@@ -106,7 +106,7 @@ type WorkspaceContextValue = {
   onThreadSnapshotLoaded: (thread: ThreadSummary) => void;
   onVisiblePaneIdsChange: (paneIds: string[]) => void;
   openDraftThreadPane: (projectId?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
-  openGeneratedUiPane: (threadId: string, title?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
+  openAppSurfacePane: (threadId: string, title?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
   openNewTerminalPane: (options?: WorkspaceTerminalOpenOptions) => Promise<void>;
   openTerminalPane: (options?: WorkspaceTerminalOpenOptions) => Promise<void>;
   openThreadPane: (threadId: string, title?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
@@ -609,16 +609,35 @@ export function WorkspaceProvider({
     [focusPaneOrAppend],
   );
 
-  const openGeneratedUiPane = useCallback(
+  const openAppSurfacePane = useCallback(
     async (threadId: string, title?: string | null, options: WorkspacePaneOpenOptions = {}) => {
-      focusPaneOrAppend({
-        id: createPaneId("generatedUi"),
-        kind: "generatedUi",
-        target: { mode: "latest", threadId },
-        title: title ?? "Generated UI",
-      }, "generatedUi", options);
+      if (!options.duplicate) {
+        const existing = appSurfacePaneForThread(workspaceRef.current.panes, threadId);
+        if (existing) {
+          focusPane(existing.id);
+          return;
+        }
+      }
+      appendPane(
+        {
+          id: createPaneId("appSurface"),
+          kind: "appSurface",
+          target: { mode: "latest", threadId },
+          title: title ?? "App Surface",
+        },
+        "appSurface",
+        {
+          ...options,
+          activate: true,
+          duplicate: true,
+          placement: {
+            ...options.placement,
+            direction: options.placement?.direction ?? "within",
+          },
+        },
+      );
     },
-    [focusPaneOrAppend],
+    [appendPane, focusPane],
   );
 
   const openTerminalPane = useCallback(
@@ -662,7 +681,7 @@ export function WorkspaceProvider({
       if (!request) {
         return;
       }
-      void openGeneratedUiPane(request.threadId, request.title ?? "Generated UI", {
+      void openAppSurfacePane(request.threadId, request.title ?? "App Surface", {
         activate: request.action === "focus",
       }).catch((error: unknown) => {
         console.error("Failed to apply app surface presentation request", error);
@@ -671,7 +690,7 @@ export function WorkspaceProvider({
     return () => {
       appSurfacePresentationHandlerRef.current = () => undefined;
     };
-  }, [openGeneratedUiPane]);
+  }, [openAppSurfacePane]);
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
@@ -691,7 +710,7 @@ export function WorkspaceProvider({
       onThreadSnapshotLoaded,
       onVisiblePaneIdsChange,
       openDraftThreadPane,
-      openGeneratedUiPane,
+      openAppSurfacePane,
       openNewTerminalPane,
       openTerminalPane,
       openThreadPane,
@@ -740,7 +759,7 @@ export function WorkspaceProvider({
       onThreadSnapshotLoaded,
       onVisiblePaneIdsChange,
       openDraftThreadPane,
-      openGeneratedUiPane,
+      openAppSurfacePane,
       openNewTerminalPane,
       openTerminalPane,
       openThreadPane,
@@ -809,6 +828,16 @@ function visibleThreadIdsForPaneIds(panes: WorkspacePane[], paneIds: string[]): 
     }
   }
   return Array.from(threadIds).sort();
+}
+
+function appSurfacePaneForThread(panes: WorkspacePane[], threadId: string): WorkspacePane | null {
+  return panes.find((pane) => {
+    if (pane.kind !== "appSurface") {
+      return false;
+    }
+    const target = paneTargetRecord(pane);
+    return typeof target.threadId === "string" && target.threadId === threadId;
+  }) ?? null;
 }
 
 function sameStringArray(left: string[], right: string[]): boolean {

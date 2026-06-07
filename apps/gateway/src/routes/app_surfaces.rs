@@ -18,8 +18,9 @@ use crate::{
     error::{ApiError, ApiResult},
     routes::turns::{submit_thread_input, ThreadInputResponse, TurnStartRequest},
     store::{
-        AppSurfaceCsp, AppSurfaceGrants, AppSurfaceProvider, AppSurfaceSession,
-        AppSurfaceSessionStatus, Approval, EventEnvelope, NewApproval, NewEvent,
+        AppSurfaceCsp, AppSurfaceGrants, AppSurfacePermissions, AppSurfaceProvider,
+        AppSurfaceResourceGrant, AppSurfaceSession, AppSurfaceSessionStatus, AppSurfaceToolGrant,
+        Approval, EventEnvelope, NewApproval, NewEvent,
     },
 };
 
@@ -33,6 +34,7 @@ pub const APP_SURFACE_PRESENTATION_REQUESTED_EVENT: &str = "app_surface.presenta
 pub const APP_SURFACE_BRIDGE_APPROVAL_METHOD: &str = "appSurface/bridge/requestApproval";
 
 const MAX_BRIDGE_MESSAGE_BYTES: usize = 16 * 1024;
+const APP_SURFACE_SIZE_CHANGED_METHOD: &str = "ui/notifications/size-changed";
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -65,6 +67,7 @@ pub struct AppSurfaceSessionDto {
     pub status: AppSurfaceSessionStatus,
     pub display_modes: Vec<String>,
     pub csp: AppSurfaceCsp,
+    pub permissions: AppSurfacePermissions,
     pub grants: AppSurfaceGrants,
     pub provenance: Value,
     pub submitted_revision: Option<i64>,
@@ -263,6 +266,12 @@ pub async fn app_surface_bridge(
             bridge_update_model_context(state.clone(), session.clone(), request).await
         }
         "ui/open-link" => bridge_open_link(session.clone(), request).await,
+        "ui/request-display-mode" => bridge_request_display_mode(session.clone(), request).await,
+        APP_SURFACE_SIZE_CHANGED_METHOD => Ok(json!({})),
+        "ping" => Ok(json!({})),
+        "notifications/message" => {
+            bridge_log_message(state.clone(), session.clone(), request).await
+        }
         method => {
             let response = bridge_error(
                 request.id,
@@ -324,14 +333,13 @@ async fn bridge_message(
             "app surface is not granted ui/message".to_string(),
         ));
     }
-    let message = required_string_param(&request.params, "message")?;
+    let message = spec_user_text_message(&request.params)?;
     if message.len() > MAX_BRIDGE_MESSAGE_BYTES {
         return Err(ApiError::BadRequest(
             "app surface message is too large".to_string(),
         ));
     }
-    let metadata = request.params.get("metadata").cloned();
-    let response = match submit_thread_input(
+    let response = submit_thread_input(
         State(state.clone()),
         Path(session.thread_id.clone()),
         Json(TurnStartRequest {
@@ -343,25 +351,8 @@ async fn bridge_message(
             options: Default::default(),
         }),
     )
-    .await
-    {
-        Ok(response) => response.0,
-        Err(error) => {
-            if let Ok(errored) = state
-                .store
-                .mark_app_surface_session_errored(&session.id, session.revision, &error.to_string())
-                .await
-            {
-                broadcast_app_surface_event(&state, APP_SURFACE_ERROR_EVENT, &errored).await?;
-            }
-            return Err(error);
-        }
-    };
-    let submitted = state
-        .store
-        .submit_app_surface_session(&session.id, session.revision, &message, metadata)
-        .await?;
-    broadcast_app_surface_event(&state, APP_SURFACE_SUBMITTED_EVENT, &submitted).await?;
+    .await?
+    .0;
     serde_json::to_value(AppSurfaceBridgeMessageResult { input: response }).map_err(Into::into)
 }
 
@@ -369,7 +360,7 @@ fn bridge_initialize(session: &AppSurfaceSession, params: &Value) -> ApiResult<V
     let protocol_version = params
         .get("protocolVersion")
         .and_then(Value::as_str)
-        .unwrap_or("2025-11-21");
+        .unwrap_or("2026-01-26");
     let available_display_modes = mcp_app_available_display_modes(&session.display_modes);
     let host_capabilities = mcp_app_host_capabilities(&session);
     Ok(json!({
@@ -386,17 +377,8 @@ fn bridge_initialize(session: &AppSurfaceSession, params: &Value) -> ApiResult<V
             "resourceUri": session.resource_uri,
             "displayMode": "inline",
             "availableDisplayModes": available_display_modes,
-            "platform": "web"
-        },
-        "sessionId": session.id,
-        "revision": session.revision,
-        "provider": session.provider,
-        "resourceUri": session.resource_uri,
-        "displayMode": "pane",
-        "displayModes": session.display_modes,
-        "capabilities": {
-            "bridge": true,
-            "methods": bridge_supported_methods(session)
+            "platform": "web",
+            "theme": "dark"
         }
     }))
 }
@@ -405,6 +387,14 @@ fn mcp_app_host_capabilities(session: &AppSurfaceSession) -> Value {
     let mut capabilities = serde_json::Map::new();
     capabilities.insert("serverTools".to_string(), json!({}));
     capabilities.insert("serverResources".to_string(), json!({}));
+    capabilities.insert("logging".to_string(), json!({}));
+    capabilities.insert(
+        "sandbox".to_string(),
+        json!({
+            "csp": session.csp,
+            "permissions": session.permissions
+        }),
+    );
     if session.grants.can_open_links {
         capabilities.insert("openLinks".to_string(), json!({}));
     }
@@ -438,21 +428,28 @@ async fn bridge_resource_read(
             "contents": [{
                 "uri": session.resource_uri,
                 "mimeType": session.resource_mime_type,
-                "text": session.html
+                "text": session.html,
+                "_meta": {
+                    "ui": {
+                        "csp": session.csp,
+                        "permissions": session.permissions
+                    }
+                }
             }]
         }));
     }
-    let server = required_string_param(&request.params, "server")?;
-    if !session
-        .grants
-        .resources
-        .iter()
-        .any(|grant| grant.server.as_deref() == Some(server.as_str()) && grant.uri == uri)
-    {
+    let Some(grant) = resolve_resource_grant(&session, &uri) else {
         return Err(ApiError::BadRequest(
             "app surface resource read is not granted".to_string(),
         ));
-    }
+    };
+    let server = grant
+        .server
+        .clone()
+        .or_else(|| session_mcp_server(&session))
+        .ok_or_else(|| {
+            ApiError::BadRequest("app surface resource grant has no server".to_string())
+        })?;
     let response = crate::app_server_api::client(&state.app_server)
         .mcp_resource_read(server, uri, Some(session.thread_id))
         .await?;
@@ -464,18 +461,14 @@ async fn bridge_tool_call(
     session: AppSurfaceSession,
     request: AppSurfaceBridgeRequest,
 ) -> ApiResult<Value> {
-    let server = required_string_param(&request.params, "server")?;
-    let tool = required_string_param(&request.params, "tool")?;
-    if !session
-        .grants
-        .tools
-        .iter()
-        .any(|grant| grant.server == server && grant.tool == tool)
-    {
+    let name = required_string_param(&request.params, "name")?;
+    let Some(grant) = resolve_tool_grant(&session, &name) else {
         return Err(ApiError::BadRequest(
             "app surface tool call is not granted".to_string(),
         ));
-    }
+    };
+    let server = grant.server.clone();
+    let tool = grant.tool.clone();
     if session.provider == AppSurfaceProvider::Generated {
         if let Some(result) =
             require_generated_tool_approval(&state, &session, &request, &server, &tool).await?
@@ -629,6 +622,46 @@ async fn bridge_update_model_context(
     }))
 }
 
+async fn bridge_request_display_mode(
+    session: AppSurfaceSession,
+    request: AppSurfaceBridgeRequest,
+) -> ApiResult<Value> {
+    let mode = required_string_param(&request.params, "mode")?;
+    let modes = mcp_app_available_display_modes(&session.display_modes);
+    if !modes.iter().any(|available| *available == mode) {
+        return Err(ApiError::BadRequest(format!(
+            "app surface display mode {mode} is not available"
+        )));
+    }
+    Ok(json!({ "mode": mode }))
+}
+
+async fn bridge_log_message(
+    state: AppState,
+    session: AppSurfaceSession,
+    request: AppSurfaceBridgeRequest,
+) -> ApiResult<Value> {
+    let event = state
+        .store
+        .append_event(NewEvent {
+            project_id: None,
+            thread_id: Some(session.thread_id.clone()),
+            turn_id: None,
+            item_id: None,
+            kind: "app_surface.notification_message".to_string(),
+            codex_method: None,
+            payload: json!({
+                "sessionId": session.id,
+                "revision": session.revision,
+                "provider": session.provider,
+                "message": request.params
+            }),
+        })
+        .await?;
+    let _ = state.events.send(event);
+    Ok(json!({}))
+}
+
 async fn bridge_open_link(
     session: AppSurfaceSession,
     request: AppSurfaceBridgeRequest,
@@ -679,6 +712,7 @@ pub(crate) fn session_dto(session: AppSurfaceSession) -> AppSurfaceSessionDto {
         status: session.status,
         display_modes: session.display_modes,
         csp: session.csp,
+        permissions: session.permissions,
         grants: session.grants,
         provenance: session.provenance,
         submitted_revision: session.submitted_revision,
@@ -814,11 +848,9 @@ fn bridge_audit_approval_id(params: &Value, response: &AppSurfaceBridgeResponse)
 fn bridge_audit_target(method: &str, params: &Value) -> Value {
     match method {
         "tools/call" => json!({
-            "server": params.get("server").and_then(Value::as_str),
-            "tool": params.get("tool").and_then(Value::as_str)
+            "name": params.get("name").and_then(Value::as_str)
         }),
         "resources/read" => json!({
-            "server": params.get("server").and_then(Value::as_str),
             "uri": params.get("uri").and_then(Value::as_str)
         }),
         "ui/open-link" => json!({
@@ -826,20 +858,6 @@ fn bridge_audit_target(method: &str, params: &Value) -> Value {
         }),
         _ => Value::Null,
     }
-}
-
-fn bridge_supported_methods(session: &AppSurfaceSession) -> Vec<&'static str> {
-    let mut methods = vec!["ui/initialize", "tools/call", "resources/read"];
-    if session.grants.can_send_message {
-        methods.push("ui/message");
-    }
-    if session.grants.can_update_model_context {
-        methods.push("ui/update-model-context");
-    }
-    if session.grants.can_open_links {
-        methods.push("ui/open-link");
-    }
-    methods
 }
 
 fn bridge_audit_grant(session: &AppSurfaceSession, method: &str, params: &Value) -> Value {
@@ -861,43 +879,28 @@ fn bridge_audit_grant(session: &AppSurfaceSession, method: &str, params: &Value)
             "capability": "canOpenLinks"
         }),
         "tools/call" => {
-            let server = params
-                .get("server")
+            let name = params
+                .get("name")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            let tool = params
-                .get("tool")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            let allowed = session
-                .grants
-                .tools
-                .iter()
-                .any(|grant| grant.server == server && grant.tool == tool);
+            let grant = resolve_tool_grant(session, name);
             json!({
-                "allowed": allowed,
-                "server": server,
-                "tool": tool
+                "allowed": grant.is_some(),
+                "name": name,
+                "server": grant.map(|grant| grant.server.as_str()),
+                "tool": grant.map(|grant| grant.tool.as_str())
             })
         }
         "resources/read" => {
-            let server = params
-                .get("server")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
             let uri = params
                 .get("uri")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            let allowed = uri == session.resource_uri
-                || session
-                    .grants
-                    .resources
-                    .iter()
-                    .any(|grant| grant.server.as_deref() == Some(server) && grant.uri == uri);
+            let grant = resolve_resource_grant(session, uri);
+            let allowed = uri == session.resource_uri || grant.is_some();
             json!({
                 "allowed": allowed,
-                "server": server,
+                "server": grant.and_then(|grant| grant.server.as_deref()),
                 "uri": uri
             })
         }
@@ -909,8 +912,7 @@ fn bridge_audit_result(method: &str, result: &Value) -> Value {
     match method {
         "ui/initialize" => json!({
             "methodCount": result
-                .get("capabilities")
-                .and_then(|capabilities| capabilities.get("methods"))
+                .get("hostCapabilities")
                 .and_then(Value::as_array)
                 .map(Vec::len)
         }),
@@ -939,6 +941,86 @@ fn required_string_param(params: &Value, field: &str) -> ApiResult<String> {
         .filter(|value| !value.is_empty())
         .map(str::to_string)
         .ok_or_else(|| ApiError::BadRequest(format!("missing app surface bridge field {field}")))
+}
+
+fn spec_user_text_message(params: &Value) -> ApiResult<String> {
+    if params.get("role").and_then(Value::as_str) != Some("user") {
+        return Err(ApiError::BadRequest(
+            "ui/message requires role \"user\"".to_string(),
+        ));
+    }
+    let Some(content) = params.get("content") else {
+        return Err(ApiError::BadRequest(
+            "ui/message requires content".to_string(),
+        ));
+    };
+    if let Some(text) = text_content_block(content) {
+        return Ok(text);
+    }
+    let Some(blocks) = content.as_array() else {
+        return Err(ApiError::BadRequest(
+            "ui/message content must be a text content block or array".to_string(),
+        ));
+    };
+    let text = blocks
+        .iter()
+        .filter_map(text_content_block)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if text.trim().is_empty() {
+        return Err(ApiError::BadRequest(
+            "ui/message requires non-empty text content".to_string(),
+        ));
+    }
+    Ok(text)
+}
+
+fn text_content_block(value: &Value) -> Option<String> {
+    if value.get("type").and_then(Value::as_str) != Some("text") {
+        return None;
+    }
+    value
+        .get("text")
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty())
+        .map(str::to_string)
+}
+
+fn grant_app_name(grant: &AppSurfaceToolGrant) -> &str {
+    grant.name.as_deref().unwrap_or(grant.tool.as_str())
+}
+
+fn resolve_tool_grant<'a>(
+    session: &'a AppSurfaceSession,
+    name: &str,
+) -> Option<&'a AppSurfaceToolGrant> {
+    let server = session_mcp_server(session);
+    session.grants.tools.iter().find(|grant| {
+        grant_app_name(grant) == name
+            && (session.provider == AppSurfaceProvider::Generated
+                || server.as_deref() == Some(grant.server.as_str()))
+    })
+}
+
+fn resolve_resource_grant<'a>(
+    session: &'a AppSurfaceSession,
+    uri: &str,
+) -> Option<&'a AppSurfaceResourceGrant> {
+    let server = session_mcp_server(session);
+    session.grants.resources.iter().find(|grant| {
+        grant.uri == uri
+            && (session.provider == AppSurfaceProvider::Generated
+                || grant.server.as_deref() == server.as_deref())
+    })
+}
+
+fn session_mcp_server(session: &AppSurfaceSession) -> Option<String> {
+    session
+        .provenance
+        .get("mcp")
+        .and_then(|mcp| mcp.get("server"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 fn url_path_segment(value: &str) -> String {

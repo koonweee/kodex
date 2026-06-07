@@ -1,10 +1,10 @@
-export type WorkspacePaneType = "thread" | "generatedUi" | "terminal";
+export type WorkspacePaneType = "thread" | "appSurface" | "terminal";
 
 export type ThreadPaneTarget =
   | { mode: "existing"; threadId: string }
   | { mode: "draft"; projectId?: string | null };
 
-export type GeneratedUiPaneTarget =
+export type AppSurfacePaneTarget =
   | { mode: "latest"; threadId: string }
   | { mode: "session"; threadId: string; sessionId: string };
 
@@ -23,8 +23,8 @@ export type WorkspacePane =
     }
   | {
       id: string;
-      kind: "generatedUi";
-      target: GeneratedUiPaneTarget;
+      kind: "appSurface";
+      target: AppSurfacePaneTarget;
       title?: string | null;
     }
   | {
@@ -68,8 +68,8 @@ export function paneTitle(pane: WorkspacePane): string {
   if (pane.kind === "thread") {
     return pane.target.mode === "draft" ? "Draft Thread" : "Thread";
   }
-  if (pane.kind === "generatedUi") {
-    return "Generated UI";
+  if (pane.kind === "appSurface") {
+    return "App Surface";
   }
   return "Terminal";
 }

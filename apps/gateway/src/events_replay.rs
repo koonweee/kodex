@@ -12,11 +12,8 @@ use crate::{
     routes::{
         app_surfaces::{
             APP_SURFACE_ARCHIVED_EVENT, APP_SURFACE_BRIDGE_CALL_EVENT, APP_SURFACE_ERROR_EVENT,
-            APP_SURFACE_MODEL_CONTEXT_UPDATED_EVENT, APP_SURFACE_SUBMITTED_EVENT,
-            APP_SURFACE_UPSERTED_EVENT,
-        },
-        generated_ui::{
-            GENERATED_UI_ARCHIVED_EVENT, GENERATED_UI_SUBMITTED_EVENT, GENERATED_UI_UPSERTED_EVENT,
+            APP_SURFACE_MODEL_CONTEXT_UPDATED_EVENT, APP_SURFACE_PRESENTATION_REQUESTED_EVENT,
+            APP_SURFACE_SUBMITTED_EVENT, APP_SURFACE_UPSERTED_EVENT,
         },
         threads::{
             THREAD_NOTIFICATIONS_UPDATED_EVENT, THREAD_PIN_UPDATED_EVENT,
@@ -42,6 +39,7 @@ pub(crate) const WORKSPACE_GLOBAL_THREAD_EVENT_KINDS: &[&str] = &[
     "gateway.error",
     "gateway.warning",
     "timeline.thread_metadata",
+    APP_SURFACE_PRESENTATION_REQUESTED_EVENT,
     THREAD_NOTIFICATIONS_UPDATED_EVENT,
     THREAD_READ_UPDATED_EVENT,
     THREAD_PIN_UPDATED_EVENT,
@@ -107,14 +105,12 @@ pub(crate) fn is_operational_replay_event(event: &EventEnvelope) -> bool {
             | THREAD_SUBAGENT_STOPPED_EVENT
             | THREAD_SUBAGENTS_CHANGED_EVENT
             | APP_SURFACE_UPSERTED_EVENT
+            | APP_SURFACE_PRESENTATION_REQUESTED_EVENT
             | APP_SURFACE_SUBMITTED_EVENT
             | APP_SURFACE_ARCHIVED_EVENT
             | APP_SURFACE_ERROR_EVENT
             | APP_SURFACE_BRIDGE_CALL_EVENT
             | APP_SURFACE_MODEL_CONTEXT_UPDATED_EVENT
-            | GENERATED_UI_UPSERTED_EVENT
-            | GENERATED_UI_SUBMITTED_EVENT
-            | GENERATED_UI_ARCHIVED_EVENT
             | automations::AUTOMATION_UPSERT_EVENT
             | automations::AUTOMATION_DELETE_EVENT
             | queue::QUEUE_UPSERT_EVENT
@@ -211,11 +207,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn generated_ui_events_are_live_and_replayable() {
+    fn app_surface_events_are_live_and_replayable() {
         for kind in [
-            GENERATED_UI_UPSERTED_EVENT,
-            GENERATED_UI_SUBMITTED_EVENT,
-            GENERATED_UI_ARCHIVED_EVENT,
+            APP_SURFACE_UPSERTED_EVENT,
+            APP_SURFACE_PRESENTATION_REQUESTED_EVENT,
+            APP_SURFACE_SUBMITTED_EVENT,
+            APP_SURFACE_ARCHIVED_EVENT,
         ] {
             let event = event(kind, 1, "thread-1");
             assert!(is_operational_replay_event(&event), "{kind} should replay");
@@ -224,7 +221,7 @@ mod tests {
     }
 
     #[test]
-    fn selected_thread_replay_includes_generated_ui_events() {
+    fn selected_thread_replay_includes_app_surface_events() {
         let query = EventsQuery {
             cursor: Some(0),
             project_id: None,
@@ -235,9 +232,10 @@ mod tests {
         };
         let replay = workspace_sse_replay_events(
             vec![
-                event(GENERATED_UI_UPSERTED_EVENT, 1, "thread-1"),
-                event(GENERATED_UI_ARCHIVED_EVENT, 2, "thread-2"),
-                event(GENERATED_UI_SUBMITTED_EVENT, 3, "thread-1"),
+                event(APP_SURFACE_UPSERTED_EVENT, 1, "thread-1"),
+                event(APP_SURFACE_PRESENTATION_REQUESTED_EVENT, 2, "thread-1"),
+                event(APP_SURFACE_ARCHIVED_EVENT, 3, "thread-2"),
+                event(APP_SURFACE_SUBMITTED_EVENT, 4, "thread-1"),
             ],
             &query,
         )
@@ -248,7 +246,11 @@ mod tests {
                 .iter()
                 .map(|event| event.kind.as_str())
                 .collect::<Vec<_>>(),
-            vec![GENERATED_UI_UPSERTED_EVENT, GENERATED_UI_SUBMITTED_EVENT]
+            vec![
+                APP_SURFACE_UPSERTED_EVENT,
+                APP_SURFACE_PRESENTATION_REQUESTED_EVENT,
+                APP_SURFACE_SUBMITTED_EVENT,
+            ]
         );
     }
 
@@ -266,9 +268,10 @@ mod tests {
         let replay = workspace_sse_replay_events(
             vec![
                 global_event(ACCOUNT_RATE_LIMITS_UPDATED_EVENT, 1),
-                event(GENERATED_UI_UPSERTED_EVENT, 2, "thread-1"),
-                event(GENERATED_UI_SUBMITTED_EVENT, 3, "thread-2"),
-                event(GENERATED_UI_ARCHIVED_EVENT, 4, "thread-3"),
+                event(APP_SURFACE_UPSERTED_EVENT, 2, "thread-1"),
+                event(APP_SURFACE_SUBMITTED_EVENT, 3, "thread-2"),
+                event(APP_SURFACE_PRESENTATION_REQUESTED_EVENT, 4, "thread-3"),
+                event(APP_SURFACE_ARCHIVED_EVENT, 5, "thread-4"),
             ],
             &query,
         )
@@ -281,8 +284,9 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 (ACCOUNT_RATE_LIMITS_UPDATED_EVENT, None),
-                (GENERATED_UI_UPSERTED_EVENT, Some("thread-1")),
-                (GENERATED_UI_SUBMITTED_EVENT, Some("thread-2")),
+                (APP_SURFACE_UPSERTED_EVENT, Some("thread-1")),
+                (APP_SURFACE_SUBMITTED_EVENT, Some("thread-2")),
+                (APP_SURFACE_PRESENTATION_REQUESTED_EVENT, Some("thread-3")),
             ]
         );
     }

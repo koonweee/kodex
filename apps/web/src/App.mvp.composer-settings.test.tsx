@@ -982,18 +982,9 @@ describe("MVP composer settings flows", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows sidebar login without model or status summaries", async () => {
-    const gateway = mockGateway(
+  it("shows sidebar account settings without model or status summaries", async () => {
+    mockGateway(
       baseRoutes({
-        "POST /v1/account/login": {
-          loginType: "chatgpt",
-          loginId: "login-1",
-          authUrl: "https://chatgpt.com/login/device",
-          verificationUrl: null,
-          userCode: null,
-          rawPayload: {},
-        },
-        "POST /v1/account/login/login-1/cancel": { payload: {} },
         "POST /v1/account/logout": { payload: {} },
       }),
     );
@@ -1006,16 +997,12 @@ describe("MVP composer settings flows", () => {
     expect(screen.queryByRole("button", { name: /debug options/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /account settings/i })).toBeInTheDocument();
     expect(screen.queryByText(/used/i)).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /connect chatgpt/i }));
+    expect(screen.queryByRole("button", { name: /connect chatgpt/i })).not.toBeInTheDocument();
 
-    expect(await screen.findByRole("link", { name: /open chatgpt auth/i })).toHaveAttribute(
-      "href",
-      "https://chatgpt.com/login/device",
-    );
-    expect(gateway.callsFor("POST", "/v1/account/login")).toHaveLength(1);
-
-    await userEvent.click(screen.getByRole("button", { name: /cancel login/i }));
-    expect(gateway.callsFor("POST", "/v1/account/login/login-1/cancel")).toHaveLength(1);
+    await userEvent.click(screen.getByRole("button", { name: /account settings/i }));
+    expect(await screen.findByRole("menuitem", { hidden: true, name: /automations/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { hidden: true, name: /preferences/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitemcheckbox", { hidden: true, name: /show debug events/i })).toBeInTheDocument();
   });
 
 });

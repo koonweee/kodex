@@ -1,7 +1,7 @@
 import { MessageSquareText, Sparkles, TerminalSquare } from "lucide-react";
 import type { ReactElement } from "react";
 
-import { GeneratedUiWorkspacePane } from "../panes/generatedUi/GeneratedUiWorkspacePane";
+import { AppSurfaceWorkspacePane } from "../panes/appSurface/AppSurfaceWorkspacePane";
 import { TerminalPane } from "../panes/terminal/TerminalPane";
 import { ThreadPane } from "../panes/thread/ThreadPane";
 import type { WorkspacePane, WorkspacePaneComponentProps, WorkspacePaneType } from "./paneTypes";
@@ -19,10 +19,10 @@ const paneRegistry: Record<WorkspacePaneType, PaneDefinition> = {
     component: ThreadPane,
     title: (pane) => pane.title ?? (paneTargetRecord(pane).mode === "draft" ? "Draft Thread" : "Thread"),
   },
-  generatedUi: {
+  appSurface: {
     icon: Sparkles,
-    component: GeneratedUiWorkspacePane,
-    title: (pane) => pane.title ?? "Generated UI",
+    component: AppSurfaceWorkspacePane,
+    title: (pane) => pane.title ?? "App Surface",
   },
   terminal: {
     icon: TerminalSquare,

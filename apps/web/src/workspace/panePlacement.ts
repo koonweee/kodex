@@ -8,7 +8,7 @@ export type WorkspacePanePlacementHint = {
   referencePaneId: string;
 };
 
-export type WorkspacePanePlacementIntent = "draftThread" | "duplicate" | "generatedUi" | "terminal" | "thread";
+export type WorkspacePanePlacementIntent = "appSurface" | "draftThread" | "duplicate" | "terminal" | "thread";
 
 export type WorkspacePanePlacementOptions = {
   direction?: WorkspacePanePlacementDirection;

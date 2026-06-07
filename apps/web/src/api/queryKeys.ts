@@ -7,7 +7,6 @@ export const queryKeys = {
   composerSettingsRoot: ["composer-settings"] as const,
   composerSettings: (projectId: string | null) => ["composer-settings", projectId ?? "global"] as const,
   appSurface: (threadId: string) => ["threads", threadId, "app-surface"] as const,
-  generatedUi: (threadId: string) => ["threads", threadId, "generated-ui"] as const,
   kodexControlPlugin: ["plugins", "kodex-control"] as const,
   models: ["models"] as const,
   mcpConfiguredServers: ["mcp", "configured-servers"] as const,

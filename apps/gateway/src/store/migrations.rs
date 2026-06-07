@@ -95,27 +95,6 @@ impl Store {
         .await?;
         sqlx::query(
             r#"
-            create table if not exists generated_ui_sessions (
-                id text primary key,
-                thread_id text not null unique,
-                title text not null,
-                html text not null,
-                revision integer not null,
-                status text not null,
-                submitted_revision integer,
-                submitted_message text,
-                submitted_metadata_json text,
-                created_at text not null,
-                updated_at text not null,
-                submitted_at text,
-                archived_at text
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-        sqlx::query(
-            r#"
             create table if not exists app_surface_sessions (
                 id text primary key,
                 thread_id text not null unique,
@@ -129,6 +108,7 @@ impl Store {
                 status text not null,
                 display_modes_json text not null,
                 csp_json text not null,
+                permissions_json text not null default '{}',
                 grants_json text not null,
                 provenance_json text not null,
                 submitted_revision integer,
@@ -147,6 +127,12 @@ impl Store {
             "app_surface_sessions",
             "bridge_token",
             "text not null default ''",
+        )
+        .await?;
+        self.add_column_if_missing(
+            "app_surface_sessions",
+            "permissions_json",
+            "text not null default '{}'",
         )
         .await?;
         sqlx::query(
@@ -589,7 +575,7 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'project_preview_services', 'project_previews', 'project_preview_routes', 'generated_ui_sessions', 'app_surface_sessions', 'app_surface_resources', 'approvals', 'thread_reads', 'push_subscriptions', 'notification_deliveries', 'thread_notification_settings', 'thread_local_settings_overlays', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'projects', 'project_preview_services', 'project_previews', 'project_preview_routes', 'app_surface_sessions', 'app_surface_resources', 'approvals', 'thread_reads', 'push_subscriptions', 'notification_deliveries', 'thread_notification_settings', 'thread_local_settings_overlays', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
         )
         .fetch_all(store.pool())
         .await
@@ -603,7 +589,6 @@ mod tests {
                 "automation_runs",
                 "automations",
                 "events",
-                "generated_ui_sessions",
                 "notification_deliveries",
                 "pending_timeline_skill_mentions",
                 "project_preview_routes",

@@ -23,8 +23,8 @@ use crate::{
         ThreadSettingsUpdateRequest, ThreadViewResponse, TurnStartOptions, UserInput,
     },
     app_surfaces::{
-        validate_app_surface_grants, validate_app_surface_html, validate_app_surface_title,
-        MCP_APP_MIME_TYPE,
+        validate_app_surface_grants, validate_app_surface_title,
+        validate_generated_app_surface_html, MCP_APP_MIME_TYPE,
     },
     automations::{broadcast_automation_delete, broadcast_automation_upsert},
     error::{ApiError, ApiResult},
@@ -46,10 +46,6 @@ use crate::{
             AutomationUpdateRequest,
         },
         events::{EventListResponse, EventsQuery},
-        generated_ui::{
-            session_dto, validate_generated_ui_html, validate_generated_ui_title,
-            GeneratedUiSessionReadResponse, GeneratedUiSessionResponse,
-        },
         project_previews::{
             project_preview_response, validate_path, validate_port, validate_protocol,
             validate_public_port, validate_route_path, PreviewListResponse,
@@ -70,11 +66,11 @@ use crate::{
     schema::validate_approval_response,
     skills,
     store::{
-        AppSurfaceCsp, AppSurfaceGrants, AppSurfaceProvider, AppSurfaceSessionStatus,
-        AppSurfaceSessionUpsert, Approval, AutomationStatus, AutomationUpdate, NewAutomation,
-        NewEvent, NewProjectPreview, NewProjectPreviewRoute, NewProjectPreviewService, Project,
-        ProjectPreview, ProjectPreviewRouteUpdate, ProjectPreviewService,
-        ProjectPreviewServiceUpdate, ProjectPreviewUpdate, QueuedInput,
+        AppSurfaceCsp, AppSurfaceGrants, AppSurfacePermissions, AppSurfaceProvider,
+        AppSurfaceSessionStatus, AppSurfaceSessionUpsert, Approval, AutomationStatus,
+        AutomationUpdate, NewAutomation, NewEvent, NewProjectPreview, NewProjectPreviewRoute,
+        NewProjectPreviewService, Project, ProjectPreview, ProjectPreviewRouteUpdate,
+        ProjectPreviewService, ProjectPreviewServiceUpdate, ProjectPreviewUpdate, QueuedInput,
     },
 };
 
@@ -117,12 +113,6 @@ pub fn router() -> Router<AppState> {
         .route(
             "/v1/self-control/threads/{thread_id}/queued-inputs",
             get(list_self_control_queued_inputs),
-        )
-        .route(
-            "/v1/self-control/threads/{thread_id}/generated-ui",
-            get(get_self_control_generated_ui)
-                .post(upsert_self_control_generated_ui)
-                .delete(archive_self_control_generated_ui),
         )
         .route(
             "/v1/self-control/threads/{thread_id}/app-surface",
@@ -330,7 +320,7 @@ pub struct SelfControlCapabilities {
     pub threads: bool,
     pub automations: bool,
     pub mcp_resources: bool,
-    pub generated_ui: bool,
+    pub app_surfaces: bool,
 }
 
 #[utoipa::path(
@@ -354,7 +344,7 @@ pub async fn self_control_status(
             threads: true,
             automations: true,
             mcp_resources: true,
-            generated_ui: true,
+            app_surfaces: true,
         },
     }))
 }
@@ -480,19 +470,6 @@ pub async fn list_self_control_queued_inputs(
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct SelfControlGeneratedUiUpsertRequest {
-    pub title: String,
-    pub html: String,
-    #[serde(default)]
-    pub presentation: Option<AppSurfacePresentationAction>,
-    #[serde(default)]
-    pub source: SelfControlSource,
-    #[serde(default)]
-    pub max_self_control_depth: Option<u8>,
-}
-
-#[derive(Debug, Clone, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct SelfControlGeneratedAppSurfaceUpsertRequest {
     pub title: String,
     pub html: String,
@@ -503,6 +480,8 @@ pub struct SelfControlGeneratedAppSurfaceUpsertRequest {
     pub display_modes: Vec<String>,
     #[serde(default)]
     pub csp: AppSurfaceCsp,
+    #[serde(default)]
+    pub permissions: AppSurfacePermissions,
     #[serde(default)]
     pub grants: AppSurfaceGrants,
     #[serde(default)]
@@ -521,19 +500,6 @@ pub struct SelfControlAppSurfacePresentationRequest {
     pub source: SelfControlSource,
     #[serde(default)]
     pub max_self_control_depth: Option<u8>,
-}
-
-#[utoipa::path(
-    get,
-    path = "/v1/self-control/threads/{threadId}/generated-ui",
-    summary = "Read the latest generated UI for a thread through self-control",
-    responses((status = 200, body = GeneratedUiSessionReadResponse))
-)]
-pub async fn get_self_control_generated_ui(
-    State(state): State<AppState>,
-    Path(thread_id): Path<String>,
-) -> ApiResult<Json<GeneratedUiSessionReadResponse>> {
-    crate::routes::generated_ui::get_thread_generated_ui(State(state), Path(thread_id)).await
 }
 
 #[utoipa::path(
@@ -564,7 +530,7 @@ pub async fn upsert_self_control_generated_app_surface(
 ) -> ApiResult<Json<AppSurfaceSessionResponse>> {
     enforce_self_control_depth(request.max_self_control_depth)?;
     let title = validate_app_surface_title(request.title)?;
-    let html = validate_app_surface_html(request.html)?;
+    let html = validate_generated_app_surface_html(request.html)?;
     let fallback_content = request.fallback_content.trim().to_string();
     if fallback_content.is_empty() {
         return Err(ApiError::BadRequest(
@@ -589,6 +555,7 @@ pub async fn upsert_self_control_generated_app_surface(
             fallback_content,
             display_modes,
             csp: request.csp,
+            permissions: request.permissions,
             grants,
             provenance: json!({
                 "source": request.source.to_value(),
@@ -625,80 +592,6 @@ pub async fn upsert_self_control_generated_app_surface(
     .await?;
     Ok(Json(AppSurfaceSessionResponse {
         session: app_surface_session_dto(session),
-    }))
-}
-
-#[utoipa::path(
-    post,
-    path = "/v1/self-control/threads/{threadId}/generated-ui",
-    summary = "Open or replace a thread generated UI pane through self-control",
-    description = "Agent-facing generated UI endpoint. The HTML is stored as the latest per-thread revision and served in a sandboxed iframe with self-contained CSP. Tools should use generated UI only when it creates a richer experience than chat alone, pair it with a short assistant message, and intentionally choose local UI interactions for embedded-data behavior or conversational submissions for actions that need Codex, tools, external data, persistence, workflow continuation, or an explicit user decision. Conversational submissions should include a standalone human-readable message plus optional compact JSON metadata.",
-    request_body = SelfControlGeneratedUiUpsertRequest,
-    responses((status = 200, body = GeneratedUiSessionResponse))
-)]
-pub async fn upsert_self_control_generated_ui(
-    State(state): State<AppState>,
-    Path(thread_id): Path<String>,
-    Json(request): Json<SelfControlGeneratedUiUpsertRequest>,
-) -> ApiResult<Json<GeneratedUiSessionResponse>> {
-    enforce_self_control_depth(request.max_self_control_depth)?;
-    let title = validate_generated_ui_title(request.title)?;
-    let html = validate_generated_ui_html(request.html)?;
-    let fallback_content = format!("Interactive generated UI: {title}");
-    let session = state
-        .store
-        .upsert_app_surface_session(AppSurfaceSessionUpsert {
-            thread_id: thread_id.clone(),
-            provider: AppSurfaceProvider::Generated,
-            title: title.clone(),
-            resource_uri: None,
-            resource_mime_type: MCP_APP_MIME_TYPE.to_string(),
-            html,
-            fallback_content,
-            display_modes: vec!["inline".to_string(), "fullscreen".to_string()],
-            csp: AppSurfaceCsp::default(),
-            grants: AppSurfaceGrants {
-                can_send_message: true,
-                ..Default::default()
-            },
-            provenance: json!({
-                "source": request.source.to_value(),
-                "generated": {
-                    "compatAlias": "generated-ui"
-                }
-            }),
-        })
-        .await?;
-    broadcast_app_surface_event(&state, APP_SURFACE_UPSERTED_EVENT, &session).await?;
-    if let Some(action) = request.presentation {
-        broadcast_app_surface_presentation_request(
-            &state,
-            app_surface_presentation_request(
-                action,
-                &thread_id,
-                Some(&session.id),
-                Some(&session.title),
-            ),
-        )
-        .await?;
-    }
-    audit_self_control(
-        &state,
-        None,
-        Some(&thread_id),
-        "self_control.app_surface_upserted",
-        json!({
-            "source": request.source.to_value(),
-            "sessionId": session.id,
-            "revision": session.revision,
-            "provider": "generated",
-            "compatAlias": "generated-ui",
-            "presentation": request.presentation.map(|action| action.as_str())
-        }),
-    )
-    .await?;
-    Ok(Json(GeneratedUiSessionResponse {
-        session: session_dto(session),
     }))
 }
 
@@ -759,42 +652,6 @@ fn app_surface_presentation_request(
         action,
         title: title.map(str::to_string),
     }
-}
-
-#[utoipa::path(
-    delete,
-    path = "/v1/self-control/threads/{threadId}/generated-ui",
-    summary = "Archive the latest generated UI for a thread through self-control",
-    request_body = SelfControlMutationRequest,
-    responses((status = 200, body = GeneratedUiSessionReadResponse))
-)]
-pub async fn archive_self_control_generated_ui(
-    State(state): State<AppState>,
-    Path(thread_id): Path<String>,
-    request: Option<Json<SelfControlMutationRequest>>,
-) -> ApiResult<Json<GeneratedUiSessionReadResponse>> {
-    let source = optional_source(request);
-    let session = state
-        .store
-        .archive_latest_app_surface_session(&thread_id)
-        .await?;
-    if let Some(session) = &session {
-        broadcast_app_surface_event(&state, APP_SURFACE_ARCHIVED_EVENT, session).await?;
-    }
-    audit_self_control(
-        &state,
-        None,
-        Some(&thread_id),
-        "self_control.app_surface_archived",
-        json!({
-            "source": source.to_value(),
-            "compatAlias": "generated-ui"
-        }),
-    )
-    .await?;
-    Ok(Json(GeneratedUiSessionReadResponse {
-        session: session.map(session_dto),
-    }))
 }
 
 #[utoipa::path(

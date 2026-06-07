@@ -1,7 +1,6 @@
 import { MantineProvider } from "@mantine/core";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 
 import type { AppSurfaceBridgeRequest, AppSurfaceSession } from "../api/client";
@@ -10,7 +9,12 @@ import { AppSurfacePane } from "./AppSurfacePane";
 type AppSurfacePaneBridge = ComponentProps<typeof AppSurfacePane>["onBridgeRequest"];
 
 describe("AppSurfacePane", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_KODEX_APP_SURFACE_SANDBOX_URL", "");
+  });
+
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
 
@@ -22,106 +26,61 @@ describe("AppSurfacePane", () => {
 
     renderPane(appSurfaceSession({ revision: 3 }), { onBridgeRequest });
 
-    postFromFrame({
+    postFromApp({
       jsonrpc: "2.0",
       id: "call-1",
       method: "tools/call",
-      params: { server: "sketch", tool: "export", arguments: { format: "png" } },
+      params: { name: "export", arguments: { format: "png" } },
       revision: 3,
-    });
+    }, 3);
 
     await waitFor(() => {
       expect(onBridgeRequest).toHaveBeenCalledWith({
         bridgeToken: "bridge-token-1",
         id: "call-1",
         method: "tools/call",
-        params: { server: "sketch", tool: "export", arguments: { format: "png" } },
+        params: { name: "export", arguments: { format: "png" } },
         revision: 3,
       });
     });
   });
 
-  it("converts legacy generated UI submit messages into ui/message bridge requests", async () => {
-    const onBridgeRequest = vi.fn().mockResolvedValue({
-      id: "submit-request-1",
-      result: { input: { disposition: "started", queuedInput: null, rawPayload: {} } },
-    }) as unknown as AppSurfacePaneBridge;
+  it("ignores removed legacy app surface submit messages", () => {
+    const onBridgeRequest = vi.fn() as unknown as AppSurfacePaneBridge;
 
     renderPane(appSurfaceSession({ revision: 2 }), { onBridgeRequest });
-    const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
-    const postMessage = vi.fn();
-    Object.defineProperty(iframe.contentWindow, "postMessage", {
-      configurable: true,
-      value: postMessage,
-    });
+    const { postMessage } = mockProxyPostMessage();
 
-    postFromFrame({
+    postFromApp({
       type: "kodex.ui.submit",
       requestId: "submit-request-1",
       sessionId: "session-1",
       revision: 2,
       message: "  Choose the compact layout  ",
       metadata: { selected: "compact" },
-    });
+    }, 2);
 
-    await waitFor(() => {
-      expect(onBridgeRequest).toHaveBeenCalledWith({
-        bridgeToken: "bridge-token-1",
-        id: "submit-request-1",
-        method: "ui/message",
-        params: {
-          message: "Choose the compact layout",
-          metadata: { selected: "compact" },
-        },
-        revision: 2,
-      });
-      expect(postMessage).toHaveBeenCalledWith(
-        {
-          type: "kodex.generatedUi.submit.result",
-          requestId: "submit-request-1",
-          ok: true,
-          status: "submitted",
-          result: { input: { disposition: "started", queuedInput: null, rawPayload: {} } },
-        },
-        "*",
-      );
-    });
+    expect(onBridgeRequest).not.toHaveBeenCalled();
+    expect(postMessage).not.toHaveBeenCalled();
   });
 
-  it("reports unrecognized kodex postMessage event types back to the iframe", async () => {
+  it("ignores unrecognized app messages without legacy acknowledgements", () => {
     const onBridgeRequest = vi.fn() as unknown as AppSurfacePaneBridge;
 
     renderPane(appSurfaceSession({ revision: 2 }), { onBridgeRequest });
-    const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
-    const postMessage = vi.fn();
-    Object.defineProperty(iframe.contentWindow, "postMessage", {
-      configurable: true,
-      value: postMessage,
-    });
+    const { postMessage } = mockProxyPostMessage();
 
-    postFromFrame({
+    postFromApp({
       type: "kodex:submit-message",
       requestId: "wrong-submit-1",
       message: "Hi",
-    });
+    }, 2);
 
     expect(onBridgeRequest).not.toHaveBeenCalled();
-    expect(postMessage).toHaveBeenCalledWith(
-      {
-        type: "kodex.generatedUi.submit.result",
-        requestId: "wrong-submit-1",
-        ok: false,
-        status: "ignored",
-        error: {
-          code: "unrecognized_event_type",
-          message: "Unrecognized generated UI event type: kodex:submit-message",
-        },
-      },
-      "*",
-    );
+    expect(postMessage).not.toHaveBeenCalled();
   });
 
-  it("loads the app surface document into a themed iframe srcDoc", async () => {
+  it("sends the themed app surface document to the sandbox proxy", async () => {
     renderPane(
       appSurfaceSession({
         csp: {
@@ -136,21 +95,204 @@ describe("AppSurfacePane", () => {
     );
 
     const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
+    const { postMessage } = mockProxyPostMessage(iframe);
+    expect(iframe).toHaveAttribute("src", "http://127.0.0.1:3000/app-surface-sandbox.html");
+    expect(iframe).not.toHaveAttribute("srcdoc");
+    expect(iframe).toHaveAttribute("sandbox", "allow-scripts allow-same-origin");
+    postProxyReady();
+
     await waitFor(() => {
-      expect(iframe).toHaveAttribute("srcdoc", expect.stringContaining("kodex-generated-ui-theme"));
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          jsonrpc: "2.0",
+          method: "ui/notifications/sandbox-resource-ready",
+          params: expect.objectContaining({
+            html: expect.stringContaining("kodex-app-surface-theme"),
+          }),
+        }),
+        "*",
+      );
     });
-    expect(iframe).not.toHaveAttribute("src");
-    expect(iframe.getAttribute("srcdoc")).toContain("--kodex-bg-app: #ece6db;");
-    expect(iframe.getAttribute("srcdoc")).toContain("connect-src https://api.example.test");
-    expect(iframe.getAttribute("srcdoc")).toContain("img-src data: blob: https://cdn.example.test");
-    expect(iframe.getAttribute("srcdoc")).toContain("<button>Pick</button>");
+    const resourceMessage = postMessage.mock.calls.find((call) => call[0]?.method === "ui/notifications/sandbox-resource-ready")?.[0];
+    expect(resourceMessage.params.html).toContain("--kodex-bg-app: #ece6db;");
+    expect(resourceMessage.params.html).toContain("connect-src https://api.example.test");
+    expect(resourceMessage.params.html).toContain("img-src https://cdn.example.test");
+    expect(resourceMessage.params.html).toContain("<button>Pick</button>");
+    expect(resourceMessage.params.csp).toEqual({
+      connectDomains: ["https://api.example.test"],
+      resourceDomains: ["https://cdn.example.test"],
+    });
+    expect(resourceMessage.params.permissions).toEqual({});
+    expect(resourceMessage.params.sandbox).toBe("allow-scripts allow-forms");
+  });
+
+  it("sends the app surface document when the proxy ready message is missed", async () => {
+    renderPane(appSurfaceSession(), {
+      documentHtml: "<!doctype html><html><body><button>Pick</button></body></html>",
+    });
+
+    const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
+    const { postMessage } = mockProxyPostMessage(iframe);
+    fireEvent.load(iframe);
+
+    await waitFor(() => {
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          jsonrpc: "2.0",
+          method: "ui/notifications/sandbox-resource-ready",
+          params: expect.objectContaining({
+            html: expect.stringContaining("<button>Pick</button>"),
+          }),
+        }),
+        "*",
+      );
+    });
+  });
+
+  it("resends the app surface document when an already-ready sandbox iframe reloads", async () => {
+    renderPane(appSurfaceSession(), {
+      documentHtml: "<!doctype html><html><body><button>Pick</button></body></html>",
+    });
+
+    const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
+    const { postMessage } = mockProxyPostMessage(iframe);
+    fireEvent.load(iframe);
+
+    await waitFor(() => {
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          jsonrpc: "2.0",
+          method: "ui/notifications/sandbox-resource-ready",
+          params: expect.objectContaining({
+            html: expect.stringContaining("<button>Pick</button>"),
+          }),
+        }),
+        "*",
+      );
+    });
+    postMessage.mockClear();
+
+    fireEvent.load(iframe);
+
+    await waitFor(() => {
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          jsonrpc: "2.0",
+          method: "ui/notifications/sandbox-resource-ready",
+          params: expect.objectContaining({
+            html: expect.stringContaining("<button>Pick</button>"),
+          }),
+        }),
+        "*",
+      );
+    });
+  });
+
+  it("replays MCP tool notifications after a sandbox reload resets the embedded app", async () => {
+    const onBridgeRequest = vi.fn().mockResolvedValue({
+      id: "init-1",
+      result: {
+        protocolVersion: "2026-01-26",
+        hostInfo: { name: "Kodex", version: "0.1.0" },
+        hostCapabilities: { resources: { read: true }, tools: { call: true } },
+        hostContext: { displayMode: "pane" },
+      },
+    }) as unknown as AppSurfacePaneBridge;
+
+    renderPane(
+      appSurfaceSession({
+        provider: "mcp",
+        provenance: {
+          mcp: {
+            arguments: { amount: 100000 },
+            result: { content: [{ type: "text", text: "Budget rows" }] },
+          },
+        },
+      }),
+      { onBridgeRequest },
+    );
+
+    const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
+    const { postMessage } = mockProxyPostMessage(iframe);
+    fireEvent.load(iframe);
+    await waitFor(() => {
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "ui/notifications/sandbox-resource-ready",
+        }),
+        "*",
+      );
+    });
+    postMessage.mockClear();
+
+    postFromApp({
+      jsonrpc: "2.0",
+      method: "ui/notifications/initialized",
+      params: {},
+    });
+
+    await waitFor(() => {
+      expect(postMessage).toHaveBeenCalledWith(
+        {
+          jsonrpc: "2.0",
+          method: "ui/notifications/tool-input",
+          params: { arguments: { amount: 100000 } },
+        },
+        "*",
+      );
+      expect(postMessage).toHaveBeenCalledWith(
+        {
+          jsonrpc: "2.0",
+          method: "ui/notifications/tool-result",
+          params: { content: [{ type: "text", text: "Budget rows" }] },
+        },
+        "*",
+      );
+    });
+    postMessage.mockClear();
+
+    fireEvent.load(iframe);
+    await waitFor(() => {
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "ui/notifications/sandbox-resource-ready",
+        }),
+        "*",
+      );
+    });
+    postMessage.mockClear();
+
+    postFromApp({
+      jsonrpc: "2.0",
+      method: "ui/notifications/initialized",
+      params: {},
+    });
+
+    await waitFor(() => {
+      expect(postMessage).toHaveBeenCalledWith(
+        {
+          jsonrpc: "2.0",
+          method: "ui/notifications/tool-input",
+          params: { arguments: { amount: 100000 } },
+        },
+        "*",
+      );
+      expect(postMessage).toHaveBeenCalledWith(
+        {
+          jsonrpc: "2.0",
+          method: "ui/notifications/tool-result",
+          params: { content: [{ type: "text", text: "Budget rows" }] },
+        },
+        "*",
+      );
+    });
   });
 
   it("answers MCP app initialization and posts tool notifications after the app is ready", async () => {
     const onBridgeRequest = vi.fn().mockResolvedValue({
       id: "init-1",
       result: {
-        protocolVersion: "2025-11-21",
+        protocolVersion: "2026-01-26",
         hostInfo: { name: "Kodex", version: "0.1.0" },
         hostCapabilities: { resources: { read: true }, tools: { call: true } },
         hostContext: { displayMode: "pane" },
@@ -179,30 +321,21 @@ describe("AppSurfacePane", () => {
     );
 
     const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
-    await waitFor(() => {
-      expect(iframe).toHaveAttribute("srcdoc", expect.stringContaining("kodex-generated-ui-theme"));
-    });
-    const postMessage = vi.fn();
-    Object.defineProperty(iframe.contentWindow, "postMessage", {
-      configurable: true,
-      value: postMessage,
-    });
-
-    fireEvent.load(iframe);
+    const { postMessage } = mockProxyPostMessage(iframe);
 
     expect(postMessage).not.toHaveBeenCalled();
 
-    postFromFrame({
+    postFromApp({
       jsonrpc: "2.0",
       id: "init-1",
       method: "ui/initialize",
       params: {
         appInfo: { name: "Budget Allocator", version: "1.0.0" },
         appCapabilities: {},
-        protocolVersion: "2025-11-21",
+        protocolVersion: "2026-01-26",
       },
       revision: 4,
-    });
+    }, 4);
 
     await waitFor(() => {
       expect(onBridgeRequest).toHaveBeenCalledWith({
@@ -212,7 +345,7 @@ describe("AppSurfacePane", () => {
         params: {
           appInfo: { name: "Budget Allocator", version: "1.0.0" },
           appCapabilities: {},
-          protocolVersion: "2025-11-21",
+          protocolVersion: "2026-01-26",
         },
         revision: 4,
       });
@@ -222,18 +355,11 @@ describe("AppSurfacePane", () => {
           id: "init-1",
           result: expect.objectContaining({
             hostInfo: { name: "Kodex", version: "0.1.0" },
-            protocolVersion: "2025-11-21",
+            protocolVersion: "2026-01-26",
           }),
         },
         "*",
       );
-    });
-
-    postFromFrame({
-      jsonrpc: "2.0",
-      method: "ui/notifications/initialized",
-      params: {},
-      revision: 4,
     });
 
     await waitFor(() => {
@@ -255,6 +381,15 @@ describe("AppSurfacePane", () => {
         "*",
       );
     });
+
+    const callsAfterInitialize = postMessage.mock.calls.length;
+    postFromApp({
+      jsonrpc: "2.0",
+      method: "ui/notifications/initialized",
+      params: {},
+      revision: 4,
+    }, 4);
+    expect(postMessage.mock.calls).toHaveLength(callsAfterInitialize);
   });
 
   it("forwards ui/open-link through the bridge without opening browser windows itself", async () => {
@@ -266,13 +401,13 @@ describe("AppSurfacePane", () => {
 
     renderPane(appSurfaceSession({ revision: 2 }), { onBridgeRequest });
 
-    postFromFrame({
+    postFromApp({
       jsonrpc: "2.0",
       id: "link-1",
       method: "ui/open-link",
       params: { url: "https://example.test/doc" },
       revision: 2,
-    });
+    }, 2);
 
     await waitFor(() => {
       expect(onBridgeRequest).toHaveBeenCalledWith({
@@ -286,6 +421,48 @@ describe("AppSurfacePane", () => {
     expect(openSpy).not.toHaveBeenCalled();
   });
 
+  it("forwards app log notifications through the bridge without posting a response", async () => {
+    const onBridgeRequest = vi.fn().mockResolvedValue({ result: {} }) as unknown as AppSurfacePaneBridge;
+
+    renderPane(appSurfaceSession({ revision: 2 }), { onBridgeRequest });
+    const { postMessage } = mockProxyPostMessage();
+
+    postFromApp({
+      jsonrpc: "2.0",
+      method: "notifications/message",
+      params: { level: "info", message: "Loaded records" },
+      revision: 2,
+    }, 2);
+
+    await waitFor(() => {
+      expect(onBridgeRequest).toHaveBeenCalledWith({
+        bridgeToken: "bridge-token-1",
+        method: "notifications/message",
+        params: { level: "info", message: "Loaded records" },
+        revision: 2,
+      });
+    });
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it("consumes app size change notifications without forwarding them through the bridge", () => {
+    const onBridgeRequest = vi.fn().mockResolvedValue({ result: {} }) as unknown as AppSurfacePaneBridge;
+
+    renderPane(appSurfaceSession({ revision: 2 }), { onBridgeRequest });
+    const { postMessage } = mockProxyPostMessage();
+
+    postFromApp({
+      jsonrpc: "2.0",
+      method: "ui/notifications/size-changed",
+      params: { height: 420, width: 360 },
+      revision: 2,
+    }, 2);
+
+    expect(onBridgeRequest).not.toHaveBeenCalled();
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("posts normalized JSON-RPC result responses without undefined error fields", async () => {
     const onBridgeRequest = vi.fn().mockResolvedValue({
       id: "call-1",
@@ -293,20 +470,15 @@ describe("AppSurfacePane", () => {
     }) as unknown as AppSurfacePaneBridge;
 
     renderPane(appSurfaceSession({ revision: 2 }), { onBridgeRequest });
-    const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
-    const postMessage = vi.fn();
-    Object.defineProperty(iframe.contentWindow, "postMessage", {
-      configurable: true,
-      value: postMessage,
-    });
+    const { postMessage } = mockProxyPostMessage();
 
-    postFromFrame({
+    postFromApp({
       jsonrpc: "2.0",
       id: "call-1",
       method: "tools/call",
-      params: { server: "sketch", tool: "export" },
+      params: { name: "export" },
       revision: 2,
-    });
+    }, 2);
 
     await waitFor(() => {
       expect(postMessage).toHaveBeenCalledWith(
@@ -328,20 +500,15 @@ describe("AppSurfacePane", () => {
     }) as unknown as AppSurfacePaneBridge;
 
     renderPane(appSurfaceSession({ revision: 2 }), { onBridgeRequest });
-    const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
-    const postMessage = vi.fn();
-    Object.defineProperty(iframe.contentWindow, "postMessage", {
-      configurable: true,
-      value: postMessage,
-    });
+    const { postMessage } = mockProxyPostMessage();
 
-    postFromFrame({
+    postFromApp({
       jsonrpc: "2.0",
       id: "call-1",
       method: "tools/call",
-      params: { server: "sketch", tool: "export" },
+      params: { name: "export" },
       revision: 2,
-    });
+    }, 2);
 
     await waitFor(() => {
       expect(postMessage).toHaveBeenCalledWith(
@@ -362,20 +529,15 @@ describe("AppSurfacePane", () => {
     }) as unknown as AppSurfacePaneBridge;
 
     renderPane(appSurfaceSession({ revision: 2 }), { onBridgeRequest });
-    const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
-    const postMessage = vi.fn();
-    Object.defineProperty(iframe.contentWindow, "postMessage", {
-      configurable: true,
-      value: postMessage,
-    });
+    const { postMessage } = mockProxyPostMessage();
 
-    postFromFrame({
+    postFromApp({
       jsonrpc: "2.0",
       id: "call-1",
       method: "tools/call",
-      params: { server: "sketch", tool: "export" },
+      params: { name: "export" },
       revision: 2,
-    });
+    }, 2);
 
     await waitFor(() => {
       expect(postMessage).toHaveBeenCalledWith(
@@ -397,20 +559,15 @@ describe("AppSurfacePane", () => {
     }) as unknown as AppSurfacePaneBridge;
 
     renderPane(appSurfaceSession({ revision: 2 }), { onBridgeRequest });
-    const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
-    const postMessage = vi.fn();
-    Object.defineProperty(iframe.contentWindow, "postMessage", {
-      configurable: true,
-      value: postMessage,
-    });
+    const { postMessage } = mockProxyPostMessage();
 
-    postFromFrame({
+    postFromApp({
       jsonrpc: "2.0",
       id: "call-1",
       method: "tools/call",
-      params: { server: "sketch", tool: "export" },
+      params: { name: "export" },
       revision: 2,
-    });
+    }, 2);
 
     await waitFor(() => {
       expect(postMessage).toHaveBeenCalledWith(
@@ -425,23 +582,11 @@ describe("AppSurfacePane", () => {
     expect(postMessage.mock.calls[0]?.[0]).not.toHaveProperty("error");
   });
 
-  it("hides through the mobile pane header control", async () => {
-    vi.spyOn(window, "matchMedia").mockImplementation((query: string): MediaQueryList => ({
-      addEventListener: vi.fn(),
-      addListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-      matches: query === "(max-width: 900px)",
-      media: query,
-      onchange: null,
-      removeEventListener: vi.fn(),
-      removeListener: vi.fn(),
-    }));
-    const onHide = vi.fn();
-    renderPane(appSurfaceSession(), { onHide });
+  it("does not duplicate the app surface title as a host pane heading", () => {
+    renderPane(appSurfaceSession());
 
-    await userEvent.click(screen.getByRole("button", { name: /hide app surface/i }));
-
-    expect(onHide).toHaveBeenCalledTimes(1);
+    expect(screen.getByTitle(/app surface: mockups/i)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Mockups" })).not.toBeInTheDocument();
   });
 });
 
@@ -451,7 +596,6 @@ function renderPane(
     colorSchemeId?: ComponentProps<typeof AppSurfacePane>["colorSchemeId"];
     documentHtml?: string;
     onBridgeRequest?: AppSurfacePaneBridge;
-    onHide?: () => void;
   } = {},
 ) {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -463,20 +607,51 @@ function renderPane(
     id: request.id,
     result: {},
   });
-  return render(
+  return render(appSurfacePaneElement(session, overrides, defaultBridge));
+}
+
+function appSurfacePaneElement(
+  session: AppSurfaceSession,
+  overrides: {
+    colorSchemeId?: ComponentProps<typeof AppSurfacePane>["colorSchemeId"];
+    onBridgeRequest?: AppSurfacePaneBridge;
+  },
+  defaultBridge: AppSurfacePaneBridge,
+) {
+  return (
     <MantineProvider>
       <AppSurfacePane
         colorSchemeId={overrides.colorSchemeId ?? "oled-black"}
         isBridgePending={false}
         onBridgeRequest={overrides.onBridgeRequest ?? defaultBridge}
-        onHide={overrides.onHide ?? vi.fn()}
         session={session}
       />
-    </MantineProvider>,
+    </MantineProvider>
   );
 }
 
-function postFromFrame(data: unknown) {
+function mockProxyPostMessage(iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement) {
+  const postMessage = vi.fn();
+  Object.defineProperty(iframe.contentWindow, "postMessage", {
+    configurable: true,
+    value: postMessage,
+  });
+  return { iframe, postMessage };
+}
+
+function postFromApp(message: unknown, revision = 1) {
+  if (message && typeof message === "object" && !Array.isArray(message)) {
+    postFromProxy({ revision, ...(message as Record<string, unknown>) });
+    return;
+  }
+  postFromProxy(message);
+}
+
+function postProxyReady() {
+  postFromProxy({ jsonrpc: "2.0", method: "ui/notifications/sandbox-proxy-ready", params: {} });
+}
+
+function postFromProxy(data: unknown) {
   const iframe = screen.getByTitle(/app surface:/i) as HTMLIFrameElement;
   const event = new MessageEvent("message", { data });
   Object.defineProperty(event, "source", { value: iframe.contentWindow });
@@ -495,6 +670,7 @@ function appSurfaceSession(overrides: Partial<AppSurfaceSession> = {}): AppSurfa
     bridgeToken: "bridge-token-1",
     id: "session-1",
     provenance: { source: "test" },
+    permissions: {},
     provider: "generated",
     resourceMimeType: "text/html",
     resourceUri: "ui://kodex/generated/session-1",

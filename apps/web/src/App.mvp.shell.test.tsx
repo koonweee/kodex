@@ -26,6 +26,15 @@ function clickMenuItem(name: RegExp) {
   return clickMenuItemWithDeps(name, screen, waitFor, fireEvent);
 }
 
+function mockClipboardWriteText() {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+  return writeText;
+}
+
 function stubNarrowViewport() {
   vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
     matches: query === "(max-width: 900px)",
@@ -1256,6 +1265,27 @@ describe("MVP shell flows", () => {
     });
     expect(activeComposer()).toBeEnabled();
     expect(screen.queryByText(/select or create a thread/i)).not.toBeInTheDocument();
+  });
+
+  it("copies the selected thread id from the last thread actions menu item", async () => {
+    const writeText = mockClipboardWriteText();
+    mockGateway(baseRoutes());
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /thread actions/i }));
+    let actionItems: HTMLElement[] = [];
+    await waitFor(() => {
+      actionItems = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]'));
+      expect(actionItems.length).toBeGreaterThan(0);
+    });
+    expect(actionItems.at(-1)).toHaveTextContent(/copy thread id/i);
+
+    await clickMenuItem(/copy thread id/i);
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("thread-1"));
   });
 
   it("pins and unpins the selected thread from the thread actions menu", async () => {

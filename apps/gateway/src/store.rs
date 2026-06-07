@@ -15,7 +15,6 @@ mod app_surfaces;
 mod approvals;
 mod automations;
 mod events;
-mod generated_ui;
 mod migrations;
 mod notifications;
 mod projects;
@@ -158,63 +157,6 @@ pub struct ProjectPreviewRouteUpdate {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub enum GeneratedUiSessionStatus {
-    Interactive,
-    Submitting,
-    Submitted,
-    Archived,
-}
-
-impl GeneratedUiSessionStatus {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Interactive => "interactive",
-            Self::Submitting => "submitting",
-            Self::Submitted => "submitted",
-            Self::Archived => "archived",
-        }
-    }
-
-    fn from_str(value: &str) -> ApiResult<Self> {
-        match value {
-            "interactive" => Ok(Self::Interactive),
-            "submitting" => Ok(Self::Submitting),
-            "submitted" => Ok(Self::Submitted),
-            "archived" => Ok(Self::Archived),
-            _ => Err(ApiError::Other(anyhow::anyhow!(
-                "unknown generated UI session status {value}"
-            ))),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GeneratedUiSession {
-    pub id: String,
-    pub thread_id: String,
-    pub title: String,
-    pub html: String,
-    pub revision: i64,
-    pub status: GeneratedUiSessionStatus,
-    pub submitted_revision: Option<i64>,
-    pub submitted_message: Option<String>,
-    pub submitted_metadata: Option<Value>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub submitted_at: Option<DateTime<Utc>>,
-    pub archived_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct GeneratedUiSessionUpsert {
-    pub thread_id: String,
-    pub title: String,
-    pub html: String,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
-#[serde(rename_all = "camelCase")]
 pub enum AppSurfaceProvider {
     Mcp,
     Generated,
@@ -277,15 +219,38 @@ impl AppSurfaceSessionStatus {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSurfaceCsp {
-    #[serde(default)]
+    #[serde(default, alias = "connect_domains")]
     pub connect_domains: Vec<String>,
-    #[serde(default)]
+    #[serde(default, alias = "resource_domains")]
     pub resource_domains: Vec<String>,
+    #[serde(default, alias = "frame_domains")]
+    pub frame_domains: Vec<String>,
+    #[serde(default, alias = "base_uri_domains")]
+    pub base_uri_domains: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSurfacePermissions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub camera: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub microphone: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geolocation: Option<Value>,
+    #[serde(
+        default,
+        alias = "clipboard_write",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub clipboard_write: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSurfaceToolGrant {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub server: String,
     pub tool: String,
 }
@@ -305,11 +270,11 @@ pub struct AppSurfaceGrants {
     pub tools: Vec<AppSurfaceToolGrant>,
     #[serde(default)]
     pub resources: Vec<AppSurfaceResourceGrant>,
-    #[serde(default)]
+    #[serde(default, alias = "can_send_message")]
     pub can_send_message: bool,
-    #[serde(default)]
+    #[serde(default, alias = "can_update_model_context")]
     pub can_update_model_context: bool,
-    #[serde(default)]
+    #[serde(default, alias = "can_open_links")]
     pub can_open_links: bool,
 }
 
@@ -329,6 +294,7 @@ pub struct AppSurfaceSession {
     pub status: AppSurfaceSessionStatus,
     pub display_modes: Vec<String>,
     pub csp: AppSurfaceCsp,
+    pub permissions: AppSurfacePermissions,
     pub grants: AppSurfaceGrants,
     pub provenance: Value,
     pub submitted_revision: Option<i64>,
@@ -351,6 +317,7 @@ pub struct AppSurfaceSessionUpsert {
     pub fallback_content: String,
     pub display_modes: Vec<String>,
     pub csp: AppSurfaceCsp,
+    pub permissions: AppSurfacePermissions,
     pub grants: AppSurfaceGrants,
     pub provenance: Value,
 }
@@ -801,27 +768,6 @@ fn row_to_project_preview_route(row: sqlx::sqlite::SqliteRow) -> ApiResult<Proje
         sort_order: row.try_get("sort_order")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
-    })
-}
-
-fn row_to_generated_ui_session(row: sqlx::sqlite::SqliteRow) -> ApiResult<GeneratedUiSession> {
-    let submitted_metadata_json: Option<String> = row.try_get("submitted_metadata_json")?;
-    Ok(GeneratedUiSession {
-        id: row.try_get("id")?,
-        thread_id: row.try_get("thread_id")?,
-        title: row.try_get("title")?,
-        html: row.try_get("html")?,
-        revision: row.try_get("revision")?,
-        status: GeneratedUiSessionStatus::from_str(&row.try_get::<String, _>("status")?)?,
-        submitted_revision: row.try_get("submitted_revision")?,
-        submitted_message: row.try_get("submitted_message")?,
-        submitted_metadata: submitted_metadata_json
-            .map(|value| serde_json::from_str(&value))
-            .transpose()?,
-        created_at: row.try_get("created_at")?,
-        updated_at: row.try_get("updated_at")?,
-        submitted_at: row.try_get("submitted_at")?,
-        archived_at: row.try_get("archived_at")?,
     })
 }
 

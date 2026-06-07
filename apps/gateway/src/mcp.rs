@@ -331,39 +331,6 @@ pub struct ThreadMutationToolParams {
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct GeneratedUiToolParams {
-    #[serde(default, alias = "thread_id", skip_serializing_if = "Option::is_none")]
-    pub thread_id: Option<String>,
-    pub title: String,
-    pub html: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub presentation: Option<AppSurfacePresentationAction>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_self_control_depth: Option<u8>,
-    #[serde(default, flatten, skip_serializing_if = "Map::is_empty")]
-    pub extra: Map<String, Value>,
-}
-
-#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GeneratedUiThreadToolParams {
-    #[serde(default, alias = "thread_id", skip_serializing_if = "Option::is_none")]
-    pub thread_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct GeneratedUiMutationToolParams {
-    #[serde(default, alias = "thread_id", skip_serializing_if = "Option::is_none")]
-    pub thread_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<Value>,
-}
-
-#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct AppSurfaceToolParams {
     #[serde(default, alias = "thread_id", skip_serializing_if = "Option::is_none")]
     pub thread_id: Option<String>,
@@ -375,9 +342,11 @@ pub struct AppSurfaceToolParams {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub display_modes: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub csp: Option<Value>,
+    pub csp: Option<AppSurfaceToolCsp>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub grants: Option<Value>,
+    pub permissions: Option<AppSurfaceToolPermissions>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grants: Option<AppSurfaceToolGrants>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provenance: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -386,6 +355,68 @@ pub struct AppSurfaceToolParams {
     pub max_self_control_depth: Option<u8>,
     #[serde(default, flatten, skip_serializing_if = "Map::is_empty")]
     pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSurfaceToolCsp {
+    #[serde(default, alias = "connect_domains")]
+    pub connect_domains: Vec<String>,
+    #[serde(default, alias = "resource_domains")]
+    pub resource_domains: Vec<String>,
+    #[serde(default, alias = "frame_domains")]
+    pub frame_domains: Vec<String>,
+    #[serde(default, alias = "base_uri_domains")]
+    pub base_uri_domains: Vec<String>,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSurfaceToolPermissions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub camera: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub microphone: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geolocation: Option<Value>,
+    #[serde(
+        default,
+        alias = "clipboard_write",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub clipboard_write: Option<Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSurfaceToolGrant {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub server: String,
+    pub tool: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSurfaceResourceGrant {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server: Option<String>,
+    pub uri: String,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSurfaceToolGrants {
+    #[serde(default)]
+    pub tools: Vec<AppSurfaceToolGrant>,
+    #[serde(default)]
+    pub resources: Vec<AppSurfaceResourceGrant>,
+    #[serde(default, alias = "can_send_message")]
+    pub can_send_message: bool,
+    #[serde(default, alias = "can_update_model_context")]
+    pub can_update_model_context: bool,
+    #[serde(default, alias = "can_open_links")]
+    pub can_open_links: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
@@ -804,25 +835,31 @@ impl KodexControlMcp {
     }
 
     #[tool(
-        description = "Open a generated app surface in the invoking Kodex thread by default, or an explicit threadId. App surfaces render MCP App-compatible HTML in the shared pane and may use the JSON-RPC bridge according to declared grants. Use when visual layout, direct manipulation, branching choices, comparison, preview, questionnaires, dashboards, or repeated actions are clearer than chat alone. Provide meaningful fallbackContent for text-only hosts. Optional presentation controls whether the browser should open the pane without switching focus (\"open\") or switch focus to it (\"focus\") when this revision arrives; omit presentation for a non-disruptive content update only."
+        description = "Open a generated app surface in the invoking Kodex thread by default, or an explicit threadId. App surfaces are host-originated MCP Apps: provide MCP App-compatible HTML as self-contained `text/html;profile=mcp-app`, meaningful fallbackContent for text-only hosts, declared CSP/permissions metadata, and declared grants for any JSON-RPC bridge access. Pass `csp`, `permissions`, and `grants` as JSON objects, never as serialized JSON strings or CSP header text. Inside the iframe use MCP Apps JSON-RPC over postMessage: `ui/message` with `{ role: \"user\", content: { type: \"text\", text } }`, `tools/call` with a granted app-local `{ name, arguments }`, and `resources/read` with `{ uri }`. If any control sends `ui/message`, declare `grants.canSendMessage: true`. Generated HTML using legacy generated UI submit events is rejected. The pane focuses by default when presentation is omitted; set presentation to \"open\" only when intentionally opening it quietly."
     )]
     async fn open_app_surface(
         &self,
         Parameters(params): Parameters<AppSurfaceToolParams>,
         meta: Meta,
     ) -> Result<CallToolResult, McpError> {
-        upsert_app_surface_tool(self, params, meta).await
+        upsert_app_surface_tool(
+            self,
+            params,
+            meta,
+            Some(AppSurfacePresentationAction::Focus),
+        )
+        .await
     }
 
     #[tool(
-        description = "Replace the latest generated app-surface revision for the invoking Kodex thread by default, or an explicit threadId. Use when the pane needs new embedded data, revised controls, or the next step of a workflow. Provide meaningful fallbackContent and declare any bridge grants explicitly. Optional presentation controls whether the browser should open the pane without switching focus (\"open\") or switch focus to it (\"focus\") when this revision arrives; omit presentation for a non-disruptive content update only."
+        description = "Replace the latest generated app-surface revision for the invoking Kodex thread by default, or an explicit threadId. Keep the new revision MCP Apps-compatible: use JSON-RPC methods such as `ui/message`, `tools/call { name, arguments }`, and `resources/read { uri }`; declare CSP/permissions metadata and any tool grants with app-local names; provide meaningful fallbackContent. Pass `csp`, `permissions`, and `grants` as JSON objects, never as serialized JSON strings or CSP header text. Optional presentation controls whether the browser should open the pane without switching focus (\"open\") or switch focus to it (\"focus\") when this revision arrives."
     )]
     async fn update_app_surface(
         &self,
         Parameters(params): Parameters<AppSurfaceToolParams>,
         meta: Meta,
     ) -> Result<CallToolResult, McpError> {
-        upsert_app_surface_tool(self, params, meta).await
+        upsert_app_surface_tool(self, params, meta, None).await
     }
 
     #[tool(
@@ -844,7 +881,7 @@ impl KodexControlMcp {
     }
 
     #[tool(
-        description = "Open or focus the latest app-surface pane for the invoking Kodex thread by default, or an explicit threadId. Use action \"open\" to make the pane available without switching focus, or \"focus\" to switch the user's workspace to it."
+        description = "Open or focus the latest app-surface pane for the invoking Kodex thread by default, or an explicit threadId. Use action \"open\" to make the pane available without switching focus, or \"focus\" to switch the user's workspace to it. This preserves the server-side app-surface session/revision, but if the previous pane iframe was closed or unmounted, unsaved local UI state inside that iframe may reset."
     )]
     async fn show_app_surface(
         &self,
@@ -860,80 +897,6 @@ impl KodexControlMcp {
     async fn archive_app_surface(
         &self,
         Parameters(params): Parameters<AppSurfaceMutationToolParams>,
-        meta: Meta,
-    ) -> Result<CallToolResult, McpError> {
-        let thread_id = resolve_app_surface_thread_id(params.thread_id.clone(), &meta)?;
-        let mut body = json_object(params)?;
-        body.remove("threadId");
-        Ok(json_tool_result(
-            self.delete_json(
-                &format!(
-                    "/v1/self-control/threads/{}/app-surface",
-                    path_segment(&thread_id)
-                ),
-                Some(Value::Object(body)),
-            )
-            .await?,
-        ))
-    }
-
-    #[tool(
-        description = "Open a generated UI pane for the invoking Kodex thread by default, or for an explicit threadId override when intentionally targeting another thread. Use only when it creates a richer experience than chat alone through visual grouping, branching choices, comparison, preview, direct manipulation, progressive disclosure, or repeated actions. Optional presentation controls whether the browser should open the pane without switching focus (\"open\") or switch focus to it (\"focus\") when this revision arrives; omit presentation for a non-disruptive content update only. Generated UI may include both local UI interactions and conversational actions. Buttons are not inherently prompts: prefer local UI interactions when behavior can be handled inside the HTML with already-available data, such as modals, row expansion, tabs, chart filters or toggles, unit switches, breakdowns, or visualization views; these should not submit messages. Use conversational actions when interaction requires Codex, tools, external data, persistence, workflow continuation, or an explicit user decision, such as questionnaire answers, plan approval, investigation, visualization regeneration, automation updates, or follow-up artifacts. When an action is intended to involve Codex again, submit a standalone human-readable message plus optional compact JSON metadata. In iframe HTML, prefer the injected helper `window.kodex.submitMessage(message, metadata)`. The raw postMessage contract is `{ type: \"kodex.generatedUi.submit\", message: \"human-readable message\", metadata: { ... } }`; the host also sends `kodex.generatedUi.submit.result` ack/error messages. Pair every open with a short assistant message. Strongly prefer a theme-native UI unless the user explicitly asks for a distinct visual style: use Kodex semantic CSS variables for body, surfaces, cards, text, borders, buttons, charts, status colors, shadows, focus rings, and radii; avoid inventing custom palettes, gradients, stock dashboard chrome, or hard-coded color schemes for ordinary generated UIs. Keep the UI responsive, and keep HTML self-contained because v1 blocks external network by default."
-    )]
-    async fn open_generated_ui(
-        &self,
-        Parameters(params): Parameters<GeneratedUiToolParams>,
-        meta: Meta,
-    ) -> Result<CallToolResult, McpError> {
-        upsert_generated_ui_tool(self, params, meta).await
-    }
-
-    #[tool(
-        description = "Replace the latest generated UI pane revision for the invoking Kodex thread by default, or for an explicit threadId override when intentionally targeting another thread. Use this after a local UI view needs new embedded data, the user submits a conversational action, asks a follow-up, requests a revised mockup, or needs the next step of a workflow. Optional presentation controls whether the browser should open the pane without switching focus (\"open\") or switch focus to it (\"focus\") when this revision arrives; omit presentation for a non-disruptive content update only. Generated UI may include both local UI interactions and conversational actions. Buttons are not inherently prompts: prefer local UI interactions for embedded-data behavior such as modals, tabs, filters, chart toggles, unit switches, drilldowns, or progressive disclosure; these should not submit messages. Use conversational actions when interaction requires Codex, tools, external data, persistence, workflow continuation, or an explicit user decision, such as submitting answers, approving a plan, investigating, regenerating a visualization, updating automation, or creating a follow-up artifact. When an action is intended to involve Codex again, submit a standalone human-readable message plus optional compact JSON metadata. In iframe HTML, prefer the injected helper `window.kodex.submitMessage(message, metadata)`. The raw postMessage contract is `{ type: \"kodex.generatedUi.submit\", message: \"human-readable message\", metadata: { ... } }`; the host also sends `kodex.generatedUi.submit.result` ack/error messages. Strongly prefer a theme-native UI unless the user explicitly asks for a distinct visual style: use Kodex semantic CSS variables for body, surfaces, cards, text, borders, buttons, charts, status colors, shadows, focus rings, and radii; avoid inventing custom palettes, gradients, stock dashboard chrome, or hard-coded color schemes for ordinary generated UIs. Keep HTML self-contained, responsive, and bounded."
-    )]
-    async fn update_generated_ui(
-        &self,
-        Parameters(params): Parameters<GeneratedUiToolParams>,
-        meta: Meta,
-    ) -> Result<CallToolResult, McpError> {
-        upsert_generated_ui_tool(self, params, meta).await
-    }
-
-    #[tool(
-        description = "Read the latest generated UI pane metadata for the invoking Kodex thread by default, or for an explicit threadId override"
-    )]
-    async fn get_generated_ui(
-        &self,
-        Parameters(params): Parameters<GeneratedUiThreadToolParams>,
-        meta: Meta,
-    ) -> Result<CallToolResult, McpError> {
-        let thread_id = resolve_app_surface_thread_id(params.thread_id, &meta)?;
-        Ok(json_tool_result(
-            self.get_json(&format!(
-                "/v1/self-control/threads/{}/app-surface",
-                path_segment(&thread_id)
-            ))
-            .await?,
-        ))
-    }
-
-    #[tool(
-        description = "Open or focus the latest generated UI pane for the invoking Kodex thread by default, or an explicit threadId. This is a compatibility alias for show_app_surface."
-    )]
-    async fn show_generated_ui(
-        &self,
-        Parameters(params): Parameters<AppSurfacePresentationToolParams>,
-        meta: Meta,
-    ) -> Result<CallToolResult, McpError> {
-        show_app_surface_tool(self, params, meta).await
-    }
-
-    #[tool(
-        description = "Archive the latest generated UI pane for the invoking Kodex thread by default, or for an explicit threadId override"
-    )]
-    async fn archive_generated_ui(
-        &self,
-        Parameters(params): Parameters<GeneratedUiMutationToolParams>,
         meta: Meta,
     ) -> Result<CallToolResult, McpError> {
         let thread_id = resolve_app_surface_thread_id(params.thread_id.clone(), &meta)?;
@@ -1658,16 +1621,6 @@ impl ServerHandler for KodexControlMcp {
                 ))
                 .await?
             }
-            uri if uri.starts_with("kodex://threads/") && uri.ends_with("/generated-ui") => {
-                let thread_id = uri
-                    .trim_start_matches("kodex://threads/")
-                    .trim_end_matches("/generated-ui");
-                self.get_json(&format!(
-                    "/v1/self-control/threads/{}/app-surface",
-                    path_segment(thread_id)
-                ))
-                .await?
-            }
             uri if uri.starts_with("kodex://threads/") => {
                 let thread_id = uri.trim_start_matches("kodex://threads/");
                 self.get_json(&format!(
@@ -1808,47 +1761,14 @@ fn spawn_thread_body(params: SpawnThreadToolParams) -> Result<Map<String, Value>
     Ok(body)
 }
 
-async fn upsert_generated_ui_tool(
-    service: &KodexControlMcp,
-    params: GeneratedUiToolParams,
-    meta: Meta,
-) -> Result<CallToolResult, McpError> {
-    let warnings = generated_ui_bridge_warnings(&params.html);
-    let fallback_content = format!("Interactive generated UI: {}", params.title);
-    let mut value = upsert_app_surface_value(
-        service,
-        AppSurfaceToolParams {
-            thread_id: params.thread_id,
-            title: params.title,
-            html: params.html,
-            fallback_content,
-            presentation: params.presentation,
-            display_modes: Vec::new(),
-            csp: None,
-            grants: Some(json!({"canSendMessage": true})),
-            provenance: None,
-            source: params.source,
-            max_self_control_depth: params.max_self_control_depth,
-            extra: params.extra,
-        },
-        meta,
-    )
-    .await?;
-    if !warnings.is_empty() {
-        if let Value::Object(object) = &mut value {
-            object.insert("warnings".to_string(), json!(warnings));
-        }
-    }
-    Ok(json_tool_result(value))
-}
-
 async fn upsert_app_surface_tool(
     service: &KodexControlMcp,
     params: AppSurfaceToolParams,
     meta: Meta,
+    default_presentation: Option<AppSurfacePresentationAction>,
 ) -> Result<CallToolResult, McpError> {
     Ok(json_tool_result(
-        upsert_app_surface_value(service, params, meta).await?,
+        upsert_app_surface_value(service, params, meta, default_presentation).await?,
     ))
 }
 
@@ -1878,10 +1798,16 @@ async fn upsert_app_surface_value(
     service: &KodexControlMcp,
     params: AppSurfaceToolParams,
     meta: Meta,
+    default_presentation: Option<AppSurfacePresentationAction>,
 ) -> Result<Value, McpError> {
     let thread_id = resolve_app_surface_thread_id(params.thread_id.clone(), &meta)?;
     let mut body = json_object(params)?;
     body.remove("threadId");
+    if !body.contains_key("presentation") {
+        if let Some(default_presentation) = default_presentation {
+            body.insert("presentation".to_string(), json!(default_presentation));
+        }
+    }
     normalize_self_control_source_shorthand(&mut body)?;
     service
         .post_json(
@@ -1892,53 +1818,6 @@ async fn upsert_app_surface_value(
             Value::Object(body),
         )
         .await
-}
-
-fn generated_ui_bridge_warnings(html: &str) -> Vec<String> {
-    generated_ui_post_message_types(html)
-        .into_iter()
-        .filter(|event_type| event_type.starts_with("kodex") && !is_known_generated_ui_event_type(event_type))
-        .map(|event_type| {
-            format!(
-                "Unrecognized generated UI postMessage event type `{event_type}`; use `window.kodex.submitMessage(message, metadata)` or post `{{ type: \"kodex.generatedUi.submit\", message, metadata }}`."
-            )
-        })
-        .collect()
-}
-
-fn generated_ui_post_message_types(html: &str) -> Vec<String> {
-    let mut types = Vec::new();
-    let mut remaining = html;
-    while let Some(post_message_index) = remaining.find("postMessage") {
-        remaining = &remaining[post_message_index + "postMessage".len()..];
-        let Some(type_index) = remaining.find("type") else {
-            break;
-        };
-        remaining = &remaining[type_index + "type".len()..];
-        let Some(colon_index) = remaining.find(':') else {
-            continue;
-        };
-        remaining = &remaining[colon_index + 1..];
-        let trimmed = remaining.trim_start();
-        let quote = match trimmed.as_bytes().first() {
-            Some(b'"') => '"',
-            Some(b'\'') => '\'',
-            _ => continue,
-        };
-        let value_start = quote.len_utf8();
-        if let Some(value_end) = trimmed[value_start..].find(quote) {
-            types.push(trimmed[value_start..value_start + value_end].to_string());
-            remaining = &trimmed[value_start + value_end + quote.len_utf8()..];
-        }
-    }
-    types
-}
-
-fn is_known_generated_ui_event_type(event_type: &str) -> bool {
-    matches!(
-        event_type,
-        "kodex.generatedUi.submit" | "kodex:generated-ui:submit" | "kodex.ui.submit"
-    )
 }
 
 fn resolve_app_surface_thread_id(
@@ -2265,7 +2144,21 @@ mod tests {
                 "MCP App-compatible HTML",
                 "JSON-RPC bridge",
                 "declared grants",
+                "permissions",
                 "fallbackContent",
+                "tools/call",
+                "ui/message",
+            ],
+        );
+        assert_tool_schema_contains(
+            &tools,
+            "open_app_surface",
+            &[
+                "connectDomains",
+                "resourceDomains",
+                "canSendMessage",
+                "canUpdateModelContext",
+                "clipboardWrite",
             ],
         );
         assert_tool_description_contains(
@@ -2273,39 +2166,7 @@ mod tests {
             "show_app_surface",
             &["action \"open\"", "or \"focus\""],
         );
-        assert_tool_requires(&tools, "open_generated_ui", &["title", "html"]);
-        assert_tool_does_not_require(&tools, "open_generated_ui", "threadId");
-        assert_tool_description_contains(
-            &tools,
-            "open_generated_ui",
-            &[
-                "Buttons are not inherently prompts",
-                "local UI interactions",
-                "conversational actions",
-                "standalone human-readable message",
-                "window.kodex.submitMessage(message, metadata)",
-                "kodex.generatedUi.submit",
-                "Strongly prefer a theme-native UI",
-                "Kodex semantic CSS variables",
-                "avoid inventing custom palettes",
-            ],
-        );
-        assert_tool_description_contains(
-            &tools,
-            "update_generated_ui",
-            &[
-                "Buttons are not inherently prompts",
-                "local UI interactions",
-                "conversational actions",
-                "standalone human-readable message",
-                "window.kodex.submitMessage(message, metadata)",
-                "kodex.generatedUi.submit",
-                "Strongly prefer a theme-native UI",
-                "Kodex semantic CSS variables",
-                "avoid inventing custom palettes",
-            ],
-        );
-        assert_tool_description_contains(&tools, "show_generated_ui", &["show_app_surface"]);
+        assert!(tools.iter().all(|tool| !tool.name.contains("generated_ui")));
         assert_tool_requires(&tools, "pause_automation", &["automationId"]);
         assert_tool_requires(&tools, "resume_automation", &["automationId"]);
         let status_resource = client
@@ -2338,47 +2199,67 @@ mod tests {
         assert_eq!(value["dryRun"], true);
         assert_eq!(value["diff"][0]["action"], "created");
 
-        let mut generated_ui_args = JsonObject::new();
-        generated_ui_args.insert("title".to_string(), json!("Mockups"));
-        generated_ui_args.insert("source".to_string(), json!("codex"));
-        generated_ui_args.insert(
-            "html".to_string(),
-            json!("<!doctype html><button>Choose</button><script>window.parent.postMessage({type:'kodex:submit-message', message:'Choose'}, '*')</script>"),
+        let mut app_surface_args = JsonObject::new();
+        app_surface_args.insert("title".to_string(), json!("Mockups"));
+        app_surface_args.insert("fallbackContent".to_string(), json!("Interactive fallback"));
+        app_surface_args.insert("source".to_string(), json!("codex"));
+        app_surface_args.insert(
+            "csp".to_string(),
+            json!({
+                "connect_domains": ["https://api.example.test"],
+                "resource_domains": ["https://cdn.example.test"]
+            }),
         );
-        let mut generated_ui_meta = JsonObject::new();
-        generated_ui_meta.insert("threadId".to_string(), json!("thread-1"));
-        let mut generated_ui_call =
-            CallToolRequestParams::new("open_generated_ui").with_arguments(generated_ui_args);
-        generated_ui_call.set_meta(Meta(generated_ui_meta));
-        let opened: Value = client.call_tool(generated_ui_call).await?.into_typed()?;
+        app_surface_args.insert("permissions".to_string(), json!({"clipboard_write": {}}));
+        app_surface_args.insert("grants".to_string(), json!({"can_send_message": true}));
+        app_surface_args.insert(
+            "html".to_string(),
+            json!("<!doctype html><button>Choose</button><script>window.parent.postMessage({jsonrpc:'2.0', id:1, method:'ui/message', params:{role:'user', content:{type:'text', text:'Choose'}}}, '*')</script>"),
+        );
+        let mut app_surface_meta = JsonObject::new();
+        app_surface_meta.insert("threadId".to_string(), json!("thread-1"));
+        let mut app_surface_call =
+            CallToolRequestParams::new("open_app_surface").with_arguments(app_surface_args);
+        app_surface_call.set_meta(Meta(app_surface_meta));
+        let opened: Value = client.call_tool(app_surface_call).await?.into_typed()?;
         assert_eq!(opened["session"]["threadId"], "thread-1");
         assert_eq!(opened["session"]["revision"], 1);
-        assert!(opened["session"].get("html").is_none());
         assert_eq!(
-            opened["warnings"][0],
-            "Unrecognized generated UI postMessage event type `kodex:submit-message`; use `window.kodex.submitMessage(message, metadata)` or post `{ type: \"kodex.generatedUi.submit\", message, metadata }`."
+            opened["session"]["csp"]["connectDomains"],
+            json!(["https://api.example.test"])
         );
+        assert_eq!(
+            opened["session"]["csp"]["resourceDomains"],
+            json!(["https://cdn.example.test"])
+        );
+        assert_eq!(
+            opened["session"]["permissions"],
+            json!({"clipboardWrite": {}})
+        );
+        assert_eq!(opened["session"]["grants"]["canSendMessage"], true);
+        assert!(opened["session"].get("html").is_none());
+        assert!(opened.get("warnings").is_none());
         let audit_events = state
             .store
             .replay_events(None, None, Some("thread-1".to_string()))
             .await?;
-        let generated_ui_audit = audit_events
+        let app_surface_audit = audit_events
             .iter()
             .find(|event| event.kind == "self_control.app_surface_upserted")
             .expect("app surface audit event");
         assert_eq!(
-            generated_ui_audit.payload["source"]["sourceToolCallId"],
+            app_surface_audit.payload["source"]["sourceToolCallId"],
             "codex"
         );
 
-        let read_generated_ui_args = JsonObject::new();
-        let mut read_generated_ui_meta = JsonObject::new();
-        read_generated_ui_meta.insert("threadId".to_string(), json!("thread-1"));
-        let mut read_generated_ui_call =
-            CallToolRequestParams::new("get_generated_ui").with_arguments(read_generated_ui_args);
-        read_generated_ui_call.set_meta(Meta(read_generated_ui_meta));
+        let read_app_surface_args = JsonObject::new();
+        let mut read_app_surface_meta = JsonObject::new();
+        read_app_surface_meta.insert("threadId".to_string(), json!("thread-1"));
+        let mut read_app_surface_call =
+            CallToolRequestParams::new("get_app_surface").with_arguments(read_app_surface_args);
+        read_app_surface_call.set_meta(Meta(read_app_surface_meta));
         let read: Value = client
-            .call_tool(read_generated_ui_call)
+            .call_tool(read_app_surface_call)
             .await?
             .into_typed()?;
         assert_eq!(read["session"]["title"], "Mockups");
@@ -2548,6 +2429,21 @@ mod tests {
             assert!(
                 description.contains(text),
                 "{name} tool description should contain {text:?}; description: {description:?}",
+            );
+        }
+    }
+
+    fn assert_tool_schema_contains(tools: &[Tool], name: &str, expected: &[&str]) {
+        let tool = tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("missing tool {name}"));
+        let schema = serde_json::to_string(&tool.input_schema)
+            .unwrap_or_else(|err| panic!("failed to serialize {name} input schema: {err}"));
+        for text in expected {
+            assert!(
+                schema.contains(text),
+                "{name} tool schema should contain {text:?}; schema: {schema}",
             );
         }
     }

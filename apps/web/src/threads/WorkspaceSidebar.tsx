@@ -287,7 +287,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const updateSidebarScrollEdges = useCallback(() => {
     const element = sidebarScrollRef.current;
     if (!element) {
-      setSidebarScrollState({ bottom: false, stickyProjectHeader: false, top: false });
+      setSidebarScrollState((current) =>
+        current.bottom || current.stickyProjectHeader || current.top
+          ? { bottom: false, stickyProjectHeader: false, top: false }
+          : current,
+      );
       return;
     }
     const scrollFrameTop = element.parentElement?.getBoundingClientRect().top ?? element.getBoundingClientRect().top;
@@ -310,7 +314,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   useEffect(() => {
     const element = sidebarScrollRef.current;
     if (!element || sidebarCollapsed) {
-      setSidebarScrollState({ bottom: false, stickyProjectHeader: false, top: false });
+      setSidebarScrollState((current) =>
+        current.bottom || current.stickyProjectHeader || current.top
+          ? { bottom: false, stickyProjectHeader: false, top: false }
+          : current,
+      );
       return;
     }
     element.addEventListener("scroll", updateSidebarScrollEdges, { passive: true });

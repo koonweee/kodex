@@ -8,7 +8,7 @@ export function workspaceSubscribedThreadIds(panes: WorkspacePane[]): string[] {
     if (pane.kind === "thread" && target.mode === "existing" && typeof target.threadId === "string") {
       threadIds.add(target.threadId);
     }
-    if (pane.kind === "generatedUi" && typeof target.threadId === "string") {
+    if (pane.kind === "appSurface" && typeof target.threadId === "string") {
       threadIds.add(target.threadId);
     }
   }

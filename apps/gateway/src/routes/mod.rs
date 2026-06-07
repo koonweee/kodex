@@ -6,7 +6,6 @@ pub mod capabilities;
 pub mod composer_settings;
 pub mod events;
 pub mod file_preview;
-pub mod generated_ui;
 pub mod health;
 pub mod kodex_control_plugin;
 pub mod mcp;
@@ -65,7 +64,6 @@ mod tests {
         },
         queue,
         store::{
-            AppSurfaceCsp, AppSurfaceGrants, AppSurfaceProvider, AppSurfaceSessionUpsert,
             EventEnvelope, NewApproval, NewAutomation, NewEvent, NewNotificationDelivery,
             NewPushSubscription, NotificationDeliveryStatus, PushSubscription, Store,
             ThreadLocalSettingsOverlay, ThreadRuntimeState, ThreadRuntimeStatus,
@@ -7843,28 +7841,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn generated_ui_upsert_read_document_update_and_archive() {
+    async fn generated_ui_routes_are_removed_and_legacy_html_is_rejected() {
         let (state, _app_server) = test_state().await;
-        let mut events = state.events.subscribe();
-        let app = build_router(state.clone());
-        let source_value = json!({
-            "sourceThreadId": "source-thread",
-            "sourceTurnId": "source-turn",
-            "sourceToolCallId": "generated-ui-tool",
-            "requestedBy": "agent",
-            "reason": "verify generated UI provenance"
-        });
+        let app = build_router(state);
 
-        let first = app
+        let old_route = app
             .clone()
             .oneshot(
                 Request::post("/v1/self-control/threads/thread-1/generated-ui")
                     .header("content-type", "application/json")
                     .body(Body::from(
                         json!({
-                            "title": "Mockup chooser",
-                            "html": "<!doctype html><button>Choose A</button><script>window.parent.postMessage({type:'kodex.generatedUi.submit'}, '*')</script>",
-                            "source": source_value.clone()
+                            "title": "Old generated UI",
+                            "html": "<!doctype html><button>Choose</button>"
                         })
                         .to_string(),
                     ))
@@ -7872,177 +7861,31 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(first.status(), StatusCode::OK);
-        let first = response_json(first).await;
-        assert_eq!(first["session"]["title"], "Mockup chooser");
-        assert_eq!(first["session"]["revision"], 1);
-        assert_eq!(first["session"]["status"], "interactive");
-        assert_eq!(first["session"]["networkPolicy"], "self_contained");
-        assert!(first["session"]["html"].is_null());
-        let session_id = first["session"]["id"].as_str().unwrap().to_string();
-        let document_url = first["session"]["documentUrl"]
+        assert_eq!(old_route.status(), StatusCode::NOT_FOUND);
+
+        let legacy_html = app
+            .oneshot(
+                Request::post("/v1/self-control/threads/thread-1/app-surface")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "title": "MCP app",
+                            "html": "<!doctype html><script>window.parent.postMessage({type:'kodex.generatedUi.submit'}, '*')</script>",
+                            "fallbackContent": "Interactive fallback",
+                            "grants": {"canSendMessage": true}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(legacy_html.status(), StatusCode::BAD_REQUEST);
+        let body = response_json(legacy_html).await;
+        assert!(body["message"]
             .as_str()
-            .unwrap()
-            .to_string();
-        assert!(state
-            .store
-            .latest_generated_ui_session("thread-1")
-            .await
-            .unwrap()
-            .is_none());
-        assert_eq!(
-            state
-                .store
-                .latest_app_surface_session("thread-1")
-                .await
-                .unwrap()
-                .unwrap()
-                .id,
-            session_id
-        );
-
-        let upsert_event = timeout(Duration::from_secs(2), events.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(upsert_event.kind, "app_surface.session_upserted");
-        assert_eq!(upsert_event.thread_id.as_deref(), Some("thread-1"));
-        assert_eq!(upsert_event.payload["id"], session_id);
-        assert!(upsert_event.payload["html"].is_null());
-
-        let events_replay = app
-            .clone()
-            .oneshot(
-                Request::get("/v1/events?threadId=thread-1")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(events_replay.status(), StatusCode::OK);
-        let events_replay = response_json(events_replay).await;
-        let replayed_kinds = events_replay["events"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|event| event["kind"].as_str().unwrap())
-            .collect::<Vec<_>>();
-        assert!(replayed_kinds.contains(&"app_surface.session_upserted"));
-
-        let read = app
-            .clone()
-            .oneshot(
-                Request::get("/v1/threads/thread-1/generated-ui")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(read.status(), StatusCode::OK);
-        let read = response_json(read).await;
-        assert_eq!(read["session"]["id"], session_id);
-        assert!(read["session"]["html"].is_null());
-
-        let document = app
-            .clone()
-            .oneshot(Request::get(&document_url).body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(document.status(), StatusCode::OK);
-        assert!(document
-            .headers()
-            .get(CONTENT_SECURITY_POLICY)
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .contains("connect-src 'none'"));
-        assert!(document
-            .headers()
-            .get(CONTENT_SECURITY_POLICY)
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .contains("navigate-to 'none'"));
-        let document_body = to_bytes(document.into_body(), usize::MAX).await.unwrap();
-        assert!(std::str::from_utf8(&document_body)
-            .unwrap()
-            .contains("<button>Choose A</button>"));
-
-        let second = app
-            .clone()
-            .oneshot(
-                Request::post("/v1/self-control/threads/thread-1/generated-ui")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({
-                            "title": "Revised mockup chooser",
-                            "html": "<!doctype html><button>Choose B</button>"
-                        })
-                        .to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(second.status(), StatusCode::OK);
-        let second = response_json(second).await;
-        assert_eq!(second["session"]["id"], session_id);
-        assert_eq!(second["session"]["revision"], 2);
-        assert_eq!(second["session"]["submittedRevision"], Value::Null);
-        assert_eq!(second["session"]["status"], "interactive");
-
-        let archived = app
-            .clone()
-            .oneshot(
-                Request::delete("/v1/self-control/threads/thread-1/generated-ui")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({"source": source_value.clone()}).to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(archived.status(), StatusCode::OK);
-        let archived = response_json(archived).await;
-        assert_eq!(archived["session"]["status"], "archived");
-
-        let public_read_after_archive = app
-            .oneshot(
-                Request::get("/v1/threads/thread-1/generated-ui")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(public_read_after_archive.status(), StatusCode::OK);
-        let public_read_after_archive = response_json(public_read_after_archive).await;
-        assert_eq!(public_read_after_archive["session"], Value::Null);
-
-        let audit_events = state
-            .store
-            .replay_events(None, None, Some("thread-1".to_string()))
-            .await
-            .unwrap();
-        for expected in [
-            "self_control.app_surface_upserted",
-            "self_control.app_surface_archived",
-        ] {
-            let Some(event) = audit_events.iter().find(|event| event.kind == expected) else {
-                panic!("missing audit event {expected}; saw {audit_events:?}");
-            };
-            assert_eq!(event.payload["source"]["sourceThreadId"], "source-thread");
-            assert_eq!(event.payload["source"]["sourceTurnId"], "source-turn");
-            assert_eq!(
-                event.payload["source"]["sourceToolCallId"],
-                "generated-ui-tool"
-            );
-            assert_eq!(event.payload["source"]["requestedBy"], "agent");
-            assert_eq!(
-                event.payload["source"]["reason"],
-                "verify generated UI provenance"
-            );
-        }
+            .unwrap_or_default()
+            .contains("removed legacy generated UI protocol"));
     }
 
     #[tokio::test]
@@ -8075,10 +7918,15 @@ mod tests {
                             "displayModes": ["inline"],
                             "csp": {
                                 "connectDomains": [],
-                                "resourceDomains": ["data:"]
+                                "resourceDomains": ["https://cdn.example.test"],
+                                "frameDomains": ["https://frame.example.test"],
+                                "baseUriDomains": []
+                            },
+                            "permissions": {
+                                "clipboardWrite": {}
                             },
                             "grants": {
-                                "tools": [{"server": "docs", "tool": "lookup"}],
+                                "tools": [{"name": "lookup", "server": "docs", "tool": "lookup"}],
                                 "resources": [{"server": "docs", "uri": "ui://docs/extra"}],
                                 "canSendMessage": true,
                                 "canUpdateModelContext": true
@@ -8107,6 +7955,10 @@ mod tests {
         assert_eq!(created["session"]["status"], "active");
         assert_eq!(created["session"]["displayModes"], json!(["inline"]));
         assert_eq!(created["session"]["grants"]["canSendMessage"], true);
+        assert_eq!(
+            created["session"]["permissions"],
+            json!({"clipboardWrite": {}})
+        );
         assert!(created["session"]["documentUrl"]
             .as_str()
             .unwrap()
@@ -8191,7 +8043,9 @@ mod tests {
             .unwrap();
         assert!(csp.contains("connect-src 'none'"));
         assert!(csp.contains("navigate-to 'none'"));
-        assert!(csp.contains("img-src data:"));
+        assert!(csp.contains("img-src https://cdn.example.test"));
+        assert!(csp.contains("frame-src https://frame.example.test"));
+        assert!(csp.contains("base-uri 'none'"));
         let document_body = to_bytes(document.into_body(), usize::MAX).await.unwrap();
         assert!(std::str::from_utf8(&document_body)
             .unwrap()
@@ -8262,7 +8116,10 @@ mod tests {
                             "bridgeToken": bridge_token.as_str(),
                             "revision": 1,
                             "method": "ui/initialize",
-                            "params": {"protocolVersion": "2025-11-21"}
+                            "params": {
+                                "protocolVersion": "2026-01-26",
+                                "appCapabilities": {"displayModes": ["inline"]}
+                            }
                         })
                         .to_string(),
                     ))
@@ -8274,7 +8131,7 @@ mod tests {
         let bridge_initialize = response_json(bridge_initialize).await;
         assert_eq!(bridge_initialize["id"], "init-1");
         assert!(bridge_initialize["error"].is_null());
-        assert_eq!(bridge_initialize["result"]["protocolVersion"], "2025-11-21");
+        assert_eq!(bridge_initialize["result"]["protocolVersion"], "2026-01-26");
         assert_eq!(bridge_initialize["result"]["hostInfo"]["name"], "Kodex");
         assert_eq!(
             bridge_initialize["result"]["hostCapabilities"]["serverTools"],
@@ -8283,6 +8140,10 @@ mod tests {
         assert_eq!(
             bridge_initialize["result"]["hostCapabilities"]["serverResources"],
             json!({})
+        );
+        assert_eq!(
+            bridge_initialize["result"]["hostCapabilities"]["sandbox"]["permissions"],
+            json!({"clipboardWrite": {}})
         );
         assert_eq!(
             bridge_initialize["result"]["hostContext"]["resourceUri"],
@@ -8296,20 +8157,32 @@ mod tests {
             bridge_initialize["result"]["hostContext"]["availableDisplayModes"],
             json!(["inline"])
         );
-        assert_eq!(bridge_initialize["result"]["sessionId"], session_id);
-        assert_eq!(bridge_initialize["result"]["revision"], 1);
-        assert_eq!(bridge_initialize["result"]["provider"], "generated");
-        assert_eq!(bridge_initialize["result"]["displayMode"], "pane");
-        assert_eq!(
-            bridge_initialize["result"]["capabilities"]["methods"],
-            json!([
-                "ui/initialize",
-                "tools/call",
-                "resources/read",
-                "ui/message",
-                "ui/update-model-context"
-            ])
-        );
+        assert!(bridge_initialize["result"].get("sessionId").is_none());
+        assert!(bridge_initialize["result"].get("capabilities").is_none());
+
+        let bridge_size_changed = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/app-surfaces/{session_id}/bridge"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "bridgeToken": bridge_token.as_str(),
+                            "revision": 1,
+                            "method": "ui/notifications/size-changed",
+                            "params": {"width": 360, "height": 420}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(bridge_size_changed.status(), StatusCode::OK);
+        let bridge_size_changed = response_json(bridge_size_changed).await;
+        assert!(bridge_size_changed["id"].is_null());
+        assert!(bridge_size_changed["error"].is_null());
+        assert_eq!(bridge_size_changed["result"], json!({}));
 
         let bridge_tool = app
             .clone()
@@ -8323,8 +8196,7 @@ mod tests {
                             "revision": 1,
                             "method": "tools/call",
                             "params": {
-                                "server": "docs",
-                                "tool": "lookup",
+                                "name": "lookup",
                                 "arguments": {"query": "answer"},
                                 "_meta": {"source": "iframe"}
                             }
@@ -8384,8 +8256,7 @@ mod tests {
                             "revision": 1,
                             "method": "tools/call",
                             "params": {
-                                "server": "docs",
-                                "tool": "lookup",
+                                "name": "lookup",
                                 "arguments": {"query": "answer"},
                                 "_meta": {"source": "iframe"},
                                 "approvalId": approval_id
@@ -8419,8 +8290,7 @@ mod tests {
                             "revision": 1,
                             "method": "tools/call",
                             "params": {
-                                "server": "docs",
-                                "tool": "delete_everything"
+                                "name": "delete_everything"
                             }
                         })
                         .to_string(),
@@ -8510,8 +8380,9 @@ mod tests {
                             "revision": 1,
                             "method": "ui/message",
                             "params": {
-                                "message": "Use the dashboard choice",
-                                "metadata": {"choice": "dashboard"}
+                                "role": "user",
+                                "content": {"type": "text", "text": "Use the dashboard choice"},
+                                "_meta": {"choice": "dashboard"}
                             }
                         })
                         .to_string(),
@@ -8526,18 +8397,47 @@ mod tests {
         assert!(bridge_message["error"].is_null());
         assert_eq!(bridge_message["result"]["input"]["disposition"], "started");
 
-        let submitted_event = recv_event_kind(&mut events, "app_surface.session_submitted").await;
-        assert_eq!(submitted_event.thread_id.as_deref(), Some("thread-1"));
-        assert_eq!(submitted_event.payload["id"], session_id);
-        assert_eq!(submitted_event.payload["status"], "submitted");
+        let bridge_after_message = app
+            .clone()
+            .oneshot(
+                Request::post(format!("/v1/app-surfaces/{session_id}/bridge"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "id": "read-after-message",
+                            "bridgeToken": bridge_token.as_str(),
+                            "revision": 1,
+                            "method": "resources/read",
+                            "params": {"uri": resource_uri}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(bridge_after_message.status(), StatusCode::OK);
+        let bridge_after_message = response_json(bridge_after_message).await;
+        assert_eq!(bridge_after_message["id"], "read-after-message");
+        assert!(bridge_after_message["error"].is_null());
         assert_eq!(
-            submitted_event.payload["submittedMessage"],
-            "Use the dashboard choice"
+            bridge_after_message["result"]["contents"][0]["uri"],
+            resource_uri
         );
-        assert_eq!(
-            submitted_event.payload["submittedMetadata"],
-            json!({"choice": "dashboard"})
-        );
+
+        let active_after_message = app
+            .clone()
+            .oneshot(
+                Request::get("/v1/threads/thread-1/app-surface")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(active_after_message.status(), StatusCode::OK);
+        let active_after_message = response_json(active_after_message).await;
+        assert_eq!(active_after_message["session"]["status"], "active");
+        assert!(active_after_message["session"]["submittedMessage"].is_null());
 
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "mcpServer/tool/call");
@@ -8721,7 +8621,7 @@ mod tests {
         assert_eq!(read["session"]["provider"], "mcp");
         assert_eq!(
             read["session"]["grants"]["tools"],
-            json!([{"server": "docs", "tool": "lookup"}])
+            json!([{"name": "lookup", "server": "docs", "tool": "lookup"}])
         );
 
         let requests = app_server.requests.lock().unwrap();
@@ -8742,204 +8642,6 @@ mod tests {
                 "thread/turns/list",
             ]
         );
-    }
-
-    #[tokio::test]
-    async fn generated_ui_submit_starts_idle_thread_and_rejects_duplicate_revision() {
-        let (state, app_server) = test_state().await;
-        app_server.queued_responses.lock().unwrap().extend([
-            thread_read_response("thread-1", 0),
-            json!({"turnId": "turn-generated"}),
-        ]);
-        let mut events = state.events.subscribe();
-        let app = build_router(state.clone());
-
-        let created = app
-            .clone()
-            .oneshot(
-                Request::post("/v1/self-control/threads/thread-1/generated-ui")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({"title": "Questionnaire", "html": "<form></form>"}).to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let created = response_json(created).await;
-        let session_id = created["session"]["id"].as_str().unwrap();
-        let submit_url = format!("/v1/generated-ui/sessions/{session_id}/submit");
-        let _ = timeout(Duration::from_secs(2), events.recv())
-            .await
-            .unwrap()
-            .unwrap();
-
-        let submitted = app
-            .clone()
-            .oneshot(
-                Request::post(&submit_url)
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({
-                            "revision": 1,
-                            "message": "I pick mockup A",
-                            "metadata": {"choice": "a"}
-                        })
-                        .to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(submitted.status(), StatusCode::OK);
-        let submitted = response_json(submitted).await;
-        assert_eq!(submitted["session"]["status"], "submitted");
-        assert_eq!(submitted["session"]["submitAvailable"], false);
-        assert_eq!(submitted["session"]["submittedRevision"], 1);
-        assert_eq!(submitted["input"]["disposition"], "started");
-
-        let submitted_event = recv_event_kind(&mut events, "app_surface.session_submitted").await;
-        assert_eq!(submitted_event.kind, "app_surface.session_submitted");
-        assert_eq!(
-            submitted_event.payload["submittedMetadata"],
-            json!({"choice": "a"})
-        );
-
-        let duplicate = app
-            .oneshot(
-                Request::post(&submit_url)
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({"revision": 1, "message": "submit twice"}).to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(duplicate.status(), StatusCode::CONFLICT);
-
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[0].0, "thread/read");
-        assert_eq!(requests[1].0, "turn/start");
-        assert_eq!(requests[1].1["input"][0]["text"], "I pick mockup A");
-        assert_eq!(
-            requests
-                .iter()
-                .filter(|(method, _)| method == "turn/start")
-                .count(),
-            1
-        );
-    }
-
-    #[tokio::test]
-    async fn generated_ui_alias_uses_app_surface_submit_state_for_update_guardrails() {
-        let (state, _app_server) = test_state().await;
-        let session = state
-            .store
-            .upsert_app_surface_session(AppSurfaceSessionUpsert {
-                thread_id: "thread-1".to_string(),
-                provider: AppSurfaceProvider::Generated,
-                title: "Questionnaire".to_string(),
-                resource_uri: None,
-                resource_mime_type: "text/html;profile=mcp-app".to_string(),
-                html: "<form></form>".to_string(),
-                fallback_content: "Interactive generated UI: Questionnaire".to_string(),
-                display_modes: vec!["inline".to_string(), "fullscreen".to_string()],
-                csp: AppSurfaceCsp::default(),
-                grants: AppSurfaceGrants {
-                    can_send_message: true,
-                    ..Default::default()
-                },
-                provenance: json!({"generated": {"compatAlias": "generated-ui"}}),
-            })
-            .await
-            .unwrap();
-
-        let submitted = state
-            .store
-            .submit_app_surface_session(
-                &session.id,
-                session.revision,
-                "I pick mockup A",
-                Some(json!({"choice": "a"})),
-            )
-            .await
-            .unwrap();
-        assert_eq!(submitted.status.as_str(), "submitted");
-
-        assert!(state
-            .store
-            .submit_app_surface_session(&session.id, session.revision, "duplicate", None)
-            .await
-            .is_err());
-        let updated = state
-            .store
-            .upsert_app_surface_session(AppSurfaceSessionUpsert {
-                thread_id: "thread-1".to_string(),
-                provider: AppSurfaceProvider::Generated,
-                title: "Updated questionnaire".to_string(),
-                resource_uri: None,
-                resource_mime_type: "text/html;profile=mcp-app".to_string(),
-                html: "<form><button>Submit</button></form>".to_string(),
-                fallback_content: "Interactive generated UI: Updated questionnaire".to_string(),
-                display_modes: vec!["inline".to_string(), "fullscreen".to_string()],
-                csp: AppSurfaceCsp::default(),
-                grants: AppSurfaceGrants {
-                    can_send_message: true,
-                    ..Default::default()
-                },
-                provenance: json!({"generated": {"compatAlias": "generated-ui"}}),
-            })
-            .await
-            .unwrap();
-        assert_eq!(updated.revision, session.revision + 1);
-    }
-
-    #[tokio::test]
-    async fn generated_ui_submit_steers_active_thread_through_composer_route() {
-        let (state, app_server) = test_state().await;
-        app_server.queued_responses.lock().unwrap().extend([
-            active_thread_read_response("thread-1", "turn-active"),
-            json!({"turnId": "turn-active"}),
-        ]);
-        let app = build_router(state);
-
-        let created = app
-            .clone()
-            .oneshot(
-                Request::post("/v1/self-control/threads/thread-1/generated-ui")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({"title": "Follow-up", "html": "<button>Send</button>"}).to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let created = response_json(created).await;
-        let session_id = created["session"]["id"].as_str().unwrap();
-
-        let submitted = app
-            .oneshot(
-                Request::post(format!("/v1/generated-ui/sessions/{session_id}/submit"))
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({"revision": 1, "message": "Use option B"}).to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(submitted.status(), StatusCode::OK);
-        let submitted = response_json(submitted).await;
-        assert_eq!(submitted["input"]["disposition"], "steered");
-
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[0].0, "thread/read");
-        assert_eq!(requests[1].0, "turn/steer");
-        assert_eq!(requests[1].1["expectedTurnId"], "turn-active");
-        assert_eq!(requests[1].1["input"][0]["text"], "Use option B");
-        assert!(requests.iter().all(|(method, _)| method != "turn/start"));
     }
 
     #[tokio::test]
@@ -15354,7 +15056,7 @@ mod tests {
                     {
                         "name": "generative-ui",
                         "path": generative_ui_skill_path.display().to_string(),
-                        "description": "Open interactive generated UI panes.",
+                        "description": "Open interactive generated app-surface panes.",
                         "enabled": true,
                         "scope": "plugin"
                     }

@@ -54,7 +54,7 @@ function activeSendButton() {
 
 async function openSecondThreadInAdditionalPane() {
   await userEvent.click(screen.getByRole("button", { name: /thread actions/i }));
-  await userEvent.click(await screen.findByRole("menuitem", { name: /duplicate pane/i }));
+  await userEvent.click(await screen.findByRole("menuitem", { hidden: true, name: /duplicate pane/i }));
   await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /second thread/i }));
 }
 

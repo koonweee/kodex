@@ -25,7 +25,6 @@ export type LiveEventRouteHandlers = {
   applyUsageLimitSnapshot: (snapshot: RateLimitSnapshot) => void;
   applyApprovalEvent: (event: EventEnvelope) => void;
   applyAppSurfaceEvent: (event: EventEnvelope) => void;
-  applyGeneratedUiEvent: (event: EventEnvelope) => void;
   applySkillsChangedEvent: () => void;
   applyMcpLifecycleEvent: (event: EventEnvelope) => void;
 };
@@ -59,9 +58,6 @@ export function routeSelectedThreadLiveEvent(event: EventEnvelope, handlers: Sel
 function routeSharedLiveEvent(event: EventEnvelope, handlers: SelectedThreadLiveEventRouteHandlers) {
   if (event.kind === "automation.item_upsert" || event.kind === "automation.item_deleted") {
     handlers.applyAutomationStreamEvent(event);
-  }
-  if (event.kind.startsWith("generated_ui.")) {
-    handlers.applyGeneratedUiEvent(event);
   }
   if (event.kind.startsWith("app_surface.")) {
     handlers.applyAppSurfaceEvent(event);

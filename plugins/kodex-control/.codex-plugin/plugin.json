@@ -1,6 +1,6 @@
 {
   "name": "kodex-control",
-  "version": "0.1.0+codex.20260606165257",
+  "version": "0.1.0+codex.20260607184335",
   "description": "First-party Kodex control plugin for guarded self-management workflows.",
   "author": {
     "name": "OpenAI",
@@ -14,7 +14,7 @@
     "kodex",
     "preview",
     "proxy",
-    "generated-ui",
+    "app-surface",
     "automation",
     "self-control"
   ],
@@ -23,7 +23,7 @@
   "interface": {
     "displayName": "Kodex Control",
     "shortDescription": "Guarded Kodex self-management tools",
-    "longDescription": "Install first-party Kodex skills and tools for evaluating project preview proxy compatibility, rendering generated UI panes, and, after explicit confirmation, configuring previews, threads, and automations through gateway-owned safeguards.",
+    "longDescription": "Install first-party Kodex skills and tools for evaluating project preview proxy compatibility, rendering generated MCP App surfaces, and, after explicit confirmation, configuring previews, threads, and automations through gateway-owned safeguards.",
     "developerName": "OpenAI",
     "category": "Coding",
     "capabilities": [

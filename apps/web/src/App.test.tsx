@@ -484,7 +484,7 @@ describe("App shell", () => {
     expect(screen.getByRole("button", { name: /account settings/i })).toBeInTheDocument();
   });
 
-  it("lets the workspace sidebar grow wider from its minimum width", async () => {
+  it("uses the fixed desktop workspace sidebar width without a resize handle", async () => {
     mockGateway({
       "GET /v1/projects": { projects: [] },
       "GET /v1/approvals": { approvals: [] },
@@ -493,18 +493,11 @@ describe("App shell", () => {
 
     renderApp();
 
-    const resizeHandle = screen.getByRole("separator", { name: /resize workspace sidebar/i });
-    expect(resizeHandle).toHaveAttribute("aria-valuenow", "292");
-
-    fireEvent.pointerDown(resizeHandle, { clientX: 292, pointerId: 1 });
-    fireEvent.pointerMove(window, { clientX: 420, pointerId: 1 });
-    fireEvent.pointerUp(window, { pointerId: 1 });
-
-    expect(resizeHandle).toHaveAttribute("aria-valuenow", "420");
-    expect(screen.getByRole("navigation", { name: /workspace/i })).toHaveStyle({ width: "420px" });
+    expect(screen.queryByRole("separator", { name: /resize workspace sidebar/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /workspace/i })).toHaveStyle({ width: "292px" });
   });
 
-  it("collapses the workspace sidebar when resizing below the minimum and restores it by dragging right", async () => {
+  it("collapses and restores the workspace sidebar from the sidebar controls", async () => {
     mockGateway({
       "GET /v1/projects": { projects: [] },
       "GET /v1/approvals": { approvals: [] },
@@ -513,21 +506,15 @@ describe("App shell", () => {
 
     renderApp();
 
-    const resizeHandle = screen.getByRole("separator", { name: /resize workspace sidebar/i });
-    fireEvent.pointerDown(resizeHandle, { clientX: 292, pointerId: 1 });
-    fireEvent.pointerMove(window, { clientX: 260, pointerId: 1 });
-    fireEvent.pointerUp(window, { pointerId: 1 });
+    fireEvent.click(screen.getByRole("button", { name: /collapse workspace sidebar/i }));
+    const expandButton = screen.getByRole("button", { name: /expand workspace sidebar/i });
+    expect(screen.getByRole("button", { name: /search/i })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /workspace/i })).toHaveStyle({ width: "44px" });
 
-    const expandHandle = screen.getByRole("separator", { name: /expand workspace sidebar/i });
-    expect(expandHandle).toHaveAttribute("aria-valuenow", "32");
-    expect(screen.queryByLabelText("Search")).not.toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: /workspace/i })).toHaveStyle({ width: "32px" });
+    fireEvent.click(expandButton);
 
-    fireEvent.click(expandHandle);
-
-    expect(screen.getByRole("separator", { name: /resize workspace sidebar/i })).toHaveAttribute("aria-valuenow", "292");
     expect(screen.getByRole("navigation", { name: /workspace/i })).toHaveStyle({ width: "292px" });
-    expect(screen.getAllByLabelText("Search")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: /search/i })).toBeInTheDocument();
   });
 
   it("keeps unified pane chrome and composer outside the timeline scroll region and toggles debug events locally", async () => {

@@ -3,7 +3,7 @@
 @import "./styles/mantine-components.css";
 @import "./styles/theme-workbench.css";
 @import "./styles/shell.css";
-@import "./styles/generated-ui.css";
+@import "./styles/app-surface.css";
 @import "./styles/terminal.css";
 @import "./styles/composer.css";
 @import "./styles/mobile-composer.css";

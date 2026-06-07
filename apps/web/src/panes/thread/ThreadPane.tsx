@@ -1,6 +1,6 @@
 import { Badge, Box, Button, Group, Loader, Menu, Modal, Skeleton, Switch, TextInput, Title } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, Archive, CopyPlus, MoreHorizontal, Pencil, Pin, PinOff, Sparkles } from "lucide-react";
+import { AlertCircle, Archive, Copy, CopyPlus, MoreHorizontal, Pencil, Pin, PinOff, Sparkles } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
 
 import type { EventEnvelope, ThreadSummary } from "../../api/client";
@@ -34,6 +34,7 @@ import { paneTargetRecord } from "../../workspace/paneTypes";
 import { useWorkspace } from "../../workspace/WorkspaceProvider";
 import { AdaptiveIconButton } from "../../ui/AdaptiveIconButton";
 import { EmptyPanel } from "../../ui/EmptyPanel";
+import { copyTextToClipboard } from "../../shared/clipboard";
 
 const TimelineView = lazy(() =>
   import("../../timeline/TimelineView").then((module) => ({ default: module.TimelineView })),
@@ -94,7 +95,7 @@ function ExistingThreadPane({
     onShowMobileSidebar,
     onThreadSnapshotLoadFailed,
     onThreadSnapshotLoaded,
-    openGeneratedUiPane,
+    openAppSurfacePane,
     openThreadPane,
     renderThreadComposer,
     renderThreadPaneAside,
@@ -386,9 +387,9 @@ function ExistingThreadPane({
               {customHeaderActions}
               {appSurfaceSession ? (
                 <AdaptiveIconButton
-                  label="Open generated UI"
+                  label="Open app surface"
                   onClick={() =>
-                    void openGeneratedUiPane(threadId, `${title} UI`, {
+                    void openAppSurfacePane(threadId, `${title} App Surface`, {
                       placement: { sourcePaneId: pane.id },
                     })
                   }
@@ -410,6 +411,7 @@ function ExistingThreadPane({
                 onSetThreadNotificationsEnabled={threadActions.onSetThreadNotificationsEnabled}
                 onUnpinThread={threadActions.onUnpinThread}
                 thread={thread}
+                threadId={threadId}
               />
             </>
           ) : null}
@@ -420,7 +422,7 @@ function ExistingThreadPane({
       appSurfaceSession,
       isActive,
       isUnavailable,
-      openGeneratedUiPane,
+      openAppSurfacePane,
       openThreadPane,
       pane,
       renderThreadPaneHeaderActions,
@@ -625,6 +627,7 @@ function ThreadActionsMenu({
   onSetThreadNotificationsEnabled,
   onUnpinThread,
   thread,
+  threadId,
 }: {
   onDuplicatePane: () => void;
   onArchiveThread?: (threadId: string) => void;
@@ -634,6 +637,7 @@ function ThreadActionsMenu({
   onSetThreadNotificationsEnabled?: (threadId: string, enabled: boolean) => void;
   onUnpinThread?: (threadId: string) => void;
   thread: ThreadSummary | null;
+  threadId: string;
 }) {
   const notificationsEnabled = thread?.notificationsEnabled !== false;
   return (
@@ -704,6 +708,9 @@ function ThreadActionsMenu({
             ) : null}
           </>
         ) : null}
+        <Menu.Item leftSection={<Copy size={14} />} onClick={() => void copyTextToClipboard(threadId)}>
+          Copy thread ID
+        </Menu.Item>
       </Menu.Dropdown>
     </Menu>
   );

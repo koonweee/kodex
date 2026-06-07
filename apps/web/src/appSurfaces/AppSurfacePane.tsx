@@ -1,41 +1,32 @@
-import { Badge, Box, Group, Text, Title } from "@mantine/core";
-import { useMediaQuery } from "@mantine/hooks";
-import { AlertCircle, CheckCircle2, Loader2, PanelRightClose } from "lucide-react";
+import { Badge, Box, Text } from "@mantine/core";
+import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AppSurfaceBridgeRequest, AppSurfaceBridgeResponse, AppSurfaceSession } from "../api/client";
-import { buildGeneratedUiSrcDoc } from "../generatedUi/themeDocument";
-import { NARROW_WORKSPACE_QUERY } from "../shared/layoutBreakpoints";
 import { errorMessageFrom } from "../shared/values";
 import type { KodexColorSchemeId } from "../theme";
-import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
+import { buildAppSurfaceResourceHtml } from "./document";
 
 const APP_SURFACE_TEXT = {
-  close: "Hide app surface",
   documentLoadError: "App surface document failed to load.",
   frame: "App surface",
+  sandboxConfigError:
+    "App surface sandbox proxy must be configured on a different origin. Set VITE_KODEX_APP_SURFACE_SANDBOX_URL.",
   submitted: "Submitted",
   submitting: "Working",
 };
+
+const APP_SURFACE_SANDBOX_PROXY_READY = "ui/notifications/sandbox-proxy-ready";
+const APP_SURFACE_SANDBOX_RESOURCE_READY = "ui/notifications/sandbox-resource-ready";
+const APP_SURFACE_APP_INITIALIZED = "ui/notifications/initialized";
+const APP_SURFACE_APP_SIZE_CHANGED = "ui/notifications/size-changed";
+const DEFAULT_APP_IFRAME_SANDBOX = "allow-scripts allow-forms";
 
 type AppSurfacePaneProps = {
   colorSchemeId: KodexColorSchemeId;
   isBridgePending: boolean;
   onBridgeRequest: (request: AppSurfaceBridgeRequest) => Promise<AppSurfaceBridgeResponse>;
-  onHide: () => void;
   session: AppSurfaceSession;
-};
-
-type LegacySubmitMessage = {
-  type?: unknown;
-  requestId?: unknown;
-  sessionId?: unknown;
-  revision?: unknown;
-  message?: unknown;
-  visibleMessage?: unknown;
-  text?: unknown;
-  metadata?: unknown;
-  json?: unknown;
 };
 
 type JsonRpcMessage = {
@@ -49,20 +40,36 @@ type JsonRpcMessage = {
 
 type JsonRecord = Record<string, unknown>;
 
-export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest, onHide, session }: AppSurfacePaneProps) {
+export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest, session }: AppSurfacePaneProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const postedToolNotificationsRef = useRef(false);
-  const showPaneClose = useMediaQuery(NARROW_WORKSPACE_QUERY, false);
+  const proxyReadyRef = useRef(false);
   const [documentError, setDocumentError] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
-  const [srcDoc, setSrcDoc] = useState("");
+  const [resourceHtml, setResourceHtml] = useState("");
   const statusLabel = session.status === "submitted" ? APP_SURFACE_TEXT.submitted : isBridgePending ? APP_SURFACE_TEXT.submitting : null;
   const frameTitle = useMemo(() => `${APP_SURFACE_TEXT.frame}: ${session.title}`, [session.title]);
+  const sandboxUrl = useMemo(resolveAppSurfaceSandboxUrl, []);
+  const sandboxError = sandboxUrl ? null : APP_SURFACE_TEXT.sandboxConfigError;
 
   useEffect(() => {
     setLocalError(null);
+    proxyReadyRef.current = false;
     postedToolNotificationsRef.current = false;
   }, [session.id, session.revision]);
+
+  const postCurrentResource = useCallback(() => {
+    if (!resourceHtml) {
+      return;
+    }
+    postedToolNotificationsRef.current = false;
+    postProxyResource(iframeRef.current?.contentWindow ?? null, session, resourceHtml);
+  }, [resourceHtml, session]);
+
+  const markProxyReady = useCallback(() => {
+    proxyReadyRef.current = true;
+    postCurrentResource();
+  }, [postCurrentResource]);
 
   const postSessionToolNotifications = useCallback(() => {
     if (postedToolNotificationsRef.current) {
@@ -74,9 +81,9 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
 
   useEffect(() => {
     const controller = new AbortController();
-    let isActive = true;
+    let isMounted = true;
     setDocumentError(null);
-    setSrcDoc("");
+    setResourceHtml("");
 
     void fetch(resolveAppSurfaceDocumentUrl(session.documentUrl), {
       headers: { Accept: "text/html" },
@@ -89,63 +96,80 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
         return response.text();
       })
       .then((html) => {
-        if (isActive) {
-          setSrcDoc(buildGeneratedUiSrcDoc(html, colorSchemeId, session.csp));
+        if (isMounted) {
+          setResourceHtml(buildAppSurfaceResourceHtml(html, colorSchemeId, session.csp));
         }
       })
       .catch((error) => {
-        if (!isActive || isAbortError(error)) {
+        if (!isMounted || isAbortError(error)) {
           return;
         }
         setDocumentError(errorMessageFrom(error));
       });
 
     return () => {
-      isActive = false;
+      isMounted = false;
       controller.abort();
     };
-  }, [colorSchemeId, session.documentUrl]);
+  }, [colorSchemeId, session.csp, session.documentUrl]);
+
+  useEffect(() => {
+    if (!proxyReadyRef.current) {
+      return;
+    }
+    postCurrentResource();
+  }, [postCurrentResource]);
+
+  useEffect(() => {
+    return () => {
+      postJsonRpcNotification(iframeRef.current?.contentWindow ?? null, "ui/resource-teardown", {
+        revision: session.revision,
+        sessionId: session.id,
+      });
+    };
+  }, [session.id, session.revision]);
 
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
       if (event.source !== iframeRef.current?.contentWindow) {
         return;
       }
-      const notificationMethod = appNotificationMethodFromMessage(event.data, session.id, session.revision);
-      if (notificationMethod) {
-        if (notificationMethod === "ui/notifications/initialized") {
-          postSessionToolNotifications();
-        }
+      const proxyNotificationMethod = sandboxProxyNotificationMethodFromData(event.data);
+      if (proxyNotificationMethod === APP_SURFACE_SANDBOX_PROXY_READY) {
+        markProxyReady();
         return;
       }
-      const legacySubmitRequest = legacySubmitRequestFromMessage(event.data, session.id, session.revision);
-      if (legacySubmitRequest) {
-        const bridgeRequest = { ...legacySubmitRequest, bridgeToken: session.bridgeToken };
+      if (proxyNotificationMethod === APP_SURFACE_SANDBOX_RESOURCE_READY) {
         setLocalError(null);
-        void onBridgeRequest(bridgeRequest)
-          .then((response) => {
-            postGeneratedUiSubmitResult(iframeRef.current?.contentWindow ?? null, bridgeRequest.id, response);
-          })
-          .catch((error) => {
-            const message = errorMessageFrom(error);
-            setLocalError(message);
-            postGeneratedUiSubmitResult(iframeRef.current?.contentWindow ?? null, bridgeRequest.id, {
-              id: bridgeRequest.id,
-              error: { code: -32000, message },
-            });
-          });
+        return;
+      }
+      if (proxyNotificationMethod) {
+        return;
+      }
+
+      const notificationMethod = appNotificationMethodFromMessage(event.data, session.id, session.revision);
+      if (notificationMethod) {
+        if (notificationMethod === APP_SURFACE_APP_INITIALIZED) {
+          postSessionToolNotifications();
+          return;
+        }
+        if (notificationMethod === APP_SURFACE_APP_SIZE_CHANGED) {
+          setLocalError(null);
+          return;
+        }
+        const notificationRequest = bridgeRequestFromMessage(event.data, session.id, session.revision);
+        if (!notificationRequest) {
+          return;
+        }
+        const bridgeRequest = { ...notificationRequest, bridgeToken: session.bridgeToken };
+        setLocalError(null);
+        void onBridgeRequest(bridgeRequest).catch((error) => {
+          setLocalError(errorMessageFrom(error));
+        });
         return;
       }
       const request = bridgeRequestFromMessage(event.data, session.id, session.revision);
       if (!request) {
-        const unrecognizedKodexType = unrecognizedGeneratedUiEventTypeFromMessage(event.data);
-        if (unrecognizedKodexType) {
-          postGeneratedUiIgnoredResult(
-            iframeRef.current?.contentWindow ?? null,
-            requestIdFromMessage(event.data),
-            `Unrecognized generated UI event type: ${unrecognizedKodexType}`,
-          );
-        }
         return;
       }
       const bridgeRequest = { ...request, bridgeToken: session.bridgeToken };
@@ -166,58 +190,41 @@ export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [onBridgeRequest, postSessionToolNotifications, session.bridgeToken, session.id, session.revision]);
-
-  const handleFrameLoad = useCallback(() => {
-    if (!srcDoc) {
-      return;
-    }
-    setLocalError(null);
-  }, [srcDoc]);
+  }, [markProxyReady, onBridgeRequest, postSessionToolNotifications, session.bridgeToken, session.id, session.revision]);
 
   return (
-    <Box className="kodex-generated-ui-pane" data-provider={session.provider} data-status={session.status}>
-      <Group className="kodex-generated-ui-header" justify="space-between" wrap="nowrap">
-        <Group className="kodex-generated-ui-heading" gap="xs" wrap="nowrap">
-          <Title className="kodex-generated-ui-title" order={3} size="h6" title={session.title}>
-            {session.title}
-          </Title>
-          {statusLabel ? (
-            <Badge
-              className="kodex-generated-ui-status"
-              leftSection={isBridgePending ? <Loader2 size={12} /> : <CheckCircle2 size={12} />}
-              size="sm"
-              variant="light"
-            >
-              {statusLabel}
-            </Badge>
-          ) : null}
-        </Group>
-        {showPaneClose ? (
-          <AdaptiveIconButton className="kodex-generated-ui-close" label={APP_SURFACE_TEXT.close} onClick={onHide}>
-            <PanelRightClose />
-          </AdaptiveIconButton>
-        ) : null}
-      </Group>
-      {documentError || localError ? (
-        <Box className="kodex-generated-ui-error" role="alert">
+    <Box className="kodex-app-surface-pane" data-provider={session.provider} data-status={session.status}>
+      {statusLabel ? (
+        <Badge
+          className="kodex-app-surface-status"
+          leftSection={isBridgePending ? <Loader2 size={12} /> : <CheckCircle2 size={12} />}
+          size="sm"
+          variant="light"
+        >
+          {statusLabel}
+        </Badge>
+      ) : null}
+      {documentError || localError || sandboxError ? (
+        <Box className="kodex-app-surface-error" role="alert">
           <AlertCircle aria-hidden="true" size={14} />
           <Text component="span" size="xs">
-            {documentError ?? localError}
+            {documentError ?? localError ?? sandboxError}
           </Text>
         </Box>
       ) : null}
-      <Box className="kodex-generated-ui-frame-wrap">
-        <iframe
-          className="kodex-generated-ui-frame"
-          key={`${session.id}:${session.revision}:${colorSchemeId}`}
-          onLoad={handleFrameLoad}
-          ref={iframeRef}
-          sandbox="allow-scripts"
-          srcDoc={srcDoc}
-          title={frameTitle}
-        />
-      </Box>
+      {sandboxUrl ? (
+        <Box className="kodex-app-surface-frame-wrap">
+          <iframe
+            className="kodex-app-surface-frame"
+            key={`${session.id}:${session.revision}:${colorSchemeId}`}
+            onLoad={markProxyReady}
+            ref={iframeRef}
+            sandbox="allow-scripts allow-same-origin"
+            src={sandboxUrl}
+            title={frameTitle}
+          />
+        </Box>
+      ) : null}
     </Box>
   );
 }
@@ -236,8 +243,8 @@ function postToolNotifications(target: Window | null, session: AppSurfaceSession
   }
 }
 
-function postJsonRpcNotification(target: Window, method: string, params: unknown) {
-  target.postMessage({ jsonrpc: "2.0", method, params: jsonRpcObject(params) }, "*");
+function postJsonRpcNotification(target: Window | null, method: string, params: unknown) {
+  postProxyHostMessage(target, { jsonrpc: "2.0", method, params: jsonRpcObject(params) });
 }
 
 function postJsonRpcResponse(target: Window | null, fallbackId: unknown, response: AppSurfaceBridgeResponse) {
@@ -246,75 +253,23 @@ function postJsonRpcResponse(target: Window | null, fallbackId: unknown, respons
   }
   const id = response.id ?? fallbackId ?? null;
   if (response.error) {
-    target.postMessage({ jsonrpc: "2.0", id, error: response.error }, "*");
+    postProxyHostMessage(target, { jsonrpc: "2.0", id, error: response.error });
     return;
   }
-  target.postMessage({ jsonrpc: "2.0", id, result: jsonRpcObject(response.result) }, "*");
+  postProxyHostMessage(target, { jsonrpc: "2.0", id, result: jsonRpcObject(response.result) });
 }
 
 function postJsonRpcError(target: Window | null, id: unknown, message: string) {
   if (!target) {
     return;
   }
-  target.postMessage(
+  postProxyHostMessage(
+    target,
     {
       jsonrpc: "2.0",
       id: id ?? null,
       error: { code: -32000, message },
     },
-    "*",
-  );
-}
-
-function postGeneratedUiSubmitResult(
-  target: Window | null,
-  requestId: unknown,
-  response: AppSurfaceBridgeResponse,
-) {
-  if (!target || typeof requestId !== "string") {
-    return;
-  }
-  if (response.error) {
-    target.postMessage(
-      {
-        type: "kodex.generatedUi.submit.result",
-        requestId,
-        ok: false,
-        status: "error",
-        error: response.error,
-      },
-      "*",
-    );
-    return;
-  }
-  target.postMessage(
-    {
-      type: "kodex.generatedUi.submit.result",
-      requestId,
-      ok: true,
-      status: "submitted",
-      result: response.result ?? {},
-    },
-    "*",
-  );
-}
-
-function postGeneratedUiIgnoredResult(target: Window | null, requestId: unknown, message: string) {
-  if (!target || typeof requestId !== "string") {
-    return;
-  }
-  target.postMessage(
-    {
-      type: "kodex.generatedUi.submit.result",
-      requestId,
-      ok: false,
-      status: "ignored",
-      error: {
-        code: "unrecognized_event_type",
-        message,
-      },
-    },
-    "*",
   );
 }
 
@@ -416,75 +371,15 @@ function appNotificationMethodFromMessage(data: unknown, currentSessionId: strin
   return message.method;
 }
 
-function requestIdFromMessage(data: unknown): unknown {
-  if (!data || typeof data !== "object") {
-    return undefined;
-  }
-  return (data as { requestId?: unknown }).requestId;
-}
-
-function unrecognizedGeneratedUiEventTypeFromMessage(data: unknown): string | null {
+function sandboxProxyNotificationMethodFromData(data: unknown): string | null {
   if (!data || typeof data !== "object") {
     return null;
   }
-  const type = (data as { type?: unknown }).type;
-  if (typeof type !== "string" || !type.startsWith("kodex")) {
-    return null;
+  const message = data as JsonRpcMessage;
+  if (typeof message.method === "string" && message.method.startsWith("ui/notifications/sandbox-")) {
+    return message.method;
   }
-  if (
-    type === "kodex.generatedUi.submit" ||
-    type === "kodex:generated-ui:submit" ||
-    type === "kodex.ui.submit"
-  ) {
-    return null;
-  }
-  return type;
-}
-
-function legacySubmitRequestFromMessage(
-  data: unknown,
-  currentSessionId: string,
-  currentRevision: number,
-): AppSurfaceBridgeRequest | null {
-  if (!data || typeof data !== "object") {
-    return null;
-  }
-  const message = data as LegacySubmitMessage;
-  if (
-    message.type !== "kodex.generatedUi.submit" &&
-    message.type !== "kodex:generated-ui:submit" &&
-    message.type !== "kodex.ui.submit"
-  ) {
-    return null;
-  }
-  if (typeof message.sessionId === "string" && message.sessionId !== currentSessionId) {
-    return null;
-  }
-  const revision = typeof message.revision === "number" ? message.revision : currentRevision;
-  if (revision !== currentRevision) {
-    return null;
-  }
-  const visibleMessage =
-    typeof message.message === "string"
-      ? message.message
-      : typeof message.visibleMessage === "string"
-        ? message.visibleMessage
-        : typeof message.text === "string"
-          ? message.text
-          : "";
-  const trimmedMessage = visibleMessage.trim();
-  if (!trimmedMessage) {
-    return null;
-  }
-  return {
-    id: typeof message.requestId === "string" ? message.requestId : `legacy-submit:${currentSessionId}:${revision}`,
-    revision,
-    method: "ui/message",
-    params: {
-      message: trimmedMessage,
-      metadata: message.metadata ?? message.json,
-    },
-  };
+  return null;
 }
 
 function isAbortError(error: unknown): boolean {
@@ -496,4 +391,70 @@ function resolveAppSurfaceDocumentUrl(documentUrl: string): string {
     return documentUrl;
   }
   return new URL(documentUrl, window.location.origin).toString();
+}
+
+function resolveAppSurfaceSandboxUrl(): string | null {
+  const configured = import.meta.env.VITE_KODEX_APP_SURFACE_SANDBOX_URL;
+  if (typeof window === "undefined") {
+    return configured || null;
+  }
+  const sandboxUrl = configured ? new URL(configured, window.location.href) : loopbackSiblingSandboxUrl();
+  if (!sandboxUrl || sandboxUrl.origin === window.location.origin) {
+    return null;
+  }
+  return sandboxUrl.toString();
+}
+
+function loopbackSiblingSandboxUrl(): URL | null {
+  const current = new URL(window.location.href);
+  const hostname = current.hostname;
+  const siblingHost = loopbackSiblingHost(hostname) ?? sameMachineFallbackHost(current);
+  if (!siblingHost) {
+    return null;
+  }
+  const port = current.port ? `:${current.port}` : "";
+  return new URL(`/app-surface-sandbox.html`, `${current.protocol}//${siblingHost}${port}`);
+}
+
+function loopbackSiblingHost(hostname: string): string | null {
+  if (hostname === "localhost") {
+    return "127.0.0.1";
+  }
+  if (hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]") {
+    return "localhost";
+  }
+  return null;
+}
+
+function sameMachineFallbackHost(current: URL): string | null {
+  if (current.protocol !== "http:") {
+    return null;
+  }
+  return current.hostname ? "127.0.0.1" : null;
+}
+
+function postProxyResource(target: Window | null, session: AppSurfaceSession, html: string) {
+  if (!target) {
+    return;
+  }
+  target.postMessage(
+    {
+      jsonrpc: "2.0",
+      method: APP_SURFACE_SANDBOX_RESOURCE_READY,
+      params: {
+        csp: session.csp,
+        html,
+        permissions: session.permissions,
+        sandbox: DEFAULT_APP_IFRAME_SANDBOX,
+      },
+    },
+    "*",
+  );
+}
+
+function postProxyHostMessage(target: Window | null, message: unknown) {
+  if (!target) {
+    return;
+  }
+  target.postMessage(message, "*");
 }

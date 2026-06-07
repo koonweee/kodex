@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::error::{ApiError, ApiResult};
 
 use super::{
-    AppSurfaceCsp, AppSurfaceGrants, AppSurfaceProvider, AppSurfaceSession,
+    AppSurfaceCsp, AppSurfaceGrants, AppSurfacePermissions, AppSurfaceProvider, AppSurfaceSession,
     AppSurfaceSessionStatus, AppSurfaceSessionUpsert, Store,
 };
 
@@ -30,6 +30,7 @@ impl Store {
 
         let display_modes_json = serde_json::to_string(&upsert.display_modes)?;
         let csp_json = serde_json::to_string(&upsert.csp)?;
+        let permissions_json = serde_json::to_string(&upsert.permissions)?;
         let grants_json = serde_json::to_string(&upsert.grants)?;
         let provenance_json = serde_json::to_string(&upsert.provenance)?;
 
@@ -60,6 +61,7 @@ impl Store {
                     status = ?,
                     display_modes_json = ?,
                     csp_json = ?,
+                    permissions_json = ?,
                     grants_json = ?,
                     provenance_json = ?,
                     submitted_revision = null,
@@ -81,6 +83,7 @@ impl Store {
             .bind(AppSurfaceSessionStatus::Active.as_str())
             .bind(&display_modes_json)
             .bind(&csp_json)
+            .bind(&permissions_json)
             .bind(&grants_json)
             .bind(&provenance_json)
             .bind(now)
@@ -109,9 +112,9 @@ impl Store {
                 insert into app_surface_sessions (
                     id, thread_id, bridge_token, provider, title, resource_uri, resource_mime_type,
                     fallback_content, revision, status, display_modes_json, csp_json,
-                    grants_json, provenance_json, created_at, updated_at
+                    permissions_json, grants_json, provenance_json, created_at, updated_at
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 "#,
             )
             .bind(&id)
@@ -126,6 +129,7 @@ impl Store {
             .bind(AppSurfaceSessionStatus::Active.as_str())
             .bind(&display_modes_json)
             .bind(&csp_json)
+            .bind(&permissions_json)
             .bind(&grants_json)
             .bind(&provenance_json)
             .bind(now)
@@ -342,7 +346,7 @@ fn app_surface_session_query() -> sqlx::QueryBuilder<'static, sqlx::Sqlite> {
         r#"
         select s.id, s.thread_id, s.bridge_token, s.provider, s.title, s.resource_uri,
                s.resource_mime_type, r.text as html, s.fallback_content, s.revision,
-               s.status, s.display_modes_json, s.csp_json, s.grants_json,
+               s.status, s.display_modes_json, s.csp_json, s.permissions_json, s.grants_json,
                s.provenance_json, s.submitted_revision, s.submitted_message,
                s.submitted_metadata_json, s.created_at, s.updated_at,
                s.submitted_at, s.archived_at
@@ -356,6 +360,7 @@ fn app_surface_session_query() -> sqlx::QueryBuilder<'static, sqlx::Sqlite> {
 fn row_to_app_surface_session(row: sqlx::sqlite::SqliteRow) -> ApiResult<AppSurfaceSession> {
     let display_modes_json: String = row.try_get("display_modes_json")?;
     let csp_json: String = row.try_get("csp_json")?;
+    let permissions_json: String = row.try_get("permissions_json")?;
     let grants_json: String = row.try_get("grants_json")?;
     let provenance_json: String = row.try_get("provenance_json")?;
     let submitted_metadata_json: Option<String> = row.try_get("submitted_metadata_json")?;
@@ -373,6 +378,7 @@ fn row_to_app_surface_session(row: sqlx::sqlite::SqliteRow) -> ApiResult<AppSurf
         status: AppSurfaceSessionStatus::from_str(&row.try_get::<String, _>("status")?)?,
         display_modes: serde_json::from_str(&display_modes_json)?,
         csp: serde_json::from_str::<AppSurfaceCsp>(&csp_json)?,
+        permissions: serde_json::from_str::<AppSurfacePermissions>(&permissions_json)?,
         grants: serde_json::from_str::<AppSurfaceGrants>(&grants_json)?,
         provenance: serde_json::from_str::<Value>(&provenance_json)?,
         submitted_revision: row.try_get("submitted_revision")?,
@@ -412,6 +418,7 @@ mod tests {
                 fallback_content: "Choose an option".to_string(),
                 display_modes: vec!["inline".to_string()],
                 csp: AppSurfaceCsp::default(),
+                permissions: AppSurfacePermissions::default(),
                 grants: AppSurfaceGrants {
                     can_send_message: true,
                     ..Default::default()
@@ -440,7 +447,10 @@ mod tests {
                 csp: AppSurfaceCsp {
                     connect_domains: vec!["https://example.test".to_string()],
                     resource_domains: Vec::new(),
+                    frame_domains: Vec::new(),
+                    base_uri_domains: Vec::new(),
                 },
+                permissions: AppSurfacePermissions::default(),
                 grants: AppSurfaceGrants::default(),
                 provenance: json!({"source": "test-2"}),
             })
@@ -477,6 +487,7 @@ mod tests {
                 fallback_content: "Choose an option".to_string(),
                 display_modes: vec!["inline".to_string()],
                 csp: AppSurfaceCsp::default(),
+                permissions: AppSurfacePermissions::default(),
                 grants: AppSurfaceGrants {
                     can_send_message: true,
                     ..Default::default()

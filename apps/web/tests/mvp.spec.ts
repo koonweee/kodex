@@ -284,7 +284,7 @@ test("renders selected thread snapshot output", async ({ page }) => {
   await expect(activeThreadPane(page).getByText(/snapshot assistant output/i)).toBeVisible();
 });
 
-test("renders generated UI as a workspace pane and submits from the frame", async ({ page }) => {
+test("renders app surface as a workspace pane and submits from the frame", async ({ page }) => {
   const interactiveSession = {
     archivedAt: null,
     createdAt: "2026-04-30T00:00:00Z",
@@ -296,6 +296,7 @@ test("renders generated UI as a workspace pane and submits from the frame", asyn
     bridgeToken: "bridge-token-1",
     id: "session-1",
     provenance: { source: "test" },
+    permissions: {},
     provider: "generated",
     resourceMimeType: "text/html",
     resourceUri: "ui://kodex/generated/session-1",
@@ -310,7 +311,7 @@ test("renders generated UI as a workspace pane and submits from the frame", asyn
     title: "Mockup chooser",
     updatedAt: "2026-04-30T00:00:00Z",
   };
-  let generatedUiSubmitted = false;
+  let appSurfaceSubmitted = false;
   await page.unroute("**/v1/**");
   await page.route("**/v1/**", async (route) => {
     const request = route.request();
@@ -327,7 +328,7 @@ test("renders generated UI as a workspace pane and submits from the frame", asyn
         status: 200,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          session: generatedUiSubmitted
+          session: appSurfaceSubmitted
             ? {
                 ...interactiveSession,
                 status: "submitted",
@@ -352,7 +353,7 @@ test("renders generated UI as a workspace pane and submits from the frame", asyn
             <body style="font-family: system-ui; margin: 0; padding: 16px">
               <h1>Mockup chooser</h1>
               <p>Compare two responsive concepts.</p>
-              <button onclick="parent.postMessage({type:'kodex.ui.submit', sessionId:'session-1', revision:1, message:'Pick mockup A', metadata:{choice:'a'}}, '*')">Choose A</button>
+              <button onclick="window.parent.postMessage({jsonrpc:'2.0', id:'submit-1', method:'ui/message', params:{role:'user', content:{type:'text', text:'Pick mockup A'}, _meta:{choice:'a'}}}, '*')">Choose A</button>
             </body>
           </html>`,
       });
@@ -360,13 +361,13 @@ test("renders generated UI as a workspace pane and submits from the frame", asyn
     }
 
     if (key === "POST /v1/app-surfaces/session-1/bridge") {
-      generatedUiSubmitted = true;
+      appSurfaceSubmitted = true;
       await route.fulfill({
         status: 200,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: "legacy-submit:session-1:1",
-          result: { input: { disposition: "started", queuedInput: null, rawPayload: { turnId: "turn-generated-ui" } } },
+          id: "submit-1",
+          result: { input: { disposition: "started", queuedInput: null, rawPayload: { turnId: "turn-app-surface" } } },
         }),
       });
       return;
@@ -383,36 +384,38 @@ test("renders generated UI as a workspace pane and submits from the frame", asyn
   await page.setViewportSize({ width: 1800, height: 820 });
   await openFrontendMvpThread(page);
 
-  await expect(activeThreadPane(page).getByText(/snapshot assistant output/i)).toBeVisible();
-  await activeThreadPane(page).getByRole("button", { name: /open generated ui/i }).click();
+  const frontendThreadPane = page.locator(".kodex-thread-pane").filter({
+    has: page.getByRole("heading", { name: /frontend mvp/i }),
+  });
+  await expect(frontendThreadPane.getByText(/snapshot assistant output/i)).toBeVisible();
+  await page.getByRole("button", { name: /open app surface/i }).click();
 
-  const generatedUiPane = page.locator(".kodex-generated-ui-pane");
+  const appSurfacePane = page.locator(".kodex-app-surface-pane");
   await expect(page.getByTitle(/app surface: mockup chooser/i)).toBeVisible();
-  await expect(generatedUiPane).toBeVisible();
-  await expect(generatedUiPane.getByRole("button", { name: /hide app surface/i })).toHaveCount(0);
-  const desktopFrameLayout = await generatedUiPane.evaluate((pane) => {
-    const header = pane.querySelector(".kodex-generated-ui-header");
-    const frame = pane.querySelector(".kodex-generated-ui-frame-wrap");
-    if (!header || !frame) {
-      throw new Error("Missing generated UI layout nodes");
+  await expect(appSurfacePane).toBeVisible();
+  await expect(appSurfacePane.getByRole("button", { name: /hide app surface/i })).toHaveCount(0);
+  await expect(appSurfacePane.locator(".kodex-app-surface-header")).toHaveCount(0);
+  const desktopFrameLayout = await appSurfacePane.evaluate((pane) => {
+    const frame = pane.querySelector(".kodex-app-surface-frame-wrap");
+    if (!frame) {
+      throw new Error("Missing app surface layout nodes");
     }
     const paneBox = pane.getBoundingClientRect();
-    const headerBox = header.getBoundingClientRect();
     const frameBox = frame.getBoundingClientRect();
     return {
       frameBottom: frameBox.bottom,
       frameHeight: frameBox.height,
-      headerHeight: headerBox.height,
       paneBottom: paneBox.bottom,
       paneHeight: paneBox.height,
     };
   });
-  expect(desktopFrameLayout.paneBottom - desktopFrameLayout.frameBottom).toBeLessThanOrEqual(2);
-  expect(desktopFrameLayout.frameHeight).toBeGreaterThan(
-    desktopFrameLayout.paneHeight - desktopFrameLayout.headerHeight - 16,
-  );
+  expect(desktopFrameLayout.paneBottom - desktopFrameLayout.frameBottom).toBeLessThanOrEqual(10);
+  expect(desktopFrameLayout.frameHeight).toBeGreaterThanOrEqual(desktopFrameLayout.paneHeight - 16);
 
-  const frameSubmit = page.frameLocator('iframe[title="App surface: Mockup chooser"]').getByRole("button", { name: "Choose A" });
+  const frameSubmit = page
+    .frameLocator('iframe[title="App surface: Mockup chooser"]')
+    .frameLocator('iframe[title="App surface content"]')
+    .getByRole("button", { name: "Choose A" });
   await frameSubmit.click();
   await expect(page.getByText(/submitted/i)).toBeVisible();
 });

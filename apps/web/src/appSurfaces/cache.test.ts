@@ -66,6 +66,7 @@ function appSurfaceSession(overrides: Partial<AppSurfaceSession> = {}): AppSurfa
     bridgeToken: "bridge-token-1",
     id: "session-1",
     provenance: { source: "test" },
+    permissions: {},
     provider: "generated",
     resourceMimeType: "text/html",
     resourceUri: "ui://kodex/generated/session-1",

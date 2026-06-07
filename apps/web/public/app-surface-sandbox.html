@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>App Surface Sandbox</title>
+  <style>
+    html,
+    body,
+    iframe {
+      border: 0;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      width: 100%;
+    }
+
+    body {
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body>
+  <script>
+    (() => {
+      let appFrame = null;
+      const SANDBOX_PROXY_READY = "ui/notifications/sandbox-proxy-ready";
+      const SANDBOX_RESOURCE_READY = "ui/notifications/sandbox-resource-ready";
+
+      function isRecord(value) {
+        return value && typeof value === "object" && !Array.isArray(value);
+      }
+
+      function postJsonRpcNotification(method, params = {}) {
+        window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*");
+      }
+
+      function ensureFrame() {
+        if (appFrame) {
+          return appFrame;
+        }
+        appFrame = document.createElement("iframe");
+        appFrame.setAttribute("title", "App surface content");
+        appFrame.addEventListener("load", () => {
+          postJsonRpcNotification(SANDBOX_RESOURCE_READY);
+        });
+        document.body.appendChild(appFrame);
+        return appFrame;
+      }
+
+      function permissionsAllowAttribute(permissions) {
+        if (!isRecord(permissions)) {
+          return "";
+        }
+        const features = [];
+        if (isRecord(permissions.camera)) {
+          features.push("camera");
+        }
+        if (isRecord(permissions.microphone)) {
+          features.push("microphone");
+        }
+        if (isRecord(permissions.geolocation)) {
+          features.push("geolocation");
+        }
+        if (isRecord(permissions.clipboardWrite)) {
+          features.push("clipboard-write");
+        }
+        return features.map((feature) => `${feature} *`).join("; ");
+      }
+
+      window.addEventListener("message", (event) => {
+        if (event.source === appFrame?.contentWindow) {
+          return;
+        }
+        const data = event.data;
+        if (!isRecord(data)) {
+          return;
+        }
+        if (data.method === SANDBOX_RESOURCE_READY) {
+          const params = isRecord(data.params) ? data.params : {};
+          const frame = ensureFrame();
+          frame.setAttribute("sandbox", typeof params.sandbox === "string" ? params.sandbox : "allow-scripts allow-forms");
+          const allow = permissionsAllowAttribute(params.permissions);
+          if (allow) {
+            frame.setAttribute("allow", allow);
+          } else {
+            frame.removeAttribute("allow");
+          }
+          frame.srcdoc = String(params.html || "");
+          return;
+        }
+        if (typeof data.method === "string" && data.method.startsWith("ui/notifications/sandbox-")) {
+          return;
+        }
+        if (appFrame?.contentWindow) {
+          appFrame.contentWindow.postMessage(data, "*");
+        }
+      });
+
+      window.addEventListener("message", (event) => {
+        if (event.source !== appFrame?.contentWindow) {
+          return;
+        }
+        const data = event.data;
+        if (isRecord(data) && typeof data.method === "string" && data.method.startsWith("ui/notifications/sandbox-")) {
+          return;
+        }
+        window.parent.postMessage(data, "*");
+      });
+
+      postJsonRpcNotification(SANDBOX_PROXY_READY);
+    })();
+  </script>
+</body>
+</html>

@@ -46,7 +46,7 @@ async fn kodex_control_mcp_stdio_lists_tools() -> anyhow::Result<()> {
         &["title", "html", "fallbackContent"],
     );
     assert_tool_does_not_require(&tools, "open_app_surface", "threadId");
-    assert_tool_requires(&tools, "open_generated_ui", &["title", "html"]);
+    assert!(tools.iter().all(|tool| !tool.name.contains("generated_ui")));
     assert_tool_requires(&tools, "deny_approval", &["approvalId"]);
     assert_tool_requires(
         &tools,
@@ -219,6 +219,7 @@ async fn kodex_control_mcp_smokes_new_tools_against_fake_gateway() -> anyhow::Re
             && request.path == "/v1/self-control/threads/thread-spawned/app-surface"
             && request.body["title"] == "Thread UI"
             && request.body["fallbackContent"] == "Thread UI fallback"
+            && request.body["presentation"] == "focus"
             && request.body.get("threadId").is_none()
     }));
     assert!(requests.iter().any(|request| {

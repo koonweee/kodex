@@ -340,38 +340,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/generated-ui/sessions/{sessionId}/document": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["generated_ui_document"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/generated-ui/sessions/{sessionId}/submit": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["submit_generated_ui"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/kodex-control-plugin": {
         parameters: {
             query?: never;
@@ -1243,28 +1211,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/self-control/threads/{threadId}/generated-ui": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read the latest generated UI for a thread through self-control */
-        get: operations["get_self_control_generated_ui"];
-        put?: never;
-        /**
-         * Open or replace a thread generated UI pane through self-control
-         * @description Agent-facing generated UI endpoint. The HTML is stored as the latest per-thread revision and served in a sandboxed iframe with self-contained CSP. Tools should use generated UI only when it creates a richer experience than chat alone, pair it with a short assistant message, and intentionally choose local UI interactions for embedded-data behavior or conversational submissions for actions that need Codex, tools, external data, persistence, workflow continuation, or an explicit user decision. Conversational submissions should include a standalone human-readable message plus optional compact JSON metadata.
-         */
-        post: operations["upsert_self_control_generated_ui"];
-        /** Archive the latest generated UI for a thread through self-control */
-        delete: operations["archive_self_control_generated_ui"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/self-control/threads/{threadId}/input": {
         parameters: {
             query?: never;
@@ -1687,22 +1633,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/threads/{threadId}/generated-ui": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_thread_generated_ui"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/threads/{threadId}/input": {
         parameters: {
             query?: never;
@@ -2084,7 +2014,9 @@ export interface components {
             result?: unknown;
         };
         AppSurfaceCsp: {
+            baseUriDomains?: string[];
             connectDomains?: string[];
+            frameDomains?: string[];
             resourceDomains?: string[];
         };
         AppSurfaceDocumentQuery: {
@@ -2097,6 +2029,12 @@ export interface components {
             canUpdateModelContext?: boolean;
             resources?: components["schemas"]["AppSurfaceResourceGrant"][];
             tools?: components["schemas"]["AppSurfaceToolGrant"][];
+        };
+        AppSurfacePermissions: {
+            camera?: unknown;
+            clipboardWrite?: unknown;
+            geolocation?: unknown;
+            microphone?: unknown;
         };
         /** @enum {string} */
         AppSurfacePresentationAction: "open" | "focus";
@@ -2127,6 +2065,7 @@ export interface components {
             grants: components["schemas"]["AppSurfaceGrants"];
             html: string;
             id: string;
+            permissions: components["schemas"]["AppSurfacePermissions"];
             provenance: unknown;
             provider: components["schemas"]["AppSurfaceProvider"];
             resourceMimeType: string;
@@ -2157,6 +2096,7 @@ export interface components {
             fallbackContent: string;
             grants: components["schemas"]["AppSurfaceGrants"];
             id: string;
+            permissions: components["schemas"]["AppSurfacePermissions"];
             provenance: unknown;
             provider: components["schemas"]["AppSurfaceProvider"];
             resourceMimeType: string;
@@ -2185,6 +2125,7 @@ export interface components {
         /** @enum {string} */
         AppSurfaceSessionStatus: "active" | "submitting" | "submitted" | "archived" | "errored";
         AppSurfaceToolGrant: {
+            name?: string | null;
             server: string;
             tool: string;
         };
@@ -2459,72 +2400,6 @@ export interface components {
             terminals: components["schemas"]["TerminalCapabilities"];
             trustedNetworkOnly: boolean;
             version: string;
-        };
-        GeneratedUiDocumentQuery: {
-            /** Format: int64 */
-            revision: number;
-        };
-        GeneratedUiSession: {
-            /** Format: date-time */
-            archivedAt?: string | null;
-            /** Format: date-time */
-            createdAt: string;
-            html: string;
-            id: string;
-            /** Format: int64 */
-            revision: number;
-            status: components["schemas"]["GeneratedUiSessionStatus"];
-            /** Format: date-time */
-            submittedAt?: string | null;
-            submittedMessage?: string | null;
-            submittedMetadata?: unknown;
-            /** Format: int64 */
-            submittedRevision?: number | null;
-            threadId: string;
-            title: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        GeneratedUiSessionDto: {
-            /** Format: date-time */
-            archivedAt?: string | null;
-            /** Format: date-time */
-            createdAt: string;
-            documentUrl: string;
-            id: string;
-            networkPolicy: string;
-            /** Format: int64 */
-            revision: number;
-            status: components["schemas"]["GeneratedUiSessionStatus"];
-            submitAvailable: boolean;
-            /** Format: date-time */
-            submittedAt?: string | null;
-            submittedMessage?: string | null;
-            submittedMetadata?: unknown;
-            /** Format: int64 */
-            submittedRevision?: number | null;
-            threadId: string;
-            title: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        GeneratedUiSessionReadResponse: {
-            session?: null | components["schemas"]["GeneratedUiSessionDto"];
-        };
-        GeneratedUiSessionResponse: {
-            session: components["schemas"]["GeneratedUiSessionDto"];
-        };
-        /** @enum {string} */
-        GeneratedUiSessionStatus: "interactive" | "submitting" | "submitted" | "archived";
-        GeneratedUiSubmitRequest: {
-            message: string;
-            metadata?: unknown;
-            /** Format: int64 */
-            revision: number;
-        };
-        GeneratedUiSubmitResponse: {
-            input: components["schemas"]["ThreadInputResponse"];
-            session: components["schemas"]["GeneratedUiSessionDto"];
         };
         GitInfo: {
             branch?: string | null;
@@ -3123,8 +2998,8 @@ export interface components {
             valid: boolean;
         };
         SelfControlCapabilities: {
+            appSurfaces: boolean;
             automations: boolean;
-            generatedUi: boolean;
             mcpResources: boolean;
             projectPreviewApply: boolean;
             threads: boolean;
@@ -3173,16 +3048,9 @@ export interface components {
             html: string;
             /** Format: int32 */
             maxSelfControlDepth?: number | null;
+            permissions?: components["schemas"]["AppSurfacePermissions"];
             presentation?: null | components["schemas"]["AppSurfacePresentationAction"];
             provenance?: unknown;
-            source?: components["schemas"]["SelfControlSource"];
-            title: string;
-        };
-        SelfControlGeneratedUiUpsertRequest: {
-            html: string;
-            /** Format: int32 */
-            maxSelfControlDepth?: number | null;
-            presentation?: null | components["schemas"]["AppSurfacePresentationAction"];
             source?: components["schemas"]["SelfControlSource"];
             title: string;
         };
@@ -4437,62 +4305,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EventListResponse"];
-                };
-            };
-        };
-    };
-    generated_ui_document: {
-        parameters: {
-            query: {
-                revision: number;
-            };
-            header?: never;
-            path: {
-                sessionId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/html": unknown;
-                };
-            };
-        };
-    };
-    submit_generated_ui: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sessionId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GeneratedUiSubmitRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GeneratedUiSubmitResponse"];
-                };
-            };
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorBody"];
                 };
             };
         };
@@ -5936,77 +5748,6 @@ export interface operations {
             };
         };
     };
-    get_self_control_generated_ui: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                threadId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GeneratedUiSessionReadResponse"];
-                };
-            };
-        };
-    };
-    upsert_self_control_generated_ui: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                threadId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SelfControlGeneratedUiUpsertRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GeneratedUiSessionResponse"];
-                };
-            };
-        };
-    };
-    archive_self_control_generated_ui: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                threadId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SelfControlMutationRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GeneratedUiSessionReadResponse"];
-                };
-            };
-        };
-    };
     send_self_control_thread_input: {
         parameters: {
             query?: never;
@@ -6669,27 +6410,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadCommandResponse"];
-                };
-            };
-        };
-    };
-    get_thread_generated_ui: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                threadId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GeneratedUiSessionReadResponse"];
                 };
             };
         };

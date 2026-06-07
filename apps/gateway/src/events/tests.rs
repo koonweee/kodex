@@ -219,7 +219,7 @@ async fn mcp_tool_item_with_app_resource_creates_app_surface_session() {
     );
     assert_eq!(
         app_surface_event.payload["grants"]["tools"],
-        json!([{"server": "docs", "tool": "lookup"}])
+        json!([{"name": "lookup", "server": "docs", "tool": "lookup"}])
     );
 
     let session = state

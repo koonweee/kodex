@@ -59,6 +59,9 @@ log_step "Restarting $session_name from $repo_root"
 log_step "Endpoint: $endpoint"
 if [[ -f "$prod_env_file" ]]; then
   log_step "Production environment: $prod_env_file"
+  set -a
+  source "$prod_env_file"
+  set +a
 else
   log_step "Production environment: $prod_env_file not found; using process environment only"
 fi

@@ -2,7 +2,7 @@
 
 ## Status
 
-Active. The repo already has a provider-neutral app-surface runtime, MCP resource detection, generated-provider self-control endpoints, Kodex Control app-surface tools, OpenAPI types, a web pane, and bridge/audit coverage. That implementation is MCP Apps-inspired but not yet spec-first enough for broad compatibility with SDK-built MCP Apps.
+Complete as of June 7, 2026. The implementation hard-cuts generated app surfaces onto the MCP Apps protocol, removes generated UI public routes/tools/storage, updates the bridge to spec-shaped JSON-RPC methods, stores full app-surface metadata, adds the web sandbox proxy, rejects legacy submit HTML, refreshes OpenAPI/frontend types, and updates Kodex Control guidance. The "Current State" section below is retained as pre-implementation planning context.
 
 This revision is the P0 hard-cut compliance plan. The target is to make external MCP Apps and Kodex-generated app surfaces use one MCP Apps protocol. Legacy generated UI routes, generated UI event types, `kodex.generatedUi.submit` messages, and submit-only helpers are not preserved. Existing generated HTML may be discarded.
 

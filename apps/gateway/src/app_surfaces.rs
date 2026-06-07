@@ -7,8 +7,8 @@ use crate::{
     app_server_api::{client as app_server_client, McpServerStatusDetail, ThreadTurnSnapshot},
     error::{ApiError, ApiResult},
     store::{
-        AppSurfaceCsp, AppSurfaceGrants, AppSurfaceProvider, AppSurfaceResourceGrant,
-        AppSurfaceSession, AppSurfaceSessionUpsert, AppSurfaceToolGrant,
+        AppSurfaceCsp, AppSurfaceGrants, AppSurfacePermissions, AppSurfaceProvider,
+        AppSurfaceResourceGrant, AppSurfaceSession, AppSurfaceSessionUpsert, AppSurfaceToolGrant,
     },
 };
 
@@ -24,6 +24,12 @@ pub struct AppSurfaceUiMetadata {
     pub visibility: Vec<String>,
     #[serde(default)]
     pub csp: AppSurfaceCsp,
+    #[serde(default)]
+    pub permissions: AppSurfacePermissions,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefers_border: Option<bool>,
     #[serde(default)]
     pub raw: Value,
 }
@@ -64,10 +70,23 @@ impl AppSurfaceUiMetadata {
             .filter(|values| !values.is_empty())
             .unwrap_or_else(|| vec!["model".to_string(), "app".to_string()]);
         let csp = ui.get("csp").map(csp_from_value).unwrap_or_default();
+        let permissions = ui
+            .get("permissions")
+            .map(permissions_from_value)
+            .unwrap_or_default();
+        let domain = ui
+            .get("domain")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_string);
+        let prefers_border = ui.get("prefersBorder").and_then(Value::as_bool);
         Self {
             resource_uri,
             visibility,
             csp,
+            permissions,
+            domain,
+            prefers_border,
             raw: ui.clone(),
         }
     }
@@ -83,6 +102,9 @@ impl Default for AppSurfaceUiMetadata {
             resource_uri: None,
             visibility: vec!["model".to_string(), "app".to_string()],
             csp: AppSurfaceCsp::default(),
+            permissions: AppSurfacePermissions::default(),
+            domain: None,
+            prefers_border: None,
             raw: Value::Null,
         }
     }
@@ -98,6 +120,24 @@ pub fn validate_app_surface_html(html: String) -> ApiResult<String> {
         return Err(ApiError::BadRequest(
             "app surface HTML exceeds the 4 MiB limit".to_string(),
         ));
+    }
+    Ok(html)
+}
+
+pub fn validate_generated_app_surface_html(html: String) -> ApiResult<String> {
+    let html = validate_app_surface_html(html)?;
+    for marker in [
+        "kodex.generatedUi.submit",
+        "kodex:generated-ui:submit",
+        "kodex.ui.submit",
+        "kodex.generatedUi.submit.result",
+        "kodex:generated-ui:submit-result",
+    ] {
+        if html.contains(marker) {
+            return Err(ApiError::BadRequest(format!(
+                "generated app surface HTML uses removed legacy generated UI protocol marker {marker}; use MCP Apps JSON-RPC instead"
+            )));
+        }
     }
     Ok(html)
 }
@@ -121,24 +161,28 @@ pub fn validate_app_surface_grants(
     provider: AppSurfaceProvider,
     grants: AppSurfaceGrants,
 ) -> ApiResult<AppSurfaceGrants> {
-    if provider == AppSurfaceProvider::Mcp
-        && grants
-            .tools
-            .iter()
-            .any(|grant| grant.server.trim().is_empty() || grant.tool.trim().is_empty())
-    {
+    if grants.tools.iter().any(|grant| {
+        grant.server.trim().is_empty()
+            || grant.tool.trim().is_empty()
+            || grant
+                .name
+                .as_deref()
+                .is_some_and(|name| name.trim().is_empty())
+    }) {
         return Err(ApiError::BadRequest(
-            "MCP app surface tool grants require server and tool".to_string(),
+            "app surface tool grants require non-empty server, tool, and optional name".to_string(),
         ));
     }
     if provider == AppSurfaceProvider::Generated
-        && grants
-            .tools
-            .iter()
-            .any(|grant| grant.server.trim().is_empty() || grant.tool.trim().is_empty())
+        && grants.tools.iter().any(|grant| {
+            grant
+                .name
+                .as_deref()
+                .map_or(true, |name| name.trim().is_empty())
+        })
     {
         return Err(ApiError::BadRequest(
-            "generated app surface tool grants require server and tool".to_string(),
+            "generated app surface tool grants require an app-local name".to_string(),
         ));
     }
     Ok(grants)
@@ -146,9 +190,11 @@ pub fn validate_app_surface_grants(
 
 pub fn app_surface_csp(csp: &AppSurfaceCsp) -> String {
     let connect_src = csp_source_list(&csp.connect_domains, "'none'");
-    let resource_src = csp_source_list(&csp.resource_domains, "data: blob:");
+    let resource_src = csp_source_list(&csp.resource_domains, "'self' data:");
+    let frame_src = csp_source_list(&csp.frame_domains, "'none'");
+    let base_uri = csp_source_list(&csp.base_uri_domains, "'none'");
     format!(
-        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src {resource_src}; font-src data:; connect-src {connect_src}; navigate-to 'none'; form-action 'none'; frame-src 'none'; base-uri 'none'"
+        "default-src 'none'; script-src 'self' 'unsafe-inline' {resource_src}; style-src 'self' 'unsafe-inline' {resource_src}; img-src {resource_src}; font-src {resource_src}; media-src {resource_src}; connect-src {connect_src}; object-src 'none'; navigate-to 'none'; form-action 'none'; frame-src {frame_src}; base-uri {base_uri}"
     )
 }
 
@@ -237,10 +283,10 @@ async fn upsert_mcp_app_surface_from_candidate(
     if mime_type != MCP_APP_MIME_TYPE {
         return Ok(None);
     }
-    let Some(html) = content.get("text").and_then(Value::as_str) else {
+    let Some(html) = app_surface_html_from_content(&content)? else {
         return Ok(None);
     };
-    let html = validate_app_surface_html(html.to_string())?;
+    let html = validate_app_surface_html(html)?;
     let resource_metadata = AppSurfaceUiMetadata::from_resource_meta(
         content.get("_meta").or_else(|| content.get("meta")),
     );
@@ -261,6 +307,7 @@ async fn upsert_mcp_app_surface_from_candidate(
             fallback_content,
             display_modes: vec!["inline".to_string(), "fullscreen".to_string()],
             csp: resource_metadata.csp,
+            permissions: resource_metadata.permissions,
             grants,
             provenance: serde_json::json!({
                 "mcp": {
@@ -285,7 +332,42 @@ fn csp_from_value(value: &Value) -> AppSurfaceCsp {
     AppSurfaceCsp {
         connect_domains: string_array(value.get("connectDomains")),
         resource_domains: string_array(value.get("resourceDomains")),
+        frame_domains: string_array(value.get("frameDomains")),
+        base_uri_domains: string_array(value.get("baseUriDomains")),
     }
+}
+
+fn permissions_from_value(value: &Value) -> AppSurfacePermissions {
+    AppSurfacePermissions {
+        camera: permission_value(value.get("camera")),
+        microphone: permission_value(value.get("microphone")),
+        geolocation: permission_value(value.get("geolocation")),
+        clipboard_write: permission_value(value.get("clipboardWrite")),
+    }
+}
+
+fn permission_value(value: Option<&Value>) -> Option<Value> {
+    match value {
+        Some(Value::Object(_)) => value.cloned(),
+        Some(Value::Bool(true)) => Some(serde_json::json!({})),
+        _ => None,
+    }
+}
+
+fn app_surface_html_from_content(content: &Value) -> ApiResult<Option<String>> {
+    if let Some(text) = content.get("text").and_then(Value::as_str) {
+        return Ok(Some(text.to_string()));
+    }
+    let Some(blob) = content.get("blob").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let bytes = STANDARD
+        .decode(blob)
+        .map_err(|error| ApiError::BadGateway(format!("invalid MCP app HTML blob: {error}")))?;
+    String::from_utf8(bytes)
+        .map(Some)
+        .map_err(|error| ApiError::BadGateway(format!("MCP app HTML blob is not UTF-8: {error}")))
 }
 
 async fn mcp_app_surface_grants(
@@ -307,6 +389,7 @@ async fn mcp_app_surface_grants(
         .into_values()
         .filter(|tool| AppSurfaceUiMetadata::from_tool_meta(tool.meta.as_ref()).app_visible())
         .map(|tool| AppSurfaceToolGrant {
+            name: Some(tool.name.clone()),
             server: server_name.to_string(),
             tool: tool.name,
         })

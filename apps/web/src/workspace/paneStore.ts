@@ -1,4 +1,4 @@
-import type { GeneratedUiPaneTarget, TerminalPaneTarget, ThreadPaneTarget, WorkspaceModel, WorkspacePane, WorkspacePaneState } from "./paneTypes";
+import type { AppSurfacePaneTarget, TerminalPaneTarget, ThreadPaneTarget, WorkspaceModel, WorkspacePane, WorkspacePaneState } from "./paneTypes";
 
 const WORKSPACE_PANE_STATE_VERSION = 1;
 const WORKSPACE_PANE_STORAGE_KEY = "kodex.workspace.panes.v1";
@@ -118,8 +118,8 @@ function isWorkspacePane(value: unknown): value is WorkspacePane {
   if (value.kind === "thread") {
     return isThreadPaneTarget(value.target);
   }
-  if (value.kind === "generatedUi") {
-    return isGeneratedUiPaneTarget(value.target);
+  if (value.kind === "appSurface") {
+    return isAppSurfacePaneTarget(value.target);
   }
   if (value.kind === "terminal") {
     return isTerminalPaneTarget(value.target);
@@ -140,7 +140,7 @@ function isThreadPaneTarget(value: unknown): value is ThreadPaneTarget {
   return false;
 }
 
-function isGeneratedUiPaneTarget(value: unknown): value is GeneratedUiPaneTarget {
+function isAppSurfacePaneTarget(value: unknown): value is AppSurfacePaneTarget {
   if (!isRecord(value) || typeof value.threadId !== "string") {
     return false;
   }

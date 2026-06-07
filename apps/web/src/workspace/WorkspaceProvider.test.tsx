@@ -103,14 +103,14 @@ describe("WorkspaceProvider pane commands", () => {
     expect(deleteTerminalSession).toHaveBeenCalledWith("terminal-1");
   });
 
-  it("focuses an existing generated UI pane for the same latest thread surface", async () => {
+  it("switches to an existing app surface tab for the same latest thread surface", async () => {
     const store = createMemoryWorkspacePaneStore(workspaceState([
       threadPane("pane-thread-1", "thread-1", "Thread 1"),
-      generatedUiPane("pane-ui-1", "thread-1"),
+      appSurfacePane("pane-ui-1", "thread-1"),
     ], "pane-thread-1"));
     renderProvider(store);
 
-    fireEvent.click(screen.getByRole("button", { name: "Open generated UI" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open app surface" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("active-pane")).toHaveTextContent("pane-ui-1");
@@ -118,19 +118,42 @@ describe("WorkspaceProvider pane commands", () => {
     expect(screen.getByTestId("pane-count")).toHaveTextContent("2");
   });
 
-  it("can open a generated UI pane without activating it", async () => {
+  it("opens a missing app surface in a new active tab in the source tab group", async () => {
     const store = createMemoryWorkspacePaneStore(workspaceState([
       threadPane("pane-thread-1", "thread-1", "Thread 1"),
     ], "pane-thread-1"));
     renderProvider(store);
 
-    fireEvent.click(screen.getByRole("button", { name: "Open generated UI quietly" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open app surface" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("pane-count")).toHaveTextContent("2");
     });
-    expect(screen.getByTestId("active-pane")).toHaveTextContent("pane-thread-1");
-    expect(store.getState().panes.some((pane) => pane.kind === "generatedUi")).toBe(true);
+    const createdPane = store.getState().panes.find((pane) => pane.kind === "appSurface");
+    expect(createdPane).toBeTruthy();
+    expect(screen.getByTestId("active-pane")).toHaveTextContent(createdPane?.id ?? "");
+    expect(JSON.parse(screen.getByTestId("pane-placement-hints").textContent ?? "{}")).toMatchObject({
+      [createdPane?.id ?? ""]: {
+        direction: "within",
+        referencePaneId: "pane-thread-1",
+      },
+    });
+  });
+
+  it("activates app surface panes even when a quiet open is requested", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      threadPane("pane-thread-1", "thread-1", "Thread 1"),
+    ], "pane-thread-1"));
+    renderProvider(store);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open app surface quietly" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pane-count")).toHaveTextContent("2");
+    });
+    const createdPane = store.getState().panes.find((pane) => pane.kind === "appSurface");
+    expect(createdPane).toBeTruthy();
+    expect(screen.getByTestId("active-pane")).toHaveTextContent(createdPane?.id ?? "");
   });
 
   it("applies app surface presentation requests from the workspace stream", async () => {
@@ -148,14 +171,14 @@ describe("WorkspaceProvider pane commands", () => {
     await waitFor(() => {
       expect(screen.getByTestId("pane-count")).toHaveTextContent("2");
     });
-    expect(screen.getByTestId("active-pane")).toHaveTextContent("pane-thread-1");
+    expect(screen.getByTestId("active-pane")).not.toHaveTextContent("pane-thread-1");
 
     streamClients[0].emit(appSurfacePresentationEvent("focus", 2));
 
     await waitFor(() => {
       expect(screen.getByTestId("active-pane")).not.toHaveTextContent("pane-thread-1");
     });
-    expect(store.getState().panes.filter((pane) => pane.kind === "generatedUi")).toHaveLength(1);
+    expect(store.getState().panes.filter((pane) => pane.kind === "appSurface")).toHaveLength(1);
   });
 
   it("does not retarget an active draft thread pane when opening an existing thread", async () => {
@@ -248,7 +271,7 @@ describe("WorkspaceProvider pane commands", () => {
     const store = createMemoryWorkspacePaneStore(workspaceState([
       threadPane("pane-thread-1", "thread-1", "Thread 1"),
       threadPane("pane-thread-2", "thread-1", "Thread 1 copy"),
-      generatedUiPane("pane-ui-1", "thread-1"),
+      appSurfacePane("pane-ui-1", "thread-1"),
       terminalPane("pane-terminal-1", "terminal-1"),
     ]));
 
@@ -289,11 +312,11 @@ function CommandHarness() {
       <button type="button" onClick={() => void workspace.openTerminalPane()}>
         Open terminal
       </button>
-      <button type="button" onClick={() => void workspace.openGeneratedUiPane("thread-1", "Generated UI")}>
-        Open generated UI
+      <button type="button" onClick={() => void workspace.openAppSurfacePane("thread-1", "App Surface")}>
+        Open app surface
       </button>
-      <button type="button" onClick={() => void workspace.openGeneratedUiPane("thread-1", "Generated UI", { activate: false })}>
-        Open generated UI quietly
+      <button type="button" onClick={() => void workspace.openAppSurfacePane("thread-1", "App Surface", { activate: false })}>
+        Open app surface quietly
       </button>
       <button type="button" onClick={() => void workspace.openNewTerminalPane()}>
         New terminal
@@ -321,7 +344,7 @@ function appSurfacePresentationEvent(action: "focus" | "open", seq: number): Eve
       action,
       sessionId: "session-1",
       threadId: "thread-1",
-      title: "Generated UI",
+      title: "App Surface",
     },
     projectId: null,
     receivedAt: "2026-05-01T00:00:00Z",
@@ -360,12 +383,12 @@ function draftThreadPane(id: string, projectId: string | null = null): Workspace
   };
 }
 
-function generatedUiPane(id: string, threadId: string): WorkspacePane {
+function appSurfacePane(id: string, threadId: string): WorkspacePane {
   return {
     id,
-    kind: "generatedUi",
+    kind: "appSurface",
     target: { mode: "latest", threadId },
-    title: "Generated UI",
+    title: "App Surface",
   };
 }
 

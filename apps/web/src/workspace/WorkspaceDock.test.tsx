@@ -179,7 +179,7 @@ describe("WorkspaceDock sync", () => {
         api as unknown as DockviewApi,
         workspaceModel([
           pane("pane-a", "thread", { mode: "existing", threadId: "thread-1" }),
-          pane("pane-b", "generatedUi", { mode: "latest", threadId: "thread-1" }),
+          pane("pane-b", "appSurface", { mode: "latest", threadId: "thread-1" }),
           pane("pane-c", "terminal", {}),
         ], "pane-c"),
         suppressEventsRef,

@@ -299,6 +299,37 @@ describe("event stream client", () => {
     client.close();
   });
 
+  it("receives app surface presentation request SSE events emitted by the gateway", () => {
+    const received: string[] = [];
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      threadId: "thread-1",
+      onEvent: (event) => received.push(event.kind),
+    });
+
+    client.connect();
+    FakeEventSource.instances[0].emitNamed("app_surface.presentation_requested", {
+      id: "event-10",
+      seq: 10,
+      kind: "app_surface.presentation_requested",
+      codexMethod: null,
+      itemId: null,
+      threadId: "thread-1",
+      turnId: null,
+      projectId: null,
+      payload: {
+        action: "focus",
+        sessionId: "session-1",
+        threadId: "thread-1",
+        title: "Mockups",
+      },
+      receivedAt: "2026-04-30T00:00:00Z",
+    });
+
+    expect(received).toEqual(["app_surface.presentation_requested"]);
+    client.close();
+  });
+
   it("receives parent-scoped subagent SSE events emitted by the gateway", () => {
     const received: string[] = [];
     const client = createEventStreamClient({
