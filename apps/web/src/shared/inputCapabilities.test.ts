@@ -1,7 +1,14 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { isTouchInputDevice, readInputCapabilities, useInputCapabilities } from "./inputCapabilities";
+import {
+  ANY_COARSE_POINTER_QUERY,
+  COARSE_POINTER_QUERY,
+  FINE_HOVER_QUERY,
+  isTouchInputDevice,
+  readInputCapabilities,
+  useInputCapabilities,
+} from "./inputCapabilities";
 
 describe("input capabilities", () => {
   afterEach(() => {
@@ -25,8 +32,8 @@ describe("input capabilities", () => {
     vi.stubGlobal(
       "matchMedia",
       mediaMatcher({
-        "(any-pointer: coarse)": true,
-        "(hover: hover) and (pointer: fine)": true,
+        [ANY_COARSE_POINTER_QUERY]: true,
+        [FINE_HOVER_QUERY]: true,
       }),
     );
 
@@ -37,12 +44,29 @@ describe("input capabilities", () => {
     });
   });
 
+  it("does not infer touch input from a narrow fine-pointer viewport", () => {
+    vi.stubGlobal("navigator", { maxTouchPoints: 0 });
+    vi.stubGlobal(
+      "matchMedia",
+      mediaMatcher({
+        "(max-width: 900px)": true,
+        [FINE_HOVER_QUERY]: true,
+      }),
+    );
+
+    expect(readInputCapabilities()).toEqual({
+      hasCoarsePointer: false,
+      hasFineHover: true,
+      hasTouchInput: false,
+    });
+  });
+
   it("updates when input media queries change", () => {
     vi.stubGlobal("navigator", { maxTouchPoints: 0 });
     const matcher = mutableMediaMatcher({
-      "(any-pointer: coarse)": false,
-      "(pointer: coarse)": false,
-      "(hover: hover) and (pointer: fine)": true,
+      [ANY_COARSE_POINTER_QUERY]: false,
+      [COARSE_POINTER_QUERY]: false,
+      [FINE_HOVER_QUERY]: true,
     });
     vi.stubGlobal("matchMedia", matcher.matchMedia);
 
@@ -55,7 +79,7 @@ describe("input capabilities", () => {
     });
 
     act(() => {
-      matcher.setMatches("(any-pointer: coarse)", true);
+      matcher.setMatches(ANY_COARSE_POINTER_QUERY, true);
     });
 
     expect(result.current).toEqual({

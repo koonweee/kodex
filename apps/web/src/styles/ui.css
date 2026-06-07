@@ -39,11 +39,6 @@
   cursor: pointer;
 }
 
-.kodex-ui-button:hover {
-  background: var(--kodex-bg-button-hover);
-  color: var(--kodex-text-primary);
-}
-
 .kodex-ui-button:focus-visible,
 .kodex-ui-selectable:focus-visible,
 .kodex-ui-icon-button:focus-visible {
@@ -71,22 +66,11 @@
   color: var(--kodex-text-secondary);
 }
 
-.kodex-ui-selectable:hover {
-  background: var(--kodex-bg-button-hover);
-  color: var(--kodex-text-primary);
-}
-
 .kodex-ui-selectable[data-active="true"],
 .kodex-ui-selectable[aria-selected="true"],
 .kodex-ui-selectable[aria-checked="true"] {
   background: var(--kodex-bg-selected);
   color: var(--kodex-text-primary);
-}
-
-.kodex-ui-selectable[data-active="true"]:hover,
-.kodex-ui-selectable[aria-selected="true"]:hover,
-.kodex-ui-selectable[aria-checked="true"]:hover {
-  background: var(--kodex-bg-selected-strong);
 }
 
 .kodex-ui-text[data-tone="accent"] {
@@ -127,4 +111,22 @@
 
 .kodex-ui-text {
   color: var(--kodex-tone-text, var(--kodex-text-secondary));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kodex-ui-button:hover {
+    background: var(--kodex-bg-button-hover);
+    color: var(--kodex-text-primary);
+  }
+
+  .kodex-ui-selectable:hover {
+    background: var(--kodex-bg-button-hover);
+    color: var(--kodex-text-primary);
+  }
+
+  .kodex-ui-selectable[data-active="true"]:hover,
+  .kodex-ui-selectable[aria-selected="true"]:hover,
+  .kodex-ui-selectable[aria-checked="true"]:hover {
+    background: var(--kodex-bg-selected-strong);
+  }
 }

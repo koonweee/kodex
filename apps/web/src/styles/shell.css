@@ -156,7 +156,6 @@
 }
 
 .kodex-thread-scroll-frame > .kodex-timeline-scroll::-webkit-scrollbar-track,
-.kodex-thread-scroll-frame > .kodex-timeline-scroll::-webkit-scrollbar-track:hover,
 .kodex-thread-scroll-frame > .kodex-timeline-scroll::-webkit-scrollbar-corner {
   background: transparent;
 }
@@ -168,8 +167,10 @@
   border-radius: var(--kodex-radius-round);
 }
 
-.kodex-thread-scroll-frame > .kodex-timeline-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in srgb, var(--kodex-text-muted) 62%, transparent);
+@media (hover: hover) and (pointer: fine) {
+  .kodex-thread-scroll-frame > .kodex-timeline-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--kodex-text-muted) 62%, transparent);
+  }
 }
 
 .kodex-thread-scroll-frame[data-overflow-above="true"]::before {

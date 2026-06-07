@@ -2,433 +2,325 @@
 
 ## Status
 
-Active. Core app-surface storage, MCP resource detection, generated-provider self-control routes, Kodex Control tools, OpenAPI types, web pane rendering, MCP-style bridge notifications, token-bound bridge calls, generated-provider approval gating, compact audit events, and README/plugin guidance are implemented and covered by focused plus full test gates. A disposable gateway validated the official `@modelcontextprotocol/server-budget-allocator` MCP Apps example through normal app-server MCP install/status/resource-read paths and an approved app-surface bridge `tools/call`. Live `$agent-browser` validation with an authenticated model turn also created and rendered the official Budget Allocator MCP app pane; that pass exposed real compatibility fixes for bundled app HTML size and `ui/initialize` bridge handshakes, now covered by focused regression tests. Remaining work is later cleanup of legacy generated-UI compatibility aliases once that migration window closes.
+Active. The repo already has a provider-neutral app-surface runtime, MCP resource detection, generated-provider self-control endpoints, Kodex Control app-surface tools, OpenAPI types, a web pane, and bridge/audit coverage. That implementation is MCP Apps-inspired but not yet spec-first enough for broad compatibility with SDK-built MCP Apps.
+
+This revision is the P0 hard-cut compliance plan. The target is to make external MCP Apps and Kodex-generated app surfaces use one MCP Apps protocol. Legacy generated UI routes, generated UI event types, `kodex.generatedUi.submit` messages, and submit-only helpers are not preserved. Existing generated HTML may be discarded.
 
 ## Goal
 
-Add first-class MCP Apps host support to Kodex and migrate Kodex generated UI onto the same app-surface runtime. After this work, installed MCP servers that expose spec-compliant UI resources, such as Excalidraw-style MCP Apps, should render in the Kodex thread UI, and model-authored generated UI should use the same iframe bridge, host context, resource, tool-call, and capability model.
+Make Kodex a practical MCP Apps host for the stable 2026-01-26 `io.modelcontextprotocol/ui` extension:
 
-The intended product split is provider provenance, not capability:
+- External MCP Apps should run unchanged when they use standard `text/html;profile=mcp-app` resources and JSON-RPC bridge methods.
+- Kodex-generated app surfaces should be host-originated MCP Apps: generated HTML stored as an MCP App resource and communicating only through MCP Apps JSON-RPC.
+- Generated surfaces may receive a tiny injected helper only if it emits standard MCP Apps JSON-RPC messages. The host must not accept old Kodex submit event protocols.
+- Spec compliance and a unified protocol are more important than compatibility with previously generated local HTML.
 
-- MCP Apps are external-server-authored app surfaces backed by MCP `ui://` resources and same-server app-visible tools.
-- Generated UI is model-authored app surface content backed by Kodex-generated `ui://`-like resources and explicit session grants.
-- Both render through one host runtime and communicate through one MCP Apps-compatible bridge.
+## Spec Baseline
 
-## Spec Grounding
+Use the stable MCP Apps specification dated 2026-01-26 as the implementation baseline:
 
-MCP Apps 2026-01-26 establishes these constraints:
-
-- Hosts advertise support with the `io.modelcontextprotocol/ui` extension and `text/html;profile=mcp-app` MIME type during MCP initialize.
-- Tools attach UI through `_meta.ui.resourceUri`, not by embedding HTML directly in tool results.
-- Hosts fetch the referenced `ui://...` resource, render it in a sandboxed iframe, and deliver tool input and result data to the view with `ui/notifications/tool-input` and `ui/notifications/tool-result`.
-- Views communicate with the host over JSON-RPC through `postMessage`, including app-side `tools/call`, `resources/read`, `ui/message`, and `ui/update-model-context`.
-- Tool visibility is controlled by `_meta.ui.visibility`; default `["model", "app"]` allows both model and app access, `["app"]` hides a tool from the model but leaves it callable by apps, and app scope is per MCP server.
-- `content` remains the text fallback for model/text-only hosts, while `structuredContent` is optimized for UI rendering.
-- Servers should provide meaningful fallback content even when UI is available.
+- Extension identifier: `io.modelcontextprotocol/ui`.
+- Supported MIME type: `text/html;profile=mcp-app`.
+- Tool linkage: `_meta.ui.resourceUri`.
+- Resource metadata: `_meta.ui.csp`, `_meta.ui.permissions`, `_meta.ui.domain`, `_meta.ui.prefersBorder`.
+- View transport: JSON-RPC 2.0 over `postMessage`.
+- Core view-to-host methods: `ui/initialize`, `tools/call`, `resources/read`, `ui/message`, `ui/update-model-context`, `ui/open-link`, `ui/request-display-mode`, `ping`, and `notifications/message`.
+- Host-to-view notifications and lifecycle: `ui/notifications/initialized`, `ui/notifications/tool-input`, `ui/notifications/tool-result`, `ui/notifications/tool-cancelled`, `ui/notifications/size-changed`, `ui/notifications/host-context-changed`, and `ui/resource-teardown`.
+- Web hosts must use a sandbox proxy on a different origin before loading untrusted app HTML.
 
 References:
 
-- MCP Apps overview: `https://modelcontextprotocol.io/extensions/apps/overview`
-- MCP Apps specification: `https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx`
+- `https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx`
+- `https://modelcontextprotocol.io/extensions/apps/overview`
 
 ## Current State
 
 Backend:
 
-- Generated UI is implemented as a special-purpose feature in `apps/gateway/src/routes/generated_ui.rs`, `apps/gateway/src/store/generated_ui.rs`, `apps/gateway/src/store.rs`, and `apps/gateway/src/store/migrations.rs`.
-- The current table `generated_ui_sessions` stores `html` inline, one latest session per thread, a revision, a submit status, and submitted message metadata.
-- `GET /v1/generated-ui/sessions/{sessionId}/document` serves the stored HTML with a self-contained CSP and `connect-src 'none'`.
-- `POST /v1/generated-ui/sessions/{sessionId}/submit` validates a submit message, claims the session revision, routes the visible text through `submit_thread_input`, and emits `generated_ui.session_submitted`.
-- Self-control generated UI endpoints in `apps/gateway/src/routes/self_control.rs` accept only `{ title, html, source, maxSelfControlDepth }`.
-- Kodex Control MCP tools in `apps/gateway/src/mcp.rs` expose `open_generated_ui`, `update_generated_ui`, `get_generated_ui`, and `archive_generated_ui`, all aimed at the submit-only generated UI contract.
-- MCP inventory/resource management exists in `apps/gateway/src/routes/mcp.rs` and `apps/gateway/src/app_server_api/client.rs`. It exposes `mcpServerStatus/list`, `mcpServer/resource/read`, OAuth login, reload, and config mutation.
-- The app-server schema at `apps/gateway/app-server-schema/0.135.0/json/v2/McpServerToolCallParams.json` includes `mcpServer/tool/call`, but Kodex does not yet wrap it in `CodexClient` or expose it through a gateway bridge.
-- `apps/gateway/src/app_server.rs::initialize_params` currently advertises only `experimentalApi`; it does not advertise the MCP Apps extension upstream to app-server-managed MCP server connections.
+- `apps/gateway/src/app_server.rs::initialize_params` already advertises `io.modelcontextprotocol/ui` with `text/html;profile=mcp-app`.
+- `apps/gateway/src/app_surfaces.rs` parses `_meta.ui.resourceUri`, defaults visibility to `["model", "app"]`, filters app-visible tools, accepts only text HTML, and stores only `connectDomains` and `resourceDomains` in `AppSurfaceCsp`.
+- `apps/gateway/src/routes/app_surfaces.rs` exposes `GET /v1/threads/{threadId}/app-surface`, `GET /v1/app-surfaces/{sessionId}/document`, and `POST /v1/app-surfaces/{sessionId}/bridge`.
+- The current bridge requires Kodex-shaped params such as `{ server, tool }` for `tools/call` and `{ message, metadata }` for `ui/message`; spec apps send `{ name, arguments }` and `{ role, content }`.
+- `bridge_initialize` defaults to the older `2025-11-21` version when `protocolVersion` is absent and includes Kodex-specific result fields beside MCP Apps fields.
+- `ui/open-link` is advertised only when granted, but the implementation still returns a non-spec `{ opened: false }` result instead of opening or returning a policy error.
+- `apps/gateway/src/routes/generated_ui.rs`, generated UI DTOs in `apps/gateway/src/api.rs`, and generated UI compatibility tests still exist.
+- `apps/gateway/src/mcp.rs` exposes both generated app-surface tools and older generated UI tools. The older descriptions still instruct `window.kodex.submitMessage(...)` and `kodex.generatedUi.submit`.
 
 Frontend:
 
-- `apps/web/src/generatedUi/GeneratedUiPane.tsx` fetches the generated UI document, wraps it with `buildGeneratedUiSrcDoc`, renders it with `sandbox="allow-scripts"` and `srcDoc`, and accepts only submit-shaped `postMessage` messages.
-- `apps/web/src/generatedUi/themeDocument.ts` injects Kodex-specific CSS variables and a CSP meta tag into generated HTML.
-- `apps/web/src/shell/KodexShellView.tsx` owns the desktop split-pane and narrow full-screen sheet layout for the generated UI pane.
-- `apps/web/src/App.tsx` fetches the selected thread's latest generated UI, keeps local hide state by `sessionId:revision`, and optimistically renders submitted visible messages.
-- `apps/web/src/events/liveRouting.ts`, `apps/web/src/events/stream.ts`, and `apps/web/src/generatedUi/cache.ts` route `generated_ui.*` events to frontend cache updates.
-- MCP manager UI under `apps/web/src/mcp/` can inspect servers/resources but does not render MCP Apps or proxy iframe tool calls.
+- `apps/web/src/appSurfaces/AppSurfacePane.tsx` fetches an app-surface document, wraps it with `apps/web/src/generatedUi/themeDocument.ts`, and renders direct `srcDoc` in a single `sandbox="allow-scripts"` iframe.
+- The web host accepts JSON-RPC requests but also accepts legacy `kodex.generatedUi.submit`, `kodex:generated-ui:submit`, and `kodex.ui.submit` messages.
+- Tool input/result notifications are posted after `ui/initialize` success or after `ui/notifications/initialized`; the spec path should wait for initialized and preserve the required input-before-result order.
+- Workspace pane names and several frontend APIs still use `generatedUi` as the pane kind even when rendering app surfaces.
+- `apps/web/src/api/client.ts`, `apps/web/src/api/generated/schema.ts`, and live event routing still include generated UI public contracts.
 
 Plugin/docs:
 
-- `plugins/kodex-control/skills/generative-ui/SKILL.md` instructs agents to create self-contained HTML and submit visible messages for conversational actions.
-- `plugins/kodex-control/README.md` documents v1 generated UI as self-contained HTML with blocked external network access.
-- `plans/generated-ui-pane.md` is complete and documents the old v1 non-goals: no direct iframe gateway API access, no external network, no MCP tool calls, and a tiny submit-only host protocol.
+- `plugins/kodex-control/skills/generative-ui/SKILL.md` describes app surfaces but still shows the old Kodex submit helper and legacy submit event names.
+- `plugins/kodex-control/README.md` needs to describe generated app surfaces as MCP Apps protocol surfaces, not a separate submit-only runtime.
 
-## Product Decisions
+## Settled Decisions
 
-- Hard-cut the existing generated UI schema and API shape if needed. Do not preserve `generated_ui_sessions` as the long-term storage contract.
-- Build one app-surface runtime, not parallel "MCP Apps UI" and "generated UI" iframe systems.
-- Match capabilities between MCP Apps and generated UI as much as possible. The difference is who authored the UI and how grants are derived.
-- Generated UI may call tools/resources through the same bridge as MCP Apps, subject to stored session grants and gateway approval policy.
-- MCP Apps preserve spec same-server app scope. Generated UI has no natural same-server boundary, so its boundary is explicit session grants.
-- Browser-local hide/reopen behavior can remain local UI state. Shared lifecycle, resources, grants, submissions, and app-session status must be gateway-owned.
-- External network remains denied by default for generated app surfaces, but the new model should represent CSP/network as structured metadata so approved resource/connect domains can be added later without another schema rewrite.
-
-## Target Architecture
-
-### App Surface Domain
-
-Replace generated-UI-specific storage and API concepts with a provider-neutral app surface:
-
-```text
-AppSurfaceSession
-  id
-  threadId
-  provider: "mcp" | "generated"
-  title
-  status: "active" | "submitting" | "submitted" | "archived" | "errored"
-  revision
-  resourceUri
-  resourceMimeType: "text/html;profile=mcp-app"
-  fallbackContent
-  displayModes
-  csp
-  permissions
-  provenance
-  grants
-  createdAt / updatedAt / archivedAt
-```
-
-Provider-specific provenance:
-
-- MCP app surface: MCP server name, tool name, tool call id/item id/turn id when available, original `resourceUri`, tool input, tool result summary.
-- Generated app surface: creating thread/turn/tool-call provenance, model-authored resource URI such as `ui://kodex-generated/sessions/{sessionId}/revisions/{revision}`, source tool call id, source/self-control metadata.
-
-Grant model:
-
-- MCP provider grants are derived from same-server MCP tool/resource metadata and `_meta.ui.visibility`.
-- Generated provider grants are declared by `open_generated_ui`/`update_generated_ui` input and stored on the session after gateway policy validation.
-- All bridge calls must check session id, revision, provider, grant, thread id, and status before hitting app-server or gateway APIs.
-
-### Backend Modules
-
-Add a new app-surface domain instead of extending generated UI names:
-
-- `apps/gateway/src/routes/app_surfaces.rs`
-- `apps/gateway/src/store/app_surfaces.rs`
-- `apps/gateway/src/app_surfaces.rs` for metadata parsing, CSP construction, grant validation, and bridge request helpers
-- `apps/gateway/src/routes/self_control.rs` migrated to app-surface upsert/read/archive endpoints for generated surfaces
-- `apps/gateway/src/routes/mcp.rs` extended with guarded tool-call/resource bridge routes only where needed by app surfaces
-- `apps/gateway/src/app_server_api/client.rs` extended with `mcp_tool_call`
-
-The legacy generated UI route/module names can be removed or kept only as short-lived aliases during one implementation chunk. The final public API should use app-surface names.
-
-Suggested routes:
-
-- `GET /v1/threads/{threadId}/app-surface`
-- `GET /v1/app-surfaces/{sessionId}/document?revision=...`
-- `POST /v1/app-surfaces/{sessionId}/bridge`
-- `DELETE /v1/self-control/threads/{threadId}/app-surface`
-- `GET /v1/self-control/threads/{threadId}/app-surface`
-- `POST /v1/self-control/threads/{threadId}/app-surface/generated`
-
-Keep "latest visible app surface per thread" as the initial UX rule unless implementation of MCP tool-result sessions requires a separate historical association. If multiple app surfaces per thread become necessary, store many sessions but project one active session in `GET /v1/threads/{threadId}/app-surface`.
-
-### Frontend Modules
-
-Create a provider-neutral frontend domain:
-
-- `apps/web/src/appSurfaces/AppSurfacePane.tsx`
-- `apps/web/src/appSurfaces/appBridge.ts`
-- `apps/web/src/appSurfaces/theme.ts`
-- `apps/web/src/appSurfaces/cache.ts`
-- `apps/web/src/styles/app-surfaces.css`
-
-Replace imports from `generatedUi` in `App.tsx`, `events/liveRouting.ts`, `events/stream.ts`, `api/client.ts`, and `shell/KodexShellView.tsx` with app-surface equivalents.
-
-The runtime should:
-
-- fetch a document resource by session/revision,
-- render it in a sandboxed iframe,
-- inject/provide host context and theme using MCP Apps-compatible names where practical,
-- establish a JSON-RPC bridge with request/response ids,
-- send initialization, tool input, and tool result notifications,
-- proxy allowed `tools/call`, `resources/read`, `ui/message`, `ui/update-model-context`, `ui/open-link`, and display-mode requests through the gateway,
-- keep existing desktop split and mobile sheet UX, renamed from generated UI to app surface in code and labels where user-visible copy allows.
+- Hard cut generated app surfaces to the MCP Apps protocol.
+- Do not keep Kodex legacy aliases for MCP provider or generated provider sessions.
+- Discard existing generated HTML instead of migrating stored legacy documents.
+- Generated app surfaces are host-originated MCP Apps with synthetic `ui://kodex-generated/...` resources.
+- External MCP Apps keep same-server tool scope. Generated surfaces get an app-local granted tool registry where each exposed app tool has a bridge-visible `name` that resolves to a stored MCP server/tool or host action.
+- Use static validation for generated app-surface requests to reject old submit protocols and obvious non-MCP Apps bridge code. Do not try to fully parse arbitrary JavaScript.
+- A host may inject a convenience helper only if it sends spec JSON-RPC, for example `ui/message` with `{ role, content }`.
+- The web runtime must move to a different-origin sandbox proxy before claiming web-host compliance.
 
 ## Milestones
 
-### 1. Spec Fixtures And App-Surface Data Model
+### 1. Lock The Spec Contract With Failing Tests
 
-Scope: `apps/gateway/src/store/migrations.rs`, `apps/gateway/src/store.rs`, new `apps/gateway/src/store/app_surfaces.rs`, new `apps/gateway/src/app_surfaces.rs`, tests in `apps/gateway/src/routes/mod.rs` or a new focused test module.
+Scope: `apps/gateway/src/app_surfaces.rs`, `apps/gateway/src/routes/app_surfaces.rs`, `apps/gateway/src/routes/mod.rs`, `apps/web/src/appSurfaces/`, `apps/web/src/appSurfaces/AppSurfacePane.test.tsx`, and new focused fixture modules as needed.
 
 Work:
 
-- Start with failing backend tests for app-surface session creation, latest-per-thread selection, revision replacement, archive, and grant persistence.
-- Add MCP Apps fixture payloads covering:
-  - tool `_meta.ui.resourceUri`,
-  - resource `mimeType: "text/html;profile=mcp-app"`,
-  - resource `_meta.ui.csp`,
-  - tool `_meta.ui.visibility` values `["model", "app"]`, `["app"]`, and `["model"]`,
-  - tool result `content`, `structuredContent`, and `_meta`.
-- Replace or supersede the `generated_ui_sessions` data shape with app-surface tables. Suggested tables:
-  - `app_surface_sessions`
-  - `app_surface_resources` for generated HTML and fetched/cached MCP HTML metadata where caching is needed
-  - `app_surface_grants`
-  - `app_surface_submissions` or submission columns if one-submit-per-revision remains enough
-- Define Rust DTOs with `utoipa::ToSchema` for `AppSurfaceSessionDto`, provider/provenance structs, CSP/permission structs, grant structs, bridge request/response envelopes, and document query.
-- Add parsers for MCP Apps `_meta.ui` metadata and visibility with tests that preserve unknown metadata for future compatibility.
-- Keep migration posture explicit: no need to preserve old local generated UI sessions; archived/local stale rows may be ignored or dropped by migration.
+- Add MCP Apps fixture builders for:
+  - `_meta.ui.resourceUri` on tools,
+  - tool visibility `["model", "app"]`, `["app"]`, and `["model"]`,
+  - resource `text` and base64 `blob`,
+  - full `_meta.ui.csp` fields,
+  - `_meta.ui.permissions`,
+  - `CallToolResult` with `content`, `structuredContent`, `_meta`, and `isError`.
+- Add failing backend bridge tests for standard JSON-RPC params:
+  - `tools/call` with `{ name, arguments }`,
+  - `resources/read` with `{ uri }`,
+  - `ui/message` with `{ role: "user", content: { type: "text", text } }`,
+  - `ping`,
+  - `notifications/message`,
+  - `ui/request-display-mode`,
+  - denied `ui/open-link` returning a JSON-RPC error.
+- Add failing frontend tests proving the iframe-visible protocol contains no Kodex legacy submit event handling.
+- Add generated-provider validation tests that reject HTML containing `kodex.generatedUi.submit`, `kodex:generated-ui:submit`, `kodex.ui.submit`, or old submit-result event usage.
 
 Exit criteria:
 
-- Focused store/parser tests pass.
-- The old generated UI table is no longer the authoritative app-surface model.
-- DTO names and route schemas are app-surface/generic, not generated-UI-specific.
+- Tests fail for the current non-spec bridge shapes before implementation.
+- Fixtures are reusable by backend and frontend app-surface tests.
+- The plan for generated static validation is encoded in tests, not only tool descriptions.
 
-### 2. App-Server MCP Apps Capability And MCP Tool Proxy
+### 2. Complete Resource Metadata, CSP, And Permissions
 
-Scope: `apps/gateway/src/app_server.rs`, `apps/gateway/src/app_server_api/client.rs`, `apps/gateway/src/app_server_api/mod.rs`, `apps/gateway/src/routes/mcp.rs`, checked-in app-server schema references under `apps/gateway/app-server-schema/0.135.0/json`.
+Scope: `apps/gateway/src/store.rs`, `apps/gateway/src/store/app_surfaces.rs`, `apps/gateway/src/store/migrations.rs`, `apps/gateway/src/app_surfaces.rs`, `apps/gateway/src/routes/app_surfaces.rs`, `apps/web/src/generatedUi/themeDocument.ts` or its app-surface replacement.
 
 Work:
 
-- Update app-server initialize params to advertise MCP Apps support if the upstream app-server uses client capabilities when initializing MCP servers:
-
-```json
-{
-  "capabilities": {
-    "experimentalApi": true,
-    "extensions": {
-      "io.modelcontextprotocol/ui": {
-        "mimeTypes": ["text/html;profile=mcp-app"]
-      }
-    }
-  }
-}
-```
-
-- Verify against `apps/gateway/app-server-schema/0.135.0/json` and the upstream app-server README before changing initialize shape.
-- Add typed `McpServerToolCallParams` and `McpServerToolCallResponse` wrappers matching the checked-in schema.
-- Add `CodexClient::mcp_tool_call(server, thread_id, tool, arguments, meta)`.
-- Keep raw MCP tool-call access behind app-surface bridge policy; do not add a broad UI button in Preferences that calls arbitrary tools.
-- Extend route tests to prove tool-call requests validate against schema and preserve `content`, `structuredContent`, `_meta`, and `isError`.
+- Extend `AppSurfaceCsp` to include `baseUriDomains` and `frameDomains` in addition to `connectDomains` and `resourceDomains`.
+- Add an `AppSurfacePermissions` DTO for camera, microphone, geolocation, and clipboard-write.
+- Preserve resource `_meta.ui.raw` metadata for future fields while explicitly projecting known fields.
+- Support resource content from either `text` or base64 `blob`; reject missing/invalid content with fallback behavior.
+- Enforce `ui://` resource URI and exact `text/html;profile=mcp-app` MIME type for renderable sessions.
+- Update `app_surface_csp` and frontend CSP injection to:
+  - deny by default,
+  - include declared connect/resource/frame/base domains,
+  - block `object-src`,
+  - avoid silently dropping declared frame/base domains.
+- Return accurate `hostCapabilities.sandbox.permissions` and `hostCapabilities.sandbox.csp` from `ui/initialize`.
 
 Exit criteria:
 
-- App-server initialization still passes compatibility probes.
-- Gateway tests cover `mcpServer/tool/call` success/error payload shapes.
-- `mcpServer/resource/read` remains compatible with existing Preferences > MCP resource viewing.
+- Backend parser tests cover every stable resource metadata field.
+- Document route tests assert CSP directives for connect, resource, frame, base, object, and defaults.
+- Frontend tests show declared frame/base domains are present when srcdoc/meta CSP is still used.
+- Generated OpenAPI DTOs include the expanded CSP and permissions shapes after regeneration in a later milestone.
 
-### 3. MCP App Provider Session Creation
+### 3. Make The Gateway Bridge Spec-First
 
-Scope: `apps/gateway/src/thread_view.rs`, `apps/gateway/src/app_server_api/timeline.rs`, `apps/gateway/src/thread_view_projection.rs`, new `apps/gateway/src/app_surfaces.rs`, route tests with app-server fixtures.
+Scope: `apps/gateway/src/routes/app_surfaces.rs`, `apps/gateway/src/app_surfaces.rs`, `apps/gateway/src/app_server_api/client.rs`, `apps/gateway/src/routes/approvals.rs`, `apps/gateway/src/events.rs`.
 
 Work:
 
-- Detect MCP tool calls or results in canonical thread view snapshots/patches whose raw payload or normalized MCP item payload includes `_meta.ui.resourceUri`.
-- Use the tool call context to create or update an app-surface session:
-  - thread id,
-  - turn id/item id/tool call id,
-  - server name and tool name,
-  - resource URI,
-  - tool input arguments,
-  - tool result content/structuredContent/_meta,
-  - fallback content from tool result `content`.
-- Read the UI resource through `mcpServer/resource/read` when creating or rendering the session. Enforce `text/html;profile=mcp-app` for app rendering and degrade to fallback content for unsupported/missing MIME.
-- Build grants from the same MCP server's tool inventory:
-  - app can call tools with `_meta.ui.visibility` containing `"app"` or missing visibility,
-  - model-only tools are rejected from bridge calls,
-  - app scope is limited to that MCP server for MCP-provider sessions.
-- Emit app-surface events such as:
-  - `app_surface.session_upserted`
-  - `app_surface.session_submitted`
-  - `app_surface.session_archived`
-  - `app_surface.session_error`
-- Make selected-thread and global SSE clients converge by refetching `GET /v1/threads/{threadId}/app-surface`.
+- Keep the HTTP bridge envelope token/revision check between web host and gateway, but make iframe-visible params standard MCP Apps JSON-RPC.
+- Change `tools/call` handling:
+  - MCP provider: resolve `params.name` against the originating MCP server from session provenance.
+  - Generated provider: resolve `params.name` against stored app-local grants, where each grant maps a bridge-visible name to a server/tool or host action.
+  - Reject model-only tools, ungranted names, cross-server MCP-provider calls, and stale revisions with JSON-RPC errors.
+- Change `resources/read` handling:
+  - resolve `{ uri }` on the app's originating MCP server for MCP provider,
+  - resolve generated `ui://kodex-generated/...` resources from stored rows for generated provider,
+  - reject ungranted external resources.
+- Change `ui/message` handling to accept `{ role, content }`; route only explicit user text messages into the thread input path.
+- Keep `ui/update-model-context` gateway-owned and compact: store or emit the latest context update without treating browser state as durable truth.
+- Implement `ping`, `notifications/message`, `ui/request-display-mode`, and spec-shaped `ui/open-link` denial/error behavior.
+- Update `ui/initialize`:
+  - default to `2026-01-26`,
+  - validate app capabilities enough to reject malformed input,
+  - return `hostInfo`, `hostCapabilities`, and `hostContext` in spec shape,
+  - advertise only genuinely supported capabilities.
+- Keep bridge audit events compact and avoid persisting large HTML or large tool results.
 
 Exit criteria:
 
-- Backend tests show a mocked MCP tool result with `_meta.ui.resourceUri` creates an app-surface session.
-- Tool input/result data are available to the bridge for `ui/notifications/tool-input` and `ui/notifications/tool-result`.
-- App-only same-server tool grants work; model-only and cross-server calls are rejected.
-- Text fallback remains available when resource read or MIME validation fails.
+- Backend route tests pass for allowed and rejected spec-shaped bridge calls.
+- Same-server external MCP scope and generated app-local grant scope are both enforced.
+- Bridge responses are JSON-RPC-compatible result/error objects from the iframe's perspective.
+- Existing approval tests still pass, with generated-provider tool calls requiring approval where current policy requires it.
 
-### 4. Generated App Provider And Kodex Control Migration
+### 4. Hard Cut Generated Surfaces To Host-Originated MCP Apps
 
-Scope: `apps/gateway/src/routes/self_control.rs`, `apps/gateway/src/mcp.rs`, `plugins/kodex-control/skills/generative-ui/SKILL.md`, `plugins/kodex-control/README.md`, plugin manifest cachebuster when implementation lands.
+Scope: `apps/gateway/src/routes/self_control.rs`, `apps/gateway/src/routes/generated_ui.rs`, `apps/gateway/src/store/generated_ui.rs`, `apps/gateway/src/api.rs`, `apps/gateway/src/mcp.rs`, `plugins/kodex-control/skills/generative-ui/SKILL.md`, `plugins/kodex-control/README.md`.
 
 Work:
 
-- Replace generated UI self-control request shape with an app-surface generated-provider request:
-
-```json
-{
-  "title": "Review dashboard",
-  "html": "<!doctype html>...",
-  "fallbackContent": "Interactive review dashboard.",
-  "displayModes": ["inline", "fullscreen"],
-  "csp": {
-    "connectDomains": [],
-    "resourceDomains": []
-  },
-  "grants": {
-    "tools": [
-      { "server": "kodex-control", "tool": "send_thread_input" }
-    ],
-    "resources": [],
-    "canSendMessage": true,
-    "canUpdateModelContext": true,
-    "canOpenLinks": false
-  },
-  "source": {}
-}
-```
-
-- Store generated HTML as a generated `ui://kodex-generated/...` resource with MCP App MIME semantics.
-- Validate generated-provider grants through gateway policy:
-  - built-in safe host actions can be allowed by default,
-  - MCP tools/resources require explicit grants,
-  - write/destructive/networked grants require approval or a conservative allowlist,
-  - all grant decisions are persisted on the session and audited.
-- Update Kodex Control MCP tools:
-  - keep familiar `open_generated_ui` and `update_generated_ui` names if useful for model ergonomics,
-  - change their schemas to emit app-surface metadata/grants,
-  - return app-surface session metadata, not generated-UI-specific DTOs.
-- Rewrite the generative UI skill to teach MCP Apps bridge capabilities, grant discipline, fallback content, app-message behavior, and same runtime expectations.
-- Keep backwards-compatible submit message support only as a temporary implementation detail if needed; the final guidance should use JSON-RPC bridge methods.
+- Remove generated UI as a public route/storage contract:
+  - remove or retire `/v1/threads/{threadId}/generated-ui`,
+  - remove `/v1/generated-ui/sessions/{sessionId}/document`,
+  - remove `/v1/generated-ui/sessions/{sessionId}/submit`,
+  - remove generated UI DTOs from OpenAPI.
+- Keep generated app surfaces only through app-surface endpoints:
+  - `POST /v1/self-control/threads/{threadId}/app-surface`,
+  - `GET /v1/self-control/threads/{threadId}/app-surface`,
+  - `DELETE /v1/self-control/threads/{threadId}/app-surface`,
+  - `POST /v1/self-control/threads/{threadId}/app-surface/presentation`.
+- Generate synthetic resource URIs like `ui://kodex-generated/sessions/{sessionId}/revisions/{revision}` and return them through `resources/read`.
+- Extend generated tool grants to include a required bridge-visible `name`; keep `server` and `tool` as the gateway resolution target.
+- Replace `open_generated_ui`, `update_generated_ui`, `get_generated_ui`, and `archive_generated_ui` MCP tools with app-surface tools only. If old names remain temporarily in code during a single branch, they must not be installed or documented as callable tools at completion.
+- Update Kodex Control tool descriptions to instruct models to:
+  - provide `fallbackContent`,
+  - use MCP Apps JSON-RPC methods,
+  - call `ui/message` for conversational user actions,
+  - call `tools/call` by granted bridge-visible tool name,
+  - avoid all old Kodex submit event names.
+- Add static generated HTML validation in `validate_app_surface_html` or a sibling helper for generated provider submissions:
+  - reject old Kodex submit event names,
+  - reject old submit-result event listeners,
+  - optionally warn on direct `postMessage` payloads without `jsonrpc: "2.0"`,
+  - allow a new injected helper only if it emits spec JSON-RPC.
+- Update plugin docs and run the plugin cachebuster update when implementation lands.
 
 Exit criteria:
 
-- MCP stdio tests in `apps/gateway/tests/kodex_control_mcp_stdio.rs` cover generated app-surface creation with grants.
-- Self-control tests cover grant validation, audit events, fallback content, and generated resource rendering.
-- Plugin docs no longer describe generated UI as submit-only or no-tool-call-capable.
+- OpenAPI no longer exposes generated UI public routes or generated UI DTOs.
+- MCP stdio tests cover `open_app_surface`/`update_app_surface` generated-provider creation and reject old generated UI submit HTML.
+- Plugin skill docs contain no `kodex.generatedUi.submit`, `kodex:generated-ui:submit`, `kodex.ui.submit`, or old submit-result protocol references.
+- Existing generated HTML is intentionally ignored or discarded; no migration is required for old generated UI rows.
 
-### 5. App Bridge Runtime In The Web Client
+### 5. Replace The Web Runtime With A Spec Sandbox Proxy
 
-Scope: `apps/web/src/appSurfaces/`, `apps/web/src/shell/KodexShellView.tsx`, `apps/web/src/App.tsx`, `apps/web/src/events/liveRouting.ts`, `apps/web/src/events/stream.ts`, `apps/web/src/api/client.ts`, `apps/web/src/styles/app-surfaces.css`.
+Scope: `apps/web/src/appSurfaces/`, `apps/web/src/generatedUi/themeDocument.ts`, `apps/web/src/panes/generatedUi/GeneratedUiWorkspacePane.tsx`, `apps/web/src/workspace/`, `apps/web/src/styles/`, gateway static routes if the proxy is served by the gateway.
 
 Work:
 
-- Extract the current generated UI pane layout into `AppSurfacePane`.
-- Replace `srcDoc`-only rendering with a route-backed document load where possible so response headers/CSP are authoritative. If `srcDoc` is retained for theme injection, the plan must include tests documenting why host headers cannot be used and how CSP remains enforced.
-- Implement MCP Apps-compatible JSON-RPC over `postMessage`:
-  - `ui/initialize`,
-  - initialized notification,
-  - `ui/notifications/tool-input`,
-  - `ui/notifications/tool-result`,
-  - `tools/call`,
-  - `resources/read`,
-  - `ui/message`,
-  - `ui/update-model-context`,
-  - `ui/open-link`,
-  - teardown,
-  - display mode requests where supported.
-- Provide host context with theme, locale, timezone, display mode, dimensions, platform, and standardized CSS variables. Continue mapping Kodex theme tokens, but expose MCP Apps variable names where practical.
-- Route bridge requests to `POST /v1/app-surfaces/{sessionId}/bridge`, not directly to MCP or thread APIs.
-- Preserve existing desktop split-pane resizing and narrow/mobile full-height sheet behavior, renaming CSS/classes from generated UI to app surfaces as part of the hard cut.
-- Keep local hide state scoped by `sessionId:revision`; new app-surface revisions reopen.
-- Add host chrome that distinguishes provider/provenance subtly without making the UI feel like a debug tool.
+- Replace the direct single `srcDoc` app iframe with a web-host sandbox proxy:
+  - outer host loads a sandbox proxy iframe from a different origin,
+  - sandbox proxy uses `allow-scripts allow-same-origin`,
+  - proxy sends `ui/notifications/sandbox-proxy-ready`,
+  - host sends `ui/notifications/sandbox-resource-ready` with HTML, CSP, and permissions,
+  - proxy loads the app HTML in an inner iframe and forwards non-sandbox messages.
+- Provide loopback defaults for development:
+  - if host is `localhost`, try `127.0.0.1` as the sandbox origin,
+  - if host is `127.0.0.1`, try `localhost`,
+  - allow explicit `KODEX_APP_SURFACE_SANDBOX_ORIGIN` or frontend config for VPN/non-loopback access.
+- If no different sandbox origin is available, fail closed or clearly degrade without advertising full web-host compliance.
+- Move theme injection to MCP Apps host context:
+  - provide standardized CSS variable names in `hostContext.styles.variables`,
+  - keep Kodex variables only as optional extras,
+  - stop mutating app HTML as the primary bridge/theming mechanism where possible.
+- Implement iframe-side message correlation in a dedicated `apps/web/src/appSurfaces/appBridge.ts`.
+- Enforce lifecycle ordering:
+  - respond to `ui/initialize`,
+  - wait for `ui/notifications/initialized`,
+  - then send `ui/notifications/tool-input`,
+  - then send `ui/notifications/tool-result` or `ui/notifications/tool-cancelled`.
+- Implement `ui/notifications/size-changed`, `ui/request-display-mode`, and `ui/resource-teardown` enough for common SDK apps.
+- Remove legacy generated UI message parsing from `AppSurfacePane`.
 
 Exit criteria:
 
-- Component tests cover bridge initialization, tool input/result delivery, tool-call success/error responses, resource read, `ui/message`, rejected stale session/revision messages, hide/reopen, and submitted/error states.
-- Frontend cache tests cover `app_surface.*` events and two-tab convergence by refetch.
-- `cd apps/web && npm test` focused app-surface suites pass.
-- `cd apps/web && npm run build` passes after generated OpenAPI types are refreshed.
+- Component tests cover sandbox-proxy readiness, resource-ready delivery, message forwarding, lifecycle ordering, size change, teardown, stale revision rejection, and error propagation.
+- No frontend app-surface code accepts old Kodex submit event names.
+- Browser-visible behavior is validated with `$agent-browser` on desktop fine pointer, narrow fine pointer, and narrow touch/mobile shapes.
+- Console output has no uncontrolled CSP, sandbox, or bridge errors for fixture apps.
 
-### 6. Gateway Bridge Policy, Approvals, And Auditing
+### 6. Rename And Simplify Frontend Ownership
 
-Scope: `apps/gateway/src/routes/app_surfaces.rs`, `apps/gateway/src/routes/approvals.rs`, `apps/gateway/src/store/events.rs`, `apps/gateway/src/events.rs`, approval tests, generated OpenAPI artifacts.
+Scope: `apps/web/src/workspace/`, `apps/web/src/panes/generatedUi/`, `apps/web/src/api/client.ts`, `apps/web/src/events/liveRouting.ts`, `apps/web/src/events/useLiveEventHandlers.ts`, `apps/web/src/api/queryKeys.ts`, tests under the same directories.
 
 Work:
 
-- Implement one bridge endpoint that accepts JSON-RPC-like request envelopes from the web client and returns JSON-RPC-like responses.
-- Validate:
-  - session exists and is active,
-  - revision matches,
-  - iframe origin/window token or equivalent frontend session token matches,
-  - requested bridge method is supported,
-  - requested tool/resource/message/link action is granted,
-  - MCP provider same-server scope is preserved,
-  - generated provider explicit grant scope is preserved.
-- Route:
-  - `tools/call` for MCP provider to `mcpServer/tool/call` on the same server,
-  - `tools/call` for generated provider to granted MCP servers or Kodex self-control tools through policy,
-  - `resources/read` to `mcpServer/resource/read` or generated resource storage,
-  - `ui/message` to normal visible thread input when configured,
-  - `ui/update-model-context` to stored session context or a visible/ephemeral event until there is a stronger model-context contract,
-  - `ui/open-link` through an allowlisted host action with explicit rejection by default for untrusted domains.
-- Integrate approval prompts for grant requests or bridge calls that are write-capable, destructive, networked, or otherwise high-risk. Reuse existing approval/event patterns rather than browser-owned decisions.
-- Persist bridge audit events with session id, provider, thread id, method, tool/resource name, grant id, approval id when any, and result status. Avoid persisting large HTML or large tool results in events.
+- Rename pane kind and workspace APIs from `generatedUi` to `appSurface` where they now represent the unified runtime.
+- Remove generated UI cache keys and generated UI event routing.
+- Keep local pane hide/focus state browser-local, but keep app-surface session status and bridge outcomes gateway-owned.
+- Keep presentation events `app_surface.presentation_requested` as the source for opening/focusing panes.
+- Update app-surface cache handling to refetch or converge through gateway-owned events for same-user two-tab behavior.
 
 Exit criteria:
 
-- Backend route tests cover allowed and rejected bridge methods, same-server MCP app scope, generated explicit grants, approval-required actions, and event/audit payloads.
-- Same-user two-tab test shape proves one tab observes app-surface submitted/error state after another tab triggers a bridge action.
-- Security tests prove ungranted cross-server tool calls and model-only tools are rejected.
+- Frontend tests no longer import generated UI DTOs or route generated UI events.
+- Workspace tests cover app-surface pane presentation for `open` and `focus`.
+- Same-user two-tab test shape verifies app-surface submitted/error state converges through gateway SSE/cache, while local hide remains per-tab.
 
-### 7. API Regeneration, Docs, And Migration Cleanup
+### 7. Regenerate API, Update Docs, And Trim Stale Code
 
-Scope: `apps/gateway/src/api.rs`, `apps/web/src/api/generated/schema.ts`, `README.md`, `plugins/kodex-control/README.md`, `plans/index.md`, `AGENTS.md` only if workflow rules change.
+Scope: `apps/gateway/src/api.rs`, `apps/web/src/api/generated/schema.ts`, `README.md`, `plugins/kodex-control/README.md`, `plugins/kodex-control/.codex-plugin/plugin.json`, `AGENTS.md` only if workflow guidance changes, `plans/index.md`.
 
 Work:
 
-- Register all app-surface DTOs/routes in OpenAPI.
-- Regenerate frontend OpenAPI types with a running gateway.
-- Remove stale generated UI exports/routes/tests once app-surface replacements pass.
+- Regenerate OpenAPI and frontend types after backend route/DTO changes.
+- Remove stale generated UI tests, DTO exports, route registrations, and frontend client wrappers.
 - Update README to describe:
   - MCP Apps host support,
-  - generated UI as model-authored app surfaces,
-  - local/VPN-only security assumption,
-  - sandbox/CSP/tool-grant behavior,
-  - expected MCP server install/use flow.
-- Update Kodex Control docs and skill references from generated UI pane to generated app surfaces.
-- Keep `plans/generated-ui-pane.md` as historical complete work; this plan supersedes its runtime contract without rewriting history.
+  - generated app surfaces as host-originated MCP Apps,
+  - sandbox proxy requirements,
+  - CSP and permissions behavior,
+  - tool/resource grants,
+  - local/VPN-only deployment assumption.
+- Update Kodex Control plugin docs and skill docs.
+- Update plugin cachebuster when `plugins/kodex-control` changes.
+- Run trim scripts before completion and remove unused generated UI code surfaced by them.
 
 Exit criteria:
 
-- `/openapi.json` includes app-surface routes and no stale generated UI-only public contract unless intentionally aliased.
-- `apps/web/src/api/generated/schema.ts` is current.
-- README and plugin README no longer contradict the new bridge/tool-call capability.
-- `plans/index.md` reflects this plan status.
+- `/openapi.json` and `apps/web/src/api/generated/schema.ts` contain app-surface routes only for this runtime.
+- `README.md` and plugin docs do not contradict the unified MCP Apps protocol.
+- `./tools/trim-backend.sh` and `./tools/trim-frontend.sh` have been run or documented with any unrelated pre-existing findings.
+- `plans/index.md` reflects the current active status and scope.
 
-### 8. End-To-End Validation With Real MCP Apps
+### 8. End-To-End Compatibility Validation
 
-Scope: local gateway/web dev environment, installed MCP Apps test servers, Playwright or `$agent-browser` validation.
+Scope: local gateway/web dev environment, app-surface fixtures, real MCP Apps servers, `$agent-browser`.
 
 Work:
 
-- Use a simple official MCP Apps example first, such as a QR, transcript, or budget allocator server, to validate the protocol before Excalidraw.
-- Validate Excalidraw or another rich app after the simple fixture passes.
-- Validate generated app surfaces with:
+- Validate a simple official MCP Apps example before richer apps:
+  - install through normal MCP server config,
+  - confirm app-server status exposes `_meta.ui.resourceUri`,
+  - trigger a model/tool call that creates an app-surface session,
+  - render the app through the sandbox proxy,
+  - call an app-visible same-server tool with standard `tools/call`.
+- Validate a generated app surface:
   - local-only interactions,
   - `ui/message`,
-  - same bridge `tools/call`,
-  - resource reads,
-  - approval-required/rejected grants.
-- Use `$agent-browser` for desktop fine pointer, narrow fine pointer, and narrow touch/mobile shapes.
-- Capture console errors, iframe blankness, CSP violations, bridge request/response traces, and visual overlap/text-fit issues.
+  - granted `tools/call`,
+  - `resources/read`,
+  - rejected or approval-required tool call.
+- Validate a richer MCP app such as Excalidraw or Budget Allocator after the simple fixture passes.
+- Capture console errors, CSP violations, blank iframe checks, bridge traces, responsive layout, and text overlap issues.
 
 Exit criteria:
 
-- A spec-compliant MCP Apps server renders from a normal MCP install path and can call an app-visible same-server tool.
-- A generated app surface renders through the same runtime and can use a granted tool.
-- Desktop split and mobile sheet remain usable with both providers.
-- Browser validation shows nonblank iframe content, working bridge calls, no uncontrolled cross-origin/network access, and no incoherent layout overlap.
+- At least one spec-compliant external MCP App renders and completes a bridge tool call without custom shims.
+- At least one generated app surface renders and uses the same protocol for message/tool/resource interactions.
+- Desktop split, narrow desktop, and narrow touch/mobile app-surface panes are usable and nonblank.
+- The app-surface runtime has no legacy generated UI submit protocol acceptance.
 
 ## Verification Matrix
 
-- Backend store: app-surface session/resource/grant persistence, revision replacement, archive, latest-by-thread projection.
-- Backend MCP: capability advertisement, resource read, tool call, metadata parsing, visibility enforcement.
-- Backend bridge: method validation, grant enforcement, same-server scope, approval policy, audit events.
-- Frontend bridge: initialize, notifications, request/response correlation, stale iframe rejection, error propagation.
-- Frontend UX: desktop split, mobile sheet, local hide, provider provenance, resize, submitted/error states.
-- Multi-client: app-surface events and refetch converge across two tabs; hide remains local.
-- Security: sandboxed iframe, CSP from session metadata, no ungranted tools/resources, no cross-server MCP app calls, generated provider grants audited.
-- Docs/API: OpenAPI regenerated, frontend types generated, README/plugin docs aligned.
+- Backend parser: resource URI, full resource metadata, text/blob content, visibility defaults, generated HTML static validation.
+- Backend bridge: JSON-RPC shapes, same-server MCP scope, generated app-local grants, approval-required paths, compact audit events.
+- Backend API: generated UI public routes removed, app-surface DTOs in OpenAPI, app-server schema assumptions preserved.
+- Frontend runtime: sandbox proxy, lifecycle ordering, request/response correlation, size change, teardown, stale iframe rejection.
+- Frontend workspace: app-surface pane naming, presentation events, local hide behavior, same-user two-tab convergence.
+- Plugin/docs: app-surface tool schemas/descriptions, generative UI skill, plugin README, cachebuster.
+- Browser: `$agent-browser` desktop fine pointer, narrow fine pointer, narrow touch/mobile, console cleanliness, nonblank iframe content.
 
 ## Risks And Open Questions
 
-- App-server capability propagation may not be sufficient for upstream MCP servers to expose UI metadata. If app-server strips or ignores MCP Apps extension capabilities, the implementation must either update app-server integration or document the blocker before frontend work proceeds.
-- App-server raw MCP tool-call item shapes may not carry enough server/tool/resource metadata to create sessions from timeline alone. Resolve by inspecting real `mcpToolCall` raw payloads from a spec-compliant test server and, if necessary, adding an explicit gateway hook at the app-server MCP tool-call response boundary.
-- MCP Apps has host-specific behavior in the ecosystem. Start with spec fixtures and a simple official example before testing Excalidraw, because Excalidraw may depend on host quirks or older MCP-UI conventions.
-- `ui/update-model-context` needs a precise Kodex meaning. Initial implementation can store it as app-surface session context and surface it to the model only through explicit visible/user-mediated actions until a gateway-owned model-context contract exists.
-- External network policy for generated app surfaces should remain deny-by-default. Any allowlist/approval expansion must be explicit in grants, CSP, and audit events.
-- Large HTML/resources/tool results can bloat SQLite and SSE payloads. Store large content in resource rows, keep events compact, and enforce size limits before exposing real MCP Apps broadly.
-- If multiple MCP App surfaces appear in one thread, "latest visible surface" may be too limiting. The first implementation can project one active surface, but storage should not make multiple sessions impossible.
+- Different-origin sandbox provisioning is the highest operational risk. Loopback defaults can cover local development, but VPN/non-loopback access needs explicit `KODEX_APP_SURFACE_SANDBOX_ORIGIN` or equivalent configuration before full compliance can be claimed.
+- Generated provider tool names need careful schema design. The plan requires bridge-visible app-local names so generated HTML can call standard `tools/call { name }` without a non-spec `{ server, tool }` payload.
+- Some ecosystem apps may depend on draft or host-specific behavior beyond the stable 2026-01-26 spec. Start with stable fixtures and record any host-specific follow-up separately.
+- Static HTML validation can catch old Kodex submit protocols and obvious non-JSON-RPC postMessage payloads, but it cannot prove arbitrary JavaScript is MCP Apps-compliant. Runtime bridge tests remain mandatory.
+- Removing generated UI routes is a hard cut. Any old workspace pane state or stored generated HTML that references generated UI endpoints should fail cleanly and allow a new generated app surface to replace it.

@@ -132,7 +132,6 @@
   padding: 0 8px;
 }
 
-.kodex-workspace-tab-overflow-button:hover,
 .kodex-workspace-tab-overflow-button:focus-visible,
 .kodex-workspace-tab-overflow-button[aria-expanded="true"] {
   background: var(--kodex-bg-button-hover);
@@ -397,7 +396,6 @@
   display: flex;
 }
 
-.kodex-workspace-single-pane-switcher-button:hover,
 .kodex-workspace-single-pane-switcher-button:focus-visible,
 .kodex-workspace-single-pane-switcher-button[aria-expanded="true"] {
   color: var(--kodex-text-primary);
@@ -610,6 +608,18 @@
 
 .kodex-workspace-dock .kodex-terminal-pane .kodex-terminal-body {
   min-height: 160px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kodex-workspace-tab-overflow-button:hover {
+    background: var(--kodex-bg-button-hover);
+    color: var(--kodex-text-primary);
+    outline: none;
+  }
+
+  .kodex-workspace-single-pane-switcher-button:hover {
+    color: var(--kodex-text-primary);
+  }
 }
 
 @media (max-width: 700px) {

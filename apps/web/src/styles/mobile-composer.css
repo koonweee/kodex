@@ -232,8 +232,7 @@
   height: 18px;
 }
 
-.kodex-mobile-skill-command-row[aria-selected="true"],
-.kodex-mobile-skill-command-row:hover {
+.kodex-mobile-skill-command-row[aria-selected="true"] {
   background: var(--kodex-bg-selected);
 }
 
@@ -271,4 +270,10 @@
 
 .kodex-mobile-skill-command-status {
   padding: 10px 9px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kodex-mobile-skill-command-row:hover {
+    background: var(--kodex-bg-selected);
+  }
 }

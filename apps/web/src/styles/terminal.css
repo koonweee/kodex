@@ -63,11 +63,6 @@
   color: var(--kodex-text-primary);
 }
 
-.kodex-terminal-reconnect-button.kodex-mantine-button-root:hover {
-  background: color-mix(in srgb, var(--kodex-border-info) 46%, var(--kodex-bg-raised));
-  color: var(--kodex-text-primary);
-}
-
 .kodex-terminal-accessory-row {
   min-width: 0;
   overflow-x: auto;
@@ -93,11 +88,6 @@
   font-size: 0.74rem;
   font-weight: 650;
   cursor: pointer;
-}
-
-.kodex-terminal-accessory-key:hover {
-  background: var(--kodex-bg-button-hover);
-  color: var(--kodex-text-primary);
 }
 
 .kodex-terminal-body {
@@ -129,6 +119,18 @@
 .kodex-terminal-viewport .xterm-viewport {
   background-color: var(--kodex-terminal-bg);
   -webkit-overflow-scrolling: touch;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kodex-terminal-reconnect-button.kodex-mantine-button-root:hover {
+    background: color-mix(in srgb, var(--kodex-border-info) 46%, var(--kodex-bg-raised));
+    color: var(--kodex-text-primary);
+  }
+
+  .kodex-terminal-accessory-key:hover {
+    background: var(--kodex-bg-button-hover);
+    color: var(--kodex-text-primary);
+  }
 }
 
 @media (max-width: 900px) {

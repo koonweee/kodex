@@ -67,8 +67,7 @@
   font-size: 13px;
 }
 
-.kodex-sidebar-text-action-row:focus-within,
-.kodex-sidebar-text-action-row.kodex-ui-button:hover {
+.kodex-sidebar-text-action-row:focus-within {
   background: var(--kodex-bg-button-hover);
   color: var(--kodex-text-primary);
 }
@@ -438,11 +437,11 @@
   display: none;
 }
 
-.kodex-thread-pin-button[data-pinned="true"]:is(:hover, :focus-visible) .kodex-thread-pin-state-icon {
+.kodex-thread-pin-button[data-pinned="true"]:focus-visible .kodex-thread-pin-state-icon {
   display: none;
 }
 
-.kodex-thread-pin-button[data-pinned="true"]:is(:hover, :focus-visible) .kodex-thread-pin-action-icon {
+.kodex-thread-pin-button[data-pinned="true"]:focus-visible .kodex-thread-pin-action-icon {
   display: block;
 }
 
@@ -495,6 +494,19 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .kodex-sidebar-text-action-row.kodex-ui-button:hover {
+    background: var(--kodex-bg-button-hover);
+    color: var(--kodex-text-primary);
+  }
+
+  .kodex-thread-pin-button[data-pinned="true"]:hover .kodex-thread-pin-state-icon {
+    display: none;
+  }
+
+  .kodex-thread-pin-button[data-pinned="true"]:hover .kodex-thread-pin-action-icon {
+    display: block;
+  }
+
   .kodex-list-button:hover {
     border-color: var(--kodex-border-strong);
     background: var(--kodex-bg-button-hover);

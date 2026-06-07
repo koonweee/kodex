@@ -15,6 +15,7 @@ import {
 import type { ModelSummary, TextElement, TimelineSkillMention, UserInput } from "../api/client";
 import type { ImageLightboxImage } from "../images/types";
 import { useInputCapabilities } from "../shared/inputCapabilities";
+import { NARROW_WORKSPACE_QUERY } from "../shared/layoutBreakpoints";
 import { InlineComposerPanel } from "./InlineComposerPanel";
 import { MobileComposerPanel } from "./MobileComposerPanel";
 import { filterSlashCommands, replaceSlashCommandToken, slashCommandItems } from "./slashCommands";
@@ -371,7 +372,7 @@ function useIsNarrowComposer() {
       return;
     }
 
-    const mediaQuery = window.matchMedia("(max-width: 900px)");
+    const mediaQuery = window.matchMedia(NARROW_WORKSPACE_QUERY);
     function updateNarrowComposer() {
       setIsNarrow(mediaQuery.matches);
     }
@@ -385,5 +386,5 @@ function useIsNarrowComposer() {
 }
 
 function readIsNarrowComposer() {
-  return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 900px)").matches;
+  return typeof window.matchMedia === "function" && window.matchMedia(NARROW_WORKSPACE_QUERY).matches;
 }

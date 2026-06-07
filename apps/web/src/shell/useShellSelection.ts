@@ -6,7 +6,7 @@ import { findKnownThreadSelection as findKnownThreadSelectionInCaches } from "..
 import {
   currentKodexRoute,
   historyState,
-  isMobileViewport,
+  isNarrowViewport,
   pathForKodexRoute,
   pushKodexRoute,
   replaceKodexRoute,
@@ -494,7 +494,7 @@ export function useShellSelection({
     }
     directMobileDeepLinkSeededRef.current = true;
     const route = currentKodexRoute();
-    if (!route.threadId || route.panel !== null || !isMobileViewport()) {
+    if (!route.threadId || route.panel !== null || !isNarrowViewport()) {
       return;
     }
     const state = historyState();

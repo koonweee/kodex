@@ -6,17 +6,21 @@ export type InputCapabilities = {
   hasTouchInput: boolean;
 };
 
+export const ANY_COARSE_POINTER_QUERY = "(any-pointer: coarse)";
+export const COARSE_POINTER_QUERY = "(pointer: coarse)";
+export const FINE_HOVER_QUERY = "(hover: hover) and (pointer: fine)";
+
 const INPUT_CAPABILITY_QUERIES = [
-  "(any-pointer: coarse)",
-  "(pointer: coarse)",
-  "(hover: hover) and (pointer: fine)",
+  ANY_COARSE_POINTER_QUERY,
+  COARSE_POINTER_QUERY,
+  FINE_HOVER_QUERY,
 ] as const;
 
 export function readInputCapabilities(): InputCapabilities {
   const hasMaxTouchPoints = typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
   const hasCoarsePointer =
-    mediaQueryMatches("(any-pointer: coarse)") || mediaQueryMatches("(pointer: coarse)");
-  const hasFineHover = mediaQueryMatches("(hover: hover) and (pointer: fine)");
+    mediaQueryMatches(ANY_COARSE_POINTER_QUERY) || mediaQueryMatches(COARSE_POINTER_QUERY);
+  const hasFineHover = mediaQueryMatches(FINE_HOVER_QUERY);
   return {
     hasCoarsePointer,
     hasFineHover,

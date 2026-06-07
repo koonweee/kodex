@@ -5,6 +5,7 @@ import type { AutomationsPane as AutomationsPaneComponent } from "../automations
 import type { PreferencesModalProps } from "../PreferencesModal";
 import type { ProjectPane as ProjectPaneComponent } from "../projects/ProjectPane";
 import { useInputCapabilities } from "../shared/inputCapabilities";
+import { NARROW_WORKSPACE_QUERY } from "../shared/layoutBreakpoints";
 import { WorkspaceSidebar } from "../threads/WorkspaceSidebar";
 import type { ThreadSummary } from "../api/client";
 import { WorkspaceSinglePaneShell } from "../workspace/WorkspaceSinglePaneShell";
@@ -22,7 +23,6 @@ const PreferencesModal = lazy(() =>
 const ProjectPane = lazy(() =>
   import("../projects/ProjectPane").then((module) => ({ default: module.ProjectPane })),
 );
-const NARROW_THREAD_WORKSPACE_QUERY = "(max-width: 900px)";
 const DESKTOP_COLLAPSED_SIDEBAR_WIDTH = 44;
 const TOUCH_COLLAPSED_SIDEBAR_WIDTH = 52;
 const DESKTOP_EXPANDED_SIDEBAR_WIDTH = 292;
@@ -139,7 +139,7 @@ export function useNarrowThreadWorkspace(): boolean {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
       return;
     }
-    const mediaQuery = window.matchMedia(NARROW_THREAD_WORKSPACE_QUERY);
+    const mediaQuery = window.matchMedia(NARROW_WORKSPACE_QUERY);
     setMatches(mediaQuery.matches);
 
     const handleChange = (event: MediaQueryListEvent) => {
@@ -160,7 +160,7 @@ function narrowThreadWorkspaceMatches(): boolean {
   return (
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
-    window.matchMedia(NARROW_THREAD_WORKSPACE_QUERY).matches
+    window.matchMedia(NARROW_WORKSPACE_QUERY).matches
   );
 }
 

@@ -4,9 +4,10 @@ import { AlertCircle, CheckCircle2, Loader2, PanelRightClose } from "lucide-reac
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AppSurfaceBridgeRequest, AppSurfaceBridgeResponse, AppSurfaceSession } from "../api/client";
+import { buildGeneratedUiSrcDoc } from "../generatedUi/themeDocument";
+import { NARROW_WORKSPACE_QUERY } from "../shared/layoutBreakpoints";
 import { errorMessageFrom } from "../shared/values";
 import type { KodexColorSchemeId } from "../theme";
-import { buildGeneratedUiSrcDoc } from "../generatedUi/themeDocument";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 
 const APP_SURFACE_TEXT = {
@@ -51,7 +52,7 @@ type JsonRecord = Record<string, unknown>;
 export function AppSurfacePane({ colorSchemeId, isBridgePending, onBridgeRequest, onHide, session }: AppSurfacePaneProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const postedToolNotificationsRef = useRef(false);
-  const showPaneClose = useMediaQuery("(max-width: 900px)", false);
+  const showPaneClose = useMediaQuery(NARROW_WORKSPACE_QUERY, false);
   const [documentError, setDocumentError] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [srcDoc, setSrcDoc] = useState("");

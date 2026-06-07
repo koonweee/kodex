@@ -71,10 +71,6 @@
   appearance: none;
 }
 
-.kodex-file-attachment-action:hover {
-  border-color: var(--kodex-border-accent);
-}
-
 .kodex-file-attachment-action:focus-visible {
   outline: 2px solid var(--kodex-border-accent);
   outline-offset: 2px;
@@ -242,10 +238,6 @@
   text-decoration: none;
 }
 
-.kodex-assistant-markdown a:hover {
-  text-decoration: underline;
-}
-
 .kodex-assistant-inline-code {
   border: 1px solid var(--kodex-inline-code-border);
   background: var(--kodex-bg-code);
@@ -361,4 +353,14 @@
 
 .kodex-markdown-preview-source-line-content {
   min-width: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kodex-file-attachment-action:hover {
+    border-color: var(--kodex-border-accent);
+  }
+
+  .kodex-assistant-markdown a:hover {
+    text-decoration: underline;
+  }
 }

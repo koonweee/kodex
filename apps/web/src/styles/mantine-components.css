@@ -120,7 +120,6 @@
   color: var(--kodex-text-secondary);
 }
 
-.kodex-mantine-combobox-option:hover,
 .kodex-mantine-combobox-option[data-combobox-active],
 .kodex-mantine-combobox-option[data-checked] {
   background: var(--kodex-bg-selected);
@@ -274,9 +273,7 @@
   color: currentColor;
 }
 
-.kodex-mantine-menu-item:hover,
 .kodex-mantine-menu-item[data-hovered],
-.kodex-mantine-menu-dropdown [data-menu-item]:hover,
 .kodex-mantine-menu-dropdown [data-menu-item][data-hovered] {
   background: var(--kodex-bg-button-hover);
   color: var(--kodex-text-primary);
@@ -288,9 +285,7 @@
   color: var(--kodex-text-primary);
 }
 
-.kodex-mantine-menu-item[data-active="true"]:hover,
 .kodex-mantine-menu-item[data-active="true"][data-hovered],
-.kodex-mantine-menu-dropdown [data-menu-item][data-active="true"]:hover,
 .kodex-mantine-menu-dropdown [data-menu-item][data-active="true"][data-hovered] {
   background: var(--kodex-bg-selected-strong);
 }
@@ -303,9 +298,7 @@
   cursor: default;
 }
 
-.kodex-mantine-menu-item:is([data-disabled], :disabled):hover,
 .kodex-mantine-menu-item:is([data-disabled], :disabled)[data-hovered],
-.kodex-mantine-menu-dropdown [data-menu-item]:is([data-disabled], :disabled):hover,
 .kodex-mantine-menu-dropdown [data-menu-item]:is([data-disabled], :disabled)[data-hovered] {
   background: transparent;
   color: var(--kodex-text-disabled);
@@ -377,12 +370,6 @@
   color: var(--kodex-text-secondary);
 }
 
-.kodex-mantine-modal-close:hover,
-.kodex-mantine-drawer-close:hover {
-  background: var(--kodex-bg-button-hover);
-  color: var(--kodex-text-primary);
-}
-
 .kodex-mantine-button-inner,
 .kodex-mantine-button-label {
   min-width: 0;
@@ -402,11 +389,6 @@
   color: var(--kodex-text-secondary);
 }
 
-.kodex-mantine-action-icon-root:hover {
-  background: var(--kodex-bg-button-hover);
-  color: var(--kodex-text-primary);
-}
-
 .kodex-mantine-button-root:is(:disabled, [data-disabled]),
 .kodex-mantine-action-icon-root:is(:disabled, [data-disabled]) {
   border-color: var(--kodex-border-disabled);
@@ -417,20 +399,9 @@
   box-shadow: none;
 }
 
-.kodex-mantine-button-root:is(:disabled, [data-disabled]):hover,
-.kodex-mantine-action-icon-root:is(:disabled, [data-disabled]):hover {
-  background: var(--kodex-bg-disabled-raised);
-  color: var(--kodex-text-disabled);
-}
-
 .kodex-mantine-button-root[data-variant="subtle"]:is(:disabled, [data-disabled]),
 .kodex-mantine-action-icon-root[data-variant="subtle"]:is(:disabled, [data-disabled]) {
   border-color: transparent;
-  background: var(--kodex-bg-disabled-subtle);
-}
-
-.kodex-mantine-button-root[data-variant="subtle"]:is(:disabled, [data-disabled]):hover,
-.kodex-mantine-action-icon-root[data-variant="subtle"]:is(:disabled, [data-disabled]):hover {
   background: var(--kodex-bg-disabled-subtle);
 }
 
@@ -491,11 +462,6 @@
   color: var(--kodex-text-secondary);
 }
 
-.kodex-mantine-tabs-tab:hover {
-  background: var(--kodex-bg-button-hover);
-  color: var(--kodex-text-primary);
-}
-
 .kodex-mantine-tabs-tab[data-active="true"] {
   background: var(--kodex-bg-selected);
   color: var(--kodex-text-primary);
@@ -518,7 +484,6 @@
   color: var(--kodex-text-secondary);
 }
 
-.kodex-mantine-segmented-control-label:hover,
 .kodex-mantine-segmented-control-label[data-active] {
   color: var(--kodex-text-primary);
 }
@@ -563,10 +528,6 @@
   color: var(--kodex-text-primary);
 }
 
-.kodex-mantine-table-tr:hover {
-  background: var(--kodex-bg-button-hover);
-}
-
 .kodex-mantine-table-caption {
   color: var(--kodex-text-muted);
 }
@@ -583,10 +544,6 @@
 
 .kodex-mantine-scroll-area-thumb {
   background: var(--kodex-border-strong);
-}
-
-.kodex-mantine-scroll-area-thumb:hover {
-  background: var(--kodex-text-muted);
 }
 
 .kodex-mantine-loader-root {
@@ -617,4 +574,67 @@
     color-mix(in srgb, var(--kodex-text-muted) 18%, transparent),
     transparent
   );
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kodex-mantine-combobox-option:hover {
+    background: var(--kodex-bg-selected);
+    color: var(--kodex-text-primary);
+  }
+
+  .kodex-mantine-menu-item:hover,
+  .kodex-mantine-menu-dropdown [data-menu-item]:hover {
+    background: var(--kodex-bg-button-hover);
+    color: var(--kodex-text-primary);
+  }
+
+  .kodex-mantine-menu-item[data-active="true"]:hover,
+  .kodex-mantine-menu-dropdown [data-menu-item][data-active="true"]:hover {
+    background: var(--kodex-bg-selected-strong);
+  }
+
+  .kodex-mantine-menu-item:is([data-disabled], :disabled):hover,
+  .kodex-mantine-menu-dropdown [data-menu-item]:is([data-disabled], :disabled):hover {
+    background: transparent;
+    color: var(--kodex-text-disabled);
+  }
+
+  .kodex-mantine-modal-close:hover,
+  .kodex-mantine-drawer-close:hover {
+    background: var(--kodex-bg-button-hover);
+    color: var(--kodex-text-primary);
+  }
+
+  .kodex-mantine-action-icon-root:hover {
+    background: var(--kodex-bg-button-hover);
+    color: var(--kodex-text-primary);
+  }
+
+  .kodex-mantine-button-root:is(:disabled, [data-disabled]):hover,
+  .kodex-mantine-action-icon-root:is(:disabled, [data-disabled]):hover {
+    background: var(--kodex-bg-disabled-raised);
+    color: var(--kodex-text-disabled);
+  }
+
+  .kodex-mantine-button-root[data-variant="subtle"]:is(:disabled, [data-disabled]):hover,
+  .kodex-mantine-action-icon-root[data-variant="subtle"]:is(:disabled, [data-disabled]):hover {
+    background: var(--kodex-bg-disabled-subtle);
+  }
+
+  .kodex-mantine-tabs-tab:hover {
+    background: var(--kodex-bg-button-hover);
+    color: var(--kodex-text-primary);
+  }
+
+  .kodex-mantine-segmented-control-label:hover {
+    color: var(--kodex-text-primary);
+  }
+
+  .kodex-mantine-table-tr:hover {
+    background: var(--kodex-bg-button-hover);
+  }
+
+  .kodex-mantine-scroll-area-thumb:hover {
+    background: var(--kodex-text-muted);
+  }
 }

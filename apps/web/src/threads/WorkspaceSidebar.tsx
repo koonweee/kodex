@@ -45,6 +45,7 @@ import type { AccountResponse, Approval, Project, ThreadSummary } from "../api/c
 import type { UsageLimitLines } from "../account/rateLimits";
 import { SidebarAccountMenu } from "../account/SidebarAccountFooter";
 import { useInputCapabilities } from "../shared/inputCapabilities";
+import { NARROW_WORKSPACE_QUERY } from "../shared/layoutBreakpoints";
 import { AdaptiveIcon } from "../ui/AdaptiveIcon";
 import { EmptyPanel } from "../ui/EmptyPanel";
 import {
@@ -229,7 +230,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const [previewProjectIds, setPreviewProjectIds] = useState<string[] | null>(null);
   const [searchActive, setSearchActive] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const isMobileSidebar = useMediaQuery("(max-width: 900px)", false);
+  const isNarrowSidebar = useMediaQuery(NARROW_WORKSPACE_QUERY, false);
   const useTouchDensity = useInputCapabilities().hasTouchInput;
   const projectGroupRefs = useRef<Map<string, HTMLElement>>(new Map());
   const pendingProjectAnimationRects = useRef<Map<string, DOMRect> | null>(null);
@@ -421,7 +422,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       data-sidebar-scope={sidebarScope}
       style={{ width: sidebarWidth }}
     >
-      <Stack gap={isMobileSidebar ? 8 : "lg"} h="100%">
+      <Stack gap={isNarrowSidebar ? 8 : "lg"} h="100%">
         {!sidebarCollapsed ? (
           <>
             <Box className="kodex-sidebar-header">
@@ -436,9 +437,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
               />
               <SidebarIconButton
                 className="kodex-sidebar-header-action"
-                label={isMobileSidebar ? SIDEBAR_TEXT.showThread : SIDEBAR_TEXT.collapseSidebar}
-                onClick={isMobileSidebar ? onShowThread : onSidebarCollapseClick}
-                tooltipProps={{ position: isMobileSidebar ? "bottom" : "right" }}
+                label={isNarrowSidebar ? SIDEBAR_TEXT.showThread : SIDEBAR_TEXT.collapseSidebar}
+                onClick={isNarrowSidebar ? onShowThread : onSidebarCollapseClick}
+                tooltipProps={{ position: isNarrowSidebar ? "bottom" : "right" }}
               >
                 <PanelLeftClose size={16} />
               </SidebarIconButton>
