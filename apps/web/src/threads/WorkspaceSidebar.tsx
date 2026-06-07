@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import {
   memo,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -230,11 +231,13 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   const [previewProjectIds, setPreviewProjectIds] = useState<string[] | null>(null);
   const [searchActive, setSearchActive] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [sidebarScrollState, setSidebarScrollState] = useState({ bottom: false, stickyProjectHeader: false, top: false });
   const isNarrowSidebar = useMediaQuery(NARROW_WORKSPACE_QUERY, false);
   const useTouchDensity = useInputCapabilities().hasTouchInput;
   const projectGroupRefs = useRef<Map<string, HTMLElement>>(new Map());
   const pendingProjectAnimationRects = useRef<Map<string, DOMRect> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const sidebarScrollRef = useRef<HTMLDivElement>(null);
   const displayedProjects = useMemo(
     () => projectsFromPreviewOrder(projects, previewProjectIds),
     [previewProjectIds, projects],
@@ -280,6 +283,50 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     }
     searchInputRef.current?.focus();
   }, [searchActive, sidebarCollapsed]);
+
+  const updateSidebarScrollEdges = useCallback(() => {
+    const element = sidebarScrollRef.current;
+    if (!element) {
+      setSidebarScrollState({ bottom: false, stickyProjectHeader: false, top: false });
+      return;
+    }
+    const scrollFrameTop = element.parentElement?.getBoundingClientRect().top ?? element.getBoundingClientRect().top;
+    const stickyProjectHeader = Array.from(element.querySelectorAll<HTMLElement>(".kodex-project-row")).some((row) => {
+      const rowRect = row.getBoundingClientRect();
+      return rowRect.top <= scrollFrameTop + 1 && rowRect.bottom > scrollFrameTop + 1;
+    });
+    const next = {
+      bottom: element.scrollTop + element.clientHeight < element.scrollHeight - 1,
+      stickyProjectHeader,
+      top: element.scrollTop > 1,
+    };
+    setSidebarScrollState((current) =>
+      current.bottom === next.bottom && current.stickyProjectHeader === next.stickyProjectHeader && current.top === next.top
+        ? current
+        : next,
+    );
+  }, []);
+
+  useEffect(() => {
+    const element = sidebarScrollRef.current;
+    if (!element || sidebarCollapsed) {
+      setSidebarScrollState({ bottom: false, stickyProjectHeader: false, top: false });
+      return;
+    }
+    element.addEventListener("scroll", updateSidebarScrollEdges, { passive: true });
+    const resizeObserver =
+      typeof ResizeObserver === "function" ? new ResizeObserver(updateSidebarScrollEdges) : null;
+    resizeObserver?.observe(element);
+    updateSidebarScrollEdges();
+    return () => {
+      element.removeEventListener("scroll", updateSidebarScrollEdges);
+      resizeObserver?.disconnect();
+    };
+  }, [sidebarCollapsed, updateSidebarScrollEdges]);
+
+  useLayoutEffect(() => {
+    updateSidebarScrollEdges();
+  });
 
   useLayoutEffect(() => {
     const beforeRects = pendingProjectAnimationRects.current;
@@ -476,217 +523,224 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
               </button>
             </Box>
             <Box
-              className="kodex-sidebar-scroll"
-              data-chats-state={dataState.chatThreads}
-              data-pinned-state={dataState.pinnedThreads}
-              data-projects-state={dataState.projects}
+              className="kodex-sidebar-scroll-frame"
+              data-can-scroll-bottom={sidebarScrollState.bottom ? "true" : undefined}
+              data-can-scroll-top={sidebarScrollState.top ? "true" : undefined}
+              data-sticky-project-header={sidebarScrollState.stickyProjectHeader ? "true" : undefined}
             >
-              {visiblePinnedThreads.length > 0 ? (
-                <Box className="kodex-pinned-section">
-                  <SidebarSectionDisclosureRow
-                    className="kodex-pinned-section-row"
-                    collapsed={pinnedSectionCollapsed}
-                    label={SIDEBAR_TEXT.pinned}
-                    onToggle={() => handleSectionCollapseToggle("pinnedSectionCollapsed")}
-                  />
-                  {!pinnedSectionCollapsed ? (
-                    <ThreadList
-                      approvals={approvals}
-                      className="kodex-pinned-thread-list"
-                      expanded
-                      hoveredThreadActionId={hoveredThreadActionId}
-                      onArchiveThread={onArchiveThread}
-                      onPinThread={onPinThread}
-                      onSelectThread={onSelectPinnedThread}
-                      onThreadActionHoverChange={onThreadActionHoverChange}
-                      onToggleExpanded={() => undefined}
-                      onUnpinThread={onUnpinThread}
-                      pendingTitleThreadIds={pendingTitleThreadIds}
-                      selectedThreadId={selectedThreadId}
-                      threads={visiblePinnedThreads}
+              <Box
+                className="kodex-sidebar-scroll"
+                data-chats-state={dataState.chatThreads}
+                data-pinned-state={dataState.pinnedThreads}
+                data-projects-state={dataState.projects}
+                ref={sidebarScrollRef}
+              >
+                {visiblePinnedThreads.length > 0 ? (
+                  <Box className="kodex-pinned-section">
+                    <SidebarSectionDisclosureRow
+                      className="kodex-pinned-section-row"
+                      collapsed={pinnedSectionCollapsed}
+                      label={SIDEBAR_TEXT.pinned}
+                      onToggle={() => handleSectionCollapseToggle("pinnedSectionCollapsed")}
                     />
-                  ) : null}
-                </Box>
-              ) : null}
-              {sidebarScope === "projects" ? (
-                <>
-                  <SidebarSectionDisclosureRow
-                    className="kodex-projects-section-row"
-                    collapsed={projectsSectionCollapsed}
-                    label={SIDEBAR_TEXT.projects}
-                    onToggle={() => handleSectionCollapseToggle("projectsSectionCollapsed")}
-                    trailingActions={[
-                      {
-                        icon: <FolderPlus />,
-                        label: SIDEBAR_TEXT.newProject,
-                        onClick: () => onProjectFormOpenChange((open) => !open),
-                      },
-                    ]}
-                  />
-                  {!projectsSectionCollapsed && projectFormOpen ? (
-                    <Box
-                      component="form"
-                      className="kodex-project-form"
-                      onSubmit={(event: FormEvent) => {
-                        event.preventDefault();
-                        onCreateProject();
-                      }}
-                    >
-                      <TextInput
-                        label={SIDEBAR_TEXT.cwd}
-                        required
-                        value={projectCwd}
-                        onChange={(event) => onProjectCwdChange(event.currentTarget.value)}
+                    {!pinnedSectionCollapsed ? (
+                      <ThreadList
+                        approvals={approvals}
+                        className="kodex-pinned-thread-list"
+                        expanded
+                        hoveredThreadActionId={hoveredThreadActionId}
+                        onArchiveThread={onArchiveThread}
+                        onPinThread={onPinThread}
+                        onSelectThread={onSelectPinnedThread}
+                        onThreadActionHoverChange={onThreadActionHoverChange}
+                        onToggleExpanded={() => undefined}
+                        onUnpinThread={onUnpinThread}
+                        pendingTitleThreadIds={pendingTitleThreadIds}
+                        selectedThreadId={selectedThreadId}
+                        threads={visiblePinnedThreads}
                       />
-                      {projectDirectoryCreatePending ? (
-                        <Group className="kodex-project-create-confirm" gap="xs" wrap="nowrap">
-                          <Button size="xs" type="button" onClick={() => onCreateProject({ createDirectory: true })}>
-                            {`Create ${projectDirectoryDisplayPath(projectCwd)}?`}
-                          </Button>
-                          <Button
-                            aria-label="Cancel directory create"
-                            color="gray"
-                            onClick={onProjectDirectoryCreateCancel}
-                            size="xs"
-                            type="button"
-                            variant="light"
-                          >
-                            <X size={14} />
-                          </Button>
-                        </Group>
-                      ) : (
-                        <Button type="submit" size="xs" disabled={!projectCwd.trim()}>
-                          {SIDEBAR_TEXT.createProject}
-                        </Button>
-                      )}
-                    </Box>
-                  ) : null}
-                  {!projectsSectionCollapsed ? (
-                    <Stack gap="sm" className="kodex-project-tree">
-                      {projects.length === 0 && dataState.projects === "loaded" ? (
-                        <EmptyPanel
-                          icon={<Inbox size={20} />}
-                          title={SIDEBAR_TEXT.noProjectsTitle}
-                          text={SIDEBAR_TEXT.noProjectsText}
+                    ) : null}
+                  </Box>
+                ) : null}
+                {sidebarScope === "projects" ? (
+                  <>
+                    <SidebarSectionDisclosureRow
+                      className="kodex-projects-section-row"
+                      collapsed={projectsSectionCollapsed}
+                      label={SIDEBAR_TEXT.projects}
+                      onToggle={() => handleSectionCollapseToggle("projectsSectionCollapsed")}
+                      trailingActions={[
+                        {
+                          icon: <FolderPlus />,
+                          label: SIDEBAR_TEXT.newProject,
+                          onClick: () => onProjectFormOpenChange((open) => !open),
+                        },
+                      ]}
+                    />
+                    {!projectsSectionCollapsed && projectFormOpen ? (
+                      <Box
+                        component="form"
+                        className="kodex-project-form"
+                        onSubmit={(event: FormEvent) => {
+                          event.preventDefault();
+                          onCreateProject();
+                        }}
+                      >
+                        <TextInput
+                          label={SIDEBAR_TEXT.cwd}
+                          required
+                          value={projectCwd}
+                          onChange={(event) => onProjectCwdChange(event.currentTarget.value)}
                         />
-                      ) : projects.length > 0 ? (
-                        displayedProjects.map((project) => {
-                          const projectThreads = sortProjectThreadsForSidebar(
-                            threadsByProjectId[project.id] ?? [],
-                            approvals,
-                            pendingTitleThreadIds,
-                          );
-                          const visibleProjectThreads = normalizedSearchQuery
-                            ? projectThreads.filter((thread) =>
-                                threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds),
-                              )
-                            : projectThreads;
-                          const projectMatchesSearch = project.name.toLowerCase().includes(normalizedSearchQuery);
-                          if (normalizedSearchQuery && !projectMatchesSearch && visibleProjectThreads.length === 0) {
-                            return null;
-                          }
-                          const projectCollapsed = collapsedProjectIds.has(project.id);
-                          const showAllProjectThreads = expandedThreadProjectIds.has(project.id);
-                          const projectThreadsHaveMore = projectThreadHasMoreById[project.id] === true;
-                          const projectThreadPaginationState = projectThreadPaginationStateById[project.id] ?? "idle";
-                          const displayedProjectThreads = projectMatchesSearch ? projectThreads : visibleProjectThreads;
-                          const collapsedProjectThreads = displayedProjectThreads.filter((thread) =>
-                            threadSurfacesWhenProjectCollapsed(thread, selectedThreadId),
-                          );
-                          const renderedProjectThreads = projectCollapsed ? collapsedProjectThreads : displayedProjectThreads;
-                          const newThreadLabel =
-                            project.id === selectedProjectId ? SIDEBAR_TEXT.newThread : `Create thread in ${project.name}`;
-                          return (
-                            <Box
-                              className="kodex-project-group"
-                              data-threads-state={dataState.projectThreadsById[project.id] ?? "loading"}
-                              key={project.id}
-                              ref={(element: HTMLDivElement | null) => {
-                                if (element) {
-                                  projectGroupRefs.current.set(project.id, element);
-                                } else {
-                                  projectGroupRefs.current.delete(project.id);
-                                }
-                              }}
-                              role="group"
-                              aria-label={project.name}
-                              onDrop={(event) => handleProjectDrop(event, project.id)}
+                        {projectDirectoryCreatePending ? (
+                          <Group className="kodex-project-create-confirm" gap="xs" wrap="nowrap">
+                            <Button size="xs" type="button" onClick={() => onCreateProject({ createDirectory: true })}>
+                              {`Create ${projectDirectoryDisplayPath(projectCwd)}?`}
+                            </Button>
+                            <Button
+                              aria-label="Cancel directory create"
+                              color="gray"
+                              onClick={onProjectDirectoryCreateCancel}
+                              size="xs"
+                              type="button"
+                              variant="light"
                             >
-                              <SidebarActionDisclosureRow
-                                className="kodex-project-row"
-                                collapsed={projectCollapsed}
-                                disclosureLabel={`${projectCollapsed ? "Expand" : "Collapse"} ${project.name}`}
-                                label={project.name}
-                                leadingIcon={
-                                  projectCollapsed ? (
-                                    <AdaptiveIcon className="kodex-project-folder-icon" data-collapsed="true">
-                                      <Folder />
-                                    </AdaptiveIcon>
-                                  ) : (
-                                    <AdaptiveIcon className="kodex-project-folder-icon">
-                                      <FolderOpen />
-                                    </AdaptiveIcon>
-                                  )
-                                }
-                                mainClassName="kodex-ui-selectable kodex-project-title"
-                                onToggle={() => handleProjectCollapseToggle(project.id)}
-                                rootProps={{
-                                  draggable: true,
-                                  onDragEnd: handleProjectDragEnd,
-                                  onDragOver: (event) => handleProjectDragOver(event, project.id),
-                                  onDragStart: (event) => handleProjectDragStart(event, project.id),
+                              <X size={14} />
+                            </Button>
+                          </Group>
+                        ) : (
+                          <Button type="submit" size="xs" disabled={!projectCwd.trim()}>
+                            {SIDEBAR_TEXT.createProject}
+                          </Button>
+                        )}
+                      </Box>
+                    ) : null}
+                    {!projectsSectionCollapsed ? (
+                      <Stack gap="sm" className="kodex-project-tree">
+                        {projects.length === 0 && dataState.projects === "loaded" ? (
+                          <EmptyPanel
+                            icon={<Inbox size={20} />}
+                            title={SIDEBAR_TEXT.noProjectsTitle}
+                            text={SIDEBAR_TEXT.noProjectsText}
+                          />
+                        ) : projects.length > 0 ? (
+                          displayedProjects.map((project) => {
+                            const projectThreads = sortProjectThreadsForSidebar(
+                              threadsByProjectId[project.id] ?? [],
+                              approvals,
+                              pendingTitleThreadIds,
+                            );
+                            const visibleProjectThreads = normalizedSearchQuery
+                              ? projectThreads.filter((thread) =>
+                                  threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds),
+                                )
+                              : projectThreads;
+                            const projectMatchesSearch = project.name.toLowerCase().includes(normalizedSearchQuery);
+                            if (normalizedSearchQuery && !projectMatchesSearch && visibleProjectThreads.length === 0) {
+                              return null;
+                            }
+                            const projectCollapsed = collapsedProjectIds.has(project.id);
+                            const showAllProjectThreads = expandedThreadProjectIds.has(project.id);
+                            const projectThreadsHaveMore = projectThreadHasMoreById[project.id] === true;
+                            const projectThreadPaginationState = projectThreadPaginationStateById[project.id] ?? "idle";
+                            const displayedProjectThreads = projectMatchesSearch ? projectThreads : visibleProjectThreads;
+                            const collapsedProjectThreads = displayedProjectThreads.filter((thread) =>
+                              threadSurfacesWhenProjectCollapsed(thread, selectedThreadId),
+                            );
+                            const renderedProjectThreads = projectCollapsed ? collapsedProjectThreads : displayedProjectThreads;
+                            const newThreadLabel =
+                              project.id === selectedProjectId ? SIDEBAR_TEXT.newThread : `Create thread in ${project.name}`;
+                            return (
+                              <Box
+                                className="kodex-project-group"
+                                data-threads-state={dataState.projectThreadsById[project.id] ?? "loading"}
+                                key={project.id}
+                                ref={(element: HTMLDivElement | null) => {
+                                  if (element) {
+                                    projectGroupRefs.current.set(project.id, element);
+                                  } else {
+                                    projectGroupRefs.current.delete(project.id);
+                                  }
                                 }}
-                                trailingActions={[
-                                  {
-                                    icon: <Settings />,
-                                    label: `Project settings for ${project.name}`,
-                                    onClick: () => onSelectProjectSettings(project.id),
-                                  },
-                                  {
-                                    icon: <SquarePen />,
-                                    label: newThreadLabel,
-                                    onClick: () => onCreateThread(project.id),
-                                  },
-                                ]}
-                              />
-                              {renderedProjectThreads.length > 0 ? (
-                                <ThreadList
-                                  approvals={approvals}
-                                  className="kodex-project-thread-list"
-                                  expanded={projectCollapsed || showAllProjectThreads}
-                                  hoveredThreadActionId={hoveredThreadActionId}
-                                  hasMore={projectCollapsed ? false : projectThreadsHaveMore}
-                                  onArchiveThread={onArchiveThread}
-                                  onPinThread={onPinThread}
-                                  onSelectThread={(threadId) => onSelectThread(project.id, threadId)}
-                                  onThreadActionHoverChange={onThreadActionHoverChange}
-                                  onToggleExpanded={() => {
-                                    if (
-                                      (projectThreadsHaveMore && showAllProjectThreads) ||
-                                      (!showAllProjectThreads && projectThreadsHaveMore)
-                                    ) {
-                                      onLoadMoreProjectThreads?.(project.id);
-                                    }
-                                    setExpandedThreadProjectIds((current) => {
-                                      const next = new Set(current);
-                                      if (next.has(project.id) && !projectThreadsHaveMore) {
-                                        next.delete(project.id);
-                                      } else {
-                                        next.add(project.id);
-                                      }
-                                      return next;
-                                    });
+                                role="group"
+                                aria-label={project.name}
+                                onDrop={(event) => handleProjectDrop(event, project.id)}
+                              >
+                                <SidebarActionDisclosureRow
+                                  className="kodex-project-row"
+                                  collapsed={projectCollapsed}
+                                  disclosureLabel={`${projectCollapsed ? "Expand" : "Collapse"} ${project.name}`}
+                                  label={project.name}
+                                  leadingIcon={
+                                    projectCollapsed ? (
+                                      <AdaptiveIcon className="kodex-project-folder-icon" data-collapsed="true">
+                                        <Folder />
+                                      </AdaptiveIcon>
+                                    ) : (
+                                      <AdaptiveIcon className="kodex-project-folder-icon">
+                                        <FolderOpen />
+                                      </AdaptiveIcon>
+                                    )
+                                  }
+                                  mainClassName="kodex-ui-selectable kodex-project-title"
+                                  onToggle={() => handleProjectCollapseToggle(project.id)}
+                                  rootProps={{
+                                    draggable: true,
+                                    onDragEnd: handleProjectDragEnd,
+                                    onDragOver: (event) => handleProjectDragOver(event, project.id),
+                                    onDragStart: (event) => handleProjectDragStart(event, project.id),
                                   }}
-                                  onUnpinThread={onUnpinThread}
-                                  pendingTitleThreadIds={pendingTitleThreadIds}
-                                  paginationState={projectThreadPaginationState}
-                                  selectedThreadId={selectedThreadId}
-                                  threads={renderedProjectThreads}
+                                  trailingActions={[
+                                    {
+                                      icon: <Settings />,
+                                      label: `Project settings for ${project.name}`,
+                                      onClick: () => onSelectProjectSettings(project.id),
+                                    },
+                                    {
+                                      icon: <SquarePen />,
+                                      label: newThreadLabel,
+                                      onClick: () => onCreateThread(project.id),
+                                    },
+                                  ]}
                                 />
-                              ) : null}
-                            </Box>
-                          );
-                        })
+                                {renderedProjectThreads.length > 0 ? (
+                                  <ThreadList
+                                    approvals={approvals}
+                                    className="kodex-project-thread-list"
+                                    expanded={projectCollapsed || showAllProjectThreads}
+                                    hoveredThreadActionId={hoveredThreadActionId}
+                                    hasMore={projectCollapsed ? false : projectThreadsHaveMore}
+                                    onArchiveThread={onArchiveThread}
+                                    onPinThread={onPinThread}
+                                    onSelectThread={(threadId) => onSelectThread(project.id, threadId)}
+                                    onThreadActionHoverChange={onThreadActionHoverChange}
+                                    onToggleExpanded={() => {
+                                      if (
+                                        (projectThreadsHaveMore && showAllProjectThreads) ||
+                                        (!showAllProjectThreads && projectThreadsHaveMore)
+                                      ) {
+                                        onLoadMoreProjectThreads?.(project.id);
+                                      }
+                                      setExpandedThreadProjectIds((current) => {
+                                        const next = new Set(current);
+                                        if (next.has(project.id) && !projectThreadsHaveMore) {
+                                          next.delete(project.id);
+                                        } else {
+                                          next.add(project.id);
+                                        }
+                                        return next;
+                                      });
+                                    }}
+                                    onUnpinThread={onUnpinThread}
+                                    pendingTitleThreadIds={pendingTitleThreadIds}
+                                    paginationState={projectThreadPaginationState}
+                                    selectedThreadId={selectedThreadId}
+                                    threads={renderedProjectThreads}
+                                  />
+                                ) : null}
+                              </Box>
+                            );
+                          })
                       ) : null}
                     </Stack>
                   ) : null}
@@ -734,6 +788,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                   ) : null}
                 </Box>
               ) : null}
+              </Box>
             </Box>
           </>
         ) : (

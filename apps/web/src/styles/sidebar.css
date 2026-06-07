@@ -314,6 +314,10 @@
 }
 
 .kodex-project-row {
+  position: sticky;
+  z-index: 3;
+  top: 0;
+  background: var(--kodex-bg-shell);
   cursor: grab;
 }
 
@@ -681,8 +685,48 @@
   }
 }
 
-.kodex-sidebar-scroll {
+.kodex-sidebar-scroll-frame {
+  --kodex-sidebar-sticky-header-height: calc(var(--kodex-sidebar-row-height) + 6px);
+
+  position: relative;
   flex: 1 1 0;
+  min-height: 0;
+}
+
+.kodex-sidebar-scroll-frame::before,
+.kodex-sidebar-scroll-frame::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  left: 0;
+  height: 22px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.kodex-sidebar-scroll-frame::before {
+  top: 0;
+  background: linear-gradient(to bottom, var(--kodex-bg-shell) 12%, transparent);
+}
+
+.kodex-sidebar-scroll-frame[data-sticky-project-header="true"]::before {
+  top: var(--kodex-sidebar-sticky-header-height);
+}
+
+.kodex-sidebar-scroll-frame::after {
+  bottom: 0;
+  background: linear-gradient(to top, var(--kodex-bg-shell) 12%, transparent);
+}
+
+.kodex-sidebar-scroll-frame[data-can-scroll-top="true"]::before,
+.kodex-sidebar-scroll-frame[data-can-scroll-bottom="true"]::after {
+  opacity: 1;
+}
+
+.kodex-sidebar-scroll {
+  height: 100%;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
