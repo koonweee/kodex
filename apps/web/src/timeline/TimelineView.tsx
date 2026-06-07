@@ -15,6 +15,13 @@ import {
 } from "./derive";
 import { TimelineActivityGroupRenderer, TimelineFileChangesRenderer, TimelineItemRenderer, TimelineWorkRowRenderer } from "./renderers";
 import type { TimelineItem, TimelineRow, TimelineState } from "./reducer";
+import {
+  getDistanceFromBottom,
+  getScrollElementBottomTop,
+  isTimelineNearBottom,
+  timelineFollowOutputBehavior,
+  type TimelineScrollBehavior,
+} from "./scrollPolicy";
 
 const EMPTY_APPROVALS: Approval[] = [];
 
@@ -28,12 +35,6 @@ type TimelineRenderRow = {
   key: string;
   row: TimelineRow;
 };
-
-type TimelineScrollBehavior = "auto" | "smooth";
-
-export function timelineFollowOutputBehavior(isNearBottom: boolean): ReturnType<Exclude<FollowOutput, boolean | string>> {
-  return isNearBottom ? "auto" : false;
-}
 
 export function TimelineView({
   approvals,
@@ -407,14 +408,7 @@ function useBottomPinnedVirtuosoTimeline({
     }
   }, []);
 
-  const updateOverflowAbove = useCallback(() => {
-    const scrollElement = scrollParentElement;
-    const hasOverflowAbove = Boolean(scrollElement && rowCount > 0 && scrollElement.scrollTop > 8);
-    onOverflowAboveChange?.(hasOverflowAbove);
-    return hasOverflowAbove;
-  }, [onOverflowAboveChange, rowCount, scrollParentElement]);
-
-  const updateNearBottom = useCallback(() => {
+  const syncScrollPolicyFromParent = useCallback(() => {
     const scrollElement = scrollParentElement;
     if (!scrollElement) {
       isPinnedToBottomRef.current = true;
@@ -423,31 +417,24 @@ function useBottomPinnedVirtuosoTimeline({
       return true;
     }
     const distanceFromBottom = getDistanceFromBottom(scrollElement);
-    const isNearBottom = distanceFromBottom < 60;
+    const isNearBottom = isTimelineNearBottom(scrollElement);
     isPinnedToBottomRef.current = isNearBottom;
     if (!isNearBottom) {
       cancelPendingBottomFollow();
     }
     setScrollToBottomVisible(!isNearBottom && rowCount > 0 && distanceFromBottom > 0);
-    updateOverflowAbove();
+    onOverflowAboveChange?.(Boolean(rowCount > 0 && scrollElement.scrollTop > 8));
     return isNearBottom;
-  }, [cancelPendingBottomFollow, onOverflowAboveChange, rowCount, scrollParentElement, setScrollToBottomVisible, updateOverflowAbove]);
+  }, [cancelPendingBottomFollow, onOverflowAboveChange, rowCount, scrollParentElement, setScrollToBottomVisible]);
 
   const scrollToTimelineBottom = useCallback((behavior: TimelineScrollBehavior = "auto") => {
     if (rowCount === 0) {
       return;
     }
-    if (scrollParentElement) {
-      const top = scrollParentElement.scrollHeight - scrollParentElement.clientHeight;
-      if (top > 0) {
-        if (behavior === "smooth" && typeof scrollParentElement.scrollTo === "function") {
-          scrollParentElement.scrollTo({ top, behavior });
-        } else {
-          scrollParentElement.scrollTop = top;
-        }
-      }
-    }
     virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior });
+    if (scrollParentElement) {
+      scrollElementToBottom(scrollParentElement, behavior);
+    }
   }, [rowCount, scrollParentElement]);
 
   const scheduleBottomFollow = useCallback(
@@ -468,12 +455,12 @@ function useBottomPinnedVirtuosoTimeline({
           }
           scrollToTimelineBottom(behavior);
           if (behavior === "auto") {
-            updateNearBottom();
+            syncScrollPolicyFromParent();
           }
         });
       });
     },
-    [rowCount, scrollToTimelineBottom, updateNearBottom],
+    [rowCount, scrollToTimelineBottom, syncScrollPolicyFromParent],
   );
 
   const markTimelineReady = useCallback(() => {
@@ -488,19 +475,23 @@ function useBottomPinnedVirtuosoTimeline({
     scrollToTimelineBottom("smooth");
     requestAnimationFrame(() => {
       scrollToTimelineBottom("smooth");
-      updateNearBottom();
+      syncScrollPolicyFromParent();
     });
-  }, [cancelPendingBottomFollow, scrollToTimelineBottom, setScrollToBottomVisible, updateNearBottom]);
+  }, [cancelPendingBottomFollow, scrollToTimelineBottom, setScrollToBottomVisible, syncScrollPolicyFromParent]);
 
   const handleAtBottomStateChange = useCallback(
     (atBottom: boolean) => {
+      if (scrollParentElement) {
+        syncScrollPolicyFromParent();
+        return;
+      }
       isPinnedToBottomRef.current = atBottom;
       if (!atBottom) {
         cancelPendingBottomFollow();
       }
       setScrollToBottomVisible(!atBottom && rowCount > 0);
     },
-    [cancelPendingBottomFollow, rowCount, setScrollToBottomVisible],
+    [cancelPendingBottomFollow, rowCount, scrollParentElement, setScrollToBottomVisible, syncScrollPolicyFromParent],
   );
 
   const handleTotalListHeightChanged = useCallback(() => {
@@ -513,7 +504,7 @@ function useBottomPinnedVirtuosoTimeline({
   useEffect(() => cancelPendingBottomFollow, [cancelPendingBottomFollow]);
 
   const followOutput = useCallback<Exclude<FollowOutput, boolean | string>>(
-    (isAtBottom) => timelineFollowOutputBehavior(isAtBottom || (isPinnedToBottomRef.current && !showScrollToBottomRef.current)),
+    () => timelineFollowOutputBehavior(isPinnedToBottomRef.current && !showScrollToBottomRef.current),
     [],
   );
 
@@ -523,13 +514,13 @@ function useBottomPinnedVirtuosoTimeline({
       return;
     }
 
-    updateNearBottom();
-    scrollElement.addEventListener("scroll", updateNearBottom, { passive: true });
+    syncScrollPolicyFromParent();
+    scrollElement.addEventListener("scroll", syncScrollPolicyFromParent, { passive: true });
     return () => {
-      scrollElement.removeEventListener("scroll", updateNearBottom);
+      scrollElement.removeEventListener("scroll", syncScrollPolicyFromParent);
       onOverflowAboveChange?.(false);
     };
-  }, [onOverflowAboveChange, scrollParentElement, updateNearBottom]);
+  }, [onOverflowAboveChange, scrollParentElement, syncScrollPolicyFromParent]);
 
   useEffect(() => {
     if (initialBottomAligned) {
@@ -555,7 +546,7 @@ function useBottomPinnedVirtuosoTimeline({
     let readyFrameId: number | null = null;
     const frameId = requestAnimationFrame(() => {
       initialAlignmentSnapshotRef.current = { rowCount, timelineLastSeq };
-      updateNearBottom();
+      syncScrollPolicyFromParent();
       readyFrameId = requestAnimationFrame(markTimelineReady);
     });
     return () => {
@@ -570,8 +561,8 @@ function useBottomPinnedVirtuosoTimeline({
     rowCount,
     scheduleBottomFollow,
     setScrollToBottomVisible,
+    syncScrollPolicyFromParent,
     timelineLastSeq,
-    updateNearBottom,
   ]);
 
   useEffect(() => {
@@ -735,6 +726,15 @@ function buildTimelineRowApprovalMap(rows: TimelineRow[], approvalIndex: ReturnT
   return approvalsByRowKey;
 }
 
-function getDistanceFromBottom(scrollElement: HTMLElement) {
-  return scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight;
+function scrollElementToBottom(scrollElement: HTMLElement, behavior: TimelineScrollBehavior) {
+  const top = getScrollElementBottomTop(scrollElement);
+  if (top === 0) {
+    scrollElement.scrollTop = 0;
+    return;
+  }
+  if (behavior === "smooth" && typeof scrollElement.scrollTo === "function") {
+    scrollElement.scrollTo({ top, behavior });
+    return;
+  }
+  scrollElement.scrollTop = top;
 }

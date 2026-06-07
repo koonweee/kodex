@@ -540,6 +540,136 @@ test("keeps long timeline content inside the thread viewer", async ({ page }) =>
   expect(outputMetrics.scrollWidth).toBeGreaterThan(outputMetrics.clientWidth);
 });
 
+test("keeps followed live output pinned to the scroll parent bottom", async ({ page }) => {
+  const turnsForLiveText = (liveText: string): TestTurn[] => [
+    {
+      id: "turn-1",
+      status: "completed",
+      startedAt: 1777500001,
+      completedAt: 1777500002,
+      rawPayload: {},
+      items: [
+        {
+          id: "user-1",
+          itemType: "userMessage",
+          rawPayload: { id: "user-1", type: "userMessage", text: "Generate a long answer." },
+        },
+        ...Array.from({ length: 14 }, (_, index) => ({
+          id: `assistant-seed-${index}`,
+          itemType: "agentMessage",
+          rawPayload: {
+            id: `assistant-seed-${index}`,
+            type: "agentMessage",
+            text: `Follow seed ${index}\n\n${"The timeline should stay pinned while output grows. ".repeat(10)}`,
+          },
+        })),
+      ],
+    },
+    {
+      id: "turn-2",
+      status: "running",
+      startedAt: 1777500003,
+      rawPayload: {},
+      items: [
+        {
+          id: "assistant-live",
+          itemType: "agentMessage",
+          rawPayload: {
+            id: "assistant-live",
+            type: "agentMessage",
+            text: liveText,
+          },
+        },
+      ],
+    },
+  ];
+  const threadBody = (liveText: string) => threadDetailBody({ ...thread, status: "active" }, turnsForLiveText(liveText), "streaming");
+  const patchTimeline = timelineFromTurns(
+    { ...thread, status: "active" },
+    turnsForLiveText(`Live growth marker\n\n${"More assistant output. ".repeat(120)}`),
+    "streaming",
+  );
+  let releasePatch: (() => void) | null = null;
+  const patchReleased = new Promise<void>((resolve) => {
+    releasePatch = resolve;
+  });
+
+  await page.unroute("**/v1/**");
+  await page.route("**/v1/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const key = `${request.method()} ${url.pathname}`;
+
+    if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
+      await patchReleased;
+      const event = {
+        id: "event-live-growth",
+        seq: 2,
+        kind: "thread_view.patch",
+        codexMethod: "thread_view/patch",
+        itemId: "assistant-live",
+        projectId: project.id,
+        threadId: thread.id,
+        turnId: "turn-2",
+        payload: {
+          ...patchTimeline,
+          pendingApprovalRequests: [],
+          pendingUserInputRequests: [],
+          scope: "full_snapshot",
+          threadId: thread.id,
+          turns: [
+            { id: "turn-1", status: "completed", startedAt: 1777500001, completedAt: 1777500002 },
+            { id: "turn-2", status: "running", startedAt: 1777500003 },
+          ],
+          viewRevision: 2,
+        },
+        receivedAt: "2026-04-30T00:00:03Z",
+      };
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+        body: `event: thread_view.patch\ndata: ${JSON.stringify(event)}\n\n`,
+      });
+      return;
+    }
+
+    const response =
+      key === "GET /v1/threads/thread-1"
+        ? { body: threadBody("Initial live output") }
+        : key === "POST /v1/threads/thread-1/attach"
+          ? { body: { disposition: "resumed", thread: { ...thread, status: "active" }, rawPayload: {} } }
+          : key === "GET /v1/approvals"
+            ? { body: { approvals: [] } }
+            : await responseFor(key, route);
+
+    await route.fulfill({
+      status: response.status ?? 200,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(response.body),
+    });
+  });
+
+  await page.setViewportSize({ width: 820, height: 760 });
+  await page.goto("/threads/thread-1");
+  await expect(page.getByText("Follow seed 13")).toBeVisible();
+
+  const viewer = page.locator(".kodex-timeline-scroll");
+  await viewer.evaluate((node) => {
+    const scrollElement = node as HTMLElement;
+    scrollElement.scrollTop = scrollElement.scrollHeight - scrollElement.clientHeight - 20;
+    scrollElement.dispatchEvent(new Event("scroll"));
+  });
+  await expect(page.locator(".kodex-scroll-to-bottom")).toHaveCount(0);
+
+  releasePatch?.();
+  await expect(page.getByText("Live growth marker")).toBeVisible();
+  await expect.poll(async () => viewer.evaluate((node) => {
+    const scrollElement = node as HTMLElement;
+    return Math.round(scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight);
+  })).toBe(0);
+  await expect(page.locator(".kodex-scroll-to-bottom")).toHaveCount(0);
+});
+
 test("keeps large file changes and following skill messages from overlapping", async ({ page }) => {
   const skillText = "$implement-review-loop continue after the files changed block";
   const skillMention = {

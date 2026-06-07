@@ -883,7 +883,7 @@ describe("App shell", () => {
     Object.defineProperties(scrollRegion, {
       clientHeight: { configurable: true, value: 400 },
       scrollHeight: { configurable: true, value: 3600 },
-      scrollTop: { configurable: true, writable: true, value: 3200 },
+      scrollTop: { configurable: true, writable: true, value: 3180 },
     });
     fireEvent.scroll(scrollRegion);
     expect(screen.queryByRole("button", { name: /scroll to bottom/i })).not.toBeInTheDocument();
@@ -900,6 +900,91 @@ describe("App shell", () => {
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: /scroll to bottom/i })).not.toBeInTheDocument();
     });
+  });
+
+  it("keeps pinned live updates at the actual scroll parent bottom", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    mockGateway({
+      "GET /v1/projects": {
+        projects: [{ id: "project-1", name: "Kodex", cwd: "/home/example/kodex", createdAt: "", updatedAt: "" }],
+      },
+      "GET /v1/threads": {
+        threads: [
+          {
+            id: "thread-1",
+            name: "Large thread",
+            cwd: "/home/example/kodex",
+            status: "idle",
+            source: "local",
+            preview: "",
+            rawPayload: {},
+            createdAt: 1777500000,
+            updatedAt: 1777501200,
+          },
+        ],
+        nextCursor: null,
+        backwardsCursor: null,
+        rawPayload: {},
+      },
+      "GET /v1/threads/thread-1": threadDetail(
+        {
+          id: "thread-1",
+          name: "Large thread",
+          cwd: "/home/example/kodex",
+          status: "idle",
+          source: "local",
+          preview: "",
+          rawPayload: {},
+          createdAt: 1777500000,
+          updatedAt: 1777501200,
+        },
+        [
+          snapshotTurn(
+            "turn-1",
+            Array.from({ length: 30 }, (_, index) =>
+              snapshotItem(`answer-${index}`, "agentMessage", { text: `Large answer ${index}` }),
+            ),
+          ),
+        ],
+      ),
+      "GET /v1/approvals": { approvals: [] },
+      "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
+    });
+
+    const { container } = renderApp();
+
+    expect(await screen.findByText("Large answer 0")).toBeInTheDocument();
+    await waitForTimelineReady();
+    await waitForAnimationFrame();
+    await waitFor(() => expect(FakeEventSource.instances.some((instance) => instance.url.includes("threadIds=thread-1"))).toBe(true));
+    const selectedThreadStream = FakeEventSource.instances.find((instance) => instance.url.includes("threadIds=thread-1"));
+    const scrollRegion = container.querySelector(".kodex-timeline-scroll") as HTMLElement;
+    Object.defineProperties(scrollRegion, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 3600 },
+      scrollTop: { configurable: true, writable: true, value: 3180 },
+    });
+    fireEvent.scroll(scrollRegion);
+    expect(screen.queryByRole("button", { name: /scroll to bottom/i })).not.toBeInTheDocument();
+
+    Object.defineProperty(scrollRegion, "scrollHeight", { configurable: true, value: 3639 });
+    act(() => {
+      selectedThreadStream?.emit(projectionPatchEvent({
+        id: "live-message-1",
+        seq: 2,
+        threadId: "thread-1",
+        turnId: "turn-2",
+        itemId: "live-agent-1",
+        text: "Live update while following output",
+        displayOrder: 31,
+      }));
+    });
+    await waitForAnimationFrame();
+    await waitForAnimationFrame();
+
+    expect(await screen.findByText(/live update while following output/i)).toBeInTheDocument();
+    expect(scrollRegion.scrollTop).toBe(3239);
+    expect(screen.queryByRole("button", { name: /scroll to bottom/i })).not.toBeInTheDocument();
   });
 
   it("keeps the user's scroll position when sending while scrolled up", async () => {
