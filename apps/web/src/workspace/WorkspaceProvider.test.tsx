@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { deleteTerminalSession } from "../api/client";
@@ -267,6 +268,29 @@ describe("WorkspaceProvider pane commands", () => {
     ]);
   });
 
+  it("closes matching thread panes before invoking archive thread actions", async () => {
+    let activePaneWhenArchived: string | null = null;
+    const onArchiveThread = vi.fn(() => {
+      activePaneWhenArchived = screen.getByTestId("active-pane").textContent;
+    });
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      threadPane("pane-thread-1", "thread-1", "Thread 1"),
+      threadPane("pane-thread-1-copy", "thread-1", "Thread 1 copy"),
+      threadPane("pane-thread-2", "thread-2", "Thread 2"),
+    ], "pane-thread-1"));
+
+    renderProvider(store, { threadActions: { onArchiveThread } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Archive thread" }));
+
+    expect(onArchiveThread).toHaveBeenCalledWith("thread-1");
+    expect(activePaneWhenArchived).toBe("pane-thread-2");
+    await waitFor(() => {
+      expect(store.getState().panes.map((pane) => pane.id)).toEqual(["pane-thread-2"]);
+    });
+    expect(store.getState().activePaneId).toBe("pane-thread-2");
+  });
+
   it("dedupes workspace stream subscriptions by unique thread resource", async () => {
     const store = createMemoryWorkspacePaneStore(workspaceState([
       threadPane("pane-thread-1", "thread-1", "Thread 1"),
@@ -284,9 +308,12 @@ describe("WorkspaceProvider pane commands", () => {
   });
 });
 
-function renderProvider(paneStore: ReturnType<typeof createMemoryWorkspacePaneStore>) {
+function renderProvider(
+  paneStore: ReturnType<typeof createMemoryWorkspacePaneStore>,
+  options: { threadActions?: ComponentProps<typeof WorkspaceProvider>["threadActions"] } = {},
+) {
   render(
-    <WorkspaceProvider paneStore={paneStore}>
+    <WorkspaceProvider paneStore={paneStore} threadActions={options.threadActions}>
       <CommandHarness />
     </WorkspaceProvider>,
   );
@@ -329,6 +356,9 @@ function CommandHarness() {
       </button>
       <button type="button" onClick={() => workspace.closePane("pane-terminal-1", { panes: [{ id: "pane-thread-1" }] })}>
         Close existing terminal
+      </button>
+      <button type="button" onClick={() => workspace.threadActions.onArchiveThread?.("thread-1")}>
+        Archive thread
       </button>
     </>
   );

@@ -174,7 +174,7 @@ function WorkspaceSidebarWithPaneActions({
   workspaceSelectedThreadPaneId,
   ...props
 }: WorkspaceSidebarWithPaneActionsProps) {
-  const { openDraftThreadPane, openTerminalPane, openThreadPane } = useWorkspace();
+  const { openDraftThreadPane, openTerminalPane, openThreadPane, threadActions } = useWorkspace();
   const titleLookupPropsRef = useRef(props);
   const seededRouteThreadPaneRef = useRef<string | null>(null);
 
@@ -219,6 +219,7 @@ function WorkspaceSidebarWithPaneActions({
   return (
     <WorkspaceSidebar
       {...props}
+      onArchiveThread={threadActions.onArchiveThread ?? props.onArchiveThread}
       onOpenTerminal={
         props.onOpenTerminal
           ? () => {

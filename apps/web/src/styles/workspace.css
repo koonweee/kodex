@@ -356,8 +356,7 @@
   background: color-mix(in srgb, var(--kodex-pane-bg) 86%, var(--kodex-bg-shell));
 }
 
-.kodex-workspace-single-pane-sidebar-button,
-.kodex-workspace-single-pane-close-button {
+.kodex-workspace-single-pane-sidebar-button {
   flex: 0 0 auto;
 }
 
@@ -401,8 +400,88 @@
   color: var(--kodex-text-primary);
 }
 
-.kodex-workspace-single-pane-menu {
-  max-width: min(360px, calc(100vw - 24px));
+.kodex-workspace-pane-manager .kodex-mantine-drawer-inner,
+.kodex-workspace-pane-manager .mantine-Drawer-inner {
+  align-items: flex-start;
+  padding: 0 12px;
+}
+
+.kodex-workspace-pane-manager .kodex-mantine-drawer-content,
+.kodex-workspace-pane-manager .mantine-Drawer-content {
+  width: min(480px, calc(100vw - 24px));
+  height: auto;
+  max-height: min(80dvh, 100dvh);
+  border-radius: 0 0 18px 18px;
+  margin-inline: auto;
+  background: color-mix(in srgb, var(--kodex-bg-panel) 92%, var(--kodex-bg-shell));
+}
+
+.kodex-workspace-pane-manager .kodex-mantine-drawer-content > div,
+.kodex-workspace-pane-manager .mantine-Drawer-content > div {
+  height: auto !important;
+  max-height: inherit;
+}
+
+.kodex-workspace-pane-manager .kodex-mantine-drawer-body,
+.kodex-workspace-pane-manager .mantine-Drawer-body {
+  flex: 0 1 auto;
+  min-height: 0;
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.kodex-workspace-pane-manager-list {
+  min-width: 0;
+}
+
+.kodex-workspace-pane-manager-row {
+  min-width: 0;
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.kodex-workspace-pane-manager-row[data-active="true"] {
+  background: color-mix(in srgb, var(--kodex-accent) 18%, transparent);
+}
+
+.kodex-workspace-pane-manager-title-button {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--kodex-text-primary);
+  justify-content: flex-start;
+  min-height: 40px;
+  padding-inline: 10px;
+}
+
+.kodex-workspace-pane-manager-title-button .kodex-mantine-button-inner,
+.kodex-workspace-pane-manager-title-button .kodex-mantine-button-label {
+  min-width: 0;
+  width: 100%;
+}
+
+.kodex-workspace-pane-manager-title-button .kodex-mantine-button-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-wrap: normal;
+}
+
+.kodex-workspace-pane-manager-title-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.kodex-workspace-pane-manager-active-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--kodex-accent);
+}
+
+.kodex-workspace-pane-manager-close-button {
+  flex: 0 0 auto;
+  color: var(--kodex-text-secondary);
 }
 
 .kodex-workspace-single-pane-host {

@@ -1,4 +1,5 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 
 import {
   deleteTerminalSession,
@@ -474,6 +475,39 @@ export function WorkspaceProvider({
     });
   }, [workspace.panes]);
 
+  const closeThreadPanes = useCallback((threadId: string) => {
+    setWorkspace((current) => {
+      const closingPaneIds = new Set(
+        current.panes
+          .filter((pane) => pane.kind === "thread" && pane.target.mode === "existing" && pane.target.threadId === threadId)
+          .map((pane) => pane.id),
+      );
+      if (closingPaneIds.size === 0) {
+        return current;
+      }
+
+      const remainingPanes = current.panes.filter((pane) => !closingPaneIds.has(pane.id));
+      const panes = remainingPanes.length > 0 ? remainingPanes : [createDraftThreadPane()];
+      let activePaneId = current.activePaneId;
+      if (activePaneId && closingPaneIds.has(activePaneId)) {
+        const activeIndex = current.panes.findIndex((pane) => pane.id === activePaneId);
+        const nextPane =
+          current.panes.slice(activeIndex + 1).find((pane) => !closingPaneIds.has(pane.id)) ??
+          current.panes.slice(0, activeIndex).reverse().find((pane) => !closingPaneIds.has(pane.id));
+        activePaneId = nextPane?.id ?? panes[0]?.id ?? null;
+      } else if (!panes.some((pane) => pane.id === activePaneId)) {
+        activePaneId = panes[0]?.id ?? null;
+      }
+
+      return {
+        ...current,
+        activePaneId,
+        dockviewLayout: layoutMatchesWorkspacePanes(current.dockviewLayout, panes) ? current.dockviewLayout : null,
+        panes,
+      };
+    });
+  }, []);
+
   const updatePane = useCallback(async (paneId: string, request: WorkspacePanePatch) => {
     setWorkspace((current) => {
       let changed = false;
@@ -692,6 +726,19 @@ export function WorkspaceProvider({
     };
   }, [openAppSurfacePane]);
 
+  const archiveAwareThreadActions = useMemo<WorkspaceThreadActions>(
+    () => ({
+      ...threadActions,
+      onArchiveThread: threadActions.onArchiveThread
+        ? (threadId: string) => {
+            flushSync(() => closeThreadPanes(threadId));
+            threadActions.onArchiveThread?.(threadId);
+          }
+        : undefined,
+    }),
+    [closeThreadPanes, threadActions],
+  );
+
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       approvals,
@@ -738,7 +785,7 @@ export function WorkspaceProvider({
       setPaneHeaderActions,
       setPaneTabStatus,
       threadSummariesById,
-      threadActions,
+      threadActions: archiveAwareThreadActions,
       updatePane,
       workspace,
       workspaceError,
@@ -781,7 +828,7 @@ export function WorkspaceProvider({
       setPaneHeaderActions,
       setPaneTabStatus,
       threadSummariesById,
-      threadActions,
+      archiveAwareThreadActions,
       updatePane,
       workspace,
       workspaceError,

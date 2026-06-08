@@ -1,8 +1,8 @@
 import "../styles/workspace.css";
 
-import { Alert, Button, Center, Group, Loader, Menu, Stack, Text } from "@mantine/core";
-import { PanelLeftOpen, X } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { ActionIcon, Alert, Button, Center, Drawer, Group, Loader, Stack, Text } from "@mantine/core";
+import { Check, PanelLeftOpen, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import { paneTitle } from "./paneTypes";
@@ -22,6 +22,7 @@ export function WorkspaceSinglePaneShell() {
     workspace,
     workspaceError,
   } = useWorkspace();
+  const [paneManagerOpened, setPaneManagerOpened] = useState(false);
   const activePane = useMemo(() => {
     if (workspace.activePaneId) {
       return workspace.panes.find((pane) => pane.id === workspace.activePaneId) ?? workspace.panes[0] ?? null;
@@ -31,14 +32,8 @@ export function WorkspaceSinglePaneShell() {
   const activePaneTitle = activePane ? paneTitle(activePane) : "Workspace";
   const activePaneAdornment = activePane ? paneHeaderAdornmentsById[activePane.id] ?? null : null;
   const activePaneActions = activePane ? paneHeaderActionsById[activePane.id] : null;
+  const recentPanes = useMemo(() => [...workspace.panes].reverse(), [workspace.panes]);
   const focusPulseToken = activePane ? focusPulseByPaneId[activePane.id] ?? 0 : 0;
-  const isOnlyDefaultDraftPane =
-    workspace.panes.length === 1 &&
-    activePane?.kind === "thread" &&
-    activePane.target.mode === "draft" &&
-    !activePane.target.projectId &&
-    activePane.title === "New chat";
-  const canCloseActivePane = Boolean(activePane && !isOnlyDefaultDraftPane);
   const nextActivePaneId = useMemo(() => {
     if (!activePane) {
       return null;
@@ -49,6 +44,9 @@ export function WorkspaceSinglePaneShell() {
     }
     return workspace.panes[activeIndex + 1]?.id ?? workspace.panes[activeIndex - 1]?.id ?? null;
   }, [activePane?.id, workspace.panes]);
+  const closeWorkspacePane = (paneId: string) => {
+    closePane(paneId, null, { nextActivePaneId: paneId === activePane?.id ? nextActivePaneId : null });
+  };
 
   useEffect(() => {
     onVisiblePaneIdsChange(activePane ? [activePane.id] : []);
@@ -85,56 +83,97 @@ export function WorkspaceSinglePaneShell() {
           <PanelLeftOpen />
         </AdaptiveIconButton>
         <div className="kodex-workspace-single-pane-switcher">
-          <Menu position="bottom-start" withinPortal>
-            <Menu.Target>
-              <Button
-                aria-label="Switch workspace pane"
-                className="kodex-workspace-single-pane-switcher-button"
-                size="compact-sm"
-                type="button"
-                variant="subtle"
-              >
-                <span className="kodex-workspace-single-pane-title">
-                  <Text className="kodex-workspace-single-pane-title-text" component="span" truncate>
-                    {activePaneTitle}
-                  </Text>
-                  {activePaneAdornment ? (
-                    <span
-                      aria-label="Pane syncing"
-                      className="kodex-workspace-pane-title-adornment"
-                      role="status"
-                      title="Pane syncing"
-                    >
-                      {activePaneAdornment}
-                    </span>
-                  ) : null}
-                </span>
-              </Button>
-            </Menu.Target>
-            <Menu.Dropdown aria-label="Workspace panes" className="kodex-workspace-single-pane-menu">
-              {workspace.panes.map((pane) => (
-                <Menu.Item
-                  aria-current={pane.id === activePane.id ? "page" : undefined}
-                  key={pane.id}
-                  onClick={() => focusPane(pane.id)}
+          <Button
+            aria-expanded={paneManagerOpened}
+            aria-haspopup="dialog"
+            aria-label="Switch workspace pane"
+            className="kodex-workspace-single-pane-switcher-button"
+            onClick={() => setPaneManagerOpened(true)}
+            size="compact-sm"
+            type="button"
+            variant="subtle"
+          >
+            <span className="kodex-workspace-single-pane-title">
+              <Text className="kodex-workspace-single-pane-title-text" component="span" truncate>
+                {activePaneTitle}
+              </Text>
+              {activePaneAdornment ? (
+                <span
+                  aria-label="Pane syncing"
+                  className="kodex-workspace-pane-title-adornment"
+                  role="status"
+                  title="Pane syncing"
                 >
-                  {paneTitle(pane)}
-                </Menu.Item>
-              ))}
-            </Menu.Dropdown>
-          </Menu>
+                  {activePaneAdornment}
+                </span>
+              ) : null}
+            </span>
+          </Button>
+          <Drawer.Root
+            className="kodex-workspace-pane-manager"
+            opened={paneManagerOpened}
+            onClose={() => setPaneManagerOpened(false)}
+            position="top"
+            size="auto"
+            trapFocus={false}
+            transitionProps={{ duration: 0 }}
+          >
+            <Drawer.Overlay opacity={0.38} />
+            <Drawer.Content aria-label="Active panes">
+              <Drawer.Body>
+                <Stack className="kodex-workspace-pane-manager-list" gap={4}>
+                  {recentPanes.map((pane) => {
+                    const title = paneTitle(pane);
+                    const isActivePane = pane.id === activePane.id;
+                    return (
+                      <Group
+                        align="center"
+                        className="kodex-workspace-pane-manager-row"
+                        data-active={isActivePane ? "true" : undefined}
+                        gap={6}
+                        key={pane.id}
+                        wrap="nowrap"
+                      >
+                        <Button
+                          aria-current={isActivePane ? "page" : undefined}
+                          className="kodex-workspace-pane-manager-title-button"
+                          onClick={() => {
+                            focusPane(pane.id);
+                            setPaneManagerOpened(false);
+                          }}
+                          size="compact-md"
+                          title={title}
+                          type="button"
+                          variant="subtle"
+                        >
+                          <Text className="kodex-workspace-pane-manager-title-text" component="span" truncate>
+                            {title}
+                          </Text>
+                          {isActivePane ? (
+                            <span aria-hidden="true" className="kodex-workspace-pane-manager-active-icon">
+                              <Check size={16} strokeWidth={2.4} />
+                            </span>
+                          ) : null}
+                        </Button>
+                        <ActionIcon
+                          aria-label={`Close pane ${title}`}
+                          className="kodex-workspace-pane-manager-close-button"
+                          onClick={() => closeWorkspacePane(pane.id)}
+                          size="lg"
+                          type="button"
+                          variant="subtle"
+                        >
+                          <X size={18} />
+                        </ActionIcon>
+                      </Group>
+                    );
+                  })}
+                </Stack>
+              </Drawer.Body>
+            </Drawer.Content>
+          </Drawer.Root>
         </div>
         <div aria-label="Pane actions" className="kodex-workspace-pane-actions" role="toolbar">
-          {canCloseActivePane ? (
-            <AdaptiveIconButton
-              className="kodex-workspace-single-pane-close-button"
-              label="Close pane"
-              onClick={() => closePane(activePane.id, null, { nextActivePaneId })}
-
-            >
-              <X />
-            </AdaptiveIconButton>
-          ) : null}
           {activePaneActions}
         </div>
       </Group>

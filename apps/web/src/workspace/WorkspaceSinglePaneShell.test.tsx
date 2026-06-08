@@ -21,7 +21,7 @@ vi.mock("./paneRegistry", async (importActual) => {
 });
 
 describe("WorkspaceSinglePaneShell", () => {
-  it("renders only the active pane and switches visible panes from the menu", async () => {
+  it("renders only the active pane and switches visible panes from the pane manager", async () => {
     const onVisibleThreadIdsChange = vi.fn();
     const onShowMobileSidebar = vi.fn();
     const store = createMemoryWorkspacePaneStore(workspaceState([
@@ -38,20 +38,31 @@ describe("WorkspaceSinglePaneShell", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: /switch workspace pane/i }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: /first thread/i }));
+    const manager = await screen.findByRole("dialog", { name: /active panes/i });
+    const paneButtons = within(manager).getAllByRole("button", { name: /^(second|first) thread$/i });
+    expect(paneButtons.map((button) => button.textContent)).toEqual(["Second thread", "First thread"]);
+    const activePaneButton = within(manager).getByRole("button", { name: /^second thread$/i });
+    expect(activePaneButton).toHaveAttribute("aria-current", "page");
+    await nextTick();
+    expect(activePaneButton).not.toHaveFocus();
+    expect(within(manager).getAllByRole("button").some((button) => button === document.activeElement)).toBe(false);
+    expect(within(manager).queryByRole("button", { name: /close pane manager/i })).not.toBeInTheDocument();
+    expect(within(manager).queryByRole("button", { name: /new pane/i })).not.toBeInTheDocument();
+    fireEvent.click(within(manager).getByRole("button", { name: /^first thread$/i }));
 
     expect(screen.getByTestId("single-pane-pane-thread-1")).toHaveAttribute("data-active", "true");
     expect(screen.queryByTestId("single-pane-pane-thread-2")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: /active panes/i })).not.toBeInTheDocument();
     await waitFor(() => {
       expect(onVisibleThreadIdsChange).toHaveBeenLastCalledWith(["thread-1"]);
     });
 
     fireEvent.click(screen.getByRole("button", { name: /show sidebar/i }));
     expect(onShowMobileSidebar).toHaveBeenCalledTimes(1);
-    expect(within(screen.getByRole("toolbar", { name: "Pane actions" })).getByRole("button", { name: /close pane/i })).toBeInTheDocument();
+    expect(within(screen.getByRole("toolbar", { name: "Pane actions" })).queryByRole("button", { name: /close pane/i })).not.toBeInTheDocument();
   });
 
-  it("closes the active pane and focuses the next pane without opening the switcher", async () => {
+  it("closes the active pane from the pane manager and focuses the next pane", async () => {
     const store = createMemoryWorkspacePaneStore(workspaceState([
       threadPane("pane-thread-1", "thread-1", "First thread"),
       threadPane("pane-thread-2", "thread-2", "Second thread"),
@@ -60,7 +71,9 @@ describe("WorkspaceSinglePaneShell", () => {
 
     renderShell(store);
 
-    fireEvent.click(screen.getByRole("button", { name: /close pane/i }));
+    fireEvent.click(screen.getByRole("button", { name: /switch workspace pane/i }));
+    const manager = await screen.findByRole("dialog", { name: /active panes/i });
+    fireEvent.click(within(manager).getByRole("button", { name: /close pane second thread/i }));
 
     await waitFor(() => {
       expect(store.getState().activePaneId).toBe("pane-thread-3");
@@ -68,7 +81,28 @@ describe("WorkspaceSinglePaneShell", () => {
     expect(store.getState().panes.map((pane) => pane.id)).toEqual(["pane-thread-1", "pane-thread-3"]);
     expect(screen.getByTestId("single-pane-pane-thread-3")).toHaveAttribute("data-active", "true");
     expect(screen.queryByTestId("single-pane-pane-thread-2")).not.toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: /first thread/i })).not.toBeInTheDocument();
+    expect(within(manager).queryByRole("button", { name: /^second thread$/i })).not.toBeInTheDocument();
+    expect(within(manager).getByRole("button", { name: /^third thread$/i })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("closes a pane from the pane manager row without switching away from the active pane", async () => {
+    const store = createMemoryWorkspacePaneStore(workspaceState([
+      threadPane("pane-thread-1", "thread-1", "First thread"),
+      threadPane("pane-thread-2", "thread-2", "Second thread"),
+      threadPane("pane-thread-3", "thread-3", "Third thread"),
+    ], "pane-thread-2"));
+
+    renderShell(store);
+
+    fireEvent.click(screen.getByRole("button", { name: /switch workspace pane/i }));
+    const manager = await screen.findByRole("dialog", { name: /active panes/i });
+    fireEvent.click(within(manager).getByRole("button", { name: /close pane third thread/i }));
+
+    await waitFor(() => {
+      expect(store.getState().panes.map((pane) => pane.id)).toEqual(["pane-thread-1", "pane-thread-2"]);
+    });
+    expect(store.getState().activePaneId).toBe("pane-thread-2");
+    expect(screen.getByTestId("single-pane-pane-thread-2")).toHaveAttribute("data-active", "true");
   });
 
   it("opens a new chat when the last visible pane is closed", async () => {
@@ -79,18 +113,21 @@ describe("WorkspaceSinglePaneShell", () => {
 
     renderShell(store, { onVisibleThreadIdsChange });
 
-    fireEvent.click(screen.getByRole("button", { name: /close pane/i }));
+    fireEvent.click(screen.getByRole("button", { name: /switch workspace pane/i }));
+    const manager = await screen.findByRole("dialog", { name: /active panes/i });
+    fireEvent.click(within(manager).getByRole("button", { name: /close pane first thread/i }));
 
     await waitFor(() => {
       expect(store.getState().panes).toHaveLength(1);
       expect(store.getState().panes[0]?.target).toEqual({ mode: "draft" });
     });
     expect(store.getState().activePaneId).toBe(store.getState().panes[0]?.id);
-    expect(screen.getAllByText("New chat")).toHaveLength(2);
+    expect(within(screen.getByRole("button", { name: /switch workspace pane/i })).getByText("New chat")).toBeInTheDocument();
+    expect(within(manager).getByRole("button", { name: /^new chat$/i })).toHaveAttribute("aria-current", "page");
     await waitFor(() => {
       expect(onVisibleThreadIdsChange).toHaveBeenLastCalledWith([]);
     });
-    expect(screen.queryByRole("button", { name: /close pane/i })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("toolbar", { name: "Pane actions" })).queryByRole("button", { name: /close pane/i })).not.toBeInTheDocument();
   });
 
   it("hides the close action for the only default new chat pane", () => {
@@ -101,7 +138,7 @@ describe("WorkspaceSinglePaneShell", () => {
     renderShell(store);
 
     expect(screen.getAllByText("New chat")).toHaveLength(2);
-    expect(screen.queryByRole("button", { name: /close pane/i })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("toolbar", { name: "Pane actions" })).queryByRole("button", { name: /close pane/i })).not.toBeInTheDocument();
   });
 
   it("renders active pane actions in the shared mobile header", async () => {
@@ -112,7 +149,7 @@ describe("WorkspaceSinglePaneShell", () => {
     renderShell(store, { actionPaneId: "pane-thread-1" });
 
     expect(await screen.findByRole("toolbar", { name: "Pane actions" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Close pane" })).toBeInTheDocument();
+    expect(within(screen.getByRole("toolbar", { name: "Pane actions" })).queryByRole("button", { name: "Close pane" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Thread overflow" })).toBeInTheDocument();
   });
 
@@ -152,6 +189,10 @@ function renderShell(
       </WorkspaceProvider>
     </MantineProvider>,
   );
+}
+
+function nextTick() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function PaneAdornmentHarness({ paneId }: { paneId: string }) {
