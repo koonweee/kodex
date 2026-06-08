@@ -39,6 +39,7 @@ export function SidebarAccountMenu({
 }) {
   return (
     <SettingsMenu
+      accountEmail={account?.account?.email ?? null}
       isAuthenticated={Boolean(account?.account)}
       onLogout={onLogout}
       onSelectAutomations={onSelectAutomations}
@@ -51,6 +52,7 @@ export function SidebarAccountMenu({
 }
 
 function SettingsMenu({
+  accountEmail,
   isAuthenticated,
   onLogout,
   onSelectAutomations,
@@ -59,6 +61,7 @@ function SettingsMenu({
   showDebugEvents,
   usageLimitLines,
 }: {
+  accountEmail: string | null;
   isAuthenticated: boolean;
   onLogout: () => void;
   onSelectAutomations: () => void;
@@ -68,6 +71,7 @@ function SettingsMenu({
   usageLimitLines?: UsageLimitLines | null;
 }) {
   const [opened, setOpened] = useState(false);
+  const accountInitial = accountInitialFromEmail(accountEmail);
 
   return (
     <Menu opened={opened} onChange={setOpened} position="bottom-start" withinPortal={false}>
@@ -78,7 +82,11 @@ function SettingsMenu({
           tooltip={false}
 
         >
-          <CircleUserRound size={16} />
+          {accountInitial ? (
+            <span className="kodex-account-menu-avatar">{accountInitial}</span>
+          ) : (
+            <CircleUserRound size={16} />
+          )}
         </AdaptiveIconButton>
       </Menu.Target>
       <Menu.Dropdown aria-label={ACCOUNT_TEXT.settings} className="kodex-settings-dropdown">
@@ -136,4 +144,12 @@ function SettingsMenu({
       </Menu.Dropdown>
     </Menu>
   );
+}
+
+function accountInitialFromEmail(email: string | null): string | null {
+  const trimmedEmail = email?.trim();
+  if (!trimmedEmail) {
+    return null;
+  }
+  return trimmedEmail[0]?.toUpperCase() ?? null;
 }
