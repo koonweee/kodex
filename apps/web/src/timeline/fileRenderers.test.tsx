@@ -149,6 +149,14 @@ describe("timeline file renderers", () => {
     );
 
     expect(screen.getByText("3 files changed")).toBeInTheDocument();
+    expect(screen.getByLabelText("Expand 3 files changed")).toBeInTheDocument();
+    expect(screen.queryByText("Added")).not.toBeInTheDocument();
+    expect(screen.queryByText("src/new.ts")).not.toBeInTheDocument();
+    expect(container.querySelectorAll("details.kodex-file-change-entry")).toHaveLength(0);
+
+    openDetails(container.querySelector("details.kodex-file-changes-panel") as HTMLDetailsElement);
+
+    expect(screen.getByLabelText("Collapse 3 files changed")).toBeInTheDocument();
     expect(screen.getByText("Added")).toBeInTheDocument();
     expect(screen.getByText("src/new.ts")).toBeInTheDocument();
     expect(screen.getByText("Deleted")).toBeInTheDocument();

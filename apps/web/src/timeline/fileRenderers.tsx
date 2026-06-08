@@ -17,17 +17,30 @@ type TimelineFileChangesRendererProps = {
 };
 
 function TimelineFileChangesRendererImpl({ entries, showDebug = false }: TimelineFileChangesRendererProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const handleToggle = (event: SyntheticEvent<HTMLDetailsElement>) => {
+    setIsOpen(event.currentTarget.open);
+  };
+
   if (entries.length === 0) {
     return null;
   }
   const additions = entries.reduce((sum, entry) => sum + entry.additions, 0);
   const deletions = entries.reduce((sum, entry) => sum + entry.deletions, 0);
+  const fileChangeLabel = entries.length === 1 ? "1 file changed" : `${entries.length} files changed`;
   return (
-    <Box className="kodex-file-changes-panel">
-      <Group gap="xs" wrap="nowrap" className="kodex-file-changes-heading">
+    <details className="kodex-file-changes-panel" onToggle={handleToggle}>
+      <Group
+        component="summary"
+        gap="xs"
+        wrap="nowrap"
+        className="kodex-file-changes-heading"
+        aria-expanded={isOpen}
+        aria-label={`${isOpen ? "Collapse" : "Expand"} ${fileChangeLabel}`}
+      >
         <FileDiff size={15} />
         <Text size="sm" fw={700} className="kodex-file-changes-title">
-          {entries.length === 1 ? "1 file changed" : `${entries.length} files changed`}
+          {fileChangeLabel}
         </Text>
         {additions > 0 ? (
           <Text size="sm" className="kodex-file-change-count" data-tone="success">
@@ -39,14 +52,19 @@ function TimelineFileChangesRendererImpl({ entries, showDebug = false }: Timelin
             -{deletions}
           </Text>
         ) : null}
+        <ChevronRight size={16} className="kodex-file-changes-caret" aria-hidden="true" />
       </Group>
-      <Stack gap={0} className="kodex-file-change-table">
-        {entries.map((entry) => (
-          <FileChangeEntryRow entry={entry} key={entry.id} />
-        ))}
-      </Stack>
-      {showDebug ? <Text size="xs" c="dimmed">{entries.length} canonical file change entries</Text> : null}
-    </Box>
+      {isOpen ? (
+        <>
+          <Stack gap={0} className="kodex-file-change-table">
+            {entries.map((entry) => (
+              <FileChangeEntryRow entry={entry} key={entry.id} />
+            ))}
+          </Stack>
+          {showDebug ? <Text size="xs" c="dimmed">{entries.length} canonical file change entries</Text> : null}
+        </>
+      ) : null}
+    </details>
   );
 }
 
