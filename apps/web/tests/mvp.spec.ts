@@ -1387,7 +1387,11 @@ test("composer fast toggle clears fast service tier for next send", async ({ pag
   await modelButtonInActiveThreadPane(page, /model: gpt-5\.4, medium/i).click();
   const fastRow = page.getByRole("menuitemcheckbox", { name: /fast/i });
   await expect(fastRow).toHaveAttribute("aria-checked", "true");
-  await fastRow.click();
+  const fastRowBox = await fastRow.boundingBox();
+  if (!fastRowBox) {
+    throw new Error("Fast menu row was not visible");
+  }
+  await page.mouse.click(fastRowBox.x + fastRowBox.width - 18, fastRowBox.y + fastRowBox.height / 2);
   await expect(page.getByRole("img", { name: /fast responses enabled/i })).toBeHidden();
 
   await composerInActiveThreadPane(page).fill("Use normal speed");

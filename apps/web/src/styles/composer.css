@@ -555,6 +555,10 @@
   cursor: default;
 }
 
+.kodex-mantine-menu-dropdown .kodex-composer-fast-row .kodex-mantine-menu-item-section[data-position="right"] {
+  pointer-events: none;
+}
+
 .kodex-context-usage {
   display: inline-grid;
   place-items: center;
