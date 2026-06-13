@@ -79,7 +79,8 @@ function renderBridgePair({
           existing &&
           existing.fast === settings.fast &&
           existing.model === settings.model &&
-          existing.effort === settings.effort
+          existing.effort === settings.effort &&
+          existing.serviceTier === settings.serviceTier
         ) {
           return current;
         }

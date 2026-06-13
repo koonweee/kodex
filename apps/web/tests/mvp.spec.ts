@@ -1319,6 +1319,88 @@ test("restores selected thread model settings when switching threads", async ({ 
   await expect(modelButtonInActiveThreadPane(page, /model: gpt-5\.4mini/i)).toBeVisible();
 });
 
+test("composer fast toggle clears fast service tier for next send", async ({ page }) => {
+  await page.unroute("**/v1/**");
+  const fastThread = {
+    ...thread,
+    model: "gpt-5.4",
+    reasoningEffort: "medium",
+    serviceTier: "fast",
+    rawPayload: { model: "gpt-5.4", reasoningEffort: "medium", serviceTier: "fast" },
+  };
+  let submittedBody: Record<string, unknown> | null = null;
+
+  await page.route("**/v1/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const key = `${request.method()} ${url.pathname}`;
+
+    if (key === "GET /v1/events" && request.headers().accept?.includes("text/event-stream")) {
+      await route.fulfill({ status: 200, headers: { "Content-Type": "text/event-stream" }, body: "" });
+      return;
+    }
+    if (key === "GET /v1/threads") {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threads: [fastThread], nextCursor: null, backwardsCursor: null, rawPayload: {} }),
+      });
+      return;
+    }
+    if (key === "GET /v1/threads/thread-1") {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(threadDetailBody(fastThread)),
+      });
+      return;
+    }
+    if (key === "GET /v1/composer-settings") {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: null, effort: null, serviceTier: null, permissionsPreset: null }),
+      });
+      return;
+    }
+    if (key === "POST /v1/threads/thread-1/input") {
+      submittedBody = request.postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ disposition: "started", queuedInput: null, rawPayload: {} }),
+      });
+      return;
+    }
+
+    const response = await responseFor(key, route);
+    await route.fulfill({
+      status: response.status ?? 200,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(response.body),
+    });
+  });
+
+  await openFrontendMvpThread(page);
+  await expect(page.getByRole("img", { name: /fast responses enabled/i })).toBeVisible();
+
+  await modelButtonInActiveThreadPane(page, /model: gpt-5\.4, medium/i).click();
+  const fastRow = page.getByRole("menuitemcheckbox", { name: /fast/i });
+  await expect(fastRow).toHaveAttribute("aria-checked", "true");
+  await fastRow.click();
+  await expect(page.getByRole("img", { name: /fast responses enabled/i })).toBeHidden();
+
+  await composerInActiveThreadPane(page).fill("Use normal speed");
+  await sendButtonInActiveThreadPane(page).click();
+
+  await expect.poll(() => submittedBody?.serviceTier).toBe(null);
+  expect(submittedBody).toMatchObject({
+    input: [{ type: "text", text: "Use normal speed" }],
+    model: "gpt-5.4",
+    effort: "medium",
+  });
+});
+
 async function expectNoRenderedTimelineOverlap(page: Page) {
   const boxes = await page.locator(".kodex-timeline-virtual-row").evaluateAll((nodes) =>
     nodes

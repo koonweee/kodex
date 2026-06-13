@@ -22,7 +22,12 @@ export type ComposerContext = {
 export const DEFAULT_COMPOSER_SETTINGS: ComposerSettings = { fast: false };
 
 export function sameComposerSettings(left: ComposerSettings, right: ComposerSettings): boolean {
-  return left.fast === right.fast && left.model === right.model && left.effort === right.effort;
+  return (
+    left.fast === right.fast &&
+    left.model === right.model &&
+    left.effort === right.effort &&
+    left.serviceTier === right.serviceTier
+  );
 }
 
 export function normalizePersistedComposerSettings(
@@ -40,6 +45,7 @@ export function normalizePersistedComposerSettings(
     model,
     effort,
     fast: settings.serviceTier === "fast",
+    serviceTier: settings.serviceTier ?? undefined,
   };
 }
 
@@ -52,6 +58,9 @@ export function mergeDurableComposerSettings(
     ...(Object.prototype.hasOwnProperty.call(patch, "model") ? { model: patch.model ?? undefined } : {}),
     ...(Object.prototype.hasOwnProperty.call(patch, "effort") ? { effort: patch.effort ?? undefined } : {}),
     ...(Object.prototype.hasOwnProperty.call(patch, "serviceTier") ? { fast: patch.serviceTier === "fast" } : {}),
+    ...(Object.prototype.hasOwnProperty.call(patch, "serviceTier")
+      ? { serviceTier: patch.serviceTier ?? undefined }
+      : {}),
   };
 }
 
@@ -76,6 +85,7 @@ export function composerSettingsFromThread(thread: ThreadComposerSettingsSource)
     model: model ?? undefined,
     effort: effort ?? undefined,
     fast: serviceTier === "fast",
+    serviceTier: serviceTier ?? undefined,
   };
 }
 
@@ -87,7 +97,9 @@ export function createThreadOptions(settings: ComposerSettings): CreateThreadOpt
   if (settings.effort) {
     options.effort = settings.effort;
   }
-  if (settings.fast) {
+  if (settings.serviceTier !== undefined) {
+    options.serviceTier = settings.serviceTier;
+  } else if (settings.fast) {
     options.serviceTier = "fast";
   }
   return options;
@@ -101,7 +113,9 @@ export function composerTurnOptions(settings: ComposerSettings): TurnStartOption
   if (settings.effort) {
     options.effort = settings.effort;
   }
-  if (settings.fast) {
+  if (settings.serviceTier !== undefined) {
+    options.serviceTier = settings.serviceTier;
+  } else if (settings.fast) {
     options.serviceTier = "fast";
   }
   return options;

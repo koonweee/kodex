@@ -253,8 +253,12 @@ pub struct CreateThreadRequest {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub service_tier: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "app_server_api::deserialize_optional_string_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub service_tier: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -275,8 +279,12 @@ pub struct CreateChatThreadRequest {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub service_tier: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "app_server_api::deserialize_optional_string_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub service_tier: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -643,7 +651,7 @@ pub async fn create_chat_thread(
 pub(crate) struct ThreadCreationOptions {
     pub(crate) model: Option<String>,
     pub(crate) effort: Option<String>,
-    pub(crate) service_tier: Option<String>,
+    pub(crate) service_tier: Option<Option<String>>,
     pub(crate) approval_policy: Option<String>,
     pub(crate) approvals_reviewer: Option<String>,
     pub(crate) permissions: Option<String>,
@@ -672,7 +680,10 @@ pub(crate) fn create_thread_payload(options: &ThreadCreationOptions) -> Value {
         payload["model"] = Value::String(model.clone());
     }
     if let Some(service_tier) = options.service_tier.as_ref() {
-        payload["serviceTier"] = Value::String(service_tier.clone());
+        payload["serviceTier"] = service_tier
+            .as_ref()
+            .map(|value| Value::String(value.clone()))
+            .unwrap_or(Value::Null);
     }
     if let Some(approval_policy) = options.approval_policy.as_ref() {
         payload["approvalPolicy"] = Value::String(approval_policy.clone());
@@ -700,7 +711,7 @@ pub(crate) fn overlay_thread_creation_options(
         thread.reasoning_effort = options.effort.clone();
     }
     if thread.service_tier.is_none() {
-        thread.service_tier = options.service_tier.clone();
+        thread.service_tier = options.service_tier.clone().flatten();
     }
     if thread.approval_policy.is_none() {
         thread.approval_policy = options.approval_policy.clone();

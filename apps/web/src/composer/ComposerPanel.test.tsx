@@ -257,6 +257,32 @@ describe("ComposerPanel", () => {
     expect(screen.getByLabelText(/message composer/i).closest(".kodex-composer")).toBeInTheDocument();
   });
 
+  it("reveals the full queued steer preview in a tooltip", async () => {
+    const longQueuedText =
+      "Plan the color palette, then build the light and dark theme tokens with enough detail that this preview would otherwise span several lines in the queued row.";
+    renderComposerPanel({
+      activeSelectedTurnId: "turn-1",
+      queuedSteerRows: [
+        {
+          id: "queue-1",
+          threadId: "thread-1",
+          input: [{ type: "text", text: longQueuedText }],
+          options: {},
+          status: "queued",
+          priority: "normal",
+          attemptCount: 0,
+          lastError: null,
+          createdAt: "2026-05-05T00:00:00Z",
+          updatedAt: "2026-05-05T00:00:00Z",
+        },
+      ],
+    });
+
+    await userEvent.hover(screen.getByText(longQueuedText));
+
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(longQueuedText);
+  });
+
   it("moves skill autocomplete selection with arrow keys", async () => {
     mockSkills([
       skillFixture({ interface: { displayName: "Alpha Skill" }, name: "alpha-skill" }),

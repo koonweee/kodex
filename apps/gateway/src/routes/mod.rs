@@ -4002,7 +4002,8 @@ mod tests {
                     .body(Body::from(
                         json!({
                             "input": [{"type": "text", "text": "next"}],
-                            "permissions": "read-only"
+                            "permissions": "read-only",
+                            "serviceTier": null
                         })
                         .to_string(),
                     ))
@@ -4020,6 +4021,7 @@ mod tests {
         assert!(requests[0].1.get("sandbox").is_none());
         assert_eq!(requests[2].0, "turn/start");
         assert_eq!(requests[2].1["permissions"], "read-only");
+        assert!(requests[2].1["serviceTier"].is_null());
         assert!(requests[2].1.get("approvalPolicy").is_none());
         assert!(requests[2].1.get("approvalsReviewer").is_none());
         assert!(requests[2].1.get("sandboxPolicy").is_none());
@@ -6100,6 +6102,7 @@ mod tests {
         let queued = state.store.list_queued_inputs("thread-1").await.unwrap();
         assert_eq!(queued.len(), 1);
         assert_eq!(queued[0].options.model.as_deref(), Some("stale-model"));
+        assert_eq!(queued[0].options.service_tier, Some(None));
     }
 
     #[tokio::test]

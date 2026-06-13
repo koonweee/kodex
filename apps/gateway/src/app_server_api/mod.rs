@@ -31,8 +31,12 @@ pub struct TurnStartOptions {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub service_tier: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_string_update",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub service_tier: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval_policy: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -66,7 +70,7 @@ impl TurnStartOptions {
             payload["effort"] = Value::String(effort);
         }
         if let Some(service_tier) = self.service_tier {
-            payload["serviceTier"] = Value::String(service_tier);
+            payload["serviceTier"] = option_string_value(service_tier);
         }
         if let Some(approval_policy) = self.approval_policy {
             payload["approvalPolicy"] = Value::String(approval_policy);
@@ -2670,7 +2674,7 @@ fn option_string_value(value: Option<String>) -> Value {
     value.map(Value::String).unwrap_or(Value::Null)
 }
 
-fn deserialize_optional_string_update<'de, D>(
+pub(crate) fn deserialize_optional_string_update<'de, D>(
     deserializer: D,
 ) -> Result<Option<Option<String>>, D::Error>
 where

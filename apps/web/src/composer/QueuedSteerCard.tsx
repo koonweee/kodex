@@ -1,4 +1,4 @@
-import { Box, Button, Text } from "@mantine/core";
+import { Box, Button, Text, Tooltip } from "@mantine/core";
 import { X } from "lucide-react";
 
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
@@ -36,6 +36,7 @@ export function QueuedSteerCard({
         const fileCount = queuedInputFileCount(row);
         const imageCount = queuedInputImageCount(row);
         const text = queuedInputText(row);
+        const previewText = text || attachmentCountLabel(imageCount, fileCount);
         const submitLabel = row.status === "failed" ? RETRY_BUTTON_LABEL : STEER_BUTTON_LABEL;
         const shouldShowSubmitAction =
           !isPendingCommit && (row.status === "failed" || (hasActiveTurn && !blockIdleStartActions));
@@ -48,9 +49,11 @@ export function QueuedSteerCard({
             role="group"
           >
             <Box className="kodex-queued-steer-content">
-              <Text className="kodex-queued-steer-text" size="sm">
-                {text || attachmentCountLabel(imageCount, fileCount)}
-              </Text>
+              <Tooltip label={previewText} multiline position="top-start" w="min(320px, calc(100vw - 32px))">
+                <Text className="kodex-queued-steer-text" size="sm">
+                  {previewText}
+                </Text>
+              </Tooltip>
               {row.lastError ? (
                 <Text c="var(--kodex-color-danger-text)" size="xs">
                   {row.lastError}
@@ -78,7 +81,6 @@ export function QueuedSteerCard({
               disabled={isBusy}
               label={ABORT_BUTTON_LABEL}
               onClick={() => onAbortRow(row)}
-
             >
               <X />
             </AdaptiveIconButton>

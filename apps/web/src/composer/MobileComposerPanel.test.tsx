@@ -212,6 +212,7 @@ describe("Mobile composer panel", () => {
     expect(onComposerSettingsChange).toHaveBeenCalledWith({
       ...composerSettings,
       fast: true,
+      serviceTier: "fast",
     });
   });
 

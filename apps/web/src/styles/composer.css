@@ -632,10 +632,14 @@
   border-top: 1px solid var(--kodex-border-subtle);
 }
 
-.kodex-queued-steer-text {
+.kodex-queued-steer .kodex-queued-steer-text {
+  display: -webkit-box;
   min-width: 0;
+  overflow: hidden;
   color: var(--kodex-text-primary);
   line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

@@ -19,6 +19,7 @@ describe("composerSettingsFromThread", () => {
       fast: true,
       model: "gpt-5.5",
       effort: "high",
+      serviceTier: "fast",
     });
   });
 
@@ -62,5 +63,12 @@ describe("composer option builders", () => {
     expect(createThreadOptions(settings)).toEqual({});
     expect(composerTurnOptions(settings)).toEqual({});
     expect(composerThreadSettingsPatch({ fast: false }, settings)).toEqual({});
+  });
+
+  it("preserves explicit fast clears for next create and turn payloads", () => {
+    const settings = { fast: false, serviceTier: null };
+
+    expect(createThreadOptions(settings)).toEqual({ serviceTier: null });
+    expect(composerTurnOptions(settings)).toEqual({ serviceTier: null });
   });
 });

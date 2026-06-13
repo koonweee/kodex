@@ -191,6 +191,7 @@ describe("MVP composer settings flows", () => {
           permissionProfileId: null,
         },
         "GET /v1/events": { events: [] },
+        "POST /v1/threads/thread-1/input": { payload: {} },
       }),
     );
 
@@ -205,6 +206,20 @@ describe("MVP composer settings flows", () => {
     await clickFastSwitch();
     expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(0);
     expect(storageSpy).not.toHaveBeenCalled();
+
+    await userEvent.type(screen.getByLabelText(/message composer/i), "Use normal speed");
+    await userEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await waitFor(() => {
+      expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
+    });
+
+    const turnBody = await requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0]);
+    expect(turnBody).toMatchObject({
+      effort: "medium",
+      input: [{ text: "Use normal speed", type: "text" }],
+      model: "gpt-5.4",
+      serviceTier: null,
+    });
   });
 
   it("does not show a global error banner when composer settings are unavailable on first load", async () => {

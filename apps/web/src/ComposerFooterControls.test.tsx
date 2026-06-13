@@ -77,7 +77,7 @@ describe("ComposerFooterControls", () => {
     expect(screen.getByRole("menuitem", { name: /^xhigh$/i, hidden: true })).toHaveFocus();
     fastItem.focus();
     await userEvent.keyboard("{Enter}");
-    expect(onSettingsChange).toHaveBeenCalledWith({ fast: true });
+    expect(onSettingsChange).toHaveBeenCalledWith({ fast: true, serviceTier: "fast" });
 
     rerender(
       <MantineProvider>

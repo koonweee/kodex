@@ -11,6 +11,7 @@ export type ComposerSettings = {
   model?: string;
   effort?: string;
   fast: boolean;
+  serviceTier?: string | null;
 };
 
 export type ContextUsage = {
@@ -49,8 +50,8 @@ export function ComposerFooterControls({
     onSettingsChange({ ...settings, ...next });
   }
 
-  function toggleFast() {
-    updateSettings({ fast: !settings.fast });
+  function toggleFast(checked: boolean) {
+    updateSettings({ fast: checked, serviceTier: checked ? "fast" : null });
     setModelMenuOpened(false);
   }
 
