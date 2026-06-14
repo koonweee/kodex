@@ -11,6 +11,7 @@ import {
   kodexDockviewTheme,
   syncWorkspaceIntoDockview,
   visibleDockviewPanelIds,
+  workspaceTabContextMenuItems,
 } from "./WorkspaceDock";
 import { createMemoryWorkspacePaneStore } from "./paneStore";
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
@@ -99,6 +100,40 @@ describe("WorkspaceDock sync", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "Pane 6" }));
 
     expect(panels[5]?.focus).toHaveBeenCalledTimes(1);
+  });
+
+  it("adds a new draft tab in the current project from a project thread tab context menu", () => {
+    const openDraftThreadPane = vi.fn();
+    const items = workspaceTabContextMenuItems({
+      openDraftThreadPane,
+      panelId: "pane-thread",
+      pane: pane("pane-thread", "thread", { mode: "existing", threadId: "thread-1" }, "Project thread"),
+      threadProjectIdsById: { "thread-1": "project-1" },
+    });
+
+    expect(items).toHaveLength(1);
+    const [item] = items;
+    expect(item).toMatchObject({ label: "New chat in project" });
+    if (typeof item === "string") {
+      throw new Error("Expected custom context menu item");
+    }
+    item.action?.();
+
+    expect(openDraftThreadPane).toHaveBeenCalledWith("project-1", {
+      duplicate: true,
+      placement: { direction: "within", sourcePaneId: "pane-thread" },
+    });
+  });
+
+  it("does not show the project draft tab action for non-project thread tabs", () => {
+    expect(
+      workspaceTabContextMenuItems({
+        openDraftThreadPane: vi.fn(),
+        panelId: "pane-chat",
+        pane: pane("pane-chat", "thread", { mode: "existing", threadId: "chat-1" }, "Chat"),
+        threadProjectIdsById: {},
+      }),
+    ).toEqual([]);
   });
 
   it("rebuilds a single-pane workspace instead of hydrating a stale saved split layout", () => {

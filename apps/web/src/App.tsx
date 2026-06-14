@@ -794,6 +794,15 @@ function KodexShell({
     }
     return summaries;
   }, [chatThreads, flatProjectThreads, pinnedThreads, routeSelectedThread]);
+  const threadProjectIdsById = useMemo(() => {
+    const projectIds: Record<string, string> = {};
+    for (const [projectId, threads] of Object.entries(threadsByProjectId)) {
+      for (const thread of threads) {
+        projectIds[thread.id] = projectId;
+      }
+    }
+    return projectIds;
+  }, [threadsByProjectId]);
   const isSelectedThreadSnapshotDeferred =
     selectedThreadId !== null && materializingThreadIds.has(selectedThreadId);
   const isDraftThreadSelected =
@@ -1642,12 +1651,13 @@ function KodexShell({
         paneStore={workspacePaneStore}
         publishThreadPaneTimelineAction={publishThreadPaneTimelineAction}
         renderThreadComposer={renderWorkspaceThreadComposer}
-        threadSummariesById={threadSummariesById}
         renderThreadPaneAside={renderWorkspaceThreadPaneAside}
         renderThreadPaneHeaderActions={renderWorkspaceThreadPaneHeaderActions}
         showDebugEvents={showDebugEvents}
         subscribeThreadPaneTimelineAction={subscribeThreadPaneTimelineAction}
         threadActions={workspaceThreadActions}
+        threadProjectIdsById={threadProjectIdsById}
+        threadSummariesById={threadSummariesById}
       >
         <KodexShellView
           automationsPaneProps={{

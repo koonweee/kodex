@@ -86,6 +86,7 @@ type WorkspaceProviderProps = {
   renderThreadPane?: (pane: WorkspacePane, fallback: ReactNode) => ReactNode;
   showDebugEvents?: boolean;
   subscribeThreadPaneTimelineAction?: (handler: ThreadPaneTimelineActionHandler) => () => void;
+  threadProjectIdsById?: Record<string, string>;
   threadSummariesById?: Record<string, ThreadSummary>;
   threadActions?: WorkspaceThreadActions;
 };
@@ -128,6 +129,7 @@ type WorkspaceContextValue = {
   setPaneHeaderAdornment: (paneId: string, adornment: ReactNode | null) => void;
   setPaneHeaderActions: (paneId: string, actions: ReactNode | null) => void;
   setPaneTabStatus: (paneId: string, status: WorkspacePaneTabStatus | null) => void;
+  threadProjectIdsById: Record<string, string>;
   threadSummariesById: Record<string, ThreadSummary>;
   threadActions: WorkspaceThreadActions;
   updatePane: (paneId: string, request: WorkspacePanePatch) => Promise<void>;
@@ -169,6 +171,7 @@ export function WorkspaceProvider({
   renderThreadPane,
   showDebugEvents = false,
   subscribeThreadPaneTimelineAction = noopSubscribeThreadPaneTimelineAction,
+  threadProjectIdsById = {},
   threadSummariesById = {},
   threadActions = {},
 }: WorkspaceProviderProps) {
@@ -784,6 +787,7 @@ export function WorkspaceProvider({
       setPaneHeaderAdornment,
       setPaneHeaderActions,
       setPaneTabStatus,
+      threadProjectIdsById,
       threadSummariesById,
       threadActions: archiveAwareThreadActions,
       updatePane,
@@ -827,6 +831,7 @@ export function WorkspaceProvider({
       setPaneHeaderAdornment,
       setPaneHeaderActions,
       setPaneTabStatus,
+      threadProjectIdsById,
       threadSummariesById,
       archiveAwareThreadActions,
       updatePane,

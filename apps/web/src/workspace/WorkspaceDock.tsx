@@ -8,13 +8,15 @@ import {
   type IDockviewPanelHeaderProps,
   type DockviewReadyEvent,
   type DockviewTheme,
+  type BuiltInContextMenuItem,
+  type ReactContextMenuItemConfig,
   type IDockviewPanelProps,
 } from "dockview";
 import { X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type HTMLAttributes, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
-import type { WorkspacePanePlacementDirection, WorkspacePanePlacementHintsById } from "./panePlacement";
+import type { WorkspacePaneOpenOptions, WorkspacePanePlacementDirection, WorkspacePanePlacementHintsById } from "./panePlacement";
 import { paneTitle } from "./paneTypes";
 import { WorkspacePaneRenderer } from "./paneRegistry";
 import { useWorkspace } from "./WorkspaceProvider";
@@ -66,6 +68,7 @@ export function WorkspaceDock({
   panePlacementHintsById = {},
   workspace,
 }: WorkspaceDockProps) {
+  const { openDraftThreadPane, threadProjectIdsById } = useWorkspace();
   const apiRef = useRef<DockviewApi | null>(null);
   const suppressEventsRef = useRef(false);
   const debounceRef = useRef<number | null>(null);
@@ -149,6 +152,21 @@ export function WorkspaceDock({
       workspace,
     ],
   );
+  const getTabContextMenuItems = useCallback(
+    ({ panel }: { panel: { id: string; params?: unknown } }) => {
+      const params = panel.params as DockviewPaneParams | undefined;
+      if (!params?.pane) {
+        return [];
+      }
+      return workspaceTabContextMenuItems({
+        openDraftThreadPane,
+        panelId: panel.id,
+        pane: params.pane,
+        threadProjectIdsById,
+      });
+    },
+    [openDraftThreadPane, threadProjectIdsById],
+  );
 
   useEffect(() => {
     const api = apiRef.current;
@@ -185,6 +203,7 @@ export function WorkspaceDock({
         defaultTabComponent={WorkspaceDefaultTab}
         disableTabsOverflowList
         disableFloatingGroups
+        getTabContextMenuItems={getTabContextMenuItems}
         leftHeaderActionsComponent={WorkspaceTabOverflowActions}
         onReady={handleReady}
         rightHeaderActionsComponent={WorkspaceRightHeaderActions}
@@ -192,6 +211,44 @@ export function WorkspaceDock({
       />
     </div>
   );
+}
+
+export function workspaceTabContextMenuItems({
+  openDraftThreadPane,
+  panelId,
+  pane,
+  threadProjectIdsById,
+}: {
+  openDraftThreadPane: (projectId?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
+  panelId: string;
+  pane: WorkspacePane;
+  threadProjectIdsById: Record<string, string>;
+}): Array<BuiltInContextMenuItem | ReactContextMenuItemConfig> {
+  const projectId = projectIdForWorkspacePane(pane, threadProjectIdsById);
+  if (!projectId) {
+    return [];
+  }
+  return [
+    {
+      label: "New chat in project",
+      action: () => {
+        void openDraftThreadPane(projectId, {
+          duplicate: true,
+          placement: { direction: "within", sourcePaneId: panelId },
+        });
+      },
+    },
+  ];
+}
+
+function projectIdForWorkspacePane(pane: WorkspacePane, threadProjectIdsById: Record<string, string>): string | null {
+  if (pane.kind !== "thread") {
+    return null;
+  }
+  if (pane.target.mode === "draft") {
+    return typeof pane.target.projectId === "string" && pane.target.projectId.length > 0 ? pane.target.projectId : null;
+  }
+  return threadProjectIdsById[pane.target.threadId] ?? null;
 }
 
 export function WorkspaceDefaultTab(props: IDockviewPanelHeaderProps<DockviewPaneParams>) {
