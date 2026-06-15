@@ -78,7 +78,7 @@
 
 .kodex-workspace-dock .dv-tabs-and-actions-container .dv-right-actions-container {
   align-items: center;
-  flex: 0 0 clamp(132px, 20%, 240px);
+  flex: 0 0 auto;
   justify-content: flex-end;
   min-width: 0;
   position: relative;
@@ -105,7 +105,7 @@
   justify-content: flex-end;
   min-width: 0;
   padding: 0 6px;
-  width: 100%;
+  width: max-content;
 }
 
 .kodex-workspace-tab-overflow {
