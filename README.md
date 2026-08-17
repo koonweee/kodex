@@ -11,6 +11,22 @@ It is built for personal use over localhost or a trusted private network—not a
 > [!WARNING]
 > Kodex does not provide gateway access control. Run it only on localhost or a trusted private network, and never expose it directly to the public internet. Its terminal and file-preview features can access the host with the permissions of the gateway process.
 
+## At a glance
+
+<p align="center">
+  <img src="docs/media/kodex-desktop-split.png" alt="Kodex desktop workspace showing three projects, two Codex threads, and a docked terminal" width="1200" />
+</p>
+
+<p align="center"><sub>Keep projects organized, work across multiple Codex threads, and dock a terminal in the same desktop workspace.</sub></p>
+
+<p align="center">
+  <img src="docs/media/kodex-mobile-projects.png" alt="Kodex mobile project and thread navigation" width="360" />
+  &nbsp;&nbsp;
+  <img src="docs/media/kodex-mobile-thread.png" alt="Kodex mobile thread timeline and composer" width="360" />
+</p>
+
+<p align="center"><sub>The responsive workspace keeps project navigation, approvals, timelines, file changes, and the composer usable on a phone. Screenshots use synthetic demo data.</sub></p>
+
 ## What Kodex provides
 
 - A project and thread workspace with live timelines, queued follow-ups, approvals, pins, and unread state.
