@@ -26,7 +26,7 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - Keep each commit focused on one sensible unit of work.
 - Do not mix unrelated changes in a commit.
 - Do not commit generated output, user-owned changes, or unrelated workspace changes unless they are part of the current task.
-- When changing `plugins/kodex-control`, update `.codex-plugin/plugin.json` with a Codex cachebuster version suffix before reinstalling so the installed plugin cache refreshes. Prefer `python3 /Users/example/.codex/skills/.system/plugin-creator/scripts/update_plugin_cachebuster.py plugins/kodex-control`, which preserves the base version and rewrites only the `+codex...` suffix.
+- When changing `plugins/kodex-control`, update `.codex-plugin/plugin.json` with a Codex cachebuster version suffix before reinstalling so the installed plugin cache refreshes. If the Codex plugin-creator skill is installed, prefer its `update_plugin_cachebuster.py` helper, which preserves the base version and rewrites only the `+codex...` suffix.
 - Before pushing, run the relevant trim script for changed code and remove unused code/dependencies surfaced by it to keep the codebase maintainable: `./tools/trim-backend.sh` for Rust changes and `./tools/trim-frontend.sh` or `cd apps/web && npm run trim` for frontend changes. If a trim script reports pre-existing unrelated findings, do not broaden the cleanup without user agreement; document the remaining findings.
 - Before pushing, check `target` size with `du -sh target 2>/dev/null`; if it is over 6 GB, run `cargo clean` before pushing.
 - Do not mark a milestone complete until its exit conditions are met.

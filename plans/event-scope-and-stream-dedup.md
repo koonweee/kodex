@@ -187,4 +187,4 @@ The next plan should start from the post-milestone-2 code, not from the current 
 - Recreated the global stream on selected-thread changes while preserving the global cursor.
 - Routed selected-thread shell reactions through the selected-thread stream so the global stream can exclude the selected thread without losing selected-thread queue, approval, sidebar, metadata, and subagent-discovery behavior.
 - Regenerated frontend OpenAPI types from a temporary local gateway.
-- Verified with focused backend tests, focused frontend tests, production build, and agent-browser validation on the large reference-project thread.
+- Verified with focused backend tests, focused frontend tests, production build, and browser validation on a large reference thread.

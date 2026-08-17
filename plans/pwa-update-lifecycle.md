@@ -4,8 +4,8 @@
 
 - Kodex already ships an installable PWA shell through `vite-plugin-pwa`, a custom Workbox service worker, and root service-worker registration.
 - The current PWA flow does not expose a waiting service-worker update to React, so users can keep running an older built frontend bundle until every controlled Kodex window closes or the installed PWA is restarted.
-- The target UX follows the working reference application pattern from `/Users/example/projects/reference-project`: a shared PWA service-worker helper exposes `needRefresh` state, a root-mounted lifecycle component shows an explicit update action, and the service worker activates a waiting bundle only when asked.
-- This plan is scoped to app-bundle update prompts. reference application also has an offline/degraded banner, but Kodex should not add that in this change unless the scope is deliberately expanded.
+- The target UX follows a proven PWA pattern: a shared service-worker helper exposes `needRefresh` state, a root-mounted lifecycle component shows an explicit update action, and the service worker activates a waiting bundle only when asked.
+- This plan is scoped to app-bundle update prompts. An offline/degraded banner remains out of scope unless the change is deliberately expanded.
 
 ## Current State
 
@@ -19,12 +19,12 @@
 - `README.md` documents that the service worker precaches built static assets only and that API routes, SSE, OpenAPI, uploads, and file previews stay network-owned. This must remain true.
 - `AGENTS.md` allows browser-local state for purely visual or per-tab UI concerns. A waiting app-bundle prompt is browser-local UI state, not gateway state.
 
-## reference application Reference
+## Reference Pattern
 
-- `/Users/example/projects/reference-project/frontend/src/lib/pwa/service-worker.ts` wraps `virtual:pwa-register`, stores `needRefresh`, exposes a listener API, and provides `getServiceWorkerRegistration()` for push subscriptions.
-- `/Users/example/projects/reference-project/frontend/src/components/PwaLifecycle.tsx` subscribes to update state and renders a Mantine `Alert` with an `Update` button that invokes the update callback.
-- `/Users/example/projects/reference-project/frontend/src/sw.ts` handles `{ type: "SKIP_WAITING" }` messages and calls `clients.claim()` on activation.
-- `/Users/example/projects/reference-project/frontend/vite.config.ts` uses `injectRegister: false` with manual `virtual:pwa-register` registration.
+- A shared service-worker module wraps `virtual:pwa-register`, stores `needRefresh`, exposes a listener API, and provides `getServiceWorkerRegistration()` for push subscriptions.
+- A root lifecycle component subscribes to update state and renders a Mantine `Alert` with an `Update` button that invokes the update callback.
+- The service worker handles `{ type: "SKIP_WAITING" }` messages and calls `clients.claim()` on activation.
+- Vite PWA configuration uses `injectRegister: false` with manual `virtual:pwa-register` registration.
 
 ## Milestones
 

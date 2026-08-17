@@ -3,9 +3,9 @@
 ## Context
 
 - Kodex currently supports Web Push for unread agent messages, but local use shows notifications can stop reaching registered recipients until notifications are disabled and re-enabled.
-- The comparison with reference application points to two reliability gaps:
-  - Kodex treats a `localStorage` subscription id as the browser's enabled state in `apps/web/src/notifications/pushSubscriptions.ts`, while reference application reconciles the browser's current `PushSubscription.endpoint` with backend state.
-  - Kodex sends push notifications inline from `apps/gateway/src/notifications.rs` and only logs failures, while reference application stores delivery rows, retries transient failures, and revokes subscriptions only for explicit terminal push-service statuses.
+- Comparison with a production reference implementation points to two reliability gaps:
+  - Kodex treats a `localStorage` subscription id as the browser's enabled state in `apps/web/src/notifications/pushSubscriptions.ts`, while the reference reconciles the browser's current `PushSubscription.endpoint` with backend state.
+  - Kodex sends push notifications inline from `apps/gateway/src/notifications.rs` and only logs failures, while the reference stores delivery rows, retries transient failures, and revokes subscriptions only for explicit terminal push-service statuses.
 - This plan keeps the MVP deployment assumption unchanged: the gateway is local or trusted-VPN only, and Web Push still requires a secure browser context for non-localhost devices.
 
 ## Current State

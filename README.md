@@ -8,13 +8,18 @@ Kodex is a local-first or VPN-only Codex gateway and web app built from scratch 
 
 The MVP target is a Rust gateway that supervises an external `codex app-server` process over stdio, reads thread history through app-server snapshots, brokers approvals, and serves a React web client. The web client is intentionally replaceable later by another client.
 
+> [!WARNING]
+> Kodex does not provide gateway access control. Run it only on localhost or a trusted private network, and never expose it directly to the public internet. Its terminal and file-preview features can access the host with the permissions of the gateway process.
+
+Kodex is an independent, unofficial project. It is not affiliated with or endorsed by OpenAI. Third-party names and marks belong to their respective owners.
+
 ## Current Status
 
 The first Rust gateway implementation exists under `apps/gateway`. It includes the backend scaffold, SQLite project/approval/read-marker/queue/pin/automation/preview/app-surface storage, diagnostic event replay, a stdio JSON-RPC app-server supervisor, HTTP/SSE API routes, gateway-host PTY terminal sessions over WebSocket, approval brokering, OpenAPI generation, an app-server adapter layer, product-shaped frontend response DTOs, optional Caddy-backed project previews, focused first-party plugin install endpoints, app-server MCP inventory/resource/auth/config endpoints, a Kodex Control MCP stdio subcommand, and optional static frontend serving.
 
 The first React web client exists under `apps/web`. It includes the Vite/Mantine scaffold, generated OpenAPI TypeScript types, a typed fetch client, project/thread navigation, pinned threads, stable draggable project ordering, attention-sorted threads, snapshot-first timeline rendering, gateway-backed queued composer follow-ups, app-surface split/sheet rendering for MCP Apps and generated app surfaces, gateway terminal dock/sheet rendering, composer controls, pending approval decisions, Preferences > Plugins for Kodex Control installation, Preferences > MCP for app-server MCP inventory/auth/resource inspection plus global MCP add/remove/enable/disable/replace, and account/model surfaces.
 
-The native iOS app and its APNs scaffold were removed from this repository.[^ios-removal]
+The native iOS app and its APNs scaffold were removed from this repository.
 
 See [plans/index.md](plans/index.md) for the plan directory and status table.
 
@@ -212,7 +217,7 @@ The install/reinstall button uses the focused gateway endpoint to add `.agents/p
 
 For non-web development, the bundled marketplace can be overridden with `KODEX_KODEX_CONTROL_MARKETPLACE_PATH`. The default is this checkout's `.agents/plugins/marketplace.json` when running from the repo.
 
-When changing files under `plugins/kodex-control`, update `.codex-plugin/plugin.json` with a Codex cachebuster version suffix before reinstalling, for example `0.1.0+codex.local-20260604-143000`. The installed plugin cache is keyed by version, so reinstalling with the same version can leave Codex using a stale cached bundle. The helper `python3 /Users/example/.codex/skills/.system/plugin-creator/scripts/update_plugin_cachebuster.py plugins/kodex-control` rewrites only the `+codex...` suffix while preserving the base version.
+When changing files under `plugins/kodex-control`, update `.codex-plugin/plugin.json` with a Codex cachebuster version suffix before reinstalling, for example `0.1.0+codex.local-20260604-143000`. The installed plugin cache is keyed by version, so reinstalling with the same version can leave Codex using a stale cached bundle. If the Codex plugin-creator skill is installed, its `update_plugin_cachebuster.py` helper rewrites only the `+codex...` suffix while preserving the base version.
 
 The plugin MCP server is hosted by the gateway binary:
 
@@ -357,5 +362,3 @@ The gateway validates outbound JSON-RPC client requests through the app-server a
 - [MVP backend implementation plan](plans/mvp-backend.md)
 - [MVP frontend implementation plan](plans/mvp-frontend.md)
 - [Future extensions overview](plans/future-extensions.md)
-
-[^ios-removal]: Recovery reference: [commit `eecd6a58142b2ab360dbdf7737ebe57c47046c67`](https://github.com/jtkw-kirbot/kodex/commit/eecd6a58142b2ab360dbdf7737ebe57c47046c67), which removed the native iOS app and APNs surface.

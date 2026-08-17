@@ -12,7 +12,7 @@ Attach to an existing thread without submitting input:
 Create a thread for a project and submit a deterministic stress prompt:
   KODEX_BASE_URL=http://127.0.0.1:8787 \
   KODEX_CREATE_THREAD=1 \
-  KODEX_PROJECT_CWD=/Users/example/kodex \
+  KODEX_PROJECT_CWD="$HOME/kodex" \
   KODEX_PROMPT='Write a detailed 12000-word technical analysis of this repository architecture. Stream the answer naturally and include sectioned detail.' \
   KODEX_TIMEOUT_MS=300000 \
     apps/gateway/scripts/profile-sse-bytes.mjs > /tmp/kodex-sse-before.json

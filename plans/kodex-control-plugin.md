@@ -60,7 +60,7 @@ Work:
 Exit criteria:
 
 - Plugin manifest and marketplace JSON are valid JSON and use relative plugin paths.
-- `python3 /Users/example/.codex/skills/.system/skill-creator/scripts/quick_validate.py plugins/kodex-control/skills/kodex-proxy-evaluation` passes.
+- `python3 "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" plugins/kodex-control/skills/kodex-proxy-evaluation` passes.
 - `rg kodex-proxy-evaluation README.md .codex plugins .agents` shows the plugin copy as canonical and no stale install instructions.
 
 ### 2. Gateway Focused Plugin Install API
@@ -282,7 +282,7 @@ Run verification progressively by milestone:
 - Plugin/skill validation:
 
   ```bash
-  python3 /Users/example/.codex/skills/.system/skill-creator/scripts/quick_validate.py plugins/kodex-control/skills/kodex-proxy-evaluation
+  python3 "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" plugins/kodex-control/skills/kodex-proxy-evaluation
   ```
 
 - Browser validation:

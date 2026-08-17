@@ -13,7 +13,7 @@ The feature is intentionally local-gateway scoped. It is not a remote server man
 ## Settled Product Decisions
 
 - Terminals are enabled by default. Kodex already assumes localhost or trusted VPN deployment, and v1 should not hide the feature behind an opt-in flag.
-- The terminal target is the gateway host only. No remote server registry or control plane-style Core/Periphery split.
+- The terminal target is the gateway host only. No remote server registry or multi-node control-plane split.
 - The first visible trigger is a terminal icon button in the workspace sidebar header beside search and the new chat/new thread action.
 - The terminal render area is shell-level, not nested in `WorkspaceSidebar`, so the trigger and host can move independently later.
 - Desktop renders a bottom-docked terminal panel over the main shell workspace.
@@ -77,7 +77,7 @@ Add a gateway-owned terminal module, for example `apps/gateway/src/terminal.rs`,
   - Keeps a bounded rolling output buffer for reconnect while the gateway process is alive.
 - `TerminalMessage`
   - Encodes browser-to-gateway websocket messages.
-  - Use a tiny binary framing model similar to control plane: stdin bytes, resize payload, and optional begin/control message.
+  - Use a tiny binary framing model: stdin bytes, resize payload, and an optional begin/control message.
   - Keep framing helpers pure and unit-tested.
 
 Use `portable-pty` unless implementation discovery finds a better maintained Rust PTY fit. Avoid plain `tokio::process::Command` for the interactive shell because it will not provide proper TTY behavior for full-screen TUIs, signals, terminal size, or line editing.

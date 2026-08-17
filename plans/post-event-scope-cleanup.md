@@ -217,5 +217,5 @@ Browser validation:
 - Extracted sidebar live cache routing and subagent-discovery event decisions from `App.tsx` into `apps/web/src/threads/liveCacheRouting.ts`.
 - Split additional shell responsibilities into `events/useGlobalLiveStream.ts`, `threads/useSelectedThreadAttach.ts`, `threads/selection.ts`, `shell/browserRouting.ts`, and `shell/queryResultLoadState.ts`; moved backend event and thread-view tests into child test modules.
 - Added dev-only live diagnostics for SSE event counts, patch bytes by scope, selected/global duplicate drops, reducer batch duration, cache invalidations, refresh-required counts, and browser long tasks when supported.
-- Restarted `kodex-prod` on the current workspace and validated the reference-project large thread across desktop, narrow, and iPhone-shaped browser viewports, including older-history loading and a short running prompt.
+- Restarted `kodex-prod` on the current workspace and validated a large reference thread across desktop, narrow, and iPhone-shaped browser viewports, including older-history loading and a short running prompt.
 - Regenerated frontend OpenAPI types after the DTO change.

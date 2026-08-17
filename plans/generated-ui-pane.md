@@ -76,7 +76,7 @@ Plugin:
 
 Visual reference:
 
-- Use [generated-ui-pane-contact-sheet.png](assets/generated-ui-pane-contact-sheet.png) as the implementation design reference for the v1 layout states: desktop split, hidden-session header icon, mobile full-page bottom sheet, and submitted revision. The implementation should match the product behavior shown there, while preserving existing Kodex component patterns and responsive constraints.
+- Cover the v1 layout states—desktop split, hidden-session header icon, mobile full-page bottom sheet, and submitted revision—while preserving existing Kodex component patterns and responsive constraints.
 
 Desktop:
 

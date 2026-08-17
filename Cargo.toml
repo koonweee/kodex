@@ -5,7 +5,7 @@ resolver = "2"
 [workspace.package]
 edition = "2021"
 license = "MIT"
-repository = "https://example.invalid/kodex"
+repository = "https://github.com/jtkw-kirbot/kodex"
 
 [profile.dev]
 debug = "line-tables-only"

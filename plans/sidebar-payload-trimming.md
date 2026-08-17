@@ -9,7 +9,7 @@ Complete.
 Fresh production-bundle profiling on May 19, 2026 showed that the current web startup path is still dominated by sidebar list payloads, even after the completed [sidebar thread list performance plan](sidebar-thread-list-performance.md):
 
 - `GET /v1/sidebar/threads` took about 2.47s and transferred about 659 KB before the sidebar was ready.
-- The `kodex` project contributed about 316 KB for 100 initial rows, and `reference-project` contributed about 193 KB for 57 rows.
+- One large project contributed about 316 KB for 100 initial rows, and another contributed about 193 KB for 57 rows.
 - The frontend initially renders only five rows per thread section, but the gateway still fetches `DEFAULT_THREAD_LIST_LIMIT = 100` for every project and for chats.
 - `ThreadListResponse.rawPayload` duplicates the upstream list payload, and each `ThreadSummary.rawPayload` duplicates the upstream raw thread object.
 

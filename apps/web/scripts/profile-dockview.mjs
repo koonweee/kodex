@@ -29,7 +29,7 @@ const TRACE_CATEGORIES = [
 const project = {
   id: "project-1",
   name: "Kodex",
-  cwd: "/Users/example/kodex",
+  cwd: process.cwd(),
   createdAt: "2026-06-05T00:00:00Z",
   updatedAt: "2026-06-05T00:00:00Z",
 };
