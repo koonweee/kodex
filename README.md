@@ -17,7 +17,7 @@ It is built for personal use over localhost or a trusted private network—not a
   <img src="docs/media/kodex-desktop-split.png" alt="Kodex desktop workspace showing three projects, two Codex threads, and a docked terminal" width="1200" />
 </p>
 
-<p align="center"><sub>Keep projects organized, work across multiple Codex threads, and dock a terminal in the same desktop workspace.</sub></p>
+<p align="center"><sub>Drag, resize, and rearrange Codex threads, terminals, and app surfaces in one desktop workspace, powered by <a href="https://dockview.dev/">Dockview</a>.</sub></p>
 
 <p align="center">
   <img src="docs/media/kodex-generative-app-surface.gif" alt="Kodex desktop workspace turning a prompt into a generated release readiness app surface" width="1200" />
@@ -33,7 +33,7 @@ It is built for personal use over localhost or a trusted private network—not a
 
 ## What Kodex provides
 
-- A project and thread workspace with live timelines, queued follow-ups, approvals, pins, and unread state.
+- A project and thread workspace with draggable, resizable panes, live timelines, queued follow-ups, approvals, pins, and unread state.
 - A responsive, installable web app for desktop, tablet, and phone browsers.
 - Host terminals, local file previews, and stable proxy URLs for project development servers.
 - Codex account, model, MCP server, plugin, skill, and app-surface controls.
