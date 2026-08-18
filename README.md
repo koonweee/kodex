@@ -6,7 +6,7 @@
 
 Kodex is a self-hosted web workspace for [OpenAI Codex](https://github.com/openai/codex). It lets you run Codex on your own machine and work with it from a desktop or mobile browser, while keeping project files, terminals, and gateway-owned data on that machine.
 
-It is built for personal use over localhost or a trusted private network—not as a public SaaS service. A Rust gateway manages Codex and local capabilities, while a responsive React PWA provides the workspace.
+A Rust gateway manages Codex and local capabilities, while a responsive React PWA provides the workspace.
 
 > [!WARNING]
 > Kodex does not provide gateway access control. Run it only on localhost or a trusted private network, and never expose it directly to the public internet. Its terminal and file-preview features can access the host with the permissions of the gateway process.
@@ -29,7 +29,7 @@ It is built for personal use over localhost or a trusted private network—not a
   <img src="docs/media/kodex-mobile-responsive.png" alt="Kodex mobile project navigation and thread workspace side by side" width="760" />
 </p>
 
-<p align="center"><sub>Responsive mobile device</sub></p>
+<p align="center"><sub>Responsive UI on mobile devices</sub></p>
 
 ## What Kodex provides
 
