@@ -20,12 +20,16 @@ It is built for personal use over localhost or a trusted private network—not a
 <p align="center"><sub>Keep projects organized, work across multiple Codex threads, and dock a terminal in the same desktop workspace.</sub></p>
 
 <p align="center">
-  <img src="docs/media/kodex-mobile-projects.png" alt="Kodex mobile project and thread navigation" width="360" />
-  &nbsp;&nbsp;
-  <img src="docs/media/kodex-mobile-thread.png" alt="Kodex mobile thread timeline and composer" width="360" />
+  <img src="docs/media/kodex-generative-app-surface.gif" alt="Kodex desktop workspace turning a prompt into a generated release readiness app surface" width="1200" />
 </p>
 
-<p align="center"><sub>The responsive workspace keeps project navigation, approvals, timelines, file changes, and the composer usable on a phone. Screenshots use synthetic demo data.</sub></p>
+<p align="center"><sub>Turn a prompt into an interactive app surface beside the active thread.</sub></p>
+
+<p align="center">
+  <img src="docs/media/kodex-mobile-responsive.png" alt="Kodex mobile project navigation and thread workspace side by side" width="760" />
+</p>
+
+<p align="center"><sub>Responsive mobile device</sub></p>
 
 ## What Kodex provides
 
