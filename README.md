@@ -20,7 +20,7 @@ It is built for personal use over localhost or a trusted private network—not a
 <p align="center"><sub>Drag, resize, and rearrange Codex threads, terminals, and app surfaces in one desktop workspace, powered by <a href="https://dockview.dev/">Dockview</a>.</sub></p>
 
 <p align="center">
-  <img src="docs/media/kodex-generative-app-surface.gif" alt="Kodex using live web search to turn a San Francisco weather request into an interactive seven-day forecast" width="1200" />
+  <img src="docs/media/kodex-generative-app-surface.gif" alt="Kodex turning a researched San Francisco weather forecast into an interactive seven-day visualization" width="1200" />
 </p>
 
 <p align="center"><sub>Codex turns a live forecast request into an interactive weekly weather surface.</sub></p>
