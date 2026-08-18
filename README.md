@@ -6,14 +6,34 @@
 
 Kodex is a self-hosted web workspace for [OpenAI Codex](https://github.com/openai/codex). It lets you run Codex on your own machine and work with it from a desktop or mobile browser, while keeping project files, terminals, and gateway-owned data on that machine.
 
-It is built for personal use over localhost or a trusted private network—not as a public SaaS service. A Rust gateway manages Codex and local capabilities, while a responsive React PWA provides the workspace.
+A Rust gateway manages Codex and local capabilities, while a responsive React PWA provides the workspace.
 
 > [!WARNING]
 > Kodex does not provide gateway access control. Run it only on localhost or a trusted private network, and never expose it directly to the public internet. Its terminal and file-preview features can access the host with the permissions of the gateway process.
 
+## At a glance
+
+<p align="center">
+  <img src="docs/media/kodex-desktop-split.png" alt="Kodex desktop workspace showing three projects, two Codex threads, and a docked terminal" width="1200" />
+</p>
+
+<p align="center"><sub>Drag, resize, and rearrange Codex threads, terminals, and app surfaces in one desktop workspace, powered by <a href="https://dockview.dev/">Dockview</a>.</sub></p>
+
+<p align="center">
+  <img src="docs/media/kodex-generative-app-surface.gif" alt="Kodex turning a researched San Francisco weather forecast into an interactive seven-day visualization" width="1200" />
+</p>
+
+<p align="center"><sub>Codex turns a live forecast request into an interactive weekly weather surface.</sub></p>
+
+<p align="center">
+  <img src="docs/media/kodex-mobile-responsive.png" alt="Kodex mobile project navigation and thread workspace side by side" width="760" />
+</p>
+
+<p align="center"><sub>Responsive UI on mobile devices</sub></p>
+
 ## What Kodex provides
 
-- A project and thread workspace with live timelines, queued follow-ups, approvals, pins, and unread state.
+- A project and thread workspace with draggable, resizable panes, live timelines, queued follow-ups, approvals, pins, and unread state.
 - A responsive, installable web app for desktop, tablet, and phone browsers.
 - Host terminals, local file previews, and stable proxy URLs for project development servers.
 - Codex account, model, MCP server, plugin, skill, and app-surface controls.
