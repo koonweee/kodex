@@ -14,6 +14,8 @@ mod items;
 mod mcp_auth;
 #[path = "native_app_server/mcp_control.rs"]
 mod mcp_control;
+#[path = "native_app_server/mcp_widget.rs"]
+mod mcp_widget;
 #[path = "native_app_server/producers.rs"]
 mod producers;
 #[path = "native_app_server/projects.rs"]
