@@ -11,6 +11,7 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - Use `$agent-browser` for browser-observable frontend validation when layout, visual rendering, responsive behavior, input modality, console cleanliness, same-user two-tab behavior, or live gateway/SSE flows need real-browser evidence. Prefer it alongside Playwright e2e for flows that are difficult to assert reliably in automated tests.
 - Keep code DRY. Add shared helpers only when they remove real duplication or clarify a repeated contract.
 - Follow YAGNI. Do not build features outside the active plan milestone unless the current change requires them.
+- Prefer native app-server primitives and semantics. Before retaining or adding custom behavior that app-server lacks, justify the concrete user need, the simpler native workflow, and the ongoing state, retry, synchronization, and testing cost. Existing implementation alone does not justify preserving a feature; simplify or remove the feature when that better serves a thin, responsive client. Preserve correctness for the workflows that remain.
 - Treat generated OpenAPI as the public API contract. Public request/response DTOs live in Rust code and must generate `/openapi.json`.
 - When integrating with the Codex app-server, treat the checked-in generated schemas and the upstream app-server README as the source of truth. Verify request/response shapes, lifecycle rules, and transport assumptions against `apps/gateway/app-server-schema/<version>/json` and https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md instead of inferring behavior from gateway code or handwritten notes.
 - For official real-client behavior examples, the upstream Codex TUI is a useful reference: https://github.com/openai/codex/tree/main/codex-rs/tui/src. Use it to understand client sequencing, UI-facing lifecycle handling, and edge cases, but do not treat it as the wire contract when it conflicts with the generated schemas or app-server README.
@@ -126,6 +127,7 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - Frontend stack: React, Vite, TypeScript.
 - API contract stack: Rust DTOs plus generated OpenAPI, with frontend-generated TypeScript types/client.
 - Gateway talks to a configured external `codex` binary over stdio.
+- Architecture target: every Kodex-launched Codex process uses a dedicated, real Kodex `CODEX_HOME`, separate from Codex desktop. Shared desktop homes and shared desktop runtimes are outside the target. This isolation is not yet implemented; see the [native capability audit](docs/audits/2026-10-04-app-server-native-audit.md) for migration and validation requirements.
 - Gateway serves the built frontend in production.
 - SSE is the first event transport.
 - WebSocket is deferred until a feature requires bidirectional browser transport.
