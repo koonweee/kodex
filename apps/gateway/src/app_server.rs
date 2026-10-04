@@ -29,6 +29,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub enum InboundMessage {
+    Disconnected,
     Notification {
         method: String,
         params: Value,
@@ -424,6 +425,7 @@ async fn read_loop(
 
     server.ready.store(false, Ordering::SeqCst);
     fail_pending(&server).await;
+    let _ = inbound.send(InboundMessage::Disconnected).await;
 }
 
 async fn route_response(server: &JsonRpcAppServer, message: Value) {

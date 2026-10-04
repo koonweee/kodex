@@ -1,9 +1,8 @@
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef } from "react";
 
-import type { Approval, EventEnvelope, ThreadSummary } from "../api/client";
+import type { EventEnvelope, ThreadSummary } from "../api/client";
 import { getThreadDetail, getThreadTimelinePage } from "../api/client";
 import { useGatewayInstanceValidation, useGatewayStreamConnected } from "../api/GatewayInstanceBoundary";
-import { isApprovalEvent } from "../approvals/state";
 import {
   recordLiveEvent,
   recordReducerBatch,
@@ -47,7 +46,6 @@ export type ThreadSyncNotice = {
 
 export function useSelectedThreadTimeline({
   isSelectedThreadSnapshotDeferred,
-  onApprovalEvent,
   onError,
   onQueueEvent,
   onSelectedThreadEvent,
@@ -55,12 +53,10 @@ export function useSelectedThreadTimeline({
   onSyncNotice,
   onThreadLoadFailed,
   selectedThreadId,
-  setApprovals,
   setTimeline,
   setTimelineEntry,
 }: {
   isSelectedThreadSnapshotDeferred: boolean;
-  onApprovalEvent: (current: Approval[], event: EventEnvelope) => Approval[];
   onError: (error: unknown) => void;
   onQueueEvent: (event: EventEnvelope) => void;
   onSelectedThreadEvent: (event: EventEnvelope) => void;
@@ -68,7 +64,6 @@ export function useSelectedThreadTimeline({
   onSyncNotice?: (notice: ThreadSyncNotice | null) => void;
   onThreadLoadFailed?: (threadId: string, error: unknown) => void;
   selectedThreadId: string | null;
-  setApprovals: Dispatch<SetStateAction<Approval[]>>;
   setTimeline: Dispatch<SetStateAction<TimelineState>>;
   setTimelineEntry: Dispatch<SetStateAction<TimelineEntry>>;
 }) {
@@ -79,7 +74,6 @@ export function useSelectedThreadTimeline({
   const requestTimelineRefresh = useRef<((reason: SelectedThreadSnapshotRefreshReason) => void) | null>(null);
   const snapshotRefreshInFlight = useRef<{ threadId: string; streamToken: number } | null>(null);
   const latestCallbacks = useRef({
-    onApprovalEvent,
     onError,
     onQueueEvent,
     onSelectedThreadEvent,
@@ -88,7 +82,6 @@ export function useSelectedThreadTimeline({
     onThreadLoadFailed,
   });
   latestCallbacks.current = {
-    onApprovalEvent,
     onError,
     onQueueEvent,
     onSelectedThreadEvent,
@@ -320,10 +313,6 @@ export function useSelectedThreadTimeline({
             refetchSnapshot("refreshRequired");
             return;
           }
-          if (isApprovalEvent(event)) {
-            setApprovals((current) => latestCallbacks.current.onApprovalEvent(current, event));
-            return;
-          }
           if (isThreadViewQueueEvent(event)) {
             latestCallbacks.current.onQueueEvent(event);
             return;
@@ -393,7 +382,6 @@ export function useSelectedThreadTimeline({
     handleStreamConnected,
     isSelectedThreadSnapshotDeferred,
     selectedThreadId,
-    setApprovals,
     setTimeline,
     setTimelineEntry,
     validateInstance,

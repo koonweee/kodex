@@ -1217,7 +1217,9 @@ impl KodexControlMcp {
         ))
     }
 
-    #[tool(description = "List pending or historical approvals through self-control")]
+    #[tool(
+        description = "List current native requests or durable generated-app grants through self-control"
+    )]
     async fn list_approvals(
         &self,
         Parameters(params): Parameters<ListApprovalsToolParams>,
@@ -2002,8 +2004,7 @@ fn allowed_wait_event_kind(kind: &str) -> Result<&'static str, McpError> {
         }
         "queueItemUpsert" | "turn_queue.item_upsert" => Ok("turn_queue.item_upsert"),
         "queueItemDeleted" | "turn_queue.item_deleted" => Ok("turn_queue.item_deleted"),
-        "approvalCreated" | "approval.created" => Ok("approval.created"),
-        "approvalResolved" | "approval.resolved" => Ok("approval.resolved"),
+        "approvalChanged" | "approval.changed" => Ok("approval.changed"),
         "automationUpserted" | "automation.item_upsert" => Ok("automation.item_upsert"),
         "automationDeleted" | "automation.item_deleted" => Ok("automation.item_deleted"),
         _ => Err(McpError::invalid_params(
@@ -2018,8 +2019,7 @@ fn allowed_wait_event_kind(kind: &str) -> Result<&'static str, McpError> {
                     "threadViewRefreshRequired",
                     "queueItemUpsert",
                     "queueItemDeleted",
-                    "approvalCreated",
-                    "approvalResolved",
+                    "approvalChanged",
                     "automationUpserted",
                     "automationDeleted"
                 ]

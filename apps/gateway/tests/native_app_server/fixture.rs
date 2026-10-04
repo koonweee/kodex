@@ -17,7 +17,7 @@ use kodex_gateway::{
     app_server::{InboundMessage, JsonRpcAppServer},
     build_router,
     config::Config,
-    events::run_inbound_ingest,
+    events::ingest_inbound,
     native_runtime::{prepare_instance, PreparedInstance},
     store::Store,
     AppState,
@@ -152,8 +152,8 @@ pub(super) struct NativeSession {
     pub(super) app: Router,
     server: Arc<JsonRpcAppServer>,
     relay: JoinHandle<()>,
-    ingest: JoinHandle<()>,
     notifications: mpsc::UnboundedReceiver<(String, Value)>,
+    requests: mpsc::UnboundedReceiver<(String, String)>,
 }
 
 impl NativeSession {
@@ -161,28 +161,57 @@ impl NativeSession {
         let store = Store::connect(&fixture.config.database.path).await?;
         let (tx, mut native_rx) = mpsc::channel(1024);
         let server = JsonRpcAppServer::start(&fixture.config.codex, tx).await?;
-        let (gateway_tx, rx) = mpsc::channel(1024);
         let (notification_tx, notifications) = mpsc::unbounded_channel();
+        let (request_tx, requests) = mpsc::unbounded_channel();
+        let state = AppState::new(fixture.config.clone(), store, server.clone());
+        if let Err(error) = kodex_gateway::approvals::initialize(&state).await {
+            server.shutdown().await.with_context(|| {
+                format!("native fixture initialization failed ({error}); cleanup failed")
+            })?;
+            return Err(error.into());
+        }
+        let app = build_router(state.clone());
         let relay = tokio::spawn(async move {
             while let Some(message) = native_rx.recv().await {
-                if let InboundMessage::Notification { method, params } = &message {
-                    let _ = notification_tx.send((method.clone(), params.clone()));
+                let notification = match &message {
+                    InboundMessage::Notification { method, params } => {
+                        Some((method.clone(), params.clone()))
+                    }
+                    _ => None,
+                };
+                let request = match &message {
+                    InboundMessage::ServerRequest {
+                        request_id, method, ..
+                    } => Some((request_id.clone(), method.clone())),
+                    _ => None,
+                };
+                // Proof observers run after gateway ingestion, so a replay assertion
+                // cannot pass merely because the duplicate is still in a relay queue.
+                ingest_inbound(message, &state)
+                    .await
+                    .expect("native fixture ingestion failed");
+                if let Some(notification) = notification {
+                    let _ = notification_tx.send(notification);
                 }
-                if gateway_tx.send(message).await.is_err() {
-                    break;
+                if let Some(request) = request {
+                    let _ = request_tx.send(request);
                 }
             }
         });
-        let state = AppState::new(fixture.config.clone(), store, server.clone());
-        let app = build_router(state.clone());
-        let ingest = tokio::spawn(run_inbound_ingest(rx, state));
         Ok(Self {
             app,
             server,
             relay,
-            ingest,
             notifications,
+            requests,
         })
+    }
+
+    pub(super) async fn next_server_request(&mut self) -> anyhow::Result<(String, String)> {
+        timeout(Duration::from_secs(15), self.requests.recv())
+            .await
+            .context("native request was not received")?
+            .context("native request stream closed")
     }
 
     pub(super) async fn completed_turn(
@@ -190,25 +219,56 @@ impl NativeSession {
         thread_id: &str,
         status: &str,
     ) -> anyhow::Result<Value> {
+        self.turn_and_resolution(thread_id, status, None).await
+    }
+
+    pub(super) async fn completed_turn_and_resolution(
+        &mut self,
+        thread_id: &str,
+        status: &str,
+        request_id: &str,
+    ) -> anyhow::Result<Value> {
+        self.turn_and_resolution(thread_id, status, Some(request_id))
+            .await
+    }
+
+    async fn turn_and_resolution(
+        &mut self,
+        thread_id: &str,
+        status: &str,
+        request_id: Option<&str>,
+    ) -> anyhow::Result<Value> {
         timeout(Duration::from_secs(20), async {
+            let mut turn = None;
+            let mut resolved = request_id.is_none();
             while let Some((method, params)) = self.notifications.recv().await {
                 if method == "turn/completed" && params["threadId"] == thread_id {
                     anyhow::ensure!(
                         params["turn"]["status"] == status,
                         "expected {status} native turn: {params}"
                     );
-                    return Ok(params["turn"].clone());
+                    turn = Some(params["turn"].clone());
+                }
+                if method == "serverRequest/resolved"
+                    && params["threadId"] == thread_id
+                    && request_id.is_some_and(|id| params["requestId"].to_string() == id)
+                {
+                    resolved = true;
+                }
+                if resolved {
+                    if let Some(turn) = turn.take() {
+                        return Ok(turn);
+                    }
                 }
             }
-            anyhow::bail!("native notifications stopped before turn completion")
+            anyhow::bail!("native notifications stopped before turn completion/request resolution")
         })
         .await
-        .context("native turn did not finish")?
+        .context("native turn/request did not finish")?
     }
 
     pub(super) async fn shutdown(&self) -> anyhow::Result<()> {
         self.server.shutdown().await?;
-        self.ingest.abort();
         self.relay.abort();
         Ok(())
     }
@@ -216,7 +276,6 @@ impl NativeSession {
 
 impl Drop for NativeSession {
     fn drop(&mut self) {
-        self.ingest.abort();
         self.relay.abort();
     }
 }

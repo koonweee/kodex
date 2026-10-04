@@ -67,6 +67,7 @@ export function ApprovalCard({
         )
       ) : null}
       <ParsedApprovalActions actions={parsedActions} />
+      {approval.status === "responding" ? <Text role="status" size="xs">Waiting for Codex to finish processing this response…</Text> : null}
       <ApprovalActionButtons approval={approval} actions={actions} onDecision={onDecision} />
     </Box>
   );
@@ -124,6 +125,7 @@ function ApprovalActionButtons({
           aria-label={action.ariaLabel}
           className="kodex-approval-action"
           color={action.color}
+          disabled={approval.status !== "pending"}
           data-approval-tone={approvalActionTone(action)}
           key={action.label}
           leftSection={action.icon}

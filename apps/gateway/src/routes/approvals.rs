@@ -29,6 +29,8 @@ pub struct ApprovalListQuery {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ApprovalListResponse {
+    pub runtime_id: String,
+    pub revision: i64,
     pub approvals: Vec<Approval>,
 }
 
@@ -43,11 +45,9 @@ pub async fn list_approvals(
     State(state): State<AppState>,
     Query(query): Query<ApprovalListQuery>,
 ) -> ApiResult<Json<ApprovalListResponse>> {
-    let approvals = state
-        .store
-        .list_approvals(query.status, query.thread_id)
-        .await?;
-    Ok(Json(ApprovalListResponse { approvals }))
+    Ok(Json(
+        crate::approvals::list_approvals(&state, query.status, query.thread_id).await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/v1/approvals/{approvalId}", responses((status = 200, body = Approval)))]
@@ -55,7 +55,9 @@ pub async fn get_approval(
     State(state): State<AppState>,
     Path(approval_id): Path<String>,
 ) -> ApiResult<Json<Approval>> {
-    Ok(Json(state.store.get_approval(&approval_id).await?))
+    Ok(Json(
+        crate::approvals::get_approval(&state, &approval_id).await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/v1/approvals/{approvalId}/decision", request_body = ApprovalDecisionRequest, responses((status = 200, body = Approval)))]

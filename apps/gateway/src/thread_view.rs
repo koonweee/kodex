@@ -549,7 +549,7 @@ impl ThreadView {
         let mut pending_user_input_requests = Vec::new();
         for approval in approvals
             .iter()
-            .filter(|approval| approval.status == "pending")
+            .filter(|approval| matches!(approval.status.as_str(), "pending" | "responding"))
         {
             let summary = pending_request_summary(approval);
             if summary.request_kind == "userInput" {
@@ -562,32 +562,6 @@ impl ThreadView {
         pending_user_input_requests.sort_by_key(|request| request.created_at);
         self.pending_approval_requests = pending_approval_requests;
         self.pending_user_input_requests = pending_user_input_requests;
-    }
-
-    fn upsert_pending_request(&mut self, approval: &Approval) {
-        if approval.status != "pending" {
-            self.remove_pending_request(&approval.id);
-            return;
-        }
-        let summary = pending_request_summary(approval);
-        let requests = if summary.request_kind == "userInput" {
-            &mut self.pending_user_input_requests
-        } else {
-            &mut self.pending_approval_requests
-        };
-        if let Some(existing) = requests.iter_mut().find(|request| request.id == summary.id) {
-            *existing = summary;
-        } else {
-            requests.push(summary);
-            requests.sort_by_key(|request| request.created_at);
-        }
-    }
-
-    fn remove_pending_request(&mut self, approval_id: &str) {
-        self.pending_approval_requests
-            .retain(|request| request.id != approval_id);
-        self.pending_user_input_requests
-            .retain(|request| request.id != approval_id);
     }
 
     fn to_snapshot(&self) -> ThreadTimelineSnapshot {
@@ -828,38 +802,6 @@ pub async fn lifecycle_patch_for_thread(
     Ok(sessions
         .with_thread_view(thread_id, 0, |view| view.lifecycle_patch())
         .await)
-}
-
-pub async fn record_approval_created(
-    sessions: &ThreadViewStore,
-    approval: &Approval,
-    updated_seq: i64,
-) -> ApiResult<()> {
-    let Some(thread_id) = approval.thread_id.as_deref() else {
-        return Ok(());
-    };
-    sessions
-        .with_thread_view(thread_id, updated_seq, |view| {
-            view.upsert_pending_request(approval);
-        })
-        .await;
-    Ok(())
-}
-
-pub async fn record_approval_resolved(
-    sessions: &ThreadViewStore,
-    approval: &Approval,
-    updated_seq: i64,
-) -> ApiResult<()> {
-    let Some(thread_id) = approval.thread_id.as_deref() else {
-        return Ok(());
-    };
-    sessions
-        .with_thread_view(thread_id, updated_seq, |view| {
-            view.remove_pending_request(&approval.id);
-        })
-        .await;
-    Ok(())
 }
 
 pub async fn record_item_upsert(

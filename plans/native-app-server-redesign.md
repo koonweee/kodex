@@ -2,7 +2,7 @@
 
 ## Status
 
-Active. Created 2026-10-04; implementation started 2026-10-04. M1 is underway. No milestone exit gate is complete yet.
+Active. Created 2026-10-04; implementation started 2026-10-04. M1 proofs remain open; the M2 native-request replacement is underway against the verified runtime foundation. No milestone exit gate is complete yet.
 
 The foundation is committed as `6600797`: exact 0.160.0 schemas/adapters, dedicated-home startup and path/environment guards, native project handlers, browser identity namespaces and title-generation removal. Validation passes: 433 backend unit tests, two stdio integration tests, 686 frontend unit/component tests, 13 Playwright flows, formatting, frontend build and both trim scripts. Schema generator fixtures pass, all 440 schemas match the selected executable, and generated frontend types match the Rust OpenAPI export. Independent foundation review passed after fixing Windows environment-name filtering; Windows execution is not verified.
 
@@ -70,6 +70,10 @@ Update this plan and the [index](index.md) as work starts or completes. Historic
 **Exit:** wrong executable versions fail clearly; a disposable instance can sign in/configure, create a native project and chat, run a turn, display/respond to an approval, Stop and reopen. Isolation fixtures cover inherited storage/auth overrides (including a synthetic `CODEX_ACCESS_TOKEN`), symlink aliases, auxiliary launches and plugin/config paths while sentinel legacy files remain untouched. Browser references from the old instance do not select or replay old work. Uploads remain usable under the supported native sandbox.
 
 ## M2 — Native projects, settings, organization and requests
+
+The first M2 replacement removes native approval rows, write-success resolution and browser union/tombstone ownership. A runtime-scoped mirror supplies authoritative snapshots and pending-request projection; native `serverRequest/resolved` closes the request. Generated-app grants remain durable and retain their existing scope checks. The existing gateway sequence orders snapshots and invalidation, with one approval-service lock guarding request changes and canonical pending-request hydration. No native restart manager or replay-repair engine is introduced.
+
+The approval slice passes 447 backend library tests, one startup-cleanup binary test, two Control stdio tests, 722 frontend unit/component tests and 17 Playwright flows, plus the opt-in real 0.160.0 native integration test. The native fixture verifies pending-request replay deduplication and waits for the exact request resolution after acceptance and Stop. The two-tab browser fixture covers responding state, missed invalidation, runtime replacement and a delayed stale snapshot. Both trim scripts, formatting, frontend build and generated OpenAPI/type freshness pass. Independent reviews found and resolved owned-process cleanup on startup failure and safe retry after publication fails before a native write; ambiguous native write failures remain non-actionable. Interactive sign-in and managed-account isolation are still open, and the remaining M2 project/settings/organization/config replacements are not implemented.
 
 **Work**
 

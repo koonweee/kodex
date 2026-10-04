@@ -2,16 +2,16 @@ import type { QueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { applyAccountEvent } from "../account/cache";
-import type { Approval, EventEnvelope, QueuedInput, RateLimitSnapshot } from "../api/client";
+import type { EventEnvelope, QueuedInput, RateLimitSnapshot } from "../api/client";
 import { applyMcpLifecycleEvent } from "../api/mcpCache";
 import { queryKeys } from "../api/queryKeys";
 import { applyAppSurfaceEvent } from "../appSurfaces/cache";
+import { applyApprovalInvalidation } from "../approvals/cache";
 import { applyCachedAutomationEvent } from "../automations/cache";
 import type { ThreadSubagentDiscoveryEvent, ThreadUpsert } from "../threads/events";
 import { routeSelectedThreadLiveEvent, type LiveEventRouteHandlers } from "./liveRouting";
 
 export function useLiveEventHandlers({
-  applyApprovalEventWithTombstone,
   applyCompletedAgentTurnEvent,
   applyQueuedInputDeleted,
   applyQueuedInputUpsert,
@@ -24,10 +24,8 @@ export function useLiveEventHandlers({
   applyUsageLimitSnapshot,
   queryClient,
   refreshSidebarThreadsForLiveEvent,
-  setApprovals,
   setSkillsInvalidationGeneration,
 }: {
-  applyApprovalEventWithTombstone: (current: Approval[], event: EventEnvelope) => Approval[];
   applyCompletedAgentTurnEvent: (event: EventEnvelope) => void;
   applyQueuedInputDeleted: (threadId: string, id: string) => void;
   applyQueuedInputUpsert: (row: QueuedInput) => void;
@@ -40,7 +38,6 @@ export function useLiveEventHandlers({
   applyUsageLimitSnapshot: (snapshot: RateLimitSnapshot) => void;
   queryClient: QueryClient;
   refreshSidebarThreadsForLiveEvent: (event: EventEnvelope) => void;
-  setApprovals: (updater: (current: Approval[]) => Approval[]) => void;
   setSkillsInvalidationGeneration: (updater: (current: number) => number) => void;
 }) {
   return useMemo(() => {
@@ -53,10 +50,6 @@ export function useLiveEventHandlers({
       if (automationQueryState.fetchStatus === "fetching") {
         void queryClient.invalidateQueries({ queryKey: queryKeys.automations });
       }
-    }
-
-    function applyApprovalEvent(event: EventEnvelope) {
-      setApprovals((current) => applyApprovalEventWithTombstone(current, event));
     }
 
     function applySkillsChangedEvent() {
@@ -85,7 +78,7 @@ export function useLiveEventHandlers({
       refreshSidebarThreadsForLiveEvent,
       applySubagentDiscoveryEvent,
       applyUsageLimitSnapshot,
-      applyApprovalEvent,
+      applyApprovalEvent: (event) => applyApprovalInvalidation(queryClient, event),
       applyAppSurfaceEvent: applyAppSurfaceStreamEvent,
       applySkillsChangedEvent,
       applyMcpLifecycleEvent: applyMcpLifecycleStreamEvent,
@@ -96,7 +89,6 @@ export function useLiveEventHandlers({
       liveRouteHandlers,
     };
   }, [
-    applyApprovalEventWithTombstone,
     applyCompletedAgentTurnEvent,
     applyQueuedInputDeleted,
     applyQueuedInputUpsert,
@@ -109,7 +101,6 @@ export function useLiveEventHandlers({
     applyUsageLimitSnapshot,
     queryClient,
     refreshSidebarThreadsForLiveEvent,
-    setApprovals,
     setSkillsInvalidationGeneration,
   ]);
 }

@@ -492,7 +492,7 @@ mod tests {
         let store = Store::in_memory().await.unwrap();
 
         append_test_event(&store, "workspace.updated", None).await;
-        append_test_event(&store, "approval.created", Some("thread-2")).await;
+        append_test_event(&store, "approval.changed", Some("thread-2")).await;
         append_test_event(&store, "thread_view.patch", Some("thread-1")).await;
         append_test_event(&store, "thread_view.patch", Some("thread-2")).await;
         append_test_event(&store, "thread_view.patch", Some("thread-3")).await;
@@ -515,7 +515,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 ("workspace.updated", None),
-                ("approval.created", Some("thread-2")),
+                ("approval.changed", Some("thread-2")),
                 ("thread_view.patch", Some("thread-1")),
                 ("thread_view.patch", Some("thread-3")),
             ]

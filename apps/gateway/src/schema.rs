@@ -126,8 +126,7 @@ pub fn validate_approval_response(method: &str, response: &Value) -> ApiResult<(
 }
 
 pub fn is_supported_approval_method(method: &str) -> bool {
-    method == crate::routes::app_surfaces::APP_SURFACE_BRIDGE_APPROVAL_METHOD
-        || approval_response_schema(method).is_some()
+    approval_response_schema(method).is_some()
 }
 
 fn validate_app_surface_bridge_approval_response(response: &Value) -> ApiResult<()> {

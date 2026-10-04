@@ -1383,7 +1383,7 @@ async fn apply_thread_detail_response_state_with_merge(
     let app_surface_sessions =
         app_surfaces::sync_mcp_app_surfaces_for_turns(state, &response.thread.id, &response.turns)
             .await?;
-    let timeline = match merge_mode {
+    match merge_mode {
         ThreadTimelineMergeMode::ReplaceWindow => {
             thread_view::build_thread_timeline_window(
                 &state.thread_views,
@@ -1405,20 +1405,7 @@ async fn apply_thread_detail_response_state_with_merge(
             .await?
         }
     };
-    let pending_approvals = state
-        .store
-        .list_approvals(
-            Some("pending".to_string()),
-            Some(response.thread.id.clone()),
-        )
-        .await?;
-    response.timeline = thread_view::record_pending_requests(
-        &state.thread_views,
-        &response.thread.id,
-        &pending_approvals,
-        timeline.view_revision,
-    )
-    .await?;
+    response.timeline = crate::approvals::hydrate_thread_view(state, &response.thread.id).await?;
     if let Some(history_page) = &mut response.history_page {
         history_page.loaded_turn_count = response.timeline.turns.len() as u32;
     }

@@ -149,7 +149,7 @@ function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
     "GET /v1/chats/threads": { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
     "GET /v1/threads/pinned": { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
     "GET /v1/events": { events: [] },
-    "GET /v1/approvals": { approvals: [] },
+    "GET /v1/approvals": { runtimeId: "mvp-runtime", revision: 0, approvals: [] },
     "GET /v1/account": { requiresOpenaiAuth: true, account: null, rawPayload: {} },
     "GET /v1/account/rate-limits": { rateLimits: null, rateLimitsByLimitId: null, rawPayload: {} },
     "GET /v1/models": { models: [model], nextCursor: null, rawPayload: {} },

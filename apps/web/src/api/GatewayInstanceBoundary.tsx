@@ -3,6 +3,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { refreshAccountQueries } from "../account/cache";
+import { refreshApprovalSnapshot } from "../approvals/cache";
 import { PwaLifecycle } from "../pwa/PwaLifecycle";
 import { currentKodexRoute, isThemeWorkbenchRoute, replaceKodexRoute } from "../shell/browserRouting";
 import { getCapabilities, getProject, getThreadDetail } from "./client";
@@ -72,6 +73,7 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
         } else if (force) {
           // Foreground checks also recover missed account changes while a stream stays open.
           void refreshAccountQueries(queryClient, { cancelInFlight: true });
+          void refreshApprovalSnapshot(queryClient);
         }
         queryClient.setQueryData(queryKeys.capabilities, capabilities);
         setError(null);
@@ -90,7 +92,10 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
   const confirmedId = instance?.id;
   const validateInstance = useCallback(async () => (await checkIdentity()) === confirmedId, [checkIdentity, confirmedId]);
   const handleStreamConnected = useCallback(() => {
-    if (confirmedId && instanceIdRef.current === confirmedId) void refreshAccountQueries(queryClient, { cancelInFlight: true });
+    if (confirmedId && instanceIdRef.current === confirmedId) {
+      void refreshAccountQueries(queryClient, { cancelInFlight: true });
+      void refreshApprovalSnapshot(queryClient);
+    }
   }, [confirmedId, queryClient]);
   const connection = useMemo(() => ({ beforeConnect: validateInstance, onConnected: handleStreamConnected }), [handleStreamConnected, validateInstance]);
 

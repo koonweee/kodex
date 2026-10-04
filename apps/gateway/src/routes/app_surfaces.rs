@@ -501,9 +501,7 @@ async fn require_generated_tool_approval(
         return Ok(None);
     }
 
-    let approval = state
-        .store
-        .insert_approval(NewApproval {
+    let approval = crate::approvals::create_local(state, NewApproval {
             request_id: format!(
                 "app-surface-bridge:{}:{}:{}",
                 session.id,
@@ -526,20 +524,6 @@ async fn require_generated_tool_approval(
             }),
         })
         .await?;
-    let event = state
-        .store
-        .append_event(NewEvent {
-            project_id: None,
-            thread_id: Some(session.thread_id.clone()),
-            turn_id: None,
-            item_id: None,
-            kind: "approval.created".to_string(),
-            codex_method: Some(APP_SURFACE_BRIDGE_APPROVAL_METHOD.to_string()),
-            payload: serde_json::to_value(&approval)?,
-        })
-        .await?;
-    let _ = state.events.send(event);
-
     Ok(Some(json!({
         "approvalRequired": true,
         "approvalId": approval.id,

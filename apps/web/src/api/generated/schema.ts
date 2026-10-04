@@ -2145,6 +2145,7 @@ export interface components {
             /** Format: date-time */
             resolvedAt?: string | null;
             response?: unknown;
+            source: components["schemas"]["ApprovalSource"];
             status: string;
             threadId?: string | null;
             turnId?: string | null;
@@ -2154,7 +2155,12 @@ export interface components {
         };
         ApprovalListResponse: {
             approvals: components["schemas"]["Approval"][];
+            /** Format: int64 */
+            revision: number;
+            runtimeId: string;
         };
+        /** @enum {string} */
+        ApprovalSource: "native" | "generatedApp";
         AutomationCreateRequest: {
             /**
              * @description Non-empty display name for the automation.

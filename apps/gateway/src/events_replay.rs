@@ -28,15 +28,14 @@ use crate::{
         THREAD_SUBAGENT_STOPPED_EVENT, THREAD_SUBAGENT_UPDATED_EVENT,
     },
     thread_view::{
-        self, THREAD_VIEW_ITEM_DELTA_EVENT_KIND, THREAD_VIEW_PATCH_EVENT_KIND,
+        THREAD_VIEW_ITEM_DELTA_EVENT_KIND, THREAD_VIEW_PATCH_EVENT_KIND,
         THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND,
     },
 };
 
 pub(crate) const THREAD_VIEW_CURSOR_KIND: &str = "thread_view.cursor";
 pub(crate) const WORKSPACE_GLOBAL_THREAD_EVENT_KINDS: &[&str] = &[
-    "approval.created",
-    "approval.resolved",
+    "approval.changed",
     "gateway.error",
     "gateway.warning",
     "timeline.thread_metadata",
@@ -87,8 +86,7 @@ pub(crate) fn event_matches(event: &EventEnvelope, query: &EventsQuery) -> bool 
 pub(crate) fn is_operational_replay_event(event: &EventEnvelope) -> bool {
     matches!(
         event.kind.as_str(),
-        "approval.created"
-            | "approval.resolved"
+        "approval.changed"
             | "gateway.error"
             | "gateway.warning"
             | "timeline.thread_metadata"
@@ -142,7 +140,7 @@ pub(crate) fn workspace_sse_replay_events(
                 .as_ref()
                 .is_some_and(|thread_id| subscribed_thread_ids.contains(thread_id))
             && (is_thread_view_replay_refresh_trigger(&event)
-                || is_invalid_thread_view_patch_replay_trigger(&event))
+                || is_thread_view_patch_replay_trigger(&event))
         {
             if let Some(thread_id) = event.thread_id.as_ref() {
                 refresh_seq_by_thread_id
@@ -181,25 +179,15 @@ pub(crate) fn is_normal_live_event(event: &EventEnvelope) -> bool {
 fn is_workspace_sse_replay_event(event: &EventEnvelope, query: &EventsQuery) -> bool {
     is_operational_replay_event(event)
         || (query.has_thread_subscriptions()
-            && (event.kind == THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND
-                || is_valid_thread_view_patch_replay_event(event)))
+            && event.kind == THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND)
 }
 
 fn is_thread_view_replay_refresh_trigger(event: &EventEnvelope) -> bool {
     event.kind == THREAD_VIEW_CURSOR_KIND
 }
 
-fn is_valid_thread_view_patch_replay_event(event: &EventEnvelope) -> bool {
-    if event.kind != THREAD_VIEW_PATCH_EVENT_KIND {
-        return false;
-    }
-
-    serde_json::from_value::<thread_view::ThreadViewPatch>(event.payload.clone())
-        .is_ok_and(|patch| patch.validate_scope().is_ok())
-}
-
-fn is_invalid_thread_view_patch_replay_trigger(event: &EventEnvelope) -> bool {
-    event.kind == THREAD_VIEW_PATCH_EVENT_KIND && !is_valid_thread_view_patch_replay_event(event)
+fn is_thread_view_patch_replay_trigger(event: &EventEnvelope) -> bool {
+    event.kind == THREAD_VIEW_PATCH_EVENT_KIND
 }
 
 #[cfg(test)]
@@ -307,7 +295,7 @@ mod tests {
 
         let replay = workspace_sse_replay_events(
             vec![
-                event("approval.created", 1, "thread-2"),
+                global_event("approval.changed", 1),
                 event(THREAD_VIEW_ITEM_DELTA_EVENT_KIND, 2, "thread-2"),
                 event(THREAD_VIEW_PATCH_EVENT_KIND, 3, "thread-2"),
                 event(THREAD_VIEW_ITEM_DELTA_EVENT_KIND, 4, "thread-1"),
@@ -321,7 +309,7 @@ mod tests {
                 .iter()
                 .map(|event| (event.kind.as_str(), event.thread_id.as_deref()))
                 .collect::<Vec<_>>(),
-            vec![("approval.created", Some("thread-2"))]
+            vec![("approval.changed", None)]
         );
     }
 

@@ -2211,7 +2211,7 @@ pub async fn decide_self_control_approval(
     Path(approval_id): Path<String>,
     Json(request): Json<SelfControlApprovalDecisionRequest>,
 ) -> ApiResult<Json<SelfControlApprovalDecisionResponse>> {
-    let approval = state.store.get_approval(&approval_id).await?;
+    let approval = crate::approvals::get_approval(&state, &approval_id).await?;
     validate_approval_response(&approval.method, &request.decision)?;
     let policy = approval_policy_result(&request)?;
     audit_self_control(
@@ -2236,7 +2236,7 @@ pub async fn decide_self_control_approval(
         &state,
         None,
         resolved.thread_id.as_deref(),
-        "self_control.approval_decision_applied",
+        "self_control.approval_decision_submitted",
         json!({
             "approvalId": approval_id,
             "policy": policy.clone(),

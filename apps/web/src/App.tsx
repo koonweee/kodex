@@ -821,10 +821,8 @@ function KodexShell({
   );
   const {
     approvals,
-    applyApprovalEventWithTombstone,
     handleApprovalDecision,
-    setApprovals,
-  } = useApprovalsState({ selectedThreadId });
+  } = useApprovalsState({ onError: reportError });
   approvalsRef.current = approvals;
   chatThreadsRef.current = chatThreads;
   pinnedThreadsRef.current = pinnedThreads;
@@ -1022,7 +1020,6 @@ function KodexShell({
   }, [draftComposerTransitionToken]);
 
   const { applySelectedThreadStreamEvent, liveRouteHandlers } = useLiveEventHandlers({
-    applyApprovalEventWithTombstone,
     applyCompletedAgentTurnEvent,
     applyQueuedInputDeleted: removeQueuedInput,
     applyQueuedInputUpsert: upsertQueuedInput,
@@ -1035,7 +1032,6 @@ function KodexShell({
     applyUsageLimitSnapshot,
     queryClient: queryClientForShell,
     refreshSidebarThreadsForLiveEvent,
-    setApprovals,
     setSkillsInvalidationGeneration,
   });
 
@@ -1062,7 +1058,6 @@ function KodexShell({
 
   useSelectedThreadTimeline({
     isSelectedThreadSnapshotDeferred,
-    onApprovalEvent: applyApprovalEventWithTombstone,
     onError: (error) => {
       const threadId = selectedThreadIdRef.current;
       reportError(error, threadId ? `Selected thread load failed (${threadId})` : "Selected thread load failed");
@@ -1072,7 +1067,6 @@ function KodexShell({
     onSelectedThreadEvent: applySelectedThreadStreamEvent,
     onQueueEvent: () => {},
     selectedThreadId: useSingleThreadWorkspace ? selectedThreadId : null,
-    setApprovals,
     setTimeline,
     setTimelineEntry,
     onThreadLoadFailed: handleSelectedThreadLoadFailed,

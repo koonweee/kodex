@@ -187,7 +187,11 @@ pub async fn run_inbound_ingest(mut inbound: mpsc::Receiver<InboundMessage>, sta
 
 pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiResult<()> {
     match message {
+        InboundMessage::Disconnected => crate::approvals::runtime_unavailable(state).await?,
         InboundMessage::Notification { method, params } => {
+            if method == "serverRequest/resolved" {
+                return crate::approvals::resolve_native(state, &params).await;
+            }
             let metadata = EventMetadata::from_payload(&params);
             let mut emitted = false;
             if let Some(event) = normalized_mcp_event(state, &method, &params).await? {
@@ -250,24 +254,6 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             params,
         } => {
             let metadata = EventMetadata::from_payload(&params);
-            let server_request_event = state
-                .store
-                .append_event(NewEvent {
-                    project_id: metadata.project_id.clone(),
-                    thread_id: metadata.thread_id.clone(),
-                    turn_id: metadata.turn_id.clone(),
-                    item_id: metadata.item_id.clone(),
-                    kind: "codex.server_request".to_string(),
-                    codex_method: Some(method.clone()),
-                    payload: json!({
-                        "requestId": request_id,
-                        "method": method,
-                        "params": params,
-                    }),
-                })
-                .await?;
-            let _ = state.events.send(server_request_event);
-
             if !is_supported_approval_method(&method) {
                 state
                     .app_server
@@ -296,37 +282,18 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                 return Ok(());
             }
 
-            let approval = state
-                .store
-                .insert_approval(NewApproval {
+            crate::approvals::receive_native(
+                state,
+                NewApproval {
                     request_id,
-                    thread_id: metadata.thread_id.clone(),
-                    turn_id: metadata.turn_id.clone(),
-                    item_id: metadata.item_id.clone(),
-                    method: method.clone(),
-                    payload: params,
-                })
-                .await?;
-            let event = state
-                .store
-                .append_event(NewEvent {
-                    project_id: metadata.project_id,
                     thread_id: metadata.thread_id,
                     turn_id: metadata.turn_id,
                     item_id: metadata.item_id,
-                    kind: "approval.created".to_string(),
-                    codex_method: Some(method),
-                    payload: serde_json::to_value(&approval)?,
-                })
-                .await?;
-            thread_view::record_approval_created(&state.thread_views, &approval, event.seq).await?;
-            let _ = state.events.send(event);
-            if let Some(thread_id) = approval.thread_id.as_deref() {
-                let patch =
-                    thread_view::lifecycle_patch_for_thread(&state.thread_views, thread_id).await?;
-                let patch = thread_view_patch_payload_event(state, patch).await?;
-                let _ = state.events.send(patch);
-            }
+                    method,
+                    payload: params,
+                },
+            )
+            .await?;
         }
     }
     Ok(())
@@ -443,6 +410,11 @@ async fn event_stream(
                 }
                 Ok(Ok(_)) => {}
                 Ok(Err(broadcast::error::RecvError::Lagged(_))) => {
+                    if let Ok(event) = synthetic_event(high_water, None, None, None,
+                        crate::approvals::APPROVAL_CHANGED_EVENT, None,
+                        json!({"runtimeId": state.approvals.runtime_id()})) {
+                        if let Ok(event) = event_to_sse(event) { yield Ok(event); }
+                    }
                     for thread_id in query.subscribed_thread_ids() {
                         if let Ok(event) = thread_view_refresh_required_event(high_water, thread_id, "lagged") {
                             if let Ok(sse_event) = event_to_sse(event) {

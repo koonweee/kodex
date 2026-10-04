@@ -3,12 +3,20 @@ use serde_json::Value;
 use sqlx::{QueryBuilder, Sqlite};
 use uuid::Uuid;
 
-use crate::error::{ApiError, ApiResult};
+use crate::{
+    error::{ApiError, ApiResult},
+    routes::app_surfaces::APP_SURFACE_BRIDGE_APPROVAL_METHOD,
+};
 
 use super::{row_to_approval, Approval, NewApproval, Store};
 
 impl Store {
     pub async fn insert_approval(&self, approval: NewApproval) -> ApiResult<Approval> {
+        if approval.method != APP_SURFACE_BRIDGE_APPROVAL_METHOD {
+            return Err(ApiError::BadRequest(
+                "only generated-app grants may be stored".to_string(),
+            ));
+        }
         let now = Utc::now();
         let id = Uuid::new_v4().to_string();
         let payload_json = serde_json::to_string(&approval.payload)?;
@@ -42,8 +50,9 @@ impl Store {
         thread_id: Option<String>,
     ) -> ApiResult<Vec<Approval>> {
         let mut builder = QueryBuilder::<Sqlite>::new(
-            "select id, request_id, thread_id, turn_id, item_id, method, status, payload_json, response_json, created_at, resolved_at from approvals where 1 = 1",
+            "select id, request_id, thread_id, turn_id, item_id, method, status, payload_json, response_json, created_at, resolved_at from approvals where method = ",
         );
+        builder.push_bind(APP_SURFACE_BRIDGE_APPROVAL_METHOD);
         if let Some(status) = status {
             builder.push(" and status = ");
             builder.push_bind(status);
@@ -64,10 +73,11 @@ impl Store {
             select id, request_id, thread_id, turn_id, item_id, method, status,
                    payload_json, response_json, created_at, resolved_at
             from approvals
-            where id = ?
+            where id = ? and method = ?
             "#,
         )
         .bind(id)
+        .bind(APP_SURFACE_BRIDGE_APPROVAL_METHOD)
         .fetch_optional(&self.pool)
         .await?;
 
@@ -77,64 +87,22 @@ impl Store {
     }
 
     pub async fn resolve_approval(&self, id: &str, response: Value) -> ApiResult<Approval> {
-        self.claim_approval_resolution(id, response).await?;
-        self.finish_approval_resolution(id).await
-    }
-
-    pub async fn claim_approval_resolution(
-        &self,
-        id: &str,
-        response: Value,
-    ) -> ApiResult<Approval> {
-        let response_json = serde_json::to_string(&response)?;
-        let resolved_at = Utc::now();
         let result = sqlx::query(
-            "update approvals set status = 'resolving', response_json = ?, resolved_at = ? where id = ? and status = 'pending'",
+            "update approvals set status = 'resolved', response_json = ?, resolved_at = ? where id = ? and status = 'pending' and method = ?",
         )
-        .bind(response_json)
-        .bind(resolved_at)
+        .bind(serde_json::to_string(&response)?)
+        .bind(Utc::now())
         .bind(id)
+        .bind(APP_SURFACE_BRIDGE_APPROVAL_METHOD)
         .execute(&self.pool)
         .await?;
-
+        let approval = self.get_approval(id).await?;
         if result.rows_affected() == 0 {
-            let existing = self.get_approval(id).await?;
             return Err(ApiError::BadRequest(format!(
-                "approval {id} is not pending; current status is {}",
-                existing.status
+                "approval {id} is not pending"
             )));
         }
-
-        self.get_approval(id).await
-    }
-
-    pub async fn finish_approval_resolution(&self, id: &str) -> ApiResult<Approval> {
-        let result = sqlx::query(
-            "update approvals set status = 'resolved' where id = ? and status = 'resolving'",
-        )
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
-
-        if result.rows_affected() == 0 {
-            let existing = self.get_approval(id).await?;
-            return Err(ApiError::BadRequest(format!(
-                "approval {id} is not resolving; current status is {}",
-                existing.status
-            )));
-        }
-
-        self.get_approval(id).await
-    }
-
-    pub async fn reset_approval_resolution(&self, id: &str) -> ApiResult<()> {
-        sqlx::query(
-            "update approvals set status = 'pending', response_json = null, resolved_at = null where id = ? and status = 'resolving'",
-        )
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+        Ok(approval)
     }
 }
 
@@ -156,7 +124,7 @@ mod tests {
                 thread_id: None,
                 turn_id: None,
                 item_id: None,
-                method: "item/permissions/requestApproval".to_string(),
+                method: crate::routes::app_surfaces::APP_SURFACE_BRIDGE_APPROVAL_METHOD.to_string(),
                 payload: json!({"kind": "test"}),
             })
             .await

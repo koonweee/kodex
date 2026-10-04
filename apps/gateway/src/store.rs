@@ -329,6 +329,7 @@ pub struct AppSurfaceSessionUpsert {
 #[serde(rename_all = "camelCase")]
 pub struct Approval {
     pub id: String,
+    pub source: ApprovalSource,
     pub request_id: String,
     pub thread_id: Option<String>,
     pub turn_id: Option<String>,
@@ -339,6 +340,13 @@ pub struct Approval {
     pub response: Option<Value>,
     pub created_at: DateTime<Utc>,
     pub resolved_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum ApprovalSource {
+    Native,
+    GeneratedApp,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -986,6 +994,7 @@ fn row_to_approval(row: sqlx::sqlite::SqliteRow) -> ApiResult<Approval> {
     let response_json: Option<String> = row.try_get("response_json")?;
     Ok(Approval {
         id: row.try_get("id")?,
+        source: ApprovalSource::GeneratedApp,
         request_id: row.try_get("request_id")?,
         thread_id: row.try_get("thread_id")?,
         turn_id: row.try_get("turn_id")?,

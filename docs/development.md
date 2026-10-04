@@ -45,6 +45,8 @@ Sign in from **Account settings → Sign in with ChatGPT**. Kodex displays the n
 
 Account state is reread after native account events, browser foreground checks and SSE reconnection. If a client misses a failed login's completion before receiving its first event cursor, the displayed attempt can remain waiting; cancel it and request a new code. Kodex does not add a durable login-status store or its own authentication poller.
 
+Native approvals belong to the current app-server connection. Kodex mirrors outstanding requests in memory, deduplicates native replay, and refetches authoritative approval snapshots after invalidation, reconnection and browser foreground checks. Sending a response makes a request non-actionable while it waits for native resolution; a successful pipe write does not prove the decision was accepted or executed. A disconnected runtime retires its native requests. Generated-app grants remain gateway-owned and durable, with their existing scope checks.
+
 ## Validation commands
 
 Backend:
@@ -73,7 +75,7 @@ Install its test browser once with `cd apps/web && npx playwright install chromi
 KODEX_TEST_CODEX_BINARY=/absolute/path/to/codex cargo test -p kodex-gateway --test native_app_server -- --ignored --nocapture
 ```
 
-That fixture does not establish completed interactive account sign-in or release readiness.
+The native fixture also verifies replay of the same pending approval without duplication and Stop clearing its exact native request. Browser E2E covers two-tab approval convergence, missed invalidation and a delayed stale snapshot. These fixtures do not establish completed interactive account sign-in or release readiness.
 
 ## Production-style local serving
 

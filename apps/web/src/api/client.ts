@@ -6,6 +6,7 @@ export type AccountLoginCompleted = components["schemas"]["AccountLoginCompleted
 export type LoginStartResponse = components["schemas"]["LoginStartResponse"];
 export type AccountResponse = components["schemas"]["AccountResponse"];
 export type Approval = components["schemas"]["Approval"];
+export type ApprovalListResponse = components["schemas"]["ApprovalListResponse"];
 export type ApprovalResponse = Record<string, unknown>;
 export type Automation = components["schemas"]["AutomationDto"];
 export type AutomationCreateRequest = components["schemas"]["AutomationCreateRequest"];
@@ -626,9 +627,8 @@ export async function uploadFiles(threadId: string, files: File[]): Promise<Time
   return body.files;
 }
 
-export async function listPendingApprovals(): Promise<Approval[]> {
-  const response = await unwrap(api.GET("/v1/approvals", { params: { query: { status: "pending" } } }));
-  return response.approvals;
+export async function listPendingApprovals(signal?: AbortSignal): Promise<ApprovalListResponse> {
+  return unwrap(api.GET("/v1/approvals", { signal, cache: "no-store" }));
 }
 
 export async function decideApproval(approvalId: string, decision: ApprovalResponse): Promise<Approval> {

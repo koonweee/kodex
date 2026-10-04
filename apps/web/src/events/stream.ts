@@ -26,8 +26,7 @@ type EventStreamClientOptions = {
 const GATEWAY_SSE_EVENT_TYPES = [
   "account.login_completed",
   "account.updated",
-  "approval.created",
-  "approval.resolved",
+  "approval.changed",
   "account.rate_limits_updated",
   "automation.item_deleted",
   "automation.item_upsert",

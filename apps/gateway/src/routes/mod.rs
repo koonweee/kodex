@@ -3338,30 +3338,32 @@ mod tests {
     #[tokio::test]
     async fn self_control_approval_policy_allows_denial_and_gates_approval() {
         let (state, app_server) = test_state().await;
-        let deny = state
-            .store
-            .insert_approval(NewApproval {
-                request_id: "approval-deny".to_string(),
+        let deny = crate::approvals::receive_native(
+            &state,
+            NewApproval {
+                request_id: "\"approval-deny\"".to_string(),
                 thread_id: Some("thread-1".to_string()),
                 turn_id: Some("turn-1".to_string()),
                 item_id: Some("item-1".to_string()),
                 method: "item/commandExecution/requestApproval".to_string(),
                 payload: json!({"threadId": "thread-1"}),
-            })
-            .await
-            .unwrap();
-        let approve = state
-            .store
-            .insert_approval(NewApproval {
-                request_id: "approval-accept".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+        let approve = crate::approvals::receive_native(
+            &state,
+            NewApproval {
+                request_id: "\"approval-accept\"".to_string(),
                 thread_id: Some("thread-1".to_string()),
                 turn_id: Some("turn-1".to_string()),
                 item_id: Some("item-2".to_string()),
                 method: "item/commandExecution/requestApproval".to_string(),
                 payload: json!({"threadId": "thread-1"}),
-            })
-            .await
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
         let app = build_router(state);
 
         let denied = app
@@ -3417,8 +3419,8 @@ mod tests {
 
         let responses = app_server.responses.lock().unwrap();
         assert_eq!(responses.len(), 2);
-        assert_eq!(responses[0].0, "approval-deny");
-        assert_eq!(responses[1].0, "approval-accept");
+        assert_eq!(responses[0].0, "\"approval-deny\"");
+        assert_eq!(responses[1].0, "\"approval-accept\"");
     }
 
     #[tokio::test]
@@ -8180,14 +8182,11 @@ mod tests {
         assert!(bridge_tool["error"].is_null());
         assert_eq!(bridge_tool["result"]["approvalRequired"], true);
         let approval_id = bridge_tool["result"]["approvalId"].as_str().unwrap();
-        let approval_event = recv_event_kind(&mut events, "approval.created").await;
-        assert_eq!(approval_event.payload["id"], approval_id);
-        assert_eq!(
-            approval_event.payload["method"],
-            "appSurface/bridge/requestApproval"
-        );
-        assert_eq!(approval_event.payload["payload"]["server"], "docs");
-        assert_eq!(approval_event.payload["payload"]["tool"], "lookup");
+        let approval_event = recv_event_kind(&mut events, "approval.changed").await;
+        assert!(approval_event.payload.get("runtimeId").is_some());
+        let stored_grant = state.store.get_approval(approval_id).await.unwrap();
+        assert_eq!(stored_grant.payload["server"], "docs");
+        assert_eq!(stored_grant.payload["tool"], "lookup");
 
         let approved = app
             .clone()
@@ -8208,8 +8207,8 @@ mod tests {
         let approved = response_json(approved).await;
         assert_eq!(approved["status"], "resolved");
         assert_eq!(approved["response"], json!({"decision": "accept"}));
-        let resolved_event = recv_event_kind(&mut events, "approval.resolved").await;
-        assert_eq!(resolved_event.payload["id"], approval_id);
+        let resolved_event = recv_event_kind(&mut events, "approval.changed").await;
+        assert!(resolved_event.seq > approval_event.seq);
 
         let bridge_tool = app
             .clone()
@@ -12461,28 +12460,29 @@ mod tests {
             .unwrap();
         }
 
-        let approvals = state
-            .store
-            .list_approvals(Some("pending".to_string()), Some("thread-1".to_string()))
-            .await
-            .unwrap();
-        assert_eq!(approvals.len(), 5);
+        let approvals = crate::approvals::list_approvals(
+            &state,
+            Some("pending".to_string()),
+            Some("thread-1".to_string()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(approvals.approvals.len(), 5);
 
         let events = state.store.replay_events(None, None, None).await.unwrap();
         assert_eq!(
             events
                 .iter()
-                .filter(|event| event.kind == "codex.server_request")
+                .filter(|event| event.kind == "approval.changed")
                 .count(),
             5
         );
-        assert_eq!(
-            events
-                .iter()
-                .filter(|event| event.kind == "approval.created")
-                .count(),
-            5
-        );
+        assert!(state
+            .store
+            .list_approvals(None, None)
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]
@@ -12506,25 +12506,26 @@ mod tests {
             .unwrap()
             .is_empty());
         let events = state.store.replay_events(None, None, None).await.unwrap();
-        assert_eq!(events[0].kind, "codex.server_request");
-        assert_eq!(events[1].kind, "gateway.warning");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, "gateway.warning");
     }
 
     #[tokio::test]
-    async fn approval_decision_sends_one_response_and_emits_resolved_event() {
+    async fn approval_decision_sends_one_response_and_waits_for_native_resolution() {
         let (state, app_server) = test_state().await;
-        let approval = state
-            .store
-            .insert_approval(NewApproval {
+        let approval = crate::approvals::receive_native(
+            &state,
+            NewApproval {
                 request_id: "\"approval-1\"".to_string(),
                 thread_id: Some("thread-1".to_string()),
                 turn_id: Some("turn-1".to_string()),
                 item_id: Some("item-1".to_string()),
                 method: "item/commandExecution/requestApproval".to_string(),
                 payload: json!({"threadId": "thread-1"}),
-            })
-            .await
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
         let app = build_router(state.clone());
 
         let response = app
@@ -12564,15 +12565,29 @@ mod tests {
             .unwrap();
         assert_eq!(unknown.status(), StatusCode::NOT_FOUND);
 
-        let resolved_events = state
-            .store
-            .replay_events(None, None, Some("thread-1".to_string()))
-            .await
-            .unwrap()
-            .into_iter()
-            .filter(|event| event.kind == "approval.resolved")
-            .collect::<Vec<_>>();
-        assert_eq!(resolved_events.len(), 1);
+        assert_eq!(
+            crate::approvals::get_approval(&state, &approval.id)
+                .await
+                .unwrap()
+                .status,
+            "responding"
+        );
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "serverRequest/resolved".to_string(),
+                params: json!({"threadId":"thread-1", "requestId":"approval-1"}),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            crate::approvals::get_approval(&state, &approval.id)
+                .await
+                .unwrap()
+                .status,
+            "resolved"
+        );
     }
 
     #[tokio::test]
@@ -12581,18 +12596,19 @@ mod tests {
         let app_server = Arc::new(BlockingRespondAppServer::default());
         app_server.ready.store(true, Ordering::SeqCst);
         let state = AppState::new(Config::default(), store, app_server.clone());
-        let approval = state
-            .store
-            .insert_approval(NewApproval {
+        let approval = crate::approvals::receive_native(
+            &state,
+            NewApproval {
                 request_id: "\"approval-1\"".to_string(),
                 thread_id: Some("thread-1".to_string()),
                 turn_id: Some("turn-1".to_string()),
                 item_id: Some("item-1".to_string()),
                 method: "item/commandExecution/requestApproval".to_string(),
                 payload: json!({"threadId": "thread-1"}),
-            })
-            .await
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
         let app = build_router(state);
         let path = format!("/v1/approvals/{}/decision", approval.id);
 
@@ -12639,18 +12655,19 @@ mod tests {
     #[tokio::test]
     async fn approval_decision_validates_payload_before_responding() {
         let (state, app_server) = test_state().await;
-        let approval = state
-            .store
-            .insert_approval(NewApproval {
+        let approval = crate::approvals::receive_native(
+            &state,
+            NewApproval {
                 request_id: "\"approval-1\"".to_string(),
                 thread_id: Some("thread-1".to_string()),
                 turn_id: None,
                 item_id: None,
                 method: "item/commandExecution/requestApproval".to_string(),
                 payload: json!({"threadId": "thread-1"}),
-            })
-            .await
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
         let app = build_router(state);
 
         let response = app
@@ -13252,7 +13269,7 @@ mod tests {
                 thread_id: Some("t1".to_string()),
                 turn_id: None,
                 item_id: None,
-                kind: "approval.created".to_string(),
+                kind: "approval.changed".to_string(),
                 codex_method: Some("apply_patch".to_string()),
                 payload: json!({"threadId": "t1", "status": "pending"}),
             })
@@ -13287,7 +13304,7 @@ mod tests {
         let events = body["events"].as_array().unwrap();
         assert_eq!(events.len(), 2);
         assert_eq!(events[0]["seq"], approval.seq);
-        assert_eq!(events[0]["kind"], "approval.created");
+        assert_eq!(events[0]["kind"], "approval.changed");
         assert_eq!(events[1]["seq"], warning.seq);
         assert_eq!(events[1]["kind"], "gateway.warning");
     }
@@ -13759,7 +13776,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sse_replays_selected_thread_projection_patches_after_cursor() {
+    async fn sse_refetches_selected_thread_instead_of_replaying_a_stale_projection_patch() {
         let (state, _) = test_state().await;
         let projection = state
             .store
@@ -13855,8 +13872,9 @@ mod tests {
         let mut body = response.into_body();
         let first = next_sse_chunk(&mut body).await;
         assert!(first.contains(&format!("id: {}", projection.seq)));
-        assert!(first.contains("thread_view.patch"));
-        assert!(first.contains("\"hello\""));
+        assert!(first.contains("thread_view.refresh_required"));
+        assert!(!first.contains("thread_view.patch"));
+        assert!(!first.contains("\"hello\""));
         assert!(!first.contains("\"phase\":\"live\""));
     }
 

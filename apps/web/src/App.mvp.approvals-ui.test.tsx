@@ -35,6 +35,7 @@ describe("MVP approvals UI flows", () => {
       turnId: "turn-2",
       itemId: "missing-item",
       method: "item/commandExecution/requestApproval",
+      source: "native",
       status: "pending",
       payload: { command: "cargo test", cwd: "/home/example/kodex", reason: "Verify changes" },
       response: null,
@@ -49,7 +50,7 @@ describe("MVP approvals UI flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "GET /v1/approvals": { approvals: [unanchoredApproval] },
+        "GET /v1/approvals": { runtimeId: "ui-runtime", revision: 1, approvals: [unanchoredApproval] },
         "GET /v1/events": {
           events: [
             {
@@ -116,6 +117,7 @@ describe("MVP approvals UI flows", () => {
       turnId: "turn-older",
       itemId: "item-older",
       method: "item/commandExecution/requestApproval",
+      source: "native",
       status: "pending",
       payload: { command: "cargo test", cwd: "/home/example/kodex", reason: "Verify before continuing" },
       response: null,
@@ -141,7 +143,7 @@ describe("MVP approvals UI flows", () => {
     expect(await within(threadView).findByRole("heading", { name: /recent idle thread/i })).toBeInTheDocument();
 
     await act(async () => {
-      resolveApprovals({ approvals: [approval] });
+      resolveApprovals({ runtimeId: "ui-runtime", revision: 1, approvals: [approval] });
       await Promise.resolve();
     });
 
@@ -153,7 +155,7 @@ describe("MVP approvals UI flows", () => {
     expect(await within(threadView).findByRole("heading", { name: /recent idle thread/i })).toBeInTheDocument();
   });
 
-  it("posts schema-shaped command, file, permission, MCP, and tool-user-input approval responses", async () => {
+  it("posts schema-shaped command, file, permission, MCP, user-input and generated-app responses", async () => {
     const approval = {
       id: "approval-1",
       requestId: "request-1",
@@ -161,6 +163,7 @@ describe("MVP approvals UI flows", () => {
       turnId: "turn-1",
       itemId: "item-1",
       method: "item/commandExecution/requestApproval",
+      source: "native",
       status: "pending",
       payload: { command: "cargo test", cwd: "/home/example/kodex", reason: "Verify frontend" },
       response: null,
@@ -196,32 +199,20 @@ describe("MVP approvals UI flows", () => {
         questions: [{ id: "choice", header: "Choice", question: "Pick one" }],
       },
     };
+    const appApproval = {
+      ...approval, id: "approval-6", source: "generatedApp", method: "appSurface/bridge/requestApproval",
+      payload: { message: "Allow this generated app tool call?" },
+    };
+    const outstanding = new Map([approval, fileApproval, permissionApproval, mcpApproval, userInputApproval, appApproval].map((row) => [row.id, row]));
+    let revision = 1;
     const gateway = mockGateway(
       baseRoutes({
-        "GET /v1/approvals": {
-          approvals: [approval, fileApproval, permissionApproval, mcpApproval, userInputApproval],
-        },
-        "POST /v1/approvals/approval-1/decision": { ...approval, status: "resolved", response: { decision: "accept" } },
-        "POST /v1/approvals/approval-2/decision": {
-          ...fileApproval,
-          status: "resolved",
-          response: { decision: "acceptForSession" },
-        },
-        "POST /v1/approvals/approval-3/decision": {
-          ...permissionApproval,
-          status: "resolved",
-          response: { permissions: { network: { enabled: true }, fileSystem: null }, scope: "turn" },
-        },
-        "POST /v1/approvals/approval-4/decision": {
-          ...mcpApproval,
-          status: "resolved",
-          response: { action: "decline" },
-        },
-        "POST /v1/approvals/approval-5/decision": {
-          ...userInputApproval,
-          status: "resolved",
-          response: { answers: { choice: { answers: [] } } },
-        },
+        "GET /v1/approvals": () => ({ runtimeId: "ui-runtime", revision, approvals: [...outstanding.values()] }),
+        ...Object.fromEntries([...outstanding.values()].map((row) => [`POST /v1/approvals/${row.id}/decision`, () => {
+          outstanding.delete(row.id);
+          revision += 1;
+          return { ...row, status: "resolved" };
+        }])),
       }),
     );
 
@@ -243,6 +234,7 @@ describe("MVP approvals UI flows", () => {
     await userEvent.click(within(timeline).getByRole("button", { name: /yes, grant these permissions for this turn/i }));
     await userEvent.click(within(timeline).getByRole("button", { name: /no, but continue without it/i }));
     await userEvent.click(within(timeline).getByRole("button", { name: /submit answers/i }));
+    await userEvent.click(within(timeline).getByRole("button", { name: /yes, allow this tool call/i }));
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/approvals/approval-1/decision")).toHaveLength(1);
@@ -250,6 +242,7 @@ describe("MVP approvals UI flows", () => {
       expect(gateway.callsFor("POST", "/v1/approvals/approval-3/decision")).toHaveLength(1);
       expect(gateway.callsFor("POST", "/v1/approvals/approval-4/decision")).toHaveLength(1);
       expect(gateway.callsFor("POST", "/v1/approvals/approval-5/decision")).toHaveLength(1);
+      expect(gateway.callsFor("POST", "/v1/approvals/approval-6/decision")).toHaveLength(1);
       expect(within(timeline).queryByText(/cargo test/i)).not.toBeInTheDocument();
     });
 
@@ -268,6 +261,9 @@ describe("MVP approvals UI flows", () => {
     await expect(requestJson(gateway.callsFor("POST", "/v1/approvals/approval-5/decision")[0])).resolves.toEqual({
       decision: { answers: { choice: { answers: [] } } },
     });
+    await expect(requestJson(gateway.callsFor("POST", "/v1/approvals/approval-6/decision")[0])).resolves.toEqual({
+      decision: { decision: "accept" },
+    });
   });
 
   it("posts strict auto review for turn-scoped permission approval", async () => {
@@ -278,6 +274,7 @@ describe("MVP approvals UI flows", () => {
       turnId: "turn-1",
       itemId: "item-1",
       method: "item/permissions/requestApproval",
+      source: "native",
       status: "pending",
       payload: {
         reason: "Needs network access",
@@ -289,7 +286,7 @@ describe("MVP approvals UI flows", () => {
     };
     const gateway = mockGateway(
       baseRoutes({
-        "GET /v1/approvals": { approvals: [approval] },
+        "GET /v1/approvals": { runtimeId: "ui-runtime", revision: 1, approvals: [approval] },
         "POST /v1/approvals/approval-strict-permissions/decision": {
           ...approval,
           status: "resolved",
@@ -330,6 +327,7 @@ describe("MVP approvals UI flows", () => {
       turnId: "turn-1",
       itemId: "item-1",
       method: "item/commandExecution/requestApproval",
+      source: "native",
       status: "pending",
       payload: {
         command: "npm run build -- --mode production && npm run test:e2e",
@@ -342,7 +340,7 @@ describe("MVP approvals UI flows", () => {
     };
     mockGateway(
       baseRoutes({
-        "GET /v1/approvals": { approvals: [approval] },
+        "GET /v1/approvals": { runtimeId: "ui-runtime", revision: 1, approvals: [approval] },
       }),
     );
 
@@ -363,6 +361,7 @@ describe("MVP approvals UI flows", () => {
       turnId: "turn-1",
       itemId: "item-1",
       method: "item/commandExecution/requestApproval",
+      source: "native",
       status: "pending",
       payload: {
         command: "rg TODO apps/web",
@@ -390,7 +389,7 @@ describe("MVP approvals UI flows", () => {
     };
     const gateway = mockGateway(
       baseRoutes({
-        "GET /v1/approvals": { approvals: [execPolicyApproval, networkPolicyApproval] },
+        "GET /v1/approvals": { runtimeId: "ui-runtime", revision: 1, approvals: [execPolicyApproval, networkPolicyApproval] },
         "POST /v1/approvals/approval-policy/decision": {
           ...execPolicyApproval,
           status: "resolved",

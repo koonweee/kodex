@@ -117,6 +117,7 @@ async fn exercise(fixture: &mut Fixture, session: &mut NativeSession) -> anyhow:
     verify_native_upload_read(fixture, session, &thread_id).await?;
     verify_native_image_upload(fixture, session, &thread_id).await?;
     verify_native_approval(fixture, session, &thread_id).await?;
+    verify_stop_pending_approval(fixture, session, &thread_id).await?;
 
     fixture.enqueue([ModelResponse::Hold]);
     start_turn(&session.app, &thread_id, "Wait for Stop").await?;
@@ -284,6 +285,31 @@ async fn verify_native_approval(
         "command ran before approval"
     );
     let approval_id = approval["id"].as_str().context("missing approval ID")?;
+    let first_request = session.next_server_request().await?;
+    anyhow::ensure!(approval["requestId"] == first_request.0);
+    api(
+        &session.app,
+        "POST",
+        &format!("/v1/threads/{thread_id}/resume"),
+        Some(json!({})),
+    )
+    .await?;
+    anyhow::ensure!(session.next_server_request().await? == first_request);
+    let replayed = api(
+        &session.app,
+        "GET",
+        &format!("/v1/approvals?threadId={thread_id}"),
+        None,
+    )
+    .await?;
+    let replayed = replayed["approvals"]
+        .as_array()
+        .context("missing replay snapshot")?;
+    anyhow::ensure!(
+        replayed.len() == 1,
+        "native replay created duplicate prompts: {replayed:?}"
+    );
+    anyhow::ensure!(replayed[0]["id"] == approval_id);
     // Another client can read and resolve the same native request through gateway state.
     let second_read = api(
         &session.app.clone(),
@@ -293,15 +319,20 @@ async fn verify_native_approval(
     )
     .await?;
     anyhow::ensure!(second_read["status"] == "pending");
-    let resolved = api(
+    let submitted = api(
         &session.app,
         "POST",
         &format!("/v1/approvals/{approval_id}/decision"),
         Some(json!({"decision":{"decision":"accept"}})),
     )
     .await?;
-    anyhow::ensure!(resolved["status"] == "resolved");
-    session.completed_turn(thread_id, "completed").await?;
+    anyhow::ensure!(matches!(
+        submitted["status"].as_str(),
+        Some("responding" | "resolved")
+    ));
+    session
+        .completed_turn_and_resolution(thread_id, "completed", &first_request.0)
+        .await?;
     anyhow::ensure!(std::fs::read_to_string(fixture.workspace.join("approved.txt"))? == "approved");
     fixture.next_model_request().await?;
     let continuation = fixture.next_model_request().await?;
@@ -316,6 +347,60 @@ async fn verify_native_approval(
     )
     .await?;
     anyhow::ensure!(second_read["status"] == "resolved");
+    Ok(())
+}
+
+async fn verify_stop_pending_approval(
+    fixture: &mut Fixture,
+    session: &mut NativeSession,
+    thread_id: &str,
+) -> anyhow::Result<()> {
+    fixture.enqueue([ModelResponse::command("fixture-stopped-approval", json!({
+        "cmd":"printf forbidden > stopped-approval.txt", "workdir":fixture.workspace,
+        "shell":"/bin/sh", "login":false, "yield_time_ms":1000,
+        "sandbox_permissions":"require_escalated", "justification":"This disposable command must be stopped before approval.",
+    }))]);
+    start_turn(
+        &session.app,
+        thread_id,
+        "Prepare another approval then stop",
+    )
+    .await?;
+    let (request_id, _) = session.next_server_request().await?;
+    let pending = api(
+        &session.app,
+        "GET",
+        &format!("/v1/approvals?threadId={thread_id}"),
+        None,
+    )
+    .await?;
+    anyhow::ensure!(pending["approvals"]
+        .as_array()
+        .is_some_and(|rows| rows.len() == 1));
+    let stopped = api(
+        &session.app,
+        "POST",
+        &format!("/v1/threads/{thread_id}/interrupt-current"),
+        None,
+    )
+    .await?;
+    let turn = session
+        .completed_turn_and_resolution(thread_id, "interrupted", &request_id)
+        .await?;
+    anyhow::ensure!(stopped["interruptedTurnId"] == turn["id"]);
+    let after = api(
+        &session.app,
+        "GET",
+        &format!("/v1/approvals?threadId={thread_id}"),
+        None,
+    )
+    .await?;
+    anyhow::ensure!(
+        after["approvals"].as_array().is_some_and(Vec::is_empty),
+        "Stop retained pending native approval: {after}"
+    );
+    anyhow::ensure!(!fixture.workspace.join("stopped-approval.txt").exists());
+    fixture.next_model_request().await?;
     Ok(())
 }
 
