@@ -57,14 +57,12 @@ export type ShellSelectionRefs = {
 };
 
 export function useShellSelection({
-  onSelectThread,
   chatThreadsRef,
   initialRoute,
   sectionThreadsRef,
   resetComposerDraft,
   threadsByProjectIdRef,
 }: {
-  onSelectThread: (threadId: string) => void;
   chatThreadsRef: CurrentRef<ThreadSummary[]>;
   initialRoute: KodexRoute;
   sectionThreadsRef: CurrentRef<ThreadSummary[]>;
@@ -120,8 +118,7 @@ export function useShellSelection({
     setUnavailableThreadId(null);
     setRouteSelectedThreadState(null);
     setSelectedThreadIdWithRef(threadId);
-    onSelectThread(threadId);
-  }, [onSelectThread, setRouteSelectedThreadState, setSelectedProjectIdWithRef, setSelectedThreadIdWithRef]);
+  }, [setRouteSelectedThreadState, setSelectedProjectIdWithRef, setSelectedThreadIdWithRef]);
 
   const selectKnownChatThread = useCallback((threadId: string) => {
     setSelectedMainPane("thread");
@@ -136,9 +133,7 @@ export function useShellSelection({
     setUnavailableThreadId(null);
     setRouteSelectedThreadState(null);
     setSelectedThreadIdWithRef(threadId);
-    onSelectThread(threadId);
   }, [
-    onSelectThread,
     setRouteSelectedThreadState,
     setSelectedProjectIdWithRef,
     setSelectedThreadIdWithRef,
@@ -171,9 +166,7 @@ export function useShellSelection({
     setUnavailableThreadId(null);
     setRouteSelectedThreadState(null);
     setSelectedThreadIdWithRef(threadId);
-    onSelectThread(threadId);
   }, [
-    onSelectThread,
     chatThreadsRef,
     sectionThreadsRef,
     selectKnownChatThread,
@@ -337,11 +330,9 @@ export function useShellSelection({
     setSelectedProjectIdWithRef(projectId);
     setUnavailableThreadId(null);
     setRouteSelectedThreadState(thread);
-    onSelectThread(thread.id);
     setSelectedThreadIdWithRef(thread.id);
     pushKodexRoute({ panel: null, threadId: null });
   }, [
-    onSelectThread,
     setRouteSelectedThreadState,
     setSelectedProjectIdWithRef,
     setSelectedThreadIdWithRef,

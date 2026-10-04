@@ -72,6 +72,7 @@ type WorkspaceProviderProps = {
   approvals?: Approval[];
   children: ReactNode;
   errorMessage?: string | null;
+  isVisible?: boolean;
   imagePreviewUrlsByPath?: Record<string, string>;
   onApprovalDecision?: (approval: Approval, decision: ApprovalResponse) => void;
   onFocusThreadPane?: (threadId: string) => void;
@@ -111,6 +112,7 @@ type WorkspaceContextValue = {
   onThreadSnapshotLoadFailed: (threadId: string) => void;
   onThreadSnapshotLoaded: (thread: ThreadSummary) => void;
   onVisiblePaneIdsChange: (paneIds: string[]) => void;
+  visiblePaneIds: string[];
   openDraftThreadPane: (projectId?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
   openAppSurfacePane: (threadId: string, title?: string | null, options?: WorkspacePaneOpenOptions) => Promise<void>;
   openNewTerminalPane: (options?: WorkspaceTerminalOpenOptions) => Promise<void>;
@@ -160,6 +162,7 @@ export function WorkspaceProvider({
   approvals = [],
   children,
   errorMessage = null,
+  isVisible = true,
   imagePreviewUrlsByPath = {},
   onApprovalDecision = () => undefined,
   onFocusThreadPane,
@@ -303,9 +306,10 @@ export function WorkspaceProvider({
     setFocusPulseByPaneId((current) => ({ ...current, [paneId]: token }));
   }, []);
 
+  const exposedVisiblePaneIds = useMemo(() => isVisible ? visiblePaneIds : [], [isVisible, visiblePaneIds]);
   const visibleThreadIds = useMemo(
-    () => visibleThreadIdsForPaneIds(workspace.panes, visiblePaneIds),
-    [visiblePaneIds, workspace.panes],
+    () => visibleThreadIdsForPaneIds(workspace.panes, exposedVisiblePaneIds),
+    [exposedVisiblePaneIds, workspace.panes],
   );
 
   useEffect(() => {
@@ -782,6 +786,7 @@ export function WorkspaceProvider({
       onThreadSnapshotLoadFailed,
       onThreadSnapshotLoaded,
       onVisiblePaneIdsChange,
+      visiblePaneIds: exposedVisiblePaneIds,
       openDraftThreadPane,
       openAppSurfacePane,
       openNewTerminalPane,
@@ -834,6 +839,7 @@ export function WorkspaceProvider({
       onThreadSnapshotLoadFailed,
       onThreadSnapshotLoaded,
       onVisiblePaneIdsChange,
+      exposedVisiblePaneIds,
       openDraftThreadPane,
       openAppSurfacePane,
       openNewTerminalPane,

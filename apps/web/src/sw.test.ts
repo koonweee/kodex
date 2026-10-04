@@ -5,6 +5,7 @@ const originalSelf = globalThis.self;
 afterEach(() => {
   vi.resetModules();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   Object.defineProperty(globalThis, "self", { configurable: true, value: originalSelf });
 });
 
@@ -35,7 +36,8 @@ describe("service worker push handling", () => {
     listeners.get("push")?.({
       data: {
         json: () => ({
-          badgeCount: 3,
+          badgeCount: 999,
+          readRevision: 1,
           body: "Agent has a new message.",
           kind: "unreadAgentMessage",
           route: "/threads/thread-1",
@@ -48,7 +50,7 @@ describe("service worker push handling", () => {
     await Promise.all(waitUntilPromises);
 
     expect(matchAll).not.toHaveBeenCalled();
-    expect(setAppBadge).toHaveBeenCalledWith(3);
+    expect(setAppBadge).toHaveBeenCalledWith(0);
     expect(showNotification).toHaveBeenCalledWith(
       "Thread one",
       expect.objectContaining({
@@ -56,6 +58,46 @@ describe("service worker push handling", () => {
         tag: "kodex-unread-agent-message:thread-1",
       }),
     );
+  });
+
+  it("does not let an old push read overwrite a later authoritative badge refresh", async () => {
+    let releaseOld!: (response: Response) => void;
+    const fetchBadge = vi.fn()
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { releaseOld = resolve; }))
+      .mockResolvedValueOnce(Response.json({ count: 0, readRevision: 2 }));
+    const { listeners, setAppBadge, showNotification } = await installServiceWorker({ fetchBadge });
+    const pending: Array<Promise<unknown>> = [];
+    listeners.get("push")?.({
+      data: { json: () => ({ kind: "unreadAgentMessage", title: "Seen answer", badgeCount: 8, readRevision: 100 }) },
+      waitUntil: (promise: Promise<unknown>) => pending.push(promise),
+    });
+    listeners.get("message")?.({
+      data: { type: "REFRESH_BADGE" },
+      waitUntil: (promise: Promise<unknown>) => pending.push(promise),
+    });
+    await pending[1];
+    expect(fetchBadge.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(setAppBadge).toHaveBeenCalledWith(0);
+    // A replaced instance can have a lower revision; request freshness owns
+    // worker ordering, with no persisted revision watermark across instances.
+    releaseOld(Response.json({ count: 8, readRevision: 100 }));
+    await Promise.all(pending);
+    expect(setAppBadge).toHaveBeenCalledTimes(1);
+    expect(showNotification).toHaveBeenCalledWith("Seen answer", expect.any(Object));
+  });
+
+  it("still shows Push when the badge inventory is unknown and preserves the current badge", async () => {
+    const { listeners, setAppBadge, showNotification } = await installServiceWorker({
+      fetchBadge: vi.fn().mockResolvedValue(new Response("unknown", { status: 409 })),
+    });
+    const pending: Array<Promise<unknown>> = [];
+    listeners.get("push")?.({
+      data: { json: () => ({ kind: "unreadAgentMessage", title: "Answer", badgeCount: null, readRevision: null }) },
+      waitUntil: (promise: Promise<unknown>) => pending.push(promise),
+    });
+    await Promise.all(pending);
+    expect(setAppBadge).not.toHaveBeenCalled();
+    expect(showNotification).toHaveBeenCalledWith("Answer", expect.any(Object));
   });
 
   it("shows test notification payloads with a stable route and tag", async () => {
@@ -120,7 +162,9 @@ describe("service worker push handling", () => {
 async function installServiceWorker({
   clients = [],
   openWindow = vi.fn().mockResolvedValue(undefined),
+  fetchBadge = vi.fn().mockResolvedValue(Response.json({ count: 0, readRevision: 20 })),
 }: {
+  fetchBadge?: ReturnType<typeof vi.fn>;
   clients?: Array<{ focus?: () => Promise<unknown> | unknown; navigate?: (url: string) => Promise<unknown> | unknown; url: string }>;
   openWindow?: (url?: string | URL) => Promise<unknown>;
 } = {}) {
@@ -129,6 +173,7 @@ async function installServiceWorker({
     precacheAndRoute: vi.fn(),
   }));
 
+  vi.stubGlobal("fetch", fetchBadge);
   const listeners = new Map<string, (event: unknown) => void>();
   const showNotification = vi.fn().mockResolvedValue(undefined);
   const setAppBadge = vi.fn().mockResolvedValue(undefined);
@@ -148,10 +193,8 @@ async function installServiceWorker({
     location: {
       origin: "https://kodex.test",
     },
-    registration: {
-      setAppBadge,
-      showNotification,
-    },
+    navigator: { setAppBadge },
+    registration: { showNotification },
     skipWaiting,
   };
   Object.defineProperty(globalThis, "self", { configurable: true, value: fakeSelf });

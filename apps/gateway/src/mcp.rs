@@ -451,8 +451,8 @@ pub struct UpdateThreadSettingsToolParams {
 pub struct MarkThreadSeenToolParams {
     #[serde(alias = "thread_id")]
     pub thread_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub seen_completed_agent_turn_seq: Option<i64>,
+    pub completed_turn_id: String,
+    pub read_revision: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<Value>,
 }
@@ -1066,7 +1066,9 @@ impl KodexControlMcp {
         ))
     }
 
-    #[tool(description = "Mark a Kodex thread seen through self-control lifecycle handling")]
+    #[tool(
+        description = "Acknowledge the exact displayed native completion ID and readRevision from a Kodex thread snapshot; stale or unknown state is rejected"
+    )]
     async fn mark_thread_seen(
         &self,
         Parameters(params): Parameters<MarkThreadSeenToolParams>,
@@ -2350,9 +2352,19 @@ mod tests {
         assert_eq!(requests[0].1["projectId"], project.id);
         assert_eq!(requests[1].0, "thread/start");
         assert_eq!(requests[1].1["projectId"], project.id);
-        assert_eq!(requests[2].0, "thread/read");
-        assert_eq!(requests[3].0, "turn/start");
-        assert_eq!(requests[3].1["input"][0]["text"], "start now");
+        assert_eq!(
+            requests[2],
+            (
+                "thread/turns/list".into(),
+                json!({
+                    "threadId":"thread-1","cursor":null,"sortDirection":"desc","itemsView":"notLoaded","limit":8
+                })
+            )
+        );
+        assert_eq!(requests[3].0, "thread/read");
+        assert_eq!(requests[4].0, "turn/start");
+        assert_eq!(requests[4].1["input"][0]["text"], "start now");
+        assert_eq!(requests.len(), 5);
 
         client.cancel().await?;
         mcp_server.abort();

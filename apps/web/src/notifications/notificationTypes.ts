@@ -1,7 +1,6 @@
 type KodexNotificationKind = "test" | "unreadAgentMessage";
 
 export type KodexNotificationPayload = {
-  badgeCount?: number;
   body?: string;
   kind: KodexNotificationKind;
   route?: string;

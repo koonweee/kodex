@@ -12,6 +12,8 @@ mod identity;
 mod items;
 #[path = "native_app_server/projects.rs"]
 mod projects;
+#[path = "native_app_server/read_markers.rs"]
+mod read_markers;
 #[path = "native_app_server/revert.rs"]
 mod revert;
 #[path = "native_app_server/sections.rs"]

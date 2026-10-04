@@ -1,4 +1,5 @@
 import { mergeThreadSummaryMetadata } from "./summaryMetadata";
+import { preserveNewerThreadReadState } from "./readState";
 import type { QueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
@@ -46,7 +47,8 @@ export function useSidebarThreadCaches({
 
   const replaceThread = useCallback((thread: ThreadSummary) => {
     if (thread.id === selectedThreadIdRef.current) {
-      setRouteSelectedThreadState(thread);
+      const current = routeSelectedThreadRef.current;
+      setRouteSelectedThreadState(current?.id === thread.id ? preserveNewerThreadReadState(current, thread) : thread);
     }
     replaceThreadEverywhere(queryClient, thread);
     if (threadHasDisplayTitle(thread)) {
@@ -62,6 +64,7 @@ export function useSidebarThreadCaches({
   }, [
     queryClient,
     selectedThreadIdRef,
+    routeSelectedThreadRef,
     setPendingTitleThreadIds,
     setRouteSelectedThreadState,
   ]);

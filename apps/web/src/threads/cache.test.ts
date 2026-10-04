@@ -5,7 +5,6 @@ import { queryKeys } from "../api/queryKeys";
 import type { ThreadRead, ThreadSummary } from "../api/client";
 import {
   applyThreadNotificationsState,
-  applyThreadReadState,
   findCachedThread,
   mergeChatThreadSnapshot,
   mergeProjectThreadSnapshot,
@@ -15,6 +14,7 @@ import {
   upsertProjectThread,
   updateThreadEverywhere,
 } from "./cache";
+import { mergeThreadReadState } from "./readState";
 
 function thread(id: string, overrides: Partial<ThreadSummary> = {}): ThreadSummary {
   return {
@@ -28,7 +28,10 @@ function thread(id: string, overrides: Partial<ThreadSummary> = {}): ThreadSumma
     section: null,
     sectionEnteredAt: null,
     rawPayload: {},
-    seenCompletedAgentTurnSeq: 0,
+    latestCompletedTurnId: null,
+    seenCompletedTurnId: null,
+    readRevision: 0,
+    readStateKnown: true,
     status: "idle",
     unreadCompletedAgentTurn: false,
     updatedAt: 1,
@@ -36,11 +39,11 @@ function thread(id: string, overrides: Partial<ThreadSummary> = {}): ThreadSumma
   };
 }
 
-function read(threadId: string, seenCompletedAgentTurnSeq: number): ThreadRead {
+function read(threadId: string, revision: number): ThreadRead {
   return {
-    seenCompletedAgentTurnSeq,
-    threadId,
-    updatedAt: "2026-05-05T00:00:00Z",
+    latestCompletedTurnId: `turn-${revision}`, seenCompletedTurnId: `turn-${revision}`,
+    readRevision: revision, readStateKnown: true, unreadCompletedAgentTurn: false,
+    threadId, updatedAt: "2026-10-05T00:00:00Z",
   };
 }
 
@@ -157,9 +160,10 @@ describe("thread query cache helpers", () => {
       queryClient,
       thread("thread-selected", {
         createdAt: 40,
-        lastCompletedAgentTurnSeq: 2,
+        latestCompletedTurnId: "turn-2",
+        readRevision: 2,
         name: "Detail title",
-        seenCompletedAgentTurnSeq: 1,
+        seenCompletedTurnId: "turn-1",
         unreadCompletedAgentTurn: true,
         updatedAt: 100,
       }),
@@ -168,9 +172,10 @@ describe("thread query cache helpers", () => {
     expect(queryClient.getQueryData(queryKeys.projectThreads("project-1"))).toEqual([
       thread("thread-selected", {
         createdAt: 50,
-        lastCompletedAgentTurnSeq: 2,
+        latestCompletedTurnId: "turn-2",
+        readRevision: 2,
         name: "Detail title",
-        seenCompletedAgentTurnSeq: 1,
+        seenCompletedTurnId: "turn-1",
         unreadCompletedAgentTurn: true,
         updatedAt: 300,
       }),
@@ -257,124 +262,36 @@ describe("thread query cache helpers", () => {
     });
   });
 
-  it("updates read state in every cached copy", () => {
+  it("updates the complete read tuple in every cached copy", () => {
     const queryClient = createKodexQueryClient();
-    const unreadThread = thread("thread-1", { unreadCompletedAgentTurn: true });
+    const unreadThread = thread("thread-1", { latestCompletedTurnId: "turn-42", unreadCompletedAgentTurn: true });
     upsertProjectThread(queryClient, "project-1", unreadThread);
     upsertChatThread(queryClient, unreadThread);
-
-    applyThreadReadState(queryClient, "thread-1", read("thread-1", 42));
-
-    expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-1"))?.[0]).toMatchObject({
-      seenCompletedAgentTurnSeq: 42,
-      unreadCompletedAgentTurn: false,
-    });
-    expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.chatThreads)?.[0]).toMatchObject({
-      seenCompletedAgentTurnSeq: 42,
-      unreadCompletedAgentTurn: false,
-    });
+    queryClient.setQueryData(queryKeys.sectionThreads("section"), [unreadThread]);
+    const state = read("thread-1", 42);
+    updateThreadEverywhere(queryClient, "thread-1", (thread) => mergeThreadReadState(thread, state));
+    for (const key of [queryKeys.projectThreads("project-1"), queryKeys.chatThreads, queryKeys.sectionThreads("section")]) {
+      expect(queryClient.getQueryData<ThreadSummary[]>(key)?.[0]).toMatchObject({
+        latestCompletedTurnId: "turn-42", seenCompletedTurnId: "turn-42", readRevision: 42,
+        readStateKnown: true, unreadCompletedAgentTurn: false,
+      });
+    }
   });
 
-  it("keeps gateway unread events ahead of a stale sidebar snapshot without local turn counting", () => {
+  it("keeps authoritative unread and seen events ahead of stale sidebar snapshots", () => {
     const queryClient = createKodexQueryClient();
-    upsertProjectThread(queryClient, "project-1", thread("thread-1"));
-
-    applyThreadReadState(queryClient, "thread-1", {
-      threadId: "thread-1",
-      seenCompletedAgentTurnSeq: 0,
-      lastCompletedAgentTurnSeq: null,
-      unreadCompletedAgentTurn: true,
-    });
-    mergeProjectThreadSnapshot(queryClient, "project-1", [thread("thread-1")], null, null);
-
+    const initial = thread("thread-1");
+    upsertProjectThread(queryClient, "project-1", initial);
+    const unread = { ...read("thread-1", 2), seenCompletedTurnId: null, unreadCompletedAgentTurn: true };
+    updateThreadEverywhere(queryClient, "thread-1", (thread) => mergeThreadReadState(thread, unread));
+    mergeProjectThreadSnapshot(queryClient, "project-1", [initial], null, null);
     expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-1"))?.[0]).toMatchObject({
-      seenCompletedAgentTurnSeq: 0,
-      unreadCompletedAgentTurn: true,
+      latestCompletedTurnId: "turn-2", readRevision: 2, seenCompletedTurnId: null, unreadCompletedAgentTurn: true,
     });
-  });
-
-  it("keeps gateway read events ahead of a stale unread sidebar snapshot", () => {
-    const queryClient = createKodexQueryClient();
-    upsertProjectThread(
-      queryClient,
-      "project-1",
-      thread("thread-1", {
-        lastCompletedAgentTurnSeq: 2,
-        seenCompletedAgentTurnSeq: 1,
-        unreadCompletedAgentTurn: true,
-      }),
-    );
-
-    applyThreadReadState(queryClient, "thread-1", {
-      threadId: "thread-1",
-      seenCompletedAgentTurnSeq: 2,
-      lastCompletedAgentTurnSeq: 2,
-      unreadCompletedAgentTurn: false,
-    });
-    mergeProjectThreadSnapshot(
-      queryClient,
-      "project-1",
-      [
-        thread("thread-1", {
-          lastCompletedAgentTurnSeq: 2,
-          seenCompletedAgentTurnSeq: 1,
-          unreadCompletedAgentTurn: true,
-        }),
-      ],
-      null,
-      null,
-    );
-
+    updateThreadEverywhere(queryClient, "thread-1", (thread) => mergeThreadReadState(thread, { ...unread, readRevision: 3, seenCompletedTurnId: "turn-2", unreadCompletedAgentTurn: false }));
+    mergeProjectThreadSnapshot(queryClient, "project-1", [{ ...initial, ...unread, id: initial.id, updatedAt: 10 }], null, null);
     expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-1"))?.[0]).toMatchObject({
-      lastCompletedAgentTurnSeq: 2,
-      seenCompletedAgentTurnSeq: 2,
-      unreadCompletedAgentTurn: false,
-    });
-  });
-
-  it("does not let an older read-clear event erase a newer unread event", () => {
-    const queryClient = createKodexQueryClient();
-    upsertProjectThread(queryClient, "project-1", thread("thread-1"));
-    applyThreadReadState(queryClient, "thread-1", {
-      threadId: "thread-1",
-      seenCompletedAgentTurnSeq: 0,
-      lastCompletedAgentTurnSeq: null,
-      unreadCompletedAgentTurn: true,
-    }, 2);
-
-    applyThreadReadState(queryClient, "thread-1", {
-      threadId: "thread-1",
-      seenCompletedAgentTurnSeq: 0,
-      lastCompletedAgentTurnSeq: 0,
-      unreadCompletedAgentTurn: false,
-    }, 1);
-
-    expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-1"))?.[0]).toMatchObject({
-      seenCompletedAgentTurnSeq: 0,
-      unreadCompletedAgentTurn: true,
-    });
-  });
-
-  it("allows a newer read-clear event to clear the same read watermark", () => {
-    const queryClient = createKodexQueryClient();
-    upsertProjectThread(queryClient, "project-1", thread("thread-1"));
-    applyThreadReadState(queryClient, "thread-1", {
-      threadId: "thread-1",
-      seenCompletedAgentTurnSeq: 1,
-      lastCompletedAgentTurnSeq: 1,
-      unreadCompletedAgentTurn: true,
-    }, 2);
-
-    applyThreadReadState(queryClient, "thread-1", {
-      threadId: "thread-1",
-      seenCompletedAgentTurnSeq: 1,
-      lastCompletedAgentTurnSeq: 1,
-      unreadCompletedAgentTurn: false,
-    }, 3);
-
-    expect(queryClient.getQueryData<ThreadSummary[]>(queryKeys.projectThreads("project-1"))?.[0]).toMatchObject({
-      seenCompletedAgentTurnSeq: 1,
-      unreadCompletedAgentTurn: false,
+      latestCompletedTurnId: "turn-2", readRevision: 3, seenCompletedTurnId: "turn-2", unreadCompletedAgentTurn: false,
     });
   });
 

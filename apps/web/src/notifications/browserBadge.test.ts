@@ -3,6 +3,23 @@ import { describe, expect, it, vi } from "vitest";
 import { setKodexAppBadge } from "./browserBadge";
 
 describe("setKodexAppBadge", () => {
+  it("delegates a controlled page to the worker's fresh shared read instead of racing tab-local badge counts", async () => {
+    const originalWorker = Object.getOwnPropertyDescriptor(navigator, "serviceWorker");
+    const originalSet = navigator.setAppBadge;
+    const postMessage = vi.fn();
+    const setAppBadge = vi.fn();
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: { controller: { postMessage } } });
+    Object.defineProperty(navigator, "setAppBadge", { configurable: true, value: setAppBadge });
+    try {
+      await expect(setKodexAppBadge(99)).resolves.toBe(true);
+      expect(postMessage).toHaveBeenCalledWith({ type: "REFRESH_BADGE" });
+      expect(setAppBadge).not.toHaveBeenCalled();
+    } finally {
+      if (originalWorker) Object.defineProperty(navigator, "serviceWorker", originalWorker);
+      else Reflect.deleteProperty(navigator, "serviceWorker");
+      Object.defineProperty(navigator, "setAppBadge", { configurable: true, value: originalSet });
+    }
+  });
   it("degrades when badging is unsupported", async () => {
     const originalSet = navigator.setAppBadge;
     const originalClear = navigator.clearAppBadge;

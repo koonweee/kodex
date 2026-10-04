@@ -30,7 +30,10 @@ pub struct NotificationPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
     pub route: String,
-    pub badge_count: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub badge_count: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_revision: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
@@ -212,7 +215,8 @@ impl NotificationService {
             title: "Kodex test notification".to_string(),
             body: Some("Push notifications are working.".to_string()),
             route: "/".to_string(),
-            badge_count: 0,
+            badge_count: None,
+            read_revision: None,
         };
         let delivery = state
             .store
@@ -495,10 +499,7 @@ async fn agent_message_payload_for_delivery(
     }
 
     let body = agent_message_body_for_delivery(state, &thread_id, turn_id).await?;
-    let badge_count = unread_badge_count(state, &thread_id)
-        .await
-        .unwrap_or(1)
-        .max(1);
+    let badge = crate::read_state::unread_badge(state).await.ok();
     let thread_title = thread
         .name
         .as_deref()
@@ -510,7 +511,8 @@ async fn agent_message_payload_for_delivery(
         title: thread_title.clone(),
         body: Some(body),
         route: format!("/threads/{thread_id}"),
-        badge_count,
+        badge_count: badge.as_ref().map(|badge| badge.count),
+        read_revision: badge.map(|badge| badge.read_revision),
     };
     Ok(Some(payload))
 }
@@ -620,33 +622,6 @@ fn truncate_preview(text: &str, max_chars: usize) -> String {
     }
     let trimmed = truncated.trim_end();
     format!("{trimmed}...")
-}
-
-async fn unread_badge_count(state: &AppState, fallback_thread_id: &str) -> ApiResult<i64> {
-    let response = app_server_api::client(&state.app_server)
-        .thread_list(None, None, None)
-        .await?;
-    let mut thread_ids: Vec<String> = response
-        .threads
-        .iter()
-        .map(|thread| thread.id.clone())
-        .collect();
-    if !thread_ids.iter().any(|id| id == fallback_thread_id) {
-        thread_ids.push(fallback_thread_id.to_string());
-    }
-    let states = state.store.thread_read_states(&thread_ids).await?;
-    let mut count = 0;
-    for mut thread in response.threads {
-        let seen = states
-            .get(&thread.id)
-            .map(|state| state.seen_completed_agent_turn_seq)
-            .unwrap_or_default();
-        thread.apply_completed_agent_turn_read_state(thread.last_completed_agent_turn_seq, seen);
-        if thread.unread_completed_agent_turn {
-            count += 1;
-        }
-    }
-    Ok(count)
 }
 
 pub fn notification_planning_event_payload(thread_id: &str) -> serde_json::Value {

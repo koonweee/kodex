@@ -1,12 +1,16 @@
+import { refreshUnreadBadge } from "../../notifications/unreadBadge";
+import { useThreadReadState } from "../../threads/useThreadReadState";
+import { mergeThreadReadState, preserveNewerThreadReadState } from "../../threads/readState";
+import { threadReadUpdateFromEvent } from "../../threads/events";
 import { mergeThreadSummaryMetadata } from "../../threads/summaryMetadata";
 import { subagentsEventInvalidatesThread } from "../../threads/subagentsCache";
 import { ThreadActionsMenu } from "./ThreadActionsMenu";
 import { Badge, Box, Button, Group, Loader, Modal, Skeleton, TextInput, Title } from "@mantine/core";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Sparkles } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
-import type { EventEnvelope, ThreadSummary } from "../../api/client";
+import type { EventEnvelope, ThreadRead, ThreadSummary } from "../../api/client";
 import { attachThread, getThreadAppSurface, getThreadTimelinePage } from "../../api/client";
 import { projectEventInvalidatesThread } from "../../projects/cache";
 import { queryKeys } from "../../api/queryKeys";
@@ -107,8 +111,10 @@ function ExistingThreadPane({
     subscribeThreadPaneTimelineAction,
     threadSummariesById,
     threadActions,
+    visiblePaneIds,
     updatePane,
   } = useWorkspace();
+  const queryClient = useQueryClient();
   const seededThread = threadSummariesById[threadId] ?? null;
   const [entry, setEntry] = useState<TimelineEntry>(idleTimelineEntry);
   const [paneErrorMessage, setPaneErrorMessage] = useState<string | null>(null);
@@ -124,6 +130,7 @@ function ExistingThreadPane({
   const refreshQueuedRef = useRef(false);
   const refreshRequestIdRef = useRef(0);
   const latestPaneThreadRef = useRef<ThreadSummary | null>(seededThread);
+  const latestReadEventRef = useRef<ThreadRead | null>(null);
   const latestThreadIdRef = useRef(threadId);
   const [renameModalOpen, setRenameModalOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
@@ -172,7 +179,9 @@ function ExistingThreadPane({
       if (requestId !== refreshRequestIdRef.current || requestThreadId !== latestThreadIdRef.current) {
         return;
       }
-      const nextThread = threadViewSummaryToThreadSummary(snapshot.thread);
+      const summary = threadViewSummaryToThreadSummary(snapshot.thread);
+      const read = latestReadEventRef.current;
+      const nextThread = read?.threadId === threadId ? mergeThreadReadState(summary, read) : summary;
       setTimeline((current) => applyTimelineSnapshot(current, snapshot));
       const mergedThread = mergePaneThreadSummary(latestPaneThreadRef.current, nextThread);
       setThread((current) => mergePaneThreadSummary(current, nextThread));
@@ -201,6 +210,23 @@ function ExistingThreadPane({
       }
     }
   }, [onThreadSnapshotLoadFailed, onThreadSnapshotLoaded, pane.id, threadId, updatePane]);
+
+  useThreadReadState({
+    thread,
+    turns: timeline.turns,
+    isVisible: visiblePaneIds.includes(pane.id),
+    onRead: (read) => {
+      void refreshUnreadBadge(queryClient);
+      if (read.threadId !== latestThreadIdRef.current) return;
+      const current = latestPaneThreadRef.current;
+      if (!current) return;
+      const next = mergeThreadReadState(current, read);
+      setThread((current) => current ? mergeThreadReadState(current, read) : current);
+      onThreadSnapshotLoaded(next);
+    },
+    onRefresh: () => { void refreshSnapshot(true); },
+    onError: (error) => setPaneErrorMessage(errorMessageFrom(error)),
+  });
 
   function reduceQueuedPaneTimelineEvents(current: TimelineState, events: EventEnvelope[]) {
     if (events.length === 0) {
@@ -276,6 +302,15 @@ function ExistingThreadPane({
       if (event.kind === "thread_view.refresh_required") {
         cancelQueuedTimelineEvents();
         void refreshSnapshot(true);
+        return;
+      }
+      if (event.kind === "thread.read_updated") {
+        const read = threadReadUpdateFromEvent(event);
+        if (read && (!latestReadEventRef.current || read.threadId !== latestReadEventRef.current.threadId || read.readRevision > latestReadEventRef.current.readRevision)) {
+          latestReadEventRef.current = read;
+          setThread((current) => current ? mergeThreadReadState(current, read) : current);
+          if (!read.readStateKnown) void refreshSnapshot(true);
+        }
         return;
       }
       if (event.kind === "thread.notifications_updated") {
@@ -614,10 +649,10 @@ function mergePaneThreadSummary(current: ThreadSummary | null, next: ThreadSumma
     return next;
   }
   if (Object.prototype.hasOwnProperty.call(next, "gitInfo")) {
-    return next;
+    return preserveNewerThreadReadState(current, next);
   }
   return {
-    ...next,
+    ...preserveNewerThreadReadState(current, next),
     gitInfo: current.gitInfo,
   };
 }

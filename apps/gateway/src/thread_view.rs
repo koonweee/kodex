@@ -35,6 +35,39 @@ pub struct ThreadViewStore {
 }
 
 impl ThreadViewStore {
+    // Only an unconfirmed live completion is retained. It proves that a
+    // temporarily lagging native header page cannot restore an older head.
+    pub async fn observe_completion(&self, thread_id: &str, turn_id: &str) {
+        self.sessions
+            .write()
+            .await
+            .entry(thread_id.to_owned())
+            .or_default()
+            .pending_completion_witness = Some(turn_id.to_owned());
+    }
+
+    pub async fn pending_completion(&self, thread_id: &str) -> Option<String> {
+        self.sessions
+            .read()
+            .await
+            .get(thread_id)
+            .and_then(|view| view.pending_completion_witness.clone())
+    }
+
+    pub async fn confirm_completion(&self, thread_id: &str, witness: &str) {
+        if let Some(view) = self.sessions.write().await.get_mut(thread_id) {
+            if view.pending_completion_witness.as_deref() == Some(witness) {
+                view.pending_completion_witness = None;
+            }
+        }
+    }
+
+    pub async fn clear_completion_witnesses(&self) {
+        for view in self.sessions.write().await.values_mut() {
+            view.pending_completion_witness = None;
+        }
+    }
+
     pub async fn ensure_history_current(&self, thread_id: &str, revision: i64) -> ApiResult<()> {
         if let Some(view) = self.sessions.read().await.get(thread_id) {
             view.ensure_history_current(revision)?;
@@ -239,6 +272,7 @@ pub(crate) struct ThreadView {
     // A native revert replaces history. Preserve this boundary even for an
     // unseen/empty view so pre-revert replies cannot be promoted to new state.
     pub(crate) history_reset_revision: i64,
+    pending_completion_witness: Option<String>,
     pub(crate) active_turn_id: Option<String>,
     pub(crate) live_state: ThreadLiveState,
     pub(crate) pending_approval_requests: Vec<PendingTimelineRequestSummary>,

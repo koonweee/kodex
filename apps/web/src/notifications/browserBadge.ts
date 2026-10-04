@@ -5,6 +5,10 @@ type BadgeNavigator = Navigator & {
 
 export async function setKodexAppBadge(count: number): Promise<boolean> {
   const badgeNavigator = globalThis.navigator as BadgeNavigator | undefined;
+  if (badgeNavigator?.serviceWorker?.controller) {
+    badgeNavigator.serviceWorker.controller.postMessage({ type: "REFRESH_BADGE" });
+    return true;
+  }
   if (!badgeNavigator?.setAppBadge || !badgeNavigator.clearAppBadge) {
     return false;
   }

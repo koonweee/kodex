@@ -46,8 +46,9 @@ export type RateLimitWindow = components["schemas"]["RateLimitWindow"];
 export type RateLimitsResponse = components["schemas"]["RateLimitsResponse"];
 export type SkillMetadata = components["schemas"]["SkillMetadata"];
 export type SkillsCatalogResponse = components["schemas"]["SkillsCatalogResponse"];
+export type UnreadBadgeResponse = components["schemas"]["UnreadBadgeResponse"];
 export type ThreadRead = components["schemas"]["ThreadRead"];
-export type ThreadReadStateUpdate = components["schemas"]["ThreadReadStateUpdate"];
+export type MarkThreadSeenRequest = components["schemas"]["MarkThreadSeenRequest"];
 export type ThreadSettingsUpdateRequest = components["schemas"]["ThreadSettingsUpdateRequest"];
 export type ThreadSettingsResponse = components["schemas"]["ThreadSettingsResponse"];
 export type ThreadNotificationSettingsResponse = components["schemas"]["ThreadNotificationSettingsResponse"];
@@ -345,13 +346,11 @@ export async function listSectionThreads(sectionId: string, { cursor, signal }: 
   }));
 }
 
-export async function markThreadSeen(threadId: string, seenCompletedAgentTurnSeq?: number): Promise<ThreadRead> {
-  const body =
-    seenCompletedAgentTurnSeq === undefined
-      ? {}
-      : {
-          seenCompletedAgentTurnSeq,
-        };
+export async function getUnreadBadge(signal?: AbortSignal): Promise<UnreadBadgeResponse> {
+  return unwrap(api.GET("/v1/threads/unread-badge", { signal, cache: "no-store" }));
+}
+
+export async function markThreadSeen(threadId: string, body: MarkThreadSeenRequest): Promise<ThreadRead> {
   return unwrap(api.POST("/v1/threads/{threadId}/seen", { params: { path: { threadId } }, body }));
 }
 

@@ -113,13 +113,30 @@ impl Store {
             r#"
             create table if not exists thread_reads (
                 thread_id text primary key,
-                seen_completed_agent_turn_seq integer not null default 0,
+                latest_completed_turn_id text,
+                seen_completed_turn_id text,
+                read_revision integer not null,
+                read_state_known integer not null,
                 updated_at text not null
             )
             "#,
         )
         .execute(&self.pool)
         .await?;
+        sqlx::query(
+            r#"
+            create table if not exists thread_read_revision (
+                id integer primary key check (id = 1),
+                revision integer not null,
+                membership_revision integer not null default 0
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query("insert into thread_read_revision (id, revision) values (1, 0) on conflict(id) do nothing")
+            .execute(&self.pool)
+            .await?;
         sqlx::query(
             r#"
             create table if not exists push_subscriptions (
@@ -375,7 +392,7 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'app_surface_sessions', 'app_surface_resources', 'approvals', 'thread_reads', 'push_subscriptions', 'notification_deliveries', 'thread_notification_settings', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'app_surface_sessions', 'app_surface_resources', 'approvals', 'thread_reads', 'thread_read_revision', 'push_subscriptions', 'notification_deliveries', 'thread_notification_settings', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
         )
         .fetch_all(store.pool())
         .await
@@ -393,6 +410,7 @@ mod tests {
                 "push_subscriptions",
                 "queued_turn_inputs",
                 "thread_notification_settings",
+                "thread_read_revision",
                 "thread_reads",
                 "thread_runtime_state"
             ]

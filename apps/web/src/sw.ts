@@ -2,6 +2,7 @@
 
 import { cleanupOutdatedCaches, precacheAndRoute } from "workbox-precaching";
 
+import type { UnreadBadgeResponse } from "./api/client";
 import type { KodexNotificationPayload } from "./notifications/notificationTypes";
 
 declare let self: ServiceWorkerGlobalScope & { __WB_MANIFEST: Array<unknown> };
@@ -14,9 +15,9 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("message", (event) => {
-  if ((event.data as { type?: unknown } | undefined)?.type === "SKIP_WAITING") {
-    self.skipWaiting();
-  }
+  const type = (event.data as { type?: unknown } | undefined)?.type;
+  if (type === "SKIP_WAITING") self.skipWaiting();
+  if (type === "REFRESH_BADGE") event.waitUntil(refreshWorkerBadge());
 });
 
 self.addEventListener("push", (event) => {
@@ -35,14 +36,14 @@ async function showPushNotification(event: PushEvent) {
     return;
   }
 
-  await setWorkerBadge(payload.badgeCount ?? 1);
-  await self.registration.showNotification(payload.title || "Kodex", {
+  const notification = self.registration.showNotification(payload.title || "Kodex", {
     badge: "/kodex-badge.png",
     body: payload.body || notificationBody(payload.kind),
     data: payload,
     icon: "/icon-192.png",
     tag: notificationTag(payload),
   });
+  await Promise.all([notification, payload.kind === "unreadAgentMessage" ? refreshWorkerBadge() : undefined]);
 }
 
 function parsePushPayload(data: PushMessageData | null): KodexNotificationPayload | null {
@@ -88,17 +89,27 @@ async function focusOrOpenKodex(route: string) {
   return self.clients.openWindow(url);
 }
 
-async function setWorkerBadge(count: number) {
-  const registration = self.registration as ServiceWorkerRegistration & {
-    setAppBadge?: (contents?: number) => Promise<void>;
-  };
-  if (!registration.setAppBadge) {
-    return;
-  }
+let badgeRequest: AbortController | null = null;
+
+async function refreshWorkerBadge() {
+  badgeRequest?.abort();
+  const controller = new AbortController();
+  badgeRequest = controller;
   try {
-    await registration.setAppBadge(count);
+    const response = await fetch(new URL("/v1/threads/unread-badge", self.location.origin), {
+      signal: controller.signal, cache: "no-store",
+    });
+    if (!response.ok) return;
+    const snapshot = await response.json() as UnreadBadgeResponse;
+    if (controller.signal.aborted || badgeRequest !== controller ||
+      !Number.isSafeInteger(snapshot.count) || snapshot.count < 0 || !Number.isSafeInteger(snapshot.readRevision)) return;
+    const navigator = self.navigator as WorkerNavigator & { setAppBadge?: (count: number) => Promise<void> };
+    await navigator.setAppBadge?.(snapshot.count);
   } catch {
-    // Badging support varies; notifications should still display.
+    // Unknown inventory or a replaced request preserves the badge. Push itself
+    // still displays; old payload counts are never an unread authority.
+  } finally {
+    if (badgeRequest === controller) badgeRequest = null;
   }
 }
 

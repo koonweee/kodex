@@ -18,6 +18,8 @@ mod native_history_tests;
 #[cfg(test)]
 mod native_identity_tests;
 #[cfg(test)]
+mod native_read_markers_tests;
+#[cfg(test)]
 mod native_revert_tests;
 #[cfg(test)]
 mod native_sections_tests;
@@ -600,7 +602,10 @@ mod tests {
             Some("Yes, octopuses actually have three hearts. They use two for their gills.")
         );
         assert_eq!(payloads[0].route, "/threads/thread-1");
-        assert_eq!(payloads[0].badge_count, 1);
+        assert_eq!(payloads[0].badge_count, Some(0));
+        assert!(payloads[0]
+            .read_revision
+            .is_some_and(|revision| revision > 0));
         assert_eq!(
             app_server
                 .requests
@@ -707,9 +712,14 @@ mod tests {
             })
             .await
             .unwrap();
+        let completed = state
+            .store
+            .record_thread_completion("thread-1", "turn-1")
+            .await
+            .unwrap();
         state
             .store
-            .mark_thread_seen_completed_agent_turns("thread-1", 1)
+            .mark_thread_seen("thread-1", "turn-1", completed.read_revision)
             .await
             .unwrap();
         app_server.queued_responses.lock().unwrap().extend([
@@ -992,7 +1002,8 @@ mod tests {
                     title: "Thread".to_string(),
                     body: Some("Thread\nAgent has a new message.".to_string()),
                     route: "/threads/thread-1".to_string(),
-                    badge_count: 1,
+                    badge_count: Some(1),
+                    read_revision: Some(1),
                 },
             )
             .await
@@ -1033,7 +1044,8 @@ mod tests {
                     title: "Thread".to_string(),
                     body: Some("Thread\nAgent has a new message.".to_string()),
                     route: "/threads/thread-1".to_string(),
-                    badge_count: 1,
+                    badge_count: Some(1),
+                    read_revision: Some(1),
                 },
             )
             .await
@@ -1801,13 +1813,14 @@ mod tests {
         assert_eq!(body["thread"]["updatedAt"], 1_767_225_700_i64);
 
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 2);
+        assert_eq!(requests.len(), 3);
         assert_eq!(requests[0].0, "thread/name/set");
         assert_eq!(requests[0].1["threadId"], "thread-1");
         assert_eq!(requests[0].1["name"], "Renamed thread");
         assert_eq!(requests[1].0, "thread/read");
         assert_eq!(requests[1].1["threadId"], "thread-1");
         assert_eq!(requests[1].1["includeTurns"], false);
+        assert_completion_head_request(&requests[2], "thread-1");
     }
 
     #[tokio::test]
@@ -1837,8 +1850,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
-        let event = receiver.recv().await.unwrap();
-        assert_eq!(event.kind, "thread.upserted");
+        let event = recv_event_kind(&mut receiver, "thread.upserted").await;
         assert_eq!(event.project_id.as_deref(), Some(project.id.as_str()));
         assert_eq!(event.thread_id.as_deref(), Some("project-thread-1"));
         assert_eq!(event.payload["scope"], "project");
@@ -1858,11 +1870,13 @@ mod tests {
             .unwrap();
         assert_eq!(replay.status(), StatusCode::OK);
         let replay = response_json(replay).await;
-        assert_eq!(replay["events"][0]["kind"], "thread.upserted");
-        assert_eq!(
-            replay["events"][0]["payload"]["thread"]["id"],
-            "project-thread-1"
-        );
+        let replayed = replay["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|event| event["kind"] == "thread.upserted")
+            .unwrap();
+        assert_eq!(replayed["payload"]["thread"]["id"], "project-thread-1");
     }
 
     #[tokio::test]
@@ -1917,20 +1931,9 @@ mod tests {
         assert_eq!(started["action"], "started");
         assert_eq!(started["turn"]["payload"]["method"], "turn/start");
 
-        let mut saw_started_audit = false;
-        for _ in 0..4 {
-            let event = timeout(Duration::from_secs(2), receiver.recv())
-                .await
-                .unwrap()
-                .unwrap();
-            if event.kind == "self_control.thread_input" {
-                assert_eq!(event.payload["action"], "started");
-                assert_eq!(event.payload["source"]["sourceToolCallId"], "tool-start");
-                saw_started_audit = true;
-                break;
-            }
-        }
-        assert!(saw_started_audit);
+        let event = recv_event_kind(&mut receiver, "self_control.thread_input").await;
+        assert_eq!(event.payload["action"], "started");
+        assert_eq!(event.payload["source"]["sourceToolCallId"], "tool-start");
 
         state
             .store
@@ -2240,7 +2243,7 @@ mod tests {
             (
                 "POST",
                 "seen",
-                json!({"seenCompletedAgentTurnSeq": 3, "source": source_value.clone()}),
+                json!({"completedTurnId": "control-completion", "readRevision": 0, "source": source_value.clone()}),
             ),
             ("POST", "compact", source.clone()),
             ("POST", "interrupt-current", source.clone()),
@@ -2254,6 +2257,16 @@ mod tests {
                             "clientId": "control-client", "content": [{"type": "text", "text": "Control history"}]}]
                     }], "nextCursor": null, "backwardsCursor": null}
                 }));
+            }
+            let mut body = body;
+            if path == "seen" {
+                let head = state
+                    .store
+                    .record_thread_completion(thread_id, "control-completion")
+                    .await
+                    .unwrap();
+                body["readRevision"] = json!(head.read_revision);
+                app_server.queued_responses.lock().unwrap().push(json!({"data":[{"id":"control-completion", "status":"completed", "items":[]}], "nextCursor":null, "backwardsCursor":null}));
             }
             let uri = format!("/v1/self-control/threads/{thread_id}/{path}");
             let request = match method {
@@ -2916,6 +2929,7 @@ mod tests {
                 },
                 "cwd": "/workspace"
             }),
+            json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
             json!({"turn": {"id": "turn-1", "status": "inProgress"}}),
         ]);
         let app = build_router(state);
@@ -2962,19 +2976,20 @@ mod tests {
         assert_eq!(requests[0].0, "project/read");
         assert_eq!(requests[0].1["projectId"], project.id);
         let requests = &requests[1..];
-        assert_eq!(requests.len(), 2);
+        assert_eq!(requests.len(), 3);
         assert_eq!(requests[0].0, "thread/start");
         assert_eq!(requests[0].1["permissions"], "auto-review");
         assert!(requests[0].1.get("approvalPolicy").is_none());
         assert!(requests[0].1.get("approvalsReviewer").is_none());
         assert!(requests[0].1.get("sandbox").is_none());
-        assert_eq!(requests[1].0, "turn/start");
-        assert_eq!(requests[1].1["clientUserMessageId"], "permission-choice");
-        assert_eq!(requests[1].1["permissions"], "read-only");
-        assert!(requests[1].1["serviceTier"].is_null());
-        assert!(requests[1].1.get("approvalPolicy").is_none());
-        assert!(requests[1].1.get("approvalsReviewer").is_none());
-        assert!(requests[1].1.get("sandboxPolicy").is_none());
+        assert_completion_head_request(&requests[1], "thread-1");
+        assert_eq!(requests[2].0, "turn/start");
+        assert_eq!(requests[2].1["clientUserMessageId"], "permission-choice");
+        assert_eq!(requests[2].1["permissions"], "read-only");
+        assert!(requests[2].1["serviceTier"].is_null());
+        assert!(requests[2].1.get("approvalPolicy").is_none());
+        assert!(requests[2].1.get("approvalsReviewer").is_none());
+        assert!(requests[2].1.get("sandboxPolicy").is_none());
     }
 
     #[tokio::test]
@@ -3117,8 +3132,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
-        let event = receiver.recv().await.unwrap();
-        assert_eq!(event.kind, "thread.upserted");
+        let event = recv_event_kind(&mut receiver, "thread.upserted").await;
         assert_eq!(event.project_id.as_deref(), None);
         assert_eq!(event.thread_id.as_deref(), Some("chat-thread-1"));
         assert_eq!(event.payload["scope"], "chat");
@@ -3135,8 +3149,13 @@ mod tests {
             .unwrap();
         assert_eq!(replay.status(), StatusCode::OK);
         let replay = response_json(replay).await;
-        assert_eq!(replay["events"][0]["kind"], "thread.upserted");
-        assert_eq!(replay["events"][0]["payload"]["scope"], "chat");
+        let replayed = replay["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|event| event["kind"] == "thread.upserted")
+            .unwrap();
+        assert_eq!(replayed["payload"]["scope"], "chat");
     }
 
     #[tokio::test]
@@ -3211,12 +3230,13 @@ mod tests {
         assert_eq!(body["threads"].as_array().unwrap().len(), 1);
         assert_eq!(body["nextCursor"], "next-page");
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
+        assert_eq!(requests.len(), 2);
         assert_eq!(requests[0].0, "thread/list");
         assert_eq!(requests[0].1["cursor"], "cursor-1");
         assert_eq!(requests[0].1["limit"], 25);
         assert_eq!(requests[0].1["archived"], false);
         assert_eq!(requests[0].1["useStateDbOnly"], true);
+        assert_completion_head_request(&requests[1], "chat-thread");
     }
 
     #[tokio::test]
@@ -3305,9 +3325,18 @@ mod tests {
             "Two".to_string(),
             project_two_cwd.to_string_lossy().to_string(),
         );
+        let completed = state
+            .store
+            .record_thread_completion("project-one-thread", "project-one-completed")
+            .await
+            .unwrap();
         state
             .store
-            .mark_thread_seen_completed_agent_turns("project-one-thread", 3)
+            .mark_thread_seen(
+                "project-one-thread",
+                "project-one-completed",
+                completed.read_revision,
+            )
             .await
             .unwrap();
         let chat_cwd = home
@@ -3443,7 +3472,10 @@ mod tests {
                 "writableRoots": ["/workspace"]
             })
         );
-        assert_eq!(project_one_compact["seenCompletedAgentTurnSeq"], 3);
+        assert_eq!(
+            project_one_compact["seenCompletedTurnId"],
+            "project-one-completed"
+        );
         assert_eq!(project_one_compact["unreadCompletedAgentTurn"], false);
         assert_eq!(body["chatThreads"]["threads"][0]["id"], "chat-thread");
         assert_eq!(body["chatThreads"]["nextCursor"], "chat-next");
@@ -3460,11 +3492,8 @@ mod tests {
         assert!(section_page["threads"][0]["rawPayload"].is_null());
         assert!(section_page["threads"][0].get("pinnedAt").is_none());
 
-        app_server
-            .queued_responses
-            .lock()
-            .unwrap()
-            .push(json!({"data": [project_two_thread], "nextCursor": "project-two-next", "backwardsCursor": null}));
+        // The native project-keyed fixture already serves this scoped page;
+        // no FIFO reply should be consumed by its separate completion read.
         let scoped_response = app
             .clone()
             .oneshot(
@@ -3489,8 +3518,28 @@ mod tests {
         );
 
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 7);
+        assert_eq!(requests.len(), 12);
         assert_eq!(requests[0].0, "project/list");
+        let mut completion_reads = requests
+            .iter()
+            .filter(|(method, _)| method == "thread/turns/list")
+            .map(|request| {
+                let id = request.1["threadId"].as_str().unwrap();
+                assert_completion_head_request(request, id);
+                id
+            })
+            .collect::<Vec<_>>();
+        completion_reads.sort();
+        assert_eq!(
+            completion_reads,
+            [
+                "chat-thread",
+                "project-one-thread",
+                "project-two-thread",
+                "project-two-thread",
+                "section-thread"
+            ]
+        );
         for project in &listed_projects {
             let request = requests
                 .iter()
@@ -3523,8 +3572,13 @@ mod tests {
         assert_eq!(section_request.1["sortKey"], "section_position");
         assert_eq!(section_request.1["sortDirection"], "asc");
         assert_eq!(section_request.1["limit"], 10);
-        assert_eq!(requests.last().unwrap().1["projectId"], project_two.id);
-        assert_eq!(requests.last().unwrap().1["limit"], 100);
+        let scoped_request = requests
+            .iter()
+            .rev()
+            .find(|(method, _)| method == "thread/list")
+            .unwrap();
+        assert_eq!(scoped_request.1["projectId"], project_two.id);
+        assert_eq!(scoped_request.1["limit"], 100);
     }
 
     #[tokio::test]
@@ -3876,11 +3930,15 @@ mod tests {
         assert_eq!(requests[3].1["threadId"], "thread-1");
         assert!(requests[3].1.get("persistExtendedHistory").is_none());
         assert_eq!(requests[3].1["excludeTurns"], true);
-        assert_eq!(requests[4].0, "thread/fork");
-        assert_eq!(requests[4].1["threadId"], "thread-1");
-        assert!(requests[4].1.get("persistExtendedHistory").is_none());
-        assert_eq!(requests[5].0, "thread/archive");
+        assert_completion_head_request(&requests[2], "thread-1");
+        assert_completion_head_request(&requests[4], "thread-1");
+        assert_eq!(requests[5].0, "thread/fork");
         assert_eq!(requests[5].1["threadId"], "thread-1");
+        assert!(requests[5].1.get("persistExtendedHistory").is_none());
+        assert_completion_head_request(&requests[6], "thread-1");
+        assert_eq!(requests[7].0, "thread/archive");
+        assert_eq!(requests[7].1["threadId"], "thread-1");
+        assert_eq!(requests.len(), 8);
     }
 
     #[tokio::test]
@@ -3987,7 +4045,7 @@ mod tests {
             json!({
                 "data": [{
                     "id": "turn-1",
-                    "status": {"type": "completed"},
+                    "status": "completed",
                     "startedAt": 1_767_225_600_i64,
                     "completedAt": 1_767_225_610_i64,
                     "items": [
@@ -4003,7 +4061,7 @@ mod tests {
             json!({
                 "data": [{
                     "id": "turn-1",
-                    "status": {"type": "completed"},
+                    "status": "completed",
                     "items": []
                 }],
                 "nextCursor": null,
@@ -4029,7 +4087,8 @@ mod tests {
         assert_eq!(items[1]["itemType"], "reasoning");
         assert_eq!(items[2]["itemType"], "commandExecution");
         assert!(!body.to_string().contains("item-stored-cmd"));
-        assert_eq!(body["thread"]["lastCompletedAgentTurnSeq"], 1);
+        assert_eq!(body["thread"]["latestCompletedTurnId"], "turn-1");
+        assert_eq!(body["thread"]["readStateKnown"], true);
         assert_eq!(body["thread"]["unreadCompletedAgentTurn"], true);
         assert_eq!(body["historyPage"]["loadedTurnCount"], 1);
         assert_eq!(body["historyPage"]["hasOlder"], false);
@@ -4086,7 +4145,7 @@ mod tests {
             json!({
                 "data": [{
                     "id": "turn-2",
-                    "status": {"type": "completed"},
+                    "status": "completed",
                     "items": [{"id": "item-agent-2", "type": "agentMessage", "text": "second"}]
                 }],
                 "nextCursor": "older-cursor",
@@ -4095,11 +4154,11 @@ mod tests {
             json!({
                 "data": [{
                     "id": "turn-2",
-                    "status": {"type": "completed"},
+                    "status": "completed",
                     "items": []
                 }, {
                     "id": "turn-1",
-                    "status": {"type": "completed"},
+                    "status": "completed",
                     "items": []
                 }],
                 "nextCursor": null,
@@ -4122,7 +4181,8 @@ mod tests {
         assert_eq!(items[0]["turnId"], "turn-2");
         assert_eq!(body["historyPage"]["olderCursor"], "older-cursor");
         assert_eq!(body["historyPage"]["hasOlder"], true);
-        assert_eq!(body["thread"]["lastCompletedAgentTurnSeq"], 2);
+        assert_eq!(body["thread"]["latestCompletedTurnId"], "turn-2");
+        assert_eq!(body["thread"]["readStateKnown"], true);
 
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[1].0, "thread/turns/list");
@@ -4155,7 +4215,7 @@ mod tests {
             json!({
                 "data": [{
                     "id": "turn-2",
-                    "status": {"type": "completed"},
+                    "status": "completed",
                     "items": [{"id": "item-agent-2", "type": "agentMessage", "text": "second"}]
                 }],
                 "nextCursor": "older-cursor",
@@ -4164,11 +4224,11 @@ mod tests {
             json!({
                 "data": [{
                     "id": "turn-2",
-                    "status": {"type": "completed"},
+                    "status": "completed",
                     "items": []
                 }, {
                     "id": "turn-1",
-                    "status": {"type": "completed"},
+                    "status": "completed",
                     "items": []
                 }],
                 "nextCursor": null,
@@ -4192,7 +4252,7 @@ mod tests {
             json!({
                 "data": [{
                     "id": "turn-1",
-                    "status": {"type": "completed"},
+                    "status": "completed",
                     "items": [{"id": "item-agent-1", "type": "agentMessage", "text": "first"}]
                 }],
                 "nextCursor": null,
@@ -4201,11 +4261,11 @@ mod tests {
             json!({
                 "data": [{
                     "id": "turn-2",
-                    "status": {"type": "completed"},
+                    "status": "completed",
                     "items": []
                 }, {
                     "id": "turn-1",
-                    "status": {"type": "completed"},
+                    "status": "completed",
                     "items": []
                 }],
                 "nextCursor": null,
@@ -4277,7 +4337,7 @@ mod tests {
                 "backwardsCursor": "newer-cursor"
             }),
             json!({
-                "data": [{"id": "turn-2", "status": {"type": "completed"}}],
+                "data": [{"id": "turn-2", "status": "completed", "items": [], "itemsView": "notLoaded"}],
                 "nextCursor": null,
                 "backwardsCursor": null
             }),
@@ -4292,7 +4352,7 @@ mod tests {
                 "backwardsCursor": null
             }),
             json!({
-                "data": [{"id": "turn-3", "status": {"type": "completed"}}],
+                "data": [{"id": "turn-3", "status": "completed", "items": [], "itemsView": "notLoaded"}],
                 "nextCursor": null,
                 "backwardsCursor": null
             }),
@@ -4614,180 +4674,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thread_list_derives_unread_completed_agent_turns_from_persisted_read_state() {
-        let (state, app_server) = test_state().await;
-        state
-            .store
-            .append_event(NewEvent {
-                project_id: None,
-                thread_id: Some("thread-1".to_string()),
-                turn_id: Some("legacy-turn".to_string()),
-                item_id: None,
-                kind: "thread_view.cursor".to_string(),
-                codex_method: Some("thread_view/cursor".to_string()),
-                payload: json!({
-                    "threadId": "thread-1",
-                    "turnId": "legacy-turn",
-                    "reason": "agent_turn_completed",
-                    "sourceKind": "thread_view.turn_completed",
-                    "sourceMethod": "turn/completed"
-                }),
-            })
-            .await
-            .unwrap();
-        let app = build_router(state);
-
-        *app_server.next_response.lock().unwrap() = Some(json!({
-            "data": [
-                thread_summary("thread-1"),
-                thread_summary("thread-2")
-            ],
-            "nextCursor": null,
-            "backwardsCursor": null
-        }));
-        let response = app
-            .clone()
-            .oneshot(Request::get("/v1/threads").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["threads"][0]["lastCompletedAgentTurnSeq"], Value::Null);
-        assert_eq!(body["threads"][0]["seenCompletedAgentTurnSeq"], json!(0));
-        assert_eq!(body["threads"][0]["unreadCompletedAgentTurn"], json!(false));
-        assert_eq!(body["threads"][1]["lastCompletedAgentTurnSeq"], Value::Null);
-        assert_eq!(body["threads"][1]["unreadCompletedAgentTurn"], json!(false));
-
-        let mut list_thread_with_cursor_like_marker = thread_summary("thread-1");
-        list_thread_with_cursor_like_marker["lastCompletedAgentTurnSeq"] = json!(129381);
-        *app_server.next_response.lock().unwrap() = Some(json!({
-            "data": [
-                list_thread_with_cursor_like_marker
-            ],
-            "nextCursor": null,
-            "backwardsCursor": null
-        }));
-        let response = app
-            .clone()
-            .oneshot(Request::get("/v1/threads").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["threads"][0]["lastCompletedAgentTurnSeq"], Value::Null);
-        assert_eq!(body["threads"][0]["unreadCompletedAgentTurn"], json!(false));
-
-        app_server.queued_responses.lock().unwrap().push(json!({
-            "data": [
-                {"id": "turn-1", "status": {"type": "completed"}}
-            ],
-            "nextCursor": null,
-            "backwardsCursor": null
-        }));
-        let response = app
-            .clone()
-            .oneshot(
-                Request::post("/v1/threads/thread-1/seen")
-                    .header("content-type", "application/json")
-                    .body(Body::from("{}"))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["seenCompletedAgentTurnSeq"], json!(1));
-
-        app_server.queued_responses.lock().unwrap().push(json!({
-            "data": [
-                {"id": "turn-1", "status": {"type": "completed"}}
-            ],
-            "nextCursor": null,
-            "backwardsCursor": null
-        }));
-        let response = app
-            .clone()
-            .oneshot(
-                Request::post("/v1/threads/thread-1/seen")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["seenCompletedAgentTurnSeq"], json!(1));
-        let requests = app_server.requests.lock().unwrap();
-        assert!(requests
-            .iter()
-            .any(|(method, params)| method == "thread/turns/list"
-                && params["itemsView"] == "notLoaded"));
-        assert!(requests
-            .iter()
-            .all(|(method, params)| method != "thread/read" || params["includeTurns"] == false));
-        drop(requests);
-
-        let response = app
-            .clone()
-            .oneshot(
-                Request::post("/v1/threads/thread-1/seen")
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"seenCompletedAgentTurnSeq":0}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["seenCompletedAgentTurnSeq"], json!(1));
-
-        *app_server.next_response.lock().unwrap() = Some(json!({
-            "data": [thread_summary("thread-1")],
-            "nextCursor": null,
-            "backwardsCursor": null
-        }));
-        let response = app
-            .oneshot(Request::get("/v1/threads").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["threads"][0]["seenCompletedAgentTurnSeq"], json!(1));
-        assert_eq!(body["threads"][0]["unreadCompletedAgentTurn"], json!(false));
-        assert_eq!(body["threads"][0]["lastCompletedAgentTurnSeq"], Value::Null);
-    }
-
-    #[tokio::test]
-    async fn explicit_thread_seen_marker_does_not_wait_for_app_server_readback() {
-        let (state, app_server) = test_state().await;
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::post("/v1/threads/thread-1/seen")
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"seenCompletedAgentTurnSeq":2}"#))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["seenCompletedAgentTurnSeq"], json!(2));
-        assert!(app_server.requests.lock().unwrap().is_empty());
-    }
-
-    #[tokio::test]
     async fn mark_thread_seen_broadcasts_and_replays_canonical_read_state() {
         let (state, app_server) = test_state().await;
+        let head = state
+            .store
+            .record_thread_completion("thread-1", "turn-2")
+            .await
+            .unwrap();
         let mut receiver = state.events.subscribe();
         let app = build_router(state.clone());
 
         app_server.queued_responses.lock().unwrap().push(json!({
             "data": [
-                {"id": "turn-1", "status": {"type": "completed"}},
-                {"id": "turn-2", "status": {"type": "completed"}}
+                {"id": "turn-2", "status": "completed", "items": [], "itemsView": "notLoaded"},
+                {"id": "turn-1", "status": "completed", "items": [], "itemsView": "notLoaded"}
             ],
             "nextCursor": null,
             "backwardsCursor": null
@@ -4796,7 +4696,10 @@ mod tests {
             .oneshot(
                 Request::post("/v1/threads/thread-1/seen")
                     .header("content-type", "application/json")
-                    .body(Body::from("{}"))
+                    .body(Body::from(
+                        json!({"completedTurnId":"turn-2", "readRevision":head.read_revision})
+                            .to_string(),
+                    ))
                     .unwrap(),
             )
             .await
@@ -4810,8 +4713,10 @@ mod tests {
         assert_eq!(event.kind, "thread.read_updated");
         assert_eq!(event.thread_id.as_deref(), Some("thread-1"));
         assert_eq!(event.payload["threadId"], "thread-1");
-        assert_eq!(event.payload["seenCompletedAgentTurnSeq"], json!(2));
-        assert_eq!(event.payload["lastCompletedAgentTurnSeq"], json!(2));
+        assert_eq!(event.payload["seenCompletedTurnId"], "turn-2");
+        assert_eq!(event.payload["latestCompletedTurnId"], "turn-2");
+        assert!(event.payload["readRevision"].as_i64().unwrap() > head.read_revision);
+        assert_eq!(event.payload["readStateKnown"], true);
         assert_eq!(event.payload["unreadCompletedAgentTurn"], json!(false));
 
         let replayed = state
@@ -4821,7 +4726,7 @@ mod tests {
             .unwrap();
         assert!(replayed.iter().any(|event| {
             event.kind == "thread.read_updated"
-                && event.payload["seenCompletedAgentTurnSeq"] == json!(2)
+                && event.payload["seenCompletedTurnId"] == "turn-2"
                 && event.payload["unreadCompletedAgentTurn"] == json!(false)
         }));
     }
@@ -6025,7 +5930,7 @@ mod tests {
                 "backwardsCursor": null
             }),
             json!({
-                "data": [{"id": "turn-mcp", "status": {"type": "completed"}}],
+                "data": [{"id": "turn-mcp", "status": "completed", "items": [], "itemsView": "notLoaded"}],
                 "nextCursor": null,
                 "backwardsCursor": null
             }),
@@ -6047,7 +5952,7 @@ mod tests {
                 "backwardsCursor": null
             }),
             json!({
-                "data": [{"id": "turn-mcp", "status": {"type": "completed"}}],
+                "data": [{"id": "turn-mcp", "status": "completed", "items": [], "itemsView": "notLoaded"}],
                 "nextCursor": null,
                 "backwardsCursor": null
             }),
@@ -6666,10 +6571,13 @@ mod tests {
         );
         assert_eq!(requests[2].0, "thread/list");
         assert_eq!(
-            requests[3].1,
+            requests[4].1,
             json!({"threadId": "thread-1", "input": [{"type": "text", "text": "default"}], "clientUserMessageId": "default-settings"})
         );
-        assert_eq!(requests[4].0, "thread/list");
+        assert_completion_head_request(&requests[3], "thread-1");
+        assert_eq!(requests[5].0, "thread/list");
+        assert_completion_head_request(&requests[6], "thread-1");
+        assert_eq!(requests.len(), 7);
     }
 
     #[tokio::test]
@@ -6718,8 +6626,9 @@ mod tests {
         assert!(listed["threads"][0]["sandbox"].is_null());
 
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
+        assert_eq!(requests.len(), 2);
         assert_eq!(requests[0].0, "thread/list");
+        assert_completion_head_request(&requests[1], "thread-1");
     }
 
     #[tokio::test]
@@ -6806,6 +6715,7 @@ mod tests {
                 "model": "gpt-5.4",
                 "modelProvider": "openai"
             }),
+            json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
             json!({"turn": {"id": "turn-started", "status": "inProgress"}}),
         ]);
         let app = build_router(state.clone());
@@ -6827,7 +6737,7 @@ mod tests {
             json!({"payload": {"turn": {"id": "turn-started", "status": "inProgress"}}})
         );
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 3);
+        assert_eq!(requests.len(), 4);
         assert_eq!(requests[0].0, "turn/start");
         assert_eq!(
             requests[0].1,
@@ -6841,8 +6751,9 @@ mod tests {
         assert_eq!(requests[1].1["threadId"], "thread-1");
         assert!(requests[1].1.get("persistExtendedHistory").is_none());
         assert_eq!(requests[1].1["excludeTurns"], true);
-        assert_eq!(requests[2].0, "turn/start");
-        assert_eq!(requests[2].1, requests[0].1);
+        assert_completion_head_request(&requests[2], "thread-1");
+        assert_eq!(requests[3].0, "turn/start");
+        assert_eq!(requests[3].1, requests[0].1);
     }
 
     #[tokio::test]
@@ -9870,8 +9781,11 @@ mod tests {
                 codex_method: None,
                 payload: json!({
                     "threadId": "thread-1",
-                    "seenCompletedAgentTurnSeq": 1,
-                    "lastCompletedAgentTurnSeq": 1,
+                    "seenCompletedTurnId": "turn-1",
+                    "latestCompletedTurnId": "turn-1",
+                    "readRevision": 1,
+                    "readStateKnown": true,
+                    "updatedAt": "2026-10-05T00:00:00Z",
                     "unreadCompletedAgentTurn": false
                 }),
             })
@@ -9901,8 +9815,11 @@ mod tests {
                 codex_method: None,
                 payload: json!({
                     "threadId": "thread-1",
-                    "seenCompletedAgentTurnSeq": 1,
-                    "lastCompletedAgentTurnSeq": 2,
+                    "seenCompletedTurnId": "turn-1",
+                    "latestCompletedTurnId": "turn-2",
+                    "readRevision": 2,
+                    "readStateKnown": true,
+                    "updatedAt": "2026-10-05T00:00:01Z",
                     "unreadCompletedAgentTurn": true
                 }),
             })
@@ -10850,6 +10767,18 @@ mod tests {
         .unwrap()
     }
 
+    fn assert_completion_head_request(request: &(String, Value), thread_id: &str) {
+        assert_eq!(
+            request,
+            &(
+                "thread/turns/list".into(),
+                json!({
+                    "threadId":thread_id, "cursor":null, "sortDirection":"desc", "itemsView":"notLoaded", "limit":8
+                })
+            )
+        );
+    }
+
     #[derive(Default)]
     struct BlockingThreadListAppServer {
         projects: RecordingAppServer,
@@ -10936,6 +10865,9 @@ mod tests {
                     }
                 }
                 "turn/start" => Ok(json!({"turnId": "turn-started"})),
+                "thread/turns/list" => {
+                    Ok(json!({"data": [], "nextCursor": null, "backwardsCursor": null}))
+                }
                 "thread/list" => {
                     Ok(json!({"data": [], "nextCursor": null, "backwardsCursor": null}))
                 }

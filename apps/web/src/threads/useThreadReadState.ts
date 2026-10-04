@@ -1,126 +1,55 @@
-import { useRef, type MutableRefObject } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 
-import { markThreadSeen, type EventEnvelope, type ThreadSummary } from "../api/client";
-import { mergeThreadReadState } from "./cache";
-import { completedAgentTurnEvent, threadReadUpdateFromEvent } from "./events";
-import { threadById, type ThreadsByProjectId } from "./helpers";
-
-type UseThreadReadStateParams = {
-  onError: (error: unknown) => void;
-  chatThreads: ThreadSummary[];
-  sectionThreads: ThreadSummary[];
-  selectedThreadIdRef: MutableRefObject<string | null>;
-  viewedThreadIdsRef: MutableRefObject<Set<string>>;
-  threadsByProjectId: ThreadsByProjectId;
-  updateThreadEverywhere: (
-    threadId: string,
-    patcher: (thread: ThreadSummary) => ThreadSummary,
-  ) => void;
-};
+import { GatewayRequestError, markThreadSeen, type ThreadRead, type ThreadSummary } from "../api/client";
+import type { TimelineTurn } from "../timeline/state";
 
 export function useThreadReadState({
-  chatThreads,
-  onError,
-  sectionThreads,
-  selectedThreadIdRef,
-  viewedThreadIdsRef,
-  threadsByProjectId,
-  updateThreadEverywhere,
-}: UseThreadReadStateParams) {
-  const threadsByProjectIdRef = useRef<ThreadsByProjectId>({});
-  const chatThreadsRef = useRef<ThreadSummary[]>([]);
-  const sectionThreadsRef = useRef<ThreadSummary[]>([]);
-  const pendingSeenByThreadIdRef = useRef<Map<string, number>>(new Map());
-  const confirmedSeenByThreadIdRef = useRef<Map<string, number>>(new Map());
-
-  threadsByProjectIdRef.current = threadsByProjectId;
-  chatThreadsRef.current = chatThreads;
-  sectionThreadsRef.current = sectionThreads;
-
-  function applyCompletedAgentTurnEvent(event: EventEnvelope) {
-    const completedTurn = completedAgentTurnEvent(event);
-    if (!completedTurn) {
-      return;
-    }
-    const isViewed =
-      completedTurn.threadId === selectedThreadIdRef.current ||
-      viewedThreadIdsRef.current.has(completedTurn.threadId);
-    if (isViewed) {
-      void persistCompletedAgentTurnSeen(completedTurn.threadId, undefined);
-      return;
-    }
-    updateThreadEverywhere(completedTurn.threadId, (thread) => {
-      const lastCompletedAgentTurnSeq = Math.max(
-        thread.lastCompletedAgentTurnSeq ?? 0,
-        (thread.seenCompletedAgentTurnSeq ?? 0) + 1,
-      );
-      return {
-        ...thread,
-        lastCompletedAgentTurnSeq,
-        status: "idle",
-        unreadCompletedAgentTurn: lastCompletedAgentTurnSeq > (thread.seenCompletedAgentTurnSeq ?? 0),
-      };
-    });
-  }
-
-  function applyThreadReadStateEvent(event: EventEnvelope) {
-    const readState = threadReadUpdateFromEvent(event);
-    if (!readState) {
-      return;
-    }
-    updateThreadEverywhere(readState.threadId, (thread) => mergeThreadReadState(thread, readState, event.seq));
-  }
-
-  function markCompletedAgentTurnSeen(threadId: string, lastCompletedAgentTurnSeq?: number | null) {
-    const thread =
-      threadById(threadsByProjectIdRef.current, threadId) ??
-      chatThreadsRef.current.find((thread) => thread.id === threadId) ??
-      sectionThreadsRef.current.find((thread) => thread.id === threadId) ??
-      null;
-    const seenCompletedAgentTurnSeq = lastCompletedAgentTurnSeq ?? thread?.lastCompletedAgentTurnSeq ?? 0;
-    const knownSeenCompletedAgentTurnSeq = Math.max(
-      thread?.seenCompletedAgentTurnSeq ?? 0,
-      pendingSeenByThreadIdRef.current.get(threadId) ?? 0,
-      confirmedSeenByThreadIdRef.current.get(threadId) ?? 0,
-    );
-    if (seenCompletedAgentTurnSeq <= knownSeenCompletedAgentTurnSeq) {
-      return;
-    }
-    void persistCompletedAgentTurnSeen(threadId, seenCompletedAgentTurnSeq);
-  }
-
-  async function persistCompletedAgentTurnSeen(threadId: string, seenCompletedAgentTurnSeq?: number) {
-    if (seenCompletedAgentTurnSeq !== undefined) {
-      pendingSeenByThreadIdRef.current.set(threadId, seenCompletedAgentTurnSeq);
-    }
-    try {
-      const read = await markThreadSeen(threadId, seenCompletedAgentTurnSeq);
-      confirmedSeenByThreadIdRef.current.set(
-        threadId,
-        Math.max(
-          confirmedSeenByThreadIdRef.current.get(threadId) ?? 0,
-          read.seenCompletedAgentTurnSeq,
-        ),
-      );
-      updateThreadEverywhere(threadId, (thread) => {
-        const nextSeenSeq = Math.max(thread.seenCompletedAgentTurnSeq ?? 0, read.seenCompletedAgentTurnSeq);
-        return {
-          ...thread,
-          seenCompletedAgentTurnSeq: nextSeenSeq,
-          unreadCompletedAgentTurn: (thread.lastCompletedAgentTurnSeq ?? 0) > nextSeenSeq,
-        };
+  thread, turns, isVisible, onRead, onRefresh, onError,
+}: {
+  thread: ThreadSummary | null;
+  turns: TimelineTurn[];
+  isVisible: boolean;
+  onRead: (read: ThreadRead) => void;
+  onRefresh: () => void;
+  onError: (error: unknown) => void;
+}) {
+  const attemptedRef = useRef<string | null>(null);
+  const currentThreadIdRef = useRef(thread?.id);
+  currentThreadIdRef.current = thread?.id;
+  useEffect(() => {
+    currentThreadIdRef.current = thread?.id;
+    return () => { currentThreadIdRef.current = undefined; };
+  }, [thread?.id]);
+  const hasVisibleCompletion = turns.some((turn) =>
+    turn.turnId === thread?.latestCompletedTurnId &&
+    (turn.status === "completed" || turn.status === "failed" || turn.status === "interrupted"),
+  );
+  const acknowledge = useEffectEvent(() => {
+    if (!isVisible || document.visibilityState !== "visible" || !hasVisibleCompletion ||
+      !thread?.readStateKnown || !thread.unreadCompletedAgentTurn || !thread.latestCompletedTurnId) return;
+    const key = JSON.stringify([thread.id, thread.latestCompletedTurnId, thread.readRevision]);
+    if (attemptedRef.current === key) return;
+    // Deduplicate this displayed revision only. The gateway owns whether it was
+    // seen; a conflict needs fresh canonical visible data, never a guessed ID.
+    attemptedRef.current = key;
+    const threadId = thread.id;
+    void markThreadSeen(thread.id, { completedTurnId: thread.latestCompletedTurnId, readRevision: thread.readRevision })
+      .then((read) => { if (currentThreadIdRef.current === threadId) onRead(read); })
+      .catch((error: unknown) => {
+        if (currentThreadIdRef.current !== threadId) return;
+        if (error instanceof GatewayRequestError && error.status === 409) onRefresh();
+        else {
+          if (attemptedRef.current === key) attemptedRef.current = null;
+          onError(error);
+        }
       });
-    } catch (error) {
-      onError(error);
-    } finally {
-      if (
-        seenCompletedAgentTurnSeq !== undefined &&
-        pendingSeenByThreadIdRef.current.get(threadId) === seenCompletedAgentTurnSeq
-      ) {
-        pendingSeenByThreadIdRef.current.delete(threadId);
-      }
-    }
-  }
+  });
 
-  return { applyCompletedAgentTurnEvent, applyThreadReadStateEvent, markCompletedAgentTurnSeen };
+  useEffect(() => {
+    acknowledge();
+  }, [hasVisibleCompletion, isVisible, thread]);
+  useEffect(() => {
+    document.addEventListener("visibilitychange", acknowledge);
+    return () => document.removeEventListener("visibilitychange", acknowledge);
+  }, []);
 }

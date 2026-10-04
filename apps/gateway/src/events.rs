@@ -22,8 +22,7 @@ use crate::{
     api::AppState,
     app_server::InboundMessage,
     app_server_api::{
-        self, SortDirection, ThreadItemSnapshot, ThreadLiveState, ThreadStatus, ThreadSummary,
-        ThreadTimelineWindowPage, ThreadTurnItemsView, ThreadTurnSnapshot,
+        self, ThreadItemSnapshot, ThreadLiveState, ThreadStatus, ThreadSummary, ThreadTurnSnapshot,
         TimelineItemUpsertPayload, TimelineThreadMetadataPayload, TimelineUpdateSource,
     },
     app_surfaces,
@@ -43,7 +42,6 @@ use crate::{
 };
 
 const SSE_REPLAY_PAGE_SIZE: i64 = 500;
-const TURN_COMPLETION_HEAD_REFRESH_LIMIT: u32 = 50;
 pub const CONFIG_CHANGED_EVENT: &str = "config.changed";
 pub const MCP_SERVER_STATUS_UPDATED_EVENT: &str = "mcp.server_status_updated";
 pub const MCP_OAUTH_LOGIN_COMPLETED_EVENT: &str = "mcp.oauth_login_completed";
@@ -195,14 +193,28 @@ pub async fn run_inbound_ingest(mut inbound: mpsc::Receiver<InboundMessage>, sta
 
 pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiResult<()> {
     match message {
-        InboundMessage::Disconnected => crate::approvals::runtime_unavailable(state).await?,
+        InboundMessage::Disconnected => {
+            state.thread_views.clear_completion_witnesses().await;
+            crate::approvals::runtime_unavailable(state).await?;
+        }
         InboundMessage::Notification { method, params } => {
             if method == "serverRequest/resolved" {
                 return crate::approvals::resolve_native(state, &params).await;
             }
             let metadata = EventMetadata::from_payload(&params);
+            if matches!(
+                method.as_str(),
+                "thread/started" | "thread/archived" | "thread/unarchived" | "thread/deleted"
+            ) {
+                state.store.bump_thread_read_membership_revision().await?;
+            }
             if method == "thread/reverted" {
                 if let Some(thread_id) = metadata.thread_id.as_deref() {
+                    let read = state
+                        .store
+                        .invalidate_thread_completion_head(thread_id)
+                        .await?;
+                    crate::routes::threads::broadcast_thread_read_update(state, read).await?;
                     let cursor = append_timeline_changed_cursor(
                         state,
                         &metadata,
@@ -301,6 +313,12 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             params,
         } => {
             let metadata = EventMetadata::from_payload(&params);
+            if matches!(
+                method.as_str(),
+                "thread/started" | "thread/archived" | "thread/unarchived" | "thread/deleted"
+            ) {
+                state.store.bump_thread_read_membership_revision().await?;
+            }
             if !is_supported_approval_method(&method) {
                 state
                     .app_server
@@ -890,68 +908,14 @@ async fn timeline_turn_completion_reconciliation_events(
         return Ok(Vec::new());
     };
     let cursor = append_completed_turn_cursor(state, metadata, method).await?;
-    let revision = cursor.seq;
-    let reconciliation =
-        refresh_completed_turn_head(state, thread_id, metadata.turn_id.as_deref(), revision).await;
-    match reconciliation {
-        Ok(()) => Ok(vec![
-            thread_view_full_snapshot_patch_event(state, thread_id).await?,
-        ]),
-        Err(error) => {
-            tracing::warn!(
-                %error,
-                thread_id,
-                "failed to reconcile completed turn head from app-server"
-            );
-            Ok(vec![thread_view_refresh_required_event(
-                cursor.seq,
-                thread_id.to_string(),
-                "turn_completed_reconciliation_failed",
-            )?])
-        }
-    }
-}
-
-async fn refresh_completed_turn_head(
-    state: &AppState,
-    thread_id: &str,
-    completed_turn_id: Option<&str>,
-    revision: i64,
-) -> ApiResult<()> {
-    let mut page = app_server_api::client(&state.app_server)
-        .thread_turns_list_page(
-            thread_id.to_string(),
-            None,
-            SortDirection::Desc,
-            ThreadTurnItemsView::Full,
-            Some(TURN_COMPLETION_HEAD_REFRESH_LIMIT),
-        )
-        .await?;
-    if let Some(completed_turn_id) = completed_turn_id {
-        if !page.data.iter().any(|turn| turn.id == completed_turn_id) {
-            return Err(ApiError::BadGateway(format!(
-                "completed turn {completed_turn_id} missing from recent head reconciliation"
-            )));
-        }
-    }
-    page.data.reverse();
-    let history_page = ThreadTimelineWindowPage {
-        older_cursor: page.next_cursor.clone(),
-        newer_cursor: page.backwards_cursor.clone(),
-        has_older: page.next_cursor.is_some(),
-        limit: TURN_COMPLETION_HEAD_REFRESH_LIMIT,
-        loaded_turn_count: page.data.len() as u32,
-        reset_window: false,
-    };
-    thread_view::build_thread_timeline_window(
-        &state.thread_views,
-        thread_id,
-        &page.data,
-        Some(history_page),
-        revision,
-    )
-    .await?;
-    Ok(())
+    // The ordinary canonical refill hydrates persisted identities outside the
+    // serial notification listener. Waiting for its RPC here can deadlock when
+    // the bounded inbound queue fills ahead of that RPC's response.
+    Ok(vec![thread_view_refresh_required_event(
+        cursor.seq,
+        thread_id.to_string(),
+        "turn_completed",
+    )?])
 }
 
 async fn timeline_turn_upsert_event(
@@ -981,6 +945,13 @@ async fn timeline_turn_upsert_event(
     let (newly_terminal, patch) =
         thread_view::record_turn_status(&state.thread_views, &thread_id, &turn, cursor.seq).await?;
     events.push(thread_view_patch_payload_event(state, patch).await?);
+    if terminal {
+        if let Some(event) =
+            append_thread_read_projection_event(state, &thread_id, &turn.id).await?
+        {
+            events.push(event);
+        }
+    }
     if newly_terminal {
         let completed_cursor = append_completed_turn_cursor(state, metadata, "turn/upsert").await?;
         let _ = thread_view::record_turn_status(
@@ -990,7 +961,6 @@ async fn timeline_turn_upsert_event(
             completed_cursor.seq,
         )
         .await?;
-        events.push(append_thread_read_projection_event(state, &thread_id).await?);
         events.extend(
             queue::requeue_unmatched_pending_commit_input_events_for_turn(
                 state, &thread_id, &turn.id,
@@ -1052,41 +1022,42 @@ async fn timeline_turn_upsert_event(
 async fn append_thread_read_projection_event(
     state: &AppState,
     thread_id: &str,
-) -> ApiResult<EventEnvelope> {
-    let last_completed_agent_turn_seq = Some(
-        state
-            .store
-            .completed_agent_turn_event_count(thread_id)
-            .await?,
-    )
-    .filter(|count| *count > 0);
-    let read_states = state
+    turn_id: &str,
+) -> ApiResult<Option<EventEnvelope>> {
+    let current = state.store.get_thread_read(thread_id).await?;
+    if current.read_state_known
+        && current.latest_completed_turn_id.as_deref() == Some(turn_id)
+        && state
+            .thread_views
+            .pending_completion(thread_id)
+            .await
+            .is_none()
+    {
+        return Ok(None);
+    }
+    // History hydration can already know this terminal turn; that suppresses
+    // duplicate push planning, not confirmation of a pending live witness.
+    state
+        .thread_views
+        .observe_completion(thread_id, turn_id)
+        .await;
+    let read = state
         .store
-        .thread_read_states(&[thread_id.to_string()])
+        .invalidate_thread_completion_head(thread_id)
         .await?;
-    let seen_completed_agent_turn_seq = read_states
-        .get(thread_id)
-        .map(|state| state.seen_completed_agent_turn_seq)
-        .unwrap_or_default();
     state
         .store
         .append_event(NewEvent {
             project_id: None,
             thread_id: Some(thread_id.to_string()),
-            turn_id: None,
+            turn_id: Some(turn_id.to_string()),
             item_id: None,
             kind: THREAD_READ_UPDATED_EVENT.to_string(),
             codex_method: None,
-            payload: serde_json::to_value(ThreadReadStateUpdate {
-                thread_id: thread_id.to_string(),
-                seen_completed_agent_turn_seq,
-                last_completed_agent_turn_seq,
-                unread_completed_agent_turn: last_completed_agent_turn_seq
-                    .map(|last_completed| last_completed > seen_completed_agent_turn_seq)
-                    .unwrap_or(true),
-            })?,
+            payload: serde_json::to_value(ThreadReadStateUpdate(read))?,
         })
         .await
+        .map(Some)
 }
 
 async fn thread_view_full_snapshot_patch_event(
@@ -1161,7 +1132,7 @@ async fn timeline_thread_metadata_event(
     let thread = match thread {
         Some(thread) => match ThreadSummary::from_payload(thread) {
             Ok(mut thread) => {
-                crate::routes::threads::apply_thread_summary_state(
+                crate::routes::threads::apply_stored_thread_summary_state(
                     state,
                     std::slice::from_mut(&mut thread),
                 )

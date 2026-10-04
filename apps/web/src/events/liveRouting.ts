@@ -8,6 +8,7 @@ import {
 } from "../threads/events";
 
 export type LiveEventRouteHandlers = {
+  applyUnreadBadgeEvent: (event: EventEnvelope) => void;
   applyAccountEvent: (event: EventEnvelope) => void;
   applyProjectEvent: (event: EventEnvelope) => void;
   applyThreadSettingsEvent: (event: EventEnvelope) => void;
@@ -17,7 +18,6 @@ export type LiveEventRouteHandlers = {
   applyThreadSectionsEvent: (event: EventEnvelope) => void;
   applyThreadUpsert: (update: ThreadUpsert) => void;
   applyThreadMetadataEvent: (event: EventEnvelope) => void;
-  applyCompletedAgentTurnEvent: (event: EventEnvelope) => void;
   applyThreadReadStateEvent: (event: EventEnvelope) => void;
   applyThreadNotificationsState: (threadId: string, notificationsEnabled: boolean) => void;
   refreshSidebarThreadsForLiveEvent: (event: EventEnvelope) => void;
@@ -31,6 +31,7 @@ export type LiveEventRouteHandlers = {
 
 export function routeGlobalLiveEvent(event: EventEnvelope, handlers: LiveEventRouteHandlers) {
   routeSharedLiveEvent(event, handlers);
+  handlers.applyUnreadBadgeEvent(event);
   if (event.kind === "thread.subagents_changed") handlers.applySubagentsEvent(event);
   if (event.kind === "thread.sections_updated") handlers.applyThreadSectionsEvent(event);
   if (event.kind === "project.changed" || event.kind === "thread.project_updated") {
@@ -78,9 +79,6 @@ function routeSharedLiveEvent(event: EventEnvelope, handlers: LiveEventRouteHand
   }
   if (isThreadMetadataEvent(event)) {
     handlers.applyThreadMetadataEvent(event);
-  }
-  if (event.kind === "thread_view.patch") {
-    handlers.applyCompletedAgentTurnEvent(event);
   }
   if (event.kind === "thread.read_updated") {
     handlers.applyThreadReadStateEvent(event);

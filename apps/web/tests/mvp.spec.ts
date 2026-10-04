@@ -20,8 +20,10 @@ const thread = {
   status: "idle",
   source: "local",
   preview: "Build the web client",
-  lastCompletedAgentTurnSeq: null,
-  seenCompletedAgentTurnSeq: 0,
+  latestCompletedTurnId: null,
+  seenCompletedTurnId: null,
+  readRevision: 0,
+  readStateKnown: false,
   unreadCompletedAgentTurn: false,
   rawPayload: {},
   createdAt: 1777500000,
@@ -1077,6 +1079,10 @@ test("restores selected thread model settings when switching threads", async ({ 
       return;
     }
 
+    if (key === "GET /v1/threads/unread-badge") {
+      return route.fulfill({ json: { count: 0, readRevision: 1 } });
+    }
+
     if (key === "GET /v1/capabilities") {
       await route.fulfill({
         status: 200,
@@ -1193,8 +1199,10 @@ test("restores selected thread model settings when switching threads", async ({ 
         status: "idle",
         source: "local",
         preview: `Thread ${thread.name}`,
-        lastCompletedAgentTurnSeq: null,
-        seenCompletedAgentTurnSeq: 0,
+        latestCompletedTurnId: null,
+        seenCompletedTurnId: null,
+        readRevision: 0,
+        readStateKnown: false,
         unreadCompletedAgentTurn: false,
         rawPayload: { model: thread.model, reasoningEffort: null, serviceTier: null },
         createdAt: 1777500000,
@@ -1256,8 +1264,10 @@ test("restores selected thread model settings when switching threads", async ({ 
             status: "idle",
             source: "local",
             preview: `Thread ${thread.name}`,
-            lastCompletedAgentTurnSeq: null,
-            seenCompletedAgentTurnSeq: 0,
+            latestCompletedTurnId: null,
+            seenCompletedTurnId: null,
+            readRevision: 0,
+            readStateKnown: false,
             unreadCompletedAgentTurn: false,
             rawPayload: { model: thread.model },
             createdAt: 1777500000,
@@ -1289,8 +1299,10 @@ test("restores selected thread model settings when switching threads", async ({ 
             status: "idle",
             source: "local",
             preview: `Thread ${nextName}`,
-            lastCompletedAgentTurnSeq: null,
-            seenCompletedAgentTurnSeq: 0,
+            latestCompletedTurnId: null,
+            seenCompletedTurnId: null,
+            readRevision: 0,
+            readStateKnown: false,
             unreadCompletedAgentTurn: false,
             rawPayload: {},
             createdAt: 1777500000,
@@ -1488,6 +1500,9 @@ async function mockGateway(page: Page) {
 }
 
 async function responseFor(key: string, route: Route, projects = [project], threads = [thread]): Promise<{ status?: number; body: unknown }> {
+  if (key === "GET /v1/threads/unread-badge") {
+    return { body: { count: 0, readRevision: 1 } };
+  }
   const settingsMatch = /^GET \/v1\/threads\/([^/]+)\/settings$/.exec(key);
   if (settingsMatch && threads.some((entry) => entry.id === settingsMatch[1])) {
     return { body: { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null } };
@@ -1530,7 +1545,7 @@ async function responseFor(key: string, route: Route, projects = [project], thre
   if (["GET /v1/threads/thread-1", "POST /v1/threads/thread-1/attach"].includes(key)) {
     return {
       body: threadDetailBody(
-        { ...thread, lastCompletedAgentTurnSeq: 1, seenCompletedAgentTurnSeq: 1, unreadCompletedAgentTurn: false },
+        { ...thread, latestCompletedTurnId: "turn-1", seenCompletedTurnId: "turn-1", readRevision: 1, readStateKnown: true, unreadCompletedAgentTurn: false },
         [
           {
             id: "turn-1",
@@ -1587,10 +1602,15 @@ async function responseFor(key: string, route: Route, projects = [project], thre
     return { body: { payload: {} } };
   }
   if (key === "POST /v1/threads/thread-1/seen") {
+    expect(route.request().postDataJSON()).toEqual({ completedTurnId: "turn-1", readRevision: 1 });
     return {
       body: {
         threadId: "thread-1",
-        seenCompletedAgentTurnSeq: 1,
+        latestCompletedTurnId: "turn-1",
+        seenCompletedTurnId: "turn-1",
+        readRevision: 1,
+        readStateKnown: true,
+        unreadCompletedAgentTurn: false,
         updatedAt: "2026-04-30T00:00:02Z",
       },
     };

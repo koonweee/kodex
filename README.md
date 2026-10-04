@@ -79,7 +79,7 @@ npm run dev
 
 Open `http://127.0.0.1:5173`. The development server proxies API requests to the gateway at `http://127.0.0.1:8787`.
 
-The new startup path defaults to `~/.kodex/native-v1/`: its gateway database, identity marker and `codex-home/` are independent of the old Kodex database and Codex desktop home. Nonempty unrecognized stores are rejected; no history, credentials, projects or schedules are imported. Sign in and configure the fresh instance deliberately. Production cutover remains gated on the redesign tests; do not point development runs at old stores.
+The new startup path defaults to `~/.kodex/native-v1/`: its gateway database, identity marker and `codex-home/` are independent of the old Kodex database and Codex desktop home. The instance marker now uses format 2 for the native completion-marker schema. Earlier marked instances are also rejected; select a new empty `KODEX_DATA_DIR` rather than migrating them. Nonempty unrecognized stores are rejected; no history, credentials, projects or schedules are imported. Sign in and configure the fresh instance deliberately. Production cutover remains gated on the redesign tests; do not point development runs at old stores.
 
 Chat model and speed controls edit native settings for the next turn. Send and Queue use the effective native settings rather than repeating a browser snapshot. Changes appear after native application is confirmed; new-chat choices apply at creation. Full settings are readable after the first native turn starts. In Codex 0.160.0, speed returns to the configured default after an app-server restart.
 
@@ -94,6 +94,8 @@ Skills use native selection rules. Free-text `$name` goes directly to Codex. The
 Send delegates to native atomic start-or-steer. If native input is rejected, the draft stays available for an explicit retry or Queue; Kodex does not silently queue it. Each submission carries a native client-message ID so identical messages remain separate across live updates and history. These IDs correlate messages; they do not make retries idempotent. Explicit Queue and queued-row Steer still use the gateway implementation pending the native queue cutover.
 
 Opening or reconnecting an editable chat rejoins native execution and reads its recent history page through one canonical gateway command. Older history uses native cursors. The subagent observer reads history without activating the child; opening an unloaded internal child separately can encounter a native resume restriction. The recent window is bounded by turns, so one large turn can still contain many items.
+
+Read state uses native completion IDs and an explicit acknowledgment of the completion shown in a visible chat pane. A stale acknowledgment cannot consume newer work. The badge counts eligible nonarchived chats across the native inventory, including chats outside the visible sidebar page. Unknown native history preserves the previous badge until a successful authoritative read; it never becomes a guessed zero. Reverting history while Kodex is offline can leave a chat conservatively unread until viewed again.
 
 For prerequisites, tests, schema generation, and production-style static serving, see [Development](docs/development.md). For network binding, configuration and notifications, see [Deployment](docs/deployment.md).
 

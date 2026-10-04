@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use crate::config::Config;
 
+const INSTANCE_FORMAT: u32 = 2;
 const MARKER: &str = "instance.json";
 const LOCK: &str = ".instance.lock";
 
@@ -107,7 +108,7 @@ fn prepare_at(
         read_marker(&marker_path)?
     } else {
         let marker = InstanceMarker {
-            format: 1,
+            format: INSTANCE_FORMAT,
             id: Uuid::new_v4(),
         };
         let mut file = OpenOptions::new()
@@ -129,7 +130,7 @@ fn prepare_at(
 fn read_marker(path: &Path) -> anyhow::Result<InstanceMarker> {
     let marker: InstanceMarker = serde_json::from_slice(&fs::read(path)?)
         .context("invalid Kodex instance marker; legacy state is not imported")?;
-    if marker.format != 1 || marker.id.is_nil() {
+    if marker.format != INSTANCE_FORMAT || marker.id.is_nil() {
         bail!("unsupported Kodex instance marker; legacy state is not imported");
     }
     Ok(marker)
@@ -275,6 +276,36 @@ mod tests {
         let mut reopened = fixture(&dir.path().join("fresh"));
         let _guard = prepare_at(&mut reopened, &[]).unwrap();
         assert_eq!(reopened.instance.id, id);
+    }
+
+    #[test]
+    fn old_instance_format_is_rejected_without_touching_its_storage() {
+        let dir = tempdir().unwrap();
+        let marker = serde_json::to_vec(&InstanceMarker {
+            format: 1,
+            id: Uuid::new_v4(),
+        })
+        .unwrap();
+        fs::write(dir.path().join(MARKER), &marker).unwrap();
+        fs::write(dir.path().join("gateway.db"), b"old read counters").unwrap();
+        fs::create_dir(dir.path().join("codex-home")).unwrap();
+        fs::write(
+            dir.path().join("codex-home/auth.json"),
+            b"old native credentials",
+        )
+        .unwrap();
+        let mut config = fixture(dir.path());
+        assert!(prepare_at(&mut config, &[]).is_err());
+        assert_eq!(fs::read(dir.path().join(MARKER)).unwrap(), marker);
+        assert_eq!(
+            fs::read(dir.path().join("gateway.db")).unwrap(),
+            b"old read counters"
+        );
+        assert_eq!(
+            fs::read(dir.path().join("codex-home/auth.json")).unwrap(),
+            b"old native credentials"
+        );
+        assert!(!dir.path().join(LOCK).exists());
     }
 
     #[test]

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { EventEnvelope } from "../api/client";
 import {
-  completedAgentTurnEvent,
+  threadReadUpdateFromEvent,
   threadNotificationsUpdateFromEvent,
   threadNameUpdateFromEvent,
   threadStatusUpdateFromEvent,
@@ -10,41 +10,19 @@ import {
 } from "./events";
 
 describe("thread events", () => {
-  it("ignores non-canonical completion-shaped events", () => {
-    expect(
-      completedAgentTurnEvent(
-        event({
-          kind: "thread_view.cursor",
-          codexMethod: "thread_view/cursor",
-          threadId: "thread-1",
-          payload: { threadId: "thread-1", sourceMethod: "turn/completed" },
-        }),
-      ),
-    ).toBeNull();
+  it("does not interpret idle, reset or raw completion notifications as read state", () => {
+    for (const kind of ["thread_view.patch", "thread_view.cursor", "timeline.turn_completed"]) {
+      expect(threadReadUpdateFromEvent(event({ kind, threadId: "thread-1", payload: {
+        scope: "full_snapshot", activeTurnId: null, liveState: "idle", sourceMethod: "turn/completed",
+      } }))).toBeNull();
+    }
   });
 
-  it("recognizes canonical idle projection patches as completed agent turns", () => {
-    expect(
-      completedAgentTurnEvent(
-        event({
-          kind: "thread_view.patch",
-          codexMethod: "thread_view/patch",
-          threadId: "thread-1",
-          payload: { scope: "lifecycle", threadId: "thread-1", liveState: "idle", activeTurnId: null },
-        }),
-      ),
-    ).toEqual({ threadId: "thread-1", seq: 10 });
-
-    expect(
-      completedAgentTurnEvent(
-        event({
-          kind: "thread_view.patch",
-          codexMethod: "thread_view/patch",
-          threadId: "thread-1",
-          payload: { scope: "lifecycle", threadId: "thread-1", liveState: "streaming", activeTurnId: "turn-1" },
-        }),
-      ),
-    ).toBeNull();
+  it("accepts the full revisioned native read tuple, including an unknown cleared head", () => {
+    const read = { threadId: "thread-1", updatedAt: "2026-10-05T00:00:00Z", latestCompletedTurnId: null,
+      seenCompletedTurnId: "earlier", readRevision: 42, readStateKnown: false, unreadCompletedAgentTurn: false };
+    expect(threadReadUpdateFromEvent(event({ kind: "thread.read_updated", payload: read }))).toEqual(read);
+    expect(threadReadUpdateFromEvent(event({ kind: "thread.read_updated", payload: { ...read, readRevision: undefined } }))).toBeNull();
   });
 
   it("recognizes running and idle status from canonical projection patches", () => {
@@ -252,7 +230,7 @@ function threadSummary(id: string) {
     name: "Live thread",
     notificationsEnabled: true,
     rawPayload: {},
-    seenCompletedAgentTurnSeq: 0,
+    latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: true,
     status: "idle" as const,
     unreadCompletedAgentTurn: false,
     updatedAt: 2,

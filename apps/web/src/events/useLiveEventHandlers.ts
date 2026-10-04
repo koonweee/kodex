@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
+import { applyUnreadBadgeEvent } from "../notifications/unreadBadge";
 import { applyAccountEvent } from "../account/cache";
 import { applyThreadSettingsEvent } from "../composer/threadSettingsCache";
 import type { EventEnvelope, QueuedInput, RateLimitSnapshot } from "../api/client";
@@ -16,7 +17,6 @@ import { applySubagentsEvent } from "../threads/subagentsCache";
 import type { LiveEventRouteHandlers } from "./liveRouting";
 
 export function useLiveEventHandlers({
-  applyCompletedAgentTurnEvent,
   applyQueuedInputDeleted,
   applyQueuedInputUpsert,
   applyThreadMetadataEvent,
@@ -28,7 +28,6 @@ export function useLiveEventHandlers({
   refreshSidebarThreadsForLiveEvent,
   setSkillsInvalidationGeneration,
 }: {
-  applyCompletedAgentTurnEvent: (event: EventEnvelope) => void;
   applyQueuedInputDeleted: (threadId: string, id: string) => void;
   applyQueuedInputUpsert: (row: QueuedInput) => void;
   applyThreadMetadataEvent: (event: EventEnvelope) => void;
@@ -65,6 +64,7 @@ export function useLiveEventHandlers({
     }
 
     const liveRouteHandlers: LiveEventRouteHandlers = {
+      applyUnreadBadgeEvent: (event) => applyUnreadBadgeEvent(queryClient, event),
       applyAccountEvent: (event) => applyAccountEvent(queryClient, event),
       applyThreadSectionsEvent: (event) => applyThreadSectionsEvent(queryClient, event),
       applyProjectEvent: (event) => applyProjectEvent(queryClient, event),
@@ -74,7 +74,6 @@ export function useLiveEventHandlers({
       applyQueuedInputDeleted,
       applyThreadUpsert,
       applyThreadMetadataEvent,
-      applyCompletedAgentTurnEvent,
       applyThreadReadStateEvent,
       applyThreadNotificationsState,
       refreshSidebarThreadsForLiveEvent,
@@ -90,12 +89,11 @@ export function useLiveEventHandlers({
       liveRouteHandlers,
     };
   }, [
-    applyCompletedAgentTurnEvent,
     applyQueuedInputDeleted,
     applyQueuedInputUpsert,
     applyThreadMetadataEvent,
     applyThreadNotificationsState,
-      applyThreadReadStateEvent,
+    applyThreadReadStateEvent,
     applyThreadUpsert,
     applyUsageLimitSnapshot,
     queryClient,

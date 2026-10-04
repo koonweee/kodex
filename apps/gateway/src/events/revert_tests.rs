@@ -1,4 +1,5 @@
 use super::*;
+use crate::app_server_api::ThreadTimelineWindowPage;
 use crate::{app_server::tests::RecordingAppServer, config::Config, store::Store};
 use http_body_util::BodyExt;
 use std::sync::{atomic::Ordering, Arc};
@@ -83,7 +84,12 @@ async fn native_revert_clears_history_live_input_and_cursors_and_replays_a_refil
     assert_eq!(cleared.live_state, ThreadLiveState::Idle);
     assert!(cleared.view_revision > before);
     assert!(state.thread_views.history_page(THREAD).await.is_none());
+    let read = live.try_recv().unwrap();
+    assert_eq!(read.kind, crate::routes::threads::THREAD_READ_UPDATED_EVENT);
+    assert_eq!(read.payload["readStateKnown"], false);
+    assert!(read.payload["latestCompletedTurnId"].is_null());
     let reset = live.try_recv().unwrap();
+    assert!(reset.seq > read.seq);
     assert_eq!(reset.kind, THREAD_VIEW_PATCH_EVENT_KIND);
     assert_eq!(reset.payload["rows"], json!([]));
     let refill = live.try_recv().unwrap();

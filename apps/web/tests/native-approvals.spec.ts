@@ -10,7 +10,7 @@ test("two tabs converge from native approval snapshots after responding, missed 
   };
   const detail: ThreadViewResponse = {
     liveState: "idle",
-    thread: { id: "thread-1", name: "Approval review", cwd: "/workspace", status: "idle", createdAt: 0, updatedAt: 0, notificationsEnabled: true, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: false },
+    thread: { id: "thread-1", name: "Approval review", cwd: "/workspace", status: "idle", createdAt: 0, updatedAt: 0, notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false },
     timeline: { activeTurnId: null, liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], turns: [], viewRevision: 0 },
   };
   const approval: Approval = {
@@ -64,6 +64,7 @@ test("two tabs converge from native approval snapshots after responding, missed 
         case "GET /v1/threads/thread-1/subagents": body = { subagents: [] }; break;
         case "GET /v1/account": body = { account: null, requiresOpenaiAuth: false, rawPayload: {} }; break;
         case "GET /v1/account/rate-limits": body = { rateLimits: null, rawPayload: {} }; break;
+        case "GET /v1/threads/unread-badge": body = { count: 0, readRevision: 0 }; break;
         case "GET /v1/models": body = { models: [], rawPayload: {} }; break;
         case "GET /v1/composer-settings": body = {}; break;
         case "PUT /v1/thread-view-presence": body = { ok: true }; break;

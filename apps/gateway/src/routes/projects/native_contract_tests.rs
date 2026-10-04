@@ -206,6 +206,7 @@ async fn native_membership_update_requires_an_explicit_nullable_project_id_and_k
     assert_eq!(missing.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert!(server.requests.lock().unwrap().is_empty());
     for project_id in [json!("project-2"), json!(null)] {
+        server.requests.lock().unwrap().clear();
         server.queued_responses.lock().unwrap().push(json!({"thread":{
             "id":"thread-1","projectId":project_id,"cwd":"/execution/unchanged","status":{"type":"idle"},"createdAt":1,"updatedAt":2,
         }}));
@@ -223,9 +224,21 @@ async fn native_membership_update_requires_an_explicit_nullable_project_id_and_k
         let response = response_json(response).await;
         assert_eq!(response["thread"]["projectId"], project_id);
         assert_eq!(response["thread"]["cwd"], "/execution/unchanged");
+        let requests = server.requests.lock().unwrap().clone();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(
+            requests[1],
+            (
+                "thread/turns/list".into(),
+                json!({
+                    "threadId": "thread-1", "cursor": null, "sortDirection": "desc",
+                    "itemsView": "notLoaded", "limit": 8,
+                })
+            )
+        );
         let expected = project_id.as_str().unwrap_or("");
         assert_eq!(
-            server.requests.lock().unwrap().last().unwrap(),
+            &server.requests.lock().unwrap()[0],
             &(
                 "thread/metadata/update".into(),
                 json!({"threadId":"thread-1","projectId":expected})

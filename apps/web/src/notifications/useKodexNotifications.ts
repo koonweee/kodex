@@ -1,29 +1,13 @@
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import type { ThreadSummary } from "../api/client";
-import type { ThreadsByProjectId } from "../threads/helpers";
 import { setKodexAppBadge } from "./browserBadge";
-import { unreadAgentMessageBadgeCount } from "./unreadAgentMessages";
+import { unreadBadgeOptions } from "./unreadBadge";
 
-type UseKodexNotificationsParams = {
-  chatThreads: ThreadSummary[];
-  sectionThreads: ThreadSummary[];
-  routeSelectedThread: ThreadSummary | null;
-  threadsByProjectId: ThreadsByProjectId;
-};
-
-export function useKodexNotifications({
-  chatThreads,
-  sectionThreads,
-  routeSelectedThread,
-  threadsByProjectId,
-}: UseKodexNotificationsParams) {
-  const threadGroups = useMemo(() => {
-    const groups = [...Object.values(threadsByProjectId), chatThreads, sectionThreads];
-    return routeSelectedThread ? [...groups, [routeSelectedThread]] : groups;
-  }, [chatThreads, sectionThreads, routeSelectedThread, threadsByProjectId]);
-
+export function useKodexNotifications() {
+  const client = useQueryClient();
+  const { data } = useQuery(unreadBadgeOptions(client));
   useEffect(() => {
-    void setKodexAppBadge(unreadAgentMessageBadgeCount(threadGroups));
-  }, [threadGroups]);
+    if (data) void setKodexAppBadge(data.count);
+  }, [data]);
 }

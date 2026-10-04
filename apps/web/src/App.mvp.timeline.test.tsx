@@ -340,7 +340,7 @@ describe("MVP timeline flows", () => {
     expect(within(timeline).getByText("Searched web")).toBeInTheDocument();
   });
 
-  it("transitions an in-progress thread indicator to unread when a background turn completes", async () => {
+  it("uses the shared read marker, rather than an idle patch, for a background completion indicator", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     mockGateway(
       baseRoutes({
@@ -383,8 +383,16 @@ describe("MVP timeline flows", () => {
         .getByRole("button", { name: /^running thread$/i })
         .closest(".kodex-thread-list-button");
       expect(updatedRunningThreadRow?.querySelector(".kodex-thread-progress-indicator")).not.toBeInTheDocument();
-      expect(updatedRunningThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
+      expect(updatedRunningThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
     });
+    act(() => workspaceStream.emit({
+      id: "read-completion", seq: 4, kind: "thread.read_updated", threadId: "thread-2",
+      payload: { threadId: "thread-2", latestCompletedTurnId: "completed-background", seenCompletedTurnId: null,
+        readRevision: 10, readStateKnown: true, unreadCompletedAgentTurn: true, updatedAt: "2026-04-30T00:00:02Z" },
+      receivedAt: "2026-04-30T00:00:02Z",
+    }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /^running thread$/i })
+      .closest(".kodex-thread-list-button")?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument());
   });
 
   it("does not mark already represented completed turns unread when the workspace stream replays after refresh", async () => {
@@ -396,8 +404,7 @@ describe("MVP timeline flows", () => {
             thread,
             {
               ...secondThread,
-              lastCompletedAgentTurnSeq: 3,
-              seenCompletedAgentTurnSeq: 3,
+              latestCompletedTurnId: "turn-3", seenCompletedTurnId: "turn-3", readRevision: 30, readStateKnown: true,
               unreadCompletedAgentTurn: false,
             },
           ],
@@ -776,7 +783,7 @@ describe("MVP timeline flows", () => {
 
   it("does not use completed-turn markers as the workspace stream cursor", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
-    const markerThread = { ...thread, lastCompletedAgentTurnSeq: 100 };
+    const markerThread = { ...thread, latestCompletedTurnId: "turn-100", readRevision: 100 };
     mockGateway(
       baseRoutes({
         "GET /v1/threads": {
@@ -863,14 +870,13 @@ describe("MVP timeline flows", () => {
       ...secondThread,
       status: "notLoaded",
       source: "external",
-      lastCompletedAgentTurnSeq: null,
-      seenCompletedAgentTurnSeq: 0,
+      latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: true,
       unreadCompletedAgentTurn: false,
     };
     const resumedThread = {
       ...externalThread,
       status: "idle",
-      lastCompletedAgentTurnSeq: 1,
+      latestCompletedTurnId: "turn-2", readRevision: 1,
     };
     const gateway = mockGateway(
       baseRoutes({
@@ -892,7 +898,7 @@ describe("MVP timeline flows", () => {
         },
         "POST /v1/threads/thread-2/seen": {
           threadId: "thread-2",
-          seenCompletedAgentTurnSeq: 1,
+          latestCompletedTurnId: "turn-2", seenCompletedTurnId: "turn-2", readRevision: 2, readStateKnown: true, unreadCompletedAgentTurn: false,
           updatedAt: "2026-04-30T00:00:02Z",
         },
       }),
@@ -978,23 +984,23 @@ describe("MVP timeline flows", () => {
     expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(2);
   });
 
-  it("does not persist read state from pane snapshot loads", async () => {
+  it("does not acknowledge a latest completion missing from the pane canonical window", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": {
-          threads: [{ ...thread, lastCompletedAgentTurnSeq: null, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: false }],
+          threads: [{ ...thread, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: true, unreadCompletedAgentTurn: false }],
           nextCursor: null,
           backwardsCursor: null,
           rawPayload: {},
         },
         "POST /v1/threads/thread-1/attach": threadDetail(
-          { ...thread, lastCompletedAgentTurnSeq: 2, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: true },
+          { ...thread, latestCompletedTurnId: "turn-2", seenCompletedTurnId: null, readRevision: 2, readStateKnown: true, unreadCompletedAgentTurn: true },
           [snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "Historical snapshot" })])],
         ),
         "POST /v1/threads/thread-1/seen": {
           threadId: "thread-1",
-          seenCompletedAgentTurnSeq: 2,
+          latestCompletedTurnId: "turn-2", seenCompletedTurnId: "turn-2", readRevision: 3, readStateKnown: true, unreadCompletedAgentTurn: false,
           updatedAt: "2026-04-30T00:00:02Z",
         },
       }),
@@ -1018,9 +1024,7 @@ describe("MVP timeline flows", () => {
         itemId: null,
         payload: {
           threadId: thread.id,
-          seenCompletedAgentTurnSeq: 2,
-          lastCompletedAgentTurnSeq: 2,
-          unreadCompletedAgentTurn: false,
+          latestCompletedTurnId: "turn-2", seenCompletedTurnId: "turn-2", readRevision: 3, readStateKnown: true, unreadCompletedAgentTurn: false, updatedAt: "2026-04-30T00:00:02Z",
         },
         receivedAt: "2026-04-30T00:00:02Z",
       });

@@ -1,12 +1,10 @@
 import { mergeThreadSummaryMetadata } from "./summaryMetadata";
 import type { QueryClient } from "@tanstack/react-query";
 
-import type { ThreadRead, ThreadReadStateUpdate, ThreadSummary } from "../api/client";
+import type { ThreadSummary } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 
-type CachedThreadSummary = ThreadSummary & {
-  readProjectionEventSeq?: number;
-};
+import { mergeThreadReadState, preserveNewerThreadReadState } from "./readState";
 
 export function upsertProjectThread(queryClient: QueryClient, projectId: string, thread: ThreadSummary) {
   queryClient.setQueryData<ThreadSummary[]>(queryKeys.projectThreads(projectId), (current) =>
@@ -49,47 +47,6 @@ export function applyThreadNotificationsState(
     ...thread,
     notificationsEnabled,
   }));
-}
-
-export function applyThreadReadState(
-  queryClient: QueryClient,
-  threadId: string,
-  readState: ThreadRead | ThreadReadStateUpdate,
-  eventSeq?: number,
-) {
-  updateThreadEverywhere(queryClient, threadId, (thread) => mergeThreadReadState(thread, readState, eventSeq));
-}
-
-export function mergeThreadReadState(
-  thread: ThreadSummary,
-  readState: ThreadRead | ThreadReadStateUpdate,
-  eventSeq?: number,
-): ThreadSummary {
-  const cachedThread = thread as CachedThreadSummary;
-  if (eventSeq !== undefined && (cachedThread.readProjectionEventSeq ?? 0) > eventSeq) {
-    return thread;
-  }
-  const eventLastCompleted =
-    "lastCompletedAgentTurnSeq" in readState ? readState.lastCompletedAgentTurnSeq : undefined;
-  const lastCompletedAgentTurnSeq =
-    eventLastCompleted === null || eventLastCompleted === undefined
-      ? thread.lastCompletedAgentTurnSeq
-      : Math.max(thread.lastCompletedAgentTurnSeq ?? 0, eventLastCompleted);
-  const seenCompletedAgentTurnSeq = Math.max(
-    thread.seenCompletedAgentTurnSeq ?? 0,
-    readState.seenCompletedAgentTurnSeq,
-  );
-  const unreadCompletedAgentTurn =
-    "unreadCompletedAgentTurn" in readState
-      ? readState.unreadCompletedAgentTurn || (lastCompletedAgentTurnSeq ?? 0) > seenCompletedAgentTurnSeq
-      : (lastCompletedAgentTurnSeq ?? 0) > seenCompletedAgentTurnSeq;
-  return {
-    ...thread,
-    ...(eventSeq !== undefined ? { readProjectionEventSeq: eventSeq } : {}),
-    lastCompletedAgentTurnSeq,
-    seenCompletedAgentTurnSeq,
-    unreadCompletedAgentTurn,
-  };
 }
 
 export function replaceThreadEverywhere(queryClient: QueryClient, thread: ThreadSummary) {
@@ -235,7 +192,7 @@ function mergeRouteSelectedThreadIntoList(
   ) {
     return threads;
   }
-  return threads.map((thread) => (thread.id === routeSelectedThread.id ? routeSelectedThread : thread));
+  return threads.map((thread) => (thread.id === routeSelectedThread.id ? preserveNewerThreadReadState(thread, routeSelectedThread) : thread));
 }
 
 function mergeNewerReadProjection(
@@ -243,47 +200,9 @@ function mergeNewerReadProjection(
   currentThread: ThreadSummary,
   beforeThread?: ThreadSummary,
 ): ThreadSummary {
-  const loadedLastCompleted = loadedThread.lastCompletedAgentTurnSeq ?? 0;
-  const currentLastCompleted = currentThread.lastCompletedAgentTurnSeq ?? 0;
-  const loadedSeen = loadedThread.seenCompletedAgentTurnSeq ?? 0;
-  const currentSeen = currentThread.seenCompletedAgentTurnSeq ?? 0;
-  const currentCachedThread = currentThread as CachedThreadSummary;
-  const currentReadProjectionEventSeq = currentCachedThread.readProjectionEventSeq;
-  const mergedNotificationsEnabled = mergedThreadNotificationsEnabled(loadedThread, currentThread, beforeThread);
-  const currentUnread = currentThread.unreadCompletedAgentTurn || currentLastCompleted > currentSeen;
-  if (
-    currentUnread &&
-    currentLastCompleted === loadedLastCompleted &&
-    currentSeen === loadedSeen &&
-    !loadedThread.unreadCompletedAgentTurn
-  ) {
-    return {
-      ...loadedThread,
-      ...(currentReadProjectionEventSeq !== undefined
-        ? { readProjectionEventSeq: currentReadProjectionEventSeq }
-        : {}),
-      status: currentThread.status,
-      notificationsEnabled: mergedNotificationsEnabled,
-      unreadCompletedAgentTurn: true,
-    };
-  }
-  if (currentLastCompleted <= loadedLastCompleted && currentSeen <= loadedSeen) {
-    return {
-      ...loadedThread,
-      notificationsEnabled: mergedNotificationsEnabled,
-    };
-  }
-
-  const lastCompletedAgentTurnSeq = Math.max(loadedLastCompleted, currentLastCompleted);
-  const seenCompletedAgentTurnSeq = Math.max(loadedSeen, currentSeen);
   return {
-    ...loadedThread,
-    ...(currentReadProjectionEventSeq !== undefined ? { readProjectionEventSeq: currentReadProjectionEventSeq } : {}),
-    lastCompletedAgentTurnSeq,
-    notificationsEnabled: mergedNotificationsEnabled,
-    seenCompletedAgentTurnSeq,
-    status: currentThread.status,
-    unreadCompletedAgentTurn: lastCompletedAgentTurnSeq > seenCompletedAgentTurnSeq,
+    ...preserveNewerThreadReadState(currentThread, loadedThread),
+    notificationsEnabled: mergedThreadNotificationsEnabled(loadedThread, currentThread, beforeThread),
   };
 }
 
@@ -294,7 +213,7 @@ function mergeThreadNotifications(
   baseThread: ThreadSummary,
 ): ThreadSummary {
   return {
-    ...baseThread,
+    ...mergeThreadReadState(preserveNewerThreadReadState(currentThread, baseThread), loadedThread),
     notificationsEnabled: mergedThreadNotificationsEnabled(loadedThread, currentThread, beforeThread),
   };
 }
@@ -314,7 +233,7 @@ function upsertThreadInList(current: ThreadSummary[], thread: ThreadSummary): Th
   if (index === -1) {
     return [thread, ...current];
   }
-  return current.map((item) => (item.id === thread.id ? thread : item));
+  return current.map((item) => (item.id === thread.id ? preserveNewerThreadReadState(item, thread) : item));
 }
 
 function updateThreadList(

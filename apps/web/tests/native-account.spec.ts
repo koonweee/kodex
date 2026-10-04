@@ -46,6 +46,7 @@ test("device-code sign-in and native account changes converge across two tabs", 
       switch (key) {
         case "GET /v1/capabilities": body = capabilities; break;
         case "GET /v1/sidebar/threads": body = { projects: [], projectThreads: {}, chatThreads: { threads: [] }, sections: [], sectionThreads: {} }; break;
+        case "GET /v1/threads/unread-badge": body = { count: 0, readRevision: 0 }; break;
         case "GET /v1/account": body = account; break;
         case "GET /v1/account/rate-limits": body = { rateLimits: null, rawPayload: {} }; break;
         case "GET /v1/approvals": body = { runtimeId: "native-account-runtime", revision: 0, approvals: [] }; break;

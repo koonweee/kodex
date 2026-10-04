@@ -785,8 +785,12 @@ pub struct ThreadSummary {
     pub section: Option<ThreadSection>,
     pub section_entered_at: Option<i64>,
     pub preview: Option<Value>,
-    pub last_completed_agent_turn_seq: Option<i64>,
-    pub seen_completed_agent_turn_seq: i64,
+    #[schema(required = true)]
+    pub latest_completed_turn_id: Option<String>,
+    #[schema(required = true)]
+    pub seen_completed_turn_id: Option<String>,
+    pub read_revision: i64,
+    pub read_state_known: bool,
     pub unread_completed_agent_turn: bool,
     pub notifications_enabled: bool,
     pub raw_payload: Value,
@@ -850,23 +854,22 @@ impl ThreadSummary {
                 .transpose()?,
             section_entered_at: optional_i64(payload, "sectionEnteredAt"),
             preview: payload.get("preview").cloned(),
-            last_completed_agent_turn_seq: None,
-            seen_completed_agent_turn_seq: 0,
+            latest_completed_turn_id: None,
+            seen_completed_turn_id: None,
+            read_revision: 0,
+            read_state_known: false,
             unread_completed_agent_turn: false,
             notifications_enabled: true,
             raw_payload: payload.clone(),
         })
     }
 
-    pub fn apply_completed_agent_turn_read_state(
-        &mut self,
-        last_completed_agent_turn_seq: Option<i64>,
-        seen_completed_agent_turn_seq: i64,
-    ) {
-        self.last_completed_agent_turn_seq = last_completed_agent_turn_seq;
-        self.seen_completed_agent_turn_seq = seen_completed_agent_turn_seq.max(0);
-        self.unread_completed_agent_turn = last_completed_agent_turn_seq
-            .is_some_and(|seq| seq > self.seen_completed_agent_turn_seq);
+    pub fn apply_read_state(&mut self, read: &crate::store::ThreadRead) {
+        self.latest_completed_turn_id = read.latest_completed_turn_id.clone();
+        self.seen_completed_turn_id = read.seen_completed_turn_id.clone();
+        self.read_revision = read.read_revision;
+        self.read_state_known = read.read_state_known;
+        self.unread_completed_agent_turn = read.unread_completed_agent_turn;
     }
 }
 
@@ -998,8 +1001,12 @@ pub struct ThreadViewThreadSummary {
     pub section: Option<ThreadSection>,
     pub section_entered_at: Option<i64>,
     pub preview: Option<Value>,
-    pub last_completed_agent_turn_seq: Option<i64>,
-    pub seen_completed_agent_turn_seq: i64,
+    #[schema(required = true)]
+    pub latest_completed_turn_id: Option<String>,
+    #[schema(required = true)]
+    pub seen_completed_turn_id: Option<String>,
+    pub read_revision: i64,
+    pub read_state_known: bool,
     pub unread_completed_agent_turn: bool,
     pub notifications_enabled: bool,
 }
@@ -1030,8 +1037,10 @@ impl From<ThreadSummary> for ThreadViewThreadSummary {
             section: thread.section,
             section_entered_at: thread.section_entered_at,
             preview: thread.preview,
-            last_completed_agent_turn_seq: thread.last_completed_agent_turn_seq,
-            seen_completed_agent_turn_seq: thread.seen_completed_agent_turn_seq,
+            latest_completed_turn_id: thread.latest_completed_turn_id,
+            seen_completed_turn_id: thread.seen_completed_turn_id,
+            read_revision: thread.read_revision,
+            read_state_known: thread.read_state_known,
             unread_completed_agent_turn: thread.unread_completed_agent_turn,
             notifications_enabled: thread.notifications_enabled,
         }
@@ -1051,9 +1060,7 @@ impl ThreadDetailResponse {
             .map(ThreadTurnSnapshot::from_payload)
             .collect::<ApiResult<Vec<_>>>()?;
         let live_state = live_state_from_thread(thread);
-        let last_completed_agent_turn_seq = completed_turn_count(&turns);
-        let mut thread = ThreadSummary::from_payload(thread)?;
-        thread.apply_completed_agent_turn_read_state(last_completed_agent_turn_seq, 0);
+        let thread = ThreadSummary::from_payload(thread)?;
         let timeline = ThreadTimelineSnapshot::from_turns(&thread.id, &turns);
         Ok(Self {
             thread,
@@ -1069,14 +1076,13 @@ impl ThreadDetailResponse {
         payload: Value,
         turns: Vec<ThreadTurnSnapshot>,
     ) -> ApiResult<Self> {
-        Self::from_thread_payload_turns_and_history(payload, turns, None, None)
+        Self::from_thread_payload_turns_and_history(payload, turns, None)
     }
 
     fn from_thread_payload_turns_and_history(
         mut payload: Value,
         turns: Vec<ThreadTurnSnapshot>,
         history_page: Option<ThreadTimelineWindowPage>,
-        last_completed_agent_turn_seq: Option<i64>,
     ) -> ApiResult<Self> {
         let thread = payload
             .get_mut("thread")
@@ -1092,11 +1098,7 @@ impl ThreadDetailResponse {
 
         let mut response = Self::from_payload(payload)?;
         response.history_page = history_page;
-        if last_completed_agent_turn_seq.is_some() {
-            response
-                .thread
-                .apply_completed_agent_turn_read_state(last_completed_agent_turn_seq, 0);
-        }
+
         Ok(response)
     }
 }
@@ -2025,6 +2027,18 @@ fn required_string(payload: &Value, field: &str) -> ApiResult<String> {
         .ok_or_else(|| bad_gateway(format!("missing string field {field}")))
 }
 
+// A malformed continuation is unknown, never proof that a native page ended.
+// Missing/null cursors are valid; opaque strings are forwarded unchanged.
+pub(crate) fn validate_native_next_cursor(payload: &Value) -> ApiResult<()> {
+    if payload
+        .get("nextCursor")
+        .is_some_and(|cursor| !cursor.is_null() && !cursor.is_string())
+    {
+        return Err(bad_gateway("native page has an invalid nextCursor"));
+    }
+    Ok(())
+}
+
 fn optional_string(payload: &Value, field: &str) -> Option<String> {
     payload
         .get(field)
@@ -2137,18 +2151,6 @@ fn overlay_thread_composer_state(thread: &mut ThreadSummary, payload: &Value) {
     if let Some(sandbox) = optional_value(payload, "sandbox") {
         thread.sandbox = Some(sandbox);
     }
-}
-
-fn completed_turn_count(turns: &[ThreadTurnSnapshot]) -> Option<i64> {
-    if turns.is_empty() {
-        return None;
-    }
-    Some(
-        turns
-            .iter()
-            .filter(|turn| is_terminal_turn_status(&turn.status))
-            .count() as i64,
-    )
 }
 
 fn is_terminal_turn_status(status: &str) -> bool {

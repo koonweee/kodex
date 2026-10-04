@@ -1430,6 +1430,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads/unread-badge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_unread_badge"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/threads/{threadId}": {
         parameters: {
             query?: never;
@@ -2411,8 +2427,9 @@ export interface components {
             verificationUrl: string;
         };
         MarkThreadSeenRequest: {
+            completedTurnId: string;
             /** Format: int64 */
-            seenCompletedAgentTurnSeq?: number | null;
+            readRevision: number;
         };
         MarketplaceAddResponse: {
             alreadyAdded: boolean;
@@ -2913,8 +2930,9 @@ export interface components {
             title: string;
         };
         SelfControlMarkThreadSeenRequest: {
+            completedTurnId: string;
             /** Format: int64 */
-            seenCompletedAgentTurnSeq?: number | null;
+            readRevision: number;
             source?: components["schemas"]["SelfControlSource"];
         };
         SelfControlMoveThreadToSectionRequest: components["schemas"]["MoveThreadToSectionRequest"] & {
@@ -3029,21 +3047,22 @@ export interface components {
             cwd: string;
             gitInfo?: null | components["schemas"]["GitInfo"];
             id: string;
-            /** Format: int64 */
-            lastCompletedAgentTurnSeq?: number | null;
+            latestCompletedTurnId: string | null;
             model?: string | null;
             name?: string | null;
             notificationsEnabled: boolean;
             parentThreadId: string | null;
             preview?: unknown;
             projectId?: string | null;
+            /** Format: int64 */
+            readRevision: number;
+            readStateKnown: boolean;
             reasoningEffort?: string | null;
             sandbox?: unknown;
             section?: null | components["schemas"]["ThreadSection"];
             /** Format: int64 */
             sectionEnteredAt?: number | null;
-            /** Format: int64 */
-            seenCompletedAgentTurnSeq: number;
+            seenCompletedTurnId: string | null;
             serviceTier?: string | null;
             source?: string | null;
             status: components["schemas"]["ThreadStatus"];
@@ -3195,20 +3214,17 @@ export interface components {
             threadId: string;
         };
         ThreadRead: {
+            latestCompletedTurnId: string | null;
             /** Format: int64 */
-            seenCompletedAgentTurnSeq: number;
+            readRevision: number;
+            readStateKnown: boolean;
+            seenCompletedTurnId: string | null;
             threadId: string;
+            unreadCompletedAgentTurn: boolean;
             /** Format: date-time */
             updatedAt: string;
         };
-        ThreadReadStateUpdate: {
-            /** Format: int64 */
-            lastCompletedAgentTurnSeq?: number | null;
-            /** Format: int64 */
-            seenCompletedAgentTurnSeq: number;
-            threadId: string;
-            unreadCompletedAgentTurn: boolean;
-        };
+        ThreadReadStateUpdate: components["schemas"]["ThreadRead"];
         ThreadSection: {
             appearance?: null | components["schemas"]["ThreadSectionAppearance"];
             id: string;
@@ -3289,8 +3305,7 @@ export interface components {
             cwd: string;
             gitInfo?: null | components["schemas"]["GitInfo"];
             id: string;
-            /** Format: int64 */
-            lastCompletedAgentTurnSeq?: number | null;
+            latestCompletedTurnId: string | null;
             model?: string | null;
             name?: string | null;
             notificationsEnabled: boolean;
@@ -3298,13 +3313,15 @@ export interface components {
             preview?: unknown;
             projectId?: string | null;
             rawPayload: unknown;
+            /** Format: int64 */
+            readRevision: number;
+            readStateKnown: boolean;
             reasoningEffort?: string | null;
             sandbox?: unknown;
             section?: null | components["schemas"]["ThreadSection"];
             /** Format: int64 */
             sectionEnteredAt?: number | null;
-            /** Format: int64 */
-            seenCompletedAgentTurnSeq: number;
+            seenCompletedTurnId: string | null;
             serviceTier?: string | null;
             source?: string | null;
             status: components["schemas"]["ThreadStatus"];
@@ -3460,21 +3477,22 @@ export interface components {
             cwd: string;
             gitInfo?: null | components["schemas"]["GitInfo"];
             id: string;
-            /** Format: int64 */
-            lastCompletedAgentTurnSeq?: number | null;
+            latestCompletedTurnId: string | null;
             model?: string | null;
             name?: string | null;
             notificationsEnabled: boolean;
             parentThreadId: string | null;
             preview?: unknown;
             projectId?: string | null;
+            /** Format: int64 */
+            readRevision: number;
+            readStateKnown: boolean;
             reasoningEffort?: string | null;
             sandbox?: unknown;
             section?: null | components["schemas"]["ThreadSection"];
             /** Format: int64 */
             sectionEnteredAt?: number | null;
-            /** Format: int64 */
-            seenCompletedAgentTurnSeq: number;
+            seenCompletedTurnId: string | null;
             serviceTier?: string | null;
             source?: string | null;
             status: components["schemas"]["ThreadStatus"];
@@ -3601,6 +3619,12 @@ export interface components {
         TurnSteerRequest: {
             clientUserMessageId?: string | null;
             input: components["schemas"]["UserInput"][];
+        };
+        UnreadBadgeResponse: {
+            /** Format: int64 */
+            count: number;
+            /** Format: int64 */
+            readRevision: number;
         };
         UpdateProjectRequest: {
             /** @description Replaces the complete metadata map when supplied; omission preserves it. */
@@ -6053,6 +6077,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadCommandResponse"];
+                };
+            };
+        };
+    };
+    get_unread_badge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnreadBadgeResponse"];
                 };
             };
         };

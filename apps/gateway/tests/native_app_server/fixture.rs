@@ -197,6 +197,23 @@ impl NativeSession {
             .await?)
     }
 
+    pub(super) async fn native_revert_without_gateway_ingestion(
+        &mut self,
+        thread_id: &str,
+        before_turn_id: &str,
+    ) -> anyhow::Result<Value> {
+        // Simulate native history changing while this gateway is offline. Join
+        // the cancelled relay before mutation so no revert receipt is applied.
+        self.relay.abort();
+        if let Err(error) = (&mut self.relay).await {
+            anyhow::ensure!(
+                error.is_cancelled(),
+                "gateway relay failed before offline mutation: {error}"
+            );
+        }
+        self.native_revert(thread_id, before_turn_id).await
+    }
+
     pub(super) async fn native_items_page(
         &self,
         thread_id: &str,

@@ -47,6 +47,7 @@ const threadSummaries = [
   threadSummary("thread-long", "Long timeline rendering", "Large thread with tool output", "idle", null),
   threadSummary("thread-stream", "Long running active turn", "Streaming answer in progress", "active", null),
 ];
+const profileUnreadBadge = { count: 1, readRevision: 1 };
 
 const scenarios = [
   {
@@ -960,6 +961,10 @@ async function startProfileServer(port) {
 
 async function handleApi({ activeScenario, request, response, terminalSessions, terminalIndexRef, url }) {
   const key = `${request.method} ${url.pathname}`;
+  if (key === "GET /v1/threads/unread-badge") {
+    json(response, profileUnreadBadge);
+    return;
+  }
   if (key === "GET /v1/capabilities") {
     json(response, {
       gateway: {
@@ -1146,7 +1151,33 @@ async function handleApi({ activeScenario, request, response, terminalSessions, 
     json(response, { id: decodeURIComponent(terminalDeleteMatch[1]) });
     return;
   }
-  if (request.method === "POST" && url.pathname.match(/^\/v1\/threads\/[^/]+\/(input|turns|seen|view-presence|interrupt-current)$/)) {
+  const seenMatch = url.pathname.match(/^\/v1\/threads\/([^/]+)\/seen$/);
+  if (request.method === "POST" && seenMatch) {
+    const summary = threadSummaries.find((thread) => thread.id === decodeURIComponent(seenMatch[1]));
+    const input = await readJson(request);
+    if (!summary || input.completedTurnId !== summary.latestCompletedTurnId || input.readRevision !== summary.readRevision) {
+      json(response, { code: "conflict", message: "Completion changed", retryable: false }, 409);
+      return;
+    }
+    if (summary.unreadCompletedAgentTurn) {
+      profileUnreadBadge.count -= 1;
+      profileUnreadBadge.readRevision += 1;
+      summary.readRevision = profileUnreadBadge.readRevision;
+      summary.seenCompletedTurnId = summary.latestCompletedTurnId;
+      summary.unreadCompletedAgentTurn = false;
+    }
+    json(response, {
+      threadId: summary.id,
+      latestCompletedTurnId: summary.latestCompletedTurnId,
+      seenCompletedTurnId: summary.seenCompletedTurnId,
+      readRevision: summary.readRevision,
+      readStateKnown: true,
+      unreadCompletedAgentTurn: false,
+      updatedAt: "2026-06-05T00:00:00Z",
+    });
+    return;
+  }
+  if (request.method === "POST" && url.pathname.match(/^\/v1\/threads\/[^/]+\/(input|turns|view-presence|interrupt-current)$/)) {
     json(response, { payload: {}, rawPayload: {} });
     return;
   }
@@ -1558,6 +1589,7 @@ function queuedInput(threadId) {
 }
 
 function threadSummary(id, name, preview, status, projectId = project.id) {
+  const latestCompletedTurnId = id === "thread-long" ? "turn-640" : id === "thread-stream" ? "turn-23" : "turn-36";
   return {
     id,
     projectId,
@@ -1566,8 +1598,10 @@ function threadSummary(id, name, preview, status, projectId = project.id) {
     status,
     source: "local",
     preview,
-    lastCompletedAgentTurnSeq: status === "active" ? 1 : 10,
-    seenCompletedAgentTurnSeq: status === "active" ? 0 : 10,
+    latestCompletedTurnId,
+    seenCompletedTurnId: status === "active" ? null : latestCompletedTurnId,
+    readRevision: 1,
+    readStateKnown: true,
     unreadCompletedAgentTurn: status === "active",
     rawPayload: {},
     createdAt: 1777500000,

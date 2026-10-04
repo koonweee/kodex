@@ -212,7 +212,7 @@ fn section_thread(id: &str, section: Value, entered_at: i64) -> Value {
 }
 
 #[tokio::test]
-async fn native_sections_list_preserves_native_member_order_and_cursor_without_per_thread_reads() {
+async fn native_sections_list_preserves_native_order_and_cursor_with_only_bounded_read_headers() {
     let (state, native) = state().await;
     let section = json!({"id":"section-1","name":"Research","appearance":null});
     *native.next_response.lock().unwrap() = Some(
@@ -241,8 +241,19 @@ async fn native_sections_list_preserves_native_member_order_and_cursor_without_p
     assert_eq!(body["nextCursor"], "next-native");
     assert_eq!(body["backwardsCursor"], "previous-native");
     let calls = native.requests.lock().unwrap();
-    assert_eq!(calls.len(), 1);
+    assert_eq!(calls.len(), 3);
     assert_eq!(calls[0].0, "thread/list");
+    for (call, id) in calls[1..].iter().zip(["z", "a"]) {
+        assert_eq!(
+            call,
+            &(
+                "thread/turns/list".into(),
+                json!({
+                    "threadId":id,"cursor":null,"sortDirection":"desc","itemsView":"notLoaded","limit":8
+                })
+            )
+        );
+    }
     let params = &calls[0].1;
     assert_eq!(params["sectionId"], "section-1");
     assert_eq!(params["sortKey"], "section_position");
@@ -362,9 +373,14 @@ async fn native_sections_started_metadata_preserves_membership_for_live_clients(
         .set_thread_notifications_enabled("thread-1", false)
         .await
         .unwrap();
-    state
+    let head = state
         .store
-        .mark_thread_seen_completed_agent_turns("thread-1", 7)
+        .record_thread_completion("thread-1", "completed-before-start")
+        .await
+        .unwrap();
+    let seen = state
+        .store
+        .mark_thread_seen("thread-1", "completed-before-start", head.read_revision)
         .await
         .unwrap();
     let section =
@@ -391,6 +407,16 @@ async fn native_sections_started_metadata_preserves_membership_for_live_clients(
     assert_eq!(event.payload["thread"]["sectionEnteredAt"], 42);
     assert_eq!(event.payload["thread"]["projectId"], "project-1");
     assert_eq!(event.payload["thread"]["notificationsEnabled"], false);
-    assert_eq!(event.payload["thread"]["seenCompletedAgentTurnSeq"], 7);
+    assert_eq!(
+        event.payload["thread"]["seenCompletedTurnId"],
+        "completed-before-start"
+    );
+    assert_eq!(
+        event.payload["thread"]["latestCompletedTurnId"],
+        "completed-before-start"
+    );
+    assert_eq!(event.payload["thread"]["readRevision"], seen.read_revision);
+    assert_eq!(event.payload["thread"]["readStateKnown"], true);
+    assert_eq!(event.payload["thread"]["unreadCompletedAgentTurn"], false);
     assert!(event.payload["thread"].get("pinnedAt").is_none());
 }

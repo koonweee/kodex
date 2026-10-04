@@ -714,6 +714,7 @@ pub async fn create_self_control_thread(
     let mut response = app_server_api::client(&state.app_server)
         .thread_start(request.project_id.clone(), cwd, payload)
         .await?;
+    crate::read_state::catalog_changed(&state, "thread/started", &response.thread.id).await?;
     apply_thread_command_response_state(&state, &mut response).await?;
     broadcast_thread_upserted(
         &state,
@@ -874,8 +875,8 @@ pub struct SelfControlThreadSettingsUpdateRequest {
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SelfControlMarkThreadSeenRequest {
-    #[serde(default)]
-    pub seen_completed_agent_turn_seq: Option<i64>,
+    pub completed_turn_id: String,
+    pub read_revision: i64,
     #[serde(default)]
     pub source: SelfControlSource,
 }
@@ -1055,21 +1056,15 @@ pub async fn archive_self_control_thread(
 pub async fn mark_self_control_thread_seen(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
-    request: Option<Json<SelfControlMarkThreadSeenRequest>>,
+    Json(request): Json<SelfControlMarkThreadSeenRequest>,
 ) -> ApiResult<Json<MarkThreadSeenResponse>> {
-    let request =
-        request
-            .map(|Json(request)| request)
-            .unwrap_or_else(|| SelfControlMarkThreadSeenRequest {
-                seen_completed_agent_turn_seq: None,
-                source: SelfControlSource::default(),
-            });
     let response = crate::routes::threads::mark_thread_seen(
         State(state.clone()),
         Path(thread_id.clone()),
-        Some(Json(MarkThreadSeenRequest {
-            seen_completed_agent_turn_seq: request.seen_completed_agent_turn_seq,
-        })),
+        Json(MarkThreadSeenRequest {
+            completed_turn_id: request.completed_turn_id,
+            read_revision: request.read_revision,
+        }),
     )
     .await?;
     audit_thread_mutation(

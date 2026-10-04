@@ -242,61 +242,32 @@ async fn mcp_tool_item_with_app_resource_creates_app_surface_session() {
 }
 
 #[tokio::test]
-async fn turn_completed_reconciles_bounded_full_recent_head_without_replaying_history() {
+async fn turn_completed_requests_canonical_refill_without_blocking_ingestion_on_history() {
     let (state, app_server) = test_state_with_app_server().await;
-    app_server.queued_responses.lock().unwrap().push(json!({
-        "data": [{
-            "id": "turn-2",
-            "status": {"type": "completed"},
-            "items": [{"id": "item-agent-2", "type": "agentMessage", "text": "durable second"}]
-        }, {
-            "id": "turn-1",
-            "status": {"type": "completed"},
-            "items": [{"id": "item-agent-1", "type": "agentMessage", "text": "durable first"}]
-        }],
-        "nextCursor": "older-cursor",
-        "backwardsCursor": null
-    }));
     let mut receiver = state.events.subscribe();
-
     ingest_inbound(
         InboundMessage::Notification {
-            method: "turn/completed".to_string(),
-            params: json!({
-                "threadId": "thread-1",
-                "turnId": "turn-2"
-            }),
+            method: "turn/completed".into(),
+            params: json!({"threadId": "thread-1", "turnId": "turn-2"}),
         },
         &state,
     )
     .await
     .unwrap();
-
-    let patch = receiver.recv().await.unwrap();
-    assert_eq!(patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
-    assert_eq!(patch.payload["scope"], "full_snapshot");
-    assert_eq!(patch.payload["liveState"], "idle");
-    let rows = patch.payload["rows"].as_array().expect("patch rows");
-    assert_eq!(rows[0]["item"]["turnId"], "turn-1");
-    assert_eq!(rows[0]["item"]["payload"]["item"]["text"], "durable first");
-    assert_eq!(rows[1]["item"]["turnId"], "turn-2");
-    assert_eq!(rows[1]["item"]["payload"]["item"]["text"], "durable second");
-
-    let requests = app_server.requests.lock().unwrap();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].0, "thread/turns/list");
+    let refill = receiver.recv().await.unwrap();
     assert_eq!(
-        requests[0].1,
-        json!({
-            "threadId": "thread-1",
-            "cursor": null,
-            "sortDirection": "desc",
-            "itemsView": "full",
-            "limit": TURN_COMPLETION_HEAD_REFRESH_LIMIT
-        })
+        refill.kind,
+        thread_view::THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND
     );
-    drop(requests);
-
+    assert_eq!(refill.thread_id.as_deref(), Some("thread-1"));
+    assert!(
+        refill.payload.get("rows").is_none(),
+        "refill is not transcript history"
+    );
+    assert!(
+        app_server.requests.lock().unwrap().is_empty(),
+        "completion ingestion cannot await its own transport"
+    );
     let persisted = state.store.replay_events(None, None, None).await.unwrap();
     assert!(persisted.iter().any(|event| {
         event.kind == THREAD_VIEW_CURSOR_KIND && event.payload["sourceMethod"] == "turn/completed"
@@ -304,9 +275,6 @@ async fn turn_completed_reconciles_bounded_full_recent_head_without_replaying_hi
     assert!(persisted
         .iter()
         .all(|event| event.kind != "thread_view.item_upsert_observed"));
-    let persisted_json = serde_json::to_string(&persisted).unwrap();
-    assert!(!persisted_json.contains("item-agent-1"));
-    assert!(!persisted_json.contains("durable second"));
 }
 
 #[tokio::test]

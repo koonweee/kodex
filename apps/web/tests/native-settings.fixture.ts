@@ -1,15 +1,16 @@
 import type { BrowserContext, Page, Route } from "@playwright/test";
 import { createServer, type ServerResponse } from "node:http";
 
-import type { Capabilities, EventEnvelope, QueuedInput, ThreadSettingsResponse, ThreadSettingsUpdateRequest, ThreadViewPatch, ThreadViewResponse, UserInput } from "../src/api/client";
+import type { Capabilities, EventEnvelope, MarkThreadSeenRequest, QueuedInput, ThreadRead, ThreadSettingsResponse, UnreadBadgeResponse, ThreadSettingsUpdateRequest, ThreadViewPatch, ThreadViewResponse, UserInput } from "../src/api/client";
 
 export async function nativeSettingsFixture(context: BrowserContext) {
   const settings: ThreadSettingsResponse = { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null };
   const detail: ThreadViewResponse = {
-    thread: { parentThreadId: null, canAcceptDirectInput: null, id: "settings-chat", name: "Native settings chat", projectId: null, cwd: "/execution/settings", status: "idle", createdAt: 0, updatedAt: 0, notificationsEnabled: true, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: false },
+    thread: { parentThreadId: null, canAcceptDirectInput: null, id: "settings-chat", name: "Native settings chat", projectId: null, cwd: "/execution/settings", status: "idle", createdAt: 0, updatedAt: 0, notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: true, unreadCompletedAgentTurn: false },
     liveState: "idle",
     timeline: { activeTurnId: null, liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], rows: [], turns: [], viewRevision: 1 },
   };
+  const badge: UnreadBadgeResponse = { count: 0, readRevision: 0 };
   const capabilities: Capabilities = {
     gateway: { instanceId: "native-settings-fixture", version: "test", sse: true, approvals: true, terminals: { enabled: false }, gatewayAuth: false, trustedNetworkOnly: true },
     appServer: { ready: true, experimentalApi: true, schemaVersion: "0.160.0", detectedVersion: "0.160.0", detectedVersionMatchesSchema: true },
@@ -56,6 +57,10 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       if (!client || client === id) stream.write(`id: ${eventSeq}\nevent: ${kind}\ndata: ${JSON.stringify(event)}\n\n`);
     }
   }
+  function applyRead(read: ThreadRead) {
+    const { threadId: _threadId, updatedAt: _updatedAt, ...tuple } = read;
+    Object.assign(detail.thread, tuple);
+  }
   function settingsChanged(client?: string) { emit("thread.settings_updated", { threadId: detail.thread.id }, client); }
   async function respond(route: Route, body: unknown, status = 200, holdClient?: string) {
     const captured = structuredClone(body);
@@ -91,7 +96,6 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       "GET /v1/composer-settings": {},
       "GET /v1/permission-profiles": { profiles: [] },
       "GET /v1/threads/settings-chat": detail,
-      "POST /v1/threads/settings-chat/seen": { threadId: detail.thread.id, seenCompletedAgentTurnSeq: 0, updatedAt: "2026-10-05T00:00:00Z" },
       "GET /v1/threads/settings-chat/app-surface": { session: null },
       "GET /v1/threads/settings-chat/subagents": { subagents: [] },
       "GET /v1/threads/settings-chat/queued-inputs": { queuedInputs },
@@ -99,6 +103,23 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       "POST /v1/thread-view-presence": { ok: true },
     };
     if (key in fixed) return respond(route, fixed[key]);
+    if (key === "GET /v1/threads/unread-badge") return respond(route, badge, 200, `badge:${client}`);
+    if (key === "POST /v1/threads/settings-chat/seen") {
+      const expected = body as MarkThreadSeenRequest;
+      if (!detail.thread.readStateKnown || expected.completedTurnId !== detail.thread.latestCompletedTurnId || expected.readRevision !== detail.thread.readRevision) {
+        return respond(route, { code: "conflict", message: "Displayed completion is stale", retryable: false }, 409);
+      }
+      if (detail.thread.unreadCompletedAgentTurn) {
+        badge.readRevision = Math.max(badge.readRevision, detail.thread.readRevision) + 1;
+        badge.count = Math.max(0, badge.count - 1);
+      }
+      const read: ThreadRead = { threadId: detail.thread.id, latestCompletedTurnId: expected.completedTurnId,
+        seenCompletedTurnId: expected.completedTurnId, readRevision: detail.thread.unreadCompletedAgentTurn ? badge.readRevision : detail.thread.readRevision, readStateKnown: true,
+        unreadCompletedAgentTurn: false, updatedAt: "2026-10-05T00:00:00Z" };
+      applyRead(read);
+      emit("thread.read_updated", read);
+      return respond(route, read, 200, `seen:${client}`);
+    }
     if (key === "POST /v1/threads/settings-chat/attach") return respond(route, detail, 200, `snapshot:${client}`);
     if (key === "GET /v1/threads/settings-chat/settings") return respond(route, settings, 200, `settings:${client}`);
     if (key === "PATCH /v1/threads/settings-chat/settings") {
@@ -125,13 +146,18 @@ export async function nativeSettingsFixture(context: BrowserContext) {
   });
   return {
     settings, requests, pending, connections, unexpected, errors, settingsChanged,
-    detail,
+    detail, badge,
+    readChanged(read: ThreadRead, count: number, client?: string) {
+      applyRead(read);
+      Object.assign(badge, { count, readRevision: read.readRevision });
+      emit("thread.read_updated", read, client);
+    },
     publishTimeline(timeline: ThreadViewResponse["timeline"], client?: string) {
       detail.timeline = timeline;
       detail.liveState = timeline.liveState;
       detail.thread.status = timeline.liveState === "streaming" ? "active" : "idle";
       const patch: ThreadViewPatch = { ...timeline, scope: "full_snapshot", threadId: detail.thread.id, affectedTurnIds: timeline.turns.map((turn) => turn.id) };
-      emit("thread_view.patch", patch, client);
+      emit("thread_view.patch", patch, client, Math.max(seq + 1, timeline.viewRevision ?? 0));
     },
     configChanged(client?: string) { emit("config.changed", {}, client); },
     subagentsChanged(client?: string, changedThreadId: string | null = null) { emit("thread.subagents_changed", { changedThreadId }, client); },
@@ -154,10 +180,10 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       Object.assign(settings, update);
       settingsChanged(client);
     },
-    holdNext(client: string, kind: "settings" | "snapshot" = "settings", label = "") { holds.set(`${kind}:${client}`, `${kind}:${client}:${label}`); },
-    isHeld(client: string, kind: "settings" | "snapshot" = "settings", label = "") { return held.has(`${kind}:${client}:${label}`); },
-    wasAborted(client: string, kind: "settings" | "snapshot" = "settings", label = "") { return held.get(`${kind}:${client}:${label}`)?.aborted() ?? false; },
-    async release(client: string, kind: "settings" | "snapshot" = "settings", label = "") {
+    holdNext(client: string, kind: "settings" | "snapshot" | "seen" | "badge" = "settings", label = "") { holds.set(`${kind}:${client}`, `${kind}:${client}:${label}`); },
+    isHeld(client: string, kind: "settings" | "snapshot" | "seen" | "badge" = "settings", label = "") { return held.has(`${kind}:${client}:${label}`); },
+    wasAborted(client: string, kind: "settings" | "snapshot" | "seen" | "badge" = "settings", label = "") { return held.get(`${kind}:${client}:${label}`)?.aborted() ?? false; },
+    async release(client: string, kind: "settings" | "snapshot" | "seen" | "badge" = "settings", label = "") {
       const key = `${kind}:${client}:${label}`;
       const reply = held.get(key);
       if (!reply) throw new Error(`No held ${kind} read for ${client}`);

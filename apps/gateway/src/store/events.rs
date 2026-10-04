@@ -1,16 +1,10 @@
-use std::collections::HashSet;
-
 use chrono::Utc;
-use serde_json::Value;
-use sqlx::{QueryBuilder, Row, Sqlite};
+use sqlx::{QueryBuilder, Sqlite};
 use uuid::Uuid;
 
 use crate::{error::ApiResult, events_replay::WORKSPACE_GLOBAL_THREAD_EVENT_KINDS};
 
-use super::{
-    payload_has_terminal_turn_status, row_to_event, EventEnvelope, NewEvent, Store,
-    EVENT_REPLAY_LIMIT,
-};
+use super::{row_to_event, EventEnvelope, NewEvent, Store, EVENT_REPLAY_LIMIT};
 
 impl Store {
     pub async fn append_event(&self, event: NewEvent) -> ApiResult<EventEnvelope> {
@@ -154,61 +148,6 @@ impl Store {
 
         let rows = builder.build().fetch_all(&self.pool).await?;
         rows.into_iter().map(row_to_event).collect()
-    }
-
-    pub async fn completed_agent_turn_event_count(&self, thread_id: &str) -> ApiResult<i64> {
-        let rows = sqlx::query(
-            r#"
-            select turn_id, codex_method, payload_json
-            from events
-            where thread_id = ?
-              and (
-                codex_method in ('turn/completed', 'turn/upsert')
-                or (
-                  kind = 'thread_view.cursor'
-                  and json_extract(payload_json, '$.sourceKind') in ('thread_view.turn_completed', 'timeline.turn_completed')
-                )
-              )
-            "#,
-        )
-        .bind(thread_id)
-        .fetch_all(&self.pool)
-        .await?;
-        let mut completed_turn_ids = HashSet::new();
-        for row in rows {
-            let payload_json: String = row.try_get("payload_json")?;
-            let payload = serde_json::from_str::<Value>(&payload_json)?;
-            let method: Option<String> = row.try_get("codex_method")?;
-            let source_kind = payload.get("sourceKind").and_then(Value::as_str);
-            if method.as_deref() == Some("turn/upsert")
-                && !matches!(
-                    source_kind,
-                    Some("thread_view.turn_completed") | Some("timeline.turn_completed")
-                )
-                && !payload_has_terminal_turn_status(&payload)
-            {
-                continue;
-            }
-            let turn_id: Option<String> = row.try_get("turn_id")?;
-            let turn_id = turn_id
-                .or_else(|| {
-                    payload
-                        .get("turn")
-                        .and_then(|turn| turn.get("id"))
-                        .and_then(Value::as_str)
-                        .map(str::to_string)
-                })
-                .or_else(|| {
-                    payload
-                        .get("turnId")
-                        .and_then(Value::as_str)
-                        .map(str::to_string)
-                });
-            if let Some(turn_id) = turn_id {
-                completed_turn_ids.insert(turn_id);
-            }
-        }
-        Ok(completed_turn_ids.len() as i64)
     }
 }
 

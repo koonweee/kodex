@@ -906,9 +906,12 @@ describe("MVP composer input flows", () => {
         itemId: null,
         payload: {
           threadId: thread.id,
-          seenCompletedAgentTurnSeq: 0,
-          lastCompletedAgentTurnSeq: null,
+          latestCompletedTurnId: "turn-3",
+          seenCompletedTurnId: null,
+          readRevision: 1,
+          readStateKnown: true,
           unreadCompletedAgentTurn: true,
+          updatedAt: "2026-05-02T00:00:03Z",
         },
         receivedAt: "2026-05-02T00:00:03Z",
       });

@@ -463,7 +463,7 @@ async fn adapter_calls_mcp_server_tool_and_preserves_result_payload() {
 }
 
 #[tokio::test]
-async fn adapter_reads_bounded_recent_history_window_and_counts_lightly() {
+async fn adapter_reads_bounded_recent_history_without_counting_all_turns() {
     let server = Arc::new(RecordingServer {
         ready: AtomicBool::new(true),
         queued_responses: StdMutex::new(vec![
@@ -488,14 +488,6 @@ async fn adapter_reads_bounded_recent_history_window_and_counts_lightly() {
                 "nextCursor": "older",
                 "backwardsCursor": "newer"
             }),
-            json!({
-                "data": [
-                    {"id": "turn-2", "status": {"type": "completed"}},
-                    {"id": "turn-1", "status": {"type": "completed"}}
-                ],
-                "nextCursor": null,
-                "backwardsCursor": null
-            }),
         ]),
         ..Default::default()
     });
@@ -507,7 +499,8 @@ async fn adapter_reads_bounded_recent_history_window_and_counts_lightly() {
         .unwrap();
 
     assert_eq!(response.turns[0].id, "turn-2");
-    assert_eq!(response.thread.last_completed_agent_turn_seq, Some(2));
+    assert!(!response.thread.read_state_known);
+    assert!(response.thread.latest_completed_turn_id.is_none());
     let history_page = response.history_page.unwrap();
     assert_eq!(history_page.older_cursor.as_deref(), Some("older"));
     assert!(history_page.has_older);
@@ -517,9 +510,7 @@ async fn adapter_reads_bounded_recent_history_window_and_counts_lightly() {
     assert_eq!(requests[1].1["sortDirection"], "desc");
     assert_eq!(requests[1].1["itemsView"], "full");
     assert_eq!(requests[1].1["limit"], 50);
-    assert_eq!(requests[2].0, "thread/turns/list");
-    assert_eq!(requests[2].1["itemsView"], "notLoaded");
-    assert_eq!(requests[2].1["limit"], 200);
+    assert_eq!(requests.len(), 2);
 }
 
 #[tokio::test]
@@ -552,7 +543,8 @@ async fn recent_history_before_first_user_message_returns_an_empty_native_window
 
     assert_eq!(response.thread.id, "thread-1");
     assert!(response.turns.is_empty());
-    assert_eq!(response.thread.last_completed_agent_turn_seq, None);
+    assert!(response.thread.latest_completed_turn_id.is_none());
+    assert!(!response.thread.read_state_known);
     let page = response.history_page.unwrap();
     assert_eq!(page.loaded_turn_count, 0);
     assert!(!page.has_older);
@@ -1066,8 +1058,10 @@ fn thread_list_normalization_does_not_derive_completed_marker_from_turns() {
     }]);
     let response = ThreadListResponse::from_payload(json!({"data": [thread]})).unwrap();
 
-    assert_eq!(response.threads[0].last_completed_agent_turn_seq, None);
-    assert_eq!(response.threads[0].seen_completed_agent_turn_seq, 0);
+    assert!(response.threads[0].latest_completed_turn_id.is_none());
+    assert!(response.threads[0].seen_completed_turn_id.is_none());
+    assert_eq!(response.threads[0].read_revision, 0);
+    assert!(!response.threads[0].read_state_known);
     assert!(!response.threads[0].unread_completed_agent_turn);
 }
 

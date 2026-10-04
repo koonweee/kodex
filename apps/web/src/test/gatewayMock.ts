@@ -5,6 +5,8 @@ type RouteHandler = (request: Request) => unknown | Promise<unknown>;
 export type GatewayRouteMap = Record<string, unknown | RouteHandler>;
 
 export function mockGateway(routes: GatewayRouteMap) {
+  // An explicit aggregate fixture, independent of the loaded sidebar page.
+  routes = { "GET /v1/threads/unread-badge": { count: 0, readRevision: 0 }, ...routes };
   const calls: Request[] = [];
   let nextQueueIndex = 0;
 

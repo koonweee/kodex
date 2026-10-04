@@ -112,7 +112,7 @@ function ActivePane() {
 
 function snapshot(rows: ThreadTimelineRow[], viewRevision: number): ThreadViewResponse {
   return {
-    thread: { id: "revert-chat", name: "Native history", projectId: null, cwd: "/native", status: "idle", parentThreadId: null, canAcceptDirectInput: true, notificationsEnabled: true, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: false, createdAt: 1, updatedAt: 2 },
+    thread: { id: "revert-chat", name: "Native history", projectId: null, cwd: "/native", status: "idle", parentThreadId: null, canAcceptDirectInput: true, notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false, createdAt: 1, updatedAt: 2 },
     liveState: "idle",
     historyPage: { olderCursor: "opaque-before", newerCursor: null, hasOlder: true, limit: 50, loadedTurnCount: rows.length, resetWindow: false },
     timeline: { liveState: "idle", activeTurnId: null, pendingApprovalRequests: [], pendingUserInputRequests: [], rows, turns: rows.map((entry) => ({ id: entry.turnId!, status: "completed" })), viewRevision },

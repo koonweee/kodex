@@ -167,8 +167,7 @@ impl CodexClient {
             }
             Err(error) => return Err(error),
         };
-        self.thread_detail_from_turns_page(thread_id, payload, page, limit)
-            .await
+        Self::thread_detail_from_turns_page(payload, page, limit)
     }
 
     /// Rejoin native execution and receive its ordered recent history page in
@@ -222,21 +221,15 @@ impl CodexClient {
                 Err(error) => return Err(error),
             };
         }
-        self.thread_detail_from_turns_page(thread_id, payload, page, limit)
-            .await
+        Self::thread_detail_from_turns_page(payload, page, limit)
     }
 
-    async fn thread_detail_from_turns_page(
-        &self,
-        thread_id: String,
+    fn thread_detail_from_turns_page(
         payload: Value,
         mut page: ThreadTurnsListPage,
         limit: u32,
     ) -> ApiResult<ThreadDetailResponse> {
         page.data.reverse();
-        // Read markers still use the legacy count until their separate cutover.
-        let last_completed_agent_turn_seq =
-            self.thread_completed_turn_count_light(thread_id).await?;
         let history_page = ThreadTimelineWindowPage {
             older_cursor: page.next_cursor.clone(),
             newer_cursor: page.backwards_cursor.clone(),
@@ -249,7 +242,6 @@ impl CodexClient {
             payload,
             page.data,
             Some(history_page),
-            last_completed_agent_turn_seq,
         )
     }
 
@@ -301,52 +293,51 @@ impl CodexClient {
         Ok(turns)
     }
 
-    pub async fn thread_completed_turn_count_light(
-        &self,
-        thread_id: String,
-    ) -> ApiResult<Option<i64>> {
-        let mut cursor = None;
-        let mut completed = 0_i64;
-        let mut saw_turns = false;
-        loop {
-            let payload = match self
-                .request_retrying_rollout_load(
-                    "thread/turns/list",
-                    json!({
-                        "threadId": thread_id.clone(),
-                        "cursor": cursor,
-                        "sortDirection": SortDirection::Desc.as_str(),
-                        "itemsView": ThreadTurnItemsView::NotLoaded.as_str(),
-                        "limit": 200,
-                    }),
-                )
-                .await
-            {
-                Ok(payload) => payload,
-                Err(error) if is_thread_history_not_materialized_error(&error) => {
-                    return Ok(None);
-                }
-                Err(error) => return Err(error),
-            };
-            let data = payload
-                .get("data")
-                .and_then(Value::as_array)
-                .ok_or_else(|| bad_gateway("thread/turns/list response missing data array"))?;
-            saw_turns |= !data.is_empty();
-            completed += data
-                .iter()
-                .filter(|turn| {
-                    is_terminal_turn_status(
-                        &status_type(turn.get("status")).unwrap_or_else(|| "unknown".to_string()),
-                    )
-                })
-                .count() as i64;
-            let Some(next_cursor) = optional_string(&payload, "nextCursor") else {
-                break;
-            };
-            cursor = Some(next_cursor);
+    /// Observe a bounded native completion head without transcript hydration.
+    /// A truncated page without a terminal header cannot prove an empty head.
+    pub async fn thread_completion_head(&self, thread_id: String) -> ApiResult<Vec<String>> {
+        let page = match self
+            .thread_turns_list_page(
+                thread_id,
+                None,
+                SortDirection::Desc,
+                ThreadTurnItemsView::NotLoaded,
+                Some(8),
+            )
+            .await
+        {
+            Ok(page) => page,
+            Err(error) if is_thread_history_not_materialized_error(&error) => return Ok(Vec::new()),
+            Err(error) => return Err(error),
+        };
+        super::validate_native_next_cursor(&page.raw_payload)?;
+        // The pinned Turn contract requires a native string status. The
+        // timeline's tolerant parser is unsuitable evidence of an empty head.
+        if page.data.iter().any(|turn| {
+            !matches!(
+                turn.raw_payload.get("status").and_then(Value::as_str),
+                Some("completed" | "interrupted" | "failed" | "inProgress")
+            )
+        }) {
+            return Err(bad_gateway(
+                "native completion header has a missing or invalid required status",
+            ));
         }
-        Ok(saw_turns.then_some(completed))
+        let terminal_ids = page
+            .data
+            .into_iter()
+            .filter(|turn| is_terminal_turn_status(&turn.status))
+            .map(|turn| turn.id)
+            .collect::<Vec<_>>();
+        if !terminal_ids.is_empty() {
+            return Ok(terminal_ids);
+        }
+        if page.next_cursor.is_some() {
+            return Err(bad_gateway(
+                "native completion head is unknown in the bounded header page",
+            ));
+        }
+        Ok(Vec::new())
     }
 
     pub async fn thread_loaded_list(&self) -> ApiResult<ThreadLoadedListResponse> {

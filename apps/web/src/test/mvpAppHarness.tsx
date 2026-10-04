@@ -5,6 +5,7 @@ import { VirtuosoMockContext } from "react-virtuoso";
 import { expect } from "vitest";
 
 import { App as KodexApp } from "../App";
+import type { ThreadRead } from "../api/client";
 import { createKodexQueryClient } from "../api/queryClient";
 import { createMemoryWorkspacePaneStore } from "../workspace/paneStore";
 import type { WorkspacePaneState } from "../workspace/paneTypes";
@@ -79,7 +80,10 @@ const thread = {
   source: "local",
   preview: "Scaffold the web client",
   notificationsEnabled: true,
-  seenCompletedAgentTurnSeq: 0,
+  latestCompletedTurnId: null as ThreadRead["latestCompletedTurnId"],
+  seenCompletedTurnId: null as ThreadRead["seenCompletedTurnId"],
+  readRevision: 0,
+  readStateKnown: false,
   unreadCompletedAgentTurn: false,
   rawPayload: {},
   createdAt: 1777500000,

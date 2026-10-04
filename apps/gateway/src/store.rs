@@ -248,11 +248,17 @@ pub enum ApprovalSource {
     GeneratedApp,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadRead {
     pub thread_id: String,
-    pub seen_completed_agent_turn_seq: i64,
+    #[schema(required = true)]
+    pub latest_completed_turn_id: Option<String>,
+    #[schema(required = true)]
+    pub seen_completed_turn_id: Option<String>,
+    pub read_revision: i64,
+    pub read_state_known: bool,
+    pub unread_completed_agent_turn: bool,
     pub updated_at: DateTime<Utc>,
 }
 
@@ -344,10 +350,7 @@ pub struct NewNotificationDelivery {
     pub available_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct ThreadReadState {
-    pub seen_completed_agent_turn_seq: i64,
-}
+pub type ThreadReadState = ThreadRead;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -730,9 +733,19 @@ pub fn next_automation_run_after(
 }
 
 fn row_to_thread_read(row: sqlx::sqlite::SqliteRow) -> ApiResult<ThreadRead> {
+    let latest_completed_turn_id: Option<String> = row.try_get("latest_completed_turn_id")?;
+    let seen_completed_turn_id: Option<String> = row.try_get("seen_completed_turn_id")?;
+    let read_state_known: bool = row.try_get("read_state_known")?;
+    let unread_completed_agent_turn = read_state_known
+        && latest_completed_turn_id.is_some()
+        && latest_completed_turn_id != seen_completed_turn_id;
     Ok(ThreadRead {
         thread_id: row.try_get("thread_id")?,
-        seen_completed_agent_turn_seq: row.try_get("seen_completed_agent_turn_seq")?,
+        latest_completed_turn_id,
+        seen_completed_turn_id,
+        read_revision: row.try_get("read_revision")?,
+        read_state_known,
+        unread_completed_agent_turn,
         updated_at: row.try_get("updated_at")?,
     })
 }
@@ -815,20 +828,6 @@ fn row_to_approval(row: sqlx::sqlite::SqliteRow) -> ApiResult<Approval> {
         created_at: row.try_get("created_at")?,
         resolved_at: row.try_get("resolved_at")?,
     })
-}
-
-fn payload_has_terminal_turn_status(payload: &Value) -> bool {
-    payload
-        .get("turn")
-        .and_then(|turn| turn.get("status"))
-        .and_then(|status| status.get("type"))
-        .and_then(Value::as_str)
-        .is_some_and(|status| {
-            matches!(
-                status.to_ascii_lowercase().as_str(),
-                "completed" | "failed" | "cancelled" | "canceled" | "interrupted"
-            )
-        })
 }
 
 #[cfg(test)]

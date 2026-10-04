@@ -130,6 +130,7 @@ export async function nativeProjectsFixture(context: BrowserContext) {
       "GET /v1/capabilities": capabilities,
       "GET /v1/account": { account: null, requiresOpenaiAuth: false, rawPayload: {} },
       "GET /v1/account/rate-limits": { rateLimits: null, rawPayload: {} },
+      "GET /v1/threads/unread-badge": { count: 0, readRevision: 0 },
       "GET /v1/approvals": { runtimeId: "native-project-runtime", revision: 0, approvals: [] },
       "GET /v1/models": { models: [], rawPayload: {} },
       "GET /v1/composer-settings": {},
@@ -288,7 +289,7 @@ export async function nativeProjectsFixture(context: BrowserContext) {
 }
 
 function thread(id: string, name: string): ThreadSummary {
-  return { id, name, projectId: "alpha", cwd: executionCwd, createdAt: 0, updatedAt: 0, status: "idle", rawPayload: {}, notificationsEnabled: true, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: false };
+  return { id, name, projectId: "alpha", cwd: executionCwd, createdAt: 0, updatedAt: 0, status: "idle", rawPayload: {}, notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false };
 }
 
 function detail(thread: ThreadSummary): ThreadViewResponse {

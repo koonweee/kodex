@@ -9,7 +9,7 @@ import { applyThreadSectionsEvent } from "./cache";
 
 vi.mock("../api/client", () => ({ getSidebarThreads: vi.fn(), listSectionThreads: vi.fn(), moveThreadToSection: vi.fn() }));
 const section = { id: "native-section", name: "Research" };
-const thread: ThreadSummary = { parentThreadId: null, canAcceptDirectInput: null, id: "first", name: "First", section, projectId: null, cwd: "/repo", createdAt: 1, updatedAt: 1, status: "idle", notificationsEnabled: true, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: false, rawPayload: {} };
+const thread: ThreadSummary = { parentThreadId: null, canAcceptDirectInput: null, id: "first", name: "First", section, projectId: null, cwd: "/repo", createdAt: 1, updatedAt: 1, status: "idle", notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false, rawPayload: {} };
 const tail = { ...thread, id: "tail", name: "Tail" };
 const snapshot: SidebarThreadsResponse = { projects: [], projectThreads: {}, chatThreads: { threads: [] }, sections: [section], sectionThreads: { [section.id]: { threads: [thread], nextCursor: "more" } } };
 afterEach(() => vi.clearAllMocks());

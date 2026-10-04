@@ -38,6 +38,7 @@ pub const THREAD_UPSERTED_EVENT: &str = "thread.upserted";
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/v1/threads", get(list_threads).post(create_thread))
+        .route("/v1/threads/unread-badge", get(get_unread_badge))
         .route("/v1/sidebar/threads", get(get_sidebar_threads))
         .route(
             "/v1/chats/threads",
@@ -137,8 +138,12 @@ pub struct SidebarThreadSummary {
     pub section: Option<ThreadSection>,
     pub section_entered_at: Option<i64>,
     pub preview: Option<Value>,
-    pub last_completed_agent_turn_seq: Option<i64>,
-    pub seen_completed_agent_turn_seq: i64,
+    #[schema(required = true)]
+    pub latest_completed_turn_id: Option<String>,
+    #[schema(required = true)]
+    pub seen_completed_turn_id: Option<String>,
+    pub read_revision: i64,
+    pub read_state_known: bool,
     pub unread_completed_agent_turn: bool,
     pub notifications_enabled: bool,
 }
@@ -168,8 +173,10 @@ impl From<ThreadSummary> for SidebarThreadSummary {
             section: thread.section,
             section_entered_at: thread.section_entered_at,
             preview: thread.preview,
-            last_completed_agent_turn_seq: thread.last_completed_agent_turn_seq,
-            seen_completed_agent_turn_seq: thread.seen_completed_agent_turn_seq,
+            latest_completed_turn_id: thread.latest_completed_turn_id,
+            seen_completed_turn_id: thread.seen_completed_turn_id,
+            read_revision: thread.read_revision,
+            read_state_known: thread.read_state_known,
             unread_completed_agent_turn: thread.unread_completed_agent_turn,
             notifications_enabled: thread.notifications_enabled,
         }
@@ -244,23 +251,18 @@ pub struct CreateChatThreadRequest {
     pub payload: Value,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MarkThreadSeenRequest {
-    #[serde(default)]
-    pub seen_completed_agent_turn_seq: Option<i64>,
+    pub completed_turn_id: String,
+    pub read_revision: i64,
 }
 
 pub type MarkThreadSeenResponse = ThreadRead;
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ThreadReadStateUpdate {
-    pub thread_id: String,
-    pub seen_completed_agent_turn_seq: i64,
-    pub last_completed_agent_turn_seq: Option<i64>,
-    pub unread_completed_agent_turn: bool,
-}
+#[serde(transparent)]
+pub struct ThreadReadStateUpdate(pub ThreadRead);
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -490,6 +492,7 @@ pub async fn create_thread(
     let mut response = app_server_api::client(&state.app_server)
         .thread_start(project_id.clone(), cwd, payload)
         .await?;
+    crate::read_state::catalog_changed(&state, "thread/started", &response.thread.id).await?;
     apply_thread_command_response_state(&state, &mut response).await?;
     broadcast_thread_upserted(
         &state,
@@ -556,6 +559,7 @@ pub async fn create_chat_thread(
     let mut response = app_server_api::client(&state.app_server)
         .thread_start_in_cwd(cwd, payload)
         .await?;
+    crate::read_state::catalog_changed(&state, "thread/started", &response.thread.id).await?;
     apply_thread_command_response_state(&state, &mut response).await?;
     broadcast_thread_upserted(&state, ThreadUpsertScope::Chat, None, &response.thread).await?;
     Ok(Json(response))
@@ -941,6 +945,7 @@ pub async fn fork_thread(
     let mut response = app_server_api::client(&state.app_server)
         .thread_fork(thread_id.clone(), payload)
         .await?;
+    crate::read_state::catalog_changed(&state, "thread/started", &response.thread.id).await?;
     apply_thread_command_response_state(&state, &mut response).await?;
     Ok(Json(response))
 }
@@ -950,49 +955,48 @@ pub async fn archive_thread(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
 ) -> ApiResult<Json<RawAppServerResponse>> {
-    Ok(Json(
-        app_server_api::client(&state.app_server)
-            .thread_archive(thread_id)
-            .await?,
-    ))
+    let response = app_server_api::client(&state.app_server)
+        .thread_archive(thread_id.clone())
+        .await?;
+    crate::read_state::catalog_changed(&state, "thread/archived", &thread_id).await?;
+    Ok(Json(response))
 }
 
 #[utoipa::path(post, path = "/v1/threads/{threadId}/seen", request_body = MarkThreadSeenRequest, responses((status = 200, body = MarkThreadSeenResponse)))]
 pub async fn mark_thread_seen(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
-    request: Option<Json<MarkThreadSeenRequest>>,
+    Json(request): Json<MarkThreadSeenRequest>,
 ) -> ApiResult<Json<MarkThreadSeenResponse>> {
-    let request = request.map(|Json(request)| request).unwrap_or_default();
-    let (seen_seq, last_completed_agent_turn_seq) = match request.seen_completed_agent_turn_seq {
-        Some(seq) => {
-            let seq = seq.max(0);
-            (seq, Some(seq))
-        }
-        None => {
-            let count = app_server_api::client(&state.app_server)
-                .thread_completed_turn_count_light(thread_id.clone())
-                .await?
-                .unwrap_or(0);
-            (count, Some(count))
-        }
-    };
+    let current = state.store.get_thread_read(&thread_id).await?;
+    if !current.read_state_known
+        || current.read_revision != request.read_revision
+        || current.latest_completed_turn_id.as_deref() != Some(request.completed_turn_id.as_str())
+    {
+        return Err(ApiError::Conflict(
+            "Chat completion changed; refresh before marking it seen".into(),
+        ));
+    }
+    // Reconcile offline native work before admitting the displayed marker.
+    // The store atomically refuses a stale acknowledgment of another head.
+    crate::read_state::reconcile(&state, &thread_id).await?;
     let read = state
         .store
-        .mark_thread_seen_completed_agent_turns(&thread_id, seen_seq)
+        .mark_thread_seen(
+            &thread_id,
+            &request.completed_turn_id,
+            request.read_revision,
+        )
         .await?;
-    broadcast_thread_read_update(
-        &state,
-        ThreadReadStateUpdate {
-            thread_id,
-            seen_completed_agent_turn_seq: read.seen_completed_agent_turn_seq,
-            last_completed_agent_turn_seq,
-            unread_completed_agent_turn: last_completed_agent_turn_seq
-                .is_some_and(|last_completed| last_completed > read.seen_completed_agent_turn_seq),
-        },
-    )
-    .await?;
+    broadcast_thread_read_update(&state, read.clone()).await?;
     Ok(Json(read))
+}
+
+#[utoipa::path(get, path = "/v1/threads/unread-badge", responses((status = 200, body = crate::read_state::UnreadBadgeResponse)))]
+pub async fn get_unread_badge(
+    State(state): State<AppState>,
+) -> ApiResult<Json<crate::read_state::UnreadBadgeResponse>> {
+    Ok(Json(crate::read_state::unread_badge(&state).await?))
 }
 
 pub(crate) async fn apply_thread_list_response_state(
@@ -1080,6 +1084,25 @@ pub(crate) async fn apply_thread_summary_state(
     Ok(())
 }
 
+// Native ingestion enriches metadata from storage only. It must not await an
+// RPC whose response shares the serial notification transport.
+pub(crate) async fn apply_stored_thread_summary_state(
+    state: &AppState,
+    threads: &mut [ThreadSummary],
+) -> ApiResult<()> {
+    apply_thread_notification_settings(state, threads).await?;
+    let ids = threads
+        .iter()
+        .map(|thread| thread.id.clone())
+        .collect::<Vec<_>>();
+    let reads = state.store.thread_read_states(&ids).await?;
+    for thread in threads {
+        let read = reads.get(&thread.id).cloned().unwrap_or_default();
+        thread.apply_read_state(&read);
+    }
+    Ok(())
+}
+
 fn sync_thread_list_raw_payload(response: &mut ThreadListResponse) {
     let Some(data) = response
         .raw_payload
@@ -1162,9 +1185,9 @@ fn sync_raw_thread_notifications_enabled(raw_payload: &mut Value, enabled: bool)
     raw_payload.insert("notificationsEnabled".to_string(), json!(enabled));
 }
 
-async fn broadcast_thread_read_update(
+pub(crate) async fn broadcast_thread_read_update(
     state: &AppState,
-    read_state: ThreadReadStateUpdate,
+    read_state: ThreadRead,
 ) -> ApiResult<EventEnvelope> {
     let event = state
         .store
@@ -1175,7 +1198,7 @@ async fn broadcast_thread_read_update(
             item_id: None,
             kind: THREAD_READ_UPDATED_EVENT.to_string(),
             codex_method: None,
-            payload: serde_json::to_value(read_state)?,
+            payload: serde_json::to_value(ThreadReadStateUpdate(read_state))?,
         })
         .await?;
     let _ = state.events.send(event.clone());
@@ -1252,21 +1275,9 @@ fn thread_is_archived(thread: &ThreadSummary) -> bool {
 }
 
 async fn apply_thread_read_state(state: &AppState, threads: &mut [ThreadSummary]) -> ApiResult<()> {
-    let thread_ids = threads
-        .iter()
-        .map(|thread| thread.id.clone())
-        .collect::<Vec<_>>();
-    let read_states = state.store.thread_read_states(&thread_ids).await?;
-
     for thread in threads {
-        let read_state = read_states.get(&thread.id);
-        thread.apply_completed_agent_turn_read_state(
-            thread.last_completed_agent_turn_seq,
-            read_state
-                .map(|state| state.seen_completed_agent_turn_seq)
-                .unwrap_or(0),
-        );
+        let read = crate::read_state::reconcile(state, &thread.id).await?;
+        thread.apply_read_state(&read);
     }
-
     Ok(())
 }

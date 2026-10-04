@@ -1,7 +1,7 @@
 import type {
   EventEnvelope,
   ThreadNotificationSettingsResponse,
-  ThreadReadStateUpdate,
+  ThreadRead,
 } from "../api/client";
 import type { ThreadSummary } from "../api/client";
 import { asRecord, numberValue, stringValue } from "../shared/values";
@@ -34,44 +34,15 @@ export function threadUpsertFromEvent(event: EventEnvelope): ThreadUpsert | null
   return null;
 }
 
-export function completedAgentTurnEvent(event: EventEnvelope): { threadId: string; seq: number } | null {
-  if (event.kind !== "thread_view.patch") {
-    return null;
-  }
+export function threadReadUpdateFromEvent(event: EventEnvelope): ThreadRead | null {
+  if (event.kind !== "thread.read_updated") return null;
   const payload = asRecord(event.payload);
-  const threadId = event.threadId ?? stringValue(payload.threadId) ?? stringValue(payload.thread_id);
-  const liveState = normalizeRuntimeStatus(stringValue(payload.liveState));
-  const activeTurnId = stringValue(payload.activeTurnId);
-  return threadId && liveState === "idle" && !activeTurnId ? { threadId, seq: event.seq } : null;
-}
-
-export function threadReadUpdateFromEvent(event: EventEnvelope): ThreadReadStateUpdate | null {
-  if (event.kind !== "thread.read_updated") {
-    return null;
-  }
-  const payload = asRecord(event.payload);
-  const threadId = event.threadId ?? stringValue(payload.threadId) ?? stringValue(payload.thread_id);
-  const seenCompletedAgentTurnSeq = numberValue(
-    payload.seenCompletedAgentTurnSeq ?? payload.seen_completed_agent_turn_seq,
-  );
-  const lastCompletedAgentTurnSeq = numberValue(
-    payload.lastCompletedAgentTurnSeq ?? payload.last_completed_agent_turn_seq,
-  );
-  const unreadCompletedAgentTurn =
-    typeof payload.unreadCompletedAgentTurn === "boolean"
-      ? payload.unreadCompletedAgentTurn
-      : typeof payload.unread_completed_agent_turn === "boolean"
-        ? payload.unread_completed_agent_turn
-        : null;
-  if (!threadId || seenCompletedAgentTurnSeq === null || unreadCompletedAgentTurn === null) {
-    return null;
-  }
-  return {
-    threadId,
-    seenCompletedAgentTurnSeq,
-    lastCompletedAgentTurnSeq,
-    unreadCompletedAgentTurn,
-  };
+  if (typeof payload.threadId !== "string" || typeof payload.updatedAt !== "string" ||
+    typeof payload.readRevision !== "number" || typeof payload.readStateKnown !== "boolean" ||
+    typeof payload.unreadCompletedAgentTurn !== "boolean" ||
+    !(payload.latestCompletedTurnId === null || typeof payload.latestCompletedTurnId === "string") ||
+    !(payload.seenCompletedTurnId === null || typeof payload.seenCompletedTurnId === "string")) return null;
+  return payload as ThreadRead;
 }
 
 export function threadNotificationsUpdateFromEvent(event: EventEnvelope): ThreadNotificationSettingsResponse | null {
@@ -171,7 +142,7 @@ function threadSummaryFromValue(value: unknown): ThreadSummary | null {
   const status = stringValue(thread.status);
   const createdAt = numberValue(thread.createdAt);
   const updatedAt = numberValue(thread.updatedAt);
-  const seenCompletedAgentTurnSeq = numberValue(thread.seenCompletedAgentTurnSeq);
+  const readRevision = numberValue(thread.readRevision);
   const unreadCompletedAgentTurn =
     typeof thread.unreadCompletedAgentTurn === "boolean" ? thread.unreadCompletedAgentTurn : null;
   const notificationsEnabled =
@@ -183,7 +154,8 @@ function threadSummaryFromValue(value: unknown): ThreadSummary | null {
     !isThreadStatus(status) ||
     createdAt === null ||
     updatedAt === null ||
-    seenCompletedAgentTurnSeq === null ||
+    readRevision === null ||
+    typeof thread.readStateKnown !== "boolean" ||
     unreadCompletedAgentTurn === null ||
     !("rawPayload" in thread)
   ) {

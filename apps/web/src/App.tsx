@@ -1,3 +1,4 @@
+import { refreshUnreadBadge } from "./notifications/unreadBadge";
 import { useThreadSections } from "./sections/useThreadSections";
 import { PINNED_SECTION_ID } from "./sections/cache";
 import { Group, MantineProvider } from "@mantine/core";
@@ -99,7 +100,8 @@ import { useThreadSubagents } from "./threads/useThreadSubagents";
 import { useSidebarThreadCaches } from "./threads/useSidebarThreadCaches";
 import { useSidebarThreadsSnapshot } from "./threads/useSidebarThreadsSnapshot";
 import { useThreadMetadata } from "./threads/useThreadMetadata";
-import { useThreadReadState } from "./threads/useThreadReadState";
+import { mergeThreadReadState, preserveNewerThreadReadState } from "./threads/readState";
+import { threadReadUpdateFromEvent } from "./threads/events";
 import { useThreadViewPresence } from "./threads/useThreadViewPresence";
 import { AdaptiveIconButton } from "./ui/AdaptiveIconButton";
 import { errorMessageFrom } from "./shared/values";
@@ -270,7 +272,6 @@ function KodexShell({
     setUnavailableThreadId,
     unavailableThreadId,
   } = useShellSelection({
-    onSelectThread: handleThreadSelectionRead,
     chatThreadsRef,
     initialRoute,
     sectionThreadsRef,
@@ -500,25 +501,17 @@ function KodexShell({
       threadPaneTimelineActionHandlersRef.current.delete(handler);
     };
   });
-  const { applyCompletedAgentTurnEvent, applyThreadReadStateEvent, markCompletedAgentTurnSeen } = useThreadReadState({
-    chatThreads,
-    onError: reportError,
-    selectedThreadIdRef,
-    viewedThreadIdsRef: visibleThreadIdsRef,
-    threadsByProjectId,
-    sectionThreads,
-    updateThreadEverywhere: patchThreadEverywhere,
+  const applyThreadReadStateEvent = useEventCallback((event: EventEnvelope) => {
+    const read = threadReadUpdateFromEvent(event);
+    if (!read) return;
+    patchThreadEverywhere(read.threadId, (thread) => mergeThreadReadState(thread, read));
+    if (!read.readStateKnown) void refreshProjectState(queryClientForShell);
   });
   useThreadViewPresence({
     enabled: selectedMainPane === "thread",
     threadIds: visibleThreadIds,
   });
-  useKodexNotifications({
-    chatThreads,
-    sectionThreads,
-    routeSelectedThread,
-    threadsByProjectId,
-  });
+  useKodexNotifications();
   const {
     applyThreadMetadataEvent,
     contextUsageByThreadId,
@@ -628,7 +621,6 @@ function KodexShell({
   }, [draftComposerTransitionToken]);
 
   const { liveRouteHandlers } = useLiveEventHandlers({
-    applyCompletedAgentTurnEvent,
     applyQueuedInputDeleted: removeQueuedInput,
     applyQueuedInputUpsert: upsertQueuedInput,
     applyThreadMetadataEvent,
@@ -731,6 +723,7 @@ function KodexShell({
     const shouldSelectDraftAfterArchive = threadId === archivedSelectedThreadId;
     const draftProjectId = selectedProjectIdRef.current;
     await archiveThreadMutation.mutateAsync(threadId);
+    void refreshUnreadBadge(queryClientForShell);
     removeThreadEverywhere(queryClientForShell, threadId);
     if (
       shouldSelectDraftAfterArchive &&
@@ -760,13 +753,10 @@ function KodexShell({
     await deleteAutomationMutation.mutateAsync(automationId);
   }
 
-  function handleThreadSelectionRead(threadId: string) {
-    markCompletedAgentTurnSeen(threadId);
-  }
-
   function handleSelectedThreadSnapshot(thread: ThreadSummary) {
     if (thread.id === selectedThreadIdRef.current) {
-      setRouteSelectedThreadState(thread);
+      const previous = routeSelectedThreadRef.current;
+      setRouteSelectedThreadState(previous?.id === thread.id ? preserveNewerThreadReadState(previous, thread) : thread);
       setSelectedProjectId(thread.projectId ?? null);
       setUnavailableThreadId((current) => (current === thread.id ? null : current));
     }
@@ -1067,6 +1057,7 @@ function KodexShell({
       <WorkspaceProvider
         approvals={approvals}
         errorMessage={errorMessage}
+        isVisible={selectedMainPane === "thread" && (!useSingleThreadWorkspace || mobilePanel === "chat")}
         imagePreviewUrlsByPath={mergedImagePreviewUrlsByPath}
         onApprovalDecision={handleApprovalDecision}
         onFocusThreadPane={handleWorkspaceFocusThreadPane}
