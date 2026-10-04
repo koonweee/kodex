@@ -127,7 +127,9 @@ This repository contains the Kodex monorepo: a Rust Codex gateway plus a planned
 - Frontend stack: React, Vite, TypeScript.
 - API contract stack: Rust DTOs plus generated OpenAPI, with frontend-generated TypeScript types/client.
 - Gateway talks to a configured external `codex` binary over stdio.
-- Architecture target: every Kodex-launched Codex process uses a dedicated, real Kodex `CODEX_HOME`, separate from Codex desktop. Shared desktop homes and shared desktop runtimes are outside the target. This isolation is not yet implemented; see the [native capability audit](docs/audits/2026-10-04-app-server-native-audit.md) for migration and validation requirements.
+- Architecture target: every Kodex-launched Codex process uses a dedicated, real Kodex `CODEX_HOME`, separate from Codex desktop. Shared desktop homes and shared desktop runtimes are outside the target. This isolation is not yet implemented; see the [native capability audit](docs/audits/2026-10-04-app-server-native-audit.md) for implementation and validation requirements.
+- The native-first redesign starts with fresh Codex and gateway state. Do not build legacy data imports, old-to-new ID mappings, queued-work conversion, or compatibility readers. Leave old storage intact and keep it out of the new runtime; fresh initialization does not require migrating existing user data.
+- Retain automations, MCP Apps, MCP setup, Kodex Control tools, docking, PWA extras, and queued-message steering. Simplify their implementations around native primitives while preserving their intended workflows. Remove remote development-server previews and their preview-specific control surface; file previews and generated app surfaces remain distinct retained features. These are target-scope decisions, not claims that the redesign is implemented.
 - Gateway serves the built frontend in production.
 - SSE is the first event transport.
 - WebSocket is deferred until a feature requires bidirectional browser transport.
