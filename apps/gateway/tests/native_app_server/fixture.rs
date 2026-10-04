@@ -151,6 +151,19 @@ stream_max_retries = 0
             .context("model fixture was not called")?
             .context("model fixture stopped")
     }
+
+    pub(super) async fn assert_no_model_request(
+        &mut self,
+        duration: Duration,
+    ) -> anyhow::Result<()> {
+        // Observe the live provider; the timeout cancels only this receiver,
+        // never the native process or its queue watcher.
+        match timeout(duration, self.requests.recv()).await {
+            Err(_) => Ok(()),
+            Ok(Some(request)) => anyhow::bail!("unexpected native model request: {request}"),
+            Ok(None) => anyhow::bail!("model fixture stopped during absence observation"),
+        }
+    }
 }
 
 impl Drop for Fixture {
@@ -169,6 +182,25 @@ pub(super) struct NativeSession {
 }
 
 impl NativeSession {
+    pub(super) async fn native_queue_rpc(
+        &self,
+        operation: &str,
+        params: Value,
+    ) -> anyhow::Result<Value> {
+        anyhow::ensure!(matches!(
+            operation,
+            "add" | "list" | "update" | "delete" | "reorder" | "start"
+        ));
+        Ok(self
+            .server
+            .request(&format!("thread/queue/{operation}"), params)
+            .await?)
+    }
+
+    pub(super) async fn native_loaded_threads(&self) -> anyhow::Result<Value> {
+        Ok(self.server.request("thread/loaded/list", json!({})).await?)
+    }
+
     pub(super) async fn canonical_view(&self, thread_id: &str) -> anyhow::Result<Value> {
         // Read the live projection without a history request repairing it first.
         Ok(serde_json::to_value(
