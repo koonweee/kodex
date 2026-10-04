@@ -1072,13 +1072,6 @@ impl ThreadDetailResponse {
         })
     }
 
-    fn from_thread_payload_and_turns(
-        payload: Value,
-        turns: Vec<ThreadTurnSnapshot>,
-    ) -> ApiResult<Self> {
-        Self::from_thread_payload_turns_and_history(payload, turns, None)
-    }
-
     fn from_thread_payload_turns_and_history(
         mut payload: Value,
         turns: Vec<ThreadTurnSnapshot>,

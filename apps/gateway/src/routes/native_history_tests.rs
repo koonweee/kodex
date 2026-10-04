@@ -203,7 +203,7 @@ fn assert_resume_bootstrap_calls(native: &AttachNative, expected_resumes: usize)
                         "sortDirection": "desc", "itemsView": "full"
                     }));
                 } else {
-                    assert_eq!(params["itemsView"], "notLoaded", "only the legacy counter scan may remain");
+                    assert_eq!(params["itemsView"], "notLoaded", "read-state reconciliation uses bounded native headers");
                 }
             }
             _ => panic!("bootstrap must not probe loaded state or fetch another transcript: {method} {params}"),

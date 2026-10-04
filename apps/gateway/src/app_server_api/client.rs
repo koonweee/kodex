@@ -113,24 +113,6 @@ impl CodexClient {
         ThreadSummary::from_payload(thread)
     }
 
-    pub async fn thread_read_full_history(
-        &self,
-        thread_id: String,
-    ) -> ApiResult<ThreadDetailResponse> {
-        let payload = self
-            .request_retrying_rollout_load(
-                "thread/read",
-                json!({ "threadId": thread_id, "includeTurns": false }),
-            )
-            .await?;
-        let turns = match self.thread_turns_list_full(thread_id).await {
-            Ok(turns) => turns,
-            Err(error) if is_thread_history_not_materialized_error(&error) => Vec::new(),
-            Err(error) => return Err(error),
-        };
-        ThreadDetailResponse::from_thread_payload_and_turns(payload, turns)
-    }
-
     pub async fn thread_read_history_window(
         &self,
         thread_id: String,
@@ -266,31 +248,6 @@ impl CodexClient {
             )
             .await?;
         ThreadTurnsListPage::from_payload(payload)
-    }
-
-    pub async fn thread_turns_list_full(
-        &self,
-        thread_id: String,
-    ) -> ApiResult<Vec<ThreadTurnSnapshot>> {
-        let mut turns = Vec::new();
-        let mut cursor = None;
-        loop {
-            let page = self
-                .thread_turns_list_page(
-                    thread_id.clone(),
-                    cursor,
-                    SortDirection::Asc,
-                    ThreadTurnItemsView::Full,
-                    None,
-                )
-                .await?;
-            turns.extend(page.data);
-            let Some(next_cursor) = page.next_cursor else {
-                break;
-            };
-            cursor = Some(next_cursor);
-        }
-        Ok(turns)
     }
 
     /// Observe a bounded native completion head without transcript hydration.

@@ -514,24 +514,6 @@ async fn adapter_reads_bounded_recent_history_without_counting_all_turns() {
 }
 
 #[tokio::test]
-async fn thread_read_full_history_returns_thread_shell_when_turns_not_materialized() {
-    let server = Arc::new(NotMaterializedHistoryServer::default());
-    let client = CodexClient::new(server.clone());
-
-    let response = client
-        .thread_read_full_history("thread-1".to_string())
-        .await
-        .unwrap();
-
-    assert_eq!(response.thread.id, "thread-1");
-    assert!(response.turns.is_empty());
-    assert_eq!(response.timeline.items.len(), 0);
-    let requests = server.requests.lock().unwrap();
-    assert_eq!(requests[0].0, "thread/read");
-    assert_eq!(requests[1].0, "thread/turns/list");
-}
-
-#[tokio::test]
 async fn recent_history_before_first_user_message_returns_an_empty_native_window() {
     let server = Arc::new(NotMaterializedHistoryServer::default());
     let client = CodexClient::new(server.clone());

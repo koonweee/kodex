@@ -2,7 +2,7 @@
 
 ## Status
 
-Active. Created 2026-10-04; implementation started 2026-10-04. M1 release proofs remain open; M2 native-request replacements and the M3 discovery, skill, message-identity, canonical attach/page and native revert-invalidation slices are implemented against the verified runtime foundation. Ordinary Send uses native atomic routing. The M3 native-ID read-marker/badge slice is implemented; M4 queues/producers remain open. No milestone exit gate is complete yet.
+Active. Created 2026-10-04; implementation started 2026-10-04. M3 history, identity, discovery, skill and read-marker exit conditions are verified. Ordinary Send uses native atomic routing. M1 release proofs and the M2 exit audit remain open; M4 native queues/producers and M5–M7 are unfinished. Completing M3 does not establish release readiness.
 
 The foundation is committed as `6600797`: exact 0.160.0 schemas/adapters, dedicated-home startup and path/environment guards, native project handlers, browser identity namespaces and title-generation removal. Validation passes: 433 backend unit tests, two stdio integration tests, 686 frontend unit/component tests, 13 Playwright flows, formatting, frontend build and both trim scripts. Schema generator fixtures pass, all 440 schemas match the selected executable, and generated frontend types match the Rust OpenAPI export. Independent foundation review passed after fixing Windows environment-name filtering; Windows execution is not verified.
 
@@ -165,6 +165,20 @@ At the earlier notification-preview boundary, validation passed 454 backend libr
 **Delete/replace:** text/FIFO user-message matching, redundant history overlays/hydration, subagent scans, custom free-text skill resolver, unnecessary historical counting. Do not remove the bounded live projection or replace it with raw browser lifecycle interpretation.
 
 **Exit:** live streaming, initial/older pages, completion, interruption, fork/revert, duplicate text, two tabs, missed SSE and native restart converge without duplicate rows or overwritten live content. Client IDs survive both snapshots and streaming paths. Subagent browsing is bounded and prohibited child input is unavailable. Read/badge state converges after an offline client returns. No legacy history converter is introduced.
+
+The M3 exit audit is verified. The strengthened real history proof submits independent input to a native fork, records the fork's actual inherited and new item identities, confirms the parent is unchanged, and checks both complete branches after a third native process starts. The parent still uses its opaque older-page cursor; cold history reads keep both chats unloaded. The obsolete full-history walker, its constructor wrapper and its implementation-only test are removed; bounded blank-shell and unsupported-history regressions remain. The mock fork boundary now asserts the supported `beforeTurnId` field.
+
+| M3 exit requirement | Evidence and scope |
+| --- | --- |
+| Streaming, completion and interruption | Native identity/history/Stop/revert proofs; gateway stale-snapshot and delta regressions; browser live-SSE and read-marker completion flows. The local model fixture does not generate incremental assistant tokens; delta transport and presentation have separate gateway/browser evidence. |
+| Initial and older pages without overwriting live content | Native 51-turn history proof, exact bundled idle/active attach contract tests, held overlapping reads, and three-shape two-tab history/reconnect/reload flows. |
+| Fork/revert and cold native restart | Fork continuation and third-process branch reads; native active revert and cold truncation; held initial/attach/older reads and late accepted input acknowledgments; three-shape missed-reset browser recovery. |
+| Duplicate text and client IDs | Native reused-ID messages stay distinct hot/cold; gateway tests cover foreign/null IDs, turn scoping and receipt-before-ACK; browser held acknowledgments and actual missed-receipt reconnect retain distinct bubbles. |
+| Bounded descendants and prohibited child input | Real native v1 unloaded descendants and cursor pages; exact native page/capability adapters and HTTP/browser denial tests. Native v2 worker execution is not claimed by the local fixture. |
+| Offline read/badge convergence | Native persisted exact seen state and deliberate offline rewind; HTTP CAS/head-lag/inventory fences; three-shape two-tab held replies, missed SSE, hidden mobile pane and off-page aggregate badges. |
+| Native skill/history ownership without conversion | Real raw/structured skill hot/cold proof, removed shadow tables and untouched-old-root tests. No legacy history converter or import path is introduced. |
+
+The exit cleanup passes 475 library tests, one binary test and two Control stdio tests; the changed real history proof passes against pinned 0.160.0. The unchanged frontend remains at its verified 783 tests and 58 browser flows across the final waves, with all 14 earlier real-native proofs green. Backend trim, formatting, unchanged exported OpenAPI and independent cleanup/fork reviews pass. These are layered contract, gateway, browser and real-native proofs, not a claim that mock browser scenarios execute real Codex. Legacy queue FIFO/recovery is explicitly M4 work.
 
 ## M4 — Native input and queues, with narrow promotion recovery
 

@@ -3900,7 +3900,7 @@ mod tests {
                 .oneshot(
                     Request::post("/v1/threads/thread-1/fork")
                         .header("content-type", "application/json")
-                        .body(Body::from(r#"{"fromItemId":"item-1"}"#))
+                        .body(Body::from(r#"{"beforeTurnId":"turn-1"}"#))
                         .unwrap(),
                 )
                 .await
@@ -3934,6 +3934,7 @@ mod tests {
         assert_completion_head_request(&requests[4], "thread-1");
         assert_eq!(requests[5].0, "thread/fork");
         assert_eq!(requests[5].1["threadId"], "thread-1");
+        assert_eq!(requests[5].1["beforeTurnId"], "turn-1");
         assert!(requests[5].1.get("persistExtendedHistory").is_none());
         assert_completion_head_request(&requests[6], "thread-1");
         assert_eq!(requests[7].0, "thread/archive");

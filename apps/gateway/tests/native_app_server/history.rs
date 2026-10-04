@@ -16,6 +16,13 @@ struct Receipt {
     client_id: String,
 }
 
+struct HistoryBranches {
+    parent_id: String,
+    parent: Vec<Receipt>,
+    fork_id: String,
+    fork: Vec<Receipt>,
+}
+
 #[tokio::test]
 #[ignore = "requires explicit pinned real Codex executable and loopback access"]
 async fn real_native_attach_bootstraps_history_live_state_and_cold_cursor_continuity(
@@ -38,6 +45,16 @@ async fn real_native_attach_bootstraps_history_live_state_and_cold_cursor_contin
     )
     .await;
     reopened.shutdown().await?;
+    drop(reopened);
+    let branches = result??;
+
+    let cold = NativeSession::start(&fixture).await?;
+    let result = timeout(
+        Duration::from_secs(30),
+        assert_cold_branches(&cold, &branches),
+    )
+    .await;
+    cold.shutdown().await?;
     result??;
     anyhow::ensure!(!fixture.config.codex.home.join("auth.json").exists());
     Ok(())
@@ -102,8 +119,7 @@ async fn seed_history(
 
     let mut receipts = Vec::new();
     // One more than the public initial turn-page limit gives the real native
-    // opaque cursor work to do. The legacy unread counter scan is still
-    // separate; this is not a claim that all gateway reads are constant-cost.
+    // opaque cursor work to do; completion heads use separate bounded headers.
     for index in 0..COMPLETED_TURNS {
         let client_id = if index >= COMPLETED_TURNS - 2 {
             "deliberately-reused-history-client".to_owned()
@@ -134,7 +150,7 @@ async fn cold_and_live_history(
     session: &mut NativeSession,
     thread_id: &str,
     mut receipts: Vec<Receipt>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<HistoryBranches> {
     let detail = api(
         &session.app,
         "GET",
@@ -164,17 +180,7 @@ async fn cold_and_live_history(
     let cursor = attached["historyPage"]["olderCursor"]
         .as_str()
         .context("initial native page omitted its older cursor")?;
-    let mut older = reqwest::Url::parse(&format!(
-        "http://fixture.invalid/v1/threads/{thread_id}/timeline/pages"
-    ))?;
-    older.query_pairs_mut().append_pair("cursor", cursor);
-    let older = api(
-        &session.app,
-        "GET",
-        &format!("{}?{}", older.path(), older.query().unwrap_or_default()),
-        None,
-    )
-    .await?;
+    let older = older_page(session, thread_id, cursor).await?;
     anyhow::ensure!(older["historyPage"]["hasOlder"] == false);
     anyhow::ensure!(older["historyPage"]["olderCursor"].is_null());
     assert_receipts(&older, &receipts)?;
@@ -247,8 +253,8 @@ async fn cold_and_live_history(
     assert_receipts(&attach(session, thread_id).await?, &receipts)?;
     anyhow::ensure!(read_settings(session, thread_id).await? == settings);
 
-    // A native paginated fork uses its own chat ID and can be inspected without
-    // another model call. This does not claim revert invalidation/reset support.
+    // Capture the fork's actual inherited identities. Native owns whether they
+    // match the parent; branch continuation and cold reads must retain its IDs.
     let fork = api(
         &session.app,
         "POST",
@@ -258,17 +264,103 @@ async fn cold_and_live_history(
     .await?;
     let fork_id = fork["thread"]["id"]
         .as_str()
-        .context("native fork ID missing")?;
+        .context("native fork ID missing")?
+        .to_owned();
     anyhow::ensure!(fork_id != thread_id);
     let fork = api(&session.app, "GET", &format!("/v1/threads/{fork_id}"), None).await?;
     let fork_items = user_items(&fork)?;
     anyhow::ensure!(fork_items.len() == 2);
+    let mut fork_receipts = Vec::new();
     for (item, original) in fork_items.iter().zip(&receipts[..2]) {
+        anyhow::ensure!(item["threadId"] == fork_id);
         anyhow::ensure!(item["payload"]["item"]["clientId"] == original.client_id);
         anyhow::ensure!(item["payload"]["item"]["content"][0]["text"] == MESSAGE);
+        fork_receipts.push(Receipt {
+            turn_id: item["turnId"]
+                .as_str()
+                .context("fork turn ID missing")?
+                .into(),
+            item_id: item["itemId"]
+                .as_str()
+                .context("fork item ID missing")?
+                .into(),
+            client_id: original.client_id.clone(),
+        });
     }
+
+    fixture.enqueue([ModelResponse::message(
+        "Independent native fork continuation",
+    )]);
+    let fork_turn = submit(session, &fork_id, "fork-only-client").await?;
+    let fork_receipt = receipt(session, &fork_id, &fork_turn, "fork-only-client").await?;
+    anyhow::ensure!(receipts
+        .iter()
+        .all(|parent| parent.turn_id != fork_receipt.turn_id
+            && parent.item_id != fork_receipt.item_id));
+    fork_receipts.push(fork_receipt);
+    anyhow::ensure!(session.completed_turn(&fork_id, "completed").await?["id"] == fork_turn);
+    fixture.next_model_request().await?;
+    assert_receipts(&attach(session, &fork_id).await?, &fork_receipts)?;
     assert_receipts(&attach(session, thread_id).await?, &receipts)?;
+    Ok(HistoryBranches {
+        parent_id: thread_id.into(),
+        parent: receipts,
+        fork_id,
+        fork: fork_receipts,
+    })
+}
+
+async fn assert_cold_branches(
+    session: &NativeSession,
+    branches: &HistoryBranches,
+) -> anyhow::Result<()> {
+    let parent = api(
+        &session.app,
+        "GET",
+        &format!("/v1/threads/{}", branches.parent_id),
+        None,
+    )
+    .await?;
+    anyhow::ensure!(parent["thread"]["status"] == "notLoaded");
+    anyhow::ensure!(parent["historyPage"]["loadedTurnCount"] == 50);
+    let cursor = parent["historyPage"]["olderCursor"]
+        .as_str()
+        .context("cold parent cursor missing")?;
+    let parent = older_page(session, &branches.parent_id, cursor).await?;
+    anyhow::ensure!(parent["thread"]["status"] == "notLoaded");
+    anyhow::ensure!(parent["historyPage"]["hasOlder"] == false);
+    assert_receipts(&parent, &branches.parent)?;
+
+    let fork = api(
+        &session.app,
+        "GET",
+        &format!("/v1/threads/{}", branches.fork_id),
+        None,
+    )
+    .await?;
+    anyhow::ensure!(fork["thread"]["id"] == branches.fork_id);
+    anyhow::ensure!(fork["thread"]["status"] == "notLoaded");
+    anyhow::ensure!(fork["historyPage"]["hasOlder"] == false);
+    assert_receipts(&fork, &branches.fork)?;
     Ok(())
+}
+
+async fn older_page(
+    session: &NativeSession,
+    thread_id: &str,
+    cursor: &str,
+) -> anyhow::Result<Value> {
+    let mut url = reqwest::Url::parse(&format!(
+        "http://fixture.invalid/v1/threads/{thread_id}/timeline/pages"
+    ))?;
+    url.query_pairs_mut().append_pair("cursor", cursor);
+    api(
+        &session.app,
+        "GET",
+        &format!("{}?{}", url.path(), url.query().unwrap_or_default()),
+        None,
+    )
+    .await
 }
 
 async fn attach(session: &NativeSession, thread_id: &str) -> anyhow::Result<Value> {
