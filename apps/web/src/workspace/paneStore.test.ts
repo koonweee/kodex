@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { createInstanceStorage } from "../api/instanceStorage";
+import { loadSidebarProjectOrder, saveSidebarProjectOrder } from "../threads/projectOrder";
+import { loadSidebarDisclosureState, saveSidebarDisclosureState } from "../threads/sidebarDisclosureState";
 import {
+  createBrowserWorkspacePaneStore,
   createDefaultWorkspaceState,
   normalizeWorkspacePaneState,
   parseWorkspacePaneState,
@@ -9,6 +13,33 @@ import {
 import type { WorkspacePaneState } from "./paneTypes";
 
 describe("paneStore", () => {
+  it("restores only this instance's references across independent browser clients", () => {
+    window.localStorage.clear();
+    const oldState: WorkspacePaneState = {
+      ...createDefaultWorkspaceState(),
+      panes: [{ id: "old-pane", kind: "thread", target: { mode: "existing", threadId: "old-thread" } }],
+      activePaneId: "old-pane",
+    };
+    window.localStorage.setItem("kodex.workspace.panes.v1", JSON.stringify(oldState));
+    const firstTab = createInstanceStorage("first", window.localStorage);
+    const secondTab = createInstanceStorage("first", window.localStorage);
+    const replacement = createInstanceStorage("replacement", window.localStorage);
+    const firstStore = createBrowserWorkspacePaneStore(firstTab);
+    expect(firstStore.load().panes[0]?.target).toEqual({ mode: "draft" });
+
+    firstStore.save(oldState);
+    saveSidebarProjectOrder(["project-1"], firstTab);
+    saveSidebarDisclosureState({ chatsSectionCollapsed: false, collapsedProjectIds: new Set(["project-1"]), pinnedSectionCollapsed: false, projectsSectionCollapsed: false }, firstTab);
+
+    expect(createBrowserWorkspacePaneStore(secondTab).load()).toEqual(oldState);
+    expect(loadSidebarProjectOrder(secondTab)).toEqual(["project-1"]);
+    expect(loadSidebarDisclosureState(secondTab).collapsedProjectIds).toEqual(new Set(["project-1"]));
+    expect(createBrowserWorkspacePaneStore(replacement).load().panes[0]?.target).toEqual({ mode: "draft" });
+    expect(loadSidebarProjectOrder(replacement)).toBeNull();
+    expect(loadSidebarDisclosureState(replacement).collapsedProjectIds.size).toBe(0);
+    expect(createBrowserWorkspacePaneStore(firstTab).load()).toEqual(oldState);
+  });
+
   it("falls back to one draft chat pane for corrupted storage", () => {
     const state = parseWorkspacePaneState("{not-json");
 

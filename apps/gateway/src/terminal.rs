@@ -32,13 +32,15 @@ const TERMINAL_CLEANUP_INTERVAL: Duration = Duration::from_secs(30);
 pub struct TerminalManager {
     sessions: Arc<Mutex<HashMap<String, Arc<TerminalSession>>>>,
     default_cwd: PathBuf,
+    codex_home: PathBuf,
 }
 
 impl TerminalManager {
-    pub fn new(default_cwd: PathBuf) -> Self {
+    pub fn new(default_cwd: PathBuf, codex_home: PathBuf) -> Self {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             default_cwd,
+            codex_home,
         }
     }
 
@@ -59,7 +61,12 @@ impl TerminalManager {
                 "terminal session limit reached; close a terminal before opening another"
             ));
         }
-        let session = Arc::new(TerminalSession::spawn(title, cwd, command)?);
+        let session = Arc::new(TerminalSession::spawn(
+            title,
+            cwd,
+            command,
+            &self.codex_home,
+        )?);
         let info = session.info();
         sessions.insert(info.id.clone(), session);
         Ok(info)
@@ -154,7 +161,12 @@ pub struct TerminalSession {
 }
 
 impl TerminalSession {
-    fn spawn(title: String, cwd: PathBuf, command: String) -> anyhow::Result<Self> {
+    fn spawn(
+        title: String,
+        cwd: PathBuf,
+        command: String,
+        codex_home: &Path,
+    ) -> anyhow::Result<Self> {
         let terminal = native_pty_system()
             .openpty(PtySize {
                 rows: DEFAULT_ROWS,
@@ -163,7 +175,7 @@ impl TerminalSession {
                 pixel_height: 0,
             })
             .context("failed to open pseudo-terminal")?;
-        let mut command_builder = command_builder(&command)?;
+        let mut command_builder = command_builder(&command, codex_home)?;
         command_builder.cwd(&cwd);
         command_builder.env("TERM", "xterm-256color");
         command_builder.env("COLORTERM", "truecolor");
@@ -543,7 +555,7 @@ impl TerminalHistory {
     }
 }
 
-fn command_builder(command: &str) -> anyhow::Result<CommandBuilder> {
+fn command_builder(command: &str, codex_home: &Path) -> anyhow::Result<CommandBuilder> {
     let mut parts = shlex::split(command)
         .filter(|parts| !parts.is_empty())
         .ok_or_else(|| anyhow!("terminal command cannot be empty"))?
@@ -555,7 +567,29 @@ fn command_builder(command: &str) -> anyhow::Result<CommandBuilder> {
     for arg in parts {
         builder.arg(arg);
     }
+    configure_terminal_environment(&mut builder, codex_home);
     Ok(builder)
+}
+
+fn configure_terminal_environment(builder: &mut CommandBuilder, codex_home: &Path) {
+    // portable-pty also merges Windows registry values; process keys retain non-UTF8 coverage.
+    let inherited_keys = builder
+        .iter_full_env_as_str()
+        .map(|(key, _)| std::ffi::OsString::from(key))
+        .chain(env::vars_os().map(|(key, _)| key))
+        .collect::<Vec<_>>();
+    for key in inherited_keys {
+        let key_name = key.to_string_lossy();
+        if key_name.starts_with("CODEX_")
+            || (cfg!(windows) && key_name.to_ascii_uppercase().starts_with("CODEX_"))
+        {
+            builder.env_remove(key);
+        }
+    }
+    builder.env_remove("OPENAI_API_KEY");
+    builder.env_remove("OPENAI_BASE_URL");
+    // These are host-shell defaults. Startup files and explicit user commands can override them.
+    builder.env("CODEX_HOME", codex_home);
 }
 
 fn terminal_title(command: &str, cwd: &Path) -> String {
@@ -597,6 +631,163 @@ fn resolve_terminal_cwd(cwd: Option<&str>, default_cwd: &Path) -> anyhow::Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn terminal_environment_sanitizes_platform_added_overrides() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("native home");
+        let mut builder = CommandBuilder::new("shell");
+        builder.env_clear();
+        // portable-pty can add environment entries absent from the gateway process on Windows.
+        builder.env("CODEX_PTY_REGISTRY_ONLY", "synthetic-storage-override");
+        builder.env("OPENAI_API_KEY", "synthetic-provider-key");
+        builder.env("OPENAI_BASE_URL", "https://fixture.invalid");
+        builder.env("ORDINARY_VALUE", "preserved");
+        if cfg!(windows) {
+            builder.env("Codex_Pty_Mixed_Case", "synthetic-override");
+        }
+
+        configure_terminal_environment(&mut builder, &home);
+
+        assert!(builder.get_env("CODEX_PTY_REGISTRY_ONLY").is_none());
+        assert!(builder.get_env("OPENAI_API_KEY").is_none());
+        assert!(builder.get_env("OPENAI_BASE_URL").is_none());
+        assert_eq!(builder.get_env("CODEX_HOME"), Some(home.as_os_str()));
+        assert_eq!(
+            builder.get_env("ORDINARY_VALUE"),
+            Some(std::ffi::OsStr::new("preserved"))
+        );
+        if cfg!(windows) {
+            assert!(builder.get_env("Codex_Pty_Mixed_Case").is_none());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn terminal_shell_environment_uses_the_dedicated_native_home() {
+        let root = tempfile::tempdir().unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "terminal::tests::isolated_terminal_environment_child",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .env("KODEX_TERMINAL_FIXTURE_ROOT", root.path())
+            .env("KODEX_TERMINAL_ORDINARY_VALUE", "preserved")
+            .env("CODEX_HOME", "/fixture/desktop")
+            .env("CODEX_SQLITE_HOME", "/fixture/desktop/sqlite")
+            .env("CODEX_ACCESS_TOKEN", "synthetic-access-token")
+            .env("CODEX_API_KEY", "synthetic-api-key")
+            .env("CODEX_FUTURE_OVERRIDE", "synthetic-override")
+            .env("OPENAI_API_KEY", "synthetic-provider-key")
+            .env("OPENAI_BASE_URL", "https://fixture.invalid")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    #[ignore = "invoked by parent test with an isolated synthetic environment"]
+    async fn isolated_terminal_environment_child() {
+        let root = PathBuf::from(env::var_os("KODEX_TERMINAL_FIXTURE_ROOT").unwrap());
+        let workspace = root.join("workspace");
+        let codex_home = root.join("native home");
+        std::fs::create_dir(&workspace).unwrap();
+        std::fs::create_dir(&codex_home).unwrap();
+        let script = root.join("capture-environment.sh");
+        std::fs::write(
+            &script,
+            r#"if [ "$1" = explicit ]; then
+  export CODEX_HOME="$KODEX_TERMINAL_FIXTURE_ROOT/explicit-home"
+fi
+/usr/bin/env > "$KODEX_TERMINAL_FIXTURE_ROOT/environment-$1"
+read exit_line
+"#,
+        )
+        .unwrap();
+
+        let mut config = crate::config::Config::default();
+        config.projects.home_dir = workspace.clone();
+        config.codex.home = codex_home.clone();
+        let state = crate::api::AppState::new(
+            config,
+            crate::store::Store::in_memory().await.unwrap(),
+            Arc::new(crate::app_server::tests::RecordingAppServer::default()),
+        );
+
+        for mode in ["default", "explicit"] {
+            let terminal = state
+                .terminals
+                .create_session(CreateTerminalSession {
+                    command: Some(format!(
+                        "/bin/sh {} {mode}",
+                        shlex::try_quote(script.to_str().unwrap()).unwrap(),
+                    )),
+                    cwd: None,
+                    title: None,
+                })
+                .await
+                .unwrap();
+            let captured = tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    if let Ok(value) =
+                        std::fs::read_to_string(root.join(format!("environment-{mode}")))
+                    {
+                        if value.contains("KODEX_TERMINAL_ORDINARY_VALUE=preserved") {
+                            break value;
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await;
+            assert!(state.terminals.delete_session(&terminal.id).await);
+            let environment = captured.unwrap();
+            let expected_home = if mode == "explicit" {
+                root.join("explicit-home")
+            } else {
+                codex_home.clone()
+            };
+            let native_vars = environment
+                .lines()
+                .filter(|line| line.starts_with("CODEX_"))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                native_vars,
+                vec![format!("CODEX_HOME={}", expected_home.display())]
+            );
+            assert!(!environment.lines().any(|line| {
+                line.starts_with("OPENAI_API_KEY=") || line.starts_with("OPENAI_BASE_URL=")
+            }));
+            assert!(environment
+                .lines()
+                .any(|line| line == "KODEX_TERMINAL_ORDINARY_VALUE=preserved"));
+            assert_eq!(
+                terminal.cwd,
+                workspace.canonicalize().unwrap().to_string_lossy()
+            );
+        }
+
+        // Launch defaults do not modify the gateway environment or confine a host shell.
+        assert_eq!(env::var("CODEX_HOME").unwrap(), "/fixture/desktop");
+        assert_eq!(
+            env::var("CODEX_ACCESS_TOKEN").unwrap(),
+            "synthetic-access-token"
+        );
+        assert_eq!(
+            env::var("OPENAI_API_KEY").unwrap(),
+            "synthetic-provider-key"
+        );
+    }
 
     #[test]
     fn decodes_stdin_frame() {
@@ -649,6 +840,7 @@ mod tests {
             "test shell".to_string(),
             temp.path().to_path_buf(),
             "/bin/sh".to_string(),
+            &temp.path().join("codex-home"),
         )
         .unwrap();
         let mut exit = session.subscribe_exit();
@@ -664,7 +856,8 @@ mod tests {
     #[tokio::test]
     async fn manager_rejects_sessions_over_limit() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = TerminalManager::new(temp.path().to_path_buf());
+        let manager =
+            TerminalManager::new(temp.path().to_path_buf(), temp.path().join("codex-home"));
         let mut terminal_ids = Vec::new();
         for _ in 0..MAX_TERMINAL_SESSIONS {
             let terminal = manager
@@ -696,7 +889,8 @@ mod tests {
     #[tokio::test]
     async fn manager_cleans_up_never_attached_sessions_after_ttl() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = TerminalManager::new(temp.path().to_path_buf());
+        let manager =
+            TerminalManager::new(temp.path().to_path_buf(), temp.path().join("codex-home"));
         let terminal = manager
             .create_session(CreateTerminalSession {
                 command: Some("/bin/sh".to_string()),
@@ -714,7 +908,8 @@ mod tests {
     #[tokio::test]
     async fn manager_keeps_attached_sessions_during_cleanup() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = TerminalManager::new(temp.path().to_path_buf());
+        let manager =
+            TerminalManager::new(temp.path().to_path_buf(), temp.path().join("codex-home"));
         let terminal = manager
             .create_session(CreateTerminalSession {
                 command: Some("/bin/sh".to_string()),
@@ -745,7 +940,8 @@ mod tests {
     #[tokio::test]
     async fn manager_enforces_session_limit_under_concurrent_creates() {
         let temp = tempfile::tempdir().unwrap();
-        let manager = TerminalManager::new(temp.path().to_path_buf());
+        let manager =
+            TerminalManager::new(temp.path().to_path_buf(), temp.path().join("codex-home"));
         let mut handles = Vec::new();
 
         for _ in 0..(MAX_TERMINAL_SESSIONS + 4) {

@@ -1,14 +1,21 @@
 import { AppShell, MantineProvider } from "@mantine/core";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Project, ThreadSummary } from "../api/client";
+import * as instanceBoundary from "../api/GatewayInstanceBoundary";
+import { createInstanceStorage } from "../api/instanceStorage";
 import { WorkspaceSidebar } from "./WorkspaceSidebar";
 
 describe("WorkspaceSidebar project reorder", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    vi.spyOn(instanceBoundary, "useGatewayInstanceStorage").mockReturnValue(createInstanceStorage("sidebar-instance"));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("emits a persisted order when a project is dragged before another project", () => {
@@ -515,26 +522,29 @@ describe("WorkspaceSidebar project reorder", () => {
     expect(screen.queryByRole("button", { name: "Chat thread" })).not.toBeInTheDocument();
   });
 
-  it("rehydrates collapsed project rows from local storage", () => {
-    const first = renderSidebar({
+  it("rehydrates collapsed project rows only for the same confirmed instance", () => {
+    const props = {
       projects: [projectSummary("project-1", "Project")],
       threadsByProjectId: {
         "project-1": [threadSummary(1)],
       },
-    });
+    };
+    const first = renderSidebar(props);
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse Project" }));
     first.unmount();
 
-    renderSidebar({
-      projects: [projectSummary("project-1", "Project")],
-      threadsByProjectId: {
-        "project-1": [threadSummary(1)],
-      },
-    });
+    const second = renderSidebar(props);
 
     expect(screen.getByRole("button", { name: "Expand Project" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("button", { name: "Thread 1" })).not.toBeInTheDocument();
+    second.unmount();
+
+    vi.mocked(instanceBoundary.useGatewayInstanceStorage).mockReturnValue(createInstanceStorage("other-instance"));
+    renderSidebar(props);
+
+    expect(screen.getByRole("button", { name: "Collapse Project" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Thread 1" })).toBeInTheDocument();
   });
 
   it("does not mark the project title active when a thread or draft thread is selected", () => {

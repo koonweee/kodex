@@ -53,6 +53,7 @@ import {
   type ThreadSubagentSummary,
   type ThreadSummary,
 } from "./api/client";
+import { useGatewayInstanceStorage } from "./api/GatewayInstanceBoundary";
 import { queryClient } from "./api/queryClient";
 import { queryKeys } from "./api/queryKeys";
 import {
@@ -131,6 +132,7 @@ import { createClientRequestId } from "./shared/id";
 import { KodexShellView, useNarrowThreadWorkspace } from "./shell/KodexShellView";
 import {
   currentKodexRoute,
+  isThemeWorkbenchRoute,
   pushKodexRoute,
 } from "./shell/browserRouting";
 import { queryResultLoadState } from "./shell/queryResultLoadState";
@@ -466,7 +468,7 @@ export function App({ queryClientInstance = queryClient, workspacePaneStore }: A
 
   useEffect(() => installLiveLongTaskObserver(), []);
 
-  const isThemeWorkbench = typeof window !== "undefined" && window.location.pathname === "/__theme";
+  const isThemeWorkbench = isThemeWorkbenchRoute();
 
   return (
     <QueryClientProvider client={queryClientInstance}>
@@ -497,10 +499,11 @@ function KodexShell({
   onColorSchemeChange: (colorSchemeId: KodexColorSchemeId) => void;
   workspacePaneStore?: WorkspacePaneStoreAdapter;
 }) {
+  const instanceStorage = useGatewayInstanceStorage();
   const [initialRoute] = useState(() => currentKodexRoute());
   const queryClientForShell = useQueryClient();
   const useSingleThreadWorkspace = useNarrowThreadWorkspace();
-  const [projectOrderIds, setProjectOrderIds] = useState<string[] | null>(() => loadSidebarProjectOrder());
+  const [projectOrderIds, setProjectOrderIds] = useState<string[] | null>(() => loadSidebarProjectOrder(instanceStorage));
   const [pendingTitleThreadIds, setPendingTitleThreadIds] = useState<Set<string>>(new Set());
   const [materializingThreadIds, setMaterializingThreadIds] = useState<Set<string>>(new Set());
   const [, setTimeline] = useState<TimelineState>(createTimelineState());
@@ -624,7 +627,7 @@ function KodexShell({
   });
   const capabilitiesQuery = useQuery({
     queryKey: queryKeys.capabilities,
-    queryFn: getCapabilities,
+    queryFn: ({ signal }) => getCapabilities(signal),
     staleTime: Infinity,
   });
   const projects = projectsQuery.data ?? EMPTY_PROJECTS;
@@ -1138,7 +1141,7 @@ function KodexShell({
 
   function handleReorderProjects(nextProjectIds: string[]) {
     setProjectOrderIds(nextProjectIds);
-    saveSidebarProjectOrder(nextProjectIds);
+    saveSidebarProjectOrder(nextProjectIds, instanceStorage);
   }
 
   async function createDraftThreadFromComposer({

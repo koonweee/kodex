@@ -1161,7 +1161,8 @@ pub async fn create_self_control_thread(
     Json(request): Json<SelfControlCreateThreadRequest>,
 ) -> ApiResult<Json<ThreadCommandResponse>> {
     enforce_self_control_depth(request.max_self_control_depth)?;
-    let project = state.store.get_project(&request.project_id).await?;
+    let project =
+        crate::routes::projects::read_project_with_cwd(&state, &request.project_id).await?;
     let options = ThreadCreationOptions {
         model: request.model,
         effort: request.effort,

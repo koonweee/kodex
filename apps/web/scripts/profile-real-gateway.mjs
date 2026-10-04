@@ -406,7 +406,10 @@ async function collectMetrics(page, client) {
 }
 
 async function installPerfObserver(context, seedWorkspace) {
-  await context.addInitScript(({ seed }) => {
+  const capabilities = await getJson("/v1/capabilities");
+  const instanceId = capabilities.gateway.instanceId;
+  if (!instanceId) throw new Error("Gateway did not provide an instance identity.");
+  await context.addInitScript(({ seed, instanceId }) => {
     window.__kodexProfile = {
       longTasks: [],
       layoutShifts: [],
@@ -442,13 +445,13 @@ async function installPerfObserver(context, seedWorkspace) {
       try {
         window.localStorage.clear();
         if (seed) {
-          window.localStorage.setItem("kodex.workspace.panes.v1", JSON.stringify(seed));
+          window.localStorage.setItem(`kodex.instance.${encodeURIComponent(instanceId)}:kodex.workspace.panes.v1`, JSON.stringify(seed));
         }
       } catch {
         // Storage is best-effort profile setup; sandboxed iframes can reject access.
       }
     }
-  }, { seed: seedWorkspace ?? null });
+  }, { seed: seedWorkspace ?? null, instanceId });
 }
 
 async function writeReports({ results, threadTargets }) {

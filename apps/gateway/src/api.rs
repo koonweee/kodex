@@ -152,7 +152,6 @@ pub struct AppState {
     pub subagents: SubagentProjection,
     pub thread_presence: crate::thread_presence::ThreadPresence,
     pub thread_views: ThreadViewStore,
-    pub title_generation: crate::title_generation::TitleGenerationService,
     pub chat_cwd_cache: crate::routes::threads::ChatCwdCache,
     pub thread_input_locks: crate::turn_lifecycle::ThreadInputLocks,
     pub terminals: crate::terminal::TerminalManager,
@@ -164,7 +163,10 @@ impl AppState {
         let notifications =
             crate::notifications::NotificationService::from_config(&config.notifications);
         let config = Arc::new(config);
-        let terminals = crate::terminal::TerminalManager::new(config.projects.home_dir.clone());
+        let terminals = crate::terminal::TerminalManager::new(
+            config.projects.home_dir.clone(),
+            config.codex.home.clone(),
+        );
         Self {
             previews: crate::previews::PreviewManager::new(config.clone()),
             config,
@@ -176,7 +178,6 @@ impl AppState {
             subagents: SubagentProjection::default(),
             thread_presence: crate::thread_presence::ThreadPresence::default(),
             thread_views: ThreadViewStore::default(),
-            title_generation: crate::title_generation::TitleGenerationService::default(),
             chat_cwd_cache: crate::routes::threads::ChatCwdCache::default(),
             thread_input_locks: crate::turn_lifecycle::ThreadInputLocks::default(),
             terminals,
@@ -188,14 +189,6 @@ impl AppState {
         sender: Arc<dyn crate::notifications::PushSender>,
     ) -> Self {
         self.notifications = crate::notifications::NotificationService::new(sender);
-        self
-    }
-
-    pub fn with_title_generation_service(
-        mut self,
-        service: crate::title_generation::TitleGenerationService,
-    ) -> Self {
-        self.title_generation = service;
         self
     }
 }

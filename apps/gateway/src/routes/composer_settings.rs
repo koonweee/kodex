@@ -40,7 +40,11 @@ pub async fn read_composer_settings(
     Query(query): Query<ComposerSettingsQuery>,
 ) -> ApiResult<Json<ComposerSettingsResponse>> {
     let cwd = match query.project_id {
-        Some(project_id) => Some(state.store.get_project(&project_id).await?.cwd),
+        Some(project_id) => Some(
+            super::projects::read_project_with_cwd(&state, &project_id)
+                .await?
+                .cwd,
+        ),
         None => None,
     };
 

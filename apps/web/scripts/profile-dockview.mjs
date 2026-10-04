@@ -15,6 +15,7 @@ const DIST_DIR = path.join(WEB_DIR, "dist");
 const OUT_ROOT = path.join(REPO_ROOT, "tmp", "dockview-profiling");
 const RUN_ID = new Date().toISOString().replace(/[:.]/g, "-");
 const OUT_DIR = path.join(OUT_ROOT, RUN_ID);
+const INSTANCE_ID = "dockview-profile";
 const cliOptions = parseCliOptions(process.argv.slice(2));
 const COMPOSER_TYPING_TEXT = "Profile prompt ".repeat(cliOptions.typingRepeat);
 const TRACE_CATEGORIES = [
@@ -519,7 +520,7 @@ function contextOptions(scenario) {
 }
 
 async function installPerfObserver(context, seedWorkspace, colorScheme) {
-  await context.addInitScript(({ seed, scheme }) => {
+  await context.addInitScript(({ seed, scheme, instanceId }) => {
     window.__kodexProfile = {
       longTasks: [],
       layoutShifts: [],
@@ -558,13 +559,13 @@ async function installPerfObserver(context, seedWorkspace, colorScheme) {
           window.localStorage.setItem("kodex-color-scheme", scheme);
         }
         if (seed) {
-          window.localStorage.setItem("kodex.workspace.panes.v1", JSON.stringify(seed));
+          window.localStorage.setItem(`kodex.instance.${encodeURIComponent(instanceId)}:kodex.workspace.panes.v1`, JSON.stringify(seed));
         }
       } catch {
         // Storage can be unavailable in restricted profiling contexts.
       }
     }
-  }, { seed: seedWorkspace ?? null, scheme: colorScheme ?? null });
+  }, { seed: seedWorkspace ?? null, scheme: colorScheme ?? null, instanceId: INSTANCE_ID });
 }
 
 async function collectMetrics(page, client) {
@@ -724,7 +725,7 @@ async function runAgentBrowserProfiles(baseUrl) {
           "--session",
           session,
           "eval",
-          `localStorage.setItem("kodex.workspace.panes.v1", ${JSON.stringify(JSON.stringify(item.setup))});`,
+          `localStorage.setItem(${JSON.stringify(`kodex.instance.${encodeURIComponent(INSTANCE_ID)}:kodex.workspace.panes.v1`)}, ${JSON.stringify(JSON.stringify(item.setup))});`,
         ]);
       }
       await agent(["--session", session, "profiler", "start"]);
@@ -958,6 +959,7 @@ async function handleApi({ activeScenario, request, response, terminalSessions, 
   if (key === "GET /v1/capabilities") {
     json(response, {
       gateway: {
+        instanceId: INSTANCE_ID,
         version: "0.1.0",
         sse: true,
         approvals: true,

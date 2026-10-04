@@ -1,8 +1,9 @@
 import type { Project } from "../api/client";
+import type { InstanceStorage } from "../api/instanceStorage";
 
 const SIDEBAR_PROJECT_ORDER_STORAGE_KEY = "kodex.sidebar.projectOrder";
 
-export function loadSidebarProjectOrder(storage: Storage | null = browserStorage()): string[] | null {
+export function loadSidebarProjectOrder(storage: InstanceStorage | null = null): string[] | null {
   if (!storage) {
     return null;
   }
@@ -23,7 +24,7 @@ export function loadSidebarProjectOrder(storage: Storage | null = browserStorage
   }
 }
 
-export function saveSidebarProjectOrder(orderIds: string[], storage: Storage | null = browserStorage()) {
+export function saveSidebarProjectOrder(orderIds: string[], storage: InstanceStorage | null = null) {
   if (!storage) {
     return;
   }
@@ -87,8 +88,4 @@ function compareProjectsByCreatedDesc(left: Project, right: Project): number {
 function timestamp(value: string): number {
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-function browserStorage(): Storage | null {
-  return typeof window === "undefined" ? null : window.localStorage;
 }

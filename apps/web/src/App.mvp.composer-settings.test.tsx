@@ -176,7 +176,7 @@ describe("MVP composer settings flows", () => {
     });
   }, 20_000);
 
-  it("hydrates and updates composer model effort and fast mode without browser storage or permission writes", async () => {
+  it("hydrates and updates composer model effort and fast mode without storing shared settings or writing permissions", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const storageSpy = vi.spyOn(Storage.prototype, "setItem");
     let latestThread: Record<string, unknown> = { ...thread, model: "gpt-5.4", reasoningEffort: "high", serviceTier: "fast", rawPayload: {} };
@@ -205,7 +205,6 @@ describe("MVP composer settings flows", () => {
     await userEvent.click(screen.getByRole("button", { name: /model: gpt-5\.4, medium/i }));
     await clickFastSwitch();
     expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(0);
-    expect(storageSpy).not.toHaveBeenCalled();
 
     await userEvent.type(screen.getByLabelText(/message composer/i), "Use normal speed");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
@@ -220,6 +219,10 @@ describe("MVP composer settings flows", () => {
       model: "gpt-5.4",
       serviceTier: null,
     });
+    // Theme and presence identity are browser-local; shared composer choices are not.
+    expect(storageSpy.mock.calls.filter(([key]) =>
+      key !== "kodex-color-scheme" && key !== "kodex.threadViewPresenceClientId",
+    )).toEqual([]);
   });
 
   it("does not show a global error banner when composer settings are unavailable on first load", async () => {

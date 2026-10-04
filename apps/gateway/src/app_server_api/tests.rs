@@ -53,6 +53,7 @@ impl AppServer for RecordingServer {
 #[derive(Default)]
 struct NotMaterializedHistoryServer {
     requests: StdMutex<Vec<(String, Value)>>,
+    turns_error: Option<&'static str>,
 }
 
 #[async_trait]
@@ -72,15 +73,16 @@ impl AppServer for NotMaterializedHistoryServer {
             .push((method.to_string(), params));
         if method == "thread/turns/list" {
             return Err(ApiError::BadGateway(
-                    "app-server error -32600: thread thread-1 is not materialized yet; thread/turns/list is unavailable before first user message".to_string(),
+                    self.turns_error.unwrap_or("app-server error -32600: thread thread-1 is not materialized yet; thread/turns/list is unavailable before first user message").to_string(),
                 ));
         }
         Ok(json!({
             "thread": {
                 "id": "thread-1",
-                "cliVersion": "0.130.0",
+                "cliVersion": "0.160.0",
                 "cwd": "/workspace",
                 "ephemeral": false,
+                "historyMode": "paginated",
                 "modelProvider": "openai",
                 "preview": "pending",
                 "source": "cli",
@@ -109,16 +111,16 @@ async fn adapter_maps_thread_and_turn_methods() {
         .thread_start(
             "project-1".to_string(),
             "/workspace".to_string(),
-            json!({"prompt": "hi"}),
+            json!({"model": "gpt-6"}),
         )
         .await
         .unwrap();
     let _ = client
-        .thread_resume("thread-1".to_string(), json!({"target": "latest"}))
+        .thread_resume("thread-1".to_string(), json!({}))
         .await
         .unwrap();
     let _ = client
-        .thread_fork("thread-1".to_string(), json!({"fromItemId": "item-1"}))
+        .thread_fork("thread-1".to_string(), json!({"lastTurnId": "turn-0"}))
         .await
         .unwrap();
     let _ = client
@@ -135,16 +137,89 @@ async fn adapter_maps_thread_and_turn_methods() {
 
     let requests = server.requests.lock().unwrap();
     assert_eq!(requests[0].0, "thread/start");
-    assert_eq!(requests[0].1["projectId"], "project-1");
-    assert_eq!(requests[0].1["cwd"], "/workspace");
-    assert_eq!(requests[0].1["persistExtendedHistory"], true);
+    assert_eq!(
+        requests[0].1,
+        json!({
+            "projectId": "project-1",
+            "cwd": "/workspace",
+            "model": "gpt-6",
+            "historyMode": "paginated",
+        })
+    );
     assert_eq!(requests[1].0, "thread/resume");
-    assert_eq!(requests[1].1["persistExtendedHistory"], true);
-    assert_eq!(requests[1].1["excludeTurns"], true);
+    assert_eq!(
+        requests[1].1,
+        json!({"threadId": "thread-1", "excludeTurns": true})
+    );
     assert_eq!(requests[2].0, "thread/fork");
-    assert_eq!(requests[2].1["persistExtendedHistory"], true);
+    assert_eq!(
+        requests[2].1,
+        json!({
+            "threadId": "thread-1",
+            "lastTurnId": "turn-0",
+            "excludeTurns": true,
+        })
+    );
     assert_eq!(requests[3].0, "turn/steer");
     assert_eq!(requests[3].1["expectedTurnId"], "turn-1");
+}
+
+#[test]
+fn mcp_status_accepts_native_unknown_auth_status() {
+    let page = McpServerStatusPage::from_payload(json!({
+        "data": [{
+            "name": "starting-server",
+            "authStatus": "unknown",
+            "tools": {},
+            "resources": [],
+            "resourceTemplates": [],
+        }],
+        "nextCursor": null,
+    }))
+    .unwrap();
+
+    assert_eq!(
+        serde_json::to_value(page.data[0].auth_status).unwrap(),
+        "unknown"
+    );
+}
+
+#[test]
+fn timeline_payload_preserves_native_input_correlation_and_subagent_identity() {
+    let user = compact_timeline_item_payload(&json!({
+        "id": "user-1",
+        "type": "userMessage",
+        "clientId": "input-1",
+        "content": [{"type": "text", "text": "continue", "text_elements": []}],
+    }));
+    assert_eq!(serde_json::to_value(user).unwrap()["clientId"], "input-1");
+
+    let activity = compact_timeline_item_payload(&json!({
+        "id": "activity-1",
+        "type": "subAgentActivity",
+        "kind": "started",
+        "agentThreadId": "child-1",
+        "agentPath": "/root/child",
+    }));
+    let serialized = serde_json::to_value(activity).unwrap();
+    assert_eq!(serialized["kind"], "started");
+    assert_eq!(serialized["agentThreadId"], "child-1");
+    assert_eq!(serialized["agentPath"], "/root/child");
+}
+
+#[test]
+fn timeline_payload_preserves_async_agent_question_delivery() {
+    let questions = json!([{"title": "Choose a color", "options": ["Blue", "Green"]}]);
+    let item = compact_timeline_item_payload(&json!({
+        "id": "agent-1",
+        "type": "agentMessage",
+        "text": "Which color should I use?",
+        "delivery": "async",
+        "questions": questions,
+    }));
+    let serialized = serde_json::to_value(item).unwrap();
+    assert_eq!(serialized["delivery"], "async");
+    assert_eq!(serialized["questions"], questions);
 }
 
 #[tokio::test]
@@ -464,6 +539,50 @@ async fn thread_read_full_history_returns_thread_shell_when_turns_not_materializ
     let requests = server.requests.lock().unwrap();
     assert_eq!(requests[0].0, "thread/read");
     assert_eq!(requests[1].0, "thread/turns/list");
+}
+
+#[tokio::test]
+async fn recent_history_before_first_user_message_returns_an_empty_native_window() {
+    let server = Arc::new(NotMaterializedHistoryServer::default());
+    let client = CodexClient::new(server.clone());
+
+    let response = client
+        .thread_read_history_window("thread-1".to_string(), 50)
+        .await
+        .unwrap();
+
+    assert_eq!(response.thread.id, "thread-1");
+    assert!(response.turns.is_empty());
+    assert_eq!(response.thread.last_completed_agent_turn_seq, None);
+    let page = response.history_page.unwrap();
+    assert_eq!(page.loaded_turn_count, 0);
+    assert!(!page.has_older);
+    assert_eq!(page.older_cursor, None);
+    assert_eq!(page.newer_cursor, None);
+    let requests = server.requests.lock().unwrap();
+    assert_eq!(requests[0].1["includeTurns"], false);
+    assert!(requests
+        .iter()
+        .all(|(method, _)| { method == "thread/read" || method == "thread/turns/list" }));
+}
+
+#[tokio::test]
+async fn unsupported_native_history_is_not_misreported_as_an_empty_thread() {
+    let server = Arc::new(NotMaterializedHistoryServer {
+        turns_error: Some("app-server error -32601: list_turns is not supported yet"),
+        ..Default::default()
+    });
+    let client = CodexClient::new(server.clone());
+
+    let error = client
+        .thread_read_history_window("thread-1".to_string(), 50)
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(error, ApiError::BadGateway(message) if message.contains("list_turns is not supported yet"))
+    );
+    assert_eq!(server.requests.lock().unwrap().len(), 2);
 }
 
 #[test]

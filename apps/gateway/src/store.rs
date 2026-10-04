@@ -3,7 +3,10 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::{sqlite::SqlitePoolOptions, Pool, Row, Sqlite};
+use sqlx::{
+    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
+    Pool, Row, Sqlite,
+};
 use utoipa::ToSchema;
 
 use crate::{
@@ -676,10 +679,13 @@ impl Store {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        let url = format!("sqlite://{}?mode=rwc", path.display());
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
-            .connect(&url)
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(path)
+                    .create_if_missing(true),
+            )
             .await?;
         let store = Self { pool };
         store.migrate().await?;
@@ -1007,4 +1013,28 @@ fn payload_has_terminal_turn_status(payload: &Value) -> bool {
                 "completed" | "failed" | "cancelled" | "canceled" | "interrupted"
             )
         })
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+    #[tokio::test]
+    async fn database_path_is_a_literal_filename_not_a_sqlite_url() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("gateway?mode=ro#native.db");
+        let store = Store::connect(&path).await.unwrap();
+        assert!(path.is_file());
+        sqlx::query("CREATE TABLE filename_fixture (value TEXT)")
+            .execute(store.pool())
+            .await
+            .unwrap();
+        store.pool().close().await;
+        let reopened = Store::connect(&path).await.unwrap();
+        let table: String =
+            sqlx::query_scalar("SELECT name FROM sqlite_master WHERE name='filename_fixture'")
+                .fetch_one(reopened.pool())
+                .await
+                .unwrap();
+        assert_eq!(table, "filename_fixture");
+    }
 }

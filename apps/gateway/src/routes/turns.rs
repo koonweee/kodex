@@ -202,9 +202,6 @@ pub async fn submit_thread_input(
         )
         .await?;
     }
-    state
-        .title_generation
-        .spawn_for_turn_start(state.clone(), thread_id.clone(), &resolved.input);
     Ok(Json(ThreadInputResponse {
         disposition: ThreadInputDisposition::Started,
         queued_input: None,
@@ -497,9 +494,6 @@ pub async fn start_turn(
         )
         .await?;
     }
-    state
-        .title_generation
-        .spawn_for_turn_start(state.clone(), thread_id.clone(), &resolved.input);
     Ok(Json(response))
 }
 

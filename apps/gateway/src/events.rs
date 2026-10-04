@@ -269,6 +269,17 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             let _ = state.events.send(server_request_event);
 
             if !is_supported_approval_method(&method) {
+                state
+                    .app_server
+                    .respond_error(
+                        &request_id,
+                        crate::app_server::JsonRpcError {
+                            code: -32601,
+                            message: format!("unsupported app-server request: {method}"),
+                            data: None,
+                        },
+                    )
+                    .await?;
                 let warning = state
                     .store
                     .append_event(NewEvent {

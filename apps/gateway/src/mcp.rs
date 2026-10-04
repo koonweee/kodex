@@ -2308,10 +2308,7 @@ mod tests {
             Store::in_memory().await?,
             app_server.clone(),
         );
-        let project = state
-            .store
-            .create_project("Kodex".to_string(), "/workspace".to_string())
-            .await?;
+        let project = app_server.seed_project("Kodex".to_string(), "/workspace".to_string());
         let router = build_router(state);
         let server = tokio::spawn(async move { axum::serve(listener, router).await });
         let service = KodexControlMcp::for_test(gateway_url);
@@ -2357,10 +2354,13 @@ mod tests {
         assert!(started["queuedInput"].is_null());
 
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[0].0, "thread/start");
-        assert_eq!(requests[1].0, "thread/read");
-        assert_eq!(requests[2].0, "turn/start");
-        assert_eq!(requests[2].1["input"][0]["text"], "start now");
+        assert_eq!(requests[0].0, "project/read");
+        assert_eq!(requests[0].1["projectId"], project.id);
+        assert_eq!(requests[1].0, "thread/start");
+        assert_eq!(requests[1].1["projectId"], project.id);
+        assert_eq!(requests[2].0, "thread/read");
+        assert_eq!(requests[3].0, "turn/start");
+        assert_eq!(requests[3].1["input"][0]["text"], "start now");
 
         client.cancel().await?;
         mcp_server.abort();

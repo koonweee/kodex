@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Config {
+    pub instance: InstanceConfig,
     pub server: ServerConfig,
     pub codex: CodexConfig,
     pub database: DatabaseConfig,
@@ -20,6 +21,12 @@ pub struct Config {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct InstanceConfig {
+    pub data_dir: PathBuf,
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ServerConfig {
     pub bind: SocketAddr,
     pub trusted_network_only: bool,
@@ -29,6 +36,7 @@ pub struct ServerConfig {
 pub struct CodexConfig {
     pub binary: String,
     pub args: Vec<String>,
+    pub home: PathBuf,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -76,7 +84,12 @@ pub struct NotificationsConfig {
 
 impl Default for Config {
     fn default() -> Self {
+        let data_dir = default_data_dir();
         Self {
+            instance: InstanceConfig {
+                data_dir: data_dir.clone(),
+                id: uuid::Uuid::new_v4().to_string(),
+            },
             server: ServerConfig {
                 bind: "127.0.0.1:8787"
                     .parse()
@@ -85,6 +98,7 @@ impl Default for Config {
             },
             codex: CodexConfig {
                 binary: "codex".to_string(),
+                home: data_dir.join("codex-home"),
                 args: vec![
                     "app-server".to_string(),
                     "--listen".to_string(),
@@ -248,7 +262,7 @@ fn default_data_dir() -> PathBuf {
     env::var_os("KODEX_DATA_DIR")
         .map(PathBuf::from)
         .map(expand_home_path)
-        .unwrap_or_else(|| home_dir().join(".kodex"))
+        .unwrap_or_else(|| home_dir().join(".kodex").join("native-v1"))
 }
 
 fn default_uploads_dir() -> PathBuf {
@@ -296,7 +310,7 @@ mod tests {
     #[test]
     fn default_database_lives_under_kodex_home() {
         let path = Config::default().database.path;
-        assert!(path.ends_with(".kodex/gateway.db"));
+        assert!(path.ends_with(".kodex/native-v1/gateway.db"));
     }
 
     #[test]

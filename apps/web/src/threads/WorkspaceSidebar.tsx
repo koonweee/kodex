@@ -43,6 +43,7 @@ import {
 } from "react";
 
 import type { AccountResponse, Approval, Project, ThreadSummary } from "../api/client";
+import { useGatewayInstanceStorage } from "../api/GatewayInstanceBoundary";
 import type { UsageLimitLines } from "../account/rateLimits";
 import { SidebarAccountMenu } from "../account/SidebarAccountFooter";
 import { useInputCapabilities } from "../shared/inputCapabilities";
@@ -221,9 +222,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   threadsByProjectId: ThreadsByProjectId;
   usageLimitLines?: UsageLimitLines | null;
 }) {
+  const instanceStorage = useGatewayInstanceStorage();
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
   const [sidebarDisclosureState, setSidebarDisclosureState] = useState<SidebarDisclosureState>(() =>
-    loadSidebarDisclosureState(),
+    loadSidebarDisclosureState(instanceStorage),
   );
   const [chatThreadsExpanded, setChatThreadsExpanded] = useState(false);
   const [expandedThreadProjectIds, setExpandedThreadProjectIds] = useState<Set<string>>(() => new Set());
@@ -436,7 +438,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   function updateSidebarDisclosureState(updater: (current: SidebarDisclosureState) => SidebarDisclosureState) {
     setSidebarDisclosureState((current) => {
       const next = updater(current);
-      saveSidebarDisclosureState(next);
+      saveSidebarDisclosureState(next, instanceStorage);
       return next;
     });
   }

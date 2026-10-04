@@ -1,0 +1,2 @@
+codex-cli 0.160.0
+generated with: "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex" app-server generate-json-schema --experimental --out apps/gateway/app-server-schema/0.160.0/json

@@ -12,6 +12,10 @@ export function currentKodexRoute(): KodexRoute {
   return parseKodexLocation(window.location);
 }
 
+export function isThemeWorkbenchRoute(): boolean {
+  return typeof window !== "undefined" && window.location.pathname === "/__theme";
+}
+
 function currentLocationPath(): string {
   return `${window.location.pathname}${window.location.search}`;
 }

@@ -9,13 +9,14 @@ import {
   type ThreadSummary,
   type TimelineSkillMention,
 } from "../api/client";
+import { useGatewayInstanceStorage } from "../api/GatewayInstanceBoundary";
 import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
 import { recordLiveEvent } from "../events/liveDiagnostics";
 import { createEventStreamClient } from "../events/stream";
 import { layoutMatchesWorkspacePanes } from "./workspaceLayoutCodec";
 import {
-  browserWorkspacePaneStore,
+  createBrowserWorkspacePaneStore,
   createDraftThreadPane,
   createPaneId,
   ensureWorkspaceHasActivePane,
@@ -163,7 +164,7 @@ export function WorkspaceProvider({
   onThreadSnapshotLoadFailed = () => undefined,
   onThreadSnapshotLoaded = () => undefined,
   onVisibleThreadIdsChange = () => undefined,
-  paneStore = browserWorkspacePaneStore,
+  paneStore: paneStoreOverride,
   publishThreadPaneTimelineAction = noopPublishThreadPaneTimelineAction,
   renderThreadComposer,
   renderThreadPaneAside,
@@ -175,6 +176,11 @@ export function WorkspaceProvider({
   threadSummariesById = {},
   threadActions = {},
 }: WorkspaceProviderProps) {
+  const instanceStorage = useGatewayInstanceStorage();
+  const paneStore = useMemo(
+    () => paneStoreOverride ?? createBrowserWorkspacePaneStore(instanceStorage),
+    [instanceStorage, paneStoreOverride],
+  );
   const liveEventCursorRef = useRef<number | undefined>(undefined);
   const liveEventHandlersRef = useRef(new Set<WorkspaceLiveEventHandler>());
   const onLiveEventRef = useRef(onLiveEvent);

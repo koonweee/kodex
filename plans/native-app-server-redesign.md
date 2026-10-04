@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed. Created 2026-10-04. Implementation has not started.
+Active. Created 2026-10-04; implementation started 2026-10-04. M1 is underway. No milestone exit gate is complete yet.
+
+Current M1 evidence: exact 0.160.0 schemas and adapters are updated; title inference is removed; process version/environment/cleanup checks, fresh-instance path/alias guards, native project handlers and browser identity namespaces are implemented. The full backend suite passes (433 unit tests and two stdio integration tests), as do all 686 frontend unit/component tests, all 13 Playwright flows, formatting, frontend build and both trim scripts. Schema generator fixtures pass, all 440 schemas match the selected executable, and generated frontend types match the Rust OpenAPI export. Independent foundation review passed after fixing Windows environment-name filtering; Windows execution is not verified. A disposable real app-server can create a native project/chat, complete a turn against a local Responses fixture and expose completed canonical history. The empty-chat materialization sequence is verified without a new fallback. First-visit unscoped deep links, foreground stream-reconnect identity checks, sign-in coexistence and cloud-managed storage redirects remain open. The sign-in check found that native browser login can cancel an existing desktop callback listener; native device-code login is the intended simpler alternative to prove. These results do not establish release readiness.
 
 This is the implementation plan for the [native capability audit](../docs/audits/2026-10-04-app-server-native-audit.md) and subsequent product decisions. The audit contains the source evidence and qualifications; this plan defines scope, dependencies, deletion work and acceptance gates. The initial target is Codex **0.160.0 with its experimental schema**, not whichever executable happens to be on `PATH`. A later version change requires checking the contract again.
 
@@ -158,7 +160,7 @@ The remote-preview removal can be an early independent slice after M1; coordinat
 | Native section notifications and live-event replay are incomplete for browser convergence | Keep bounded gateway invalidation/runtime sequencing and reconnect snapshots. Do not add a duplicate durable native store to cover the gap. |
 | No native read/unread or web Push service | Choose a small shared read-marker design and retain necessary delivery records; prove missed-event/two-client convergence and keep Push policy separate. |
 | Native MCP metadata does not cover every widget | Prove native discovery plus result-metadata fallback with scoped resource calls and generated-app approval behavior. |
-| Dedicated home does not isolate project files, ambient skills or every config redirect | Enforce Kodex storage ownership and document the remaining shared filesystem/discovery boundary. Do not build a new workspace sandbox or desktop credential bridge. |
+| Dedicated home does not isolate project files, ambient skills or every config redirect | Enforce Kodex storage ownership and document the remaining shared filesystem/discovery boundary. Local managed config is rejected; cloud-managed requirements can override storage before initialization in 0.160.0 and remain an unresolved release gate. Do not bypass enterprise policy, claim that CLI path pins solve it, or build a new workspace sandbox/desktop credential bridge. |
 
 The queue-restart, terminal-lifetime and automatic-title questions are resolved above. There is no remaining migration or desktop-integration decision. Settings/sidebar simplifications follow the general native-first direction; remaining work is to prove the implementation preserves the retained workflows and correctness guarantees, not to reopen native defaults individually.
 

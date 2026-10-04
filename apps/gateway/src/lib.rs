@@ -10,6 +10,7 @@ pub mod events;
 mod events_replay;
 mod events_synthetic;
 pub mod mcp;
+pub mod native_runtime;
 pub mod notifications;
 pub mod performance;
 pub mod previews;
@@ -26,7 +27,6 @@ mod thread_settings_projection;
 pub mod thread_view;
 pub mod thread_view_patch;
 mod thread_view_projection;
-pub mod title_generation;
 pub mod turn_lifecycle;
 
 pub use api::{build_router, AppState};

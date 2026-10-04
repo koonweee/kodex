@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -52,8 +52,10 @@ describe("app surface pane integration", () => {
     expect(screen.queryByLabelText(/message composer/i)).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /switch workspace pane/i }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: /implement frontend$/i }));
+    const paneManager = await screen.findByRole("dialog", { name: /active panes/i });
+    await userEvent.click(within(paneManager).getByRole("button", { name: /^implement frontend$/i }));
 
+    expect(screen.queryByRole("dialog", { name: /active panes/i })).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toBeInTheDocument();
 

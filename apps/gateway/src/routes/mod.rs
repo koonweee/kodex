@@ -69,7 +69,6 @@ mod tests {
             ThreadLocalSettingsOverlay, ThreadRuntimeState, ThreadRuntimeStatus,
         },
         thread_view,
-        title_generation::{ThreadTitleGenerator, ThreadTitleRequest, TitleGenerationService},
     };
 
     async fn test_state() -> (AppState, Arc<RecordingAppServer>) {
@@ -77,10 +76,7 @@ mod tests {
         let app_server = Arc::new(RecordingAppServer::default());
         app_server.ready.store(true, Ordering::SeqCst);
         (
-            AppState::new(Config::default(), store, app_server.clone())
-                .with_title_generation_service(
-                    crate::title_generation::TitleGenerationService::disabled(),
-                ),
+            AppState::new(Config::default(), store, app_server.clone()),
             app_server,
         )
     }
@@ -1397,7 +1393,7 @@ mod tests {
         let capabilities_body = response_json(capabilities).await;
         assert_eq!(capabilities_body["gateway"]["sse"], true);
         assert_eq!(capabilities_body["appServer"]["ready"], false);
-        assert_eq!(capabilities_body["appServer"]["schemaVersion"], "0.135.0");
+        assert_eq!(capabilities_body["appServer"]["schemaVersion"], "0.160.0");
         assert_eq!(
             capabilities_body["appServer"]["detectedVersionMatchesSchema"],
             Value::Null
@@ -1616,8 +1612,7 @@ mod tests {
     async fn readyz_reports_app_server_incompatibility() {
         let (state, app_server) = test_state().await;
         *app_server.readiness_error.lock().unwrap() = Some(
-            "Codex app-server is incompatible: rejected required persistExtendedHistory field"
-                .to_string(),
+            "configured Codex executable reports 0.159.0; required version is 0.160.0".to_string(),
         );
         let app = build_router(state.clone());
 
@@ -1631,7 +1626,7 @@ mod tests {
         assert_eq!(body["ready"], false);
         assert_eq!(
             body["message"],
-            "Codex app-server is incompatible: rejected required persistExtendedHistory field"
+            "configured Codex executable reports 0.159.0; required version is 0.160.0"
         );
     }
 
@@ -2577,14 +2572,10 @@ mod tests {
     #[tokio::test]
     async fn thread_start_maps_to_app_server() {
         let (state, app_server) = test_state().await;
-        let project = state
-            .store
-            .create_project(
-                "Kodex".to_string(),
-                std::env::current_dir().unwrap().display().to_string(),
-            )
-            .await
-            .unwrap();
+        let project = app_server.seed_project(
+            "Kodex".to_string(),
+            std::env::current_dir().unwrap().display().to_string(),
+        );
         let app = build_router(state);
 
         let body = json!({"projectId": project.id, "payload": {"prompt": "hi"}}).to_string();
@@ -2601,9 +2592,13 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
 
         let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "project/read");
+        assert_eq!(requests[0].1["projectId"], project.id);
+        let requests = &requests[1..];
         assert_eq!(requests[0].0, "thread/start");
+        assert_eq!(requests[0].1["historyMode"], "paginated");
         assert!(requests[0].1.get("cwd").is_some());
-        assert_eq!(requests[0].1["persistExtendedHistory"], true);
+        assert!(requests[0].1.get("persistExtendedHistory").is_none());
     }
 
     #[tokio::test]
@@ -2630,6 +2625,7 @@ mod tests {
         let (state, app_server) = test_state().await;
         let mut renamed_thread = thread_summary("thread-1");
         renamed_thread["name"] = json!("Renamed thread");
+        renamed_thread["preview"] = json!("The original user message");
         renamed_thread["updatedAt"] = json!(1_767_225_700_i64);
         app_server
             .queued_responses
@@ -2652,6 +2648,7 @@ mod tests {
         let body = response_json(response).await;
         assert_eq!(body["thread"]["id"], "thread-1");
         assert_eq!(body["thread"]["name"], "Renamed thread");
+        assert_eq!(body["thread"]["preview"], "The original user message");
         assert_eq!(body["thread"]["updatedAt"], 1_767_225_700_i64);
 
         let requests = app_server.requests.lock().unwrap();
@@ -2667,14 +2664,10 @@ mod tests {
     #[tokio::test]
     async fn thread_start_broadcasts_and_replays_thread_upserted_event() {
         let (state, app_server) = test_state().await;
-        let project = state
-            .store
-            .create_project(
-                "Kodex".to_string(),
-                std::env::current_dir().unwrap().display().to_string(),
-            )
-            .await
-            .unwrap();
+        let project = app_server.seed_project(
+            "Kodex".to_string(),
+            std::env::current_dir().unwrap().display().to_string(),
+        );
         *app_server.next_response.lock().unwrap() = Some(json!({
             "thread": thread_summary("project-thread-1"),
             "cwd": "/workspace"
@@ -2726,11 +2719,7 @@ mod tests {
     #[tokio::test]
     async fn self_control_thread_create_and_input_use_gateway_state_and_source_labels() {
         let (state, app_server) = test_state().await;
-        let project = state
-            .store
-            .create_project("Kodex".to_string(), "/workspace/kodex".to_string())
-            .await
-            .unwrap();
+        let project = app_server.seed_project("Kodex".to_string(), "/workspace/kodex".to_string());
         let mut receiver = state.events.subscribe();
         let app = build_router(state.clone());
 
@@ -2951,12 +2940,8 @@ mod tests {
 
     #[tokio::test]
     async fn self_control_source_type_must_be_kodex_control() {
-        let (state, _) = test_state().await;
-        let project = state
-            .store
-            .create_project("Kodex".to_string(), "/workspace/kodex".to_string())
-            .await
-            .unwrap();
+        let (state, app_server) = test_state().await;
+        let project = app_server.seed_project("Kodex".to_string(), "/workspace/kodex".to_string());
         let app = build_router(state);
 
         let response = app
@@ -2981,17 +2966,13 @@ mod tests {
     #[tokio::test]
     async fn self_control_read_discovery_routes_wrap_gateway_state() {
         let (state, app_server) = test_state().await;
-        let project = state
-            .store
-            .create_project("Kodex".to_string(), "/workspace/kodex".to_string())
-            .await
-            .unwrap();
+        let project = app_server.seed_project("Kodex".to_string(), "/workspace/kodex".to_string());
         app_server
-            .thread_list_responses_by_cwd
+            .thread_list_responses_by_project_id
             .lock()
             .unwrap()
             .insert(
-                "/workspace/kodex".to_string(),
+                project.id.clone(),
                 json!({
                     "data": [thread_summary_with_cwd("thread-project", "/workspace/kodex")],
                     "nextCursor": null,
@@ -3167,11 +3148,7 @@ mod tests {
     #[tokio::test]
     async fn self_control_spawn_is_idempotent_and_enforces_depth() {
         let (state, app_server) = test_state().await;
-        let project = state
-            .store
-            .create_project("Kodex".to_string(), "/workspace/kodex".to_string())
-            .await
-            .unwrap();
+        let project = app_server.seed_project("Kodex".to_string(), "/workspace/kodex".to_string());
         let app = build_router(state);
         let request = json!({
             "projectId": project.id,
@@ -3246,13 +3223,10 @@ mod tests {
     async fn self_control_spawn_retry_reuses_created_thread_after_input_failure() {
         let store = Store::in_memory().await.unwrap();
         let app_server = Arc::new(SpawnInputFailingAppServer::default());
-        let state = AppState::new(Config::default(), store, app_server.clone())
-            .with_title_generation_service(TitleGenerationService::disabled());
-        let project = state
-            .store
-            .create_project("Kodex".to_string(), "/workspace/kodex".to_string())
-            .await
-            .unwrap();
+        let state = AppState::new(Config::default(), store, app_server.clone());
+        let project = app_server
+            .projects
+            .seed_project("Kodex".to_string(), "/workspace/kodex".to_string());
         let app = build_router(state.clone());
         let request = json!({
             "projectId": project.id,
@@ -3492,14 +3466,10 @@ mod tests {
     #[tokio::test]
     async fn thread_start_forwards_initial_composer_settings() {
         let (state, app_server) = test_state().await;
-        let project = state
-            .store
-            .create_project(
-                "Kodex".to_string(),
-                std::env::current_dir().unwrap().display().to_string(),
-            )
-            .await
-            .unwrap();
+        let project = app_server.seed_project(
+            "Kodex".to_string(),
+            std::env::current_dir().unwrap().display().to_string(),
+        );
         *app_server.next_response.lock().unwrap() = Some(json!({
             "thread": {
                 "id": "thread-1",
@@ -3580,6 +3550,9 @@ mod tests {
         assert_eq!(listed["threads"][0]["sandbox"], "workspace-write");
 
         let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "project/read");
+        assert_eq!(requests[0].1["projectId"], project.id);
+        let requests = &requests[1..];
         assert_eq!(requests[0].0, "thread/start");
         assert_eq!(requests[0].1["prompt"], "hi");
         assert_eq!(requests[0].1["model"], "gpt-5.4");
@@ -3589,7 +3562,7 @@ mod tests {
         assert_eq!(requests[0].1["approvalPolicy"], "on-request");
         assert_eq!(requests[0].1["approvalsReviewer"], "auto_review");
         assert_eq!(requests[0].1["sandbox"], "workspace-write");
-        assert_eq!(requests[0].1["persistExtendedHistory"], true);
+        assert!(requests[0].1.get("persistExtendedHistory").is_none());
     }
 
     #[tokio::test]
@@ -3888,11 +3861,7 @@ mod tests {
     async fn permission_profiles_route_paginates_and_resolves_project_cwd() {
         let (state, app_server) = test_state().await;
         let cwd = tempdir().unwrap().path().to_string_lossy().to_string();
-        let project = state
-            .store
-            .create_project("Kodex".to_string(), cwd.clone())
-            .await
-            .unwrap();
+        let project = app_server.seed_project("Kodex".to_string(), cwd.clone());
         app_server.queued_responses.lock().unwrap().extend([
             json!({
                 "data": [
@@ -3931,6 +3900,9 @@ mod tests {
         assert!(body["profiles"][1]["description"].is_null());
 
         let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "project/read");
+        assert_eq!(requests[0].1["projectId"], project.id);
+        let requests = &requests[1..];
         assert_eq!(requests[0].0, "permissionProfile/list");
         assert_eq!(requests[0].1["cwd"], cwd);
         assert!(requests[0].1["cursor"].is_null());
@@ -3942,11 +3914,7 @@ mod tests {
     async fn create_and_turn_start_forward_native_permissions_profile_ids() {
         let (state, app_server) = test_state().await;
         let cwd = tempdir().unwrap().path().to_string_lossy().to_string();
-        let project = state
-            .store
-            .create_project("Kodex".to_string(), cwd)
-            .await
-            .unwrap();
+        let project = app_server.seed_project("Kodex".to_string(), cwd);
         app_server.queued_responses.lock().unwrap().extend([
             json!({
                 "thread": {
@@ -4014,6 +3982,9 @@ mod tests {
         assert_eq!(turn.status(), StatusCode::OK);
 
         let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "project/read");
+        assert_eq!(requests[0].1["projectId"], project.id);
+        let requests = &requests[1..];
         assert_eq!(requests[0].0, "thread/start");
         assert_eq!(requests[0].1["permissions"], "auto-review");
         assert!(requests[0].1.get("approvalPolicy").is_none());
@@ -4240,7 +4211,7 @@ mod tests {
         assert_eq!(requests[0].1["approvalPolicy"], "on-request");
         assert_eq!(requests[0].1["approvalsReviewer"], "auto_review");
         assert_eq!(requests[0].1["sandbox"], "workspace-write");
-        assert_eq!(requests[0].1["persistExtendedHistory"], true);
+        assert!(requests[0].1.get("persistExtendedHistory").is_none());
         let cwd = requests[0].1["cwd"].as_str().unwrap();
         let today = chrono::Local::now()
             .date_naive()
@@ -4453,14 +4424,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thread_list_project_filter_maps_to_cwd() {
+    async fn thread_list_project_filter_forwards_native_membership() {
         let (state, app_server) = test_state().await;
         let cwd = std::env::current_dir().unwrap().display().to_string();
-        let project = state
-            .store
-            .create_project("Kodex".to_string(), cwd.clone())
-            .await
-            .unwrap();
+        let project = app_server.seed_project("Kodex".to_string(), cwd.clone());
         let app = build_router(state);
 
         let response = app
@@ -4475,7 +4442,8 @@ mod tests {
 
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "thread/list");
-        assert_eq!(requests[0].1["cwd"], cwd);
+        assert_eq!(requests[0].1["projectId"], project.id);
+        assert!(requests[0].1.get("cwd").is_none());
         assert_eq!(requests[0].1["sortKey"], "updated_at");
         assert_eq!(requests[0].1["sortDirection"], "desc");
         assert_eq!(requests[0].1["archived"], false);
@@ -4493,22 +4461,14 @@ mod tests {
         std::fs::create_dir_all(&project_two_cwd).unwrap();
         let project_one_cwd = std::fs::canonicalize(project_one_cwd).unwrap();
         let project_two_cwd = std::fs::canonicalize(project_two_cwd).unwrap();
-        let project_one = state
-            .store
-            .create_project(
-                "One".to_string(),
-                project_one_cwd.to_string_lossy().to_string(),
-            )
-            .await
-            .unwrap();
-        let project_two = state
-            .store
-            .create_project(
-                "Two".to_string(),
-                project_two_cwd.to_string_lossy().to_string(),
-            )
-            .await
-            .unwrap();
+        let project_one = app_server.seed_project(
+            "One".to_string(),
+            project_one_cwd.to_string_lossy().to_string(),
+        );
+        let project_two = app_server.seed_project(
+            "Two".to_string(),
+            project_two_cwd.to_string_lossy().to_string(),
+        );
         let pinned_thread = state.store.pin_thread("pinned-thread").await.unwrap();
         state
             .store
@@ -4557,26 +4517,26 @@ mod tests {
         project_two_thread["cwd"] = json!(project_two_cwd.to_string_lossy().to_string());
         let mut chat_thread = thread_summary("chat-thread");
         chat_thread["cwd"] = json!(chat_cwd.to_string_lossy().to_string());
-        let listed_projects = state.store.list_projects().await.unwrap();
-        let mut project_responses_by_cwd = std::collections::HashMap::new();
+        let listed_projects = [project_one.clone(), project_two.clone()];
+        let mut project_responses_by_id = std::collections::HashMap::new();
         for project in &listed_projects {
             if project.id == project_one.id {
-                project_responses_by_cwd.insert(
-                    project.cwd.clone(),
+                project_responses_by_id.insert(
+                    project.id.clone(),
                     json!({"data": [project_one_thread.clone()], "nextCursor": null, "backwardsCursor": null}),
                 );
             } else {
-                project_responses_by_cwd.insert(
-                    project.cwd.clone(),
+                project_responses_by_id.insert(
+                    project.id.clone(),
                     json!({"data": [project_two_thread.clone()], "nextCursor": "project-two-next", "backwardsCursor": null}),
                 );
             }
         }
         app_server
-            .thread_list_responses_by_cwd
+            .thread_list_responses_by_project_id
             .lock()
             .unwrap()
-            .extend(project_responses_by_cwd);
+            .extend(project_responses_by_id);
         let mut queued = Vec::new();
         queued.push(
             json!({"data": [chat_thread], "nextCursor": "chat-next", "backwardsCursor": null}),
@@ -4685,12 +4645,15 @@ mod tests {
         );
 
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 5);
+        assert_eq!(requests.len(), 6);
+        assert_eq!(requests[0].0, "project/list");
         for project in &listed_projects {
             let request = requests
                 .iter()
                 .find(|(method, params)| {
-                    method == "thread/list" && params["cwd"] == project.cwd && params["limit"] == 10
+                    method == "thread/list"
+                        && params["projectId"] == project.id
+                        && params["limit"] == 10
                 })
                 .unwrap();
             assert_eq!(request.1["sortKey"], "updated_at");
@@ -4703,18 +4666,17 @@ mod tests {
                 && params["limit"] == 10
                 && params["archived"] == false
                 && params["useStateDbOnly"] == true
-                && params["cwd"]
-                    .as_array()
-                    .unwrap()
-                    .contains(&Value::String(chat_cwd.to_string_lossy().to_string()))
+                && params["cwd"].as_array().is_some_and(|paths| {
+                    paths.contains(&Value::String(chat_cwd.to_string_lossy().to_string()))
+                })
         }));
         assert!(requests.iter().any(|(method, params)| {
             method == "thread/read"
                 && *params == json!({"threadId": "pinned-thread", "includeTurns": false})
         }));
-        assert_eq!(requests[4].0, "thread/list");
-        assert_eq!(requests[4].1["cwd"], project_two.cwd);
-        assert_eq!(requests[4].1["limit"], 100);
+        assert_eq!(requests[5].0, "thread/list");
+        assert_eq!(requests[5].1["projectId"], project_two.id);
+        assert_eq!(requests[5].1["limit"], 100);
     }
 
     #[tokio::test]
@@ -4722,16 +4684,12 @@ mod tests {
         let store = Store::in_memory().await.unwrap();
         let app_server = Arc::new(BlockingThreadListAppServer::default());
         let state = AppState::new(Config::default(), store, app_server.clone());
-        state
-            .store
-            .create_project("One".to_string(), "/workspace/one".to_string())
-            .await
-            .unwrap();
-        state
-            .store
-            .create_project("Two".to_string(), "/workspace/two".to_string())
-            .await
-            .unwrap();
+        app_server
+            .projects
+            .seed_project("One".to_string(), "/workspace/one".to_string());
+        app_server
+            .projects
+            .seed_project("Two".to_string(), "/workspace/two".to_string());
         let app = build_router(state);
         let release = app_server.release.clone();
 
@@ -4767,11 +4725,7 @@ mod tests {
     async fn thread_list_filters_archived_threads() {
         let (state, app_server) = test_state().await;
         let cwd = std::env::current_dir().unwrap().display().to_string();
-        let project = state
-            .store
-            .create_project("Kodex".to_string(), cwd)
-            .await
-            .unwrap();
+        let project = app_server.seed_project("Kodex".to_string(), cwd);
         let mut archived_thread = thread_summary("archived-thread");
         archived_thread["archived"] = json!(true);
         let visible_thread = thread_summary("visible-thread");
@@ -4801,11 +4755,7 @@ mod tests {
     async fn composer_settings_reads_project_config_and_persists_execution_defaults() {
         let (state, app_server) = test_state().await;
         let cwd = std::env::current_dir().unwrap().display().to_string();
-        let project = state
-            .store
-            .create_project("Kodex".to_string(), cwd.clone())
-            .await
-            .unwrap();
+        let project = app_server.seed_project("Kodex".to_string(), cwd.clone());
         *app_server.next_response.lock().unwrap() = Some(json!({
             "config": {
                 "model": "gpt-5.4",
@@ -4861,6 +4811,9 @@ mod tests {
         assert_eq!(write.status(), StatusCode::OK);
 
         let requests = app_server.requests.lock().unwrap();
+        assert_eq!(requests[0].0, "project/read");
+        assert_eq!(requests[0].1["projectId"], project.id);
+        let requests = &requests[1..];
         assert_eq!(
             requests[0],
             (
@@ -5441,11 +5394,11 @@ mod tests {
         assert_eq!(requests[2].1["itemsView"], "notLoaded");
         assert_eq!(requests[3].0, "thread/resume");
         assert_eq!(requests[3].1["threadId"], "thread-1");
-        assert_eq!(requests[3].1["persistExtendedHistory"], true);
+        assert!(requests[3].1.get("persistExtendedHistory").is_none());
         assert_eq!(requests[3].1["excludeTurns"], true);
         assert_eq!(requests[4].0, "thread/fork");
         assert_eq!(requests[4].1["threadId"], "thread-1");
-        assert_eq!(requests[4].1["persistExtendedHistory"], true);
+        assert!(requests[4].1.get("persistExtendedHistory").is_none());
         assert_eq!(requests[5].0, "thread/archive");
         assert_eq!(requests[5].1["threadId"], "thread-1");
     }
@@ -5533,7 +5486,7 @@ mod tests {
         assert_eq!(requests[0].0, "thread/loaded/list");
         assert_eq!(requests[1].0, "thread/resume");
         assert_eq!(requests[1].1["threadId"], "thread-1");
-        assert_eq!(requests[1].1["persistExtendedHistory"], true);
+        assert!(requests[1].1.get("persistExtendedHistory").is_none());
         assert_eq!(requests[1].1["excludeTurns"], true);
     }
 
@@ -5585,7 +5538,7 @@ mod tests {
         assert_eq!(requests[0].0, "thread/loaded/list");
         assert_eq!(requests[1].0, "thread/resume");
         assert_eq!(requests[1].1["threadId"], "thread-1");
-        assert_eq!(requests[1].1["persistExtendedHistory"], true);
+        assert!(requests[1].1.get("persistExtendedHistory").is_none());
         assert_eq!(requests[1].1["excludeTurns"], true);
     }
 
@@ -7462,8 +7415,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thread_start_requires_stored_project_before_app_server_call() {
+    async fn thread_start_requires_native_project_before_execution() {
         let (state, app_server) = test_state().await;
+        app_server
+            .queued_errors
+            .lock()
+            .unwrap()
+            .push(ApiError::BadGateway(
+                "app-server error -32602: project not found: missing".to_string(),
+            ));
         let app = build_router(state);
 
         let response = app
@@ -7477,8 +7437,12 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        assert!(app_server.requests.lock().unwrap().is_empty());
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        let requests = app_server.requests.lock().unwrap();
+        assert_eq!(
+            *requests,
+            vec![("project/read".to_string(), json!({"projectId":"missing"}))]
+        );
     }
 
     #[tokio::test]
@@ -8648,17 +8612,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thread_input_sets_model_generated_name_after_started_turn() {
+    async fn thread_input_does_not_generate_a_thread_name() {
         let (state, app_server) = test_state().await;
-        let title_generator = Arc::new(RecordingTitleGenerator::new(Some("Implement Naming")));
-        let state = state.with_title_generation_service(TitleGenerationService::with_generator(
-            title_generator.clone(),
-        ));
         app_server.queued_responses.lock().unwrap().extend([
             thread_read_response("thread-1", 0),
             json!({"turnId": "turn-started"}),
-            thread_read_response("thread-1", 1),
-            thread_read_response("thread-1", 1),
         ]);
         let app = build_router(state);
 
@@ -8667,7 +8625,7 @@ mod tests {
                 Request::post("/v1/threads/thread-1/input")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        r#"{"input":[{"type":"text","text":"Create model generated thread naming"}]}"#,
+                        r#"{"input":[{"type":"text","text":"Implement the requested change"}]}"#,
                     ))
                     .unwrap(),
             )
@@ -8676,40 +8634,26 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response_json(response).await["disposition"], "started");
-        wait_for_app_server_method(&app_server, "thread/name/set").await;
+        tokio::task::yield_now().await;
 
-        let title_requests = title_generator.requests.lock().unwrap();
-        assert_eq!(title_requests.len(), 1);
+        let requests = app_server.requests.lock().unwrap();
         assert_eq!(
-            title_requests[0].user_request,
-            "Create model generated thread naming"
+            requests
+                .iter()
+                .map(|(method, _)| method.as_str())
+                .collect::<Vec<_>>(),
+            vec!["thread/read", "turn/start"]
         );
-        drop(title_requests);
-
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[0].0, "thread/read");
-        assert_eq!(requests[1].0, "turn/start");
-        assert!(requests
-            .iter()
-            .any(|(method, params)| method == "thread/read"
-                && params == &json!({"threadId": "thread-1", "includeTurns": true})));
-        assert!(requests
-            .iter()
-            .any(|(method, params)| method == "thread/name/set"
-                && params == &json!({"threadId": "thread-1", "name": "Implement Naming"})));
     }
 
     #[tokio::test]
-    async fn turn_start_sets_model_generated_name_after_started_turn() {
+    async fn turn_start_does_not_generate_a_thread_name() {
         let (state, app_server) = test_state().await;
-        let title_generator = Arc::new(RecordingTitleGenerator::new(Some("Direct Turn Title")));
-        let state = state
-            .with_title_generation_service(TitleGenerationService::with_generator(title_generator));
-        app_server.queued_responses.lock().unwrap().extend([
-            json!({"turnId": "turn-started"}),
-            thread_read_response("thread-1", 1),
-            thread_read_response("thread-1", 1),
-        ]);
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(json!({"turnId": "turn-started"}));
         let app = build_router(state);
 
         let response = app
@@ -8717,7 +8661,7 @@ mod tests {
                 Request::post("/v1/threads/thread-1/turns")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        r#"{"input":[{"type":"text","text":"Name direct turns"}]}"#,
+                        r#"{"input":[{"type":"text","text":"Implement the requested change"}]}"#,
                     ))
                     .unwrap(),
             )
@@ -8725,114 +8669,19 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
-        wait_for_app_server_method(&app_server, "thread/name/set").await;
+        assert_eq!(
+            response_json(response).await["payload"]["turnId"],
+            "turn-started"
+        );
+        tokio::task::yield_now().await;
         let requests = app_server.requests.lock().unwrap();
-        assert!(requests
-            .iter()
-            .any(|(method, params)| method == "thread/name/set"
-                && params == &json!({"threadId": "thread-1", "name": "Direct Turn Title"})));
-    }
-
-    #[tokio::test]
-    async fn model_generated_name_skips_already_named_thread() {
-        let (state, app_server) = test_state().await;
-        let title_generator = Arc::new(RecordingTitleGenerator::new(Some("Should Not Apply")));
-        let state = state.with_title_generation_service(TitleGenerationService::with_generator(
-            title_generator.clone(),
-        ));
-        app_server.queued_responses.lock().unwrap().extend([
-            json!({"turnId": "turn-started"}),
-            named_thread_read_response("thread-1", "User Name", 1),
-        ]);
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::post("/v1/threads/thread-1/turns")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{"input":[{"type":"text","text":"do not rename"}]}"#,
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        wait_for_app_server_request_count(&app_server, "thread/read", 1).await;
-        assert_eq!(title_generator.requests.lock().unwrap().len(), 0);
-        let requests = app_server.requests.lock().unwrap();
-        assert!(requests
-            .iter()
-            .all(|(method, _)| method != "thread/name/set"));
-    }
-
-    #[tokio::test]
-    async fn model_generated_name_skips_threads_after_first_turn() {
-        let (state, app_server) = test_state().await;
-        let title_generator = Arc::new(RecordingTitleGenerator::new(Some("Should Not Apply")));
-        let state = state.with_title_generation_service(TitleGenerationService::with_generator(
-            title_generator.clone(),
-        ));
-        app_server.queued_responses.lock().unwrap().extend([
-            json!({"turnId": "turn-started"}),
-            thread_read_response("thread-1", 2),
-        ]);
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::post("/v1/threads/thread-1/turns")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{"input":[{"type":"text","text":"second turn"}]}"#,
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        wait_for_app_server_request_count(&app_server, "thread/read", 1).await;
-        assert_eq!(title_generator.requests.lock().unwrap().len(), 0);
-        let requests = app_server.requests.lock().unwrap();
-        assert!(requests
-            .iter()
-            .all(|(method, _)| method != "thread/name/set"));
-    }
-
-    #[tokio::test]
-    async fn active_steered_thread_input_does_not_generate_thread_name() {
-        let (state, app_server) = test_state().await;
-        let title_generator = Arc::new(RecordingTitleGenerator::new(Some("Should Not Run")));
-        let state = state.with_title_generation_service(TitleGenerationService::with_generator(
-            title_generator.clone(),
-        ));
-        app_server.queued_responses.lock().unwrap().extend([
-            active_thread_read_response("thread-1", "turn-active"),
-            json!({"turnId": "turn-active"}),
-        ]);
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::post("/v1/threads/thread-1/input")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{"input":[{"type":"text","text":"queue me"}]}"#,
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(response_json(response).await["disposition"], "steered");
-        assert_eq!(title_generator.requests.lock().unwrap().len(), 0);
-        let requests = app_server.requests.lock().unwrap();
-        assert!(requests
-            .iter()
-            .all(|(method, _)| method != "thread/name/set"));
+        assert_eq!(
+            requests
+                .iter()
+                .map(|(method, _)| method.as_str())
+                .collect::<Vec<_>>(),
+            vec!["turn/start"]
+        );
     }
 
     #[tokio::test]
@@ -9969,7 +9818,7 @@ mod tests {
         assert_eq!(requests[1].0, "turn/start");
         assert_eq!(requests[2].0, "thread/resume");
         assert_eq!(requests[2].1["threadId"], "thread-1");
-        assert_eq!(requests[2].1["persistExtendedHistory"], true);
+        assert!(requests[2].1.get("persistExtendedHistory").is_none());
         assert_eq!(requests[2].1["excludeTurns"], true);
         assert_eq!(requests[3].0, "turn/start");
     }
@@ -14426,41 +14275,42 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sse_allows_live_thread_title_notifications() {
+    async fn sse_delivers_native_thread_name_updates_to_each_client() {
         let (state, _) = test_state().await;
         let app = build_router(state.clone());
+        let mut clients = Vec::new();
+        for _ in 0..2 {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::get("/v1/events?threadId=t1")
+                        .header("accept", "text/event-stream")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            clients.push(response.into_body());
+        }
 
-        let response = app
-            .oneshot(
-                Request::get("/v1/events?threadId=t1")
-                    .header("accept", "text/event-stream")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
+        ingest_inbound(
+            InboundMessage::Notification {
+                method: "thread/name/updated".to_string(),
+                params: json!({"threadId": "t1", "threadName": "Manual name"}),
+            },
+            &state,
+        )
+        .await
+        .unwrap();
+        let seq = state.store.latest_event_seq().await.unwrap();
 
-        let title = state
-            .store
-            .append_event(NewEvent {
-                project_id: None,
-                thread_id: Some("t1".to_string()),
-                turn_id: None,
-                item_id: None,
-                kind: "timeline.thread_metadata".to_string(),
-                codex_method: Some("thread/name/updated".to_string()),
-                payload: json!({"threadId": "t1", "threadName": "New title"}),
-            })
-            .await
-            .unwrap();
-        state.events.send(title.clone()).unwrap();
-
-        let mut body = response.into_body();
-        let chunk = next_sse_chunk(&mut body).await;
-        assert!(chunk.contains(&format!("id: {}", title.seq)));
-        assert!(chunk.contains("thread/name/updated"));
-        assert!(chunk.contains("New title"));
+        for body in &mut clients {
+            let chunk = next_sse_chunk(body).await;
+            assert!(chunk.contains(&format!("id: {seq}")));
+            assert!(chunk.contains("thread/name/updated"));
+            assert!(chunk.contains("Manual name"));
+        }
     }
 
     #[tokio::test]
@@ -14659,12 +14509,6 @@ mod tests {
         })
     }
 
-    fn named_thread_read_response(thread_id: &str, name: &str, completed_turns: usize) -> Value {
-        let mut response = thread_read_response(thread_id, completed_turns);
-        response["thread"]["name"] = json!(name);
-        response
-    }
-
     fn active_thread_read_response(thread_id: &str, turn_id: &str) -> Value {
         json!({
             "thread": {
@@ -14702,59 +14546,9 @@ mod tests {
         .unwrap()
     }
 
-    async fn wait_for_app_server_method(app_server: &RecordingAppServer, expected_method: &str) {
-        wait_for_app_server_request_count(app_server, expected_method, 1).await;
-    }
-
-    async fn wait_for_app_server_request_count(
-        app_server: &RecordingAppServer,
-        expected_method: &str,
-        expected_count: usize,
-    ) {
-        timeout(Duration::from_secs(2), async {
-            loop {
-                if app_server
-                    .requests
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .filter(|(method, _)| method == expected_method)
-                    .count()
-                    >= expected_count
-                {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .unwrap();
-    }
-
-    struct RecordingTitleGenerator {
-        title: Option<String>,
-        requests: StdMutex<Vec<ThreadTitleRequest>>,
-    }
-
-    impl RecordingTitleGenerator {
-        fn new(title: Option<&str>) -> Self {
-            Self {
-                title: title.map(str::to_string),
-                requests: StdMutex::new(Vec::new()),
-            }
-        }
-    }
-
-    #[async_trait]
-    impl ThreadTitleGenerator for RecordingTitleGenerator {
-        async fn generate_title(&self, request: ThreadTitleRequest) -> ApiResult<Option<String>> {
-            self.requests.lock().unwrap().push(request);
-            Ok(self.title.clone())
-        }
-    }
-
     #[derive(Default)]
     struct BlockingThreadListAppServer {
+        projects: RecordingAppServer,
         in_flight: AtomicUsize,
         max_in_flight: AtomicUsize,
         total_requests: AtomicUsize,
@@ -14772,7 +14566,10 @@ mod tests {
         }
 
         async fn request(&self, method: &str, params: Value) -> ApiResult<Value> {
-            if method != "thread/list" || !params["cwd"].is_string() {
+            if method.starts_with("project/") {
+                return self.projects.request(method, params).await;
+            }
+            if method != "thread/list" || !params["projectId"].is_string() {
                 return Ok(match method {
                     "thread/read" => json!({"thread": thread_summary("thread-1")}),
                     "thread/list" => {
@@ -14881,6 +14678,7 @@ mod tests {
 
     #[derive(Default)]
     struct SpawnInputFailingAppServer {
+        projects: RecordingAppServer,
         requests: StdMutex<Vec<(String, Value)>>,
         thread_read_requests: AtomicUsize,
     }
@@ -14896,6 +14694,9 @@ mod tests {
         }
 
         async fn request(&self, method: &str, params: Value) -> ApiResult<Value> {
+            if method.starts_with("project/") {
+                return self.projects.request(method, params).await;
+            }
             self.requests
                 .lock()
                 .unwrap()

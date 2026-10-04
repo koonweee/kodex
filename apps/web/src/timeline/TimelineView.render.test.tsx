@@ -438,7 +438,8 @@ describe("TimelineView debug rendering", () => {
       />,
     );
 
-    await user.click(screen.getByText("Modified"));
+    await user.click(screen.getByLabelText("Expand 1 file changed"));
+    await user.click(await screen.findByText("Modified"));
 
     expect(await screen.findByLabelText("File diff for src/file.ts")).toBeInTheDocument();
     expect(screen.getByLabelText("Implement Review Loop skill")).toBeInTheDocument();

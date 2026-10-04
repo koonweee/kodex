@@ -93,7 +93,7 @@ impl CodexClient {
         cwd: String,
         payload: Value,
     ) -> ApiResult<ThreadCommandResponse> {
-        let payload = require_extended_history(merge_path_payload(
+        let payload = require_paginated_history(merge_path_payload(
             "cwd",
             cwd,
             merge_path_payload("projectId", project_id, payload),
@@ -107,7 +107,7 @@ impl CodexClient {
         cwd: String,
         payload: Value,
     ) -> ApiResult<ThreadCommandResponse> {
-        let payload = require_extended_history(merge_path_payload("cwd", cwd, payload));
+        let payload = require_paginated_history(merge_path_payload("cwd", cwd, payload));
         let payload = self.request("thread/start", payload).await?;
         ThreadCommandResponse::from_payload(payload)
     }
@@ -322,9 +322,8 @@ impl CodexClient {
         thread_id: String,
         payload: Value,
     ) -> ApiResult<ThreadCommandResponse> {
-        let payload = require_metadata_only_resume(require_extended_history(merge_path_payload(
-            "threadId", thread_id, payload,
-        )));
+        let payload =
+            require_metadata_only_thread(merge_path_payload("threadId", thread_id, payload));
         let payload = self.request("thread/resume", payload).await?;
         ThreadCommandResponse::from_payload(payload)
     }
@@ -337,7 +336,7 @@ impl CodexClient {
         let payload = self
             .request(
                 "thread/fork",
-                require_extended_history(merge_path_payload("threadId", thread_id, payload)),
+                require_metadata_only_thread(merge_path_payload("threadId", thread_id, payload)),
             )
             .await?;
         ThreadCommandResponse::from_payload(payload)
@@ -778,7 +777,7 @@ impl CodexClient {
         }
     }
 
-    async fn request(&self, method: &str, params: Value) -> ApiResult<Value> {
+    pub(super) async fn request(&self, method: &str, params: Value) -> ApiResult<Value> {
         validate_client_request_params(method, params.clone())?;
         self.app_server.request(method, params).await
     }

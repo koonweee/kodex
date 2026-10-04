@@ -859,6 +859,7 @@ test("keeps large file changes and following skill messages from overlapping", a
   await expect(page.getByLabel("Implement Review Loop skill")).toBeVisible();
   await expectNoRenderedTimelineOverlap(page);
 
+  await page.getByLabel("Expand 23 files changed").click();
   await page.getByText("Modified").first().click();
   await expect(page.getByLabel(/file diff for src\/generated-/i).first()).toBeVisible();
   await expect(page.getByLabel("Implement Review Loop skill")).toBeVisible();
@@ -905,16 +906,11 @@ test("lets thread titles use the expanded sidebar width before truncating", asyn
 
   await page.goto("/threads/thread-1");
 
-  const resizeHandle = page.getByRole("separator", { name: /resize workspace sidebar/i });
-  const handleBox = await resizeHandle.boundingBox();
-  expect(handleBox).not.toBeNull();
-  await resizeHandle.dragTo(resizeHandle, {
-    force: true,
-    sourcePosition: { x: 0, y: handleBox!.height / 2 },
-    targetPosition: { x: 260, y: handleBox!.height / 2 },
-  });
-
   const threadButton = page.locator(".kodex-thread-list-button").first();
+  await expect(threadButton).toBeVisible();
+  await page.getByRole("button", { name: /collapse workspace sidebar/i }).click();
+  await expect(threadButton).toBeHidden();
+  await page.getByRole("button", { name: /expand workspace sidebar/i }).click();
   await expect(threadButton).toBeVisible();
   await threadButton.hover();
 
@@ -1061,6 +1057,7 @@ test("restores selected thread model settings when switching threads", async ({ 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           gateway: {
+            instanceId: "mvp-test-instance",
             version: "0.1.0",
             sse: true,
             approvals: true,
@@ -1303,12 +1300,13 @@ test("restores selected thread model settings when switching threads", async ({ 
 
   await page.goto("/");
 
-  await page.getByRole("button", { name: /start new chat from desktop header/i }).click();
+  await page.getByRole("button", { name: /^chats$/i }).click();
+  await page.getByRole("button", { name: /^new chat$/i }).click();
   await composerInActiveThreadPane(page).fill("mini thread message");
   await sendButtonInActiveThreadPane(page).click();
   await expect(modelButtonInActiveThreadPane(page, /model: gpt-5\.4mini/i)).toBeVisible();
 
-  await page.getByRole("button", { name: /start new chat from desktop header/i }).click();
+  await page.getByRole("button", { name: /^new chat$/i }).click();
   await selectModelInActiveThreadPane(page, "gpt-5.3spark");
   await expect(modelButtonInActiveThreadPane(page, /model: gpt-5\.3spark/i)).toBeVisible();
   await composerInActiveThreadPane(page).fill("spark thread message");
@@ -1460,6 +1458,7 @@ async function responseFor(key: string, route: Route): Promise<{ status?: number
     return {
       body: {
         gateway: {
+          instanceId: "mvp-test-instance",
           version: "0.1.0",
           sse: true,
           approvals: true,

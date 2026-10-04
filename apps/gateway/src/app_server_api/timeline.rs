@@ -780,12 +780,24 @@ fn string_field(value: &Value, field: &str) -> Option<String> {
 pub struct TimelineDisplayItemPayload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
     #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
     pub item_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_thread_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub questions: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -882,9 +894,15 @@ pub(crate) fn compact_timeline_item_payload(item: &Value) -> TimelineDisplayItem
     };
     TimelineDisplayItemPayload {
         id: display_string(object, "id"),
+        client_id: display_string(object, "clientId"),
         item_type: display_string(object, "type"),
+        kind: display_string(object, "kind"),
+        agent_thread_id: display_string(object, "agentThreadId"),
+        agent_path: display_string(object, "agentPath"),
         status: display_string(object, "status"),
         phase: display_string(object, "phase"),
+        delivery: display_string(object, "delivery"),
+        questions: display_value(object, "questions"),
         text: display_string(object, "text"),
         message: display_string(object, "message"),
         content: display_value(object, "content"),

@@ -5,7 +5,7 @@ This guide covers local setup, common workflows, tests, and generated contracts.
 ## Prerequisites
 
 - Rust stable with `cargo` and `rustfmt`.
-- A compatible `codex` binary on `PATH`. The gateway can start API-only without it, but `/readyz` reports `ready: false`.
+- Codex **0.160.0**, selected with `KODEX_CODEX_BINARY` or that exact version on `PATH`. Missing/unknown versions and failed initialization stop gateway startup.
 - Node.js and npm.
 - A C toolchain/linker, `bash`, `curl`, and `jq` for backend builds and smoke checks.
 - Optional: `sqlite3` for inspecting local databases and `tmux` for running both development servers.
@@ -22,8 +22,10 @@ sudo apt-get install -y build-essential pkg-config libsqlite3-dev curl jq sqlite
 Start the gateway from the repository root:
 
 ```bash
-cargo run -p kodex-gateway
+KODEX_DATA_DIR="$(mktemp -d)/instance" KODEX_CODEX_BINARY=/absolute/path/to/codex cargo run -p kodex-gateway
 ```
+
+Use disposable instances during the native redesign. The default new root is `~/.kodex/native-v1/`; `gateway.db` and `codex-home/` must stay inside the selected instance root. Startup refuses unrecognized existing state and takes an exclusive instance lock. Old state stays unopened, with no migration.
 
 Start the web client in another terminal:
 
@@ -61,6 +63,14 @@ npm run trim
 
 Playwright uses mocked gateway responses and starts its own Vite server on `127.0.0.1:5174`.
 
+Install its test browser once with `cd apps/web && npx playwright install chromium --only-shell`. The real app-server integration test is opt-in and uses a disposable home with a local Responses fixture, without existing credentials:
+
+```bash
+KODEX_TEST_CODEX_BINARY=/absolute/path/to/codex cargo test -p kodex-gateway --test native_app_server -- --ignored --nocapture
+```
+
+That fixture does not establish completed interactive account sign-in or release readiness.
+
 ## Production-style local serving
 
 Build the web app and have the gateway serve the static assets:
@@ -94,6 +104,14 @@ cd apps/web
 npm run generate:api
 ```
 
+For contract generation without starting a runtime, export the same Rust definition and run the generator against that file:
+
+```bash
+cargo run -q -p kodex-gateway --example export_openapi > /tmp/kodex-openapi.json
+cd apps/web
+npx openapi-typescript /tmp/kodex-openapi.json -o src/api/generated/schema.ts
+```
+
 The output lives at `apps/web/src/api/generated/schema.ts`. Do not hand-write duplicate frontend DTOs or a separate route contract.
 
 ### Codex app-server schema
@@ -101,7 +119,7 @@ The output lives at `apps/web/src/api/generated/schema.ts`. Do not hand-write du
 The checked-in schema is generated from the exact Codex binary used for compatibility testing, with experimental API output enabled. After changing Codex versions, run:
 
 ```bash
-apps/gateway/scripts/generate-app-server-schema.sh
+bash apps/gateway/scripts/generate-app-server-schema.sh 0.160.0 /absolute/path/to/codex
 ```
 
 Keep the configured Codex binary version aligned with `apps/gateway/app-server-schema/<version>/VERSION`.

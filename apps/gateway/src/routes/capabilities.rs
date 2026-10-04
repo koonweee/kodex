@@ -20,6 +20,7 @@ pub struct CapabilitiesResponse {
 #[serde(rename_all = "camelCase")]
 pub struct GatewayCapabilities {
     pub version: String,
+    pub instance_id: String,
     pub sse: bool,
     pub approvals: bool,
     pub terminals: TerminalCapabilities,
@@ -53,6 +54,7 @@ pub async fn capabilities(State(state): State<AppState>) -> Json<CapabilitiesRes
     Json(CapabilitiesResponse {
         gateway: GatewayCapabilities {
             version: env!("CARGO_PKG_VERSION").to_string(),
+            instance_id: state.config.instance.id.clone(),
             sse: true,
             approvals: true,
             terminals: TerminalCapabilities { enabled: true },

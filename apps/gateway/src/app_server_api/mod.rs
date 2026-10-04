@@ -8,10 +8,12 @@ use utoipa::ToSchema;
 use crate::error::{ApiError, ApiResult};
 
 mod client;
+mod projects;
 
 mod timeline;
 pub(crate) use client::is_thread_not_materialized_before_first_user_message;
 pub use client::{client, CodexClient};
+pub use projects::{NativeProject, NativeProjectPage, NativeProjectRoot};
 #[cfg(test)]
 pub(crate) use timeline::TIMELINE_PREVIEW_STRING_LIMIT;
 pub(crate) use timeline::{
@@ -225,6 +227,7 @@ pub struct McpServerStatus {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum McpAuthStatus {
+    Unknown,
     Unsupported,
     NotLoggedIn,
     BearerToken,
@@ -2500,12 +2503,12 @@ fn merge_path_payload(field: &str, value: String, payload: Value) -> Value {
     payload
 }
 
-fn require_extended_history(mut payload: Value) -> Value {
-    payload["persistExtendedHistory"] = Value::Bool(true);
+fn require_paginated_history(mut payload: Value) -> Value {
+    payload["historyMode"] = Value::String("paginated".to_string());
     payload
 }
 
-fn require_metadata_only_resume(mut payload: Value) -> Value {
+fn require_metadata_only_thread(mut payload: Value) -> Value {
     payload["excludeTurns"] = Value::Bool(true);
     payload
 }

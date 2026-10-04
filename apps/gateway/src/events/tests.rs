@@ -1203,3 +1203,29 @@ async fn thread_metadata_patch_preserves_omitted_git_info_fields() {
     assert!(normalized.payload["gitInfo"].get("branch").is_none());
     assert_eq!(normalized.payload["gitInfo"]["sha"], "abc123");
 }
+
+#[tokio::test]
+async fn unsupported_callback_returns_method_not_found_instead_of_hanging() {
+    let (state, app_server) = test_state_with_app_server().await;
+    ingest_inbound(
+        InboundMessage::ServerRequest {
+            request_id: "42".into(),
+            method: "unknown/request".into(),
+            params: json!({"threadId":"thread-1"}),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+    let errors = app_server.error_responses.lock().unwrap();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].0, "42");
+    assert_eq!(errors[0].1.code, -32601);
+    assert!(errors[0].1.message.contains("unknown/request"));
+    assert!(state
+        .store
+        .list_approvals(None, None)
+        .await
+        .unwrap()
+        .is_empty());
+}

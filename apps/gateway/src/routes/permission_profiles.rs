@@ -35,7 +35,11 @@ pub async fn list_permission_profiles(
     Query(query): Query<PermissionProfilesQuery>,
 ) -> ApiResult<Json<PermissionProfileListResponse>> {
     let cwd = match (query.project_id, query.cwd) {
-        (Some(project_id), _) => Some(state.store.get_project(&project_id).await?.cwd),
+        (Some(project_id), _) => Some(
+            super::projects::read_project_with_cwd(&state, &project_id)
+                .await?
+                .cwd,
+        ),
         (None, cwd) => cwd,
     };
     let client = app_server_api::client(&state.app_server);

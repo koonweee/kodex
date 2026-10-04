@@ -1,3 +1,5 @@
+import type { InstanceStorage } from "../api/instanceStorage";
+
 export const SIDEBAR_DISCLOSURE_STORAGE_KEY = "kodex.sidebar.disclosureState";
 
 export type SidebarDisclosureState = {
@@ -21,7 +23,7 @@ type SidebarDisclosureStorageValue = {
   projectsSectionCollapsed?: unknown;
 };
 
-export function loadSidebarDisclosureState(storage: Storage | null = browserStorage()): SidebarDisclosureState {
+export function loadSidebarDisclosureState(storage: InstanceStorage | null = null): SidebarDisclosureState {
   if (!storage) {
     return cloneDefaultState();
   }
@@ -54,7 +56,7 @@ export function loadSidebarDisclosureState(storage: Storage | null = browserStor
 
 export function saveSidebarDisclosureState(
   state: SidebarDisclosureState,
-  storage: Storage | null = browserStorage(),
+  storage: InstanceStorage | null = null,
 ) {
   if (!storage) {
     return;
@@ -80,8 +82,4 @@ function cloneDefaultState(): SidebarDisclosureState {
     ...DEFAULT_SIDEBAR_DISCLOSURE_STATE,
     collapsedProjectIds: new Set(DEFAULT_SIDEBAR_DISCLOSURE_STATE.collapsedProjectIds),
   };
-}
-
-function browserStorage(): Storage | null {
-  return typeof window === "undefined" ? null : window.localStorage;
 }

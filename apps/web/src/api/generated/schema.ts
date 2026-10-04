@@ -2336,6 +2336,7 @@ export interface components {
         CreateProjectRequest: {
             createDirectory?: boolean | null;
             cwd: string;
+            idempotencyKey?: string | null;
             name?: string | null;
         };
         CreateTerminalSession: {
@@ -2396,6 +2397,7 @@ export interface components {
         GatewayCapabilities: {
             approvals: boolean;
             gatewayAuth: boolean;
+            instanceId: string;
             sse: boolean;
             terminals: components["schemas"]["TerminalCapabilities"];
             trustedNetworkOnly: boolean;
@@ -2473,7 +2475,7 @@ export interface components {
             message: string;
         };
         /** @enum {string} */
-        McpAuthStatus: "unsupported" | "notLoggedIn" | "bearerToken" | "oAuth";
+        McpAuthStatus: "unknown" | "unsupported" | "notLoggedIn" | "bearerToken" | "oAuth";
         McpConfigMutationResponse: {
             configuredServer?: null | components["schemas"]["ConfiguredMcpServer"];
             reload: components["schemas"]["McpReloadResponse"];
@@ -3597,7 +3599,9 @@ export interface components {
         TimelineDisplayItemPayload: {
             action?: unknown;
             agentNickname?: string | null;
+            agentPath?: string | null;
             agentRole?: string | null;
+            agentThreadId?: string | null;
             agent_nickname?: string | null;
             agent_role?: string | null;
             agentsStates?: unknown;
@@ -3605,12 +3609,15 @@ export interface components {
             arguments?: unknown;
             change?: unknown;
             changes?: unknown;
+            clientId?: string | null;
             command?: string | null;
             content?: unknown;
             cwd?: string | null;
+            delivery?: string | null;
             diff?: string | null;
             fileAttachments?: components["schemas"]["TimelineFileAttachment"][];
             id?: string | null;
+            kind?: string | null;
             message?: string | null;
             model?: string | null;
             name?: string | null;
@@ -3619,6 +3626,7 @@ export interface components {
             phase?: string | null;
             prompt?: string | null;
             query?: string | null;
+            questions?: unknown;
             reasoningEffort?: string | null;
             receiverThreadIds?: string[] | null;
             result?: string | null;

@@ -5,54 +5,54 @@ use serde_json::{json, Value};
 
 use crate::error::{ApiError, ApiResult};
 
-pub const APP_SERVER_SCHEMA_VERSION: &str = "0.135.0";
+pub const APP_SERVER_SCHEMA_VERSION: &str = "0.160.0";
 
 static CLIENT_REQUEST_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.135.0/json/ClientRequest.json"
+        "../app-server-schema/0.160.0/json/ClientRequest.json"
     ))
 });
 
 static CLIENT_NOTIFICATION_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.135.0/json/ClientNotification.json"
+        "../app-server-schema/0.160.0/json/ClientNotification.json"
     ))
 });
 
 #[cfg(test)]
 static SERVER_NOTIFICATION_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.135.0/json/ServerNotification.json"
+        "../app-server-schema/0.160.0/json/ServerNotification.json"
     ))
 });
 
 static COMMAND_APPROVAL_RESPONSE_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.135.0/json/CommandExecutionRequestApprovalResponse.json"
+        "../app-server-schema/0.160.0/json/CommandExecutionRequestApprovalResponse.json"
     ))
 });
 
 static FILE_CHANGE_APPROVAL_RESPONSE_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.135.0/json/FileChangeRequestApprovalResponse.json"
+        "../app-server-schema/0.160.0/json/FileChangeRequestApprovalResponse.json"
     ))
 });
 
 static PERMISSIONS_APPROVAL_RESPONSE_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.135.0/json/PermissionsRequestApprovalResponse.json"
+        "../app-server-schema/0.160.0/json/PermissionsRequestApprovalResponse.json"
     ))
 });
 
 static MCP_ELICITATION_RESPONSE_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.135.0/json/McpServerElicitationRequestResponse.json"
+        "../app-server-schema/0.160.0/json/McpServerElicitationRequestResponse.json"
     ))
 });
 
 static TOOL_USER_INPUT_RESPONSE_SCHEMA: LazyLock<JSONSchema> = LazyLock::new(|| {
     compile_schema(include_str!(
-        "../app-server-schema/0.135.0/json/ToolRequestUserInputResponse.json"
+        "../app-server-schema/0.160.0/json/ToolRequestUserInputResponse.json"
     ))
 });
 
@@ -82,11 +82,23 @@ pub fn validate_client_request_params(method: &str, params: Value) -> ApiResult<
 }
 
 pub fn validate_required_experimental_fields() -> ApiResult<()> {
-    for method in ["thread/start", "thread/resume", "thread/fork"] {
-        validate_client_request_params(
-            method,
-            required_history_params(method, json!({"persistExtendedHistory": true})),
-        )?;
+    for (method, params) in [
+        (
+            "thread/start",
+            json!({"cwd": "/workspace", "historyMode": "paginated"}),
+        ),
+        (
+            "thread/resume",
+            json!({"threadId": "thread-1", "excludeTurns": true}),
+        ),
+        (
+            "thread/fork",
+            json!({"threadId": "thread-1", "excludeTurns": true}),
+        ),
+        ("thread/timeline/list", json!({"threadId": "thread-1"})),
+        ("thread/queue/list", json!({"threadId": "thread-1"})),
+    ] {
+        validate_client_request_params(method, params)?;
     }
     Ok(())
 }
@@ -159,22 +171,6 @@ fn validate(kind: &str, schema: &JSONSchema, message: &Value) -> ApiResult<()> {
     Ok(())
 }
 
-fn required_history_params(method: &str, extra: Value) -> Value {
-    match method {
-        "thread/start" => {
-            let mut params = extra;
-            params["cwd"] = Value::String("/workspace".to_string());
-            params
-        }
-        "thread/resume" | "thread/fork" => {
-            let mut params = extra;
-            params["threadId"] = Value::String("thread-1".to_string());
-            params
-        }
-        _ => extra,
-    }
-}
-
 fn validate_bad_request(kind: &str, schema: &JSONSchema, message: &Value) -> ApiResult<()> {
     if let Err(errors) = schema.validate(message) {
         let errors = validation_errors(errors);
@@ -221,7 +217,38 @@ mod tests {
     }
 
     #[test]
-    fn native_0135_requests_are_supported() {
+    fn native_reasoning_effort_is_an_open_string() {
+        for effort in ["max", "ultra", "future-catalogued-effort"] {
+            validate_client_request_params(
+                "turn/start",
+                json!({"threadId": "thread-1", "input": [], "effort": effort}),
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn native_paginated_history_methods_are_supported() {
+        validate_client_request_params(
+            "thread/items/list",
+            json!({
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "cursor": {"type": "item", "itemId": "item-1"},
+                "sortDirection": "desc",
+                "limit": 25,
+            }),
+        )
+        .unwrap();
+        validate_client_request_params(
+            "thread/timeline/list",
+            json!({"threadId": "thread-1", "limit": 25}),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn native_settings_and_permissions_requests_are_supported() {
         validate_client_request(&client_request_message(
             1,
             "thread/settings/update",
@@ -246,7 +273,7 @@ mod tests {
     }
 
     #[test]
-    fn native_0135_notifications_are_supported() {
+    fn native_status_and_settings_notifications_are_supported() {
         validate_server_notification(&json!({
             "jsonrpc": "2.0",
             "method": "thread/status/changed",

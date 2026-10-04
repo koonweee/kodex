@@ -57,6 +57,9 @@ pub trait AppServer: Send + Sync {
     }
     async fn request(&self, method: &str, params: Value) -> ApiResult<Value>;
     async fn respond(&self, request_id: &str, result: Value) -> ApiResult<()>;
+    async fn respond_error(&self, _request_id: &str, _error: JsonRpcError) -> ApiResult<()> {
+        Err(ApiError::AppServerUnavailable)
+    }
 }
 
 pub type DynAppServer = Arc<dyn AppServer>;
@@ -102,9 +105,33 @@ impl JsonRpcAppServer {
         inbound: mpsc::Sender<InboundMessage>,
     ) -> ApiResult<Arc<Self>> {
         let detected_version = detect_codex_cli_version(config).await;
+        if detected_version.as_deref() != Some(crate::schema::APP_SERVER_SCHEMA_VERSION) {
+            return Err(ApiError::BadGateway(format!(
+                "configured Codex executable reports {}; required version is {}",
+                detected_version.as_deref().unwrap_or("an unknown version"),
+                crate::schema::APP_SERVER_SCHEMA_VERSION
+            )));
+        }
 
-        let mut child = Command::new(&config.binary)
-            .args(&config.args)
+        let mut command = codex_command(config);
+        command.args(&config.args);
+        for (key, value) in [
+            ("sqlite_home", config.home.join("sqlite")),
+            ("log_dir", config.home.join("log")),
+        ] {
+            command.args([
+                "-c",
+                &format!("{key}={}", serde_json::to_string(&value.to_string_lossy())?),
+            ]);
+        }
+        command.args([
+            "-c",
+            "cli_auth_credentials_store=\"file\"",
+            "-c",
+            "mcp_oauth_credentials_store=\"file\"",
+        ]);
+        let mut child = command
+            .kill_on_drop(true)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -134,7 +161,20 @@ impl JsonRpcAppServer {
         ));
         tokio::spawn(watch_child(Arc::clone(&server)));
 
-        server.initialize().await?;
+        let initialized = timeout(Duration::from_secs(10), server.initialize()).await;
+        match initialized {
+            Ok(Ok(())) => {}
+            outcome => {
+                server.shutdown().await?;
+                return Err(match outcome {
+                    Ok(Err(error)) => error,
+                    Err(_) => ApiError::BadGateway(
+                        "Codex app-server initialization timed out".to_string(),
+                    ),
+                    Ok(Ok(())) => unreachable!(),
+                });
+            }
+        }
         Ok(server)
     }
 
@@ -146,62 +186,8 @@ impl JsonRpcAppServer {
             *self.readiness_error.lock().unwrap() = Some(error.to_string());
             return Err(error);
         }
-        self.probe_required_experimental_behavior().await?;
         self.ready.store(true, Ordering::SeqCst);
         Ok(())
-    }
-
-    async fn probe_required_experimental_behavior(&self) -> ApiResult<()> {
-        match self
-            .startup_probe_request(
-                "thread/resume",
-                json!({
-                    "threadId": "00000000-0000-0000-0000-000000000000",
-                    "persistExtendedHistory": true
-                }),
-            )
-            .await?
-        {
-            Ok(_) => Ok(()),
-            Err(error) if error.message.contains("persistExtendedHistory") => {
-                self.mark_persist_extended_history_incompatible();
-                Err(ApiError::BadGateway(format!(
-                    "app-server error {}: {}",
-                    error.code, error.message
-                )))
-            }
-            Err(error) if is_expected_probe_missing_thread_error(&error.message) => Ok(()),
-            Err(error) => {
-                self.ready.store(false, Ordering::SeqCst);
-                *self.readiness_error.lock().unwrap() = Some(format!(
-                    "Codex app-server compatibility probe failed: {}",
-                    error.message
-                ));
-                Err(ApiError::BadGateway(format!(
-                    "app-server compatibility probe failed {}: {}",
-                    error.code, error.message
-                )))
-            }
-        }
-    }
-
-    async fn startup_probe_request(
-        &self,
-        method: &str,
-        params: Value,
-    ) -> ApiResult<Result<Value, JsonRpcError>> {
-        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        let message = client_request_message(id, method, params);
-
-        let (sender, receiver) = oneshot::channel();
-        self.pending.lock().await.insert(id, sender);
-
-        if let Err(error) = self.write_message(message).await {
-            self.pending.lock().await.remove(&id);
-            return Err(error);
-        }
-
-        receiver.await.map_err(|_| ApiError::AppServerUnavailable)
     }
 
     async fn send_initialized(&self) -> ApiResult<()> {
@@ -230,14 +216,6 @@ impl JsonRpcAppServer {
         let _ = child.wait().await;
         Ok(())
     }
-
-    fn mark_persist_extended_history_incompatible(&self) {
-        self.ready.store(false, Ordering::SeqCst);
-        *self.readiness_error.lock().unwrap() = Some(
-            "Codex app-server is incompatible: rejected required persistExtendedHistory field"
-                .to_string(),
-        );
-    }
 }
 
 fn initialize_params() -> Value {
@@ -256,16 +234,6 @@ fn initialize_params() -> Value {
             }
         }
     })
-}
-
-fn is_expected_probe_missing_thread_error(message: &str) -> bool {
-    let message = message.to_ascii_lowercase();
-    (message.contains("thread")
-        && (message.contains("not found")
-            || message.contains("no such")
-            || message.contains("does not exist")
-            || message.contains("unknown")))
-        || message.contains("no rollout found for thread id")
 }
 
 #[async_trait]
@@ -320,9 +288,6 @@ impl AppServer for JsonRpcAppServer {
                 } else {
                     format!("app-server error {}: {}", error.code, error.message)
                 };
-                if message.contains("persistExtendedHistory") {
-                    self.mark_persist_extended_history_incompatible();
-                }
                 log_app_server_timing(method, started_at, None, "bad_gateway");
                 Err(ApiError::BadGateway(message))
             }
@@ -346,6 +311,15 @@ impl AppServer for JsonRpcAppServer {
             "result": result,
         }))
         .await
+    }
+    async fn respond_error(&self, request_id: &str, error: JsonRpcError) -> ApiResult<()> {
+        if !self.is_ready() {
+            return Err(ApiError::AppServerUnavailable);
+        }
+        let id = serde_json::from_str::<Value>(request_id)
+            .unwrap_or_else(|_| Value::String(request_id.to_string()));
+        self.write_message(json!({"jsonrpc":"2.0", "id":id, "error":error}))
+            .await
     }
 }
 
@@ -387,7 +361,7 @@ fn api_error_classification(error: &ApiError) -> &'static str {
 async fn detect_codex_cli_version(config: &CodexConfig) -> Option<String> {
     let output = timeout(
         Duration::from_secs(2),
-        Command::new(&config.binary).arg("--version").output(),
+        codex_command(config).arg("--version").output(),
     )
     .await
     .ok()?
@@ -398,6 +372,25 @@ async fn detect_codex_cli_version(config: &CodexConfig) -> Option<String> {
     }
 
     parse_codex_cli_version(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn codex_command(config: &CodexConfig) -> Command {
+    let mut command = Command::new(&config.binary);
+    // Applies to version probes as well as the long-lived app-server.
+    command.kill_on_drop(true);
+    for (key, _) in std::env::vars_os() {
+        let key_name = key.to_string_lossy();
+        if key_name.starts_with("CODEX_")
+            || (cfg!(windows) && key_name.to_ascii_uppercase().starts_with("CODEX_"))
+        {
+            command.env_remove(key);
+        }
+    }
+    command.env_remove("OPENAI_API_KEY");
+    command.env_remove("OPENAI_BASE_URL");
+    command.env("CODEX_HOME", &config.home);
+    command.current_dir(&config.home);
+    command
 }
 
 fn parse_codex_cli_version(output: &str) -> Option<String> {
@@ -541,10 +534,42 @@ pub mod tests {
         pub readiness_error: StdMutex<Option<String>>,
         pub requests: StdMutex<Vec<(String, Value)>>,
         pub responses: StdMutex<Vec<(String, Value)>>,
+        pub error_responses: StdMutex<Vec<(String, JsonRpcError)>>,
         pub queued_errors: StdMutex<Vec<ApiError>>,
         pub queued_responses: StdMutex<Vec<Value>>,
+        pub native_projects: StdMutex<HashMap<String, Value>>,
         pub thread_list_responses_by_cwd: StdMutex<HashMap<String, Value>>,
+        pub thread_list_responses_by_project_id: StdMutex<HashMap<String, Value>>,
         pub next_response: StdMutex<Option<Value>>,
+    }
+
+    impl RecordingAppServer {
+        pub fn seed_project(&self, name: String, cwd: String) -> crate::store::Project {
+            let mut projects = self.native_projects.lock().unwrap();
+            let position = projects.len() as i64;
+            let id = format!("native-project-{}", position + 1);
+            let timestamp = 1_767_225_600_i64;
+            projects.insert(
+                id.clone(),
+                json!({
+                    "id": id,
+                    "name": name,
+                    "roots": [{"path": cwd}],
+                    "metadata": {},
+                    "position": position,
+                    "createdAt": timestamp,
+                    "updatedAt": timestamp,
+                    "recencyAt": timestamp,
+                }),
+            );
+            crate::store::Project {
+                id,
+                name,
+                cwd,
+                created_at: chrono::DateTime::from_timestamp(timestamp, 0).unwrap(),
+                updated_at: chrono::DateTime::from_timestamp(timestamp, 0).unwrap(),
+            }
+        }
     }
 
     #[test]
@@ -576,17 +601,40 @@ pub mod tests {
         assert_eq!(parse_codex_cli_version("GNU bash, version 5.2\n"), None);
     }
 
-    #[test]
-    fn startup_probe_only_accepts_missing_thread_errors() {
-        assert!(is_expected_probe_missing_thread_error("thread not found"));
-        assert!(is_expected_probe_missing_thread_error("no such thread"));
-        assert!(is_expected_probe_missing_thread_error(
-            "no rollout found for thread id 00000000-0000-0000-0000-000000000000"
-        ));
-        assert!(!is_expected_probe_missing_thread_error("missing field cwd"));
-        assert!(!is_expected_probe_missing_thread_error(
-            "unknown field persistExtendedHistory"
-        ));
+    #[tokio::test]
+    async fn wrong_cli_version_is_rejected_before_startup_writes() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().unwrap();
+        let script = dir.path().join("wrong-version-codex");
+        let log = dir.path().join("messages.log");
+        let launched = dir.path().join("launched");
+        write_fake_app_server(&script, false);
+        let body = std::fs::read_to_string(&script).unwrap();
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/bash\nif [[ ${{1:-}} == --version ]]; then printf 'codex-cli 0.159.0\\n'; exit 0; fi\ntouch '{}'\n{body}",
+                launched.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let config = CodexConfig {
+            binary: script.display().to_string(),
+            args: vec![log.display().to_string()],
+            home: dir.path().to_path_buf(),
+        };
+        let (inbound_tx, _inbound_rx) = mpsc::channel(8);
+        let error = match JsonRpcAppServer::start(&config, inbound_tx).await {
+            Ok(server) => {
+                server.shutdown().await.unwrap();
+                panic!("wrong-version executable must be rejected before launching app-server");
+            }
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("0.159.0"));
+        assert!(!launched.exists());
     }
 
     #[tokio::test]
@@ -597,8 +645,9 @@ pub mod tests {
         write_fake_app_server(&script, false);
 
         let config = CodexConfig {
-            binary: "/bin/bash".to_string(),
-            args: vec![script.display().to_string(), log.display().to_string()],
+            binary: script.display().to_string(),
+            args: vec![log.display().to_string()],
+            home: dir.path().to_path_buf(),
         };
         let (inbound_tx, mut inbound_rx) = mpsc::channel(8);
         let server = JsonRpcAppServer::start(&config, inbound_tx).await.unwrap();
@@ -641,7 +690,6 @@ pub mod tests {
             .map(|line| serde_json::from_str::<Value>(line).unwrap());
         assert_eq!(lines.next().unwrap()["method"], "initialize");
         assert_eq!(lines.next().unwrap()["method"], "initialized");
-        assert_eq!(lines.next().unwrap()["method"], "thread/resume");
         assert_eq!(lines.next().unwrap()["method"], "thread/list");
     }
 
@@ -653,8 +701,9 @@ pub mod tests {
         write_fake_app_server(&script, true);
 
         let config = CodexConfig {
-            binary: "/bin/bash".to_string(),
-            args: vec![script.display().to_string(), log.display().to_string()],
+            binary: script.display().to_string(),
+            args: vec![log.display().to_string()],
+            home: dir.path().to_path_buf(),
         };
         let (inbound_tx, _inbound_rx) = mpsc::channel(8);
         let server = JsonRpcAppServer::start(&config, inbound_tx).await.unwrap();
@@ -670,26 +719,159 @@ pub mod tests {
     }
 
     #[tokio::test]
-    async fn persist_extended_history_rejection_fails_startup_readiness() {
+    async fn initialization_failure_terminates_the_child() {
+        use std::os::unix::fs::PermissionsExt;
         let dir = tempdir().unwrap();
-        let script = dir.path().join("rejecting-app-server.sh");
-        let log = dir.path().join("messages.log");
-        write_persist_rejecting_app_server(&script);
-
+        let script = dir.path().join("codex");
+        let pid_file = dir.path().join("pid");
+        std::fs::write(
+            &script,
+            format!(
+                r#"#!/bin/bash
+if [[ ${{1:-}} == --version ]]; then printf 'codex-cli 0.160.0\n'; exit 0; fi
+printf '%s' "$$" > '{}'
+IFS= read -r line
+printf '%s\n' '{{"id":1,"error":{{"code":-32603,"message":"fixture initialization failure"}}}}'
+while IFS= read -r line; do :; done
+"#,
+                pid_file.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
         let config = CodexConfig {
-            binary: "/bin/bash".to_string(),
-            args: vec![script.display().to_string(), log.display().to_string()],
+            binary: script.display().to_string(),
+            args: vec![],
+            home: dir.path().into(),
         };
-        let (inbound_tx, _inbound_rx) = mpsc::channel(8);
-        let error = match JsonRpcAppServer::start(&config, inbound_tx).await {
+        let (tx, _rx) = mpsc::channel(8);
+        let error = match JsonRpcAppServer::start(&config, tx).await {
             Ok(server) => {
                 server.shutdown().await.unwrap();
-                panic!("expected incompatible app-server startup to fail");
+                panic!("initialization must fail");
             }
             Err(error) => error,
         };
+        assert!(
+            error.to_string().contains("fixture initialization failure"),
+            "{error}"
+        );
+        assert_process_exited(&pid_file).await;
+    }
 
-        assert!(error.to_string().contains("persistExtendedHistory"));
+    #[tokio::test]
+    async fn a_timed_out_version_probe_does_not_leave_a_process_running() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir().unwrap();
+        let script = dir.path().join("codex");
+        let pid_file = dir.path().join("pid");
+        std::fs::write(
+            &script,
+            format!(
+                r#"#!/bin/bash
+printf '%s' "$$" > '{}'
+while true; do :; done
+"#,
+                pid_file.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let config = CodexConfig {
+            binary: script.display().to_string(),
+            args: vec![],
+            home: dir.path().into(),
+        };
+        assert!(detect_codex_cli_version(&config).await.is_none());
+        let checked = timeout(Duration::from_millis(500), assert_process_exited(&pid_file)).await;
+        if checked.is_err() {
+            let pid = std::fs::read_to_string(&pid_file).unwrap();
+            let _ = Command::new("/bin/kill")
+                .args(["-KILL", &pid])
+                .status()
+                .await;
+        }
+        assert!(
+            checked.is_ok(),
+            "timed-out version probe must terminate its child"
+        );
+    }
+
+    async fn assert_process_exited(pid_file: &Path) {
+        let pid = std::fs::read_to_string(pid_file).unwrap();
+        timeout(Duration::from_secs(2), async {
+            loop {
+                let alive = Command::new("/bin/kill")
+                    .args(["-0", &pid])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()
+                    .await
+                    .unwrap()
+                    .success();
+                if !alive {
+                    break;
+                }
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    #[test]
+    fn inherited_native_storage_and_auth_are_not_imported() {
+        let dir = tempdir().unwrap();
+        let result = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "app_server::tests::isolated_environment_child",
+                "--ignored",
+            ])
+            .env("KODEX_ENVIRONMENT_FIXTURE_HOME", dir.path())
+            .env("CODEX_HOME", "/fixture/desktop")
+            .env("CODEX_SQLITE_HOME", "/fixture/desktop/sqlite")
+            .env("CODEX_ACCESS_TOKEN", "synthetic-access-token")
+            .env("CODEX_API_KEY", "synthetic-api-key")
+            .env("OPENAI_API_KEY", "synthetic-provider-key")
+            .env("OPENAI_BASE_URL", "https://fixture.invalid")
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stdout)
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "invoked by parent test with isolated synthetic environment"]
+    async fn isolated_environment_child() {
+        let home = std::env::var_os("KODEX_ENVIRONMENT_FIXTURE_HOME").unwrap();
+        let config = CodexConfig {
+            binary: "/usr/bin/env".into(),
+            args: vec![],
+            home: home.clone().into(),
+        };
+        let output = codex_command(&config).output().await.unwrap();
+        assert!(output.status.success());
+        let environment = String::from_utf8(output.stdout).unwrap();
+        let native_vars = environment
+            .lines()
+            .filter(|line| line.starts_with("CODEX_"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            native_vars,
+            vec![format!("CODEX_HOME={}", Path::new(&home).display())]
+        );
+        assert!(!environment.lines().any(
+            |line| line.starts_with("OPENAI_API_KEY=") || line.starts_with("OPENAI_BASE_URL=")
+        ));
+        // Child sanitization must never mutate the gateway environment.
+        assert_eq!(
+            std::env::var("CODEX_ACCESS_TOKEN").unwrap(),
+            "synthetic-access-token"
+        );
     }
 
     fn write_fake_app_server(path: &Path, exit_after_initialized: bool) {
@@ -697,22 +879,21 @@ pub mod tests {
         std::fs::write(
             path,
             format!(
-                r#"set -euo pipefail
+                r#"#!/bin/bash
+if [[ ${{1:-}} == --version ]]; then printf 'codex-cli 0.160.0\n'; exit 0; fi
+set -euo pipefail
 log="$1"
 IFS= read -r line
 printf '%s\n' "$line" >> "$log"
 printf '%s\n' '{{"jsonrpc":"2.0","id":1,"result":{{"initialized":true}}}}'
 IFS= read -r line
 printf '%s\n' "$line" >> "$log"
-IFS= read -r line
-printf '%s\n' "$line" >> "$log"
-printf '%s\n' '{{"jsonrpc":"2.0","id":2,"error":{{"code":-32602,"message":"thread not found"}}}}'
 {exit_line}
 printf '%s\n' '{{"jsonrpc":"2.0","method":"turn/completed","params":{{"threadId":"thread-1","turnId":"turn-1","itemId":"item-1"}}}}'
 printf '%s\n' '{{"jsonrpc":"2.0","id":"approval-1","method":"item/permissions/requestApproval","params":{{"threadId":"thread-1","turnId":"turn-1","itemId":"item-1"}}}}'
 IFS= read -r line
 printf '%s\n' "$line" >> "$log"
-printf '%s\n' '{{"jsonrpc":"2.0","id":3,"result":{{"ok":true}}}}'
+printf '%s\n' '{{"jsonrpc":"2.0","id":2,"result":{{"ok":true}}}}'
 while IFS= read -r line; do
   printf '%s\n' "$line" >> "$log"
 done
@@ -720,27 +901,8 @@ done
             ),
         )
         .unwrap();
-    }
-
-    fn write_persist_rejecting_app_server(path: &Path) {
-        std::fs::write(
-            path,
-            r#"set -euo pipefail
-log="$1"
-IFS= read -r line
-printf '%s\n' "$line" >> "$log"
-printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"initialized":true}}'
-IFS= read -r line
-printf '%s\n' "$line" >> "$log"
-IFS= read -r line
-printf '%s\n' "$line" >> "$log"
-printf '%s\n' '{"jsonrpc":"2.0","id":2,"error":{"code":-32602,"message":"unknown field persistExtendedHistory"}}'
-while IFS= read -r line; do
-  printf '%s\n' "$line" >> "$log"
-done
-"#,
-        )
-        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
 
     #[async_trait]
@@ -759,6 +921,17 @@ done
                 .unwrap()
                 .push((method.to_string(), params.clone()));
             if method == "thread/list" {
+                if let Some(project_id) = params.get("projectId").and_then(Value::as_str) {
+                    if let Some(response) = self
+                        .thread_list_responses_by_project_id
+                        .lock()
+                        .unwrap()
+                        .get(project_id)
+                        .cloned()
+                    {
+                        return Ok(response);
+                    }
+                }
                 if let Some(cwd) = params.get("cwd").and_then(Value::as_str) {
                     if let Some(response) = self
                         .thread_list_responses_by_cwd
@@ -771,6 +944,23 @@ done
                     }
                 }
             }
+            if method == "project/read" {
+                if let Some(project) = params
+                    .get("projectId")
+                    .and_then(Value::as_str)
+                    .and_then(|id| self.native_projects.lock().unwrap().get(id).cloned())
+                {
+                    return Ok(json!({"project": project}));
+                }
+            }
+            if method == "project/list" {
+                let projects = self.native_projects.lock().unwrap();
+                if !projects.is_empty() {
+                    let mut data = projects.values().cloned().collect::<Vec<_>>();
+                    data.sort_by_key(|project| project["position"].as_i64().unwrap_or_default());
+                    return Ok(json!({"data": data, "nextCursor": null}));
+                }
+            }
             let mut queued_errors = self.queued_errors.lock().unwrap();
             if !queued_errors.is_empty() {
                 return Err(queued_errors.remove(0));
@@ -781,6 +971,13 @@ done
                 return Ok(queued_responses.remove(0));
             }
             drop(queued_responses);
+            if method == "project/create" && self.next_response.lock().unwrap().is_none() {
+                let project = self.seed_project(
+                    params["name"].as_str().unwrap().to_string(),
+                    params["roots"][0]["path"].as_str().unwrap().to_string(),
+                );
+                return Ok(json!({"project": self.native_projects.lock().unwrap()[&project.id]}));
+            }
             Ok(self
                 .next_response
                 .lock()
@@ -796,10 +993,18 @@ done
                 .push((request_id.to_string(), result));
             Ok(())
         }
+        async fn respond_error(&self, request_id: &str, error: JsonRpcError) -> ApiResult<()> {
+            self.error_responses
+                .lock()
+                .unwrap()
+                .push((request_id.to_string(), error));
+            Ok(())
+        }
     }
 
     fn default_test_response(method: &str) -> Value {
         match method {
+            "project/list" => json!({"data": [], "nextCursor": null}),
             "thread/list" => json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
             "thread/loaded/list" => json!({"data": [], "nextCursor": null}),
             "thread/read" => json!({"thread": test_thread("thread-1")}),

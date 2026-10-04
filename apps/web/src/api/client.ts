@@ -133,8 +133,8 @@ export async function fetchThreadFilePreview(threadId: string, path: string): Pr
   return response.text();
 }
 
-export async function getCapabilities(): Promise<Capabilities> {
-  return unwrap(api.GET("/v1/capabilities"));
+export async function getCapabilities(signal?: AbortSignal): Promise<Capabilities> {
+  return unwrap(api.GET("/v1/capabilities", { cache: "no-store", signal }));
 }
 
 export async function listTerminalSessions(): Promise<TerminalSessionInfo[]> {

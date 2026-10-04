@@ -1,3 +1,4 @@
+import type { InstanceStorage } from "../api/instanceStorage";
 import type { AppSurfacePaneTarget, TerminalPaneTarget, ThreadPaneTarget, WorkspaceModel, WorkspacePane, WorkspacePaneState } from "./paneTypes";
 
 const WORKSPACE_PANE_STATE_VERSION = 1;
@@ -8,20 +9,18 @@ export type WorkspacePaneStoreAdapter = {
   save: (state: WorkspacePaneState) => void;
 };
 
-export const browserWorkspacePaneStore: WorkspacePaneStoreAdapter = {
-  load: () => {
-    if (typeof window === "undefined") {
-      return createDefaultWorkspaceState();
-    }
-    return parseWorkspacePaneState(window.localStorage.getItem(WORKSPACE_PANE_STORAGE_KEY));
-  },
-  save: (state) => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    window.localStorage.setItem(WORKSPACE_PANE_STORAGE_KEY, JSON.stringify(serializeWorkspacePaneState(state)));
-  },
-};
+export function createBrowserWorkspacePaneStore(storage: InstanceStorage | null): WorkspacePaneStoreAdapter {
+  return {
+    load: () => {
+      try {
+        return parseWorkspacePaneState(storage?.getItem(WORKSPACE_PANE_STORAGE_KEY) ?? null);
+      } catch {
+        return createDefaultWorkspaceState();
+      }
+    },
+    save: (state) => storage?.setItem(WORKSPACE_PANE_STORAGE_KEY, JSON.stringify(serializeWorkspacePaneState(state))),
+  };
+}
 
 export function createMemoryWorkspacePaneStore(initialState?: WorkspacePaneState): WorkspacePaneStoreAdapter & {
   getState: () => WorkspacePaneState;

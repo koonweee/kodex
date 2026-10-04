@@ -390,12 +390,12 @@ pub async fn list_threads(
     State(state): State<AppState>,
     Query(query): Query<ThreadListQuery>,
 ) -> ApiResult<Json<ThreadListResponse>> {
-    let cwd = match query.project_id {
-        Some(project_id) => Some(state.store.get_project(&project_id).await?.cwd),
-        None => None,
+    let response = match query.project_id {
+        Some(project_id) => {
+            list_project_threads(&state, project_id, query.cursor, query.limit).await?
+        }
+        None => list_project_threads_for_cwd(&state, None, query.cursor, query.limit).await?,
     };
-
-    let response = list_project_threads_for_cwd(&state, cwd, query.cursor, query.limit).await?;
     Ok(Json(response))
 }
 
@@ -403,7 +403,7 @@ pub async fn list_threads(
 pub async fn get_sidebar_threads(
     State(state): State<AppState>,
 ) -> ApiResult<Json<SidebarThreadsResponse>> {
-    let projects = state.store.list_projects().await?;
+    let projects = super::projects::list_project_records(&state).await?;
     let (project_threads, chat_threads, pinned_threads) = tokio::try_join!(
         sidebar_project_threads(&state, &projects),
         chat_thread_list_response(&state, None, Some(SIDEBAR_INITIAL_THREAD_LIST_LIMIT)),
@@ -433,11 +433,10 @@ async fn sidebar_project_threads(
             };
             let state = state.clone();
             let project_id = project.id.clone();
-            let cwd = project.cwd.clone();
             pending.spawn(async move {
-                let response = list_project_threads_for_cwd(
+                let response = list_project_threads(
                     &state,
-                    Some(cwd),
+                    project_id.clone(),
                     None,
                     Some(SIDEBAR_INITIAL_THREAD_LIST_LIMIT),
                 )
@@ -456,6 +455,22 @@ async fn sidebar_project_threads(
     }
 
     Ok(project_threads)
+}
+
+async fn list_project_threads(
+    state: &AppState,
+    project_id: String,
+    cursor: Option<String>,
+    limit: Option<u32>,
+) -> ApiResult<ThreadListResponse> {
+    let mut response = app_server_api::client(&state.app_server)
+        .thread_list_in_project(project_id, cursor, limit)
+        .await?;
+    response
+        .threads
+        .retain(|thread| !thread_is_archived(thread));
+    apply_thread_list_response_state(state, &mut response).await?;
+    Ok(response)
 }
 
 async fn list_project_threads_for_cwd(
@@ -479,7 +494,7 @@ pub async fn create_thread(
     State(state): State<AppState>,
     Json(request): Json<CreateThreadRequest>,
 ) -> ApiResult<Json<ThreadCommandResponse>> {
-    let project = state.store.get_project(&request.project_id).await?;
+    let project = super::projects::read_project_with_cwd(&state, &request.project_id).await?;
     let project_id = project.id.clone();
     let options = ThreadCreationOptions {
         model: request.model,
@@ -1142,10 +1157,8 @@ pub async fn rename_thread(
 ) -> ApiResult<Json<RenameThreadResponse>> {
     let name = normalize_thread_name(&request.name)
         .ok_or_else(|| ApiError::BadRequest("thread name cannot be empty".to_string()))?;
-    let _name_guard = state.title_generation.name_write_guard(&thread_id).await;
     let client = app_server_api::client(&state.app_server);
     client.thread_set_name(thread_id.clone(), name).await?;
-    state.title_generation.mark_thread_named(&thread_id);
     let mut thread = client.thread_read_summary(thread_id).await?;
     apply_thread_summary_state(&state, std::slice::from_mut(&mut thread)).await?;
     Ok(Json(RenameThreadResponse { thread }))

@@ -59,14 +59,14 @@ See [Architecture](docs/architecture.md) for component boundaries and state owne
 
 You will need:
 
-- A compatible `codex` binary on `PATH`.
+- Codex **0.160.0**, selected explicitly with `KODEX_CODEX_BINARY` (or that exact version on `PATH`).
 - The stable Rust toolchain.
 - Node.js and npm.
 
-Start the gateway:
+Start a disposable development instance while the [native redesign](plans/native-app-server-redesign.md) is underway:
 
 ```bash
-cargo run -p kodex-gateway
+KODEX_DATA_DIR="$(mktemp -d)/instance" KODEX_CODEX_BINARY=/absolute/path/to/codex cargo run -p kodex-gateway
 ```
 
 In another terminal, start the web client:
@@ -78,6 +78,8 @@ npm run dev
 ```
 
 Open `http://127.0.0.1:5173`. The development server proxies API requests to the gateway at `http://127.0.0.1:8787`.
+
+The new startup path defaults to `~/.kodex/native-v1/`: its gateway database, identity marker and `codex-home/` are independent of the old Kodex database and Codex desktop home. Nonempty unrecognized stores are rejected; no history, credentials, projects or schedules are imported. Sign in and configure the fresh instance deliberately. Production cutover remains gated on the redesign tests; do not point development runs at old stores.
 
 For prerequisites, tests, schema generation, and production-style static serving, see [Development](docs/development.md). For network binding, configuration, previews, and notifications, see [Deployment](docs/deployment.md).
 
