@@ -194,6 +194,7 @@ pub async fn run_inbound_ingest(mut inbound: mpsc::Receiver<InboundMessage>, sta
 pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiResult<()> {
     match message {
         InboundMessage::Disconnected => {
+            state.queue_admissions.invalidate_all();
             state.thread_views.clear_completion_witnesses().await;
             crate::approvals::runtime_unavailable(state).await?;
         }
@@ -201,6 +202,9 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             if method == "serverRequest/resolved" {
                 return crate::approvals::resolve_native(state, &params).await;
             }
+            state
+                .queue_admissions
+                .observe_notification(&method, &params);
             let metadata = EventMetadata::from_payload(&params);
             if matches!(
                 method.as_str(),

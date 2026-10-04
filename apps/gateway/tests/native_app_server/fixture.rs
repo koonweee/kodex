@@ -32,6 +32,9 @@ use tokio::{
 };
 use tower::ServiceExt;
 
+#[path = "queue_adapter.rs"]
+mod queue_adapter;
+
 pub(super) enum ModelResponse {
     Items(Vec<Value>),
     GatedItems(Vec<Value>, oneshot::Receiver<()>),
@@ -187,14 +190,7 @@ impl NativeSession {
         operation: &str,
         params: Value,
     ) -> anyhow::Result<Value> {
-        anyhow::ensure!(matches!(
-            operation,
-            "add" | "list" | "update" | "delete" | "reorder" | "start"
-        ));
-        Ok(self
-            .server
-            .request(&format!("thread/queue/{operation}"), params)
-            .await?)
+        queue_adapter::request(&CodexClient::new(self.server.clone()), operation, params).await
     }
 
     pub(super) async fn native_loaded_threads(&self) -> anyhow::Result<Value> {

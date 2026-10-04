@@ -155,6 +155,7 @@ pub struct AppState {
     pub thread_presence: crate::thread_presence::ThreadPresence,
     pub thread_views: ThreadViewStore,
     pub thread_input_locks: crate::turn_lifecycle::ThreadInputLocks,
+    pub queue_admissions: crate::queue_admission::QueueAdmissionWitnesses,
     pub terminals: crate::terminal::TerminalManager,
 }
 
@@ -179,6 +180,7 @@ impl AppState {
             thread_presence: crate::thread_presence::ThreadPresence::default(),
             thread_views: ThreadViewStore::default(),
             thread_input_locks: crate::turn_lifecycle::ThreadInputLocks::default(),
+            queue_admissions: crate::queue_admission::QueueAdmissionWitnesses::default(),
             terminals,
         }
     }

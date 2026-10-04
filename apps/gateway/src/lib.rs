@@ -14,6 +14,7 @@ pub mod native_runtime;
 pub mod notifications;
 pub mod performance;
 pub mod queue;
+pub mod queue_admission;
 pub mod read_state;
 pub mod routes;
 pub mod schema;

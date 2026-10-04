@@ -11,6 +11,9 @@ mod config;
 mod items;
 mod mcp_config;
 mod projects;
+mod queue;
+#[cfg(test)]
+mod queue_tests;
 mod sections;
 mod subagents;
 
@@ -21,6 +24,7 @@ pub use config::*;
 pub use items::{ThreadItemEntry, ThreadItemsListPage};
 pub use mcp_config::*;
 pub use projects::{Project, ProjectPage, ProjectRoot};
+pub use queue::{NativeQueuePage, NativeQueuedSubmission};
 pub use sections::{
     ThreadSection, ThreadSectionAppearance, ThreadSectionPage, PINNED_THREAD_SECTION_ID,
 };
