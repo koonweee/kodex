@@ -2,6 +2,8 @@
 
 This file is the directory of record for Kodex plans. Keep the status column current whenever work starts, completes, pauses, or changes scope.
 
+The [2026-10-04 app-server native capability and desktop coexistence audit](../docs/audits/2026-10-04-app-server-native-audit.md) compares the current implementation with Codex 0.160.0 and proposes an order for reducing gateway ownership. It is a completed audit, not an implemented migration or a change to the historical plan statuses below.
+
 ## Status Values
 
 - `Proposed`: plan exists but implementation has not started.
