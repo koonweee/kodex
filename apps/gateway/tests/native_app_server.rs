@@ -1,204 +1,342 @@
-//! Real protocol integration, with a local Responses fixture rather than an account.
-//! Run explicitly with KODEX_TEST_CODEX_BINARY set to the pinned executable.
-use axum::{body::Body, http::Request, routing::post, Router};
-use http_body_util::BodyExt;
-use kodex_gateway::{
-    app_server::{InboundMessage, JsonRpcAppServer},
-    build_router,
-    config::Config,
-    events::run_inbound_ingest,
-    native_runtime::prepare_instance,
-    store::Store,
-    AppState,
-};
+//! Real protocol proof with a pinned executable, disposable home, and local model.
+//! Interactive account sign-in is deliberately not completed or claimed by this test.
+#[path = "native_app_server/fixture.rs"]
+mod fixture;
+
+use anyhow::Context;
+use axum::Router;
+use fixture::{api, upload, Fixture, ModelResponse, NativeSession};
 use serde_json::{json, Value};
-use tokio::{
-    sync::mpsc,
-    time::{timeout, Duration},
-};
-use tower::ServiceExt;
+use tokio::time::{timeout, Duration};
 
 #[tokio::test]
 #[ignore = "requires explicit pinned real Codex executable and loopback access"]
-async fn real_native_project_thread_turn_and_reopen_use_fresh_state() -> anyhow::Result<()> {
-    let binary = std::env::var("KODEX_TEST_CODEX_BINARY")?;
-    let dir = tempfile::tempdir()?;
-    let workspace = dir.path().join("workspace");
-    std::fs::create_dir(&workspace)?;
-    let mut config = Config::default();
-    config.instance.data_dir = dir.path().join("instance");
-    config.database.path = config.instance.data_dir.join("gateway.db");
-    config.codex.home = config.instance.data_dir.join("codex-home");
-    config.codex.binary = binary;
-    let _guard = prepare_instance(&mut config)?;
-
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-    let address = listener.local_addr()?;
-    // Deliberate new-home configuration, no imported credentials/provider overrides.
-    std::fs::write(
-        config.codex.home.join("config.toml"),
-        format!(
-            r#"
-model = "mock-model"
-model_provider = "local_fixture"
-approval_policy = "never"
-sandbox_mode = "read-only"
-[model_providers.local_fixture]
-name = "Local integration fixture"
-base_url = "http://{address}/v1"
-wire_api = "responses"
-request_max_retries = 0
-stream_max_retries = 0
-"#
-        ),
-    )?;
-    let provider = tokio::spawn(async move {
-        axum::serve(
-            listener,
-            Router::new().route(
-                "/v1/responses",
-                post(|| async { ([("content-type", "text/event-stream")], response_events()) }),
-            ),
-        )
-        .await
-        .unwrap();
-    });
-    let (tx, mut native_rx) = mpsc::channel(1024);
-    let server = JsonRpcAppServer::start(&config.codex, tx).await?;
-    let (gateway_tx, rx) = mpsc::channel(1024);
-    let (completed_tx, completed_rx) = tokio::sync::oneshot::channel();
-    let relay = tokio::spawn(async move {
-        let mut completed_tx = Some(completed_tx);
-        while let Some(message) = native_rx.recv().await {
-            if let InboundMessage::Notification { method, params } = &message {
-                if method == "turn/completed" {
-                    if let Some(tx) = completed_tx.take() {
-                        let _ = tx.send(params.clone());
-                    }
-                }
-            }
-            if gateway_tx.send(message).await.is_err() {
-                break;
-            }
-        }
-    });
-    let store = Store::connect(&config.database.path).await?;
-    let state = AppState::new(config.clone(), store, server.clone());
-    let ingest = tokio::spawn(run_inbound_ingest(rx, state.clone()));
+async fn real_native_project_approval_stop_upload_and_cold_reopen_use_fresh_state(
+) -> anyhow::Result<()> {
+    let mut fixture = Fixture::new().await?;
+    let mut session = NativeSession::start(&fixture).await?;
     let result = timeout(
-        Duration::from_secs(30),
-        exercise(build_router(state), &workspace, completed_rx),
+        Duration::from_secs(60),
+        exercise(&mut fixture, &mut session),
     )
     .await;
-    server.shutdown().await?;
-    ingest.abort();
-    relay.abort();
-    provider.abort();
+    session.shutdown().await?;
+    drop(session);
+    let thread_id = result??;
+
+    // A new native process and gateway projection must recover persisted history.
+    let reopened = NativeSession::start(&fixture).await?;
+    let result = timeout(Duration::from_secs(20), async {
+        let detail = api(
+            &reopened.app,
+            "GET",
+            &format!("/v1/threads/{thread_id}"),
+            None,
+        )
+        .await?;
+        for text in [
+            "fixture completed",
+            "upload readable",
+            "image received",
+            "approval completed",
+        ] {
+            anyhow::ensure!(
+                detail.to_string().contains(text),
+                "cold reopen missing {text}"
+            );
+        }
+        anyhow::ensure!(detail["thread"]["id"] == thread_id);
+        let stop = api(
+            &reopened.app,
+            "POST",
+            &format!("/v1/threads/{thread_id}/interrupt-current"),
+            None,
+        )
+        .await?;
+        anyhow::ensure!(
+            stop["disposition"] == "idle",
+            "cold reopen retained a running turn: {stop}"
+        );
+        Ok::<_, anyhow::Error>(())
+    })
+    .await;
+    reopened.shutdown().await?;
     result??;
-    anyhow::ensure!(config.codex.home.join("sqlite").is_dir());
-    anyhow::ensure!(!config.codex.home.join("auth.json").exists());
+    anyhow::ensure!(fixture.config.codex.home.join("sqlite").is_dir());
+    anyhow::ensure!(!fixture.config.codex.home.join("auth.json").exists());
     Ok(())
 }
 
-async fn exercise(
-    app: Router,
-    workspace: &std::path::Path,
-    completed: tokio::sync::oneshot::Receiver<Value>,
-) -> anyhow::Result<()> {
+async fn exercise(fixture: &mut Fixture, session: &mut NativeSession) -> anyhow::Result<String> {
+    // The configured local provider needs no account. No inherited credentials are used.
+    let account = api(&session.app, "GET", "/v1/account", None).await?;
+    anyhow::ensure!(account["account"].is_null());
+    anyhow::ensure!(account["requiresOpenaiAuth"] == false);
     let project = api(
-        &app,
+        &session.app,
         "POST",
         "/v1/projects",
         Some(json!({
-            "cwd": workspace, "name":"Native integration",
+            "cwd":fixture.workspace, "name":"Native integration",
             "idempotencyKey":"real-native-project-fixture",
         })),
     )
     .await?;
-    let id = project["id"]
+    let project_id = project["id"]
         .as_str()
-        .ok_or_else(|| anyhow::anyhow!("missing native project ID"))?;
-    let listed = api(&app, "GET", "/v1/projects", None).await?;
+        .context("missing native project ID")?;
+    let listed = api(&session.app, "GET", "/v1/projects", None).await?;
     anyhow::ensure!(listed["projects"]
         .as_array()
         .unwrap()
         .iter()
-        .any(|row| row["id"] == id));
-    let thread = api(&app, "POST", "/v1/threads", Some(json!({"projectId":id}))).await?;
-    let thread_id = thread["thread"]["id"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("missing thread ID: {thread}"))?;
-    // A newly opened empty chat must also have a usable canonical view.
-    api(&app, "GET", &format!("/v1/threads/{thread_id}"), None).await?;
-    api(
-        &app,
+        .any(|row| row["id"] == project_id));
+    let thread = api(
+        &session.app,
         "POST",
-        &format!("/v1/threads/{thread_id}/turns"),
-        Some(json!({
-            "input":[{"type":"text", "text":"Hello local fixture", "textElements":[]}]
-        })),
+        "/v1/threads",
+        Some(json!({"projectId":project_id})),
     )
     .await?;
-    let completed = timeout(Duration::from_secs(20), completed).await??;
+    let thread_id = thread["thread"]["id"]
+        .as_str()
+        .context("missing native thread ID")?
+        .to_string();
+    api(
+        &session.app,
+        "GET",
+        &format!("/v1/threads/{thread_id}"),
+        None,
+    )
+    .await?;
+    fixture.enqueue([ModelResponse::message("fixture completed")]);
+    start_turn(&session.app, &thread_id, "Hello local fixture").await?;
+    session.completed_turn(&thread_id, "completed").await?;
+    fixture.next_model_request().await?;
+
+    verify_native_upload_read(fixture, session, &thread_id).await?;
+    verify_native_image_upload(fixture, session, &thread_id).await?;
+    verify_native_approval(fixture, session, &thread_id).await?;
+
+    fixture.enqueue([ModelResponse::Hold]);
+    start_turn(&session.app, &thread_id, "Wait for Stop").await?;
+    fixture.next_model_request().await?;
+    let stop = api(
+        &session.app,
+        "POST",
+        &format!("/v1/threads/{thread_id}/interrupt-current"),
+        None,
+    )
+    .await?;
     anyhow::ensure!(
-        completed["turn"]["status"] == "completed",
-        "native turn did not complete: {completed}"
+        stop["disposition"] == "interrupted",
+        "Stop did not interrupt: {stop}"
     );
-    // Canonical gateway snapshots must converge to real native persisted history.
-    timeout(Duration::from_secs(20), async {
-        loop {
-            let reopened = api(&app, "GET", &format!("/v1/threads/{thread_id}"), None).await?;
-            if reopened.to_string().contains("fixture completed") {
-                break Ok::<_, anyhow::Error>(());
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    })
-    .await??;
+    let interrupted = session.completed_turn(&thread_id, "interrupted").await?;
+    anyhow::ensure!(stop["interruptedTurnId"] == interrupted["id"]);
+    Ok(thread_id)
+}
+
+async fn verify_native_upload_read(
+    fixture: &mut Fixture,
+    session: &mut NativeSession,
+    thread_id: &str,
+) -> anyhow::Result<()> {
+    let uploaded = upload(
+        &session.app,
+        &format!("/v1/threads/{thread_id}/uploads/files"),
+        "files",
+        "proof.txt",
+        "text/plain",
+        b"kodex-native-upload-proof",
+    )
+    .await?;
+    let path = uploaded["files"][0]["absolutePath"]
+        .as_str()
+        .context("missing uploaded file path")?;
+    anyhow::ensure!(
+        std::path::Path::new(path).starts_with(std::fs::canonicalize(&fixture.workspace)?)
+    );
+    fixture.enqueue([
+        ModelResponse::command(
+            "fixture-upload",
+            json!({
+                "cmd":format!("cat {}", shlex::try_quote(path)?), "workdir":fixture.workspace,
+                "shell":"/bin/sh", "login":false, "yield_time_ms":1000,
+            }),
+        ),
+        ModelResponse::message("upload readable"),
+    ]);
+    start_turn(&session.app, thread_id, "Read the uploaded fixture file").await?;
+    session.completed_turn(thread_id, "completed").await?;
+    fixture.next_model_request().await?;
+    let continuation = fixture.next_model_request().await?;
+    let output = function_output(&continuation, "fixture-upload")?;
+    anyhow::ensure!(
+        output.to_string().contains("kodex-native-upload-proof"),
+        "native sandbox could not read upload: {output}"
+    );
     Ok(())
 }
 
-async fn api(app: &Router, method: &str, path: &str, body: Option<Value>) -> anyhow::Result<Value> {
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method(method)
-                .uri(path)
-                .header("content-type", "application/json")
-                .body(Body::from(
-                    body.map(|value| value.to_string()).unwrap_or_default(),
-                ))?,
-        )
-        .await?;
-    let status = response.status();
-    let payload = response.into_body().collect().await?.to_bytes();
+async fn verify_native_image_upload(
+    fixture: &mut Fixture,
+    session: &mut NativeSession,
+    thread_id: &str,
+) -> anyhow::Result<()> {
+    const PNG: &[u8] = &[
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x04, 0x00, 0x00, 0x00, 0xb5,
+        0x1c, 0x0c, 0x02, 0x00, 0x00, 0x00, 0x0b, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xfc,
+        0xff, 0x1f, 0x00, 0x03, 0x03, 0x02, 0x00, 0xef, 0xa2, 0xa7, 0x5b, 0x00, 0x00, 0x00, 0x00,
+        0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ];
+    let uploaded = upload(
+        &session.app,
+        "/v1/uploads/images",
+        "images",
+        "proof.png",
+        "image/png",
+        PNG,
+    )
+    .await?;
+    let path = uploaded["images"][0]["path"]
+        .as_str()
+        .context("missing uploaded image path")?;
+    anyhow::ensure!(std::fs::canonicalize(path)?.starts_with(&fixture.config.instance.data_dir));
+    fixture.enqueue([ModelResponse::message("image received")]);
+    api(
+        &session.app,
+        "POST",
+        &format!("/v1/threads/{thread_id}/turns"),
+        Some(json!({"input":[
+            {"type":"text", "text":"Inspect the uploaded image", "textElements":[]},
+            {"type":"localImage", "path":path},
+        ]})),
+    )
+    .await?;
+    session.completed_turn(thread_id, "completed").await?;
+    let request = fixture.next_model_request().await?;
     anyhow::ensure!(
-        status.is_success(),
-        "{method} {path}: {status}: {}",
-        String::from_utf8_lossy(&payload)
+        request["input"]
+            .as_array()
+            .context("model request missing input")?
+            .iter()
+            .any(|item| {
+                item["role"] == "user"
+                    && item["content"].as_array().is_some_and(|content| {
+                        content.iter().any(|part| {
+                            part["type"] == "input_image"
+                                && part["image_url"]
+                                    .as_str()
+                                    .is_some_and(|url| url.starts_with("data:image/png;base64,"))
+                        })
+                    })
+            }),
+        "native input did not load the relocated image upload"
     );
-    Ok(serde_json::from_slice(&payload)?)
+    Ok(())
 }
 
-fn response_events() -> String {
-    [
-        json!({"type":"response.created","response":{"id":"fixture-response"}}),
-        json!({"type":"response.output_item.done","item":{
-            "type":"message","role":"assistant","id":"fixture-message",
-            "content":[{"type":"output_text","text":"fixture completed"}]
-        }}),
-        json!({"type":"response.completed","response":{"id":"fixture-response","usage":{
-            "input_tokens":1,"output_tokens":1,"total_tokens":2,
-            "input_tokens_details":null,"output_tokens_details":null
-        }}}),
-    ]
-    .into_iter()
-    .map(|event| {
-        format!(
-            "event: {}\ndata: {event}\n\n",
-            event["type"].as_str().unwrap()
-        )
+async fn verify_native_approval(
+    fixture: &mut Fixture,
+    session: &mut NativeSession,
+    thread_id: &str,
+) -> anyhow::Result<()> {
+    fixture.enqueue([
+        ModelResponse::command("fixture-approval", json!({
+            "cmd":"printf approved > approved.txt", "workdir":fixture.workspace,
+            "shell":"/bin/sh", "login":false, "yield_time_ms":1000,
+            "sandbox_permissions":"require_escalated", "justification":"Create the disposable approval proof file.",
+        })),
+        ModelResponse::message("approval completed"),
+    ]);
+    start_turn(
+        &session.app,
+        thread_id,
+        "Run the command that requires approval",
+    )
+    .await?;
+    let approval = timeout(Duration::from_secs(15), async {
+        loop {
+            let listed = api(
+                &session.app,
+                "GET",
+                &format!("/v1/approvals?status=pending&threadId={thread_id}"),
+                None,
+            )
+            .await?;
+            if let Some(approval) = listed["approvals"].as_array().and_then(|rows| rows.first()) {
+                break Ok::<_, anyhow::Error>(approval.clone());
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
     })
-    .collect()
+    .await
+    .context("real command approval was not displayed")??;
+    anyhow::ensure!(approval["method"] == "item/commandExecution/requestApproval");
+    anyhow::ensure!(approval["threadId"] == thread_id);
+    anyhow::ensure!(approval["payload"]["command"]
+        .as_str()
+        .is_some_and(|command| command.contains("approved.txt")));
+    anyhow::ensure!(
+        !fixture.workspace.join("approved.txt").exists(),
+        "command ran before approval"
+    );
+    let approval_id = approval["id"].as_str().context("missing approval ID")?;
+    // Another client can read and resolve the same native request through gateway state.
+    let second_read = api(
+        &session.app.clone(),
+        "GET",
+        &format!("/v1/approvals/{approval_id}"),
+        None,
+    )
+    .await?;
+    anyhow::ensure!(second_read["status"] == "pending");
+    let resolved = api(
+        &session.app,
+        "POST",
+        &format!("/v1/approvals/{approval_id}/decision"),
+        Some(json!({"decision":{"decision":"accept"}})),
+    )
+    .await?;
+    anyhow::ensure!(resolved["status"] == "resolved");
+    session.completed_turn(thread_id, "completed").await?;
+    anyhow::ensure!(std::fs::read_to_string(fixture.workspace.join("approved.txt"))? == "approved");
+    fixture.next_model_request().await?;
+    let continuation = fixture.next_model_request().await?;
+    anyhow::ensure!(function_output(&continuation, "fixture-approval")?
+        .to_string()
+        .contains("Process exited with code 0"));
+    let second_read = api(
+        &session.app.clone(),
+        "GET",
+        &format!("/v1/approvals/{approval_id}"),
+        None,
+    )
+    .await?;
+    anyhow::ensure!(second_read["status"] == "resolved");
+    Ok(())
+}
+
+async fn start_turn(app: &Router, thread_id: &str, text: &str) -> anyhow::Result<Value> {
+    api(
+        app,
+        "POST",
+        &format!("/v1/threads/{thread_id}/turns"),
+        Some(json!({
+            "input":[{"type":"text", "text":text, "textElements":[]}],
+        })),
+    )
+    .await
+}
+
+fn function_output<'a>(request: &'a Value, call_id: &str) -> anyhow::Result<&'a Value> {
+    request["input"]
+        .as_array()
+        .context("model request missing input")?
+        .iter()
+        .find(|item| item["type"] == "function_call_output" && item["call_id"] == call_id)
+        .and_then(|item| item.get("output"))
+        .context("model continuation missing native tool output")
 }
