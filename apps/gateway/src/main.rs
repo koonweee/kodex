@@ -7,7 +7,6 @@ use kodex_gateway::{
     build_router,
     config::Config,
     events::run_inbound_ingest,
-    queue::recover_queued_inputs,
     store::Store,
     terminal::start_terminal_cleanup,
     AppState,
@@ -62,7 +61,6 @@ async fn run_gateway(
     let result: anyhow::Result<()> = async {
         kodex_gateway::approvals::initialize(&state).await?;
         kodex_gateway::queue_transfer::recover(&state).await?;
-        recover_queued_inputs(&state).await?;
         recover_automations_after_restart(&state).await?;
         start_automation_scheduler(state.clone());
         start_terminal_cleanup(state.terminals.clone());

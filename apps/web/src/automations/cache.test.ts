@@ -11,7 +11,7 @@ function automation(id: string, overrides: Partial<Automation> = {}): Automation
     createdAt: "2026-05-07T08:00:00Z",
     id,
     lastError: null,
-    lastQueuedInputId: null,
+    lastNativeQueueId: null,
     lastRunAt: null,
     name: id,
     nextRunAt: "2026-05-07T09:00:00Z",

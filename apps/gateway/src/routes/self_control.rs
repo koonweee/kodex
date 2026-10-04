@@ -17,9 +17,8 @@ use utoipa::ToSchema;
 use crate::{
     api::AppState,
     app_server_api::{
-        self, RawAppServerResponse, ThreadCommandResponse, ThreadListResponse, ThreadLiveState,
-        ThreadSettingsUpdateRequest, ThreadSubagentListResponse, ThreadViewResponse,
-        TurnStartOptions, UserInput,
+        self, RawAppServerResponse, ThreadCommandResponse, ThreadListResponse,
+        ThreadSettingsUpdateRequest, ThreadSubagentListResponse, ThreadViewResponse, UserInput,
     },
     app_surfaces::{
         validate_app_surface_grants, validate_app_surface_title,
@@ -27,7 +26,7 @@ use crate::{
     },
     automations::{broadcast_automation_delete, broadcast_automation_upsert},
     error::{ApiError, ApiResult},
-    queue,
+    queue::{self, QueuedInput},
     routes::{
         app_surfaces::{
             broadcast_app_surface_event, broadcast_app_surface_presentation_request,
@@ -53,15 +52,13 @@ use crate::{
             RenameThreadResponse, SidebarThreadsResponse, ThreadCreationOptions, ThreadListQuery,
             ThreadTimelinePageQuery, ThreadUpsertScope,
         },
-        turns::{
-            start_turn, ThreadCompactResponse, ThreadInterruptCurrentResponse, TurnStartRequest,
-        },
+        turns::{ThreadCompactResponse, ThreadInterruptCurrentResponse},
     },
     schema::validate_approval_response,
     store::{
         AppSurfaceCsp, AppSurfaceGrants, AppSurfacePermissions, AppSurfaceProvider,
-        AppSurfaceSessionStatus, AppSurfaceSessionUpsert, Approval, AutomationStatus,
-        AutomationUpdate, NewAutomation, NewEvent, QueuedInput,
+        AppSurfaceSessionStatus, AppSurfaceSessionUpsert, Approval, AutomationRun,
+        AutomationStatus, AutomationUpdate, NewAutomation, NewEvent,
     },
 };
 
@@ -234,13 +231,6 @@ impl Default for SelfControlSource {
 }
 
 impl SelfControlSource {
-    fn source_id(&self) -> Option<&str> {
-        self.source_tool_call_id
-            .as_deref()
-            .or(self.source_turn_id.as_deref())
-            .or(self.source_thread_id.as_deref())
-    }
-
     pub(super) fn to_value(&self) -> Value {
         let mut value = serde_json::Map::new();
         value.insert("sourceType".to_string(), json!("kodex_control"));
@@ -429,7 +419,12 @@ pub async fn list_self_control_queued_inputs(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
 ) -> ApiResult<Json<crate::queue::QueuedInputListResponse>> {
-    crate::queue::list_queued_inputs(State(state), Path(thread_id)).await
+    crate::queue::list_queued_inputs(
+        State(state),
+        Path(thread_id),
+        Query(crate::queue::QueuedInputListQuery::default()),
+    )
+    .await
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
@@ -687,7 +682,7 @@ pub struct SelfControlCreateThreadRequest {
     post,
     path = "/v1/self-control/threads",
     summary = "Create a Kodex thread through self-control",
-    description = "Agent-facing guarded thread creation endpoint. It reuses gateway-owned thread creation policy, settings overlays, broadcasts, and provenance instead of raw app-server access.",
+    description = "Agent-facing guarded thread creation endpoint. It delegates native thread creation and shared settings while preserving guarded provenance.",
     request_body = SelfControlCreateThreadRequest,
     responses((status = 200, body = ThreadCommandResponse))
 )]
@@ -735,11 +730,9 @@ pub async fn create_self_control_thread(
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SelfControlThreadInputRequest {
-    pub input: Vec<UserInput>,
-    #[serde(flatten)]
-    pub options: TurnStartOptions,
+    pub input: Vec<Value>,
     #[serde(default)]
     pub source: SelfControlSource,
     #[serde(default)]
@@ -759,7 +752,6 @@ pub struct SelfControlThreadInputResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum SelfControlThreadInputAction {
-    Started,
     Queued,
 }
 
@@ -767,7 +759,7 @@ pub enum SelfControlThreadInputAction {
     post,
     path = "/v1/self-control/threads/{threadId}/input",
     summary = "Send input to a Kodex thread through self-control",
-    description = "Agent-facing guarded thread input endpoint. Idle threads start a turn; active threads receive source-labeled queued input instead of steering the live user turn.",
+    description = "Activate the target and submit one native queued message. Native ordering and pause behavior apply; this never steers the user’s active turn and never retries an uncertain admission.",
     request_body = SelfControlThreadInputRequest,
     responses((status = 200, body = SelfControlThreadInputResponse))
 )]
@@ -777,65 +769,31 @@ pub async fn send_self_control_thread_input(
     Json(request): Json<SelfControlThreadInputRequest>,
 ) -> ApiResult<Json<SelfControlThreadInputResponse>> {
     enforce_self_control_depth(request.max_self_control_depth)?;
-    request.options.validate()?;
-    if should_queue_self_control_input(&state, &thread_id).await? {
-        let input = request.input;
-        let source_id = request.source.source_id().map(str::to_string);
-        let queued_input = queue::create_queued_input_with_source(
-            &state,
-            &thread_id,
-            input,
-            request.options,
-            Some("kodex_control"),
-            source_id.as_deref(),
-        )
-        .await?;
-        audit_self_control(
-            &state,
-            None,
-            Some(&thread_id),
-            "self_control.thread_input",
-            json!({
-                "source": request.source.to_value(),
-                "action": "queued",
-                "queuedInputId": queued_input.id
-            }),
-        )
-        .await?;
-        return Ok(Json(SelfControlThreadInputResponse {
-            action: SelfControlThreadInputAction::Queued,
-            turn: None,
-            queued_input: Some(queued_input),
-        }));
-    }
-
-    let turn = start_turn(
-        State(state.clone()),
-        Path(thread_id.clone()),
-        Json(TurnStartRequest {
-            client_user_message_id: None,
-            input: request.input,
-            attachments: Vec::new(),
-            options: request.options,
-        }),
-    )
-    .await?
-    .0;
+    let _guard = state.thread_input_locks.lock(&thread_id).await;
+    let client = app_server_api::client(&state.app_server);
+    client.activate_input_target(&thread_id).await?;
+    let client_id = uuid::Uuid::new_v4().to_string();
     audit_self_control(
         &state,
         None,
         Some(&thread_id),
-        "self_control.thread_input",
-        json!({
-            "source": request.source.to_value(),
-            "action": "started"
-        }),
+        "self_control.thread_input_admitting",
+        json!({"source":request.source.to_value(), "clientUserMessageId":client_id}),
     )
     .await?;
+    let row =
+        crate::queue_transfer::enqueue_locked(&state, &thread_id, request.input, client_id).await?;
+    queue::broadcast_changed_best_effort(&state, &thread_id).await;
+    let queued_input = queue::project_row(&state, &thread_id, row);
+    // An accepted native write must not become a retryable error solely because
+    // its audit/refill publication fails.
+    if let Err(error) = audit_self_control(&state, None, Some(&thread_id), "self_control.thread_input", json!({"source":request.source.to_value(), "action":"queued", "queuedInputId":queued_input.id})).await {
+        tracing::warn!(%error, "failed to audit accepted Control input");
+    }
     Ok(Json(SelfControlThreadInputResponse {
-        action: SelfControlThreadInputAction::Started,
-        turn: Some(turn),
-        queued_input: None,
+        action: SelfControlThreadInputAction::Queued,
+        turn: None,
+        queued_input: Some(queued_input),
     }))
 }
 
@@ -1169,9 +1127,8 @@ pub struct SelfControlThreadSpawnResponse {
     pub thread_id: String,
     pub idempotency_key: Option<String>,
     pub remaining_self_control_depth: u8,
-    pub thread: ThreadCommandResponse,
-    pub input: SelfControlThreadInputResponse,
-    #[serde(default)]
+    pub queued_submission_id: String,
+    pub client_user_message_id: String,
     pub idempotent_replay: bool,
 }
 
@@ -1191,42 +1148,41 @@ pub async fn spawn_self_control_thread(
         .idempotency_key
         .clone()
         .or_else(|| request.source.source_tool_call_id.clone());
-    if let Some(existing) =
-        find_idempotent_spawn_response(&state, idempotency_key.as_deref()).await?
-    {
-        return Ok(Json(SelfControlThreadSpawnResponse {
-            idempotent_replay: true,
-            ..existing
-        }));
+    let _key_guard = if let Some(key) = &idempotency_key {
+        Some(state.self_control_spawn_locks.lock(key).await)
+    } else {
+        None
+    };
+    if let Some(key) = &idempotency_key {
+        if let Some(event) = state
+            .store
+            .find_control_spawn_event("self_control.thread_spawned", key)
+            .await?
+        {
+            let mut response: SelfControlThreadSpawnResponse =
+                serde_json::from_value(event.payload["response"].clone())?;
+            response.idempotent_replay = true;
+            return Ok(Json(response));
+        }
+        if state
+            .store
+            .find_control_spawn_event("self_control.thread_spawn_admitting", key)
+            .await?
+            .is_some()
+        {
+            return Err(ApiError::Conflict("Prior spawn admission is uncertain; inspect native threads/history before explicitly starting another attempt with a new key".into()));
+        }
     }
-    if let Some(created) = find_idempotent_spawn_created(&state, idempotency_key.as_deref()).await?
-    {
-        let input_response = send_self_control_thread_input(
-            State(state.clone()),
-            Path(created.thread_id.clone()),
-            Json(SelfControlThreadInputRequest {
-                input: request.input,
-                options: TurnStartOptions::default(),
-                source: request.source.clone(),
-                max_self_control_depth: None,
-            }),
-        )
-        .await?
-        .0;
-        let response = complete_self_control_thread_spawn(
-            &state,
-            &request.project_id,
-            &created.thread_id,
-            idempotency_key,
-            created.remaining_self_control_depth,
-            created.thread,
-            input_response,
-            &request.source,
-            true,
-        )
-        .await?;
-        return Ok(Json(response));
-    }
+    // One durable intent before either native write. Creation/input lost ACKs
+    // never authorize repeating the same key; no partial-spawn repair engine.
+    audit_self_control(
+        &state,
+        Some(&request.project_id),
+        None,
+        "self_control.thread_spawn_admitting",
+        json!({"idempotencyKey":idempotency_key,"source":request.source.to_value()}),
+    )
+    .await?;
 
     let mut payload = request.payload.clone();
     if let Some(object) = payload.as_object_mut() {
@@ -1261,40 +1217,37 @@ pub async fn spawn_self_control_thread(
     .await?
     .0;
     let thread_id = thread_response.thread.id.clone();
-    record_self_control_thread_spawn_created(
-        &state,
-        &request.project_id,
-        &thread_id,
-        idempotency_key.as_deref(),
-        remaining_depth,
-        &thread_response,
-        &request.source,
-    )
-    .await?;
     let input_response = send_self_control_thread_input(
         State(state.clone()),
         Path(thread_id.clone()),
         Json(SelfControlThreadInputRequest {
-            input: request.input,
-            options: TurnStartOptions::default(),
+            input: request
+                .input
+                .into_iter()
+                .map(serde_json::to_value)
+                .collect::<Result<Vec<_>, _>>()?,
             source: request.source.clone(),
             max_self_control_depth: None,
         }),
     )
     .await?
     .0;
-    let response = complete_self_control_thread_spawn(
-        &state,
-        &request.project_id,
-        &thread_id,
+    let row = input_response
+        .queued_input
+        .ok_or_else(|| ApiError::BadGateway("Control input admission was not confirmed".into()))?;
+    let response = SelfControlThreadSpawnResponse {
+        thread_id: thread_id.clone(),
         idempotency_key,
-        remaining_depth,
-        thread_response,
-        input_response,
-        &request.source,
-        false,
-    )
-    .await?;
+        remaining_self_control_depth: remaining_depth,
+        queued_submission_id: row.id,
+        client_user_message_id: row.client_user_message_id,
+        idempotent_replay: false,
+    };
+    if let Err(error) = audit_self_control(&state, Some(&request.project_id), Some(&thread_id), "self_control.thread_spawned", json!({"idempotencyKey":response.idempotency_key,"source":request.source.to_value(),"response":response})).await {
+        // Current caller receives the native ACK. A later replay lacking this
+        // audit record sees the durable uncertain intent and cannot resubmit.
+        tracing::warn!(%error, "failed to cache accepted Control spawn");
+    }
     Ok(Json(response))
 }
 
@@ -1491,7 +1444,7 @@ pub struct SelfControlAutomationRunNowRequest {
 #[serde(rename_all = "camelCase")]
 pub struct SelfControlAutomationRunNowResponse {
     pub automation: AutomationDto,
-    pub queued_input: QueuedInput,
+    pub run: AutomationRun,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -1583,38 +1536,13 @@ pub async fn run_self_control_automation_now(
         .unwrap_or_default();
     let automation = state.store.get_automation(&automation_id).await?;
     validate_target_thread(&state, &automation.target_thread_id).await?;
-    let input = vec![UserInput::Text {
-        text: automation.prompt.clone(),
-        text_elements: Vec::new(),
-    }];
-    let source_id = source
-        .source_id()
-        .map(str::to_string)
-        .unwrap_or_else(|| automation_id.clone());
-    let queued_input = queue::create_queued_input_with_source(
-        &state,
-        &automation.target_thread_id,
-        input,
-        TurnStartOptions::default(),
-        Some("automation"),
-        Some(&source_id),
-    )
-    .await?;
-    audit_self_control(
-        &state,
-        None,
-        Some(&automation.target_thread_id),
-        "self_control.automation_run_now",
-        json!({
-            "automationId": automation_id,
-            "queuedInputId": queued_input.id,
-            "source": source.to_value()
-        }),
-    )
-    .await?;
+    let run = crate::automations::run_now(&state, &automation_id).await?;
+    if let Err(error) = audit_self_control(&state, None, Some(&run.target_thread_id), "self_control.automation_run_now", json!({"automationId":automation_id, "runId":run.id, "nativeQueueId":run.native_queue_id, "source":source.to_value()})).await {
+        tracing::warn!(%error, "failed to audit Control automation run");
+    }
     Ok(Json(SelfControlAutomationRunNowResponse {
         automation: automation_to_dto(automation),
-        queued_input,
+        run,
     }))
 }
 
@@ -1777,32 +1705,6 @@ pub async fn list_self_control_events(
     Ok(Json(EventListResponse { events }))
 }
 
-async fn should_queue_self_control_input(state: &AppState, thread_id: &str) -> ApiResult<bool> {
-    match state.thread_views.live_state(thread_id).await {
-        Some(ThreadLiveState::Streaming | ThreadLiveState::Syncing) => return Ok(true),
-        Some(ThreadLiveState::Idle) => return Ok(false),
-        Some(ThreadLiveState::NotLoaded) | None => {}
-    }
-    let revision = state.store.latest_event_seq().await?;
-    let snapshot = match app_server_api::client(&state.app_server)
-        .thread_read(thread_id.to_string())
-        .await
-    {
-        Ok(snapshot) => snapshot,
-        Err(error)
-            if app_server_api::is_thread_not_materialized_before_first_user_message(&error) =>
-        {
-            return Ok(false);
-        }
-        Err(error) => return Err(error),
-    };
-    let timeline = state
-        .thread_views
-        .refresh_from_turns(thread_id, &snapshot.turns, revision)
-        .await?;
-    Ok(timeline.active_turn_id.is_some() || timeline.live_state != ThreadLiveState::Idle)
-}
-
 fn enforce_self_control_depth(max_depth: Option<u8>) -> ApiResult<()> {
     consume_self_control_depth(max_depth).map(|_| ())
 }
@@ -1837,144 +1739,6 @@ async fn audit_thread_mutation(
         json!({ "source": source.to_value() }),
     )
     .await
-}
-
-struct IdempotentSpawnCreated {
-    thread_id: String,
-    remaining_self_control_depth: u8,
-    thread: ThreadCommandResponse,
-}
-
-async fn record_self_control_thread_spawn_created(
-    state: &AppState,
-    project_id: &str,
-    thread_id: &str,
-    idempotency_key: Option<&str>,
-    remaining_self_control_depth: u8,
-    thread: &ThreadCommandResponse,
-    source: &SelfControlSource,
-) -> ApiResult<()> {
-    audit_self_control(
-        state,
-        Some(project_id),
-        Some(thread_id),
-        "self_control.thread_spawn_created",
-        json!({
-            "source": source.to_value(),
-            "idempotencyKey": idempotency_key,
-            "remainingSelfControlDepth": remaining_self_control_depth,
-            "threadId": thread_id,
-            "thread": thread
-        }),
-    )
-    .await
-}
-
-async fn complete_self_control_thread_spawn(
-    state: &AppState,
-    project_id: &str,
-    thread_id: &str,
-    idempotency_key: Option<String>,
-    remaining_self_control_depth: u8,
-    thread: ThreadCommandResponse,
-    input: SelfControlThreadInputResponse,
-    source: &SelfControlSource,
-    idempotent_replay: bool,
-) -> ApiResult<SelfControlThreadSpawnResponse> {
-    let response = SelfControlThreadSpawnResponse {
-        thread_id: thread_id.to_string(),
-        idempotency_key,
-        remaining_self_control_depth,
-        thread,
-        input,
-        idempotent_replay,
-    };
-    audit_self_control(
-        state,
-        Some(project_id),
-        Some(thread_id),
-        "self_control.thread_spawned",
-        json!({
-            "source": source.to_value(),
-            "idempotencyKey": response.idempotency_key.as_deref(),
-            "remainingSelfControlDepth": remaining_self_control_depth,
-            "response": &response
-        }),
-    )
-    .await?;
-    Ok(response)
-}
-
-async fn find_idempotent_spawn_response(
-    state: &AppState,
-    idempotency_key: Option<&str>,
-) -> ApiResult<Option<SelfControlThreadSpawnResponse>> {
-    let Some(idempotency_key) = idempotency_key else {
-        return Ok(None);
-    };
-    let events = state.store.replay_events(None, None, None).await?;
-    for event in events.into_iter().rev() {
-        if event.kind != "self_control.thread_spawned" {
-            continue;
-        }
-        let Some(event_key) = event.payload.get("idempotencyKey").and_then(Value::as_str) else {
-            continue;
-        };
-        if event_key != idempotency_key {
-            continue;
-        }
-        let Some(response) = event.payload.get("response").cloned() else {
-            continue;
-        };
-        return serde_json::from_value(response)
-            .map(Some)
-            .map_err(|error| ApiError::Other(anyhow::anyhow!(error)));
-    }
-    Ok(None)
-}
-
-async fn find_idempotent_spawn_created(
-    state: &AppState,
-    idempotency_key: Option<&str>,
-) -> ApiResult<Option<IdempotentSpawnCreated>> {
-    let Some(idempotency_key) = idempotency_key else {
-        return Ok(None);
-    };
-    let events = state.store.replay_events(None, None, None).await?;
-    for event in events.into_iter().rev() {
-        if event.kind != "self_control.thread_spawn_created" {
-            continue;
-        }
-        let Some(event_key) = event.payload.get("idempotencyKey").and_then(Value::as_str) else {
-            continue;
-        };
-        if event_key != idempotency_key {
-            continue;
-        }
-        let Some(thread_value) = event.payload.get("thread").cloned() else {
-            continue;
-        };
-        let thread = serde_json::from_value::<ThreadCommandResponse>(thread_value)
-            .map_err(|error| ApiError::Other(anyhow::anyhow!(error)))?;
-        let thread_id = event
-            .payload
-            .get("threadId")
-            .and_then(Value::as_str)
-            .unwrap_or(&thread.thread.id)
-            .to_string();
-        let remaining_self_control_depth = event
-            .payload
-            .get("remainingSelfControlDepth")
-            .and_then(Value::as_u64)
-            .and_then(|value| u8::try_from(value).ok())
-            .unwrap_or_default();
-        return Ok(Some(IdempotentSpawnCreated {
-            thread_id,
-            remaining_self_control_depth,
-            thread,
-        }));
-    }
-    Ok(None)
 }
 
 fn approval_policy_result(

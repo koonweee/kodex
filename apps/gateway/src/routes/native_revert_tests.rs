@@ -301,12 +301,6 @@ async fn native_revert_does_not_recreate_pending_input_from_a_late_accepted_ack(
         "late ACK recreated removed input"
     );
     assert!(cleared.active_turn_id.is_none());
-    assert!(state
-        .store
-        .list_queued_inputs(THREAD)
-        .await
-        .unwrap()
-        .is_empty());
 
     let (status, ack) = request(&state, "POST", &format!("/v1/threads/{THREAD}/input"), Some(json!({
         "clientUserMessageId":"new-client", "input":[{"type":"text", "text":"Submitted after revert"}],

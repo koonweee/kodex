@@ -1,40 +1,68 @@
+//! Native ordinary queue projection. Only promotion transfers live in gateway
+//! storage; no startup drainer, replay or admission retry owns these rows.
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     routing::{delete, get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
+use uuid::Uuid;
 
 use crate::{
     api::AppState,
-    app_server_api::{self, ThreadLiveState, TimelineFileAttachment, TurnStartOptions, UserInput},
+    app_server_api::{self, NativeQueuedSubmission, RawAppServerResponse, TimelineFileAttachment},
     error::{ApiError, ApiResult},
-    store::{
-        EventEnvelope, NewEvent, QueuedInput, QueuedInputPriority, QueuedInputStatus,
-        ThreadRuntimeState, ThreadRuntimeStatus,
-    },
-    turn_lifecycle,
+    queue_transfer::{self, PromotionOutcome},
+    store::{NewEvent, QueueTransfer},
 };
 
-pub const QUEUE_UPSERT_EVENT: &str = "turn_queue.item_upsert";
-pub const QUEUE_DELETE_EVENT: &str = "turn_queue.item_deleted";
+pub const QUEUE_CHANGED_EVENT: &str = "turn_queue.changed";
+
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct QueuedInput {
+    pub id: String,
+    pub thread_id: String,
+    pub client_user_message_id: String,
+    pub input: Vec<Value>,
+    pub attachments: Vec<TimelineFileAttachment>,
+    /// Ephemeral hint. The command revalidates continuous original-turn context.
+    pub can_steer: bool,
+}
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QueuedInputCreateRequest {
-    pub input: Vec<UserInput>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub input: Vec<Value>,
+    #[serde(default)]
     pub attachments: Vec<TimelineFileAttachment>,
-    #[serde(flatten)]
-    pub options: TurnStartOptions,
+    #[serde(default)]
+    pub client_user_message_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct QueuedInputUpdateRequest {
+    pub input: Vec<Value>,
+    #[serde(default)]
+    pub attachments: Vec<TimelineFileAttachment>,
+}
+
+#[derive(Debug, Default, Deserialize, IntoParams, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct QueuedInputListQuery {
+    pub cursor: Option<String>,
+    pub limit: Option<u32>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct QueuedInputListResponse {
     pub queued_inputs: Vec<QueuedInput>,
+    pub transfers: Vec<QueueTransfer>,
+    pub next_cursor: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -48,6 +76,26 @@ pub struct QueuedInputResponse {
 pub struct QueuedInputDeleteResponse {
     pub id: String,
     pub thread_id: String,
+    pub deleted: bool,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct QueuedInputReorderRequest {
+    pub queued_submission_ids: Vec<String>,
+}
+
+#[derive(Debug, Default, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct QueuedInputStartRequest {
+    pub queued_submission_id: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueTransferDeleteResponse {
+    pub id: String,
+    pub thread_id: String,
 }
 
 pub fn router() -> Router<AppState> {
@@ -57,26 +105,55 @@ pub fn router() -> Router<AppState> {
             get(list_queued_inputs).post(create_queued_input),
         )
         .route(
-            "/v1/threads/{thread_id}/queued-inputs/{queue_id}/retry",
-            post(retry_queued_input),
+            "/v1/threads/{thread_id}/queued-inputs/reorder",
+            post(reorder_queued_inputs),
+        )
+        .route(
+            "/v1/threads/{thread_id}/queued-inputs/start",
+            post(start_queued_input),
+        )
+        .route(
+            "/v1/threads/{thread_id}/queued-inputs/{queue_id}",
+            delete(delete_queued_input).put(update_queued_input),
         )
         .route(
             "/v1/threads/{thread_id}/queued-inputs/{queue_id}/steer",
             post(steer_queued_input),
         )
         .route(
-            "/v1/threads/{thread_id}/queued-inputs/{queue_id}",
-            delete(delete_queued_input),
+            "/v1/queue-transfers/{transfer_id}/reconcile",
+            post(reconcile_queue_transfer),
+        )
+        .route(
+            "/v1/queue-transfers/{transfer_id}",
+            delete(dismiss_queue_transfer),
         )
 }
 
-#[utoipa::path(get, path = "/v1/threads/{threadId}/queued-inputs", responses((status = 200, body = QueuedInputListResponse)))]
+#[utoipa::path(get, path = "/v1/threads/{threadId}/queued-inputs", params(QueuedInputListQuery), responses((status = 200, body = QueuedInputListResponse)))]
 pub async fn list_queued_inputs(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
+    Query(query): Query<QueuedInputListQuery>,
 ) -> ApiResult<Json<QueuedInputListResponse>> {
-    let queued_inputs = state.store.list_queued_inputs(&thread_id).await?;
-    Ok(Json(QueuedInputListResponse { queued_inputs }))
+    let limit = query.limit.unwrap_or(100);
+    if !(1..=100).contains(&limit) {
+        return Err(ApiError::BadRequest(
+            "Queue page limit must be between 1 and 100".into(),
+        ));
+    }
+    let page = app_server_api::client(&state.app_server)
+        .queue_list(thread_id.clone(), query.cursor, Some(limit))
+        .await?;
+    Ok(Json(QueuedInputListResponse {
+        queued_inputs: page
+            .data
+            .into_iter()
+            .map(|row| project_row(&state, &thread_id, row))
+            .collect(),
+        transfers: state.store.list_queue_transfers(Some(&thread_id)).await?,
+        next_cursor: page.next_cursor,
+    }))
 }
 
 #[utoipa::path(post, path = "/v1/threads/{threadId}/queued-inputs", request_body = QueuedInputCreateRequest, responses((status = 200, body = QueuedInputResponse)))]
@@ -85,107 +162,41 @@ pub async fn create_queued_input(
     Path(thread_id): Path<String>,
     Json(request): Json<QueuedInputCreateRequest>,
 ) -> ApiResult<Json<QueuedInputResponse>> {
-    request.options.validate()?;
-    let attachments =
-        app_server_api::validate_file_attachments_for_thread(&thread_id, request.attachments)?;
-    let input = app_server_api::append_file_attachment_envelope(request.input, &attachments);
-    let queued_input = create_queued_input_with_source_and_attachments(
+    let input = prepare_input(&thread_id, request.input, request.attachments)?;
+    let row = queue_transfer::enqueue(
         &state,
         &thread_id,
         input,
-        attachments,
-        request.options,
-        None,
-        None,
+        request
+            .client_user_message_id
+            .unwrap_or_else(|| Uuid::new_v4().to_string()),
     )
     .await?;
-    Ok(Json(QueuedInputResponse { queued_input }))
+    // Native notification may arrive before the add ACK binds its witness.
+    broadcast_changed_best_effort(&state, &thread_id).await;
+    Ok(Json(QueuedInputResponse {
+        queued_input: project_row(&state, &thread_id, row),
+    }))
 }
 
-#[utoipa::path(post, path = "/v1/threads/{threadId}/queued-inputs/{queueId}/retry", responses((status = 200, body = QueuedInputResponse)))]
-pub async fn retry_queued_input(
+#[utoipa::path(put, path = "/v1/threads/{threadId}/queued-inputs/{queueId}", request_body = QueuedInputUpdateRequest, responses((status = 200, body = QueuedInputResponse)))]
+pub async fn update_queued_input(
     State(state): State<AppState>,
     Path((thread_id, queue_id)): Path<(String, String)>,
+    Json(request): Json<QueuedInputUpdateRequest>,
 ) -> ApiResult<Json<QueuedInputResponse>> {
-    app_server_api::client(&state.app_server)
-        .check_direct_input_capability(&thread_id)
+    let input = prepare_input(&thread_id, request.input, request.attachments)?;
+    let _guard = state.thread_input_locks.lock(&thread_id).await;
+    let client = app_server_api::client(&state.app_server);
+    client.check_direct_input_capability(&thread_id).await?;
+    ensure_not_transferring(&state, &thread_id, &queue_id).await?;
+    let row = client
+        .queue_update(thread_id.clone(), queue_id, input)
         .await?;
-    let queued_input = state
-        .store
-        .requeue_queued_input(&thread_id, &queue_id)
-        .await?;
-    broadcast_queue_upsert(&state, &queued_input).await?;
-    trigger_queue_drain(state.clone(), thread_id);
-    Ok(Json(QueuedInputResponse { queued_input }))
-}
-
-#[utoipa::path(post, path = "/v1/threads/{threadId}/queued-inputs/{queueId}/steer", responses((status = 200, body = QueuedInputResponse)))]
-pub async fn steer_queued_input(
-    State(state): State<AppState>,
-    Path((thread_id, queue_id)): Path<(String, String)>,
-) -> ApiResult<Json<QueuedInputResponse>> {
-    app_server_api::client(&state.app_server)
-        .check_direct_input_capability(&thread_id)
-        .await?;
-    let Some(active_turn_id) = turn_lifecycle::current_active_turn_id(&state, &thread_id).await?
-    else {
-        return Err(ApiError::BadRequest(format!(
-            "thread {thread_id} has no active turn to steer"
-        )));
-    };
-    let queued_input = state
-        .store
-        .claim_queued_input_for_steering(&thread_id, &queue_id)
-        .await?;
-    broadcast_queue_upsert(&state, &queued_input).await?;
-
-    let submission_revision = state.store.latest_event_seq().await?;
-    let result = app_server_api::client(&state.app_server)
-        .turn_steer(
-            thread_id.clone(),
-            active_turn_id.clone(),
-            queued_input.input.clone(),
-            Some(format!("kodex-queue:{}", queued_input.id)),
-        )
-        .await;
-    match result {
-        Ok(_) => {
-            turn_lifecycle::record_pending_user_projection(
-                &state,
-                &thread_id,
-                &active_turn_id,
-                &format!("kodex-queue:{}", queued_input.id),
-                &queued_input.input,
-                &queued_input.attachments,
-                submission_revision,
-            )
-            .await?;
-            let queued_input = state
-                .store
-                .mark_queued_input_pending_commit(&thread_id, &queue_id, &active_turn_id, None)
-                .await?;
-            broadcast_queue_upsert(&state, &queued_input).await?;
-            Ok(Json(QueuedInputResponse { queued_input }))
-        }
-        Err(error) if turn_lifecycle::is_non_steerable_error(&error) => {
-            let queued_input = state
-                .store
-                .mark_queued_input_rejected_steer(&thread_id, &queue_id, error.to_string())
-                .await?;
-            broadcast_queue_upsert(&state, &queued_input).await?;
-            Err(ApiError::BadRequest(
-                "active turn cannot accept steering; queued for next turn".to_string(),
-            ))
-        }
-        Err(error) => {
-            let queued_input = state
-                .store
-                .mark_queued_input_failed(&thread_id, &queue_id, error.to_string())
-                .await?;
-            broadcast_queue_upsert(&state, &queued_input).await?;
-            Err(error)
-        }
-    }
+    broadcast_changed_best_effort(&state, &thread_id).await;
+    Ok(Json(QueuedInputResponse {
+        queued_input: project_row(&state, &thread_id, row),
+    }))
 }
 
 #[utoipa::path(delete, path = "/v1/threads/{threadId}/queued-inputs/{queueId}", responses((status = 200, body = QueuedInputDeleteResponse)))]
@@ -193,466 +204,201 @@ pub async fn delete_queued_input(
     State(state): State<AppState>,
     Path((thread_id, queue_id)): Path<(String, String)>,
 ) -> ApiResult<Json<QueuedInputDeleteResponse>> {
-    state
-        .store
-        .delete_queued_input(&thread_id, &queue_id)
-        .await?;
-    broadcast_queue_delete(&state, &thread_id, &queue_id).await?;
+    let _guard = state.thread_input_locks.lock(&thread_id).await;
+    let client = app_server_api::client(&state.app_server);
+    client.check_direct_input_capability(&thread_id).await?;
+    ensure_not_transferring(&state, &thread_id, &queue_id).await?;
+    // Ambiguous deletion must not leave a reusable promotion right.
+    crate::automations::observe_queue_handoff_pending(&state, &thread_id, &queue_id).await?;
+    state.queue_admissions.forget(&thread_id, &queue_id);
+    let result = client
+        .queue_delete(thread_id.clone(), queue_id.clone())
+        .await;
+    broadcast_changed_best_effort(&state, &thread_id).await;
+    let deleted = result?;
+    if deleted {
+        crate::automations::observe_removed(&state, &thread_id, &queue_id).await?;
+    }
     Ok(Json(QueuedInputDeleteResponse {
         id: queue_id,
         thread_id,
+        deleted,
     }))
 }
 
-pub async fn recover_queued_inputs(state: &AppState) -> ApiResult<()> {
-    for queued_input in state.store.recover_queued_inputs_after_restart().await? {
-        broadcast_queue_upsert(state, &queued_input).await?;
-    }
-    for thread_id in state.store.queued_thread_ids().await? {
-        trigger_queue_drain(state.clone(), thread_id);
-    }
-    Ok(())
-}
-
-pub async fn create_queued_input_with_source(
-    state: &AppState,
-    thread_id: &str,
-    input: Vec<UserInput>,
-    options: TurnStartOptions,
-    source_type: Option<&str>,
-    source_id: Option<&str>,
-) -> ApiResult<QueuedInput> {
-    create_queued_input_with_source_and_attachments(
-        state,
-        thread_id,
-        input,
-        Vec::new(),
-        options,
-        source_type,
-        source_id,
-    )
-    .await
-}
-
-pub async fn create_queued_input_with_source_and_attachments(
-    state: &AppState,
-    thread_id: &str,
-    input: Vec<UserInput>,
-    attachments: Vec<TimelineFileAttachment>,
-    options: TurnStartOptions,
-    source_type: Option<&str>,
-    source_id: Option<&str>,
-) -> ApiResult<QueuedInput> {
-    app_server_api::client(&state.app_server)
-        .check_direct_input_capability(thread_id)
-        .await?;
-    let queued_input = state
-        .store
-        .create_queued_input_with_source_and_attachments(
-            thread_id,
-            input,
-            attachments,
-            options,
-            source_type,
-            source_id,
-        )
-        .await?;
-    broadcast_queue_upsert(state, &queued_input).await?;
-    trigger_queue_drain(state.clone(), thread_id.to_string());
-    Ok(queued_input)
-}
-
-pub fn trigger_queue_drain(state: AppState, thread_id: String) {
-    tokio::spawn(async move {
-        if let Err(error) = drain_one_queued_input(&state, &thread_id).await {
-            tracing::debug!(%error, thread_id, "queue drain skipped or failed");
-        }
-    });
-}
-
-pub async fn refresh_runtime_state(state: &AppState, runtime: ThreadRuntimeState) -> ApiResult<()> {
-    state.store.upsert_thread_runtime_state(runtime).await?;
-    Ok(())
-}
-
-pub async fn reconcile_pending_steer_commit_event(
-    state: &AppState,
-    thread_id: &str,
-    turn_id: &str,
-    item: &Value,
-) -> ApiResult<Option<EventEnvelope>> {
-    if !is_user_message_item(item) {
-        return Ok(None);
-    }
-    let committed_key = pending_steer_compare_key_from_item(item);
-    let Some(pending) = state
-        .store
-        .oldest_pending_commit_input(thread_id, turn_id)
-        .await?
-    else {
-        return Ok(None);
-    };
-    if pending_steer_compare_key_from_inputs(&pending.input) != committed_key {
-        tracing::debug!(
-            thread_id,
-            turn_id,
-            queue_id = pending.id,
-            "committed user message did not match front pending steer"
-        );
-        return Ok(None);
-    }
-    state
-        .store
-        .delete_queued_input_for_gateway(thread_id, &pending.id)
-        .await?;
-    append_queue_delete_event(state, thread_id, &pending.id)
-        .await
-        .map(Some)
-}
-
-pub async fn requeue_unmatched_pending_commit_input_events_for_turn(
-    state: &AppState,
-    thread_id: &str,
-    turn_id: &str,
-) -> ApiResult<Vec<EventEnvelope>> {
-    let rows = state
-        .store
-        .requeue_pending_commit_inputs_for_turn(
-            thread_id,
-            turn_id,
-            "Steer was accepted but not confirmed in committed history before the turn ended.",
-        )
-        .await?;
-    let mut events = Vec::new();
-    for row in rows {
-        events.push(append_queue_upsert_event(state, &row).await?);
-    }
-    Ok(events)
-}
-
-pub async fn requeue_unmatched_pending_commit_input_events_for_thread(
-    state: &AppState,
-    thread_id: &str,
-) -> ApiResult<Vec<EventEnvelope>> {
-    let rows = state
-        .store
-        .requeue_pending_commit_inputs_for_thread(
-            thread_id,
-            "Steer was accepted but not confirmed in committed history before the thread became idle.",
-        )
-        .await?;
-    let mut events = Vec::new();
-    for row in rows {
-        events.push(append_queue_upsert_event(state, &row).await?);
-    }
-    Ok(events)
-}
-
-async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<()> {
-    // A full native history read can persist a newly loaded thread. Avoid that
-    // side effect without queued work; enqueue and retry schedule their own drain.
-    if !state
-        .store
-        .list_queued_inputs(thread_id)
-        .await?
-        .iter()
-        .any(|input| input.status == QueuedInputStatus::Queued)
-    {
-        return Ok(());
-    }
-    if !thread_is_idle_for_queue(state, thread_id).await? {
-        return Ok(());
-    }
-    state
-        .store
-        .insert_idle_thread_runtime_if_absent(thread_id)
-        .await?;
-    if !state
-        .store
-        .claim_idle_thread_runtime_for_queue_drain(thread_id)
-        .await?
-    {
-        return Ok(());
-    }
-
-    let Some(queued_input) = state.store.claim_next_queued_input(thread_id).await? else {
-        state
-            .store
-            .clear_queue_drain_runtime_claim(thread_id)
-            .await?;
-        return Ok(());
-    };
-    broadcast_queue_upsert(state, &queued_input).await?;
-
-    let submission_revision = state.store.latest_event_seq().await?;
-    let result = app_server_api::client(&state.app_server)
-        .turn_start(
-            thread_id.to_string(),
-            queued_input.input.clone(),
-            queued_input.options.clone(),
-            Some(format!("kodex-queue:{}", queued_input.id)),
-        )
+#[utoipa::path(post, path = "/v1/threads/{threadId}/queued-inputs/reorder", request_body = QueuedInputReorderRequest, responses((status = 200)))]
+pub async fn reorder_queued_inputs(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+    Json(request): Json<QueuedInputReorderRequest>,
+) -> ApiResult<Json<Value>> {
+    let _guard = state.thread_input_locks.lock(&thread_id).await;
+    let client = app_server_api::client(&state.app_server);
+    client.check_direct_input_capability(&thread_id).await?;
+    let result = client
+        .queue_reorder(thread_id.clone(), request.queued_submission_ids)
         .await;
-    match result {
-        Ok(response) => {
-            if let Some(turn_id) = turn_lifecycle::pending_projection_turn_id(&response.payload) {
-                turn_lifecycle::record_pending_user_projection(
-                    state,
-                    thread_id,
-                    &turn_id,
-                    &format!("kodex-queue:{}", queued_input.id),
-                    &queued_input.input,
-                    &queued_input.attachments,
-                    submission_revision,
-                )
-                .await?;
-            }
-            state
-                .store
-                .delete_queued_input_for_gateway(thread_id, &queued_input.id)
-                .await?;
-            broadcast_queue_delete(state, thread_id, &queued_input.id).await?;
-        }
-        Err(error) => {
-            let failed = state
-                .store
-                .mark_queued_input_failed(thread_id, &queued_input.id, error.to_string())
-                .await?;
-            state
-                .store
-                .clear_queue_drain_runtime_claim(thread_id)
-                .await?;
-            broadcast_queue_upsert(state, &failed).await?;
-        }
-    }
-    Ok(())
+    broadcast_changed_best_effort(&state, &thread_id).await;
+    result?;
+    Ok(Json(json!({})))
 }
 
-#[cfg(test)]
-pub(crate) async fn reconcile_thread_runtime_from_app_server(
-    state: &AppState,
-    thread_id: &str,
-) -> ApiResult<Option<ThreadRuntimeState>> {
-    let snapshot = app_server_api::client(&state.app_server)
-        .thread_read(thread_id.to_string())
-        .await?;
-    let active_turn_id = snapshot
-        .turns
-        .iter()
-        .find(|turn| !is_terminal_turn_status(&turn.status))
-        .map(|turn| turn.id.clone());
-    let runtime = ThreadRuntimeState {
-        thread_id: thread_id.to_string(),
-        status: if active_turn_id.is_some() {
-            ThreadRuntimeStatus::Active
-        } else {
-            ThreadRuntimeStatus::Idle
-        },
-        active_turn_id,
-        updated_at: chrono::Utc::now(),
-        last_event_seq: None,
-    };
-    let runtime = state
-        .store
-        .upsert_thread_runtime_state_unless_draining(runtime)
-        .await?;
-    Ok(Some(runtime))
-}
-
-async fn thread_is_idle_for_queue(state: &AppState, thread_id: &str) -> ApiResult<bool> {
-    match state.thread_views.live_state(thread_id).await {
-        Some(ThreadLiveState::Streaming | ThreadLiveState::Syncing) => return Ok(false),
-        Some(ThreadLiveState::Idle | ThreadLiveState::NotLoaded) => {}
-        None => {}
-    }
-    if let Some(runtime) = state.store.get_thread_runtime_state(thread_id).await? {
-        match runtime.status {
-            ThreadRuntimeStatus::Draining
-            | ThreadRuntimeStatus::Starting
-            | ThreadRuntimeStatus::Syncing => return Ok(false),
-            ThreadRuntimeStatus::Active | ThreadRuntimeStatus::Streaming
-                if runtime.active_turn_id.is_some() =>
+#[utoipa::path(post, path = "/v1/threads/{threadId}/queued-inputs/start", request_body = QueuedInputStartRequest, responses((status = 200, body = RawAppServerResponse)))]
+pub async fn start_queued_input(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+    Json(request): Json<QueuedInputStartRequest>,
+) -> ApiResult<Json<RawAppServerResponse>> {
+    let _guard = state.thread_input_locks.lock(&thread_id).await;
+    let client = app_server_api::client(&state.app_server);
+    client.check_direct_input_capability(&thread_id).await?;
+    let id = request.queued_submission_id;
+    ensure_not_transferring(&state, &thread_id, &id).await?;
+    crate::automations::observe_queue_handoff_pending(&state, &thread_id, &id).await?;
+    state.queue_admissions.forget(&thread_id, &id);
+    let result = client
+        .queue_start(thread_id.clone(), Some(id.clone()))
+        .await;
+    if let Ok(ack) = &result {
+        if let Some(turn) = ack.payload.pointer("/turn/id").and_then(Value::as_str) {
+            if let Err(error) =
+                crate::automations::observe_promoted_receipt(&state, &thread_id, &id, turn).await
             {
-                return Ok(false);
+                tracing::warn!(%error, "failed to record acknowledged automation dispatch");
             }
-            _ => {}
         }
     }
-    let revision = state.store.latest_event_seq().await?;
-    let snapshot = app_server_api::client(&state.app_server)
-        .thread_read(thread_id.to_string())
-        .await?;
-    let timeline = state
-        .thread_views
-        .refresh_from_turns(thread_id, &snapshot.turns, revision)
-        .await?;
-    Ok(timeline.active_turn_id.is_none() && timeline.live_state == ThreadLiveState::Idle)
+    broadcast_changed_best_effort(&state, &thread_id).await;
+    Ok(Json(result?))
 }
 
-#[cfg(test)]
-fn is_terminal_turn_status(status: &str) -> bool {
-    matches!(
-        status.to_ascii_lowercase().as_str(),
-        "completed" | "failed" | "cancelled" | "canceled" | "interrupted"
-    )
+#[utoipa::path(post, path = "/v1/threads/{threadId}/queued-inputs/{queueId}/steer", responses((status = 200, body = PromotionOutcome)))]
+pub async fn steer_queued_input(
+    State(state): State<AppState>,
+    Path((thread_id, queue_id)): Path<(String, String)>,
+) -> ApiResult<Json<PromotionOutcome>> {
+    let result = queue_transfer::promote(&state, &thread_id, &queue_id).await;
+    broadcast_changed_best_effort(&state, &thread_id).await;
+    Ok(Json(result?))
 }
 
-async fn broadcast_queue_upsert(state: &AppState, queued_input: &QueuedInput) -> ApiResult<()> {
-    let event = append_queue_upsert_event(state, queued_input).await?;
+#[utoipa::path(post, path = "/v1/queue-transfers/{transferId}/reconcile", responses((status = 200, body = PromotionOutcome)))]
+pub async fn reconcile_queue_transfer(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<PromotionOutcome>> {
+    Ok(Json(queue_transfer::reconcile(&state, &id).await?))
+}
+
+#[utoipa::path(delete, path = "/v1/queue-transfers/{transferId}", responses((status = 200, body = QueueTransferDeleteResponse)))]
+pub async fn dismiss_queue_transfer(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<QueueTransferDeleteResponse>> {
+    let transfer = state
+        .store
+        .get_queue_transfer(&id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("Queue transfer".into()))?;
+    let _guard = state.thread_input_locks.lock(&transfer.thread_id).await;
+    if !state.store.dismiss_uncertain_queue_transfer(&id).await? {
+        return Err(ApiError::Conflict(
+            "Only an uncertain transfer can be dismissed".into(),
+        ));
+    }
+    queue_transfer::broadcast_changed(&state, &transfer.thread_id).await?;
+    Ok(Json(QueueTransferDeleteResponse {
+        id,
+        thread_id: transfer.thread_id,
+    }))
+}
+
+pub(crate) fn project_row(
+    state: &AppState,
+    thread_id: &str,
+    row: NativeQueuedSubmission,
+) -> QueuedInput {
+    QueuedInput {
+        can_steer: state.queue_admissions.can_promote(thread_id, &row.id),
+        attachments: app_server_api::file_attachments_from_user_content(&row.input),
+        id: row.id,
+        thread_id: thread_id.into(),
+        client_user_message_id: row.client_user_message_id,
+        input: row.input,
+    }
+}
+
+fn prepare_input(
+    thread_id: &str,
+    mut input: Vec<Value>,
+    attachments: Vec<TimelineFileAttachment>,
+) -> ApiResult<Vec<Value>> {
+    let attachments = app_server_api::validate_file_attachments_for_thread(thread_id, attachments)?;
+    // Append the existing native text envelope without deserializing the other
+    // native variants into the gateway's narrower composer input enum.
+    for envelope in app_server_api::append_file_attachment_envelope(Vec::new(), &attachments) {
+        input.push(serde_json::to_value(envelope)?);
+    }
+    Ok(input)
+}
+
+async fn ensure_not_transferring(state: &AppState, thread_id: &str, row_id: &str) -> ApiResult<()> {
+    if state
+        .store
+        .get_queue_transfer_for_row(thread_id, row_id)
+        .await?
+        .is_some()
+    {
+        return Err(ApiError::Conflict(
+            "Message has a promotion transfer; reconcile or recover that transfer".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) async fn broadcast_changed(state: &AppState, thread_id: &str) -> ApiResult<()> {
+    let event = state
+        .store
+        .append_event(NewEvent {
+            project_id: None,
+            thread_id: Some(thread_id.into()),
+            turn_id: None,
+            item_id: None,
+            kind: QUEUE_CHANGED_EVENT.into(),
+            codex_method: None,
+            payload: json!({"threadId":thread_id}),
+        })
+        .await?;
     let _ = state.events.send(event);
     Ok(())
 }
 
-async fn append_queue_upsert_event(
-    state: &AppState,
-    queued_input: &QueuedInput,
-) -> ApiResult<EventEnvelope> {
-    state
-        .store
-        .append_event(NewEvent {
-            project_id: None,
-            thread_id: Some(queued_input.thread_id.clone()),
-            turn_id: None,
-            item_id: None,
-            kind: QUEUE_UPSERT_EVENT.to_string(),
-            codex_method: None,
-            payload: serde_json::to_value(queued_input)?,
-        })
-        .await
-}
-
-async fn broadcast_queue_delete(
-    state: &AppState,
-    thread_id: &str,
-    queue_id: &str,
-) -> ApiResult<()> {
-    let event = append_queue_delete_event(state, thread_id, queue_id).await?;
-    let _ = state.events.send(event);
-    Ok(())
-}
-
-async fn append_queue_delete_event(
-    state: &AppState,
-    thread_id: &str,
-    queue_id: &str,
-) -> ApiResult<EventEnvelope> {
-    state
-        .store
-        .append_event(NewEvent {
-            project_id: None,
-            thread_id: Some(thread_id.to_string()),
-            turn_id: None,
-            item_id: None,
-            kind: QUEUE_DELETE_EVENT.to_string(),
-            codex_method: None,
-            payload: json!({
-                "id": queue_id,
-                "threadId": thread_id,
-            }),
-        })
-        .await
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct PendingSteerCompareKey {
-    text: String,
-    image_count: usize,
-}
-
-fn pending_steer_compare_key_from_inputs(input: &[UserInput]) -> PendingSteerCompareKey {
-    let mut text = String::new();
-    let mut image_count = 0;
-    for item in input {
-        match item {
-            UserInput::Text {
-                text: item_text, ..
-            } => text.push_str(item_text),
-            UserInput::Image { .. } | UserInput::LocalImage { .. } => image_count += 1,
-            UserInput::Skill { .. } | UserInput::Mention { .. } => {}
-        }
-    }
-    PendingSteerCompareKey { text, image_count }
-}
-
-fn pending_steer_compare_key_from_item(item: &Value) -> PendingSteerCompareKey {
-    let content = item
-        .get("content")
-        .or_else(|| item.get("input"))
-        .and_then(Value::as_array);
-    let Some(content) = content else {
-        return PendingSteerCompareKey {
-            text: item
-                .get("text")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_string(),
-            image_count: 0,
-        };
-    };
-    let mut text = String::new();
-    let mut image_count = 0;
-    for part in content {
-        match part.get("type").and_then(Value::as_str) {
-            Some("text") => {
-                if let Some(part_text) = part.get("text").and_then(Value::as_str) {
-                    text.push_str(part_text);
-                }
-            }
-            Some("image") | Some("localImage") => image_count += 1,
-            _ => {}
-        }
-    }
-    PendingSteerCompareKey { text, image_count }
-}
-
-fn is_user_message_item(item: &Value) -> bool {
-    item.get("type")
-        .or_else(|| item.get("itemType"))
-        .and_then(Value::as_str)
-        .is_some_and(|item_type| item_type == "userMessage")
-}
-
-impl QueuedInput {
-    pub fn text_preview(&self) -> String {
-        self.input
-            .iter()
-            .filter_map(|input| match input {
-                UserInput::Text { text, .. } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-
-    pub fn image_count(&self) -> usize {
-        self.input
-            .iter()
-            .filter(|input| {
-                matches!(
-                    input,
-                    UserInput::Image { .. } | UserInput::LocalImage { .. }
-                )
-            })
-            .count()
-    }
-}
-
-pub fn queued_input_status_schema_values() -> [QueuedInputStatus; 5] {
-    [
-        QueuedInputStatus::Queued,
-        QueuedInputStatus::Submitting,
-        QueuedInputStatus::Steering,
-        QueuedInputStatus::PendingCommit,
-        QueuedInputStatus::Failed,
-    ]
-}
-
-pub fn queued_input_priority_schema_values() -> [QueuedInputPriority; 2] {
-    [
-        QueuedInputPriority::RejectedSteer,
-        QueuedInputPriority::Normal,
-    ]
-}
-
 #[cfg(test)]
-mod tests;
+#[path = "queue_transfer/http_tests.rs"]
+mod http_tests;
+
+pub(crate) async fn broadcast_changed_best_effort(state: &AppState, thread_id: &str) {
+    if let Err(error) = broadcast_changed(state, thread_id).await {
+        tracing::warn!(%error, thread_id, "failed to publish native queue refill");
+    }
+}
+
+/// Publish after canonical lifecycle state so consumers can refill against the
+/// completed ingestion boundary. No native RPC or input lock is acquired.
+pub(crate) async fn observe_notification(state: &AppState, method: &str, params: &Value) {
+    if matches!(
+        method,
+        "thread/queue/changed"
+            | "turn/started"
+            | "turn/completed"
+            | "thread/status/changed"
+            | "thread/reverted"
+            | "thread/closed"
+            | "thread/archived"
+            | "thread/deleted"
+    ) {
+        if let Some(thread) = params.get("threadId").and_then(Value::as_str) {
+            broadcast_changed_best_effort(state, thread).await;
+        }
+    }
+}

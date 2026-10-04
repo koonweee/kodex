@@ -13,7 +13,7 @@ use crate::{
         TurnStartOptions, UserInput,
     },
     error::{ApiError, ApiResult},
-    events, queue, thread_view, turn_lifecycle,
+    events, thread_view, turn_lifecycle,
 };
 
 pub fn router() -> Router<AppState> {
@@ -129,7 +129,6 @@ pub async fn compact_thread(
         Ok(response) => response,
         Err(error) => {
             turn_lifecycle::record_turn_start_failed(&state, &thread_id).await?;
-            queue::trigger_queue_drain(state.clone(), thread_id.clone());
             return Err(error);
         }
     };

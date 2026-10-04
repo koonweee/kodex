@@ -60,7 +60,7 @@ test("two tabs converge from native approval snapshots after responding, missed 
         case "POST /v1/threads/thread-1/attach": body = detail; break;
         case "GET /v1/threads/thread-1/settings": body = { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null }; break;
         case "GET /v1/threads/thread-1/app-surface": body = { session: null }; break;
-        case "GET /v1/threads/thread-1/queued-inputs": body = { queuedInputs: [] }; break;
+        case "GET /v1/threads/thread-1/queued-inputs": body = { queuedInputs: [], transfers: [], nextCursor: null }; break;
         case "GET /v1/threads/thread-1/subagents": body = { subagents: [] }; break;
         case "GET /v1/account": body = { account: null, requiresOpenaiAuth: false, rawPayload: {} }; break;
         case "GET /v1/account/rate-limits": body = { rateLimits: null, rawPayload: {} }; break;

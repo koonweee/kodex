@@ -602,68 +602,6 @@
   opacity: 0.65;
 }
 
-.kodex-queued-steer {
-  position: relative;
-  z-index: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0;
-  min-width: 0;
-  margin-bottom: calc(-1 * var(--kodex-radius-composer));
-  padding-bottom: var(--kodex-radius-composer);
-  overflow: hidden;
-  border: 0;
-  border-radius: var(--kodex-radius-composer) var(--kodex-radius-composer) 0 0;
-  background: var(--kodex-bg-raised);
-}
-
-.kodex-queued-steer-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 10px;
-  align-items: center;
-  min-width: 0;
-  padding: 12px 14px;
-}
-
-.kodex-queued-steer-content {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-
-.kodex-queued-steer-row + .kodex-queued-steer-row {
-  border-top: 1px solid var(--kodex-border-subtle);
-}
-
-.kodex-queued-steer .kodex-queued-steer-text {
-  display: -webkit-box;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--kodex-text-primary);
-  line-height: 1.45;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.kodex-queued-steer-button,
-.kodex-queued-steer-abort {
-  justify-self: end;
-}
-
-.kodex-queued-steer-button {
-  --button-bg: var(--kodex-accent);
-  --button-hover: var(--kodex-accent-strong);
-  --button-color: var(--kodex-text-on-accent);
-  --button-bd: 1px solid transparent;
-  height: 30px;
-  border-radius: 10px;
-  padding-inline: 16px;
-  font-weight: 700;
-}
-
 @media (max-width: 700px) {
   .kodex-composer-hero-stage {
     margin-bottom: 24px;
@@ -750,4 +688,17 @@
     background: var(--kodex-bg-danger);
     color: var(--kodex-text-danger);
   }
+}
+
+.kodex-native-queue {
+  max-height: 280px;
+  overflow-y: auto;
+  margin-bottom: var(--mantine-spacing-xs);
+}
+.kodex-native-queue-row {
+  padding: var(--mantine-spacing-xs);
+  border-bottom: 1px solid var(--kodex-border-subtle);
+}
+@media (pointer: coarse) {
+  .kodex-native-queue button { min-height: 44px; }
 }

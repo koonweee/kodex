@@ -7,6 +7,17 @@ use crate::{error::ApiResult, events_replay::WORKSPACE_GLOBAL_THREAD_EVENT_KINDS
 use super::{row_to_event, EventEnvelope, NewEvent, Store, EVENT_REPLAY_LIMIT};
 
 impl Store {
+    /// Exact Control audit lookup; SSE replay windows are not idempotency state.
+    pub(crate) async fn find_control_spawn_event(
+        &self,
+        kind: &str,
+        key: &str,
+    ) -> ApiResult<Option<EventEnvelope>> {
+        let row = sqlx::query("select * from events where kind = ? and json_extract(payload_json, '$.idempotencyKey') = ? order by seq desc limit 1")
+            .bind(kind).bind(key).fetch_optional(&self.pool).await?;
+        row.map(row_to_event).transpose()
+    }
+
     pub async fn append_event(&self, event: NewEvent) -> ApiResult<EventEnvelope> {
         let id = Uuid::new_v4().to_string();
         let received_at = Utc::now();

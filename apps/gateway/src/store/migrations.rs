@@ -195,45 +195,6 @@ impl Store {
         .await?;
         sqlx::query(
             r#"
-            create table if not exists queued_turn_inputs (
-                id text primary key,
-                thread_id text not null,
-                input_json text not null,
-                attachments_json text not null default '[]',
-                options_json text not null,
-                status text not null,
-                priority text not null default 'normal',
-                attempt_count integer not null default 0,
-                last_error text,
-                accepted_turn_id text,
-                accepted_at text,
-                accepted_event_seq integer,
-                created_at text not null,
-                updated_at text not null,
-                deleted_at text
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-        self.add_column_if_missing("queued_turn_inputs", "accepted_turn_id", "text")
-            .await?;
-        self.add_column_if_missing("queued_turn_inputs", "accepted_at", "text")
-            .await?;
-        self.add_column_if_missing("queued_turn_inputs", "accepted_event_seq", "integer")
-            .await?;
-        self.add_column_if_missing("queued_turn_inputs", "source_type", "text")
-            .await?;
-        self.add_column_if_missing("queued_turn_inputs", "source_id", "text")
-            .await?;
-        self.add_column_if_missing(
-            "queued_turn_inputs",
-            "attachments_json",
-            "text not null default '[]'",
-        )
-        .await?;
-        sqlx::query(
-            r#"
             create table if not exists thread_runtime_state (
                 thread_id text primary key,
                 status text not null,
@@ -258,7 +219,7 @@ impl Store {
                 status text not null,
                 paused_reason text,
                 last_run_at text,
-                last_queued_input_id text,
+                last_native_queue_id text,
                 last_error text,
                 consecutive_failure_count integer not null default 0,
                 created_at text not null,
@@ -276,9 +237,11 @@ impl Store {
             create table if not exists automation_runs (
                 id text primary key,
                 automation_id text not null,
-                scheduled_for text not null,
-                status text not null,
-                queued_input_id text,
+                target_thread_id text not null,
+                scheduled_for text,
+                phase text not null check (phase in ('admitting', 'queued', 'startRequested', 'dispatched', 'rejected', 'uncertain', 'removed')),
+                native_queue_id text,
+                turn_id text,
                 error text,
                 created_at text not null,
                 updated_at text not null,
@@ -289,22 +252,17 @@ impl Store {
         .execute(&self.pool)
         .await?;
         sqlx::query(
-            "create index if not exists queued_turn_inputs_active_idx on queued_turn_inputs (thread_id, deleted_at, status, priority, created_at)"
-        )
-        .execute(&self.pool)
-        .await?;
-        sqlx::query(
-            "create index if not exists queued_turn_inputs_source_idx on queued_turn_inputs (source_type, source_id)"
-        )
-        .execute(&self.pool)
-        .await?;
-        sqlx::query(
             "create index if not exists automations_due_idx on automations (status, deleted_at, next_run_at)",
         )
         .execute(&self.pool)
         .await?;
         sqlx::query(
-            "create index if not exists automation_runs_pending_idx on automation_runs (automation_id, status, created_at)",
+            "create unique index if not exists automation_runs_pending_idx on automation_runs (automation_id) where scheduled_for is not null and phase in ('admitting', 'queued', 'startRequested', 'uncertain')",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "create unique index if not exists automation_runs_native_row_idx on automation_runs (target_thread_id, native_queue_id) where native_queue_id is not null",
         )
         .execute(&self.pool)
         .await?;
@@ -393,7 +351,7 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'app_surface_sessions', 'app_surface_resources', 'approvals', 'thread_reads', 'thread_read_revision', 'push_subscriptions', 'notification_deliveries', 'thread_notification_settings', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'app_surface_sessions', 'app_surface_resources', 'approvals', 'thread_reads', 'thread_read_revision', 'push_subscriptions', 'notification_deliveries', 'thread_notification_settings', 'queue_transfers', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
         )
         .fetch_all(store.pool())
         .await
@@ -409,7 +367,7 @@ mod tests {
                 "events",
                 "notification_deliveries",
                 "push_subscriptions",
-                "queued_turn_inputs",
+                "queue_transfers",
                 "thread_notification_settings",
                 "thread_read_revision",
                 "thread_reads",

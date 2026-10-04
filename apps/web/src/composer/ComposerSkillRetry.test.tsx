@@ -34,12 +34,9 @@ function renderComposer(activeTurnId: string | null) {
       onCreateDraftThread: vi.fn(),
       onError,
       onOptimisticUserMessageStarted,
-      onQueuedInputDeleted: vi.fn(),
-      onQueuedInputUpsert: vi.fn(),
       onThreadMaterialized: vi.fn(),
       onThreadTurnStartFailed: vi.fn(),
       onThreadTurnStarted: vi.fn(),
-      queuedSteerRows: [],
       selectedProjectId: null,
       selectedThreadId: "thread-1",
     });
@@ -58,7 +55,6 @@ function renderComposer(activeTurnId: string | null) {
       isComposerSubmitting={orchestration.isComposerSubmitting}
       isSelectedTimelineReady
       models={[]}
-      onAbortQueuedSteer={orchestration.handleAbortQueuedSteer}
       onAttachmentInputChange={orchestration.handleAttachmentInputChange}
       onComposerDragLeave={orchestration.handleComposerDragLeave}
       onComposerDragOver={orchestration.handleComposerDragOver}
@@ -69,10 +65,8 @@ function renderComposer(activeTurnId: string | null) {
       onImageOpen={vi.fn()}
       onRemovePendingAttachment={orchestration.removePendingAttachment}
       onStopTurn={orchestration.handleStopTurn}
-      onSubmitQueuedSteer={orchestration.handleSubmitQueuedSteer}
       onSubmitTurn={orchestration.handleSubmitTurn}
       pendingAttachments={orchestration.pendingAttachments}
-      queuedSteerRows={[]}
       selectedThreadPresent
     />;
   }
@@ -96,7 +90,7 @@ describe("explicit skill retry", () => {
         }
         return endpoint === "input"
           ? { payload: {} }
-          : { queuedInput: { id: "queue-1", threadId: "thread-1", input: [], options: {}, status: "queued", priority: "normal", attemptCount: 0, lastError: null, createdAt: "2026-10-05T00:00:00Z", updatedAt: "2026-10-05T00:00:00Z" } };
+          : { queuedInput: { id: "queue-1", threadId: "thread-1", input: [], clientUserMessageId: "fixture", attachments: [], canSteer: true } };
       },
     });
     const { onError, onOptimisticUserMessageStarted } = renderComposer(activeTurnId);
@@ -104,12 +98,12 @@ describe("explicit skill retry", () => {
     await userEvent.type(composer, "请 $rev");
     expect(await screen.findByRole("option", { name: /review fix/i })).toBeInTheDocument();
     await userEvent.keyboard("{Enter}");
-    await userEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await userEvent.click(screen.getByRole("button", { name: endpoint === "queued-inputs" ? "Queue message" : "Send message" }));
 
     await waitFor(() => expect(onError).toHaveBeenCalledOnce());
     expect((composer as HTMLTextAreaElement).value.trim()).toBe("请 $review-fix");
     expect(composer).toBeEnabled();
-    await userEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await userEvent.click(screen.getByRole("button", { name: endpoint === "queued-inputs" ? "Queue message" : "Send message" }));
 
     await waitFor(() => expect(gateway.callsFor("POST", `/v1/threads/thread-1/${endpoint}`)).toHaveLength(2));
     const expectedBody = { input: [
@@ -124,7 +118,7 @@ describe("explicit skill retry", () => {
       for (const [index, body] of bodies.entries()) expect(onOptimisticUserMessageStarted.mock.calls[index]).toEqual([
         expect.objectContaining({ clientRequestId: body.clientUserMessageId, text: "请 $review-fix", skillMentions: expect.arrayContaining([expect.objectContaining({ name: "review-fix", path: "/skills/review-fix/SKILL.md" })]) }),
       ]);
-    } else for (const body of bodies) expect(body).toEqual(expectedBody);
+    } else for (const body of bodies) expect(body).toEqual({ ...expectedBody, clientUserMessageId: expect.any(String) });
     expect(composer).toHaveValue("");
     expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(0);
   });

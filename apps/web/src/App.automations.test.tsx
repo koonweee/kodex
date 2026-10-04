@@ -5,12 +5,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   App,
   FakeEventSource,
-  baseRoutes,
+  baseRoutes as baseAppRoutes,
   mockGateway,
   requestJson,
   secondThread,
   thread,
 } from "./test/mvpAppHarness";
+
+function baseRoutes(routes: Parameters<typeof baseAppRoutes>[0] = {}) {
+  return baseAppRoutes({ "GET /v1/automations/automation-1/runs": { runs: [] }, ...routes });
+}
 
 function goTo(path: string) {
   window.history.replaceState(null, "", path);
@@ -42,7 +46,7 @@ const automation = {
   status: "active",
   pausedReason: null,
   lastRunAt: null,
-  lastQueuedInputId: null,
+  lastNativeQueueId: null,
   lastError: null,
   consecutiveFailureCount: 0,
   createdAt: "2026-05-07T08:00:00Z",
@@ -241,7 +245,7 @@ describe("Automations frontend", () => {
             status: "active",
             pausedReason: null,
             lastRunAt: null,
-            lastQueuedInputId: null,
+            lastNativeQueueId: null,
             lastError: null,
             consecutiveFailureCount: 0,
           },

@@ -88,8 +88,24 @@ impl CodexClient {
         ThreadSubagentListResponse::from_payload(payload)
     }
 
-    /// Until the legacy queue is removed, reject an explicit native denial before
-    /// accepting a durable queued row. Unknown remains for native dispatch to decide.
+    /// Explicit producer-target activation. Loaded empty shells need no resume;
+    /// metadata reads of cold chats do not themselves activate their queues.
+    pub async fn activate_input_target(&self, thread_id: &str) -> ApiResult<()> {
+        let thread = self.thread_read_summary(thread_id.to_string()).await?;
+        if thread.can_accept_direct_input == Some(false) {
+            return Err(ApiError::BadRequest(
+                "Native thread does not accept direct input".into(),
+            ));
+        }
+        if thread.status == super::ThreadStatus::NotLoaded {
+            self.thread_resume(thread_id.to_string(), serde_json::json!({}))
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Reject an explicit native denial before input admission. Unknown remains
+    /// for the native input primitive to decide.
     pub async fn check_direct_input_capability(&self, thread_id: &str) -> ApiResult<()> {
         let thread = self.thread_read_summary(thread_id.to_string()).await?;
         if thread.can_accept_direct_input == Some(false) {

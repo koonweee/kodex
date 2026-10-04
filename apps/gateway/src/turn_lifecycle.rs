@@ -92,9 +92,7 @@ pub async fn refreshed_active_turn_id(
 pub async fn routed_active_turn_id(state: &AppState, thread_id: &str) -> ApiResult<Option<String>> {
     if let Some(runtime) = state.store.get_thread_runtime_state(thread_id).await? {
         match runtime.status {
-            ThreadRuntimeStatus::Syncing
-            | ThreadRuntimeStatus::Starting
-            | ThreadRuntimeStatus::Draining => {
+            ThreadRuntimeStatus::Syncing | ThreadRuntimeStatus::Starting => {
                 return Ok(Some(
                     runtime
                         .active_turn_id

@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::config::Config;
 
-const INSTANCE_FORMAT: u32 = 2;
+const INSTANCE_FORMAT: u32 = 3;
 const MARKER: &str = "instance.json";
 const LOCK: &str = ".instance.lock";
 

@@ -47,8 +47,8 @@ pub(crate) const WORKSPACE_GLOBAL_THREAD_EVENT_KINDS: &[&str] = &[
     THREAD_SUBAGENTS_CHANGED_EVENT,
     automations::AUTOMATION_UPSERT_EVENT,
     automations::AUTOMATION_DELETE_EVENT,
-    queue::QUEUE_UPSERT_EVENT,
-    queue::QUEUE_DELETE_EVENT,
+    automations::AUTOMATION_RUN_UPDATED_EVENT,
+    queue::QUEUE_CHANGED_EVENT,
     queue_transfer::TRANSFER_CHANGED_EVENT,
 ];
 
@@ -112,8 +112,8 @@ pub(crate) fn is_operational_replay_event(event: &EventEnvelope) -> bool {
             | APP_SURFACE_MODEL_CONTEXT_UPDATED_EVENT
             | automations::AUTOMATION_UPSERT_EVENT
             | automations::AUTOMATION_DELETE_EVENT
-            | queue::QUEUE_UPSERT_EVENT
-            | queue::QUEUE_DELETE_EVENT
+            | automations::AUTOMATION_RUN_UPDATED_EVENT
+            | queue::QUEUE_CHANGED_EVENT
             | queue_transfer::TRANSFER_CHANGED_EVENT
     )
 }
@@ -170,8 +170,7 @@ pub(crate) fn is_normal_live_event(event: &EventEnvelope) -> bool {
                 | THREAD_VIEW_REFRESH_REQUIRED_EVENT_KIND
                 | ACCOUNT_RATE_LIMITS_UPDATED_EVENT
                 | skills::SKILLS_CHANGED_EVENT
-                | queue::QUEUE_UPSERT_EVENT
-                | queue::QUEUE_DELETE_EVENT
+                | queue::QUEUE_CHANGED_EVENT
         )
 }
 

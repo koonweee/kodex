@@ -204,7 +204,7 @@ describe("app surface pane integration", () => {
       resolveBridge({
         id: "submit-1",
         result: {
-          input: { disposition: "started", queuedInput: null, rawPayload: { turnId: "turn-app-surface" } },
+          input: { payload: { turn: { id: "turn-app-surface", status: "inProgress" } } },
         },
       });
     });

@@ -73,6 +73,17 @@ pub struct QueueTransfer {
 }
 
 impl Store {
+    /// Explicit abandonment only. Dismissing accepted/in-flight input could
+    /// conceal eventual delivery, so only persisted uncertainty is removable.
+    pub async fn dismiss_uncertain_queue_transfer(&self, id: &str) -> ApiResult<bool> {
+        let result =
+            sqlx::query("delete from queue_transfers where id = ? and phase = 'uncertain'")
+                .bind(id)
+                .execute(&self.pool)
+                .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
     pub(super) async fn install_queue_transfer_schema(&self) -> ApiResult<()> {
         sqlx::query(
             r#"

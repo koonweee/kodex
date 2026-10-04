@@ -251,7 +251,7 @@ describe("deep link navigation", () => {
           name: "Framework detail title",
           updatedAt: 100,
         }),
-        "GET /v1/threads/thread-framework/queued-inputs": { queuedInputs: [] },
+        "GET /v1/threads/thread-framework/queued-inputs": { queuedInputs: [], transfers: [], nextCursor: null },
       }),
     );
 

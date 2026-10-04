@@ -1040,7 +1040,7 @@ async function handleApi({ activeScenario, request, response, terminalSessions, 
   }
   const queuedInputsMatch = url.pathname.match(/^\/v1\/threads\/([^/]+)\/queued-inputs$/);
   if (request.method === "GET" && queuedInputsMatch) {
-    json(response, { queuedInputs: [] });
+    json(response, { queuedInputs: [], transfers: [], nextCursor: null });
     return;
   }
   if (request.method === "POST" && queuedInputsMatch) {
@@ -1062,7 +1062,7 @@ async function handleApi({ activeScenario, request, response, terminalSessions, 
   if (request.method === "POST" && appSurfaceBridgeMatch) {
     json(response, {
       id: "bridge-result",
-      result: { input: { disposition: "started", queuedInput: null, rawPayload: { turnId: "turn-bridge" } } },
+      result: { input: { payload: { turn: { id: "turn-bridge", status: "inProgress" } } } },
     });
     return;
   }
@@ -1575,16 +1575,8 @@ function approval() {
 
 function queuedInput(threadId) {
   return {
-    id: "queue-1",
-    threadId,
-    input: [{ type: "text", text: "Queued profile input" }],
-    options: {},
-    status: "queued",
-    priority: "normal",
-    attemptCount: 0,
-    lastError: null,
-    createdAt: "2026-06-05T00:00:00Z",
-    updatedAt: "2026-06-05T00:00:00Z",
+    id: "queue-1", threadId, clientUserMessageId: "profile-queue-client",
+    input: [{ type: "text", text: "Queued profile input" }], attachments: [], canSteer: false,
   };
 }
 

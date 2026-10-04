@@ -84,8 +84,6 @@ function renderBridgePair({
       onError: vi.fn(),
       onImageOpen: vi.fn(),
       onImagePreviewUrlsChanged: vi.fn(),
-      onQueuedInputDeleted: vi.fn(),
-      onQueuedInputUpsert: vi.fn(),
       onThreadMaterialized: vi.fn(),
       onThreadTurnStartFailed: vi.fn(),
       onThreadTurnStarted: vi.fn(),
@@ -177,9 +175,9 @@ describe("ThreadPaneComposerBridge", () => {
     const first = within(screen.getByRole("region", { name: /first thread pane/i }));
     expect(await first.findByRole("button", { name: "Chat settings unavailable" })).toBeDisabled();
     await userEvent.type(first.getByLabelText(/message composer/i), "Use native execution settings");
-    await userEvent.click(first.getByRole("button", { name: "Send message" }));
+    await userEvent.click(first.getByRole("button", { name: endpoint === "queued-inputs" ? "Queue message" : "Send message" }));
     await waitFor(() => expect(gateway.callsFor("POST", `/v1/threads/thread-1/${endpoint}`)).toHaveLength(1));
-    await expect(requestJson(gateway.callsFor("POST", `/v1/threads/thread-1/${endpoint}`)[0])).resolves.toEqual({ ...(endpoint === "input" ? { clientUserMessageId: expect.any(String) } : {}), input: [{ text: "Use native execution settings", type: "text" }] });
+    await expect(requestJson(gateway.callsFor("POST", `/v1/threads/thread-1/${endpoint}`)[0])).resolves.toEqual({ clientUserMessageId: expect.any(String), input: [{ text: "Use native execution settings", type: "text" }] });
     expect(gateway.callsFor("PATCH", "/v1/threads/thread-1/settings")).toHaveLength(0);
   });
 

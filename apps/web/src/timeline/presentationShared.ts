@@ -109,7 +109,7 @@ export function contentArrayText(value: unknown): string {
   return stripAttachmentEnvelope(text);
 }
 
-function stripAttachmentEnvelope(text: string): string {
+export function stripAttachmentEnvelope(text: string): string {
   const trimmed = text.trimEnd();
   const start = trimmed.lastIndexOf("```kodex-attachments\n");
   if (start === -1 || !trimmed.endsWith("\n```")) {

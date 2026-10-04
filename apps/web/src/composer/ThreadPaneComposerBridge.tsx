@@ -1,12 +1,11 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Autocomplete, Box, Button } from "@mantine/core";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
-import { getComposerSettings, listQueuedInputs, type Project, type QueuedInput } from "../api/client";
+import { getComposerSettings, type Project } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import type { ComposerSettings, ComposerSettingsChange, ContextUsage } from "../ComposerFooterControls";
 import type { ImageLightboxImage } from "../images/types";
-import { mergeQueuedInputData } from "../queuedInputs/cache";
 import { singleProjectRoot } from "../projects/roots";
 import { useWorkspace, type ThreadComposerState } from "../workspace/WorkspaceProvider";
 import { paneTargetRecord, type WorkspacePane } from "../workspace/paneTypes";
@@ -16,8 +15,6 @@ import type { ComposerDraftStore } from "./useComposerDraftState";
 import { useComposerOrchestration } from "./useComposerOrchestration";
 import type { useComposerSettingsState } from "./useComposerSettingsState";
 import { useThreadSettings } from "./useThreadSettings";
-
-const EMPTY_QUEUED_INPUTS: QueuedInput[] = [];
 
 type ThreadPaneComposerBridgeProps = {
   composerDefaults: ComposerSettings;
@@ -30,8 +27,6 @@ type ThreadPaneComposerBridgeProps = {
   onError: (error: unknown) => void;
   onImageOpen: (image: ImageLightboxImage) => void;
   onImagePreviewUrlsChanged: (previewUrls: Record<string, string>) => void;
-  onQueuedInputDeleted: (threadId: string, queueId: string) => void;
-  onQueuedInputUpsert: (row: QueuedInput) => void;
   onThreadMaterialized: (threadId: string) => void;
   onThreadTurnStartFailed: (threadId: string) => void;
   onThreadTurnStarted: (threadId: string) => void;
@@ -52,8 +47,6 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   onError,
   onImageOpen,
   onImagePreviewUrlsChanged,
-  onQueuedInputDeleted,
-  onQueuedInputUpsert,
   onThreadMaterialized,
   onThreadTurnStartFailed,
   onThreadTurnStarted,
@@ -62,7 +55,6 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
   projects,
   skillsInvalidationGeneration,
 }: ThreadPaneComposerBridgeProps) {
-  const queryClientForPane = useQueryClient();
   const { publishThreadPaneTimelineAction, updatePane } = useWorkspace();
   const target = paneTargetRecord(pane);
   const existingThreadId = target.mode === "existing" && typeof target.threadId === "string" ? target.threadId : null;
@@ -95,27 +87,10 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
     createdDraftThreadRef.current = null;
   }, [composerCwd, draftProjectId, pane.id]);
 
-  const queuedInputsQuery = useQuery({
-    enabled: existingThreadId !== null && inputStateReadable,
-    queryKey: existingThreadId ? queryKeys.queuedInputs(existingThreadId) : ["queued-inputs", "pane", pane.id, "none"],
-    queryFn: async () => {
-      if (!existingThreadId) {
-        return [];
-      }
-      const snapshot = await listQueuedInputs(existingThreadId);
-      return mergeQueuedInputData(
-        queryClientForPane.getQueryData<QueuedInput[]>(queryKeys.queuedInputs(existingThreadId)),
-        snapshot,
-        queryClientForPane.getQueryData<string[]>(queryKeys.queuedInputTombstones(existingThreadId)) ?? [],
-      );
-    },
-  });
-
   const paneComposerSettings = isDraftPane
     ? effectiveDraftSettings
     : threadSettings.settings;
   const activeThreadId = existingThreadId;
-  const queuedSteerRows = existingThreadId ? queuedInputsQuery.data ?? EMPTY_QUEUED_INPUTS : EMPTY_QUEUED_INPUTS;
   const composerSettingsErrorMessage = isDraftPane ? null : threadSettings.error;
   const composerDraftKey = existingThreadId
     ? `pane:${pane.id}:thread:${existingThreadId}`
@@ -168,8 +143,6 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
         threadId,
       });
     },
-    onQueuedInputDeleted,
-    onQueuedInputUpsert,
     onThreadMaterialized: (threadId) => {
       createdDraftThreadRef.current = null;
       onThreadMaterialized(threadId);
@@ -177,7 +150,6 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
     },
     onThreadTurnStartFailed,
     onThreadTurnStarted,
-    queuedSteerRows,
     selectedProjectId: isDraftPane ? draftProjectId : null,
     selectedThreadId: activeThreadId,
   });
@@ -246,11 +218,9 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
       isDraftComposerTransitioning={isDraftComposerTransitioning}
       isComposerDragActive={orchestration.isComposerDragActive}
       isComposerSubmitting={orchestration.isComposerSubmitting}
-      isQueuedTurnStartPending={orchestration.isQueuedTurnStartPending}
       isSelectedTimelineReady={paneState.isReady}
       skillsInvalidationGeneration={skillsInvalidationGeneration}
       models={models}
-      onAbortQueuedSteer={orchestration.handleAbortQueuedSteer}
       onAttachmentInputChange={orchestration.handleAttachmentInputChange}
       onComposerDragLeave={orchestration.handleComposerDragLeave}
       onComposerDragOver={orchestration.handleComposerDragOver}
@@ -261,10 +231,10 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
       onImageOpen={onImageOpen}
       onRemovePendingAttachment={orchestration.removePendingAttachment}
       onStopTurn={orchestration.handleStopTurn}
-      onSubmitQueuedSteer={orchestration.handleSubmitQueuedSteer}
       onSubmitTurn={orchestration.handleSubmitTurn}
       pendingAttachments={orchestration.pendingAttachments}
-      queuedSteerRows={orchestration.queuedSteerRows}
+      queueThreadId={inputStateReadable ? existingThreadId : null}
+      queueDialogActive={paneState.isActive}
       selectedThreadPresent={!isDraftPane}
     />
     </>

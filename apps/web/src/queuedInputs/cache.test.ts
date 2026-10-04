@@ -1,58 +1,42 @@
-import { describe, expect, it } from "vitest";
+import { waitFor } from "@testing-library/react";
+import { QueryObserver } from "@tanstack/react-query";
+import { expect, it } from "vitest";
 
-import type { QueuedInput } from "../api/client";
 import { createKodexQueryClient } from "../api/queryClient";
 import { queryKeys } from "../api/queryKeys";
-import { deleteCachedQueuedInput, mergeQueuedInputData, upsertCachedQueuedInput } from "./cache";
+import { applyQueueEvent, refreshQueuedInputs } from "./cache";
 
-function queuedInput(id: string, overrides: Partial<QueuedInput> = {}): QueuedInput {
-  return {
-    attemptCount: 0,
-    createdAt: "2026-05-05T00:00:00Z",
-    id,
-    input: [{ type: "text", text: id }],
-    lastError: null,
-    options: {},
-    priority: "normal",
-    status: "queued",
-    threadId: "thread-1",
-    updatedAt: "2026-05-05T00:00:00Z",
-    ...overrides,
-  };
-}
-
-describe("queued input query cache helpers", () => {
-  it("preserves newer live rows when a stale selected-thread snapshot resolves later", () => {
-    const live = queuedInput("queue-newer", {
-      input: [{ type: "text", text: "Newer from SSE" }],
-      updatedAt: "2026-05-05T00:00:04Z",
-    });
-
-    expect(
-      mergeQueuedInputData([live], [
-        queuedInput("queue-newer", {
-          input: [{ type: "text", text: "Stale snapshot" }],
-          updatedAt: "2026-05-05T00:00:01Z",
-        }),
-      ]),
-    ).toEqual([live]);
-  });
-
-  it("does not resurrect rows deleted after a queued-input snapshot started", () => {
-    const queryClient = createKodexQueryClient();
-    const deleted = queuedInput("queue-deleted", { input: [{ type: "text", text: "Deleted by SSE" }] });
-    const live = queuedInput("queue-newer", {
-      input: [{ type: "text", text: "Newer from SSE" }],
-      updatedAt: "2026-05-05T00:00:04Z",
-    });
-    upsertCachedQueuedInput(queryClient, deleted);
-    deleteCachedQueuedInput(queryClient, deleted.threadId, deleted.id);
-    upsertCachedQueuedInput(queryClient, live);
-
-    const tombstones = queryClient.getQueryData<string[]>(queryKeys.queuedInputTombstones("thread-1")) ?? [];
-
-    expect(
-      mergeQueuedInputData(queryClient.getQueryData(queryKeys.queuedInputs("thread-1")), [deleted], tombstones),
-    ).toEqual([live]);
-  });
+it("refills both clients from native order and cancels captured stale reads instead of merging deleted rows", async () => {
+  const clients = [createKodexQueryClient(), createKodexQueryClient()];
+  let rows = ["native-b", "native-a"];
+  const signals: AbortSignal[] = [];
+  const releases: Array<() => void> = [];
+  const observers = clients.map((client) => new QueryObserver(client, {
+    queryKey: queryKeys.queuedInputs("chat"),
+    queryFn: ({ signal }) => {
+      signals.push(signal);
+      const captured = [...rows];
+      return new Promise<{ queuedInputs: string[]; transfers: never[] }>((resolve) => releases.push(() => resolve({ queuedInputs: captured, transfers: [] })));
+    },
+  }));
+  const stops = observers.map((observer) => observer.subscribe(() => {}));
+  expect(signals).toHaveLength(2);
+  rows = ["native-a"];
+  for (const client of clients) applyQueueEvent(client, { id: "1", seq: 1, kind: "turn_queue.changed", threadId: "chat", payload: { threadId: "chat" }, receivedAt: "2026-10-05T00:00:00Z" });
+  await Promise.resolve(); await Promise.resolve();
+  expect(signals.slice(0, 2).every((signal) => signal.aborted)).toBe(true);
+  await waitFor(() => expect(releases).toHaveLength(4));
+  for (const release of releases.slice(2)) release();
+  await Promise.resolve(); await Promise.resolve();
+  for (const release of releases.slice(0, 2)) release();
+  await Promise.resolve(); await Promise.resolve();
+  await waitFor(() => { for (const observer of observers) expect(observer.getCurrentResult().data?.queuedInputs).toEqual(["native-a"]); });
+  rows = [];
+  const refreshes = clients.map((client) => refreshQueuedInputs(client));
+  await Promise.resolve(); await Promise.resolve();
+  await waitFor(() => expect(releases).toHaveLength(6));
+  for (const release of releases.slice(4)) release();
+  await Promise.all(refreshes);
+  for (const observer of observers) expect(observer.getCurrentResult().data?.queuedInputs).toEqual([]);
+  for (const stop of stops) stop();
 });

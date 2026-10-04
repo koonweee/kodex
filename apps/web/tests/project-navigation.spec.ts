@@ -46,7 +46,7 @@ for (const shape of [
           "GET /v1/threads/thread-1/settings": { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null },
           "POST /v1/threads/thread-1/attach": detail,
           "GET /v1/threads/thread-1/app-surface": { session: null },
-          "GET /v1/threads/thread-1/queued-inputs": { queuedInputs: [] },
+          "GET /v1/threads/thread-1/queued-inputs": { queuedInputs: [], transfers: [], nextCursor: null },
           "GET /v1/threads/thread-1/subagents": { subagents: [], nextCursor: null },
           "GET /v1/account": { account: null, requiresOpenaiAuth: false, rawPayload: {} },
           "GET /v1/account/rate-limits": { rateLimits: null, rawPayload: {} },

@@ -1028,6 +1028,13 @@ done
                 response["thread"]["projectId"] = params["projectId"].clone();
                 return Ok(response);
             }
+            if method == "thread/queue/add" && self.next_response.lock().unwrap().is_none() {
+                return Ok(json!({"queuedSubmission": {
+                    "id": format!("native-queue-{}", uuid::Uuid::new_v4()),
+                    "clientUserMessageId": params["clientUserMessageId"],
+                    "input": params["input"],
+                }}));
+            }
             Ok(self
                 .next_response
                 .lock()
@@ -1057,6 +1064,12 @@ done
             "project/list" | "threadSection/list" => json!({"data": [], "nextCursor": null}),
             "thread/list" => json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
             "thread/loaded/list" => json!({"data": [], "nextCursor": null}),
+            "thread/queue/list" => json!({"data": [], "nextCursor": null}),
+            "thread/queue/start" => json!({"turn": {
+                "id":"native-queue-turn", "items":[], "itemsView":"notLoaded",
+                "status":"inProgress", "error":null, "startedAt":null,
+                "completedAt":null, "durationMs":null,
+            }}),
             "thread/read" => json!({"thread": test_thread("thread-1")}),
             "thread/turns/list" => json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
             "thread/start" | "thread/resume" | "thread/fork" => json!({

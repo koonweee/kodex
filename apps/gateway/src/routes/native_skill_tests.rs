@@ -5,14 +5,12 @@ use axum::{
     http::{Request, StatusCode},
 };
 use serde_json::{json, Value};
-use tokio::time::{timeout, Duration};
 use tower::ServiceExt;
 
 use crate::{
     api::{build_router, AppState},
     app_server::tests::RecordingAppServer,
     config::Config,
-    queue,
     store::Store,
     thread_view,
 };
@@ -114,112 +112,11 @@ async fn native_skill_input_routes_active_steering_without_rewriting_selections(
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body.get("payload").is_some());
     assert!(body["queuedInput"].is_null());
-    assert!(state
-        .store
-        .list_queued_inputs("native-chat")
-        .await
-        .unwrap()
-        .is_empty());
     let requests = native.requests.lock().unwrap();
     assert_eq!(requests.len(), 1, "unexpected native calls: {requests:?}");
     assert_eq!(requests[0].0, "turn/start");
 
     assert_eq!(requests[0].1["input"], input);
-}
-
-#[tokio::test]
-async fn native_skill_queued_input_preserves_selections_through_drain_and_steer() {
-    for native_method in ["turn/start", "turn/steer"] {
-        let (state, native) = state().await;
-        let steering = native_method == "turn/steer";
-        if steering {
-            thread_view::record_item_delta(
-                &state.thread_views,
-                "native-chat",
-                "native-turn",
-                "native-agent-message",
-                "Working",
-                1,
-            )
-            .await
-            .unwrap();
-        }
-        let thread = json!({"thread":{
-            "id":"native-chat", "cwd":"/fixture", "preview":"Native",
-            "status":{"type":if steering {"active"} else {"idle"}},
-            "createdAt":1, "updatedAt":1, "turns":[], "canAcceptDirectInput":true,
-        }});
-        // Queue admission reads capability; dispatch checks the active turn or
-        // native idle history. Neither operation needs a skill catalog.
-        native.queued_responses.lock().unwrap().extend([
-            thread.clone(),
-            thread,
-            if steering {
-                json!({"turnId":"native-turn"})
-            } else {
-                json!({"turn":{"id":"native-turn","status":"inProgress"}})
-            },
-        ]);
-        let mut events = state.events.subscribe();
-        let input = selected_and_raw_input();
-        let (status, body) = request(
-            &state,
-            "POST",
-            "/v1/threads/native-chat/queued-inputs",
-            json!({"input":input}),
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK, "{native_method}: {body}");
-        assert_eq!(body["queuedInput"]["input"], input);
-        let queue_id = body["queuedInput"]["id"].as_str().unwrap();
-
-        if steering {
-            let (status, body) = request(
-                &state,
-                "POST",
-                &format!("/v1/threads/native-chat/queued-inputs/{queue_id}/steer"),
-                Value::Null,
-            )
-            .await;
-            assert_eq!(status, StatusCode::OK, "{body}");
-            assert_eq!(body["queuedInput"]["status"], "pendingCommit");
-            assert_eq!(body["queuedInput"]["input"], input);
-        } else {
-            timeout(Duration::from_secs(2), async {
-                loop {
-                    let event = events.recv().await.unwrap();
-                    if event.kind == queue::QUEUE_DELETE_EVENT && event.payload["id"] == queue_id {
-                        break;
-                    }
-                }
-            })
-            .await
-            .expect("native start should finish queue dispatch");
-            assert!(state
-                .store
-                .list_queued_inputs("native-chat")
-                .await
-                .unwrap()
-                .is_empty());
-        }
-
-        let requests = native.requests.lock().unwrap();
-        assert!(
-            requests
-                .iter()
-                .all(|(method, _)| method == "thread/read" || method == native_method),
-            "unexpected native calls: {requests:?}"
-        );
-        let dispatched = requests
-            .iter()
-            .filter(|(method, _)| method == native_method)
-            .collect::<Vec<_>>();
-        assert_eq!(dispatched.len(), 1, "must dispatch queued input once");
-        assert_eq!(dispatched[0].1["input"], input);
-        if steering {
-            assert_eq!(dispatched[0].1["expectedTurnId"], "native-turn");
-        }
-    }
 }
 
 #[tokio::test]

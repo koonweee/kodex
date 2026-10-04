@@ -1,5 +1,5 @@
 import { Group, Loader, Menu } from "@mantine/core";
-import { ArrowUp, Maximize2, Paperclip, Plus, Square } from "lucide-react";
+import { ArrowUp, ListPlus, Maximize2, Paperclip, Plus, Square } from "lucide-react";
 import { memo } from "react";
 import type { RefObject } from "react";
 
@@ -102,6 +102,11 @@ export const ComposerToolbar = memo(function ComposerToolbar({
           onClick={onExpandComposer}
         >
           <Maximize2 />
+        </AdaptiveIconButton>
+      ) : null}
+      {selectedThreadPresent && !shouldShowStopAction ? (
+        <AdaptiveIconButton label="Queue message" disabled={!canSubmitComposer} type="submit" data-submit-intent="queue">
+          <ListPlus />
         </AdaptiveIconButton>
       ) : null}
       {isSubmitting ? (

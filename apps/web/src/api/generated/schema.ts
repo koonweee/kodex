@@ -260,6 +260,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/automations/{automationId}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_automation_runs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/capabilities": {
         parameters: {
             query?: never;
@@ -644,6 +660,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/queue-transfers/{transferId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["dismiss_queue_transfer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/queue-transfers/{transferId}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reconcile_queue_transfer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/self-control/approvals": {
         parameters: {
             query?: never;
@@ -961,7 +1009,7 @@ export interface paths {
         put?: never;
         /**
          * Create a Kodex thread through self-control
-         * @description Agent-facing guarded thread creation endpoint. It reuses gateway-owned thread creation policy, settings overlays, broadcasts, and provenance instead of raw app-server access.
+         * @description Agent-facing guarded thread creation endpoint. It delegates native thread creation and shared settings while preserving guarded provenance.
          */
         post: operations["create_self_control_thread"];
         delete?: never;
@@ -1105,7 +1153,7 @@ export interface paths {
         put?: never;
         /**
          * Send input to a Kodex thread through self-control
-         * @description Agent-facing guarded thread input endpoint. Idle threads start a turn; active threads receive source-labeled queued input instead of steering the live user turn.
+         * @description Activate the target and submit one native queued message. Native ordering and pause behavior apply; this never steers the user’s active turn and never retries an uncertain admission.
          */
         post: operations["send_self_control_thread_input"];
         delete?: never;
@@ -1658,6 +1706,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads/{threadId}/queued-inputs/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reorder_queued_inputs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/threads/{threadId}/queued-inputs/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["start_queued_input"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/threads/{threadId}/queued-inputs/{queueId}": {
         parameters: {
             query?: never;
@@ -1666,25 +1746,9 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        put: operations["update_queued_input"];
         post?: never;
         delete: operations["delete_queued_input"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/threads/{threadId}/queued-inputs/{queueId}/retry": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["retry_queued_input"];
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2133,7 +2197,7 @@ export interface components {
             createdAt: string;
             id: string;
             lastError?: string | null;
-            lastQueuedInputId?: string | null;
+            lastNativeQueueId?: string | null;
             /** Format: date-time */
             lastRunAt?: string | null;
             name: string;
@@ -2172,6 +2236,26 @@ export interface components {
         AutomationResponse: {
             automation: components["schemas"]["AutomationDto"];
         };
+        AutomationRun: {
+            automationId: string;
+            /** Format: date-time */
+            createdAt: string;
+            error?: string | null;
+            id: string;
+            nativeQueueId?: string | null;
+            phase: components["schemas"]["AutomationRunPhase"];
+            /** Format: date-time */
+            scheduledFor?: string | null;
+            targetThreadId: string;
+            turnId?: string | null;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AutomationRunListResponse: {
+            runs: components["schemas"]["AutomationRun"][];
+        };
+        /** @enum {string} */
+        AutomationRunPhase: "admitting" | "queued" | "startRequested" | "dispatched" | "rejected" | "uncertain" | "removed";
         AutomationSchedule: {
             /** @description Fixed-duration repeat interval. Accepted units are seconds, minutes, and hours; the effective interval must be at least 30 seconds. */
             repeatEvery: components["schemas"]["AutomationRepeatEvery"];
@@ -2730,6 +2814,15 @@ export interface components {
         ProjectRoot: {
             path: string;
         };
+        PromotionOutcome: {
+            id: string;
+            /** @enum {string} */
+            status: "delivered";
+        } | {
+            /** @enum {string} */
+            status: "transfer";
+            transfer: components["schemas"]["QueueTransfer"];
+        };
         PushSubscriptionDeleteResponse: {
             subscription?: null | components["schemas"]["PushSubscriptionResponse"];
         };
@@ -2755,47 +2848,77 @@ export interface components {
         PushSubscriptionUpsertResponse: {
             subscription: components["schemas"]["PushSubscriptionResponse"];
         };
-        QueuedInput: {
-            /** Format: date-time */
-            acceptedAt?: string | null;
-            /** Format: int64 */
-            acceptedEventSeq?: number | null;
-            acceptedTurnId?: string | null;
-            attachments?: components["schemas"]["TimelineFileAttachment"][];
-            /** Format: int64 */
-            attemptCount: number;
+        /**
+         * @description Recoverable input for one native-queue-to-steer transfer. Ordinary queued
+         *     messages remain exclusively in native storage.
+         */
+        QueueTransfer: {
+            /**
+             * @description Original native queue correlation for provenance; it is not unique and
+             *     cannot establish delivery of this transfer.
+             */
+            clientUserMessageId: string;
             /** Format: date-time */
             createdAt: string;
+            error?: string | null;
+            expectedTurnId: string;
+            /** @description Fresh operation identity, also used as the steered user message client ID. */
             id: string;
-            input: components["schemas"]["UserInput"][];
-            lastError?: string | null;
-            options: components["schemas"]["TurnStartOptions"];
-            priority: components["schemas"]["QueuedInputPriority"];
-            sourceId?: string | null;
-            sourceType?: string | null;
-            status: components["schemas"]["QueuedInputStatus"];
+            input: unknown[];
+            nativeQueueId: string;
+            phase: components["schemas"]["QueueTransferPhase"];
             threadId: string;
             /** Format: date-time */
             updatedAt: string;
         };
-        QueuedInputCreateRequest: components["schemas"]["TurnStartOptions"] & {
-            attachments?: components["schemas"]["TimelineFileAttachment"][];
-            input: components["schemas"]["UserInput"][];
-        };
-        QueuedInputDeleteResponse: {
+        QueueTransferDeleteResponse: {
             id: string;
             threadId: string;
         };
-        QueuedInputListResponse: {
-            queuedInputs: components["schemas"]["QueuedInput"][];
-        };
         /** @enum {string} */
-        QueuedInputPriority: "normal" | "rejectedSteer";
+        QueueTransferPhase: "deleting" | "deleted" | "steering" | "accepted" | "uncertain";
+        QueuedInput: {
+            attachments: components["schemas"]["TimelineFileAttachment"][];
+            /** @description Ephemeral hint. The command revalidates continuous original-turn context. */
+            canSteer: boolean;
+            clientUserMessageId: string;
+            id: string;
+            input: unknown[];
+            threadId: string;
+        };
+        QueuedInputCreateRequest: {
+            attachments?: components["schemas"]["TimelineFileAttachment"][];
+            clientUserMessageId?: string | null;
+            input: unknown[];
+        };
+        QueuedInputDeleteResponse: {
+            deleted: boolean;
+            id: string;
+            threadId: string;
+        };
+        QueuedInputListQuery: {
+            cursor?: string | null;
+            /** Format: int32 */
+            limit?: number | null;
+        };
+        QueuedInputListResponse: {
+            nextCursor?: string | null;
+            queuedInputs: components["schemas"]["QueuedInput"][];
+            transfers: components["schemas"]["QueueTransfer"][];
+        };
+        QueuedInputReorderRequest: {
+            queuedSubmissionIds: string[];
+        };
         QueuedInputResponse: {
             queuedInput: components["schemas"]["QueuedInput"];
         };
-        /** @enum {string} */
-        QueuedInputStatus: "queued" | "submitting" | "steering" | "pendingCommit" | "failed";
+        QueuedInputStartRequest: {
+            queuedSubmissionId: string;
+        };
+        QueuedInputUpdateRequest: {
+            attachments?: components["schemas"]["TimelineFileAttachment"][];
+            input: unknown[];
+        };
         RateLimitSnapshot: {
             credits?: null | components["schemas"]["CreditsSnapshot"];
             limitId?: string | null;
@@ -2874,7 +2997,7 @@ export interface components {
         };
         SelfControlAutomationRunNowResponse: {
             automation: components["schemas"]["AutomationDto"];
-            queuedInput: components["schemas"]["QueuedInput"];
+            run: components["schemas"]["AutomationRun"];
         };
         SelfControlAutomationUpdateRequest: components["schemas"]["AutomationUpdateRequest"] & {
             enabled?: boolean | null;
@@ -2980,9 +3103,9 @@ export interface components {
             version: string;
         };
         /** @enum {string} */
-        SelfControlThreadInputAction: "started" | "queued";
-        SelfControlThreadInputRequest: components["schemas"]["TurnStartOptions"] & {
-            input: components["schemas"]["UserInput"][];
+        SelfControlThreadInputAction: "queued";
+        SelfControlThreadInputRequest: {
+            input: unknown[];
             /** Format: int32 */
             maxSelfControlDepth?: number | null;
             source?: components["schemas"]["SelfControlSource"];
@@ -3020,12 +3143,12 @@ export interface components {
             source?: components["schemas"]["SelfControlSource"];
         };
         SelfControlThreadSpawnResponse: {
+            clientUserMessageId: string;
             idempotencyKey?: string | null;
-            idempotentReplay?: boolean;
-            input: components["schemas"]["SelfControlThreadInputResponse"];
+            idempotentReplay: boolean;
+            queuedSubmissionId: string;
             /** Format: int32 */
             remainingSelfControlDepth: number;
-            thread: components["schemas"]["ThreadCommandResponse"];
             threadId: string;
         };
         SelfControlUpdateThreadSectionRequest: components["schemas"]["UpdateThreadSectionRequest"] & {
@@ -4077,6 +4200,27 @@ export interface operations {
             };
         };
     };
+    list_automation_runs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationRunListResponse"];
+                };
+            };
+        };
+    };
     capabilities: {
         parameters: {
             query?: never;
@@ -4782,6 +4926,48 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    dismiss_queue_transfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transferId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueTransferDeleteResponse"];
+                };
+            };
+        };
+    };
+    reconcile_queue_transfer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transferId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionOutcome"];
+                };
             };
         };
     };
@@ -6398,7 +6584,10 @@ export interface operations {
     };
     list_queued_inputs: {
         parameters: {
-            query?: never;
+            query?: {
+                cursor?: string | null;
+                limit?: number | null;
+            };
             header?: never;
             path: {
                 threadId: string;
@@ -6442,6 +6631,80 @@ export interface operations {
             };
         };
     };
+    reorder_queued_inputs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueuedInputReorderRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    start_queued_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueuedInputStartRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RawAppServerResponse"];
+                };
+            };
+        };
+    };
+    update_queued_input: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+                queueId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QueuedInputUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueuedInputResponse"];
+                };
+            };
+        };
+    };
     delete_queued_input: {
         parameters: {
             query?: never;
@@ -6464,28 +6727,6 @@ export interface operations {
             };
         };
     };
-    retry_queued_input: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                threadId: string;
-                queueId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["QueuedInputResponse"];
-                };
-            };
-        };
-    };
     steer_queued_input: {
         parameters: {
             query?: never;
@@ -6503,7 +6744,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["QueuedInputResponse"];
+                    "application/json": components["schemas"]["PromotionOutcome"];
                 };
             };
         };

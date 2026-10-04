@@ -7,10 +7,6 @@ export function threadViewSummaryToThreadSummary(thread: ThreadViewThreadSummary
   };
 }
 
-export function isThreadViewQueueEvent(event: EventEnvelope): boolean {
-  return event.kind === "turn_queue.item_upsert" || event.kind === "turn_queue.item_deleted";
-}
-
 export function isCanonicalThreadViewRenderEvent(
   event: EventEnvelope,
   options: { includeGatewayDiagnostics?: boolean } = {},

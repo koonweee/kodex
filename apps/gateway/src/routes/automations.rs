@@ -110,7 +110,7 @@ pub struct AutomationDto {
     pub status: AutomationStatus,
     pub paused_reason: Option<String>,
     pub last_run_at: Option<DateTime<Utc>>,
-    pub last_queued_input_id: Option<String>,
+    pub last_native_queue_id: Option<String>,
     pub last_error: Option<String>,
     pub consecutive_failure_count: i64,
     pub provenance: Option<serde_json::Value>,
@@ -118,8 +118,29 @@ pub struct AutomationDto {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationRunListResponse {
+    pub runs: Vec<crate::store::AutomationRun>,
+}
+
+#[utoipa::path(get, path = "/v1/automations/{automationId}/runs", responses((status = 200, body = AutomationRunListResponse)))]
+pub async fn list_automation_runs(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<AutomationRunListResponse>> {
+    state.store.get_automation(&id).await?;
+    Ok(Json(AutomationRunListResponse {
+        runs: state.store.list_automation_runs(&id).await?,
+    }))
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route(
+            "/v1/automations/{automation_id}/runs",
+            get(list_automation_runs),
+        )
         .route(
             "/v1/automations",
             get(list_automations).post(create_automation),
@@ -294,7 +315,7 @@ pub(crate) fn automation_to_dto(automation: Automation) -> AutomationDto {
         status: automation.status,
         paused_reason: automation.paused_reason,
         last_run_at: automation.last_run_at,
-        last_queued_input_id: automation.last_queued_input_id,
+        last_native_queue_id: automation.last_native_queue_id,
         last_error: automation.last_error,
         consecutive_failure_count: automation.consecutive_failure_count,
         provenance: automation.provenance,
@@ -305,9 +326,8 @@ pub(crate) fn automation_to_dto(automation: Automation) -> AutomationDto {
 
 pub(crate) async fn validate_target_thread(state: &AppState, thread_id: &str) -> ApiResult<()> {
     app_server_api::client(&state.app_server)
-        .thread_read(thread_id.to_string())
-        .await?;
-    Ok(())
+        .check_direct_input_capability(thread_id)
+        .await
 }
 
 pub(crate) fn validate_name_and_prompt(name: &str, prompt: &str) -> ApiResult<()> {

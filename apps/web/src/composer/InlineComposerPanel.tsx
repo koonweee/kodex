@@ -6,7 +6,6 @@ import type { SkillMetadata } from "../api/client";
 import { AttachmentTray } from "./AttachmentTray";
 import type { ComposerPanelProps } from "./ComposerPanel";
 import { ComposerToolbar } from "./ComposerToolbar";
-import { QueuedSteerCard } from "./QueuedSteerCard";
 import { SlashCommandPopup } from "./SlashCommandPopup";
 import { SkillMentionPopup } from "./SkillMentionPopup";
 import { shouldSyncComposerCursorOnKeyUp } from "./keyEvents";
@@ -24,6 +23,7 @@ const COMPOSER_TEXT = {
 };
 
 type InlineComposerPanelProps = ComposerPanelProps & {
+  queuePanel?: ReactNode;
   canSubmitComposer: boolean;
   density?: "desktop" | "mobile";
   draftState: ComposerDraftState;
@@ -48,7 +48,6 @@ type InlineComposerPanelProps = ComposerPanelProps & {
 };
 
 export function InlineComposerPanel({
-  activeSelectedTurnId,
   attachmentInputRef,
   canCompose,
   canSubmitComposer,
@@ -70,10 +69,8 @@ export function InlineComposerPanel({
   isComposerDisabled,
   isComposerDragActive,
   isComposerSubmitting,
-  isQueuedTurnStartPending,
   isEntryPending,
   models,
-  onAbortQueuedSteer,
   onAttachmentInputChange,
   onComposerDragLeave,
   onComposerDragOver,
@@ -85,10 +82,9 @@ export function InlineComposerPanel({
   onImageOpen,
   onRemovePendingAttachment,
   onStopTurn,
-  onSubmitQueuedSteer,
   onSubmitTurn,
   pendingAttachments,
-  queuedSteerRows,
+  queuePanel,
   selectedGitBranch,
   selectedThreadPresent,
   selectSkill,
@@ -140,15 +136,7 @@ export function InlineComposerPanel({
           <Box className="kodex-composer-hero">{draftHeroText}</Box>
         </Box>
       ) : null}
-      {queuedSteerRows.length > 0 ? (
-        <QueuedSteerCard
-          blockIdleStartActions={activeSelectedTurnId === null && (Boolean(isQueuedTurnStartPending) || isComposerControlsDisabled)}
-          hasActiveTurn={activeSelectedTurnId !== null}
-          rows={queuedSteerRows}
-          onAbortRow={onAbortQueuedSteer}
-          onSubmitRow={onSubmitQueuedSteer}
-        />
-      ) : null}
+      {queuePanel}
       <Box
         component="form"
         className="kodex-composer"

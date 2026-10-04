@@ -42,7 +42,6 @@ import {
   type AutomationUpdateRequest,
   type EventEnvelope,
   type Project,
-  type QueuedInput,
   type ThreadSummary,
 } from "./api/client";
 import { queryClient } from "./api/queryClient";
@@ -92,10 +91,6 @@ import {
   upsertChatThread,
   upsertProjectThread,
 } from "./threads/cache";
-import {
-  deleteCachedQueuedInput,
-  upsertCachedQueuedInput,
-} from "./queuedInputs/cache";
 import { useThreadSubagents } from "./threads/useThreadSubagents";
 import { useSidebarThreadCaches } from "./threads/useSidebarThreadCaches";
 import { useSidebarThreadsSnapshot } from "./threads/useSidebarThreadsSnapshot";
@@ -159,7 +154,6 @@ type AppProps = {
   queryClientInstance?: QueryClient;
   workspacePaneStore?: WorkspacePaneStoreAdapter;
 };
-
 
 export function App({ queryClientInstance = queryClient, workspacePaneStore }: AppProps = {}) {
   const [colorSchemeId, setColorSchemeId] = useState<KodexColorSchemeId>(() => readStoredKodexColorScheme());
@@ -621,8 +615,6 @@ function KodexShell({
   }, [draftComposerTransitionToken]);
 
   const { liveRouteHandlers } = useLiveEventHandlers({
-    applyQueuedInputDeleted: removeQueuedInput,
-    applyQueuedInputUpsert: upsertQueuedInput,
     applyThreadMetadataEvent,
     applyThreadNotificationsState,
     applyThreadReadStateEvent,
@@ -787,14 +779,6 @@ function KodexShell({
   function reportError(error: unknown, context?: string) {
     const message = errorMessageFrom(error);
     setErrorMessage(context ? `${context}: ${message}` : message);
-  }
-
-  function upsertQueuedInput(row: QueuedInput) {
-    upsertCachedQueuedInput(queryClientForShell, row);
-  }
-
-  function removeQueuedInput(threadId: string, id: string) {
-    deleteCachedQueuedInput(queryClientForShell, threadId, id);
   }
 
   function resetComposerDraft() {
@@ -999,8 +983,6 @@ function KodexShell({
         onError={reportError}
         onImageOpen={setLightboxImage}
         onImagePreviewUrlsChanged={handlePaneImagePreviewUrlsChanged}
-        onQueuedInputDeleted={removeQueuedInput}
-        onQueuedInputUpsert={upsertQueuedInput}
         onThreadMaterialized={markThreadMaterialized}
         onThreadTurnStartFailed={markThreadIdle}
         onThreadTurnStarted={markThreadActive}
@@ -1022,10 +1004,8 @@ function KodexShell({
       markThreadMaterialized,
       models,
       orderedProjects,
-      removeQueuedInput,
       reportError,
       skillsInvalidationGeneration,
-      upsertQueuedInput,
     ],
   );
   const renderWorkspaceThreadPaneAside = useCallback<

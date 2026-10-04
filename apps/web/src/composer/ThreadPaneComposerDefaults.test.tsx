@@ -28,7 +28,7 @@ function Draft() {
     paneState={{ activeTurnId: null, isActive: true, isReady: true, selectedThreadPresent: false, thread: null, publishThreadPaneTimelineAction: ignore }}
     projects={projects} contextUsageByThreadId={{}} composerDraftStore={draftStore} isDraftComposerTransitioning={false}
     onCreateDraftThread={async () => ({ threadId: "created" })} onError={ignore} onImageOpen={ignore} onImagePreviewUrlsChanged={ignore}
-    onQueuedInputDeleted={ignore} onQueuedInputUpsert={ignore} onThreadMaterialized={ignore} onThreadTurnStartFailed={ignore} onThreadTurnStarted={ignore} skillsInvalidationGeneration={0}
+    onThreadMaterialized={ignore} onThreadTurnStartFailed={ignore} onThreadTurnStarted={ignore} skillsInvalidationGeneration={0}
   />;
 }
 

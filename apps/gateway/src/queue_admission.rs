@@ -167,6 +167,18 @@ impl QueueAdmissionWitnesses {
         }
     }
 
+    /// Presentation hint only; promotion still rechecks the native turn and
+    /// consumes the guarded right under the gateway's shared input lock.
+    pub fn can_promote(&self, thread_id: &str, native_row_id: &str) -> bool {
+        self.threads
+            .lock()
+            .unwrap()
+            .get(thread_id)
+            .is_some_and(|context| {
+                context.turn_id.is_some() && context.rows.contains(native_row_id)
+            })
+    }
+
     pub fn invalidate_all(&self) {
         self.threads.lock().unwrap().clear();
     }

@@ -21,7 +21,8 @@ import { InlineComposerPanel } from "./InlineComposerPanel";
 import { MobileComposerPanel } from "./MobileComposerPanel";
 import { filterSlashCommands, replaceSlashCommandToken, slashCommandItems } from "./slashCommands";
 import { filterSkillsForQuery } from "./skillMentions";
-import type { PendingAttachment, QueuedSteerRow } from "./types";
+import type { PendingAttachment } from "./types";
+import { NativeQueuePanel } from "../queuedInputs/NativeQueuePanel";
 import { useComposerDraftState, type ComposerDraftStore } from "./useComposerDraftState";
 import { useSkillCatalog } from "./useSkillCatalog";
 
@@ -43,6 +44,8 @@ export type ComposerPanelProps = {
   composerSettingsDisabled?: boolean;
   composerSettingsError: string | null;
   composerResetToken: number;
+  queueThreadId?: string | null;
+  queueDialogActive?: boolean;
   composerDraftKey?: string;
   composerDraftStore?: ComposerDraftStore;
   composerCwd?: string | null;
@@ -59,11 +62,9 @@ export type ComposerPanelProps = {
   isDraftComposerTransitioning: boolean;
   isComposerDragActive: boolean;
   isComposerSubmitting: boolean;
-  isQueuedTurnStartPending?: boolean;
   isSelectedTimelineReady: boolean;
   skillsInvalidationGeneration?: number;
   models: ModelSummary[];
-  onAbortQueuedSteer: (row: QueuedSteerRow) => void;
   onAttachmentInputChange: (event: ReactChangeEvent<HTMLInputElement>) => void;
   onComposerDragLeave: (event: ReactDragEvent<HTMLElement>) => void;
   onComposerDragOver: (event: ReactDragEvent<HTMLElement>) => void;
@@ -74,7 +75,6 @@ export type ComposerPanelProps = {
   onImageOpen: (image: ImageLightboxImage) => void;
   onRemovePendingAttachment: (id: string) => void;
   onStopTurn: () => void;
-  onSubmitQueuedSteer: (row: QueuedSteerRow) => void;
   onSubmitTurn: (
     event: FormEvent,
     draftText: string,
@@ -84,7 +84,6 @@ export type ComposerPanelProps = {
     skillMentions: TimelineSkillMention[],
   ) => void;
   pendingAttachments: PendingAttachment[];
-  queuedSteerRows: QueuedSteerRow[];
   selectedThreadPresent: boolean;
 };
 
@@ -96,6 +95,8 @@ export function ComposerPanel({
   composerSettingsDisabled,
   composerSettingsError,
   composerResetToken,
+  queueThreadId,
+  queueDialogActive = true,
   composerDraftKey,
   composerDraftStore,
   composerCwd,
@@ -108,11 +109,9 @@ export function ComposerPanel({
   isDraftComposerTransitioning,
   isComposerDragActive,
   isComposerSubmitting,
-  isQueuedTurnStartPending,
   isSelectedTimelineReady,
   skillsInvalidationGeneration = 0,
   models,
-  onAbortQueuedSteer,
   onAttachmentInputChange,
   onComposerDragLeave,
   onComposerDragOver,
@@ -123,10 +122,8 @@ export function ComposerPanel({
   onImageOpen,
   onRemovePendingAttachment,
   onStopTurn,
-  onSubmitQueuedSteer,
   onSubmitTurn,
   pendingAttachments,
-  queuedSteerRows,
   selectedThreadPresent,
 }: ComposerPanelProps) {
   const draftState = useComposerDraftState(composerResetToken, composerDraftKey, composerDraftStore);
@@ -135,7 +132,7 @@ export function ComposerPanel({
   const isMobileComposer = isNarrowComposer && inputCapabilities.hasTouchInput;
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const internalComposerShellRef = useRef<HTMLDivElement | null>(null);
-  const isComposerBusy = isComposerSubmitting || Boolean(isQueuedTurnStartPending);
+  const isComposerBusy = isComposerSubmitting;
   const isEntryPending = selectedThreadPresent && !isSelectedTimelineReady && !isDraftComposerTransitioning;
   const isComposerDisabled = !canCompose || isComposerBusy;
   const isComposerControlsDisabled = isComposerDisabled || isEntryPending;
@@ -304,7 +301,12 @@ export function ComposerPanel({
     }
   }, [composerShellRef]);
 
+  const queuePanel = queueThreadId ? <NativeQueuePanel key={queueThreadId} threadId={queueThreadId} isActive={queueDialogActive}
+    canRestoreText={!draftState.composerText && pendingAttachments.length === 0 && !isComposerBusy}
+    onRestoreText={(text) => draftState.updateComposerText(text, null)} /> : null;
+
   const representationProps = {
+    queuePanel,
     activeSelectedTurnId,
     attachmentInputRef,
     canCompose,
@@ -330,10 +332,8 @@ export function ComposerPanel({
     isDraftComposerTransitioning,
     isDraftThreadSelected,
     isEntryPending,
-    isQueuedTurnStartPending,
     isSelectedTimelineReady,
     models,
-    onAbortQueuedSteer,
     onAttachmentInputChange,
     onComposerDragLeave,
     onComposerDragOver,
@@ -344,10 +344,8 @@ export function ComposerPanel({
     onImageOpen,
     onRemovePendingAttachment,
     onStopTurn,
-    onSubmitQueuedSteer,
     onSubmitTurn,
     pendingAttachments,
-    queuedSteerRows,
     selectedGitBranch,
     selectedThreadPresent,
     selectSkill,

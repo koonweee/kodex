@@ -1,7 +1,7 @@
 import { Box, Text, Textarea } from "@mantine/core";
 import { Minimize2 } from "lucide-react";
 import { useState } from "react";
-import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
+import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
 
 import type { SkillMetadata } from "../api/client";
 import { useInputCapabilities } from "../shared/inputCapabilities";
@@ -27,6 +27,7 @@ const MOBILE_COMPOSER_TEXT = {
 };
 
 type MobileComposerPanelProps = ComposerPanelProps & {
+  queuePanel?: ReactNode;
   canSubmitComposer: boolean;
   draftState: ComposerDraftState;
   filteredSkills: SkillMetadata[];

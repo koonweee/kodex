@@ -2,6 +2,8 @@ import { Button, Center, MantineProvider, Stack, Text } from "@mantine/core";
 import type { QueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
+import { refreshQueuedInputs } from "../queuedInputs/cache";
+import { refreshAutomationRuns } from "../automations/runsCache";
 import { refreshUnreadBadge } from "../notifications/unreadBadge";
 import { refreshAccountQueries } from "../account/cache";
 import { refreshApprovalSnapshot } from "../approvals/cache";
@@ -84,6 +86,8 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
           void refreshNativeConfig(queryClient);
           void refreshThreadSubagents(queryClient);
           void refreshUnreadBadge(queryClient);
+          void refreshQueuedInputs(queryClient);
+          void refreshAutomationRuns(queryClient);
         }
         queryClient.setQueryData(queryKeys.capabilities, capabilities);
         setError(null);
@@ -110,6 +114,8 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
       void refreshNativeConfig(queryClient);
       void refreshThreadSubagents(queryClient);
       void refreshUnreadBadge(queryClient);
+      void refreshQueuedInputs(queryClient);
+      void refreshAutomationRuns(queryClient);
     }
   }, [confirmedId, queryClient]);
   const connection = useMemo(() => ({ beforeConnect: validateInstance, onConnected: handleStreamConnected }), [handleStreamConnected, validateInstance]);

@@ -82,10 +82,10 @@ for (const shape of [
         await expect.poll(() => fixture.requests.filter((entry) => entry.key === "POST /v1/threads/settings-chat/input").map((entry) => entry.body))
           .toEqual([{ input: [{ type: "text", text: "Use native settings" }], clientUserMessageId: expect.any(String) }]);
         await expect(activePane(second).getByRole("button", { name: "Stop turn", exact: true })).toBeVisible();
-        await send(second, "Use native settings when queued", shape.hasTouch);
+        await send(second, "Use native settings when queued", shape.hasTouch, "Queue message");
         await expect.poll(() => fixture.requests.filter((entry) => entry.key === "POST /v1/threads/settings-chat/queued-inputs").map((entry) => entry.body))
-          .toEqual([{ input: [{ type: "text", text: "Use native settings when queued" }] }]);
-        for (const page of [first, second]) await expect(activePane(page).getByRole("region", { name: "Queued steer messages" })).toContainText("Use native settings when queued");
+          .toEqual([{ input: [{ type: "text", text: "Use native settings when queued" }], clientUserMessageId: expect.any(String) }]);
+        for (const page of [first, second]) await expect(activePane(page).getByRole("region", { name: "Queued messages" })).toContainText("Use native settings when queued");
         expect(fixture.requests.filter((entry) => entry.key.startsWith("PATCH") && entry.key !== patchKey)).toEqual([]);
       } finally {
         await fixture.close();
@@ -100,7 +100,7 @@ function modelButton(page: Page, effort: string) {
   return activePane(page).getByRole("button", { name: `Model: gpt-5.4, ${effort}`, exact: true });
 }
 
-async function send(page: Page, text: string, hasTouch: boolean) {
+async function send(page: Page, text: string, hasTouch: boolean, label = "Send message") {
   const composer = activePane(page).getByLabel("Message composer", { exact: true });
   // Touch focus opens a replacement expanded editor. Resolve it after the tap
   // before entering text, just as a phone user does before typing.
@@ -110,7 +110,7 @@ async function send(page: Page, text: string, hasTouch: boolean) {
   }
   await composer.fill(text);
   await expect(composer).toHaveValue(text);
-  const submit = activePane(page).getByRole("button", { name: "Send message", exact: true });
+  const submit = activePane(page).getByRole("button", { name: label, exact: true });
   if (hasTouch) await submit.tap();
   else await submit.click();
 }

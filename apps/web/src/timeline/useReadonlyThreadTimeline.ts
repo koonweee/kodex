@@ -10,7 +10,6 @@ import { idleTimelineEntry, type TimelineEntry } from "./entry";
 import { applyTimelineSnapshot, canApplyThreadViewItemDelta, createTimelineState, type TimelineState } from "./reducer";
 import {
   isCanonicalThreadViewRenderEvent,
-  isThreadViewQueueEvent,
   threadViewSummaryToThreadSummary,
 } from "./threadViewEvents";
 import { useTimelineEventQueue } from "./useTimelineEventQueue";
@@ -154,7 +153,7 @@ export function useReadonlyThreadTimeline({
             refetchSnapshot();
             return;
           }
-          if (isApprovalEvent(event) || isThreadViewQueueEvent(event)) {
+          if (isApprovalEvent(event)) {
             return;
           }
           if (!isCanonicalThreadViewRenderEvent(event)) {

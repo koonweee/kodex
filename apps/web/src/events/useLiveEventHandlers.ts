@@ -1,10 +1,12 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
+import { applyQueueEvent } from "../queuedInputs/cache";
+import { applyAutomationRunEvent } from "../automations/runsCache";
 import { applyUnreadBadgeEvent } from "../notifications/unreadBadge";
 import { applyAccountEvent } from "../account/cache";
 import { applyThreadSettingsEvent } from "../composer/threadSettingsCache";
-import type { EventEnvelope, QueuedInput, RateLimitSnapshot } from "../api/client";
+import type { EventEnvelope, RateLimitSnapshot } from "../api/client";
 import { applyNativeConfigEvent } from "../api/nativeConfigCache";
 import { queryKeys } from "../api/queryKeys";
 import { applyThreadSectionsEvent } from "../sections/cache";
@@ -17,8 +19,6 @@ import { applySubagentsEvent } from "../threads/subagentsCache";
 import type { LiveEventRouteHandlers } from "./liveRouting";
 
 export function useLiveEventHandlers({
-  applyQueuedInputDeleted,
-  applyQueuedInputUpsert,
   applyThreadMetadataEvent,
   applyThreadNotificationsState,
   applyThreadReadStateEvent,
@@ -28,8 +28,6 @@ export function useLiveEventHandlers({
   refreshSidebarThreadsForLiveEvent,
   setSkillsInvalidationGeneration,
 }: {
-  applyQueuedInputDeleted: (threadId: string, id: string) => void;
-  applyQueuedInputUpsert: (row: QueuedInput) => void;
   applyThreadMetadataEvent: (event: EventEnvelope) => void;
   applyThreadNotificationsState: (threadId: string, notificationsEnabled: boolean) => void;
   applyThreadReadStateEvent: (event: EventEnvelope) => void;
@@ -41,6 +39,7 @@ export function useLiveEventHandlers({
 }) {
   return useMemo(() => {
     function applyAutomationStreamEvent(event: EventEnvelope) {
+      applyAutomationRunEvent(queryClient, event);
       const automationQueryState = queryClient.getQueryState(queryKeys.automations);
       if (automationQueryState?.data === undefined && automationQueryState?.fetchStatus !== "fetching") {
         return;
@@ -64,14 +63,13 @@ export function useLiveEventHandlers({
     }
 
     const liveRouteHandlers: LiveEventRouteHandlers = {
+      applyQueueEvent: (event) => applyQueueEvent(queryClient, event),
       applyUnreadBadgeEvent: (event) => applyUnreadBadgeEvent(queryClient, event),
       applyAccountEvent: (event) => applyAccountEvent(queryClient, event),
       applyThreadSectionsEvent: (event) => applyThreadSectionsEvent(queryClient, event),
       applyProjectEvent: (event) => applyProjectEvent(queryClient, event),
       applyThreadSettingsEvent: (event) => applyThreadSettingsEvent(queryClient, event),
       applyAutomationStreamEvent,
-      applyQueuedInputUpsert,
-      applyQueuedInputDeleted,
       applyThreadUpsert,
       applyThreadMetadataEvent,
       applyThreadReadStateEvent,
@@ -89,8 +87,6 @@ export function useLiveEventHandlers({
       liveRouteHandlers,
     };
   }, [
-    applyQueuedInputDeleted,
-    applyQueuedInputUpsert,
     applyThreadMetadataEvent,
     applyThreadNotificationsState,
     applyThreadReadStateEvent,

@@ -16,7 +16,7 @@ const automation: Automation = {
   status: "active",
   pausedReason: null,
   lastRunAt: null,
-  lastQueuedInputId: null,
+  lastNativeQueueId: null,
   lastError: null,
   consecutiveFailureCount: 0,
   createdAt: "2026-05-07T08:00:00Z",

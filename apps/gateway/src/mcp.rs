@@ -182,31 +182,15 @@ pub struct CreateThreadToolParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SendThreadInputToolParams {
     #[serde(alias = "thread_id")]
     pub thread_id: String,
     pub input: Vec<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub effort: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub service_tier: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub approval_policy: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub approvals_reviewer: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub permissions: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sandbox_policy: Option<Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_self_control_depth: Option<u8>,
-    #[serde(default, flatten, skip_serializing_if = "Map::is_empty")]
-    pub extra: Map<String, Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
@@ -602,7 +586,7 @@ pub struct WaitForAutomationRunToolParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub after_last_run_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub after_last_queued_input_id: Option<String>,
+    pub after_last_native_queue_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub poll_interval_ms: Option<u64>,
 }
@@ -1438,7 +1422,7 @@ impl KodexControlMcp {
             if automation_run_changed(
                 &response,
                 params.after_last_run_at.as_deref(),
-                params.after_last_queued_input_id.as_deref(),
+                params.after_last_native_queue_id.as_deref(),
             ) {
                 return Ok(json_tool_result(json!({
                     "status": "matched",
@@ -2062,13 +2046,13 @@ fn max_event_seq(value: &Value) -> Option<i64> {
 fn automation_run_changed(
     value: &Value,
     after_last_run_at: Option<&str>,
-    after_last_queued_input_id: Option<&str>,
+    after_last_native_queue_id: Option<&str>,
 ) -> bool {
     let automation = value.get("automation").unwrap_or(value);
     let last_run_at = automation.get("lastRunAt").and_then(Value::as_str);
-    let last_queued_input_id = automation.get("lastQueuedInputId").and_then(Value::as_str);
+    let last_native_queue_id = automation.get("lastNativeQueueId").and_then(Value::as_str);
     last_run_at.is_some_and(|last| after_last_run_at != Some(last))
-        || last_queued_input_id.is_some_and(|last| after_last_queued_input_id != Some(last))
+        || last_native_queue_id.is_some_and(|last| after_last_native_queue_id != Some(last))
 }
 
 fn approval_matches(value: &Value, status: &str, single_approval: bool) -> bool {
@@ -2100,7 +2084,6 @@ mod tests {
         api::build_router,
         app_server::{tests::RecordingAppServer, UnavailableAppServer},
         config::Config,
-        error::ApiError,
         store::Store,
     };
     use serde_json::json;
@@ -2146,6 +2129,15 @@ mod tests {
         assert!(tools.iter().any(|tool| tool.name == "get_status"));
         assert_tool_requires(&tools, "create_thread", &["projectId"]);
         assert_tool_requires(&tools, "send_thread_input", &["threadId", "input"]);
+        let input_schema = &tools
+            .iter()
+            .find(|tool| tool.name == "send_thread_input")
+            .unwrap()
+            .input_schema;
+        let input_properties = input_schema["properties"].as_object().unwrap();
+        assert!(input_properties.get("options").is_none());
+        assert!(input_properties.get("model").is_none());
+
         assert_tool_requires(
             &tools,
             "open_app_surface",
@@ -2285,7 +2277,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mcp_thread_tools_create_and_start_new_unmaterialized_thread() -> anyhow::Result<()> {
+    async fn mcp_thread_tools_create_and_admit_loaded_fresh_native_queue_input(
+    ) -> anyhow::Result<()> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let gateway_url = format!("http://{}", listener.local_addr()?);
         let app_server = Arc::new(RecordingAppServer::default());
@@ -2322,30 +2315,22 @@ mod tests {
             .into_typed()?;
         assert_eq!(created["thread"]["id"], "thread-1");
 
-        app_server
-            .queued_errors
-            .lock()
-            .unwrap()
-            .push(ApiError::BadGateway(
-                "app-server error -32600: thread thread-1 is not materialized yet; includeTurns is unavailable before first user message".to_string(),
-            ));
-        app_server
-            .queued_responses
-            .lock()
-            .unwrap()
-            .push(json!({"turnId": "turn-started"}));
         let mut input_args = JsonObject::new();
         input_args.insert("threadId".to_string(), json!("thread-1"));
         input_args.insert(
             "input".to_string(),
             json!([{"type": "text", "text": "start now"}]),
         );
-        let started: Value = client
+        let queued: Value = client
             .call_tool(CallToolRequestParams::new("send_thread_input").with_arguments(input_args))
             .await?
             .into_typed()?;
-        assert_eq!(started["action"], "started");
-        assert!(started["queuedInput"].is_null());
+        assert_eq!(queued["action"], "queued");
+        assert!(queued.get("turn").is_none());
+        assert_eq!(
+            queued["queuedInput"]["input"],
+            json!([{"type":"text","text":"start now"}])
+        );
 
         let requests = app_server.requests.lock().unwrap();
         assert_eq!(requests[0].0, "project/read");
@@ -2362,9 +2347,29 @@ mod tests {
             )
         );
         assert_eq!(requests[3].0, "thread/read");
-        assert_eq!(requests[4].0, "turn/start");
-        assert_eq!(requests[4].1["input"][0]["text"], "start now");
-        assert_eq!(requests.len(), 5);
+        assert_eq!(requests[4].0, "thread/read");
+        assert_eq!(requests[3].1["includeTurns"], false);
+        assert_eq!(requests[4].1["includeTurns"], false);
+        assert_eq!(
+            requests[5],
+            (
+                "thread/turns/list".into(),
+                json!({
+                    "threadId":"thread-1","cursor":null,"sortDirection":"desc","itemsView":"notLoaded","limit":1,
+                })
+            )
+        );
+        assert_eq!(
+            requests[6],
+            (
+                "thread/queue/add".into(),
+                json!({
+                    "threadId":"thread-1","input":[{"type":"text","text":"start now"}],
+                    "clientUserMessageId":queued["queuedInput"]["clientUserMessageId"],
+                })
+            )
+        );
+        assert_eq!(requests.len(), 7);
 
         client.cancel().await?;
         mcp_server.abort();

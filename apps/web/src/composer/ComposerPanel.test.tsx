@@ -80,7 +80,6 @@ function renderComposerPanel(
         isComposerSubmitting={false}
         isSelectedTimelineReady
         models={[]}
-        onAbortQueuedSteer={vi.fn()}
         onAttachmentInputChange={vi.fn()}
         onComposerDragLeave={vi.fn()}
         onComposerDragOver={vi.fn()}
@@ -91,10 +90,8 @@ function renderComposerPanel(
         onImageOpen={vi.fn()}
         onRemovePendingAttachment={vi.fn()}
         onStopTurn={vi.fn()}
-        onSubmitQueuedSteer={vi.fn()}
         onSubmitTurn={noopSubmit}
         pendingAttachments={[]}
-        queuedSteerRows={[]}
         selectedThreadPresent
         {...props}
       />
@@ -232,55 +229,6 @@ describe("ComposerPanel", () => {
     expect(optionIcon.querySelector("img")).not.toBeInTheDocument();
     expect(svgIcon).toBeInTheDocument();
     expect(svgIcon.style.getPropertyValue("--skill-icon-mask")).toContain("github-small.svg");
-  });
-
-  it("layers queued steer rows under the rounded composer surface", () => {
-    renderComposerPanel({
-      activeSelectedTurnId: "turn-1",
-      queuedSteerRows: [
-        {
-          id: "queue-1",
-          threadId: "thread-1",
-          input: [{ type: "text", text: "Match the composer" }],
-          options: {},
-          status: "queued",
-          priority: "normal",
-          attemptCount: 0,
-          lastError: null,
-          createdAt: "2026-05-05T00:00:00Z",
-          updatedAt: "2026-05-05T00:00:00Z",
-        },
-      ],
-    });
-
-    expect(screen.getByRole("region", { name: /queued steer messages/i })).toBeInTheDocument();
-    expect(screen.getByLabelText(/message composer/i).closest(".kodex-composer")).toBeInTheDocument();
-  });
-
-  it("reveals the full queued steer preview in a tooltip", async () => {
-    const longQueuedText =
-      "Plan the color palette, then build the light and dark theme tokens with enough detail that this preview would otherwise span several lines in the queued row.";
-    renderComposerPanel({
-      activeSelectedTurnId: "turn-1",
-      queuedSteerRows: [
-        {
-          id: "queue-1",
-          threadId: "thread-1",
-          input: [{ type: "text", text: longQueuedText }],
-          options: {},
-          status: "queued",
-          priority: "normal",
-          attemptCount: 0,
-          lastError: null,
-          createdAt: "2026-05-05T00:00:00Z",
-          updatedAt: "2026-05-05T00:00:00Z",
-        },
-      ],
-    });
-
-    await userEvent.hover(screen.getByText(longQueuedText));
-
-    expect(await screen.findByRole("tooltip")).toHaveTextContent(longQueuedText);
   });
 
   it("moves skill autocomplete selection with arrow keys", async () => {
@@ -505,7 +453,6 @@ describe("ComposerPanel", () => {
             isComposerSubmitting={false}
             isSelectedTimelineReady
             models={[]}
-            onAbortQueuedSteer={vi.fn()}
             onAttachmentInputChange={vi.fn()}
             onComposerDragLeave={vi.fn()}
             onComposerDragOver={vi.fn()}
@@ -516,10 +463,8 @@ describe("ComposerPanel", () => {
             onImageOpen={vi.fn()}
             onRemovePendingAttachment={vi.fn()}
             onStopTurn={vi.fn()}
-            onSubmitQueuedSteer={vi.fn()}
             onSubmitTurn={handleSubmit}
             pendingAttachments={[]}
-            queuedSteerRows={[]}
             selectedThreadPresent
           />
         </MantineProvider>
@@ -573,7 +518,6 @@ describe("ComposerPanel", () => {
           isComposerSubmitting={false}
           isSelectedTimelineReady
           models={[]}
-          onAbortQueuedSteer={vi.fn()}
           onAttachmentInputChange={vi.fn()}
           onComposerDragLeave={vi.fn()}
           onComposerDragOver={vi.fn()}
@@ -584,10 +528,8 @@ describe("ComposerPanel", () => {
           onImageOpen={vi.fn()}
           onRemovePendingAttachment={vi.fn()}
           onStopTurn={vi.fn()}
-          onSubmitQueuedSteer={vi.fn()}
           onSubmitTurn={noopSubmit}
           pendingAttachments={[]}
-          queuedSteerRows={[]}
           selectedThreadPresent
         />
       </MantineProvider>,
@@ -612,7 +554,6 @@ describe("ComposerPanel", () => {
           isComposerSubmitting={false}
           isSelectedTimelineReady
           models={[]}
-          onAbortQueuedSteer={vi.fn()}
           onAttachmentInputChange={vi.fn()}
           onComposerDragLeave={vi.fn()}
           onComposerDragOver={vi.fn()}
@@ -623,10 +564,8 @@ describe("ComposerPanel", () => {
           onImageOpen={vi.fn()}
           onRemovePendingAttachment={vi.fn()}
           onStopTurn={vi.fn()}
-          onSubmitQueuedSteer={vi.fn()}
           onSubmitTurn={noopSubmit}
           pendingAttachments={[]}
-          queuedSteerRows={[]}
           selectedThreadPresent
         />
       </MantineProvider>,
@@ -654,7 +593,6 @@ describe("ComposerPanel", () => {
           isComposerSubmitting={false}
           isSelectedTimelineReady
           models={[]}
-          onAbortQueuedSteer={vi.fn()}
           onAttachmentInputChange={vi.fn()}
           onComposerDragLeave={vi.fn()}
           onComposerDragOver={vi.fn()}
@@ -665,10 +603,8 @@ describe("ComposerPanel", () => {
           onImageOpen={vi.fn()}
           onRemovePendingAttachment={vi.fn()}
           onStopTurn={vi.fn()}
-          onSubmitQueuedSteer={vi.fn()}
           onSubmitTurn={noopSubmit}
           pendingAttachments={[]}
-          queuedSteerRows={[]}
           selectedThreadPresent={false}
         />
       </MantineProvider>,
@@ -696,7 +632,6 @@ describe("ComposerPanel", () => {
           isComposerSubmitting={false}
           isSelectedTimelineReady
           models={[]}
-          onAbortQueuedSteer={vi.fn()}
           onAttachmentInputChange={vi.fn()}
           onComposerDragLeave={vi.fn()}
           onComposerDragOver={vi.fn()}
@@ -707,10 +642,8 @@ describe("ComposerPanel", () => {
           onImageOpen={vi.fn()}
           onRemovePendingAttachment={vi.fn()}
           onStopTurn={vi.fn()}
-          onSubmitQueuedSteer={vi.fn()}
           onSubmitTurn={noopSubmit}
           pendingAttachments={[]}
-          queuedSteerRows={[]}
           selectedGitBranch="feature/very-long-branch-name-that-should-truncate"
           selectedThreadPresent
         />
@@ -748,7 +681,6 @@ describe("ComposerPanel", () => {
           isComposerSubmitting={false}
           isSelectedTimelineReady
           models={[]}
-          onAbortQueuedSteer={vi.fn()}
           onAttachmentInputChange={vi.fn()}
           onComposerDragLeave={vi.fn()}
           onComposerDragOver={vi.fn()}
@@ -759,10 +691,8 @@ describe("ComposerPanel", () => {
           onImageOpen={vi.fn()}
           onRemovePendingAttachment={vi.fn()}
           onStopTurn={vi.fn()}
-          onSubmitQueuedSteer={vi.fn()}
           onSubmitTurn={noopSubmit}
           pendingAttachments={[]}
-          queuedSteerRows={[]}
           selectedThreadPresent={false}
         />
       </MantineProvider>,
@@ -795,7 +725,6 @@ describe("ComposerPanel", () => {
             isComposerSubmitting={false}
             isSelectedTimelineReady
             models={[]}
-            onAbortQueuedSteer={vi.fn()}
             onAttachmentInputChange={vi.fn()}
             onComposerDragLeave={vi.fn()}
             onComposerDragOver={vi.fn()}
@@ -806,10 +735,8 @@ describe("ComposerPanel", () => {
             onImageOpen={vi.fn()}
             onRemovePendingAttachment={vi.fn()}
             onStopTurn={vi.fn()}
-            onSubmitQueuedSteer={vi.fn()}
             onSubmitTurn={noopSubmit}
             pendingAttachments={[]}
-            queuedSteerRows={[]}
             selectedGitBranch={selectedGitBranch}
             selectedThreadPresent
           />

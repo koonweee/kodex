@@ -464,7 +464,7 @@ describe("MVP shell flows", () => {
           created = true;
           return { thread: chatThread, rawPayload: {} };
         },
-        "GET /v1/threads/chat-thread-1/queued-inputs": { queuedInputs: [] },
+        "GET /v1/threads/chat-thread-1/queued-inputs": { queuedInputs: [], transfers: [], nextCursor: null },
         "POST /v1/threads/chat-thread-1/input": { payload: {} },
         "POST /v1/threads/chat-thread-1/attach": threadDetail(
           { ...chatThread, preview: "Plan the chat sidebar implementation" },
@@ -531,7 +531,7 @@ describe("MVP shell flows", () => {
           created = true;
           return { thread: chatThread, rawPayload: {} };
         },
-        "GET /v1/threads/chat-thread-1/queued-inputs": { queuedInputs: [] },
+        "GET /v1/threads/chat-thread-1/queued-inputs": { queuedInputs: [], transfers: [], nextCursor: null },
         "POST /v1/threads/chat-thread-1/input": { payload: {} },
         "POST /v1/threads/chat-thread-1/attach": threadDetail(
           { ...chatThread, preview: "Keep local chat" },
@@ -580,7 +580,7 @@ describe("MVP shell flows", () => {
           projectThreads = [{ ...projectThread, preview: "Keep local project thread" }, thread];
           return { thread: projectThread, rawPayload: {} };
         },
-        "GET /v1/threads/project-thread-2/queued-inputs": { queuedInputs: [] },
+        "GET /v1/threads/project-thread-2/queued-inputs": { queuedInputs: [], transfers: [], nextCursor: null },
         "POST /v1/threads/project-thread-2/input": { payload: {} },
         "POST /v1/threads/project-thread-2/attach": threadDetail(
           { ...projectThread, preview: "Keep local project thread" },
@@ -1782,7 +1782,7 @@ describe("MVP shell flows", () => {
       baseRoutes({
         "GET /v1/chats/threads": { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         "POST /v1/chats/threads": { thread: chatThread, rawPayload: {} },
-        "GET /v1/threads/chat-thread-1/queued-inputs": { queuedInputs: [] },
+        "GET /v1/threads/chat-thread-1/queued-inputs": { queuedInputs: [], transfers: [], nextCursor: null },
         "POST /v1/threads/chat-thread-1/attach": threadDetail(
           { ...chatThread, preview: "Start from mobile chats" },
           [],

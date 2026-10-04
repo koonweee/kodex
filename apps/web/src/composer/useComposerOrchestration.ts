@@ -8,15 +8,13 @@ import {
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { refreshQueuedInputs } from "../queuedInputs/cache";
 
 import {
   compactThread,
   createQueuedInput,
-  deleteQueuedInput,
   interruptCurrentTurn,
-  retryQueuedInput,
-  steerQueuedInput,
   submitThreadInput,
   uploadFiles,
   uploadImages,
@@ -39,14 +37,10 @@ import {
 import type { ComposerDraftControls } from "./ComposerPanel";
 import { isTouchInputDevice } from "../shared/inputCapabilities";
 import { createClientRequestId } from "../shared/id";
-import type { PendingAttachment, QueuedSteerRow } from "./types";
+import type { PendingAttachment } from "./types";
 
 type DraftThreadCreateRequest = { composerSettings?: ComposerSettings; firstMessageText: string; projectId?: string; cwd?: string };
 type DraftThreadCreateResult = { threadId: string };
-type QueuedInputMutation = {
-  queueId: string;
-  threadId: string;
-};
 
 type UseComposerOrchestrationParams = {
   activeSelectedTurnId: string | null;
@@ -59,8 +53,6 @@ type UseComposerOrchestrationParams = {
   isDraftThreadSelected: boolean;
   onCreateDraftThread: (request: DraftThreadCreateRequest) => Promise<DraftThreadCreateResult>;
   onError: (error: unknown) => void;
-  onQueuedInputDeleted: (threadId: string, queueId: string) => void;
-  onQueuedInputUpsert: (row: QueuedSteerRow) => void;
   onOptimisticUserMessageRemoved?: (clientRequestId: string) => void;
   onOptimisticUserMessageSent?: (clientRequestId: string) => void;
   onOptimisticUserMessageStarted?: (message: {
@@ -73,7 +65,6 @@ type UseComposerOrchestrationParams = {
   onThreadMaterialized: (threadId: string) => void;
   onThreadTurnStartFailed: (threadId: string) => void;
   onThreadTurnStarted: (threadId: string) => void;
-  queuedSteerRows: QueuedSteerRow[];
   selectedProjectId: string | null;
   selectedThreadId: string | null;
 };
@@ -89,8 +80,6 @@ export function useComposerOrchestration({
   isDraftThreadSelected,
   onCreateDraftThread,
   onError,
-  onQueuedInputDeleted,
-  onQueuedInputUpsert,
   onOptimisticUserMessageRemoved,
   onOptimisticUserMessageSent,
   onOptimisticUserMessageStarted,
@@ -98,44 +87,20 @@ export function useComposerOrchestration({
   onThreadMaterialized,
   onThreadTurnStartFailed,
   onThreadTurnStarted,
-  queuedSteerRows,
   selectedProjectId,
   selectedThreadId,
 }: UseComposerOrchestrationParams) {
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [isComposerSubmitting, setIsComposerSubmitting] = useState(false);
-  const [isQueuedTurnStartPending, setIsQueuedTurnStartPending] = useState(false);
   const [isComposerDragActive, setIsComposerDragActive] = useState(false);
   const [imagePreviewUrlsByPath, setImagePreviewUrlsByPath] = useState<Record<string, string>>({});
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const composerContextRef = useRef<ComposerContext | null>(null);
   const latestComposerContextRef = useRef<ComposerContext | null>(null);
   const imagePreviewUrlsByPathRef = useRef<Record<string, string>>({});
-  const previousActiveSelectedTurnIdRef = useRef<string | null>(activeSelectedTurnId);
   const isComposerSubmittingRef = useRef(isComposerSubmitting);
   const nextAttachmentId = useRef(0);
-  const retryQueuedInputMutation = useMutation({
-    mutationFn: ({ queueId, threadId }: QueuedInputMutation) => retryQueuedInput(threadId, queueId),
-    onSuccess: onQueuedInputUpsert,
-  });
-  const steerQueuedInputMutation = useMutation({
-    mutationFn: ({ queueId, threadId }: QueuedInputMutation) => steerQueuedInput(threadId, queueId),
-    onSuccess: onQueuedInputUpsert,
-  });
-  const deleteQueuedInputMutation = useMutation({
-    mutationFn: async ({ queueId, threadId }: QueuedInputMutation) => {
-      await deleteQueuedInput(threadId, queueId);
-      return { queueId, threadId };
-    },
-    onSuccess: ({ queueId, threadId }) => onQueuedInputDeleted(threadId, queueId),
-  });
-
-  useEffect(() => {
-    if (activeSelectedTurnId) {
-      setIsQueuedTurnStartPending(false);
-    }
-    previousActiveSelectedTurnIdRef.current = activeSelectedTurnId;
-  }, [activeSelectedTurnId]);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     isComposerSubmittingRef.current = isComposerSubmitting;
@@ -159,7 +124,6 @@ export function useComposerOrchestration({
       return;
     }
 
-    setIsQueuedTurnStartPending(false);
     clearPendingAttachments();
   }, [activeSelectedTurnId, draftChatThreadSelected, draftThreadProjectId, selectedProjectId, selectedThreadId]);
 
@@ -172,10 +136,11 @@ export function useComposerOrchestration({
     skillMentions: TimelineSkillMention[] = [],
   ) {
     event.preventDefault();
+    const submitter = "submitter" in event.nativeEvent ? event.nativeEvent.submitter : null;
+    const queueRequested = submitter instanceof HTMLElement && submitter.dataset.submitIntent === "queue";
     const canSubmitComposer =
       currentCanCompose() &&
       !isComposerSubmitting &&
-      !isQueuedTurnStartPending &&
       (Boolean(composerText.trim()) || pendingAttachments.length > 0);
     if (!canSubmitComposer) {
       return;
@@ -226,9 +191,12 @@ export function useComposerOrchestration({
       if (selectedThreadId) {
         draftControls.clearText();
         const payload = await buildTurnPayload(selectedThreadId, text, attachments, skillInputs, skillTextElements);
-        if (effectiveActiveSelectedTurnId) {
-          const queuedInput = await createQueuedInput(selectedThreadId, payload.input, payload.attachments);
-          onQueuedInputUpsert(queuedInput);
+        if (queueRequested) {
+          try {
+            await createQueuedInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId);
+          } finally {
+            void refreshQueuedInputs(queryClient, selectedThreadId);
+          }
           clearPendingAttachments();
           setIsComposerSubmitting(false);
           return;
@@ -311,33 +279,6 @@ export function useComposerOrchestration({
     }
 
     await interruptCurrentTurn(selectedThreadId);
-  }
-
-  async function handleSubmitQueuedSteer(row: QueuedSteerRow) {
-    if (isQueuedTurnStartPending || row.status === "submitting" || row.status === "steering") {
-      return;
-    }
-
-    setIsQueuedTurnStartPending(true);
-    try {
-      if (row.status === "failed" || !currentActiveSelectedTurnId()) {
-        await retryQueuedInputMutation.mutateAsync({ queueId: row.id, threadId: row.threadId });
-      } else {
-        await steerQueuedInputMutation.mutateAsync({ queueId: row.id, threadId: row.threadId });
-      }
-    } catch (error) {
-      onError(error);
-    } finally {
-      setIsQueuedTurnStartPending(false);
-    }
-  }
-
-  async function handleAbortQueuedSteer(row: QueuedSteerRow) {
-    try {
-      await deleteQueuedInputMutation.mutateAsync({ queueId: row.id, threadId: row.threadId });
-    } catch (error) {
-      onError(error);
-    }
   }
 
   function handleAttachmentInputChange(event: ReactChangeEvent<HTMLInputElement>) {
@@ -580,7 +521,6 @@ export function useComposerOrchestration({
 
   return {
     attachmentInputRef,
-    handleAbortQueuedSteer,
     handleAttachmentInputChange,
     handleComposerDragLeave,
     handleComposerDragOver,
@@ -588,14 +528,11 @@ export function useComposerOrchestration({
     handleComposerKeyDown,
     handleComposerPaste,
     handleStopTurn,
-    handleSubmitQueuedSteer,
     handleSubmitTurn,
     imagePreviewUrlsByPath,
     isComposerDragActive,
     isComposerSubmitting,
-    isQueuedTurnStartPending,
     pendingAttachments,
-    queuedSteerRows,
     removePendingAttachment,
   };
 }

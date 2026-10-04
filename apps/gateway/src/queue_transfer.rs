@@ -1,6 +1,6 @@
 //! Narrow coordination for the retained queued-row Steer action. Ordinary
-//! queue contents, ordering and dispatch remain native-owned. HTTP/producer
-//! cutover will use this coordinator; there is no parallel ordinary drainer.
+//! queue contents, ordering and dispatch remain native-owned. Public commands
+//! and retained producers share this coordinator; there is no ordinary drainer.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -32,6 +32,17 @@ pub async fn enqueue(
     client_id: String,
 ) -> ApiResult<app_server_api::NativeQueuedSubmission> {
     let _guard = state.thread_input_locks.lock(thread_id).await;
+    enqueue_locked(state, thread_id, input, client_id).await
+}
+
+/// Caller must hold the shared thread input lock. Used only by Control's
+/// explicit target activation so admission cannot race another Kodex writer.
+pub(crate) async fn enqueue_locked(
+    state: &AppState,
+    thread_id: &str,
+    input: Vec<Value>,
+    client_id: String,
+) -> ApiResult<app_server_api::NativeQueuedSubmission> {
     let client = app_server_api::client(&state.app_server);
     client.check_direct_input_capability(thread_id).await?;
     let probe = state.queue_admissions.begin_probe(thread_id);
@@ -39,7 +50,13 @@ pub async fn enqueue(
     let ticket = state
         .queue_admissions
         .capture_after_probe(probe, original.as_deref());
-    let row = client.queue_add(thread_id.into(), input, client_id).await?;
+    let row = match client.queue_add(thread_id.into(), input, client_id).await {
+        Ok(row) => row,
+        Err(error @ ApiError::BadRequest(_)) => return Err(error),
+        Err(_) => return Err(ApiError::BadGateway(
+            "Native queue admission was not confirmed. Delivery may have occurred; inspect the queue before explicitly submitting again. No automatic retry was made.".into()
+        )),
+    };
     if let Some(ticket) = ticket {
         state.queue_admissions.record(ticket, &row.id);
     }
@@ -93,6 +110,18 @@ pub async fn promote(
         )
         .await?;
     broadcast_changed(state, thread_id).await?;
+    if crate::automations::observe_queue_handoff_pending(state, thread_id, native_queue_id)
+        .await
+        .is_err()
+    {
+        return uncertain(
+            state,
+            &transfer,
+            QueueTransferPhase::Deleting,
+            "Producer bookkeeping could not be updated; native queue was left untouched",
+        )
+        .await;
+    }
 
     if !state.queue_admissions.is_current(&claim) {
         return uncertain(
@@ -206,7 +235,7 @@ pub async fn promote(
     }
 }
 
-async fn active_turn(
+pub(crate) async fn active_turn(
     client: &app_server_api::CodexClient,
     thread_id: &str,
 ) -> ApiResult<Option<String>> {
@@ -320,6 +349,17 @@ pub async fn reconcile(state: &AppState, transfer_id: &str) -> ApiResult<Promoti
                 && entry.item.client_id.as_deref() == Some(transfer.id.as_str())
         })
         .count();
+    if matches == 1 {
+        // Retain the transfer correlation until producer settlement succeeds.
+        // A temporary bookkeeping error must not destroy its recovery witness.
+        crate::automations::observe_promoted_receipt(
+            state,
+            &transfer.thread_id,
+            &transfer.native_queue_id,
+            &transfer.expected_turn_id,
+        )
+        .await?;
+    }
     if matches == 1
         && state
             .store
@@ -367,13 +407,23 @@ pub async fn observe_notification(state: &AppState, method: &str, params: &Value
             let Some(turn) = params.get("turnId").and_then(Value::as_str) else {
                 return Ok(());
             };
+            let client_id = params.pointer("/item/clientId").and_then(Value::as_str);
+            if let Some(id) = client_id {
+                if let Some(transfer) = state.store.get_queue_transfer(id).await? {
+                    if transfer.thread_id == thread && transfer.expected_turn_id == turn {
+                        crate::automations::observe_promoted_receipt(
+                            state,
+                            thread,
+                            &transfer.native_queue_id,
+                            turn,
+                        )
+                        .await?;
+                    }
+                }
+            }
             state
                 .store
-                .settle_queue_transfer_delivery(
-                    thread,
-                    turn,
-                    params.pointer("/item/clientId").and_then(Value::as_str),
-                )
+                .settle_queue_transfer_delivery(thread, turn, client_id)
                 .await?
         }
         "turn/completed" => {

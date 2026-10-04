@@ -382,7 +382,6 @@ function renderComposerPanel(props: Partial<ComponentProps<typeof ComposerPanel>
               upgrade: null,
             },
           ]}
-          onAbortQueuedSteer={vi.fn()}
           onAttachmentInputChange={vi.fn()}
           onComposerDragLeave={vi.fn()}
           onComposerDragOver={vi.fn()}
@@ -393,10 +392,8 @@ function renderComposerPanel(props: Partial<ComponentProps<typeof ComposerPanel>
           onImageOpen={vi.fn()}
           onRemovePendingAttachment={vi.fn()}
           onStopTurn={vi.fn()}
-          onSubmitQueuedSteer={vi.fn()}
           onSubmitTurn={noopSubmit}
           pendingAttachments={[]}
-          queuedSteerRows={[]}
           selectedThreadPresent
           {...props}
         />

@@ -8,11 +8,9 @@ import {
   getThreadAppSurface,
   type AppSurfaceBridgeRequest,
   type AppSurfaceBridgeResponse,
-  type QueuedInput,
 } from "../../api/client";
 import { queryKeys } from "../../api/queryKeys";
 import { AppSurfacePane } from "../../appSurfaces/AppSurfacePane";
-import { upsertCachedQueuedInput } from "../../queuedInputs/cache";
 import { createClientRequestId } from "../../shared/id";
 import { errorMessageFrom } from "../../shared/values";
 import { readStoredKodexColorScheme } from "../../theme";
@@ -111,17 +109,6 @@ function ThreadAppSurfacePane({
         if (response.error) {
           throw new Error(response.error.message);
         }
-        const queuedInput = appSurfaceBridgeQueuedInput(response);
-        if (queuedInput) {
-          if (optimisticClientRequestId) {
-            publishThreadPaneTimelineAction({
-              clientRequestId: optimisticClientRequestId,
-              kind: "optimistic_user_removed",
-            });
-          }
-          upsertCachedQueuedInput(queryClient, queuedInput);
-          return response;
-        }
         if (optimisticClientRequestId) {
           publishThreadPaneTimelineAction({
             clientRequestId: optimisticClientRequestId,
@@ -199,29 +186,6 @@ function appSurfaceBridgeMessageText(request: AppSurfaceBridgeRequest): string |
     return null;
   }
   return textFromMessageContent(params.content);
-}
-
-function appSurfaceBridgeQueuedInput(response: AppSurfaceBridgeResponse): QueuedInput | null {
-  if (!response.result || typeof response.result !== "object") {
-    return null;
-  }
-  const result = response.result as { input?: unknown; queuedInput?: unknown };
-  const directQueuedInput = queuedInputFromUnknown(result.queuedInput);
-  if (directQueuedInput) {
-    return directQueuedInput;
-  }
-  if (!result.input || typeof result.input !== "object") {
-    return null;
-  }
-  return queuedInputFromUnknown((result.input as { queuedInput?: unknown }).queuedInput);
-}
-
-function queuedInputFromUnknown(value: unknown): QueuedInput | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const row = value as Partial<QueuedInput>;
-  return typeof row.id === "string" && typeof row.threadId === "string" ? (row as QueuedInput) : null;
 }
 
 function textFromMessageContent(content: unknown): string | null {

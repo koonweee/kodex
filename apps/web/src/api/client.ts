@@ -8,6 +8,7 @@ export type AccountResponse = components["schemas"]["AccountResponse"];
 export type Approval = components["schemas"]["Approval"];
 export type ApprovalListResponse = components["schemas"]["ApprovalListResponse"];
 export type ApprovalResponse = Record<string, unknown>;
+export type AutomationRun = components["schemas"]["AutomationRun"];
 export type Automation = components["schemas"]["AutomationDto"];
 export type AutomationCreateRequest = components["schemas"]["AutomationCreateRequest"];
 export type AutomationUpdateRequest = components["schemas"]["AutomationUpdateRequest"];
@@ -41,6 +42,9 @@ export type Project = components["schemas"]["Project"];
 export type CreateProjectRequest = components["schemas"]["CreateProjectRequest"];
 export type UpdateProjectRequest = components["schemas"]["UpdateProjectRequest"];
 export type QueuedInput = components["schemas"]["QueuedInput"];
+export type QueuedInputListResponse = components["schemas"]["QueuedInputListResponse"];
+export type QueueTransfer = components["schemas"]["QueueTransfer"];
+export type PromotionOutcome = components["schemas"]["PromotionOutcome"];
 export type RateLimitSnapshot = components["schemas"]["RateLimitSnapshot"];
 export type RateLimitWindow = components["schemas"]["RateLimitWindow"];
 export type RateLimitsResponse = components["schemas"]["RateLimitsResponse"];
@@ -443,51 +447,61 @@ export async function compactThread(threadId: string): Promise<ThreadCompactResp
   );
 }
 
-export async function listQueuedInputs(threadId: string): Promise<QueuedInput[]> {
-  const response = await unwrap(
-    api.GET("/v1/threads/{threadId}/queued-inputs", { params: { path: { threadId } } }),
-  );
-  return response.queuedInputs;
+export async function listQueuedInputs(threadId: string, signal?: AbortSignal): Promise<QueuedInputListResponse> {
+  return unwrap(api.GET("/v1/threads/{threadId}/queued-inputs", {
+    params: { path: { threadId } }, cache: "no-store", signal,
+  }));
 }
 
 export async function createQueuedInput(
   threadId: string,
-  input: UserInput[],
+  input: QueuedInput["input"],
   attachments: TimelineFileAttachment[] = [],
+  clientUserMessageId?: string,
 ): Promise<QueuedInput> {
-  const response = await unwrap(
-    api.POST("/v1/threads/{threadId}/queued-inputs", {
-      params: { path: { threadId } },
-      body: { input, ...(attachments.length > 0 ? { attachments } : {}) },
-    }),
-  );
+  const response = await unwrap(api.POST("/v1/threads/{threadId}/queued-inputs", {
+    params: { path: { threadId } },
+    body: { input, ...(attachments.length > 0 ? { attachments } : {}), ...(clientUserMessageId !== undefined ? { clientUserMessageId } : {}) },
+  }));
   return response.queuedInput;
 }
 
-export async function retryQueuedInput(threadId: string, queueId: string): Promise<QueuedInput> {
-  const response = await unwrap(
-    api.POST("/v1/threads/{threadId}/queued-inputs/{queueId}/retry", {
-      params: { path: { threadId, queueId } },
-    }),
-  );
-  return response.queuedInput;
+export async function updateQueuedInput(threadId: string, queueId: string, input: QueuedInput["input"]) {
+  return unwrap(api.PUT("/v1/threads/{threadId}/queued-inputs/{queueId}", {
+    params: { path: { threadId, queueId } }, body: { input },
+  }));
 }
 
-export async function steerQueuedInput(threadId: string, queueId: string): Promise<QueuedInput> {
-  const response = await unwrap(
-    api.POST("/v1/threads/{threadId}/queued-inputs/{queueId}/steer", {
-      params: { path: { threadId, queueId } },
-    }),
-  );
-  return response.queuedInput;
+export async function reorderQueuedInputs(threadId: string, queuedSubmissionIds: string[]) {
+  return unwrap(api.POST("/v1/threads/{threadId}/queued-inputs/reorder", {
+    params: { path: { threadId } }, body: { queuedSubmissionIds },
+  }));
 }
 
-export async function deleteQueuedInput(threadId: string, queueId: string): Promise<void> {
-  await unwrap(
-    api.DELETE("/v1/threads/{threadId}/queued-inputs/{queueId}", {
-      params: { path: { threadId, queueId } },
-    }),
-  );
+export async function startQueuedInput(threadId: string, queuedSubmissionId: string) {
+  return unwrap(api.POST("/v1/threads/{threadId}/queued-inputs/start", {
+    params: { path: { threadId } }, body: { queuedSubmissionId },
+  }));
+}
+
+export async function steerQueuedInput(threadId: string, queueId: string): Promise<PromotionOutcome> {
+  return unwrap(api.POST("/v1/threads/{threadId}/queued-inputs/{queueId}/steer", {
+    params: { path: { threadId, queueId } },
+  }));
+}
+
+export async function deleteQueuedInput(threadId: string, queueId: string) {
+  return unwrap(api.DELETE("/v1/threads/{threadId}/queued-inputs/{queueId}", {
+    params: { path: { threadId, queueId } },
+  }));
+}
+
+export async function reconcileQueueTransfer(transferId: string): Promise<PromotionOutcome> {
+  return unwrap(api.POST("/v1/queue-transfers/{transferId}/reconcile", { params: { path: { transferId } } }));
+}
+
+export async function dismissQueueTransfer(transferId: string) {
+  return unwrap(api.DELETE("/v1/queue-transfers/{transferId}", { params: { path: { transferId } } }));
 }
 
 export async function listAutomations(threadId?: string): Promise<Automation[]> {
@@ -497,6 +511,13 @@ export async function listAutomations(threadId?: string): Promise<Automation[]> 
     }),
   );
   return response.automations;
+}
+
+export async function listAutomationRuns(automationId: string, signal?: AbortSignal): Promise<AutomationRun[]> {
+  const result = await unwrap(api.GET("/v1/automations/{automationId}/runs", {
+    params: { path: { automationId } }, signal, cache: "no-store",
+  }));
+  return result.runs;
 }
 
 export async function createAutomation(request: AutomationCreateRequest): Promise<Automation> {

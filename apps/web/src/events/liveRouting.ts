@@ -1,5 +1,5 @@
 import { usageLimitSnapshotFromEvent } from "../account/rateLimits";
-import type { EventEnvelope, QueuedInput, RateLimitSnapshot } from "../api/client";
+import type { EventEnvelope, RateLimitSnapshot } from "../api/client";
 import { isApprovalEvent } from "../approvals/state";
 import {
   threadNotificationsUpdateFromEvent,
@@ -13,8 +13,7 @@ export type LiveEventRouteHandlers = {
   applyProjectEvent: (event: EventEnvelope) => void;
   applyThreadSettingsEvent: (event: EventEnvelope) => void;
   applyAutomationStreamEvent: (event: EventEnvelope) => void;
-  applyQueuedInputUpsert: (row: QueuedInput) => void;
-  applyQueuedInputDeleted: (threadId: string, id: string) => void;
+  applyQueueEvent: (event: EventEnvelope) => void;
   applyThreadSectionsEvent: (event: EventEnvelope) => void;
   applyThreadUpsert: (update: ThreadUpsert) => void;
   applyThreadMetadataEvent: (event: EventEnvelope) => void;
@@ -59,20 +58,13 @@ export function routeGlobalLiveEvent(event: EventEnvelope, handlers: LiveEventRo
 }
 
 function routeSharedLiveEvent(event: EventEnvelope, handlers: LiveEventRouteHandlers) {
-  if (event.kind === "automation.item_upsert" || event.kind === "automation.item_deleted") {
+  if (event.kind === "automation.item_upsert" || event.kind === "automation.item_deleted" || event.kind === "automation.run_updated") {
     handlers.applyAutomationStreamEvent(event);
   }
   if (event.kind.startsWith("app_surface.")) {
     handlers.applyAppSurfaceEvent(event);
   }
-  const queueUpsert = queuedInputUpsertFromEvent(event);
-  if (queueUpsert) {
-    handlers.applyQueuedInputUpsert(queueUpsert);
-  }
-  const queueDelete = queuedInputDeleteFromEvent(event);
-  if (queueDelete) {
-    handlers.applyQueuedInputDeleted(queueDelete.threadId, queueDelete.id);
-  }
+  if (event.kind === "turn_queue.changed" || event.kind === "turn_queue.transfer_changed") handlers.applyQueueEvent(event);
   const threadUpsert = threadUpsertFromEvent(event);
   if (threadUpsert) {
     handlers.applyThreadUpsert(threadUpsert);
@@ -90,24 +82,6 @@ function routeSharedLiveEvent(event: EventEnvelope, handlers: LiveEventRouteHand
   if (event.kind === "thread_view.patch" || event.kind === "timeline.thread_metadata") {
     handlers.refreshSidebarThreadsForLiveEvent(event);
   }
-}
-
-function queuedInputUpsertFromEvent(event: EventEnvelope): QueuedInput | null {
-  if (event.kind !== "turn_queue.item_upsert") {
-    return null;
-  }
-  const row = event.payload as QueuedInput;
-  return row?.id && row.threadId ? row : null;
-}
-
-function queuedInputDeleteFromEvent(event: EventEnvelope): { threadId: string; id: string } | null {
-  if (event.kind !== "turn_queue.item_deleted") {
-    return null;
-  }
-  const payload = event.payload as { id?: unknown; threadId?: unknown };
-  const id = typeof payload.id === "string" ? payload.id : null;
-  const threadId = typeof payload.threadId === "string" ? payload.threadId : event.threadId;
-  return id && threadId ? { threadId, id } : null;
 }
 
 function isNativeConfigEvent(event: EventEnvelope): boolean {

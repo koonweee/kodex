@@ -125,12 +125,6 @@ async fn native_identity_omitted_ids_get_distinct_gateway_ids_without_retrying_r
         .await;
         assert_eq!(status, StatusCode::BAD_GATEWAY);
         assert_eq!(native.requests.lock().unwrap().len(), 3 + index);
-        assert!(state
-            .store
-            .list_queued_inputs("native-chat")
-            .await
-            .unwrap()
-            .is_empty());
     }
 }
 
@@ -156,11 +150,5 @@ async fn native_identity_submission_ignores_stale_gateway_routing_state() {
             assert_eq!(calls[0].0, "turn/start");
             assert_eq!(calls[0].1["clientUserMessageId"], "native-decision");
         }
-        assert!(state
-            .store
-            .list_queued_inputs("native-chat")
-            .await
-            .unwrap()
-            .is_empty());
     }
 }

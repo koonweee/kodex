@@ -153,7 +153,6 @@ class FakeEventSource {
 
 function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
   setInitialWorkspacePaneState(defaultWorkspacePaneStateForCurrentRoute());
-  let nextQueueIndex = 0;
   const routes: GatewayRouteMap = {
     "GET /v1/capabilities": capabilities,
     "GET /v1/projects": { projects: [project] },
@@ -179,24 +178,11 @@ function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
   };
   routes["POST /v1/threads/thread-1/resume"] ??= () => threadCommandFromList(routes, thread);
   routes["POST /v1/threads/thread-2/resume"] ??= () => threadCommandFromList(routes, secondThread);
-  routes["GET /v1/threads/thread-1/queued-inputs"] ??= { queuedInputs: [] };
-  routes["GET /v1/threads/thread-2/queued-inputs"] ??= { queuedInputs: [] };
   routes["GET /v1/threads/thread-1/app-surface"] ??= { session: null };
   routes["GET /v1/threads/thread-2/app-surface"] ??= { session: null };
-  routes["POST /v1/threads/thread-1/queued-inputs"] ??= (request: Request) => {
-    nextQueueIndex += 1;
-    return queuedInputFromRequest(request, "thread-1", `queue-${nextQueueIndex}`);
-  };
   routes["POST /v1/threads/thread-1/input"] ??= {
     payload: { turnId: "turn-active" },
   };
-  routes["POST /v1/threads/thread-1/queued-inputs/queue-1/retry"] ??= {
-    queuedInput: queuedInput("queue-1", "thread-1", "Retry later", "queued"),
-  };
-  routes["POST /v1/threads/thread-1/queued-inputs/queue-1/steer"] ??= {
-    queuedInput: queuedInput("queue-1", "thread-1", "Add tests", "pendingCommit"),
-  };
-  routes["DELETE /v1/threads/thread-1/queued-inputs/queue-1"] ??= { id: "queue-1", threadId: "thread-1" };
   routes["POST /v1/threads/thread-1/attach"] ??= (request: Request) =>
     threadDetailFromSnapshot(routes, request, thread, [
       snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "Hello from Codex" })]),
@@ -590,39 +576,6 @@ function fileChangeEntryFromItem(item: TestTimelineItem) {
     deletions: diff.split("\n").filter((line) => line.startsWith("-") && !line.startsWith("---")).length,
     diff,
     itemIds: [item.id],
-  };
-}
-
-async function queuedInputFromRequest(request: Request, threadId: string, queueId = "queue-1") {
-  const body = (await request.json()) as { input?: Array<{ type: string; text?: string }> };
-  return {
-    queuedInput: {
-      id: queueId,
-      threadId,
-      input: body.input ?? [],
-      options: {},
-      status: "queued",
-      priority: "normal",
-      attemptCount: 0,
-      lastError: null,
-      createdAt: "2026-05-05T00:00:00Z",
-      updatedAt: "2026-05-05T00:00:00Z",
-    },
-  };
-}
-
-function queuedInput(id: string, threadId: string, text: string, status = "queued") {
-  return {
-    id,
-    threadId,
-    input: [{ type: "text", text }],
-    options: {},
-    status,
-    priority: "normal",
-    attemptCount: status === "failed" ? 1 : 0,
-    lastError: status === "failed" ? "turn failed" : null,
-    createdAt: "2026-05-05T00:00:00Z",
-    updatedAt: "2026-05-05T00:00:00Z",
   };
 }
 

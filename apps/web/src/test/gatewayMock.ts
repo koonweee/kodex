@@ -1,3 +1,4 @@
+import type { QueuedInput, QueueTransfer } from "../api/client";
 import { vi } from "vitest";
 
 type RouteHandler = (request: Request) => unknown | Promise<unknown>;
@@ -9,6 +10,8 @@ export function mockGateway(routes: GatewayRouteMap) {
   routes = { "GET /v1/threads/unread-badge": { count: 0, readRevision: 0 }, ...routes };
   const calls: Request[] = [];
   let nextQueueIndex = 0;
+  const nativeQueues = new Map<string, QueuedInput[]>();
+  const transfers = new Map<string, QueueTransfer[]>();
 
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const request = input instanceof Request ? input.clone() : new Request(input, init);
@@ -23,7 +26,7 @@ export function mockGateway(routes: GatewayRouteMap) {
       const queuedInput = await fallbackQueuedInput(request, () => {
         nextQueueIndex += 1;
         return `queue-${nextQueueIndex}`;
-      });
+      }, nativeQueues, transfers);
       if (queuedInput) {
         return jsonResponse(queuedInput, 200);
       }
@@ -105,75 +108,30 @@ async function fallbackThreadInput(request: Request) {
   };
 }
 
-async function fallbackQueuedInput(request: Request, nextQueueId: () => string) {
-  const url = new URL(request.url);
-  const listMatch = url.pathname.match(/^\/v1\/threads\/([^/]+)\/queued-inputs$/);
-  if (request.method === "GET" && listMatch) {
-    return { queuedInputs: [] };
+async function fallbackQueuedInput(request: Request, nextQueueId: () => string, queues: Map<string, QueuedInput[]>, transfers: Map<string, QueueTransfer[]>) {
+  const match = new URL(request.url).pathname.match(/^\/v1\/threads\/([^/]+)\/queued-inputs(?:\/([^/]+)(?:\/(steer))?)?$/);
+  if (!match) return null;
+  const threadId = decodeURIComponent(match[1]);
+  const id = match[2];
+  const rows = queues.get(threadId) ?? [];
+  if (request.method === "GET" && !id) return { queuedInputs: rows, transfers: transfers.get(threadId) ?? [], nextCursor: null };
+  if (request.method === "POST" && !id) {
+    const body = await request.json();
+    const queuedInput: QueuedInput = { id: nextQueueId(), threadId, clientUserMessageId: body.clientUserMessageId ?? "fixture-client", input: body.input ?? [], attachments: body.attachments ?? [], canSteer: true };
+    queues.set(threadId, [...rows, queuedInput]);
+    return { queuedInput };
   }
-  if (request.method === "POST" && listMatch) {
-    const threadId = decodeURIComponent(listMatch[1]);
-    const body = (await request.clone().json()) as { input?: unknown[] };
-    return {
-      queuedInput: {
-        id: nextQueueId(),
-        threadId,
-        input: body.input ?? [],
-        options: {},
-        status: "queued",
-        priority: "normal",
-        attemptCount: 0,
-        lastError: null,
-        createdAt: "2026-05-05T00:00:00Z",
-        updatedAt: "2026-05-05T00:00:00Z",
-      },
-    };
+  if (request.method === "DELETE" && id && !match[3]) {
+    queues.set(threadId, rows.filter((row) => row.id !== id));
+    return { id, threadId, deleted: rows.some((row) => row.id === id) };
   }
-
-  const actionMatch = url.pathname.match(/^\/v1\/threads\/([^/]+)\/queued-inputs\/([^/]+)(?:\/(retry|steer))?$/);
-  if (!actionMatch) {
-    return null;
-  }
-  const threadId = decodeURIComponent(actionMatch[1]);
-  const queueId = decodeURIComponent(actionMatch[2]);
-  const action = actionMatch[3];
-  if (request.method === "DELETE") {
-    return { id: queueId, threadId };
-  }
-  if (request.method === "POST" && action === "steer") {
-    return {
-      queuedInput: {
-        id: queueId,
-        threadId,
-        input: [{ type: "text", text: "Pending steer" }],
-        options: {},
-        status: "pendingCommit",
-        priority: "normal",
-        attemptCount: 1,
-        lastError: null,
-        acceptedTurnId: "turn-1",
-        acceptedAt: "2026-05-05T00:00:01Z",
-        acceptedEventSeq: null,
-        createdAt: "2026-05-05T00:00:00Z",
-        updatedAt: "2026-05-05T00:00:01Z",
-      },
-    };
-  }
-  if (request.method === "POST" && action === "retry") {
-    return {
-      queuedInput: {
-        id: queueId,
-        threadId,
-        input: [{ type: "text", text: "Retry later" }],
-        options: {},
-        status: "queued",
-        priority: "normal",
-        attemptCount: 1,
-        lastError: null,
-        createdAt: "2026-05-05T00:00:00Z",
-        updatedAt: "2026-05-05T00:00:00Z",
-      },
-    };
+  if (request.method === "POST" && match[3] === "steer") {
+    const row = rows.find((row) => row.id === id);
+    if (!row) return null;
+    const transfer: QueueTransfer = { id: `transfer-${id}`, threadId, nativeQueueId: id, clientUserMessageId: row.clientUserMessageId, expectedTurnId: "turn-active", input: row.input, phase: "accepted", error: null, createdAt: "2026-10-05T00:00:00Z", updatedAt: "2026-10-05T00:00:00Z" };
+    queues.set(threadId, rows.filter((row) => row.id !== id));
+    transfers.set(threadId, [...(transfers.get(threadId) ?? []), transfer]);
+    return { status: "transfer", transfer };
   }
   return null;
 }

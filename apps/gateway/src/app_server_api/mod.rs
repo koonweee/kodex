@@ -1414,7 +1414,7 @@ fn file_attachments_from_thread_item(item: &Value) -> Vec<TimelineFileAttachment
     file_attachments_from_user_content(content)
 }
 
-fn file_attachments_from_user_content(content: &[Value]) -> Vec<TimelineFileAttachment> {
+pub(crate) fn file_attachments_from_user_content(content: &[Value]) -> Vec<TimelineFileAttachment> {
     let parts = content
         .iter()
         .filter_map(|input| {

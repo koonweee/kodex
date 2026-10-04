@@ -1,7 +1,7 @@
 import type { BrowserContext, Page, Route } from "@playwright/test";
 import { createServer, type ServerResponse } from "node:http";
 
-import type { Capabilities, EventEnvelope, MarkThreadSeenRequest, QueuedInput, ThreadRead, ThreadSettingsResponse, UnreadBadgeResponse, ThreadSettingsUpdateRequest, ThreadViewPatch, ThreadViewResponse, UserInput } from "../src/api/client";
+import type { Automation, AutomationRun, Capabilities, EventEnvelope, MarkThreadSeenRequest, QueuedInput, QueueTransfer, ThreadRead, ThreadSettingsResponse, UnreadBadgeResponse, ThreadSettingsUpdateRequest, ThreadViewPatch, ThreadViewResponse } from "../src/api/client";
 
 export async function nativeSettingsFixture(context: BrowserContext) {
   const settings: ThreadSettingsResponse = { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null };
@@ -20,7 +20,12 @@ export async function nativeSettingsFixture(context: BrowserContext) {
   const connections = new Map<string, number>();
   const requests: Array<{ client: string; key: string; body: unknown; failure: () => string | null }> = [];
   const pending: ThreadSettingsUpdateRequest[] = [];
+  const automations: Automation[] = [];
+  const automationRuns = new Map<string, AutomationRun[]>();
   const queuedInputs: QueuedInput[] = [];
+  const transfers: QueueTransfer[] = [];
+  const deliveredTransfers = new Set<string>();
+  let nextQueueId = 0;
   const unexpected: string[] = [];
   const errors: string[] = [];
   const holds = new Map<string, string>();
@@ -52,7 +57,7 @@ export async function nativeSettingsFixture(context: BrowserContext) {
 
   function emit(kind: string, payload: unknown, client?: string, eventSeq = seq + 1) {
     seq = Math.max(seq, eventSeq);
-    const event: EventEnvelope = { id: `${eventSeq}-${kind}`, seq: eventSeq, kind, threadId: ["config.changed", "thread.subagents_changed"].includes(kind) ? null : detail.thread.id, payload, receivedAt: "2026-10-04T00:00:00Z" };
+    const event: EventEnvelope = { id: `${eventSeq}-${kind}`, seq: eventSeq, kind, threadId: ["config.changed", "thread.subagents_changed", "automation.run_updated"].includes(kind) ? null : detail.thread.id, payload, receivedAt: "2026-10-04T00:00:00Z" };
     for (const [stream, id] of streams) {
       if (!client || client === id) stream.write(`id: ${eventSeq}\nevent: ${kind}\ndata: ${JSON.stringify(event)}\n\n`);
     }
@@ -92,17 +97,20 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       "GET /v1/approvals": { runtimeId: "native-settings-runtime", revision: 0, approvals: [] },
       "GET /v1/sidebar/threads": { projects: [], projectThreads: {}, chatThreads: { threads: [detail.thread] }, sections: [], sectionThreads: {} },
       "GET /v1/projects": { projects: [] },
+      "GET /v1/automations": { automations },
       "GET /v1/models": { models: [{ id: "gpt-5.4", model: "gpt-5.4", displayName: "GPT-5.4", description: "Test model", defaultReasoningEffort: "medium", isDefault: true, hidden: false, inputModalities: ["text"], supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }, { reasoningEffort: "high", description: "Deeper reasoning" }], rawPayload: {} }], rawPayload: {} },
       "GET /v1/composer-settings": {},
       "GET /v1/permission-profiles": { profiles: [] },
       "GET /v1/threads/settings-chat": detail,
       "GET /v1/threads/settings-chat/app-surface": { session: null },
       "GET /v1/threads/settings-chat/subagents": { subagents: [] },
-      "GET /v1/threads/settings-chat/queued-inputs": { queuedInputs },
       "PUT /v1/thread-view-presence": { ok: true },
       "POST /v1/thread-view-presence": { ok: true },
     };
     if (key in fixed) return respond(route, fixed[key]);
+    const runsPath = url.pathname.match(/^\/v1\/automations\/([^/]+)\/runs$/);
+    if (request.method() === "GET" && runsPath && automationRuns.has(runsPath[1])) return respond(route, { runs: automationRuns.get(runsPath[1]) }, 200, `runs:${client}`);
+    if (key === "GET /v1/threads/settings-chat/queued-inputs") return respond(route, { queuedInputs, transfers, nextCursor: null }, 200, `queue:${client}`);
     if (key === "GET /v1/threads/unread-badge") return respond(route, badge, 200, `badge:${client}`);
     if (key === "POST /v1/threads/settings-chat/seen") {
       const expected = body as MarkThreadSeenRequest;
@@ -136,17 +144,78 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       return respond(route, { payload: {turn: {id:"turn-1",status:"inProgress"}} });
     }
     if (key === "POST /v1/threads/settings-chat/queued-inputs") {
-      const queued: QueuedInput = { id: "queued-1", threadId: detail.thread.id, input: (body as { input: UserInput[] }).input, options: {}, priority: "normal", status: "queued", attemptCount: 0, createdAt: "2026-10-04T00:00:00Z", updatedAt: "2026-10-04T00:00:00Z" };
+      const submitted = body as { input: QueuedInput["input"]; clientUserMessageId: string };
+      const queued: QueuedInput = { id: `queued-${++nextQueueId}`, threadId: detail.thread.id, input: submitted.input, clientUserMessageId: submitted.clientUserMessageId, attachments: [], canSteer: detail.thread.status === "active" };
       queuedInputs.push(queued);
-      emit("turn_queue.item_upsert", queued);
+      emit("turn_queue.changed", { threadId: detail.thread.id });
       return respond(route, { queuedInput: queued });
+    }
+    if (key === "POST /v1/threads/settings-chat/queued-inputs/reorder") {
+      const ids = (body as { queuedSubmissionIds: string[] }).queuedSubmissionIds;
+      if (ids.length !== queuedInputs.length || new Set(ids).size !== ids.length || ids.some((id) => !queuedInputs.some((row) => row.id === id))) throw new Error("Incomplete native queue order");
+      const ordered = ids.map((id) => queuedInputs.find((row) => row.id === id)!);
+      queuedInputs.splice(0, queuedInputs.length, ...ordered);
+      emit("turn_queue.changed", { threadId: detail.thread.id });
+      return respond(route, {});
+    }
+    if (key === "POST /v1/threads/settings-chat/queued-inputs/start") {
+      if (detail.timeline.activeTurnId) return respond(route, { code: "app_server_error", message: "thread already has an active or pending turn", retryable: false }, 502);
+      const id = (body as { queuedSubmissionId: string }).queuedSubmissionId;
+      const index = queuedInputs.findIndex((row) => row.id === id);
+      if (index < 0) throw new Error("Unknown native row start");
+      queuedInputs.splice(index, 1);
+      emit("turn_queue.changed", { threadId: detail.thread.id });
+      return respond(route, { payload: { turn: { id: "manual-native-turn", status: "inProgress" } } });
+    }
+    const queuePath = url.pathname.match(/^\/v1\/threads\/settings-chat\/queued-inputs\/([^/]+)(\/steer)?$/);
+    if (queuePath) {
+      const index = queuedInputs.findIndex((row) => row.id === queuePath[1]);
+      const row = queuedInputs[index];
+      if (row && request.method() === "PUT" && !queuePath[2]) {
+        row.input = (body as { input: QueuedInput["input"] }).input;
+        emit("turn_queue.changed", { threadId: detail.thread.id });
+        return respond(route, { queuedInput: row });
+      }
+      if (request.method() === "DELETE" && !queuePath[2]) {
+        if (row) queuedInputs.splice(index, 1);
+        emit("turn_queue.changed", { threadId: detail.thread.id });
+        return respond(route, { id: queuePath[1], threadId: detail.thread.id, deleted: Boolean(row) });
+      }
+      if (row?.canSteer && request.method() === "POST" && queuePath[2] === "/steer") {
+        queuedInputs.splice(index, 1);
+        const transfer: QueueTransfer = { id: `transfer-${row.id}`, threadId: detail.thread.id, nativeQueueId: row.id, clientUserMessageId: row.clientUserMessageId, expectedTurnId: "turn-1", input: row.input, phase: "accepted", error: null, createdAt: "2026-10-05T00:00:00Z", updatedAt: "2026-10-05T00:00:00Z" };
+        transfers.push(transfer);
+        emit("turn_queue.changed", { threadId: detail.thread.id });
+        emit("turn_queue.transfer_changed", { threadId: detail.thread.id });
+        return respond(route, { status: "transfer", transfer });
+      }
+    }
+    const transferPath = url.pathname.match(/^\/v1\/queue-transfers\/([^/]+)(\/reconcile)?$/);
+    if (transferPath) {
+      const index = transfers.findIndex((transfer) => transfer.id === transferPath[1]);
+      const transfer = transfers[index];
+      if (transfer && request.method() === "POST" && transferPath[2] === "/reconcile") {
+        if (deliveredTransfers.has(transfer.id)) {
+          transfers.splice(index, 1);
+          emit("turn_queue.transfer_changed", { threadId: detail.thread.id });
+          return respond(route, { status: "delivered", id: transfer.id });
+        }
+        return respond(route, { status: "transfer", transfer });
+      }
+      if (transfer?.phase === "uncertain" && request.method() === "DELETE" && !transferPath[2]) {
+        transfers.splice(index, 1);
+        emit("turn_queue.transfer_changed", { threadId: detail.thread.id });
+        return respond(route, { id: transfer.id, threadId: detail.thread.id });
+      }
     }
     unexpected.push(key);
     return respond(route, { code: "not_found", message: key, retryable: false }, 404);
   });
   return {
     settings, requests, pending, connections, unexpected, errors, settingsChanged,
-    detail, badge,
+    detail, badge, queuedInputs, transfers, deliveredTransfers, automations, automationRuns,
+    automationRunChanged(automationId: string, client?: string) { emit("automation.run_updated", { automationId }, client); },
+    queueChanged(client?: string, transfer = false) { emit(transfer ? "turn_queue.transfer_changed" : "turn_queue.changed", { threadId: detail.thread.id }, client); },
     readChanged(read: ThreadRead, count: number, client?: string) {
       applyRead(read);
       Object.assign(badge, { count, readRevision: read.readRevision });
@@ -180,17 +249,17 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       Object.assign(settings, update);
       settingsChanged(client);
     },
-    holdNext(client: string, kind: "settings" | "snapshot" | "seen" | "badge" = "settings", label = "") { holds.set(`${kind}:${client}`, `${kind}:${client}:${label}`); },
-    isHeld(client: string, kind: "settings" | "snapshot" | "seen" | "badge" = "settings", label = "") { return held.has(`${kind}:${client}:${label}`); },
-    wasAborted(client: string, kind: "settings" | "snapshot" | "seen" | "badge" = "settings", label = "") { return held.get(`${kind}:${client}:${label}`)?.aborted() ?? false; },
-    async release(client: string, kind: "settings" | "snapshot" | "seen" | "badge" = "settings", label = "") {
+    holdNext(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" = "settings", label = "") { holds.set(`${kind}:${client}`, `${kind}:${client}:${label}`); },
+    isHeld(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" = "settings", label = "") { return held.has(`${kind}:${client}:${label}`); },
+    wasAborted(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" = "settings", label = "") { return held.get(`${kind}:${client}:${label}`)?.aborted() ?? false; },
+    async release(client: string, kind: "settings" | "snapshot" | "seen" | "badge" | "queue" | "runs" = "settings", label = "") {
       const key = `${kind}:${client}:${label}`;
       const reply = held.get(key);
       if (!reply) throw new Error(`No held ${kind} read for ${client}`);
       held.delete(key);
       await reply.send();
     },
-    async page(client: string) {
+    async page(client: string, path = "/threads/settings-chat") {
       const page = await context.newPage();
       clients.set(page, client);
       // Keep late pagehide beacons inside this disposable fixture too.
@@ -203,7 +272,7 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       }, `http://127.0.0.1:${address.port}`);
       page.on("pageerror", (error) => errors.push(error.message));
       page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
-      await page.goto("/threads/settings-chat");
+      await page.goto(path);
       return page;
     },
     async close() {

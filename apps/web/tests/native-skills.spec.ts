@@ -40,9 +40,8 @@ for (const shape of [
           if (attempts.length === 1) {
             return route.fulfill({ status: 400, json: { code: "rejected", message: "Native input rejected", retryable: false } });
           }
-          return route.fulfill({ json: queued
-            ? { queuedInput: { id: "skill-queue", threadId: "settings-chat", input, options: {}, status: "queued", priority: "normal", attemptCount: 0, createdAt: "2026-10-05T00:00:00Z", updatedAt: "2026-10-05T00:00:00Z" } }
-            : { payload: {} } });
+          if (queued) return route.fallback();
+          return route.fulfill({ json: { payload: {} } });
         });
         try {
           const first = await fixture.page("first");
@@ -58,7 +57,7 @@ for (const shape of [
           if (shape.hasTouch) await skill.tap();
           else await skill.click();
           await expect(composer).toHaveValue("请 $review-fix ");
-          const send = activePane(first).getByRole("button", { name: "Send message", exact: true });
+          const send = activePane(first).getByRole("button", { name: queued ? "Queue message" : "Send message", exact: true });
           if (shape.hasTouch) await send.tap();
           else await send.click();
           await expect.poll(() => attempts.length).toBe(1);
@@ -68,18 +67,19 @@ for (const shape of [
           if (shape.hasTouch) await send.tap();
           else await send.click();
           await expect.poll(() => attempts.length).toBe(2);
-          expect(attempts).toEqual(queued ? [{ input }, { input }] : [
+          expect(attempts).toEqual([
             { input, clientUserMessageId: expect.any(String) },
             { input, clientUserMessageId: expect.any(String) },
           ]);
-          if (!queued) expect((attempts[0] as {clientUserMessageId:string}).clientUserMessageId).not.toBe((attempts[1] as {clientUserMessageId:string}).clientUserMessageId);
+          expect((attempts[0] as {clientUserMessageId:string}).clientUserMessageId).not.toBe((attempts[1] as {clientUserMessageId:string}).clientUserMessageId);
 
           const pickerCatalogReads = catalogReads;
+          if (queued) { fixture.queuedInputs.splice(0); fixture.queueChanged(); }
           // A native item supplies its own structured input. Only the first tab
           // sees its canonical patch; the second must recover from the snapshot.
           const item: ThreadTimelineSnapshotItem = {
             id: "native-skill-item", itemId: "native-user", threadId: "settings-chat", turnId: "skill-turn", itemType: "userMessage", status: "completed", codexMethod: "item/completed", displayOrder: 1,
-            payload: { source: "appServerSnapshot", turnId: "skill-turn", itemId: "native-user", item: { id: "native-user", type: "userMessage", content: input }, itemSnapshot: { id: "native-user", itemType: "userMessage", rawPayload: {}, skillMentions: [{ start: 2, end: 13, name: "review-fix", path: "/skills/review-fix/SKILL.md" }] } },
+            payload: { source: "appServerSnapshot", turnId: "skill-turn", itemId: "native-user", item: { id: "native-user", type: "userMessage", content: input }, itemSnapshot: { id: "native-user", itemType: "userMessage", skillMentions: [{ start: 2, end: 13, name: "review-fix", path: "/skills/review-fix/SKILL.md" }] } },
           };
           fixture.publishTimeline({ activeTurnId: null, liveState: "idle", pendingApprovalRequests: [], pendingUserInputRequests: [], viewRevision: 5, turns: [{ id: "skill-turn", status: "completed" }], rows: [{ id: "native-skill-row", kind: "user_message", status: "completed", turnId: "skill-turn", displayOrder: 1, item, items: [], collapsedRows: [], fileChanges: [] }] }, "first");
           await expect(activePane(first).getByLabel("$review-fix skill", { exact: true })).toBeVisible();

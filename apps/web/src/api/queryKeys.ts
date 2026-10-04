@@ -1,6 +1,8 @@
 export const queryKeys = {
   account: ["account"] as const,
   accountLoginCompletion: (loginId: string | null) => ["account-login-completion", loginId] as const,
+  automationRunsRoot: ["automation-runs"] as const,
+  automationRuns: (automationId: string) => ["automation-runs", automationId] as const,
   automations: ["automations"] as const,
   automationTombstones: ["automations", "tombstones"] as const,
   capabilities: ["capabilities"] as const,
@@ -27,7 +29,7 @@ export const queryKeys = {
   threadSettingsRoot: ["thread-settings"] as const,
   threadSettings: (threadId: string | null) => ["thread-settings", threadId] as const,
   queuedInputs: (threadId: string) => ["queued-inputs", threadId] as const,
-  queuedInputTombstones: (threadId: string) => ["queued-inputs", threadId, "tombstones"] as const,
+  queuedInputsRoot: ["queued-inputs"] as const,
   rateLimits: ["account", "rate-limits"] as const,
   sidebarThreads: ["threads", "sidebar"] as const,
   skills: (cwd: string | null) => ["skills", cwd ?? "global"] as const,

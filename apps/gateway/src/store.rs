@@ -9,10 +9,7 @@ use sqlx::{
 };
 use utoipa::ToSchema;
 
-use crate::{
-    app_server_api::{TimelineFileAttachment, TurnStartOptions, UserInput},
-    error::{ApiError, ApiResult},
-};
+use crate::error::{ApiError, ApiResult};
 
 mod app_surfaces;
 mod approvals;
@@ -21,7 +18,6 @@ mod events;
 mod migrations;
 mod notifications;
 mod queue_transfers;
-mod queued_inputs;
 mod runtime;
 mod threads;
 
@@ -365,66 +361,6 @@ pub struct ThreadNotificationSetting {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub enum QueuedInputStatus {
-    Queued,
-    Submitting,
-    Steering,
-    PendingCommit,
-    Failed,
-}
-
-impl QueuedInputStatus {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Queued => "queued",
-            Self::Submitting => "submitting",
-            Self::Steering => "steering",
-            Self::PendingCommit => "pendingCommit",
-            Self::Failed => "failed",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub enum QueuedInputPriority {
-    Normal,
-    RejectedSteer,
-}
-
-impl QueuedInputPriority {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Normal => "normal",
-            Self::RejectedSteer => "rejectedSteer",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct QueuedInput {
-    pub id: String,
-    pub thread_id: String,
-    pub input: Vec<UserInput>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub attachments: Vec<TimelineFileAttachment>,
-    pub options: TurnStartOptions,
-    pub source_type: Option<String>,
-    pub source_id: Option<String>,
-    pub status: QueuedInputStatus,
-    pub priority: QueuedInputPriority,
-    pub attempt_count: i64,
-    pub last_error: Option<String>,
-    pub accepted_turn_id: Option<String>,
-    pub accepted_at: Option<DateTime<Utc>>,
-    pub accepted_event_seq: Option<i64>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
-#[serde(rename_all = "camelCase")]
 pub enum AutomationStatus {
     Active,
     Paused,
@@ -452,7 +388,7 @@ pub struct Automation {
     pub status: AutomationStatus,
     pub paused_reason: Option<String>,
     pub last_run_at: Option<DateTime<Utc>>,
-    pub last_queued_input_id: Option<String>,
+    pub last_native_queue_id: Option<String>,
     pub last_error: Option<String>,
     pub consecutive_failure_count: i64,
     pub provenance: Option<Value>,
@@ -486,13 +422,55 @@ pub struct AutomationUpdate {
     pub provenance: Option<Value>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum AutomationRunPhase {
+    Admitting,
+    Queued,
+    StartRequested,
+    Dispatched,
+    Rejected,
+    Uncertain,
+    Removed,
+}
+
+impl AutomationRunPhase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Admitting => "admitting",
+            Self::Queued => "queued",
+            Self::StartRequested => "startRequested",
+            Self::Dispatched => "dispatched",
+            Self::Rejected => "rejected",
+            Self::Uncertain => "uncertain",
+            Self::Removed => "removed",
+        }
+    }
+
+    fn from_persisted(value: &str) -> ApiResult<Self> {
+        match value {
+            "admitting" => Ok(Self::Admitting),
+            "queued" => Ok(Self::Queued),
+            "startRequested" => Ok(Self::StartRequested),
+            "dispatched" => Ok(Self::Dispatched),
+            "rejected" => Ok(Self::Rejected),
+            "uncertain" => Ok(Self::Uncertain),
+            "removed" => Ok(Self::Removed),
+            _ => Err(ApiError::BadGateway("invalid automation run phase".into())),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct AutomationRun {
     pub id: String,
     pub automation_id: String,
-    pub scheduled_for: DateTime<Utc>,
-    pub status: String,
-    pub queued_input_id: Option<String>,
+    pub target_thread_id: String,
+    pub scheduled_for: Option<DateTime<Utc>>,
+    pub phase: AutomationRunPhase,
+    pub native_queue_id: Option<String>,
+    pub turn_id: Option<String>,
     pub error: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -510,7 +488,6 @@ pub struct ThreadRuntimeState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThreadRuntimeStatus {
     Starting,
-    Draining,
     Syncing,
     Active,
     Streaming,
@@ -522,7 +499,6 @@ impl ThreadRuntimeStatus {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Starting => "starting",
-            Self::Draining => "draining",
             Self::Syncing => "syncing",
             Self::Active => "active",
             Self::Streaming => "streaming",
@@ -534,7 +510,6 @@ impl ThreadRuntimeStatus {
     fn from_persisted(value: &str) -> Self {
         match value {
             "starting" => Self::Starting,
-            "draining" => Self::Draining,
             "syncing" => Self::Syncing,
             "active" => Self::Active,
             "streaming" => Self::Streaming,
@@ -624,7 +599,7 @@ fn row_to_automation(row: sqlx::sqlite::SqliteRow) -> ApiResult<Automation> {
         status: automation_status(&status)?,
         paused_reason: row.try_get("paused_reason")?,
         last_run_at: row.try_get("last_run_at")?,
-        last_queued_input_id: row.try_get("last_queued_input_id")?,
+        last_native_queue_id: row.try_get("last_native_queue_id")?,
         last_error: row.try_get("last_error")?,
         consecutive_failure_count: row.try_get("consecutive_failure_count")?,
         provenance,
@@ -637,70 +612,15 @@ fn row_to_automation_run(row: sqlx::sqlite::SqliteRow) -> ApiResult<AutomationRu
     Ok(AutomationRun {
         id: row.try_get("id")?,
         automation_id: row.try_get("automation_id")?,
+        target_thread_id: row.try_get("target_thread_id")?,
         scheduled_for: row.try_get("scheduled_for")?,
-        status: row.try_get("status")?,
-        queued_input_id: row.try_get("queued_input_id")?,
+        phase: AutomationRunPhase::from_persisted(&row.try_get::<String, _>("phase")?)?,
+        native_queue_id: row.try_get("native_queue_id")?,
+        turn_id: row.try_get("turn_id")?,
         error: row.try_get("error")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })
-}
-
-fn row_to_queued_input(row: sqlx::sqlite::SqliteRow) -> ApiResult<QueuedInput> {
-    let input_json: String = row.try_get("input_json")?;
-    let attachments_json: String = row
-        .try_get::<Option<String>, _>("attachments_json")?
-        .unwrap_or_else(|| "[]".to_string());
-    let options_json: String = row.try_get("options_json")?;
-    let status: String = row.try_get("status")?;
-    let priority: String = row.try_get("priority")?;
-    let accepted_at: Option<String> = row.try_get("accepted_at")?;
-    Ok(QueuedInput {
-        id: row.try_get("id")?,
-        thread_id: row.try_get("thread_id")?,
-        input: serde_json::from_str(&input_json)?,
-        attachments: serde_json::from_str(&attachments_json)?,
-        options: serde_json::from_str(&options_json)?,
-        source_type: row.try_get("source_type")?,
-        source_id: row.try_get("source_id")?,
-        status: queued_input_status(&status)?,
-        priority: queued_input_priority(&priority)?,
-        attempt_count: row.try_get("attempt_count")?,
-        last_error: row.try_get("last_error")?,
-        accepted_turn_id: row.try_get("accepted_turn_id")?,
-        accepted_at: accepted_at
-            .map(|value| value.parse::<DateTime<Utc>>())
-            .transpose()
-            .map_err(|error| {
-                ApiError::BadGateway(format!("invalid queued input accepted_at: {error}"))
-            })?,
-        accepted_event_seq: row.try_get("accepted_event_seq")?,
-        created_at: row.try_get("created_at")?,
-        updated_at: row.try_get("updated_at")?,
-    })
-}
-
-fn queued_input_status(status: &str) -> ApiResult<QueuedInputStatus> {
-    match status {
-        "queued" => Ok(QueuedInputStatus::Queued),
-        "submitting" => Ok(QueuedInputStatus::Submitting),
-        "steering" => Ok(QueuedInputStatus::Steering),
-        "pendingCommit" => Ok(QueuedInputStatus::PendingCommit),
-        "failed" => Ok(QueuedInputStatus::Failed),
-        other => Err(ApiError::BadGateway(format!(
-            "unknown queued input status {other}"
-        ))),
-    }
-}
-
-fn queued_input_priority(priority: &str) -> ApiResult<QueuedInputPriority> {
-    match priority {
-        "normal" => Ok(QueuedInputPriority::Normal),
-        "rejectedSteer" => Ok(QueuedInputPriority::RejectedSteer),
-        other => Err(ApiError::BadGateway(format!(
-            "unknown queued input priority {other}"
-        ))),
-    }
 }
 
 fn automation_status(status: &str) -> ApiResult<AutomationStatus> {

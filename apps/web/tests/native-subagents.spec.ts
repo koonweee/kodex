@@ -42,7 +42,7 @@ for (const shape of [
           if (url.pathname.endsWith("/subagents")) return route.fulfill({ json: { subagents: [], nextCursor: null } });
           if (url.pathname.endsWith("/app-surface")) return route.fulfill({ json: { session: null } });
           if (url.pathname.endsWith("/settings")) return route.fulfill({ json: fixture.settings });
-          if (url.pathname.endsWith("/queued-inputs")) return route.fulfill({ json: { queuedInputs: [] } });
+          if (url.pathname.endsWith("/queued-inputs")) return route.fulfill({ json: { queuedInputs: [], transfers: [], nextCursor: null } });
           childReads.push(child.id);
           const detail: ThreadViewResponse = {
             thread: { ...child, cwd: "/native/child", projectId: null, createdAt: 0, notificationsEnabled: true, latestCompletedTurnId: null, seenCompletedTurnId: null, readRevision: 0, readStateKnown: false, unreadCompletedAgentTurn: false },

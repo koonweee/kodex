@@ -152,8 +152,15 @@ async fn native_subagent_deleted_unloaded_child_invalidates_without_cached_ances
     assert_eq!(marker.payload, json!({"changedThreadId":"unloaded-child"}));
     assert!(native.requests.lock().unwrap().is_empty());
     let persisted = state.store.replay_events(None, None, None).await.unwrap();
-    assert_eq!(persisted.len(), 1);
+    assert_eq!(
+        persisted
+            .iter()
+            .map(|event| event.kind.as_str())
+            .collect::<Vec<_>>(),
+        vec!["thread.subagents_changed", "turn_queue.changed"]
+    );
     assert_eq!(persisted[0].seq, marker.seq);
+    assert_eq!(persisted[1].payload, json!({"threadId":"unloaded-child"}));
 }
 
 #[tokio::test]
@@ -243,7 +250,7 @@ fn native_subagent_input_capability_and_parent_survive_canonical_summary_project
 }
 
 #[tokio::test]
-async fn native_subagent_explicit_input_denial_prevents_legacy_queue_acceptance() {
+async fn native_subagent_explicit_input_denial_prevents_native_queue_admission() {
     let (state, native) = state().await;
     state
         .store
@@ -270,12 +277,6 @@ async fn native_subagent_explicit_input_denial_prevents_legacy_queue_acceptance(
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    assert!(state
-        .store
-        .list_queued_inputs("child")
-        .await
-        .unwrap()
-        .is_empty());
     assert_eq!(
         *native.requests.lock().unwrap(),
         vec![(
@@ -313,12 +314,6 @@ async fn native_subagent_atomic_input_forwards_native_denial_without_queuing() {
     let body: Value =
         serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap();
     assert_eq!(body["message"], error);
-    assert!(state
-        .store
-        .list_queued_inputs("child")
-        .await
-        .unwrap()
-        .is_empty());
     assert_eq!(
         *native.requests.lock().unwrap(),
         vec![(
@@ -333,62 +328,36 @@ async fn native_subagent_atomic_input_forwards_native_denial_without_queuing() {
 }
 
 #[tokio::test]
-async fn native_subagent_input_denial_preserves_queued_row_on_retry_or_promotion() {
-    use crate::app_server_api::{TurnStartOptions, UserInput};
-
-    for operation in ["retry", "steer"] {
-        let (state, native) = state().await;
-        let queued = state
-            .store
-            .create_queued_input(
-                "child",
-                vec![UserInput::Text {
-                    text: "Recoverable input".into(),
-                    text_elements: Vec::new(),
-                }],
-                TurnStartOptions::default(),
-            )
-            .await
-            .unwrap();
-        let before = if operation == "retry" {
-            state
-                .store
-                .mark_queued_input_failed("child", &queued.id, "Previously failed".into())
-                .await
-                .unwrap()
-        } else {
-            queued
-        };
-        *native.next_response.lock().unwrap() =
-            Some(json!({"thread":child("child","root","active",json!(false))}));
-        let response = build_router(state.clone())
-            .oneshot(
-                Request::post(format!(
-                    "/v1/threads/child/queued-inputs/{}/{operation}",
-                    before.id
-                ))
+async fn native_subagent_input_denial_cannot_delete_or_steer_a_native_queue_row() {
+    let (state, native) = state().await;
+    *native.next_response.lock().unwrap() =
+        Some(json!({"thread":child("child","root","active",json!(false))}));
+    let response = build_router(state.clone())
+        .oneshot(
+            Request::post("/v1/threads/child/queued-inputs/native-row/steer")
                 .body(Body::empty())
                 .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{operation}");
-        let remaining = state.store.list_queued_inputs("child").await.unwrap();
-        assert_eq!(serde_json::to_value(&remaining).unwrap(), json!([before]));
-        assert!(state
-            .store
-            .replay_events(None, None, None)
-            .await
-            .unwrap()
-            .is_empty());
-        assert_eq!(
-            *native.requests.lock().unwrap(),
-            vec![(
-                "thread/read".into(),
-                json!({"threadId":"child","includeTurns":false})
-            )]
-        );
-    }
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let events = state.store.replay_events(None, None, None).await.unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].kind, "turn_queue.changed");
+    assert_eq!(events[0].payload, json!({"threadId":"child"}));
+    assert!(state
+        .store
+        .list_queue_transfers(None)
+        .await
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        *native.requests.lock().unwrap(),
+        vec![(
+            "thread/read".into(),
+            json!({"threadId":"child","includeTurns":false})
+        )]
+    );
 }
 
 #[tokio::test]
@@ -405,22 +374,38 @@ async fn native_subagent_unknown_input_capability_does_not_infer_denial_from_rol
         })
         .await
         .unwrap();
-    *native.next_response.lock().unwrap() =
-        Some(json!({"thread":child("child","root","notLoaded",Value::Null)}));
+    let input = json!([{"type":"text","text":"Native dispatch will decide"}]);
+    native.queued_responses.lock().unwrap().extend([
+        json!({"thread":child("child","root","notLoaded",Value::Null)}),
+        json!({"data":[],"nextCursor":null,"backwardsCursor":null}),
+        json!({"queuedSubmission":{"id":"native-row","clientUserMessageId":"native-client","input":input}}),
+    ]);
     let response = build_router(state.clone())
         .oneshot(
             Request::post("/v1/threads/child/queued-inputs")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    json!({"input":[{"type":"text","text":"Native dispatch will decide"}]})
-                        .to_string(),
+                    json!({"input":input,"clientUserMessageId":"native-client"}).to_string(),
                 ))
                 .unwrap(),
         )
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    let remaining = state.store.list_queued_inputs("child").await.unwrap();
-    assert_eq!(remaining.len(), 1);
-    assert_eq!(remaining[0].status, crate::store::QueuedInputStatus::Queued);
+    let body: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap();
+    assert_eq!(body["queuedInput"]["id"], "native-row");
+    assert_eq!(body["queuedInput"]["input"], input);
+    let calls = native.requests.lock().unwrap();
+    assert_eq!(
+        calls
+            .iter()
+            .map(|(method, _)| method.as_str())
+            .collect::<Vec<_>>(),
+        vec!["thread/read", "thread/turns/list", "thread/queue/add"]
+    );
+    assert_eq!(
+        calls[2].1,
+        json!({"threadId":"child","input":input,"clientUserMessageId":"native-client"})
+    );
 }

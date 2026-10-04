@@ -25,6 +25,7 @@ import {
   type AutomationFormValues,
 } from "./schedule";
 import type { AutomationThreadOption } from "./threadOptions";
+import { AutomationRuns } from "./AutomationRuns";
 import { PromptMarkdownEditor } from "./PromptMarkdownEditor";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 
@@ -289,6 +290,7 @@ export function AutomationEditorModal({
             {promptFields()}
           </>
         )}
+        {automation && opened ? <AutomationRuns automationId={automation.id} /> : null}
         <Group className="kodex-automation-modal-footer" justify="space-between" wrap="nowrap">
           <Group gap="xs" wrap="nowrap">
             {automation ? (

@@ -10,6 +10,8 @@ mod history;
 mod identity;
 #[path = "native_app_server/items.rs"]
 mod items;
+#[path = "native_app_server/producers.rs"]
+mod producers;
 #[path = "native_app_server/projects.rs"]
 mod projects;
 #[path = "native_app_server/promotion.rs"]

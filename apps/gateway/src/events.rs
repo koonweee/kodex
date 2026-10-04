@@ -213,6 +213,26 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
             {
                 tracing::warn!(%error, "failed to reconcile queue transfer notification");
             }
+            if matches!(method.as_str(), "item/started" | "item/completed")
+                && params.pointer("/item/type").and_then(Value::as_str) == Some("userMessage")
+                && params.pointer("/item/id").and_then(Value::as_str).is_some()
+            {
+                if let (Some(thread), Some(turn)) = (
+                    params.get("threadId").and_then(Value::as_str),
+                    params.get("turnId").and_then(Value::as_str),
+                ) {
+                    if let Err(error) = crate::automations::observe_user_receipt(
+                        state,
+                        thread,
+                        turn,
+                        params.pointer("/item/clientId").and_then(Value::as_str),
+                    )
+                    .await
+                    {
+                        tracing::warn!(%error, "failed to reconcile automation user receipt");
+                    }
+                }
+            }
             let metadata = EventMetadata::from_payload(&params);
             if matches!(
                 method.as_str(),
@@ -257,6 +277,7 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                         "thread_reverted",
                     )?);
                 }
+                queue::observe_notification(state, &method, &params).await;
                 return Ok(());
             }
             let mut emitted = false;
@@ -295,9 +316,7 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                 let _ = state.events.send(event);
                 emitted = true;
             }
-            for thread_id in normalized.drain_thread_ids {
-                queue::trigger_queue_drain(state.clone(), thread_id);
-            }
+            queue::observe_notification(state, &method, &params).await;
             if method == "skills/changed" {
                 skills::broadcast_skills_changed(state, "app-server").await?;
                 emitted = true;
@@ -658,23 +677,17 @@ async fn normalized_timeline_events(
     source: TimelineUpdateSource,
 ) -> ApiResult<NormalizedTimelineEvents> {
     let mut events = Vec::new();
-    let mut drain_thread_ids = Vec::new();
     if metadata.thread_id.is_none() {
-        return Ok(NormalizedTimelineEvents {
-            events,
-            drain_thread_ids,
-        });
+        return Ok(NormalizedTimelineEvents { events });
     }
 
     events.extend(timeline_item_delta_event(state, method, params, metadata).await?);
     events.extend(timeline_item_upsert_event(state, method, params, metadata, source).await?);
     let turn_upsert = timeline_turn_upsert_event(state, params, metadata, source).await?;
     events.extend(turn_upsert.events);
-    drain_thread_ids.extend(turn_upsert.drain_thread_ids);
     events.extend(timeline_turn_completion_reconciliation_events(state, method, metadata).await?);
     let compaction = timeline_thread_compacted_event(state, method, metadata).await?;
     events.extend(compaction.events);
-    drain_thread_ids.extend(compaction.drain_thread_ids);
     if let Some(event) =
         timeline_thread_metadata_event(state, method, params, metadata, source).await?
     {
@@ -683,25 +696,17 @@ async fn normalized_timeline_events(
     let thread_status =
         timeline_thread_status_event(state, method, params, metadata, source).await?;
     events.extend(thread_status.events);
-    drain_thread_ids.extend(thread_status.drain_thread_ids);
 
-    Ok(NormalizedTimelineEvents {
-        events,
-        drain_thread_ids,
-    })
+    Ok(NormalizedTimelineEvents { events })
 }
 
 struct NormalizedTimelineEvents {
     events: Vec<EventEnvelope>,
-    drain_thread_ids: Vec<String>,
 }
 
 impl Default for NormalizedTimelineEvents {
     fn default() -> Self {
-        Self {
-            events: Vec::new(),
-            drain_thread_ids: Vec::new(),
-        }
+        Self { events: Vec::new() }
     }
 }
 
@@ -831,11 +836,6 @@ async fn timeline_item_upsert_event(
             );
         }
     }
-    if let Some(event) =
-        queue::reconcile_pending_steer_commit_event(state, &thread_id, &turn_id, item).await?
-    {
-        events.push(event);
-    }
     Ok(events)
 }
 
@@ -876,7 +876,6 @@ async fn timeline_thread_compacted_event(
                     thread_id.to_string(),
                     "thread_compacted_reconciliation_failed",
                 )?],
-                drain_thread_ids: Vec::new(),
             });
         }
     };
@@ -900,11 +899,6 @@ async fn timeline_thread_compacted_event(
         .await?;
     Ok(NormalizedTimelineEvents {
         events: vec![thread_view_full_snapshot_patch_event(state, thread_id).await?],
-        drain_thread_ids: if timeline.active_turn_id.is_none() {
-            vec![thread_id.to_string()]
-        } else {
-            Vec::new()
-        },
     })
 }
 
@@ -973,12 +967,6 @@ async fn timeline_turn_upsert_event(
             completed_cursor.seq,
         )
         .await?;
-        events.extend(
-            queue::requeue_unmatched_pending_commit_input_events_for_turn(
-                state, &thread_id, &turn.id,
-            )
-            .await?,
-        );
         let planned = state
             .store
             .append_event(NewEvent {
@@ -1019,16 +1007,8 @@ async fn timeline_turn_upsert_event(
             last_event_seq: Some(cursor.seq),
         }
     };
-    let runtime_thread_id = runtime.thread_id.clone();
-    queue::refresh_runtime_state(state, runtime).await?;
-    Ok(NormalizedTimelineEvents {
-        events,
-        drain_thread_ids: if terminal {
-            vec![runtime_thread_id]
-        } else {
-            Vec::new()
-        },
-    })
+    state.store.upsert_thread_runtime_state(runtime).await?;
+    Ok(NormalizedTimelineEvents { events })
 }
 
 async fn append_thread_read_projection_event(
@@ -1299,14 +1279,7 @@ async fn timeline_thread_status_event(
                     last_event_seq: Some(cursor.seq),
                 })
                 .await?;
-            events.extend(
-                queue::requeue_unmatched_pending_commit_input_events_for_thread(state, &thread_id)
-                    .await?,
-            );
-            return Ok(NormalizedTimelineEvents {
-                events,
-                drain_thread_ids: vec![thread_id],
-            });
+            return Ok(NormalizedTimelineEvents { events });
         }
         ThreadStatus::Active => {
             state
@@ -1321,10 +1294,7 @@ async fn timeline_thread_status_event(
                 .await?;
         }
     }
-    Ok(NormalizedTimelineEvents {
-        events,
-        drain_thread_ids: Vec::new(),
-    })
+    Ok(NormalizedTimelineEvents { events })
 }
 
 async fn append_timeline_event(state: &AppState, event: NewEvent) -> ApiResult<EventEnvelope> {
