@@ -13,7 +13,7 @@ use crate::{
         TurnStartOptions, UserInput,
     },
     error::{ApiError, ApiResult},
-    events, queue, skills, thread_view, turn_lifecycle,
+    events, queue, thread_view, turn_lifecycle,
 };
 
 pub fn router() -> Router<AppState> {
@@ -107,8 +107,6 @@ pub async fn submit_thread_input(
     let attachments =
         app_server_api::validate_file_attachments_for_thread(&thread_id, request.attachments)?;
     let input = app_server_api::append_file_attachment_envelope(request.input, &attachments);
-    let resolved =
-        skills::resolve_turn_input_with_skills_for_thread(&state, &thread_id, input).await?;
     let options = request.options;
 
     let submit_guard = state.thread_input_locks.lock(&thread_id).await;
@@ -117,7 +115,7 @@ pub async fn submit_thread_input(
             let queued_input = queue::create_queued_input_with_source_and_attachments(
                 &state,
                 &thread_id,
-                resolved.input,
+                input,
                 attachments,
                 options,
                 None,
@@ -130,66 +128,45 @@ pub async fn submit_thread_input(
                 raw_payload: None,
             }));
         }
-        turn_lifecycle::ThreadInputRoute::Active { turn_id } => match submit_thread_input_as_steer(
-            &state,
-            &thread_id,
-            &turn_id,
-            &resolved.input,
-            &resolved.skills,
-            &attachments,
-        )
-        .await
-        {
-            Ok(Some(response)) => return Ok(response),
-            Ok(None) => {}
-            Err(error) if turn_lifecycle::is_expected_turn_mismatch_error(&error) => {
-                return Err(error);
+        turn_lifecycle::ThreadInputRoute::Active { turn_id } => {
+            match submit_thread_input_as_steer(&state, &thread_id, &turn_id, &input, &attachments)
+                .await
+            {
+                Ok(Some(response)) => return Ok(response),
+                Ok(None) => {}
+                Err(error) if turn_lifecycle::is_expected_turn_mismatch_error(&error) => {
+                    return Err(error);
+                }
+                Err(error) if turn_lifecycle::is_non_steerable_error(&error) => {
+                    return queue_rejected_steer_input(
+                        &state,
+                        &thread_id,
+                        input,
+                        attachments,
+                        options,
+                        error,
+                    )
+                    .await;
+                }
+                Err(error) => return Err(error),
             }
-            Err(error) if turn_lifecycle::is_non_steerable_error(&error) => {
-                return queue_rejected_steer_input(
-                    &state,
-                    &thread_id,
-                    resolved.input,
-                    attachments,
-                    options,
-                    error,
-                )
-                .await;
-            }
-            Err(error) => return Err(error),
-        },
+        }
         turn_lifecycle::ThreadInputRoute::Idle => {}
     }
 
-    let pending_skill_mentions_id = turn_lifecycle::insert_pending_skill_mentions(
-        &state,
-        &thread_id,
-        &resolved.input,
-        &resolved.skills,
-    )
-    .await?;
     turn_lifecycle::record_turn_starting(&state, &thread_id).await?;
     drop(submit_guard);
-    let response = match turn_start_resuming_missing_thread_once(
-        &state,
-        &thread_id,
-        resolved.input.clone(),
-        options,
-    )
-    .await
-    {
-        Ok(response) => response,
-        Err(error) => {
-            turn_lifecycle::record_turn_start_failed(&state, &thread_id).await?;
-            queue::trigger_queue_drain(state.clone(), thread_id.clone());
-            turn_lifecycle::delete_pending_skill_mentions(
-                &state,
-                pending_skill_mentions_id.as_deref(),
-            )
-            .await?;
-            return Err(error);
-        }
-    };
+    let response =
+        match turn_start_resuming_missing_thread_once(&state, &thread_id, input.clone(), options)
+            .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                turn_lifecycle::record_turn_start_failed(&state, &thread_id).await?;
+                queue::trigger_queue_drain(state.clone(), thread_id.clone());
+                return Err(error);
+            }
+        };
     let projection_turn_id = turn_lifecycle::pending_projection_turn_id(&response.payload);
     turn_lifecycle::record_turn_started(&state, &thread_id, projection_turn_id.as_deref()).await?;
     if let Some(turn_id) = projection_turn_id {
@@ -197,7 +174,7 @@ pub async fn submit_thread_input(
             &state,
             &thread_id,
             &turn_id,
-            &resolved.input,
+            &input,
             &attachments,
         )
         .await?;
@@ -214,11 +191,8 @@ async fn submit_thread_input_as_steer(
     thread_id: &str,
     expected_turn_id: &str,
     input: &[UserInput],
-    skills: &[app_server_api::SkillMetadata],
     attachments: &[TimelineFileAttachment],
 ) -> ApiResult<Option<Json<ThreadInputResponse>>> {
-    let pending_skill_mentions_id =
-        turn_lifecycle::insert_pending_skill_mentions(state, thread_id, input, skills).await?;
     match steer_thread_input_with_one_retry(state, thread_id, expected_turn_id, input).await {
         Ok((response, accepted_turn_id)) => {
             let projection_turn_id = turn_lifecycle::pending_projection_turn_id(&response.payload)
@@ -238,38 +212,10 @@ async fn submit_thread_input_as_steer(
             })));
         }
         Err(error) if turn_lifecycle::is_no_active_turn_error(&error) => {
-            turn_lifecycle::delete_pending_skill_mentions(
-                state,
-                pending_skill_mentions_id.as_deref(),
-            )
-            .await?;
             turn_lifecycle::record_idle_after_missing_active_turn(state, thread_id).await?;
             Ok(None)
         }
-        Err(error) if turn_lifecycle::is_expected_turn_mismatch_error(&error) => {
-            turn_lifecycle::delete_pending_skill_mentions(
-                state,
-                pending_skill_mentions_id.as_deref(),
-            )
-            .await?;
-            Err(error)
-        }
-        Err(error) if turn_lifecycle::is_non_steerable_error(&error) => {
-            turn_lifecycle::delete_pending_skill_mentions(
-                state,
-                pending_skill_mentions_id.as_deref(),
-            )
-            .await?;
-            Err(error)
-        }
-        Err(error) => {
-            turn_lifecycle::delete_pending_skill_mentions(
-                state,
-                pending_skill_mentions_id.as_deref(),
-            )
-            .await?;
-            Err(error)
-        }
+        Err(error) => Err(error),
     }
 }
 
@@ -457,39 +403,19 @@ pub async fn start_turn(
     let attachments =
         app_server_api::validate_file_attachments_for_thread(&thread_id, request.attachments)?;
     let input = app_server_api::append_file_attachment_envelope(request.input, &attachments);
-    let resolved =
-        skills::resolve_turn_input_with_skills_for_thread(&state, &thread_id, input).await?;
-    let pending_skill_mentions_id = turn_lifecycle::insert_pending_skill_mentions(
+    let response = turn_start_resuming_missing_thread_once(
         &state,
         &thread_id,
-        &resolved.input,
-        &resolved.skills,
-    )
-    .await?;
-    let response = match turn_start_resuming_missing_thread_once(
-        &state,
-        &thread_id,
-        resolved.input.clone(),
+        input.clone(),
         request.options.clone(),
     )
-    .await
-    {
-        Ok(response) => response,
-        Err(error) => {
-            turn_lifecycle::delete_pending_skill_mentions(
-                &state,
-                pending_skill_mentions_id.as_deref(),
-            )
-            .await?;
-            return Err(error);
-        }
-    };
+    .await?;
     if let Some(turn_id) = turn_lifecycle::pending_projection_turn_id(&response.payload) {
         turn_lifecycle::record_pending_user_projection(
             &state,
             &thread_id,
             &turn_id,
-            &resolved.input,
+            &input,
             &attachments,
         )
         .await?;
@@ -503,38 +429,12 @@ pub async fn steer_turn(
     Path((thread_id, turn_id)): Path<(String, String)>,
     Json(request): Json<TurnSteerRequest>,
 ) -> ApiResult<Json<RawAppServerResponse>> {
-    let resolved =
-        skills::resolve_turn_input_with_skills_for_thread(&state, &thread_id, request.input)
-            .await?;
-    let pending_skill_mentions_id = turn_lifecycle::insert_pending_skill_mentions(
-        &state,
-        &thread_id,
-        &resolved.input,
-        &resolved.skills,
-    )
-    .await?;
-    let response = match app_server_api::client(&state.app_server)
-        .turn_steer(thread_id.clone(), turn_id.clone(), resolved.input.clone())
-        .await
-    {
-        Ok(response) => response,
-        Err(error) => {
-            turn_lifecycle::delete_pending_skill_mentions(
-                &state,
-                pending_skill_mentions_id.as_deref(),
-            )
-            .await?;
-            return Err(error);
-        }
-    };
-    turn_lifecycle::record_pending_user_projection(
-        &state,
-        &thread_id,
-        &turn_id,
-        &resolved.input,
-        &[],
-    )
-    .await?;
+    let input = request.input;
+    let response = app_server_api::client(&state.app_server)
+        .turn_steer(thread_id.clone(), turn_id.clone(), input.clone())
+        .await?;
+    turn_lifecycle::record_pending_user_projection(&state, &thread_id, &turn_id, &input, &[])
+        .await?;
     Ok(Json(response))
 }
 

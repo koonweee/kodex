@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     path::{Path as FsPath, PathBuf},
 };
 
@@ -18,10 +18,8 @@ use utoipa::{IntoParams, ToSchema};
 use crate::{
     api::AppState,
     app_server_api::{
-        self, enrich_timeline_skill_mentions, timeline_skill_mentions_from_text,
-        visible_text_from_thread_item, GitInfo, RawAppServerResponse, ThreadCommandResponse,
-        ThreadDetailResponse, ThreadItemSnapshot, ThreadListResponse, ThreadSection, ThreadStatus,
-        ThreadSummary, ThreadViewResponse, TimelineSkillMention,
+        self, GitInfo, RawAppServerResponse, ThreadCommandResponse, ThreadDetailResponse,
+        ThreadListResponse, ThreadSection, ThreadStatus, ThreadSummary, ThreadViewResponse,
     },
     app_surfaces,
     error::{ApiError, ApiResult},
@@ -1051,7 +1049,6 @@ async fn apply_thread_detail_response_state_with_merge(
     merge_mode: ThreadTimelineMergeMode,
 ) -> ApiResult<()> {
     apply_thread_summary_state(state, std::slice::from_mut(&mut response.thread)).await?;
-    apply_thread_detail_skill_mentions(state, response).await?;
     let app_surface_sessions =
         app_surfaces::sync_mcp_app_surfaces_for_turns(state, &response.thread.id, &response.turns)
             .await?;
@@ -1086,112 +1083,6 @@ async fn apply_thread_detail_response_state_with_merge(
     }
     response.live_state = response.timeline.live_state;
     sync_raw_response_thread(&mut response.raw_payload, &response.thread);
-    Ok(())
-}
-
-async fn apply_thread_detail_skill_mentions(
-    state: &AppState,
-    response: &mut ThreadDetailResponse,
-) -> ApiResult<()> {
-    let thread_id = response.thread.id.clone();
-    let item_refs = response
-        .turns
-        .iter()
-        .flat_map(|turn| {
-            turn.items
-                .iter()
-                .map(|item| (turn.id.clone(), item.id.clone()))
-        })
-        .collect::<Vec<_>>();
-    let mut stored = state
-        .store
-        .timeline_skill_mentions_for_items(&thread_id, &item_refs)
-        .await?;
-    let has_snapshot_skill_mentions = response
-        .turns
-        .iter()
-        .flat_map(|turn| turn.items.iter())
-        .any(|item| !item.skill_mentions.is_empty());
-    let has_stored_skill_mentions = stored.values().any(|mentions| !mentions.is_empty());
-    let has_skill_text = response
-        .turns
-        .iter()
-        .flat_map(|turn| turn.items.iter())
-        .any(|item| {
-            visible_text_from_thread_item(&item.raw_payload).is_some_and(|text| text.contains('$'))
-        });
-    let catalog = if has_snapshot_skill_mentions || has_stored_skill_mentions || has_skill_text {
-        state
-            .skills
-            .catalog(&state.app_server, Some(response.thread.cwd.clone()), false)
-            .await
-            .ok()
-    } else {
-        None
-    };
-    for turn in &mut response.turns {
-        for item in &mut turn.items {
-            apply_thread_item_skill_mentions(
-                state,
-                &thread_id,
-                &turn.id,
-                item,
-                &mut stored,
-                catalog.as_ref().map(|catalog| catalog.skills.as_slice()),
-            )
-            .await?;
-        }
-    }
-    Ok(())
-}
-
-async fn apply_thread_item_skill_mentions(
-    state: &AppState,
-    thread_id: &str,
-    turn_id: &str,
-    item: &mut ThreadItemSnapshot,
-    stored: &mut HashMap<(String, String), Vec<TimelineSkillMention>>,
-    catalog: Option<&[app_server_api::SkillMetadata]>,
-) -> ApiResult<()> {
-    if !item.skill_mentions.is_empty() {
-        item.skill_mentions = enrich_timeline_skill_mentions(
-            std::mem::take(&mut item.skill_mentions),
-            catalog.unwrap_or(&[]),
-        );
-        state
-            .store
-            .upsert_timeline_skill_mentions(thread_id, turn_id, &item.id, &item.skill_mentions)
-            .await?;
-        return Ok(());
-    }
-    if let Some(mentions) = stored.remove(&(turn_id.to_string(), item.id.clone())) {
-        item.skill_mentions = enrich_timeline_skill_mentions(mentions, catalog.unwrap_or(&[]));
-        state
-            .store
-            .upsert_timeline_skill_mentions(thread_id, turn_id, &item.id, &item.skill_mentions)
-            .await?;
-        return Ok(());
-    }
-    let Some(text) = visible_text_from_thread_item(&item.raw_payload) else {
-        return Ok(());
-    };
-    if let Some(mentions) = state
-        .store
-        .commit_pending_timeline_skill_mentions(thread_id, turn_id, &item.id, &text)
-        .await?
-    {
-        item.skill_mentions = mentions;
-        return Ok(());
-    }
-    if let Some(catalog) = catalog {
-        item.skill_mentions = timeline_skill_mentions_from_text(&text, catalog);
-        if !item.skill_mentions.is_empty() {
-            state
-                .store
-                .upsert_timeline_skill_mentions(thread_id, turn_id, &item.id, &item.skill_mentions)
-                .await?;
-        }
-    }
     Ok(())
 }
 

@@ -7,10 +7,7 @@ use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use crate::{
     api::AppState,
-    app_server_api::{
-        self, timeline_skill_mentions_from_user_input, SkillMetadata, ThreadLiveState,
-        TimelineFileAttachment, UserInput,
-    },
+    app_server_api::{self, ThreadLiveState, TimelineFileAttachment, UserInput},
     error::{ApiError, ApiResult},
     events,
     store::{ThreadRuntimeState, ThreadRuntimeStatus},
@@ -260,34 +257,6 @@ pub async fn record_pending_user_projection(
     {
         let event = events::thread_view_patch_payload_event(state, patch).await?;
         let _ = state.events.send(event);
-    }
-    Ok(())
-}
-
-pub async fn insert_pending_skill_mentions(
-    state: &AppState,
-    thread_id: &str,
-    input: &[UserInput],
-    skills: &[SkillMetadata],
-) -> ApiResult<Option<String>> {
-    let Some((text, mentions)) = timeline_skill_mentions_from_user_input(input, skills) else {
-        return Ok(None);
-    };
-    state
-        .store
-        .insert_pending_timeline_skill_mentions(thread_id, &text, &mentions)
-        .await
-}
-
-pub async fn delete_pending_skill_mentions(
-    state: &AppState,
-    pending_id: Option<&str>,
-) -> ApiResult<()> {
-    if let Some(pending_id) = pending_id {
-        state
-            .store
-            .delete_pending_timeline_skill_mentions(pending_id)
-            .await?;
     }
     Ok(())
 }

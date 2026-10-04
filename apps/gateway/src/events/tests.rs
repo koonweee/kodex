@@ -145,6 +145,39 @@ async fn notification_ingest_persists_thread_view_cursor_before_broadcast() {
 }
 
 #[tokio::test]
+async fn native_skill_content_projects_live_canonical_patch_without_catalog_or_fifo() {
+    let (state, native) = test_state_with_app_server().await;
+    let mut receiver = state.events.subscribe();
+    let content = json!([
+        {"type":"text","text":"🧪 $missing","text_elements":[{"byteRange":{"start":5,"end":13}}]},
+        {"type":"skill","name":"missing","path":"/unavailable/SKILL.md"}
+    ]);
+    ingest_inbound(
+        InboundMessage::Notification {
+            method: "item/completed".to_string(),
+            params: json!({"threadId":"thread-1","turnId":"turn-1","item":{
+                "id":"native-user","type":"userMessage","content":content
+            }}),
+        },
+        &state,
+    )
+    .await
+    .unwrap();
+    let patch = receiver.recv().await.unwrap();
+    assert_eq!(patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
+    let row = &patch.payload["rows"][0]["item"];
+    assert_eq!(row["itemId"], "native-user");
+    assert_eq!(row["payload"]["item"]["content"], content);
+    assert_eq!(
+        row["payload"]["itemSnapshot"]["skillMentions"],
+        json!([
+            {"start":3,"end":11,"name":"missing","path":"/unavailable/SKILL.md"}
+        ])
+    );
+    assert!(native.requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn mcp_tool_item_with_app_resource_creates_app_surface_session() {
     let (state, app_server) = test_state_with_app_server().await;
     app_server
@@ -768,98 +801,6 @@ async fn notification_ingest_emits_normalized_mcp_lifecycle_events() {
     assert!(replay
         .iter()
         .any(|event| event.kind == MCP_OAUTH_LOGIN_COMPLETED_EVENT));
-}
-
-#[tokio::test]
-async fn notification_ingest_commits_pending_skill_mentions_to_user_item() {
-    let state = test_state().await;
-    let mut receiver = state.events.subscribe();
-    state
-        .store
-        .insert_pending_timeline_skill_mentions(
-            "thread-1",
-            "Use $agent-browser",
-            &[app_server_api::TimelineSkillMention {
-                start: 4,
-                end: 18,
-                name: "agent-browser".to_string(),
-                path: "/skills/agent-browser/SKILL.md".to_string(),
-                display_name: Some("Agent Browser".to_string()),
-                scope: Some("user".to_string()),
-                short_description: Some("Automate browser tasks".to_string()),
-                brand_color: Some("#23a55a".to_string()),
-                icon_small_url: Some(
-                    "/v1/skills/icon?path=%2Fskills%2Fagent-browser%2Ficon.png".to_string(),
-                ),
-            }],
-        )
-        .await
-        .unwrap();
-
-    ingest_inbound(
-        InboundMessage::Notification {
-            method: "item/completed".to_string(),
-            params: json!({
-                "threadId": "thread-1",
-                "turnId": "turn-1",
-                "itemId": "item-user-1",
-                "item": {
-                    "id": "item-user-1",
-                    "type": "userMessage",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "Use $agent-browser",
-                            "text_elements": [{
-                                "byteRange": {"start": 4, "end": 18},
-                                "placeholder": "$agent-browser"
-                            }]
-                        },
-                        {"type": "skill", "name": "agent-browser", "path": "/skills/agent-browser/SKILL.md"}
-                    ]
-                }
-            }),
-        },
-        &state,
-    )
-    .await
-    .unwrap();
-
-    let patch = receiver.recv().await.unwrap();
-    assert_eq!(patch.kind, THREAD_VIEW_PATCH_EVENT_KIND);
-    let rows = patch.payload["rows"].as_array().expect("patch rows");
-    assert_eq!(
-        rows[0]["item"]["payload"]["itemSnapshot"]["skillMentions"],
-        json!([{
-            "start": 4,
-            "end": 18,
-            "name": "agent-browser",
-            "path": "/skills/agent-browser/SKILL.md",
-            "displayName": "Agent Browser",
-            "scope": "user",
-            "shortDescription": "Automate browser tasks",
-            "brandColor": "#23a55a",
-            "iconSmallUrl": "/v1/skills/icon?path=%2Fskills%2Fagent-browser%2Ficon.png"
-        }])
-    );
-    let persisted = state
-        .store
-        .timeline_skill_mentions_for_items(
-            "thread-1",
-            &[("turn-1".to_string(), "item-user-1".to_string())],
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        persisted[&("turn-1".to_string(), "item-user-1".to_string())][0].name,
-        "agent-browser"
-    );
-    assert_eq!(
-        persisted[&("turn-1".to_string(), "item-user-1".to_string())][0]
-            .display_name
-            .as_deref(),
-        Some("Agent Browser")
-    );
 }
 
 #[test]

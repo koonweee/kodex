@@ -46,11 +46,17 @@ export function useComposerDraftState(
   const skillBindingsRef = useRef(skillBindings);
   const skillTokenRef = useRef(skillToken);
   const slashTokenRef = useRef(slashToken);
+  const draftEditRef = useRef(0);
+
+  useLayoutEffect(() => () => {
+    draftEditRef.current += 1;
+  }, []);
 
   useLayoutEffect(() => {
     if (activeDraftKeyRef.current === activeDraftKey) {
       return;
     }
+    draftEditRef.current += 1;
     persistDraft(activeDraftKeyRef.current, composerTextRef.current, skillBindingsRef.current);
     activeDraftKeyRef.current = activeDraftKey;
     restoreDraftForKey(activeDraftKey);
@@ -88,6 +94,9 @@ export function useComposerDraftState(
     ) {
       return;
     }
+    if (composerTextRef.current !== nextText || bindingsChanged) {
+      draftEditRef.current += 1;
+    }
     composerTextRef.current = nextText;
     if (bindingsChanged) {
       skillBindingsRef.current = nextBindings;
@@ -121,6 +130,7 @@ export function useComposerDraftState(
       ...validSkillMentionBindings(replacement.text, skillBindingsRef.current),
       replacement.binding,
     ];
+    draftEditRef.current += 1;
     composerTextRef.current = replacement.text;
     skillBindingsRef.current = nextBindings;
     skillTokenRef.current = null;
@@ -138,6 +148,7 @@ export function useComposerDraftState(
     if (!deletion) {
       return null;
     }
+    draftEditRef.current += 1;
     composerTextRef.current = deletion.text;
     skillBindingsRef.current = deletion.bindings;
     skillTokenRef.current = null;
@@ -151,6 +162,7 @@ export function useComposerDraftState(
   }
 
   function replaceSlashToken(text: string, cursor: number) {
+    draftEditRef.current += 1;
     composerTextRef.current = text;
     skillBindingsRef.current = validSkillMentionBindings(text, skillBindingsRef.current);
     skillTokenRef.current = null;
@@ -164,6 +176,7 @@ export function useComposerDraftState(
   }
 
   function clearText() {
+    draftEditRef.current += 1;
     composerTextRef.current = "";
     skillBindingsRef.current = [];
     skillTokenRef.current = null;
@@ -175,16 +188,27 @@ export function useComposerDraftState(
     setSlashToken(null);
   }
 
-  function restoreText(text: string) {
-    composerTextRef.current = text;
-    skillBindingsRef.current = [];
-    skillTokenRef.current = null;
-    slashTokenRef.current = null;
-    persistDraft(activeDraftKeyRef.current, text, []);
-    setComposerText(text);
-    setSkillBindings([]);
-    setSkillToken(null);
-    setSlashToken(null);
+  function captureSubmission() {
+    // A late reply must not clear or restore a draft edited or switched since submission.
+    const key = activeDraftKeyRef.current;
+    const edit = draftEditRef.current;
+    const text = composerTextRef.current;
+    const bindings = [...skillBindingsRef.current];
+    let clearedEdit: number | null = null;
+    return {
+      clearText() {
+        if (activeDraftKeyRef.current !== key || draftEditRef.current !== edit) return;
+        clearText();
+        clearedEdit = draftEditRef.current;
+      },
+      restoreDraft() {
+        if (clearedEdit === null || activeDraftKeyRef.current !== key || draftEditRef.current !== clearedEdit) return;
+        clearedEdit = null;
+        draftEditRef.current += 1;
+        persistDraft(key, text, bindings);
+        restoreDraftForKey(key);
+      },
+    };
   }
 
   function closeSkillToken() {
@@ -265,6 +289,7 @@ export function useComposerDraftState(
     activeSkillIndex,
     clampActiveSlashIndex,
     clampActiveSkillIndex,
+    captureSubmission,
     clearText,
     closeSlashToken,
     closeSkillToken,
@@ -274,7 +299,6 @@ export function useComposerDraftState(
     currentSubmittedText,
     currentTimelineSkillMentions,
     deleteBoundSkillBeforeCursor,
-    restoreText,
     replaceSlashToken,
     selectSkill,
     setActiveSlashIndex,

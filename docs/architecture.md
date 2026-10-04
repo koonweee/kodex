@@ -38,6 +38,8 @@ Existing-chat settings are read from native session state. Picker edits submit o
 
 Subagent discovery forwards bounded native descendant pages without a gateway graph, loaded-thread union or repair scan. These pages cover persisted spawn relationships; ordinary pages exclude archived descendants and do not discover ephemeral activity or forks. History-only reads do not load an unloaded child. Global `thread.subagents_changed` markers refill descendant queries; their direct changed-thread ID refreshes only the matching canonical pane. The browser preserves native true/false/null input capability rather than inferring permission from a role. The retained observer sidebar has no input or approval actions. Until native queue replacement, the gateway rejects a definite native input denial before accepting, retrying or promoting a queued row.
 
+Native skill selection owns free-text parsing, ambiguity, disabled entries and stale paths. All input producers forward text and explicit selections without gateway catalog resolution or rejection. Catalog caching and invalidation remain for autocomplete and icon serving. Live and historical user-item content supplies selected name/path and UTF-8 spans; a pure display projection validates those ranges and converts them to UTF-16 offsets. No skill-metadata text/FIFO association, historical catalog enrichment or skill-mention tables remain. Browser-local selected drafts and decorative metadata survive a definite failed submission only while the originating draft is unchanged. Confirmed badges use native content and do not certify skill execution.
+
 The generated OpenAPI document is the API contract. With the gateway running, use:
 
 - `GET /docs` for interactive local API documentation.

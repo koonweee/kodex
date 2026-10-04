@@ -58,7 +58,7 @@ describe("useComposerDraftState", () => {
     expect(result.current.currentSkillInputs()).toEqual([]);
 
     act(() => {
-      result.current.restoreText("Restored draft");
+      result.current.updateComposerText("Restored draft", null);
     });
     expect(result.current.composerText).toBe("Restored draft");
     expect(result.current.skillToken).toBeNull();

@@ -14,11 +14,10 @@ pub use crate::thread_view_patch::{
 use crate::{
     app_server_api::{
         canonical_timeline_item_id, compact_timeline_item_payload, thread_timeline_rows_from_items,
-        timeline_skill_mentions_from_user_input, visible_text_from_thread_item,
-        PendingTimelineRequestSummary, ThreadItemSnapshot, ThreadLiveState, ThreadTimelineSnapshot,
-        ThreadTimelineSnapshotItem, ThreadTimelineSnapshotTurn, ThreadTimelineWindowPage,
-        ThreadTurnSnapshot, TimelineFileAttachment, TimelineItemUpsertPayload,
-        TimelineUpdateSource, UserInput,
+        visible_text_from_thread_item, visible_text_from_user_input, PendingTimelineRequestSummary,
+        ThreadItemSnapshot, ThreadLiveState, ThreadTimelineSnapshot, ThreadTimelineSnapshotItem,
+        ThreadTimelineSnapshotTurn, ThreadTimelineWindowPage, ThreadTurnSnapshot,
+        TimelineFileAttachment, TimelineItemUpsertPayload, TimelineUpdateSource, UserInput,
     },
     error::ApiResult,
     store::Approval,
@@ -990,7 +989,7 @@ pub async fn record_pending_user_input(
     attachments: &[TimelineFileAttachment],
     updated_seq: i64,
 ) -> ApiResult<Option<ThreadViewPatch>> {
-    if attachments.is_empty() && timeline_skill_mentions_from_user_input(input, &[]).is_none() {
+    if attachments.is_empty() && visible_text_from_user_input(input).is_none() {
         return Ok(None);
     }
     let Ok(content) = serde_json::to_value(input) else {

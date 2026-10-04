@@ -89,6 +89,7 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       "GET /v1/composer-settings": {},
       "GET /v1/permission-profiles": { profiles: [] },
       "GET /v1/threads/settings-chat": detail,
+      "POST /v1/threads/settings-chat/seen": { threadId: detail.thread.id, seenCompletedAgentTurnSeq: 0, updatedAt: "2026-10-05T00:00:00Z" },
       "POST /v1/threads/settings-chat/attach": { disposition: "resumed", thread: detail.thread, rawPayload: {} },
       "GET /v1/threads/settings-chat/app-surface": { session: null },
       "GET /v1/threads/settings-chat/subagents": { subagents: [] },
@@ -122,6 +123,14 @@ export async function nativeSettingsFixture(context: BrowserContext) {
   });
   return {
     settings, requests, pending, connections, unexpected, errors, settingsChanged,
+    detail,
+    publishTimeline(timeline: ThreadViewResponse["timeline"], client?: string) {
+      detail.timeline = timeline;
+      detail.liveState = timeline.liveState;
+      detail.thread.status = timeline.liveState === "streaming" ? "active" : "idle";
+      const patch: ThreadViewPatch = { ...timeline, scope: "full_snapshot", threadId: detail.thread.id, affectedTurnIds: timeline.turns.map((turn) => turn.id) };
+      emit("thread_view.patch", patch, client);
+    },
     configChanged(client?: string) { emit("config.changed", {}, client); },
     subagentsChanged(client?: string, changedThreadId: string | null = null) { emit("thread.subagents_changed", { changedThreadId }, client); },
     connected(client: string) { return [...streams.values()].includes(client); },

@@ -305,7 +305,7 @@ export function useComposerOrchestration({
         onThreadTurnStartFailed(startedThreadId);
       }
       if (sameComposerContext(latestComposerContextRef.current, retryRestoreContext)) {
-        draftControls.restoreText(text);
+        draftControls.restoreDraft();
       } else {
         clearPendingAttachments();
       }

@@ -621,6 +621,58 @@ fn user_message_snapshot_projects_skill_mentions_from_text_elements() {
 }
 
 #[test]
+fn user_message_skill_spans_ignore_invalid_utf8_ranges_and_ambiguous_paths() {
+    let content = json!([
+        {"type":"text","text":"🧪 $skill","text_elements":[
+            {"byteRange":{"start":1,"end":11}},
+            {"byteRange":{"start":5,"end":7}},
+            {"byteRange":{"start":5,"end":99}},
+            {"byteRange":{"start":11,"end":5}},
+            {"byteRange":{"start":5,"end":11}}
+        ]},
+        {"type":"skill","name":"skill","path":"/unavailable/SKILL.md"}
+    ]);
+    let item = ThreadItemSnapshot::from_payload(
+        &json!({"id":"user","type":"userMessage","content":content}),
+    )
+    .unwrap();
+    assert_eq!(item.skill_mentions.len(), 1);
+    assert_eq!(
+        (item.skill_mentions[0].start, item.skill_mentions[0].end),
+        (3, 9)
+    );
+    assert_eq!(item.skill_mentions[0].path, "/unavailable/SKILL.md");
+
+    let mut ambiguous = content.as_array().unwrap().clone();
+    ambiguous.push(json!({"type":"skill","name":"skill","path":"/other/SKILL.md"}));
+    let item = ThreadItemSnapshot::from_payload(
+        &json!({"id":"user","type":"userMessage","content":ambiguous}),
+    )
+    .unwrap();
+    assert!(item.skill_mentions.is_empty());
+}
+
+#[test]
+fn user_message_skill_spans_follow_joined_text_utf16_offsets() {
+    let item = ThreadItemSnapshot::from_payload(&json!({
+        "id":"user", "type":"userMessage", "content":[
+            {"type":"text","text":"🧪 first"},
+            {"type":"text","text":""},
+            {"type":"image","url":"https://example.invalid/image"},
+            {"type":"text","text":"请 $skill","text_elements":[{"byteRange":{"start":4,"end":10}}]},
+            {"type":"skill","name":"skill","path":"/unavailable/SKILL.md"},
+            {"type":"skill","name":"skill","path":"/unavailable/SKILL.md"}
+        ]
+    }))
+    .unwrap();
+    assert_eq!(item.skill_mentions.len(), 1);
+    assert_eq!(
+        (item.skill_mentions[0].start, item.skill_mentions[0].end),
+        (11, 17)
+    );
+}
+
+#[test]
 fn timeline_snapshot_item_serializes_compact_display_payload() {
     let large_output = "x".repeat(TIMELINE_PREVIEW_STRING_LIMIT + 1024);
     let turn = ThreadTurnSnapshot {
@@ -677,45 +729,6 @@ fn user_message_snapshot_ignores_unstructured_or_mismatched_skill_ranges() {
     }))
     .unwrap();
     assert!(mismatched.skill_mentions.is_empty());
-}
-
-#[test]
-fn skill_mention_enrichment_requires_enabled_name_and_path_match() {
-    let mentions = vec![TimelineSkillMention {
-        start: 4,
-        end: 15,
-        name: "review-fix".to_string(),
-        path: "/skills/review-fix/SKILL.md".to_string(),
-        display_name: None,
-        scope: None,
-        short_description: None,
-        brand_color: None,
-        icon_small_url: None,
-    }];
-    let skill = SkillMetadata {
-        name: "other".to_string(),
-        path: "/skills/review-fix/SKILL.md".to_string(),
-        description: "Should not apply".to_string(),
-        enabled: true,
-        scope: "user".to_string(),
-        short_description: Some("Wrong skill".to_string()),
-        interface: Some(SkillInterface {
-            display_name: Some("Wrong".to_string()),
-            short_description: Some("Wrong skill".to_string()),
-            brand_color: Some("#f00".to_string()),
-            default_prompt: None,
-            icon_small: Some("/skills/review-fix/icon.png".to_string()),
-            icon_large: None,
-        }),
-    };
-
-    let enriched = enrich_timeline_skill_mentions(mentions, &[skill]);
-
-    assert!(enriched[0].display_name.is_none());
-    assert!(enriched[0].scope.is_none());
-    assert!(enriched[0].short_description.is_none());
-    assert!(enriched[0].brand_color.is_none());
-    assert!(enriched[0].icon_small_url.is_none());
 }
 
 #[test]

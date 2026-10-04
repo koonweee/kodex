@@ -58,7 +58,6 @@ use crate::{
         },
     },
     schema::validate_approval_response,
-    skills,
     store::{
         AppSurfaceCsp, AppSurfaceGrants, AppSurfacePermissions, AppSurfaceProvider,
         AppSurfaceSessionStatus, AppSurfaceSessionUpsert, Approval, AutomationStatus,
@@ -779,8 +778,7 @@ pub async fn send_self_control_thread_input(
     enforce_self_control_depth(request.max_self_control_depth)?;
     request.options.validate()?;
     if should_queue_self_control_input(&state, &thread_id).await? {
-        let input =
-            skills::resolve_turn_input_for_thread(&state, &thread_id, request.input).await?;
+        let input = request.input;
         let source_id = request.source.source_id().map(str::to_string);
         let queued_input = queue::create_queued_input_with_source(
             &state,
@@ -1593,8 +1591,6 @@ pub async fn run_self_control_automation_now(
         text: automation.prompt.clone(),
         text_elements: Vec::new(),
     }];
-    let input =
-        skills::resolve_turn_input_for_thread(&state, &automation.target_thread_id, input).await?;
     let source_id = source
         .source_id()
         .map(str::to_string)

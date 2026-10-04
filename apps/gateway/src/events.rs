@@ -22,10 +22,9 @@ use crate::{
     api::AppState,
     app_server::InboundMessage,
     app_server_api::{
-        self, visible_text_from_thread_item, SortDirection, ThreadItemSnapshot, ThreadLiveState,
-        ThreadStatus, ThreadSummary, ThreadTimelineWindowPage, ThreadTurnItemsView,
-        ThreadTurnSnapshot, TimelineItemUpsertPayload, TimelineThreadMetadataPayload,
-        TimelineUpdateSource,
+        self, SortDirection, ThreadItemSnapshot, ThreadLiveState, ThreadStatus, ThreadSummary,
+        ThreadTimelineWindowPage, ThreadTurnItemsView, ThreadTurnSnapshot,
+        TimelineItemUpsertPayload, TimelineThreadMetadataPayload, TimelineUpdateSource,
     },
     app_surfaces,
     error::{ApiError, ApiResult},
@@ -720,10 +719,9 @@ async fn timeline_item_upsert_event(
     let Some(item) = params.get("item").filter(|item| item.is_object()) else {
         return Ok(Vec::new());
     };
-    let Ok(mut item_snapshot) = item_snapshot_from_value(item) else {
+    let Ok(item_snapshot) = item_snapshot_from_value(item) else {
         return Ok(Vec::new());
     };
-    apply_live_item_skill_mentions(state, &thread_id, &turn_id, item, &mut item_snapshot).await?;
     let payload = TimelineItemUpsertPayload {
         source,
         turn_id: turn_id.clone(),
@@ -915,61 +913,6 @@ async fn refresh_completed_turn_head(
         revision,
     )
     .await?;
-    Ok(())
-}
-
-async fn apply_live_item_skill_mentions(
-    state: &AppState,
-    thread_id: &str,
-    turn_id: &str,
-    item: &Value,
-    item_snapshot: &mut ThreadItemSnapshot,
-) -> ApiResult<()> {
-    let Some(text) = visible_text_from_thread_item(item) else {
-        if !item_snapshot.skill_mentions.is_empty() {
-            state
-                .store
-                .upsert_timeline_skill_mentions(
-                    thread_id,
-                    turn_id,
-                    &item_snapshot.id,
-                    &item_snapshot.skill_mentions,
-                )
-                .await?;
-        }
-        return Ok(());
-    };
-    if let Some(mentions) = state
-        .store
-        .commit_pending_timeline_skill_mentions(thread_id, turn_id, &item_snapshot.id, &text)
-        .await?
-    {
-        item_snapshot.skill_mentions = mentions;
-        return Ok(());
-    }
-    if !item_snapshot.skill_mentions.is_empty() {
-        state
-            .store
-            .upsert_timeline_skill_mentions(
-                thread_id,
-                turn_id,
-                &item_snapshot.id,
-                &item_snapshot.skill_mentions,
-            )
-            .await?;
-        return Ok(());
-    }
-    if let Some(mentions) = state
-        .store
-        .timeline_skill_mentions_for_items(
-            thread_id,
-            &[(turn_id.to_string(), item_snapshot.id.clone())],
-        )
-        .await?
-        .remove(&(turn_id.to_string(), item_snapshot.id.clone()))
-    {
-        item_snapshot.skill_mentions = mentions;
-    }
     Ok(())
 }
 

@@ -156,10 +156,7 @@ export function InlineComposerPanel({
           onSubmitTurn(
             event,
             draftState.currentSubmittedText(),
-            {
-              clearText: draftState.clearText,
-              restoreText: draftState.restoreText,
-            },
+            draftState.captureSubmission(),
             draftState.currentSkillInputs(),
             draftState.currentSkillTextElements(),
             draftState.currentTimelineSkillMentions(),

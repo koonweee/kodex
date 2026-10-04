@@ -10,6 +10,8 @@ mod projects;
 mod sections;
 #[path = "native_app_server/settings.rs"]
 mod settings;
+#[path = "native_app_server/skills.rs"]
+mod skills;
 #[path = "native_app_server/subagents.rs"]
 mod subagents;
 

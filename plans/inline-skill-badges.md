@@ -4,6 +4,8 @@
 
 Complete.
 
+Current implementation note: the [native redesign](native-app-server-redesign.md#m3--native-history-identity-discovery-and-skill-selection) replaces gateway resolution, strict stale-selection rejection, catalog-backed history enrichment and skill-mention persistence with native input selection and stored structured content. Autocomplete/icons, explicit spans and inline rendering remain; failed Send/Queue retains the selected binding. This document records the earlier implementation, not the current ownership contract.
+
 ## Goal
 
 Render selected skills inline as compact badges in user-authored timeline messages without scanning message text for `$skill` strings. The committed timeline must converge across tabs, reloads, reconnects, and snapshot refreshes by using gateway-normalized metadata instead of browser-local composer bindings.

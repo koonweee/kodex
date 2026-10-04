@@ -4,6 +4,8 @@
 
 Complete.
 
+Current implementation note: the [native redesign](native-app-server-redesign.md#m3--native-history-identity-discovery-and-skill-selection) replaces gateway resolution, strict stale-selection rejection, catalog-backed history enrichment and skill-mention persistence with native input selection and stored structured content. Autocomplete/icons, explicit spans and inline rendering remain; failed Send/Queue retains the selected binding. This document records the earlier implementation, not the current ownership contract.
+
 ## Goal
 
 Support Codex-style `$skill-name` invocation from the Kodex web composer with autocomplete, keyboard navigation, and structured skill enrichment, while keeping gateway/app-server state authoritative enough to avoid frontend desync.

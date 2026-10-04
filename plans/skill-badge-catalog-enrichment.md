@@ -4,6 +4,8 @@
 
 Complete. Implemented catalog-backed gateway projection, skill icon preview serving, optimistic composer metadata, enriched inline badge rendering, stale/missing catalog fallback behavior, generated OpenAPI/frontend types, and focused verification.
 
+Current implementation note: the [native redesign](native-app-server-redesign.md#m3--native-history-identity-discovery-and-skill-selection) replaces gateway resolution, strict stale-selection rejection, catalog-backed history enrichment and skill-mention persistence with native input selection and stored structured content. Autocomplete/icons, explicit spans and inline rendering remain; failed Send/Queue retains the selected binding. This document records the earlier implementation, not the current ownership contract.
+
 ## Goal
 
 Enrich timeline skill mention badges with catalog-backed display metadata when Kodex can prove the badge identity matches a current skill catalog entry. Badges must still render historical or stale skills as the original `$skill-name` token when catalog metadata is unavailable.

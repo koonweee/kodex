@@ -27,7 +27,7 @@ import { useSkillCatalog } from "./useSkillCatalog";
 
 export type ComposerDraftControls = {
   clearText: () => void;
-  restoreText: (text: string) => void;
+  restoreDraft: () => void;
 };
 
 type ComposerProjectOption = {

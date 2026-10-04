@@ -1,6 +1,6 @@
 import { Box, Text, Textarea } from "@mantine/core";
 import { Minimize2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
 
 import type { SkillMetadata } from "../api/client";
@@ -91,17 +91,6 @@ export function MobileComposerPanel({
     "--kodex-mobile-visual-viewport-offset-top": `${keyboardViewport.viewportOffsetTop}px`,
     "--kodex-mobile-visual-viewport-height": `${keyboardViewport.viewportHeight}px`,
   } as CSSProperties;
-  const submitContent = useMemo(
-    () => ({
-      controls: {
-        clearText: draftState.clearText,
-        restoreText: draftState.restoreText,
-      },
-      text: draftState.composerText,
-    }),
-    [draftState.clearText, draftState.composerText, draftState.restoreText],
-  );
-
   function openExpanded() {
     setIsExpanded(true);
     window.requestAnimationFrame(() => {
@@ -120,7 +109,7 @@ export function MobileComposerPanel({
     onSubmitTurn(
       event,
       draftState.currentSubmittedText(),
-      submitContent.controls,
+      draftState.captureSubmission(),
       draftState.currentSkillInputs(),
       draftState.currentSkillTextElements(),
       draftState.currentTimelineSkillMentions(),

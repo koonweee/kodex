@@ -8,7 +8,6 @@ use crate::{
     error::ApiResult,
     queue,
     routes::automations::automation_to_dto,
-    skills,
     store::{Automation, NewEvent},
 };
 
@@ -77,24 +76,6 @@ pub async fn process_due_automations(state: &AppState, now: DateTime<Utc>) -> Ap
             text: automation.prompt.clone(),
             text_elements: Vec::new(),
         }];
-        let input =
-            match skills::resolve_turn_input_for_thread(state, &automation.target_thread_id, input)
-                .await
-            {
-                Ok(input) => input,
-                Err(error) => {
-                    let automation = state
-                        .store
-                        .mark_automation_run_failed(
-                            &run.id,
-                            error.to_string(),
-                            AUTOMATION_AUTO_PAUSE_FAILURES,
-                        )
-                        .await?;
-                    broadcast_automation_upsert(state, &automation).await?;
-                    continue;
-                }
-            };
 
         match queue::create_queued_input_with_source(
             state,

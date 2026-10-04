@@ -1,5 +1,4 @@
 use chrono::Utc;
-use sqlx::{QueryBuilder, Sqlite};
 use uuid::Uuid;
 
 use crate::{
@@ -219,7 +218,6 @@ impl Store {
                 accepted_turn_id = null,
                 accepted_at = null,
                 accepted_event_seq = null,
-                pending_skill_mentions_id = null,
                 updated_at = ?
             where thread_id = ? and id = ? and status = 'queued' and deleted_at is null
             "#,
@@ -244,7 +242,6 @@ impl Store {
         id: &str,
         accepted_turn_id: &str,
         accepted_event_seq: Option<i64>,
-        pending_skill_mentions_id: Option<&str>,
     ) -> ApiResult<QueuedInput> {
         let now = Utc::now();
         let result = sqlx::query(
@@ -256,7 +253,6 @@ impl Store {
                 accepted_turn_id = ?,
                 accepted_at = ?,
                 accepted_event_seq = ?,
-                pending_skill_mentions_id = ?,
                 updated_at = ?
             where thread_id = ? and id = ? and status = 'steering' and deleted_at is null
             "#,
@@ -264,7 +260,6 @@ impl Store {
         .bind(accepted_turn_id)
         .bind(now)
         .bind(accepted_event_seq)
-        .bind(pending_skill_mentions_id)
         .bind(now)
         .bind(thread_id)
         .bind(id)
@@ -322,7 +317,6 @@ impl Store {
                 accepted_turn_id = null,
                 accepted_at = null,
                 accepted_event_seq = null,
-                pending_skill_mentions_id = null,
                 updated_at = ?
             where thread_id = ? and id = ? and status = 'failed' and deleted_at is null
             "#,
@@ -419,8 +413,6 @@ impl Store {
         if pending.is_empty() {
             return Ok(Vec::new());
         }
-        self.delete_pending_timeline_skill_mentions_for_queued_rows(&pending)
-            .await?;
 
         let now = Utc::now();
         let update = format!(
@@ -432,7 +424,6 @@ impl Store {
                 accepted_turn_id = null,
                 accepted_at = null,
                 accepted_event_seq = null,
-                pending_skill_mentions_id = null,
                 updated_at = ?
             where deleted_at is null and status = 'pendingCommit' and {predicate}
             "#
@@ -448,32 +439,6 @@ impl Store {
             requeued.push(self.get_queued_input(&row.thread_id, &row.id).await?);
         }
         Ok(requeued)
-    }
-
-    pub(super) async fn delete_pending_timeline_skill_mentions_for_queued_rows(
-        &self,
-        queued_inputs: &[QueuedInput],
-    ) -> ApiResult<()> {
-        if queued_inputs.is_empty() {
-            return Ok(());
-        }
-        let mut builder = QueryBuilder::<Sqlite>::new(
-            "select pending_skill_mentions_id from queued_turn_inputs where pending_skill_mentions_id is not null and id in (",
-        );
-        let mut separated = builder.separated(", ");
-        for queued_input in queued_inputs {
-            separated.push_bind(&queued_input.id);
-        }
-        separated.push_unseparated(")");
-        let pending_ids = builder
-            .build_query_scalar::<String>()
-            .fetch_all(&self.pool)
-            .await?;
-        for pending_id in pending_ids {
-            self.delete_pending_timeline_skill_mentions(&pending_id)
-                .await?;
-        }
-        Ok(())
     }
 
     async fn transition_queued_input(
@@ -494,7 +459,6 @@ impl Store {
                 accepted_turn_id = null,
                 accepted_at = null,
                 accepted_event_seq = null,
-                pending_skill_mentions_id = null,
                 updated_at = ?
             where thread_id = ? and id = ? and deleted_at is null
             "#,
@@ -602,73 +566,12 @@ mod tests {
     use chrono::Utc;
 
     use crate::{
-        app_server_api::{TimelineSkillMention, TurnStartOptions, UserInput},
+        app_server_api::{TurnStartOptions, UserInput},
         error::ApiError,
         store::{
             QueuedInputPriority, QueuedInputStatus, Store, ThreadRuntimeState, ThreadRuntimeStatus,
         },
     };
-
-    #[tokio::test]
-    async fn requeue_pending_commit_cleans_up_pending_skill_mentions() {
-        let store = Store::in_memory().await.unwrap();
-        let queued = store
-            .create_queued_input(
-                "thread-1",
-                vec![UserInput::Text {
-                    text: "Use $agent-browser".to_string(),
-                    text_elements: vec![],
-                }],
-                TurnStartOptions::default(),
-            )
-            .await
-            .unwrap();
-        store
-            .claim_queued_input_for_steering("thread-1", &queued.id)
-            .await
-            .unwrap();
-        let mentions = vec![TimelineSkillMention {
-            start: 4,
-            end: 18,
-            name: "agent-browser".to_string(),
-            path: "/skills/agent-browser/SKILL.md".to_string(),
-            display_name: Some("Agent Browser".to_string()),
-            scope: None,
-            short_description: None,
-            brand_color: None,
-            icon_small_url: None,
-        }];
-        let pending_id = store
-            .insert_pending_timeline_skill_mentions("thread-1", "Use $agent-browser", &mentions)
-            .await
-            .unwrap();
-        store
-            .mark_queued_input_pending_commit(
-                "thread-1",
-                &queued.id,
-                "turn-1",
-                None,
-                pending_id.as_deref(),
-            )
-            .await
-            .unwrap();
-
-        let requeued = store
-            .requeue_pending_commit_inputs_for_turn("thread-1", "turn-1", "not committed")
-            .await
-            .unwrap();
-        assert_eq!(requeued[0].status, QueuedInputStatus::Queued);
-        let committed = store
-            .commit_pending_timeline_skill_mentions(
-                "thread-1",
-                "turn-1",
-                "item-later",
-                "Use $agent-browser",
-            )
-            .await
-            .unwrap();
-        assert!(committed.is_none());
-    }
 
     #[tokio::test]
     async fn queued_inputs_round_trip_order_and_restart_recovery() {
@@ -811,7 +714,7 @@ mod tests {
             .await
             .unwrap();
         store
-            .mark_queued_input_pending_commit("thread-1", &pending.id, "turn-1", Some(42), None)
+            .mark_queued_input_pending_commit("thread-1", &pending.id, "turn-1", Some(42))
             .await
             .unwrap();
         let recovered = store.recover_queued_inputs_after_restart().await.unwrap();

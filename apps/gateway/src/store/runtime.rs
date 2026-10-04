@@ -168,8 +168,6 @@ impl Store {
             .into_iter()
             .map(row_to_queued_input)
             .collect::<ApiResult<Vec<_>>>()?;
-        self.delete_pending_timeline_skill_mentions_for_queued_rows(&recovering)
-            .await?;
         sqlx::query(
             r#"
             update queued_turn_inputs
@@ -178,7 +176,6 @@ impl Store {
                 accepted_turn_id = null,
                 accepted_at = null,
                 accepted_event_seq = null,
-                pending_skill_mentions_id = null,
                 updated_at = ?
             where deleted_at is null and status in ('submitting', 'steering', 'pendingCommit')
             "#,
