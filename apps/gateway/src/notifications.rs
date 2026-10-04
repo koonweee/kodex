@@ -60,6 +60,7 @@ const UNREAD_AGENT_MESSAGE_FALLBACK_THREAD_TITLE: &str = "New message";
 const UNREAD_AGENT_MESSAGE_FALLBACK_BODY: &str = "Agent has a new message.";
 const UNREAD_AGENT_MESSAGE_PREVIEW_MAX_CHARS: usize = 240;
 const UNREAD_AGENT_MESSAGE_TITLE_MAX_CHARS: usize = 48;
+const NOTIFICATION_PREVIEW_ITEM_LIMIT: u32 = 25;
 const DELIVERY_CLAIM_LIMIT: i64 = 10;
 const DELIVERY_MAX_ATTEMPTS: i64 = 3;
 const DELIVERY_PROCESSING_STALE_AFTER: ChronoDuration = ChronoDuration::minutes(5);
@@ -452,15 +453,16 @@ async fn notification_payload_for_delivery(
             let Some(thread_id) = delivery.thread_id.clone() else {
                 return Ok(None);
             };
-            unread_agent_message_payload_if_still_unread(state, thread_id).await
+            agent_message_payload_for_delivery(state, thread_id, delivery.turn_id.clone()).await
         }
         _ => Ok(None),
     }
 }
 
-async fn unread_agent_message_payload_if_still_unread(
+async fn agent_message_payload_for_delivery(
     state: &AppState,
     thread_id: String,
+    turn_id: Option<String>,
 ) -> ApiResult<Option<NotificationPayload>> {
     if !state.store.thread_notifications_enabled(&thread_id).await? {
         tracing::debug!(
@@ -471,10 +473,10 @@ async fn unread_agent_message_payload_if_still_unread(
         return Ok(None);
     }
 
-    let snapshot = app_server_api::client(&state.app_server)
-        .thread_read(thread_id.clone())
+    let thread = app_server_api::client(&state.app_server)
+        .thread_read_summary(thread_id.clone())
         .await?;
-    if suppress_unread_agent_message_notification(&snapshot.thread.raw_payload) {
+    if suppress_unread_agent_message_notification(&thread.raw_payload) {
         tracing::debug!(
             thread_id,
             reason = "suppressed_by_thread_source",
@@ -492,17 +494,16 @@ async fn unread_agent_message_payload_if_still_unread(
         return Ok(None);
     }
 
-    let badge_count = unread_badge_count(&state, &thread_id)
+    let body = agent_message_body_for_delivery(state, &thread_id, turn_id).await?;
+    let badge_count = unread_badge_count(state, &thread_id)
         .await
         .unwrap_or(1)
         .max(1);
-    let thread_title = snapshot
-        .thread
+    let thread_title = thread
         .name
         .as_deref()
         .and_then(notification_title_text)
         .unwrap_or_else(|| UNREAD_AGENT_MESSAGE_FALLBACK_THREAD_TITLE.to_string());
-    let body = unread_agent_message_body(&snapshot);
     let payload = NotificationPayload {
         kind: NotificationKind::UnreadAgentMessage,
         thread_id: Some(thread_id.clone()),
@@ -525,34 +526,51 @@ fn suppress_unread_agent_message_notification(thread: &serde_json::Value) -> boo
             .is_some_and(|source| matches!(source, "subagent" | "memory_consolidation"))
 }
 
-fn unread_agent_message_body(snapshot: &app_server_api::ThreadDetailResponse) -> String {
-    match final_agent_message_preview(snapshot) {
-        Some(preview) => preview,
-        None => UNREAD_AGENT_MESSAGE_FALLBACK_BODY.to_string(),
-    }
+async fn agent_message_body_for_delivery(
+    state: &AppState,
+    thread_id: &str,
+    turn_id: Option<String>,
+) -> ApiResult<String> {
+    let Some(turn_id) = turn_id else {
+        return Ok(UNREAD_AGENT_MESSAGE_FALLBACK_BODY.to_string());
+    };
+    let page = app_server_api::client(&state.app_server)
+        .thread_items_list_page(
+            thread_id.to_string(),
+            Some(turn_id),
+            None,
+            app_server_api::SortDirection::Desc,
+            Some(NOTIFICATION_PREVIEW_ITEM_LIMIT),
+        )
+        .await?;
+    Ok(
+        final_agent_message_preview(page.data.iter().map(|entry| &entry.item))
+            .unwrap_or_else(|| UNREAD_AGENT_MESSAGE_FALLBACK_BODY.to_string()),
+    )
 }
 
-fn final_agent_message_preview(snapshot: &app_server_api::ThreadDetailResponse) -> Option<String> {
-    snapshot
-        .turns
-        .iter()
-        .rev()
-        .filter(|turn| is_terminal_turn_status(&turn.status))
-        .find_map(final_agent_message_preview_from_turn)
-}
-
-fn final_agent_message_preview_from_turn(
-    turn: &app_server_api::ThreadTurnSnapshot,
+fn final_agent_message_preview<'a>(
+    items: impl Iterator<Item = &'a app_server_api::ThreadItemSnapshot>,
 ) -> Option<String> {
     let mut fallback = None;
-    for item in turn.items.iter().rev() {
-        if !is_agent_message_item(&item.item_type) {
+    for item in items {
+        if item.item_type != "agentMessage" {
             continue;
         }
-        let Some(text) = agent_message_text(&item.raw_payload) else {
+        let Some(text) = item
+            .raw_payload
+            .get("text")
+            .and_then(serde_json::Value::as_str)
+            .and_then(notification_preview_text)
+        else {
             continue;
         };
-        if is_final_answer_item(&item.raw_payload) {
+        if item
+            .raw_payload
+            .get("phase")
+            .and_then(serde_json::Value::as_str)
+            == Some("final_answer")
+        {
             return Some(text);
         }
         if fallback.is_none() {
@@ -560,53 +578,6 @@ fn final_agent_message_preview_from_turn(
         }
     }
     fallback
-}
-
-fn is_agent_message_item(item_type: &str) -> bool {
-    matches!(
-        item_type.to_ascii_lowercase().as_str(),
-        "agentmessage" | "agent_message" | "assistantmessage" | "assistant_message"
-    )
-}
-
-fn is_terminal_turn_status(status: &str) -> bool {
-    matches!(
-        status.to_ascii_lowercase().as_str(),
-        "completed" | "failed" | "cancelled" | "canceled" | "interrupted"
-    )
-}
-
-fn is_final_answer_item(item: &serde_json::Value) -> bool {
-    item.get("phase")
-        .and_then(serde_json::Value::as_str)
-        .is_some_and(|phase| phase.eq_ignore_ascii_case("final_answer"))
-}
-
-fn agent_message_text(item: &serde_json::Value) -> Option<String> {
-    string_field(item, &["text", "message"])
-        .and_then(|text| notification_preview_text(&text))
-        .or_else(|| {
-            content_array_text(item.get("content"))
-                .and_then(|text| notification_preview_text(&text))
-        })
-}
-
-fn content_array_text(value: Option<&serde_json::Value>) -> Option<String> {
-    let parts = value?
-        .as_array()?
-        .iter()
-        .filter_map(|part| string_field(part, &["text", "content"]))
-        .collect::<Vec<_>>();
-    if parts.is_empty() {
-        return None;
-    }
-    Some(parts.join(" "))
-}
-
-fn string_field(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
-    keys.iter()
-        .find_map(|key| value.get(*key).and_then(serde_json::Value::as_str))
-        .map(str::to_string)
 }
 
 fn notification_preview_text(text: &str) -> Option<String> {
@@ -701,3 +672,6 @@ fn stale_endpoint_error(error: &WebPushError) -> bool {
         WebPushError::EndpointNotFound(_) | WebPushError::EndpointNotValid(_)
     )
 }
+
+#[cfg(test)]
+mod tests;

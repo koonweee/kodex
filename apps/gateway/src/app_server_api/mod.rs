@@ -8,6 +8,7 @@ use crate::error::{ApiError, ApiResult};
 
 mod client;
 mod config;
+mod items;
 mod mcp_config;
 mod projects;
 mod sections;
@@ -17,6 +18,7 @@ mod timeline;
 pub(crate) use client::is_thread_not_materialized_before_first_user_message;
 pub use client::{client, CodexClient};
 pub use config::*;
+pub use items::{ThreadItemEntry, ThreadItemsListPage};
 pub use mcp_config::*;
 pub use projects::{Project, ProjectPage, ProjectRoot};
 pub use sections::{

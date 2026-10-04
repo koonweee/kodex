@@ -556,12 +556,16 @@ mod tests {
             .await
             .unwrap();
         app_server.queued_responses.lock().unwrap().extend([
-            thread_read_response_with_agent_message(
+            notification_thread_summary_response(
                 "thread-1",
                 "Octopus Heart Facts With An Overly Long Thread Title That Should Not Fill The Banner",
-                "Tool output should stay hidden.",
-                "Yes, octopuses actually have three hearts.\n\nThey use two for their gills.",
+                json!("cli"),
+                None,
             ),
+            json!({"data": [
+                {"turnId": "turn-1", "item": {"id": "item-agent-1", "type": "agentMessage", "phase": "final_answer", "text": "Yes, octopuses actually have three hearts.\n\nThey use two for their gills."}},
+                {"turnId": "turn-1", "item": {"id": "item-tool-1", "type": "commandExecution", "aggregatedOutput": "Tool output should stay hidden."}}
+            ], "nextCursor": null, "backwardsCursor": null}),
             json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
         ]);
 
@@ -709,8 +713,8 @@ mod tests {
             .await
             .unwrap();
         app_server.queued_responses.lock().unwrap().extend([
-            thread_read_response("thread-1", 1),
-            thread_read_response("thread-1", 1),
+            thread_read_response("thread-1", 0),
+            json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
             json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
         ]);
 
@@ -758,12 +762,6 @@ mod tests {
             .set_thread_notifications_enabled("thread-1", false)
             .await
             .unwrap();
-        app_server
-            .queued_responses
-            .lock()
-            .unwrap()
-            .push(thread_read_response("thread-1", 1));
-
         ingest_inbound(
             InboundMessage::Notification {
                 method: "turn/upsert".to_string(),
@@ -783,6 +781,7 @@ mod tests {
 
         process_due_deliveries(state.clone()).await.unwrap();
         assert!(sender.payloads.lock().unwrap().is_empty());
+        assert!(app_server.requests.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -806,10 +805,11 @@ mod tests {
         state
             .thread_presence
             .record_view("client-1", "thread-1", true);
-        app_server.queued_responses.lock().unwrap().extend([
-            thread_read_response("thread-1", 1),
-            thread_read_response("thread-1", 1),
-        ]);
+        app_server
+            .queued_responses
+            .lock()
+            .unwrap()
+            .push(thread_read_response("thread-1", 0));
 
         ingest_inbound(
             InboundMessage::Notification {
@@ -830,6 +830,13 @@ mod tests {
 
         process_due_deliveries(state.clone()).await.unwrap();
         assert!(sender.payloads.lock().unwrap().is_empty());
+        assert_eq!(
+            app_server.requests.lock().unwrap().as_slice(),
+            &[(
+                "thread/read".to_string(),
+                json!({"threadId": "thread-1", "includeTurns": false}),
+            )]
+        );
     }
 
     #[tokio::test]
@@ -859,8 +866,8 @@ mod tests {
                 - chrono::Duration::milliseconds(1),
         );
         app_server.queued_responses.lock().unwrap().extend([
-            thread_read_response("thread-1", 1),
-            thread_read_response("thread-1", 1),
+            thread_read_response("thread-1", 0),
+            json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
             json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
         ]);
 
@@ -918,15 +925,12 @@ mod tests {
                 })
                 .await
                 .unwrap();
-            *app_server.next_response.lock().unwrap() =
-                Some(thread_read_response_with_agent_message_source(
-                    "thread-subagent",
-                    "Subagent",
-                    "Tool output should stay hidden.",
-                    "Subagent final answer.",
-                    source,
-                    thread_source,
-                ));
+            *app_server.next_response.lock().unwrap() = Some(notification_thread_summary_response(
+                "thread-subagent",
+                "Subagent",
+                source,
+                thread_source,
+            ));
 
             ingest_inbound(
                 InboundMessage::Notification {
@@ -956,7 +960,7 @@ mod tests {
                 app_server.requests.lock().unwrap().as_slice(),
                 &[(
                     "thread/read".to_string(),
-                    json!({"threadId":"thread-subagent","includeTurns":true}),
+                    json!({"threadId":"thread-subagent","includeTurns":false}),
                 )]
             );
         }
@@ -10957,53 +10961,15 @@ mod tests {
         .unwrap();
     }
 
-    fn thread_read_response_with_agent_message(
+    fn notification_thread_summary_response(
         thread_id: &str,
         name: &str,
-        tool_output: &str,
-        agent_text: &str,
-    ) -> Value {
-        thread_read_response_with_agent_message_source(
-            thread_id,
-            name,
-            tool_output,
-            agent_text,
-            json!("cli"),
-            None,
-        )
-    }
-
-    fn thread_read_response_with_agent_message_source(
-        thread_id: &str,
-        name: &str,
-        tool_output: &str,
-        agent_text: &str,
         source: Value,
         thread_source: Option<&str>,
     ) -> Value {
-        let mut response = json!({
-            "thread": {
-                "id": thread_id,
-                "name": name,
-                "cliVersion": "0.130.0",
-                "cwd": "/workspace",
-                "ephemeral": false,
-                "modelProvider": "openai",
-                "source": source,
-                "status": {"type": "idle"},
-                "turns": [{
-                    "id": "turn-0",
-                    "status": {"type": "completed"},
-                    "items": [
-                        {"id": "item-user-1", "type": "userMessage", "content": [{"type": "text", "text": "Question"}]},
-                        {"id": "item-tool-1", "type": "commandExecution", "aggregatedOutput": tool_output},
-                        {"id": "item-agent-1", "type": "agentMessage", "phase": "final_answer", "text": agent_text}
-                    ]
-                }],
-                "createdAt": 1_767_225_600_i64,
-                "updatedAt": 1_767_225_600_i64
-            }
-        });
+        let mut response = thread_read_response(thread_id, 0);
+        response["thread"]["name"] = json!(name);
+        response["thread"]["source"] = source;
         if let Some(thread_source) = thread_source {
             response["thread"]["threadSource"] = json!(thread_source);
         }

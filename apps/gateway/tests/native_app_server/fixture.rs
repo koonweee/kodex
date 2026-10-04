@@ -15,6 +15,7 @@ use axum::{
 use http_body_util::BodyExt;
 use kodex_gateway::{
     app_server::{AppServer, InboundMessage, JsonRpcAppServer},
+    app_server_api::{CodexClient, SortDirection, ThreadItemsListPage},
     build_router,
     config::Config,
     events::ingest_inbound,
@@ -192,6 +193,25 @@ impl NativeSession {
             .request(
                 "thread/revert",
                 json!({"threadId":thread_id, "beforeTurnId":before_turn_id}),
+            )
+            .await?)
+    }
+
+    pub(super) async fn native_items_page(
+        &self,
+        thread_id: &str,
+        turn_id: Option<&str>,
+        cursor: Option<String>,
+        sort_direction: SortDirection,
+        limit: u32,
+    ) -> anyhow::Result<ThreadItemsListPage> {
+        Ok(CodexClient::new(self.server.clone())
+            .thread_items_list_page(
+                thread_id.to_owned(),
+                turn_id.map(str::to_owned),
+                cursor,
+                sort_direction,
+                Some(limit),
             )
             .await?)
     }
