@@ -15,6 +15,7 @@ import { getCapabilities, getProject, getThreadDetail } from "./client";
 import { createInstanceStorage, type InstanceStorage } from "./instanceStorage";
 import { queryKeys } from "./queryKeys";
 import { refreshNativeConfig } from "./nativeConfigCache";
+import { refreshAppSurfaceSessions } from "../appSurfaces/cache";
 import { refreshThreadSubagents } from "../threads/subagentsCache";
 
 const InstanceStorageContext = createContext<InstanceStorage | null>(null);
@@ -84,6 +85,7 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
           void refreshProjectState(queryClient);
           void refreshThreadSettings(queryClient);
           void refreshNativeConfig(queryClient);
+          void refreshAppSurfaceSessions(queryClient);
           void refreshThreadSubagents(queryClient);
           void refreshUnreadBadge(queryClient);
           void refreshQueuedInputs(queryClient);
@@ -112,6 +114,7 @@ function GatewayInstanceGate({ children, queryClient }: GatewayInstanceBoundaryP
       void refreshProjectState(queryClient);
       void refreshThreadSettings(queryClient);
       void refreshNativeConfig(queryClient);
+      void refreshAppSurfaceSessions(queryClient);
       void refreshThreadSubagents(queryClient);
       void refreshUnreadBadge(queryClient);
       void refreshQueuedInputs(queryClient);

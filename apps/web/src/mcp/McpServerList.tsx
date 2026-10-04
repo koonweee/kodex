@@ -1,5 +1,6 @@
 import { Badge, Box, Button, Group, Stack, Text } from "@mantine/core";
 
+import type { McpServerStatus } from "../api/client";
 import { authColor, authLabel, type MergedMcpServer, transportLabel } from "./mcpTypes";
 
 type McpServerListProps = {
@@ -36,14 +37,14 @@ export function McpServerList({ onSelect, selectedName, servers }: McpServerList
                 </Badge>
               ) : null}
               {server.runtime ? (
-                <Badge color="green" size="sm" variant="light">
-                  Loaded
+                <Badge color={server.runtime.runtimeStatus === "connected" ? "green" : server.runtime.runtimeStatus === "failed" ? "red" : "gray"} size="sm" variant="light">
+                  {runtimeLabel(server.runtime.runtimeStatus)}
                 </Badge>
               ) : null}
             </Group>
             <Text c="dimmed" size="xs">
               {server.runtime
-                ? `${Object.keys(server.runtime.tools).length} tools · ${server.runtime.resources.length} resources · ${server.runtime.resourceTemplates.length} templates`
+                ? `${server.runtime.toolsError ? "Tools unavailable" : `${Object.keys(server.runtime.tools).length} tools`} · ${server.runtime.resources.length} resources · ${server.runtime.resourceTemplates.length} templates`
                 : transportLabel(server.configured)}
             </Text>
           </Box>
@@ -51,4 +52,17 @@ export function McpServerList({ onSelect, selectedName, servers }: McpServerList
       ))}
     </Stack>
   );
+}
+
+function runtimeLabel(status: McpServerStatus["runtimeStatus"]): string {
+  switch (status) {
+    case "notStarted": return "Not started";
+    case "starting": return "Starting";
+    case "connected": return "Connected";
+    case "authenticationRequired": return "Authentication required";
+    case "failed": return "Failed";
+    case "cancelled": return "Cancelled";
+    case "disabled": return "Disabled";
+    default: return "Status unavailable";
+  }
 }

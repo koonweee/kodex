@@ -86,7 +86,6 @@ export function WorkspaceDock({
       if (suppressEventsRef.current) {
         return;
       }
-      const activePaneId = api.activePanel?.id ?? null;
       const livePanelIds = new Set(api.panels.map((panel) => panel.id));
       if (workspace.panes.some((pane) => !livePanelIds.has(pane.id))) {
         return;
@@ -95,7 +94,7 @@ export function WorkspaceDock({
         window.clearTimeout(debounceRef.current);
       }
       debounceRef.current = window.setTimeout(() => {
-        onLayoutChange(api.toJSON(), activePaneId);
+        onLayoutChange(api.toJSON(), api.activePanel?.id ?? null);
       }, 350);
     },
     [onLayoutChange, workspace.panes],

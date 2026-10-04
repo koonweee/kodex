@@ -23,8 +23,8 @@ Generated app surfaces should justify their presence. Use them when layout, visu
 
 ## Thread Targeting
 
-- In normal thread use, omit `threadId`; the Kodex app-server supplies the invoking thread through MCP `_meta.threadId`. Pass `threadId` only when the user explicitly wants to target another thread.
-- Do not list recent threads or ask the user for the current thread ID before rendering an app surface. If an app-surface tool reports that `_meta.threadId` is unavailable, then retry with an explicit `threadId` only if you can identify it with high confidence.
+- Every app-surface call requires an explicit `threadId` belonging to the connected Kodex gateway. Use a thread ID returned by Kodex thread tools or resources, or an explicit target the user supplied.
+- MCP `_meta.threadId` does not establish Kodex ownership. Do not assume a desktop or other native-home chat can be targeted, or import its rollout to make an app surface work. If the intended Kodex target is unclear, inspect Kodex threads or ask the user to choose one.
 
 ## UI Requirements
 

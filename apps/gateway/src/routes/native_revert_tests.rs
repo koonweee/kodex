@@ -84,13 +84,6 @@ impl AppServer for RevertNative {
                     "status":"inProgress",
                 }}))
                 .await),
-            // A stale page contains a valid MCP app item. It must be rejected
-            // before either reading its resource or importing a surface.
-            "mcpServer/resource/read" => Ok(json!({"contents":[{
-                "uri":"ui://reverted/app", "mimeType":"text/html;profile=mcp-app",
-                "text":"<!doctype html><html><body>Removed app</body></html>",
-            }]})),
-            "mcpServerStatus/list" => Ok(json!({"data":[], "nextCursor":null})),
             _ => Err(ApiError::BadGateway(format!(
                 "unexpected native request: {method} {params}"
             ))),
@@ -162,7 +155,7 @@ async fn request(
 }
 
 async fn seed_history(state: &AppState) {
-    // Normalize the native page without executing route-level MCP imports.
+    // Seed the canonical window before testing an overlapping native read.
     let detail = app_server_api::client(&state.app_server)
         .thread_read_history_window(THREAD.into(), 50)
         .await
@@ -224,7 +217,7 @@ async fn assert_stale_read_fenced(method: &str, path: &str, seed: bool) {
             .unwrap()
             .iter()
             .all(|(method, _)| !method.starts_with("mcp")),
-        "stale history must be rejected before MCP surface synchronization"
+        "history reads must not call MCP or import app surfaces"
     );
     assert!(state
         .store
@@ -256,7 +249,7 @@ async fn native_revert_fences_a_detail_read_started_before_any_view_existed() {
 }
 
 #[tokio::test]
-async fn native_revert_fences_an_attach_initial_page_and_stale_surface_import() {
+async fn native_revert_fences_an_attach_initial_page_with_tool_history() {
     assert_stale_read_fenced("POST", &format!("/v1/threads/{THREAD}/attach"), true).await;
 }
 

@@ -197,7 +197,12 @@ pub async fn read_mcp_resource(
 ) -> ApiResult<Json<McpResourceReadResponse>> {
     Ok(Json(
         app_server_api::client(&state.app_server)
-            .mcp_resource_read(server, query.uri, query.thread_id)
+            .mcp_resource_read(app_server_api::McpResourceReadRequest {
+                server,
+                uri: query.uri,
+                thread_id: query.thread_id,
+                ..Default::default()
+            })
             .await?,
     ))
 }

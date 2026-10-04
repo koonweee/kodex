@@ -11,10 +11,8 @@ import {
 } from "../../api/client";
 import { queryKeys } from "../../api/queryKeys";
 import { AppSurfacePane } from "../../appSurfaces/AppSurfacePane";
-import { createClientRequestId } from "../../shared/id";
 import { errorMessageFrom } from "../../shared/values";
 import { readStoredKodexColorScheme } from "../../theme";
-import { useWorkspace } from "../../workspace/WorkspaceProvider";
 import type { WorkspacePaneComponentProps } from "../../workspace/paneTypes";
 import { paneTargetRecord } from "../../workspace/paneTypes";
 
@@ -48,16 +46,15 @@ function ThreadAppSurfacePane({
   threadId,
 }: ThreadAppSurfacePaneProps) {
   const queryClient = useQueryClient();
-  const { publishThreadPaneTimelineAction } = useWorkspace();
 
   const sessionQuery = useQuery({
     enabled: threadId !== null,
-    queryKey: threadId ? queryKeys.appSurface(threadId) : ["app-surface", "thread", "none"],
-    queryFn: () => {
+    queryKey: threadId ? queryKeys.appSurface(threadId) : [...queryKeys.appSurfaceRoot, null],
+    queryFn: ({ signal }) => {
       if (!threadId) {
         return null;
       }
-      return getThreadAppSurface(threadId);
+      return getThreadAppSurface(threadId, signal);
     },
   });
 
@@ -88,45 +85,17 @@ function ThreadAppSurfacePane({
         return Promise.reject(new Error("No app surface session is available."));
       }
 
-      const optimisticText = appSurfaceBridgeMessageText(request);
-      const optimisticClientRequestId = optimisticText ? createClientRequestId() : null;
-      if (optimisticText && optimisticClientRequestId) {
-        publishThreadPaneTimelineAction({
-          clientRequestId: optimisticClientRequestId,
-          kind: "optimistic_user_started",
-          skillMentions: [],
-          text: optimisticText,
-          threadId: visibleSession.threadId,
-        });
+      const response = await bridgeMutation.mutateAsync({
+        request,
+        sessionId: visibleSession.id,
+      });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.appSurface(visibleSession.threadId) });
+      if (response.error) {
+        throw new Error(response.error.message);
       }
-
-      try {
-        const response = await bridgeMutation.mutateAsync({
-          request,
-          sessionId: visibleSession.id,
-        });
-        void queryClient.invalidateQueries({ queryKey: queryKeys.appSurface(visibleSession.threadId) });
-        if (response.error) {
-          throw new Error(response.error.message);
-        }
-        if (optimisticClientRequestId) {
-          publishThreadPaneTimelineAction({
-            clientRequestId: optimisticClientRequestId,
-            kind: "optimistic_user_sent",
-          });
-        }
-        return response;
-      } catch (error) {
-        if (optimisticClientRequestId) {
-          publishThreadPaneTimelineAction({
-            clientRequestId: optimisticClientRequestId,
-            kind: "optimistic_user_removed",
-          });
-        }
-        throw error;
-      }
+      return response;
     },
-    [bridgeMutation, publishThreadPaneTimelineAction, queryClient, visibleSession],
+    [bridgeMutation, queryClient, visibleSession],
   );
 
   if (!threadId) {
@@ -175,33 +144,6 @@ function ThreadAppSurfacePane({
       session={visibleSession}
     />
   );
-}
-
-function appSurfaceBridgeMessageText(request: AppSurfaceBridgeRequest): string | null {
-  if (request.method !== "ui/message" || !request.params || typeof request.params !== "object") {
-    return null;
-  }
-  const params = request.params as { content?: unknown; role?: unknown };
-  if (params.role !== "user") {
-    return null;
-  }
-  return textFromMessageContent(params.content);
-}
-
-function textFromMessageContent(content: unknown): string | null {
-  const blocks = Array.isArray(content) ? content : [content];
-  const text = blocks
-    .map((block) => {
-      if (!block || typeof block !== "object") {
-        return "";
-      }
-      const value = block as { text?: unknown; type?: unknown };
-      return value.type === "text" && typeof value.text === "string" ? value.text : "";
-    })
-    .filter((value) => value.trim().length > 0)
-    .join("\n")
-    .trim();
-  return text || null;
 }
 
 function AppSurfaceEmptyState({ detail, title }: { detail: string; title: string }) {

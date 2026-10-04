@@ -9,6 +9,9 @@ use crate::error::{ApiError, ApiResult};
 mod client;
 mod config;
 mod items;
+mod mcp_apps;
+#[cfg(test)]
+mod mcp_apps_tests;
 mod mcp_config;
 mod projects;
 mod queue;
@@ -22,6 +25,7 @@ pub(crate) use client::is_thread_not_materialized_before_first_user_message;
 pub use client::{client, CodexClient};
 pub use config::*;
 pub use items::{ThreadItemEntry, ThreadItemsListPage};
+pub use mcp_apps::{McpResourceReadRequest, McpResourceReadTarget, McpServerConnectionStatus};
 pub use mcp_config::*;
 pub use projects::{Project, ProjectPage, ProjectRoot};
 pub use queue::{NativeQueuePage, NativeQueuedSubmission};
@@ -237,6 +241,20 @@ pub struct McpServerStatus {
     pub tools: BTreeMap<String, McpTool>,
     pub resources: Vec<McpResource>,
     pub resource_templates: Vec<McpResourceTemplate>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_status: Option<McpServerConnectionStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_capabilities: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_info: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_origin: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin_id: Option<String>,
+    #[serde(default, flatten)]
+    pub extra: BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
@@ -267,6 +285,8 @@ pub struct McpTool {
     pub icons: Option<Value>,
     #[serde(default, rename = "_meta")]
     pub meta: Option<Value>,
+    #[serde(default, flatten)]
+    pub extra: BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -288,6 +308,8 @@ pub struct McpResource {
     pub icons: Option<Value>,
     #[serde(default, rename = "_meta")]
     pub meta: Option<Value>,
+    #[serde(default, flatten)]
+    pub extra: BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -303,12 +325,18 @@ pub struct McpResourceTemplate {
     pub mime_type: Option<String>,
     #[serde(default)]
     pub annotations: Option<Value>,
+    #[serde(default, flatten)]
+    pub extra: BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct McpResourceReadResponse {
     pub contents: Vec<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_call_id: Option<String>,
+    #[serde(default, flatten)]
+    pub extra: BTreeMap<String, Value>,
 }
 
 impl McpResourceReadResponse {
@@ -340,6 +368,8 @@ pub struct McpServerToolCallResponse {
     pub is_error: Option<bool>,
     #[serde(default, rename = "_meta", skip_serializing_if = "Option::is_none")]
     pub meta: Option<Value>,
+    #[serde(default, flatten)]
+    pub extra: BTreeMap<String, Value>,
 }
 
 impl McpServerToolCallResponse {

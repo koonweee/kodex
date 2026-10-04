@@ -1,10 +1,11 @@
 import { MantineProvider } from "@mantine/core";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useEffect } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { DockviewApi } from "dockview";
 
 import {
+  WorkspaceDock,
   WorkspaceDefaultTab,
   WorkspaceRightHeaderActions,
   WorkspaceTabOverflowActions,
@@ -17,7 +18,60 @@ import { createMemoryWorkspacePaneStore } from "./paneStore";
 import type { WorkspaceModel, WorkspacePane } from "./paneTypes";
 import { WorkspaceProvider, useWorkspace } from "./WorkspaceProvider";
 
+const dockHarness = vi.hoisted(() => ({ api: null as DockviewApi | null }));
+vi.mock("dockview", async (importOriginal) => ({
+  ...await importOriginal<typeof import("dockview")>(),
+  DockviewReact: ({ onReady }: { onReady: (event: { api: DockviewApi }) => void }) => (
+    <button onClick={() => onReady({ api: dockHarness.api! })}>Initialize test dock</button>
+  ),
+}));
+
 describe("WorkspaceDock sync", () => {
+  it("persists the newly focused app pane with the current layout after an older layout timer", async () => {
+    vi.useFakeTimers();
+    const api = fakeDockviewApi(["pane-chat", "pane-app"]);
+    let emitLayout: () => void = () => { throw new Error("Layout listener is not registered"); };
+    const subscribe = () => ({ dispose: vi.fn() });
+    dockHarness.api = Object.assign(api, {
+      onDidLayoutChange: (listener: () => void) => { emitLayout = listener; return subscribe(); },
+      onDidActivePanelChange: subscribe, onDidRemovePanel: subscribe,
+      onDidAddPanel: subscribe, onDidAddGroup: subscribe,
+      onDidRemoveGroup: subscribe, onDidMovePanel: subscribe,
+    }) as unknown as DockviewApi;
+    const panes = [
+      pane("pane-chat", "thread", { mode: "existing", threadId: "chat" }),
+      pane("pane-app", "appSurface", { mode: "latest", threadId: "chat" }),
+    ];
+    const onLayoutChange = vi.fn();
+    const renderDock = (activePaneId: string) => (
+      <WorkspaceProvider>
+        <WorkspaceDock
+          workspace={workspaceModel(panes, activePaneId)}
+          onLayoutChange={onLayoutChange} onActivePaneChange={vi.fn()} onPaneClose={vi.fn()}
+        />
+      </WorkspaceProvider>
+    );
+    const view = render(renderDock("pane-chat"));
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Initialize test dock" }));
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      onLayoutChange.mockClear();
+      act(() => emitLayout());
+      // An explicit app-pane selection synchronizes focus while Dockview events
+      // are suppressed; the old layout timer remains pending.
+      view.rerender(renderDock("pane-app"));
+      expect(api.activePanel?.id).toBe("pane-app");
+      await act(() => vi.advanceTimersByTimeAsync(350));
+      expect(onLayoutChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ activePanelId: "pane-app" }), "pane-app",
+      );
+    } finally {
+      view.unmount();
+      dockHarness.api = null;
+      vi.useRealTimers();
+    }
+  });
+
   it("uses a compact Kodex Dockview theme instead of the default abyss chrome", () => {
     expect(kodexDockviewTheme.className).toContain("dockview-theme-abyss");
     expect(kodexDockviewTheme.className).toContain("kodex-dockview-theme");

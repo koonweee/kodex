@@ -113,9 +113,10 @@ describe("app surface pane integration", () => {
   });
 
   it("converges app surface revisions and archived state from the workspace stream", async () => {
+    let currentSession: AppSurfaceSession | null = appSurfaceSession();
     mockGateway(
       baseRoutes({
-        "GET /v1/threads/thread-1/app-surface": { session: appSurfaceSession() },
+        "GET /v1/threads/thread-1/app-surface": () => ({ session: currentSession }),
         "GET /v1/app-surfaces/session-1/document": appSurfaceDocument,
       }),
     );
@@ -130,10 +131,12 @@ describe("app surface pane integration", () => {
       revision: 2,
       title: "Follow-up mockups",
     });
+    currentSession = followUpSession;
     emitAppSurfaceEvent("app_surface.session_upserted", followUpSession);
 
     expect(await screen.findByTitle(/app surface: follow-up mockups/i)).toBeInTheDocument();
 
+    currentSession = null;
     emitAppSurfaceEvent("app_surface.session_archived", {
       ...followUpSession,
       archivedAt: "2026-04-30T00:00:05Z",
@@ -145,7 +148,7 @@ describe("app surface pane integration", () => {
     });
   });
 
-  it("submits app surface output and applies the resulting thread patch through the workspace stream", async () => {
+  it.each(["accepted", "failed"] as const)("renders one canonical app message before a late %s bridge response", async (outcome) => {
     let resolveBridge: (value: unknown) => void = () => undefined;
     const gateway = mockGateway(
       baseRoutes({
@@ -201,17 +204,33 @@ describe("app surface pane integration", () => {
         displayOrder: 7,
         status: "completed",
       }));
-      resolveBridge({
-        id: "submit-1",
-        result: {
-          input: { payload: { turn: { id: "turn-app-surface", status: "inProgress" } } },
-        },
-      });
+    });
+
+    // The native active-turn affordance is the barrier that the queued patch
+    // rendered; the identical text alone could still be the optimistic row.
+    expect(await screen.findByRole("button", { name: /stop turn/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getAllByText("Pick mockup A")).toHaveLength(1);
+      expect(screen.getByText("Working")).toBeInTheDocument();
+    });
+
+    act(() => {
+      resolveBridge(outcome === "failed"
+        ? { id: "submit-1", error: { code: -32000, message: "Bridge acknowledgment failed" } }
+        : {
+          id: "submit-1",
+          result: { input: { payload: { turn: { id: "turn-app-surface", status: "inProgress" } } } },
+        });
     });
 
     await waitFor(() => {
+      expect(screen.queryByText("Working")).not.toBeInTheDocument();
       expect(screen.getAllByText("Pick mockup A")).toHaveLength(1);
     });
+    if (outcome === "failed") {
+      expect(screen.getByRole("alert")).toHaveTextContent("Bridge acknowledgment failed");
+    }
+    expect(gateway.callsFor("POST", "/v1/app-surfaces/session-1/bridge")).toHaveLength(1);
   });
 });
 

@@ -2559,6 +2559,8 @@ export interface components {
             size?: number | null;
             title?: string | null;
             uri: string;
+        } & {
+            [key: string]: unknown;
         };
         McpResourceReadQuery: {
             threadId?: string | null;
@@ -2566,6 +2568,9 @@ export interface components {
         };
         McpResourceReadResponse: {
             contents: unknown[];
+            originCallId?: string | null;
+        } & {
+            [key: string]: unknown;
         };
         McpResourceTemplate: {
             annotations?: unknown;
@@ -2574,7 +2579,11 @@ export interface components {
             name: string;
             title?: string | null;
             uriTemplate: string;
+        } & {
+            [key: string]: unknown;
         };
+        /** @enum {string} */
+        McpServerConnectionStatus: "notStarted" | "starting" | "connected" | "authenticationRequired" | "failed" | "cancelled" | "disabled";
         McpServerInstallRequest: {
             enabled?: boolean | null;
             enabledTools?: string[] | null;
@@ -2596,12 +2605,20 @@ export interface components {
         };
         McpServerStatus: {
             authStatus: components["schemas"]["McpAuthStatus"];
+            httpOrigin?: string | null;
             name: string;
+            pluginId?: string | null;
             resourceTemplates: components["schemas"]["McpResourceTemplate"][];
             resources: components["schemas"]["McpResource"][];
+            runtimeStatus?: null | components["schemas"]["McpServerConnectionStatus"];
+            serverCapabilities?: unknown;
+            serverInfo?: unknown;
             tools: {
                 [key: string]: components["schemas"]["McpTool"];
             };
+            toolsError?: string | null;
+        } & {
+            [key: string]: unknown;
         };
         /** @enum {string} */
         McpServerStatusDetail: "full" | "toolsAndAuthOnly";
@@ -2648,6 +2665,8 @@ export interface components {
             name: string;
             outputSchema?: unknown;
             title?: string | null;
+        } & {
+            [key: string]: unknown;
         };
         ModelListResponse: {
             models: components["schemas"]["ModelSummary"][];

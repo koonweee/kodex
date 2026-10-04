@@ -138,7 +138,7 @@ function ExistingThreadPane({
   const [renamePending, setRenamePending] = useState(false);
   const appSurfaceQuery = useQuery({
     queryKey: queryKeys.appSurface(threadId),
-    queryFn: () => getThreadAppSurface(threadId),
+    queryFn: ({ signal }) => getThreadAppSurface(threadId, signal),
   });
 
   useEffect(() => {

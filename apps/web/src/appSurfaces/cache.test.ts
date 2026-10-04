@@ -1,41 +1,92 @@
-import { QueryClient } from "@tanstack/react-query";
-import { describe, expect, it } from "vitest";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
+import { describe, expect, it, vi } from "vitest";
 
 import type { AppSurfaceSession, EventEnvelope } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { applyAppSurfaceEvent } from "./cache";
 
 describe("app surface cache events", () => {
-  it("updates and archives the active app surface for a thread", () => {
-    const queryClient = new QueryClient();
-    const active = appSurfaceSession({ revision: 1, status: "active" });
-    const submitted = appSurfaceSession({
-      revision: 2,
-      status: "submitted",
-      submittedMessage: "Pick mockup A",
-      submittedRevision: 2,
-    });
-
-    applyAppSurfaceEvent(queryClient, appSurfaceEvent("app_surface.session_upserted", active));
-    expect(queryClient.getQueryData(queryKeys.appSurface("thread-1"))).toEqual(active);
-
-    applyAppSurfaceEvent(queryClient, appSurfaceEvent("app_surface.session_submitted", submitted));
-    expect(queryClient.getQueryData(queryKeys.appSurface("thread-1"))).toEqual(submitted);
-
-    applyAppSurfaceEvent(queryClient, appSurfaceEvent("app_surface.session_archived", submitted));
-    expect(queryClient.getQueryData(queryKeys.appSurface("thread-1"))).toBeNull();
+  it.each([false, true])("refills authoritative current state after an older replayed event (archived=%s)", async (archived) => {
+    const current = archived ? null : appSurfaceSession({ revision: 3, title: "Current gateway session" });
+    const client = new QueryClient();
+    const read = vi.fn().mockResolvedValue(current);
+    const observer = new QueryObserver(client, { queryKey: queryKeys.appSurface("thread-1"), queryFn: read });
+    const cleanup = observer.subscribe(() => {});
+    try {
+      await vi.waitFor(() => expect(client.getQueryData(queryKeys.appSurface("thread-1"))).toEqual(current));
+      applyAppSurfaceEvent(client, appSurfaceEvent("app_surface.session_upserted", appSurfaceSession({ revision: 1, title: "Delayed old event" })));
+      expect(client.getQueryData(queryKeys.appSurface("thread-1"))).toEqual(current);
+      await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+      expect(client.getQueryData(queryKeys.appSurface("thread-1"))).toEqual(current);
+    } finally {
+      cleanup();
+      client.clear();
+    }
   });
 
-  it("archives by event thread id when the payload is empty", () => {
-    const queryClient = new QueryClient();
-    queryClient.setQueryData(queryKeys.appSurface("thread-1"), appSurfaceSession());
-
-    applyAppSurfaceEvent(queryClient, {
-      ...appSurfaceEvent("app_surface.session_archived", null),
-      threadId: "thread-1",
+  it.each([false, true])("cancels both clients' stale session reads before authoritative refill (archived=%s)", async (archived) => {
+    const clients = [new QueryClient(), new QueryClient()];
+    const signals: AbortSignal[] = [];
+    const releases: Array<(session: AppSurfaceSession) => void> = [];
+    const current = archived ? null : appSurfaceSession({ revision: 3, title: "Latest gateway surface" });
+    const cleanups = clients.map((client) => {
+      let reads = 0;
+      const observer = new QueryObserver(client, {
+        queryKey: queryKeys.appSurface("thread-1"),
+        queryFn: ({ signal }) => {
+          if (reads++ > 0) return Promise.resolve(current);
+          signals.push(signal);
+          return new Promise<AppSurfaceSession>((resolve) => releases.push(resolve));
+        },
+      });
+      return observer.subscribe(() => {});
     });
+    try {
+      await vi.waitFor(() => expect(signals).toHaveLength(2));
+      for (const client of clients) {
+        applyAppSurfaceEvent(client, appSurfaceEvent("app_surface.session_upserted", appSurfaceSession({ revision: 2 })));
+        applyAppSurfaceEvent(client, appSurfaceEvent("app_surface.session_upserted", appSurfaceSession({ revision: 3 })));
+        if (archived) applyAppSurfaceEvent(client, appSurfaceEvent("app_surface.session_archived", appSurfaceSession({ revision: 3 })));
+      }
+      await vi.waitFor(() => expect(signals.every((signal) => signal.aborted)).toBe(true));
+      releases.forEach((release) => release(appSurfaceSession({ revision: 1, title: "Captured obsolete surface" })));
+      await vi.waitFor(() => {
+        for (const client of clients) {
+          expect(client.getQueryState(queryKeys.appSurface("thread-1"))?.fetchStatus).toBe("idle");
+          expect(client.getQueryData(queryKeys.appSurface("thread-1"))).toEqual(current);
+        }
+      });
+    } finally {
+      cleanups.forEach((cleanup) => cleanup());
+      clients.forEach((client) => client.clear());
+    }
+  });
 
-    expect(queryClient.getQueryData(queryKeys.appSurface("thread-1"))).toBeNull();
+  it("refills submission, error and archive state without interpreting event payloads", async () => {
+    const queryClient = new QueryClient();
+    let current: AppSurfaceSession | null = appSurfaceSession();
+    const read = vi.fn(() => Promise.resolve(current));
+    const observer = new QueryObserver(queryClient, {
+      queryKey: queryKeys.appSurface("thread-1"), queryFn: read,
+    });
+    const cleanup = observer.subscribe(() => {});
+    try {
+      await vi.waitFor(() => expect(queryClient.getQueryData(queryKeys.appSurface("thread-1"))).toEqual(current));
+      for (const [kind, next] of [
+        ["app_surface.session_submitted", appSurfaceSession({ status: "submitted", submittedMessage: "Pick mockup A", submittedRevision: 1 })],
+        ["app_surface.session_error", appSurfaceSession({ status: "errored" })],
+        ["app_surface.session_archived", null],
+      ] as const) {
+        current = next;
+        const previousReads = read.mock.calls.length;
+        applyAppSurfaceEvent(queryClient, { ...appSurfaceEvent(kind, null), threadId: "thread-1" });
+        await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(previousReads + 1));
+        expect(queryClient.getQueryData(queryKeys.appSurface("thread-1"))).toEqual(current);
+      }
+    } finally {
+      cleanup();
+      queryClient.clear();
+    }
   });
 });
 

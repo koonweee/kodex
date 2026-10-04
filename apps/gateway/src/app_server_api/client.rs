@@ -315,6 +315,7 @@ impl CodexClient {
         thread_id: String,
         payload: Value,
     ) -> ApiResult<ThreadCommandResponse> {
+        reject_external_thread_import(&payload)?;
         let payload =
             require_metadata_only_thread(merge_path_payload("threadId", thread_id, payload));
         let payload = self.request("thread/resume", payload).await?;
@@ -326,6 +327,7 @@ impl CodexClient {
         thread_id: String,
         payload: Value,
     ) -> ApiResult<ThreadCommandResponse> {
+        reject_external_thread_import(&payload)?;
         let payload = self
             .request(
                 "thread/fork",
@@ -508,19 +510,26 @@ impl CodexClient {
         &self,
         detail: McpServerStatusDetail,
     ) -> ApiResult<McpServerListResponse> {
+        self.mcp_server_status_list_scoped(detail, None, None).await
+    }
+
+    pub(crate) async fn mcp_server_status_list_scoped(
+        &self,
+        detail: McpServerStatusDetail,
+        thread_id: Option<&str>,
+        server_name: Option<&str>,
+    ) -> ApiResult<McpServerListResponse> {
         let mut cursor: Option<String> = None;
         let mut servers = Vec::new();
         loop {
-            let payload = self
-                .request(
-                    "mcpServerStatus/list",
-                    json!({
-                        "cursor": cursor,
-                        "detail": detail,
-                        "limit": 100,
-                    }),
-                )
-                .await?;
+            let mut params = json!({"cursor": cursor, "detail": detail, "limit": 100});
+            if let Some(thread_id) = thread_id {
+                params["threadId"] = json!(thread_id);
+            }
+            if let Some(server_name) = server_name {
+                params["serverName"] = json!(server_name);
+            }
+            let payload = self.request("mcpServerStatus/list", params).await?;
             let response = McpServerStatusPage::from_payload(payload)?;
             servers.extend(response.data);
             match response.next_cursor {
@@ -533,19 +542,10 @@ impl CodexClient {
 
     pub async fn mcp_resource_read(
         &self,
-        server: String,
-        uri: String,
-        thread_id: Option<String>,
+        request: McpResourceReadRequest,
     ) -> ApiResult<McpResourceReadResponse> {
         let payload = self
-            .request(
-                "mcpServer/resource/read",
-                json!({
-                    "server": server,
-                    "threadId": thread_id,
-                    "uri": uri,
-                }),
-            )
+            .request("mcpServer/resource/read", serde_json::to_value(request)?)
             .await?;
         McpResourceReadResponse::from_payload(payload)
     }
@@ -693,6 +693,18 @@ impl CodexClient {
         validate_client_request_params(method, params.clone())?;
         self.app_server.request(method, params).await
     }
+}
+
+fn reject_external_thread_import(payload: &Value) -> ApiResult<()> {
+    if ["path", "history"]
+        .iter()
+        .any(|key| payload.get(key).is_some_and(|value| !value.is_null()))
+    {
+        return Err(ApiError::BadRequest(
+            "Thread commands require a native ID from the dedicated Kodex home; path/history imports are unavailable".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn is_rollout_load_error(error: &ApiError) -> bool {

@@ -103,7 +103,6 @@ export function buildAppSurfaceDocumentCsp(csp?: AppSurfaceDocumentCsp): string 
     `font-src ${resourceSrc}`,
     `connect-src ${connectSrc}`,
     "object-src 'none'",
-    "navigate-to 'none'",
     "form-action 'none'",
     `frame-src ${frameSrc}`,
     `base-uri ${baseUri}`,

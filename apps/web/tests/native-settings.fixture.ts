@@ -1,7 +1,7 @@
 import type { BrowserContext, Page, Route } from "@playwright/test";
 import { createServer, type ServerResponse } from "node:http";
 
-import type { Automation, AutomationRun, Capabilities, EventEnvelope, MarkThreadSeenRequest, QueuedInput, QueueTransfer, ThreadRead, ThreadSettingsResponse, UnreadBadgeResponse, ThreadSettingsUpdateRequest, ThreadViewPatch, ThreadViewResponse } from "../src/api/client";
+import type { AppSurfaceSession, Automation, AutomationRun, Capabilities, EventEnvelope, MarkThreadSeenRequest, QueuedInput, QueueTransfer, ThreadRead, ThreadSettingsResponse, UnreadBadgeResponse, ThreadSettingsUpdateRequest, ThreadViewPatch, ThreadViewResponse } from "../src/api/client";
 
 export async function nativeSettingsFixture(context: BrowserContext) {
   const settings: ThreadSettingsResponse = { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null };
@@ -214,6 +214,7 @@ export async function nativeSettingsFixture(context: BrowserContext) {
   return {
     settings, requests, pending, connections, unexpected, errors, settingsChanged,
     detail, badge, queuedInputs, transfers, deliveredTransfers, automations, automationRuns,
+    appSurfaceChanged(kind: "app_surface.session_upserted" | "app_surface.session_submitted" | "app_surface.session_archived", session: AppSurfaceSession, client?: string) { emit(kind, session, client); },
     automationRunChanged(automationId: string, client?: string) { emit("automation.run_updated", { automationId }, client); },
     queueChanged(client?: string, transfer = false) { emit(transfer ? "turn_queue.transfer_changed" : "turn_queue.changed", { threadId: detail.thread.id }, client); },
     readChanged(read: ThreadRead, count: number, client?: string) {

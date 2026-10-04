@@ -53,7 +53,7 @@ Generated app surfaces let Codex open or update temporary, thread-bound HTML whe
 - Keep embedded-data interactions such as tabs, filters, charts, and modals inside the iframe.
 - Use `ui/message` only when an action needs Codex, tools, persistence, continued workflow, or an explicit user decision.
 
-MCP tool and resource calls pass through gateway-owned grants and inherit Kodex's localhost/private-network security model. Generated-provider MCP tool calls also require user approval before execution. External network access remains denied unless an explicit future policy grants it.
+MCP tool and resource calls pass through gateway-owned grants and inherit Kodex's localhost/private-network security model. Generated-provider MCP tool calls also require user approval for the exact requested arguments and metadata before execution. Hosted MCP apps retain the app/account scope validated by their originating native call. Every app-surface tool requires an explicit Kodex chat ID; foreign MCP metadata cannot supply one. External network access remains denied unless an explicit future policy grants it.
 
 ## Example use
 

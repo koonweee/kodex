@@ -14,11 +14,15 @@ pub mod models;
 #[cfg(test)]
 mod native_config_tests;
 #[cfg(test)]
+mod native_control_target_tests;
+#[cfg(test)]
 mod native_control_tests;
 #[cfg(test)]
 mod native_history_tests;
 #[cfg(test)]
 mod native_identity_tests;
+#[cfg(test)]
+mod native_mcp_history_tests;
 #[cfg(test)]
 mod native_read_markers_tests;
 #[cfg(test)]
@@ -5282,15 +5286,6 @@ mod tests {
     #[tokio::test]
     async fn app_surface_upsert_read_document_bridge_and_archive() {
         let (state, app_server) = test_state().await;
-        app_server.queued_responses.lock().unwrap().extend([
-            json!({
-                "content": [{"type": "text", "text": "lookup complete"}],
-                "structuredContent": {"answer": 42},
-                "isError": false,
-                "_meta": {"trace": "tool-call-1"}
-            }),
-            json!({"turn": {"id": "turn-app-surface", "status": "inProgress"}}),
-        ]);
         let mut events = state.events.subscribe();
         let app = build_router(state.clone());
 
@@ -5432,7 +5427,6 @@ mod tests {
             .to_str()
             .unwrap();
         assert!(csp.contains("connect-src 'none'"));
-        assert!(csp.contains("navigate-to 'none'"));
         assert!(csp.contains("img-src https://cdn.example.test"));
         assert!(csp.contains("frame-src https://frame.example.test"));
         assert!(csp.contains("base-uri 'none'"));
@@ -5630,6 +5624,16 @@ mod tests {
         assert_eq!(approved["response"], json!({"decision": "accept"}));
         let resolved_event = recv_event_kind(&mut events, "approval.changed").await;
         assert!(resolved_event.seq > approval_event.seq);
+
+        app_server.queued_responses.lock().unwrap().extend([
+            json!({
+                "content": [{"type": "text", "text": "lookup complete"}],
+                "structuredContent": {"answer": 42},
+                "isError": false,
+                "_meta": {"trace": "tool-call-1"}
+            }),
+            json!({"turn": {"id": "turn-app-surface", "status": "inProgress"}}),
+        ]);
 
         let bridge_tool = app
             .clone()
@@ -5829,26 +5833,43 @@ mod tests {
         assert_eq!(active_after_message["session"]["status"], "active");
         assert!(active_after_message["session"]["submittedMessage"].is_null());
 
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[0].0, "mcpServer/tool/call");
-        assert_eq!(requests[0].1["server"], "docs");
-        assert_eq!(requests[0].1["threadId"], "thread-1");
-        assert_eq!(requests[0].1["tool"], "lookup");
-        assert_eq!(requests[0].1["arguments"], json!({"query": "answer"}));
-        assert_eq!(requests[0].1["_meta"], json!({"source": "iframe"}));
-        assert_eq!(requests.len(), 2);
-        assert_eq!(requests[1].0, "turn/start");
-        let client_id = requests[1].1["clientUserMessageId"].as_str().unwrap();
-        assert!(!client_id.is_empty());
-        assert_eq!(
-            requests[1].1,
-            json!({
-                "threadId": "thread-1",
-                "clientUserMessageId": client_id,
-                "input": [{"type": "text", "text": "Use the dashboard choice"}]
-            })
-        );
-        drop(requests);
+        {
+            let requests = app_server.requests.lock().unwrap();
+            assert_eq!(
+                requests
+                    .iter()
+                    .map(|(method, _)| method.as_str())
+                    .collect::<Vec<_>>(),
+                vec![
+                    "thread/read",
+                    "thread/read",
+                    "mcpServer/tool/call",
+                    "turn/start"
+                ]
+            );
+            for (_, params) in &requests[..2] {
+                assert_eq!(params, &json!({"threadId":"thread-1","includeTurns":false}));
+            }
+            let requests = &requests[2..];
+            assert_eq!(requests[0].0, "mcpServer/tool/call");
+            assert_eq!(requests[0].1["server"], "docs");
+            assert_eq!(requests[0].1["threadId"], "thread-1");
+            assert_eq!(requests[0].1["tool"], "lookup");
+            assert_eq!(requests[0].1["arguments"], json!({"query": "answer"}));
+            assert_eq!(requests[0].1["_meta"], json!({"source": "iframe"}));
+            assert_eq!(requests.len(), 2);
+            assert_eq!(requests[1].0, "turn/start");
+            let client_id = requests[1].1["clientUserMessageId"].as_str().unwrap();
+            assert!(!client_id.is_empty());
+            assert_eq!(
+                requests[1].1,
+                json!({
+                    "threadId": "thread-1",
+                    "clientUserMessageId": client_id,
+                    "input": [{"type": "text", "text": "Use the dashboard choice"}]
+                })
+            );
+        }
 
         let archived = app
             .clone()
@@ -5912,132 +5933,6 @@ mod tests {
                 && event.payload["method"] == "tools/call"
                 && event.payload["status"] == "error"
         }));
-    }
-
-    #[tokio::test]
-    async fn thread_detail_syncs_mcp_app_surface_without_revision_churn() {
-        let (state, app_server) = test_state().await;
-        app_server.queued_responses.lock().unwrap().extend([
-            thread_read_response("thread-1", 0),
-            json!({
-                "data": [mcp_app_turn()],
-                "nextCursor": null,
-                "backwardsCursor": null
-            }),
-            json!({
-                "data": [{"id": "turn-mcp", "status": "completed", "items": [], "itemsView": "notLoaded"}],
-                "nextCursor": null,
-                "backwardsCursor": null
-            }),
-            json!({
-                "contents": [{
-                    "uri": "ui://docs/dashboard",
-                    "mimeType": "text/html;profile=mcp-app",
-                    "text": "<!doctype html><h1>Docs dashboard</h1>"
-                }]
-            }),
-            json!({
-                "data": [mcp_server_status_with_visibility()],
-                "nextCursor": null
-            }),
-            thread_read_response("thread-1", 0),
-            json!({
-                "data": [mcp_app_turn()],
-                "nextCursor": null,
-                "backwardsCursor": null
-            }),
-            json!({
-                "data": [{"id": "turn-mcp", "status": "completed", "items": [], "itemsView": "notLoaded"}],
-                "nextCursor": null,
-                "backwardsCursor": null
-            }),
-        ]);
-        let mut events = state.events.subscribe();
-        let app = build_router(state.clone());
-
-        let first = app
-            .clone()
-            .oneshot(
-                Request::get("/v1/threads/thread-1")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(first.status(), StatusCode::OK);
-        let first_surface_event =
-            recv_event_kind(&mut events, "app_surface.session_upserted").await;
-        let session_id = first_surface_event.payload["id"]
-            .as_str()
-            .unwrap()
-            .to_string();
-        assert_eq!(first_surface_event.payload["revision"], 1);
-
-        let first_surface = state
-            .store
-            .latest_app_surface_session("thread-1")
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(first_surface.id, session_id);
-        assert_eq!(first_surface.revision, 1);
-        assert_eq!(first_surface.provider.as_str(), "mcp");
-
-        let second = app
-            .clone()
-            .oneshot(
-                Request::get("/v1/threads/thread-1")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(second.status(), StatusCode::OK);
-        let second_surface = state
-            .store
-            .latest_app_surface_session("thread-1")
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(second_surface.id, session_id);
-        assert_eq!(second_surface.revision, 1);
-
-        let read = app
-            .oneshot(
-                Request::get("/v1/threads/thread-1/app-surface")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(read.status(), StatusCode::OK);
-        let read = response_json(read).await;
-        assert_eq!(read["session"]["id"], session_id);
-        assert_eq!(read["session"]["revision"], 1);
-        assert_eq!(read["session"]["provider"], "mcp");
-        assert_eq!(
-            read["session"]["grants"]["tools"],
-            json!([{"name": "lookup", "server": "docs", "tool": "lookup"}])
-        );
-
-        let requests = app_server.requests.lock().unwrap();
-        let methods = requests
-            .iter()
-            .map(|(method, _)| method.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            methods,
-            vec![
-                "thread/read",
-                "thread/turns/list",
-                "thread/turns/list",
-                "mcpServer/resource/read",
-                "mcpServerStatus/list",
-                "thread/read",
-                "thread/turns/list",
-                "thread/turns/list",
-            ]
-        );
     }
 
     #[tokio::test]
@@ -9851,55 +9746,6 @@ mod tests {
                 "uriTemplate": "file:///docs/{id}",
                 "mimeType": "text/plain"
             }]
-        })
-    }
-
-    fn mcp_server_status_with_visibility() -> Value {
-        json!({
-            "name": "docs",
-            "authStatus": "unsupported",
-            "tools": {
-                "lookup": {
-                    "name": "lookup",
-                    "description": "Lookup docs",
-                    "inputSchema": {},
-                    "_meta": {"ui": {"visibility": ["app"]}}
-                },
-                "model_only": {
-                    "name": "model_only",
-                    "description": "Model-only docs",
-                    "inputSchema": {},
-                    "_meta": {"ui": {"visibility": ["model"]}}
-                }
-            },
-            "resources": [],
-            "resourceTemplates": []
-        })
-    }
-
-    fn mcp_app_turn() -> Value {
-        json!({
-            "id": "turn-mcp",
-            "status": {"type": "completed"},
-            "items": [mcp_app_tool_item()]
-        })
-    }
-
-    fn mcp_app_tool_item() -> Value {
-        json!({
-            "id": "item-mcp-app",
-            "type": "mcpToolCall",
-            "server": "docs",
-            "tool": "lookup",
-            "arguments": {"query": "widgets"},
-            "status": "completed",
-            "mcpAppResourceUri": "ui://docs/dashboard",
-            "result": {
-                "content": [{"type": "text", "text": "Dashboard ready"}],
-                "structuredContent": {"count": 3},
-                "_meta": {"trace": "mcp-result-1"}
-            },
-            "error": null
         })
     }
 

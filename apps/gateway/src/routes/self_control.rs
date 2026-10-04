@@ -471,6 +471,7 @@ pub async fn get_self_control_app_surface(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
 ) -> ApiResult<Json<AppSurfaceSessionReadResponse>> {
+    require_control_thread(&state, &thread_id).await?;
     crate::routes::app_surfaces::get_thread_app_surface(State(state), Path(thread_id)).await
 }
 
@@ -497,6 +498,7 @@ pub async fn upsert_self_control_generated_app_surface(
         ));
     }
     let grants = validate_app_surface_grants(AppSurfaceProvider::Generated, request.grants)?;
+    require_control_thread(&state, &thread_id).await?;
     let display_modes = if request.display_modes.is_empty() {
         vec!["inline".to_string(), "fullscreen".to_string()]
     } else {
@@ -567,6 +569,7 @@ pub async fn request_self_control_app_surface_presentation(
     Json(request): Json<SelfControlAppSurfacePresentationRequest>,
 ) -> ApiResult<Json<AppSurfacePresentationResponse>> {
     enforce_self_control_depth(request.max_self_control_depth)?;
+    require_control_thread(&state, &thread_id).await?;
     let session = state
         .store
         .latest_app_surface_session(&thread_id)
@@ -626,6 +629,7 @@ pub async fn archive_self_control_app_surface(
     request: Option<Json<SelfControlMutationRequest>>,
 ) -> ApiResult<Json<AppSurfaceSessionReadResponse>> {
     let source = optional_source(request);
+    require_control_thread(&state, &thread_id).await?;
     let session = state
         .store
         .archive_latest_app_surface_session(&thread_id)
@@ -839,6 +843,23 @@ pub struct SelfControlMarkThreadSeenRequest {
     pub source: SelfControlSource,
 }
 
+// External caller metadata and extension rows never establish native ownership.
+// A metadata-only read checks this runtime without loading or importing a chat.
+async fn require_control_thread(state: &AppState, thread_id: &str) -> ApiResult<()> {
+    if thread_id.trim().is_empty() {
+        return Err(ApiError::BadRequest("threadId must not be empty".into()));
+    }
+    let thread = app_server_api::client(&state.app_server)
+        .thread_read_summary(thread_id.to_owned())
+        .await?;
+    if thread.id != thread_id {
+        return Err(ApiError::BadGateway(
+            "native thread/read returned a different thread identity".into(),
+        ));
+    }
+    Ok(())
+}
+
 #[utoipa::path(
     post,
     path = "/v1/self-control/threads/{threadId}/attach",
@@ -871,6 +892,7 @@ pub async fn resume_self_control_thread(
     Path(thread_id): Path<String>,
     request: Option<Json<SelfControlThreadPayloadMutationRequest>>,
 ) -> ApiResult<Json<ThreadCommandResponse>> {
+    require_control_thread(&state, &thread_id).await?;
     let request = request.map(|Json(request)| request).unwrap_or_else(|| {
         SelfControlThreadPayloadMutationRequest {
             payload: json!({}),
@@ -905,6 +927,7 @@ pub async fn fork_self_control_thread(
     Path(thread_id): Path<String>,
     request: Option<Json<SelfControlThreadPayloadMutationRequest>>,
 ) -> ApiResult<Json<ThreadCommandResponse>> {
+    require_control_thread(&state, &thread_id).await?;
     let request = request.map(|Json(request)| request).unwrap_or_else(|| {
         SelfControlThreadPayloadMutationRequest {
             payload: json!({}),

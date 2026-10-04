@@ -33,6 +33,13 @@ pub const APP_SURFACE_MODEL_CONTEXT_UPDATED_EVENT: &str = "app_surface.model_con
 pub const APP_SURFACE_PRESENTATION_REQUESTED_EVENT: &str = "app_surface.presentation_requested";
 pub const APP_SURFACE_BRIDGE_APPROVAL_METHOD: &str = "appSurface/bridge/requestApproval";
 
+#[cfg(test)]
+#[path = "app_surfaces/approval_tests.rs"]
+mod approval_tests;
+#[cfg(test)]
+#[path = "app_surfaces/scope_tests.rs"]
+mod scope_tests;
+
 const MAX_BRIDGE_MESSAGE_BYTES: usize = 16 * 1024;
 const APP_SURFACE_SIZE_CHANGED_METHOD: &str = "ui/notifications/size-changed";
 
@@ -451,8 +458,20 @@ async fn bridge_resource_read(
         .ok_or_else(|| {
             ApiError::BadRequest("app surface resource grant has no server".to_string())
         })?;
+    let resource_request = if session.provider == AppSurfaceProvider::Mcp && server == "codex_apps"
+    {
+        crate::app_surfaces::scope::HostedAppScope::from_provenance(&session.provenance["mcp"])?
+            .resource_request(uri, session.thread_id)
+    } else {
+        crate::app_server_api::McpResourceReadRequest {
+            server,
+            uri,
+            thread_id: Some(session.thread_id),
+            ..Default::default()
+        }
+    };
     let response = crate::app_server_api::client(&state.app_server)
-        .mcp_resource_read(server, uri, Some(session.thread_id))
+        .mcp_resource_read(resource_request)
         .await?;
     serde_json::to_value(response).map_err(Into::into)
 }
@@ -477,13 +496,23 @@ async fn bridge_tool_call(
             return Ok(result);
         }
     }
+    let meta = if session.provider == AppSurfaceProvider::Mcp && server == "codex_apps" {
+        Some(
+            crate::app_surfaces::scope::HostedAppScope::from_provenance(
+                &session.provenance["mcp"],
+            )?
+            .tool_meta(request.params.get("arguments"), request.params.get("_meta"))?,
+        )
+    } else {
+        request.params.get("_meta").cloned()
+    };
     let response = crate::app_server_api::client(&state.app_server)
         .mcp_tool_call(McpServerToolCallRequest {
             server,
             thread_id: session.thread_id,
             tool,
             arguments: request.params.get("arguments").cloned(),
-            meta: request.params.get("_meta").cloned(),
+            meta,
         })
         .await?;
     serde_json::to_value(response).map_err(Into::into)
@@ -498,11 +527,28 @@ async fn require_generated_tool_approval(
 ) -> ApiResult<Option<Value>> {
     if let Some(approval_id) = request.params.get("approvalId").and_then(Value::as_str) {
         let approval = state.store.get_approval(approval_id).await?;
-        validate_bridge_tool_approval(&approval, session, server, tool)?;
+        validate_bridge_tool_approval(&approval, session, request, server, tool)?;
         return Ok(None);
     }
 
-    let approval = crate::approvals::create_local(state, NewApproval {
+    let mut payload = json!({
+        "sessionId": session.id,
+        "revision": session.revision,
+        "provider": session.provider,
+        "method": "tools/call",
+        "server": server,
+        "tool": tool,
+        "message": format!("App surface \"{}\" wants to call MCP tool {server}/{tool}.", session.title),
+        "reason": "Generated app surfaces require approval before MCP tool execution."
+    });
+    for field in ["arguments", "_meta"] {
+        if let Some(value) = request.params.get(field) {
+            payload[field] = value.clone();
+        }
+    }
+    let approval = crate::approvals::create_local(
+        state,
+        NewApproval {
             request_id: format!(
                 "app-surface-bridge:{}:{}:{}",
                 session.id,
@@ -513,18 +559,10 @@ async fn require_generated_tool_approval(
             turn_id: None,
             item_id: None,
             method: APP_SURFACE_BRIDGE_APPROVAL_METHOD.to_string(),
-            payload: json!({
-                "sessionId": session.id,
-                "revision": session.revision,
-                "provider": session.provider,
-                "method": "tools/call",
-                "server": server,
-                "tool": tool,
-                "message": format!("App surface \"{}\" wants to call MCP tool {server}/{tool}.", session.title),
-                "reason": "Generated app surfaces require approval before MCP tool execution."
-            }),
-        })
-        .await?;
+            payload,
+        },
+    )
+    .await?;
     Ok(Some(json!({
         "approvalRequired": true,
         "approvalId": approval.id,
@@ -535,6 +573,7 @@ async fn require_generated_tool_approval(
 fn validate_bridge_tool_approval(
     approval: &Approval,
     session: &AppSurfaceSession,
+    request: &AppSurfaceBridgeRequest,
     server: &str,
     tool: &str,
 ) -> ApiResult<()> {
@@ -554,6 +593,8 @@ fn validate_bridge_tool_approval(
         || approval.payload.get("method").and_then(Value::as_str) != Some("tools/call")
         || approval.payload.get("server").and_then(Value::as_str) != Some(server)
         || approval.payload.get("tool").and_then(Value::as_str) != Some(tool)
+        || approval.payload.get("arguments") != request.params.get("arguments")
+        || approval.payload.get("_meta") != request.params.get("_meta")
     {
         return Err(ApiError::BadRequest(
             "approval does not match this app surface bridge call".to_string(),

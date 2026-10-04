@@ -385,6 +385,8 @@ describe("gateway instance bootstrap", () => {
     { kind: "native config", queryKey: queryKeys.mcpConfiguredServers, trigger: "foreground" },
     { kind: "native subagents", queryKey: queryKeys.threadSubagents("ancestor"), trigger: "stream open" },
     { kind: "native subagents", queryKey: queryKeys.threadSubagents("ancestor"), trigger: "foreground" },
+    { kind: "app surface", queryKey: queryKeys.appSurface("native-chat"), trigger: "stream open" },
+    { kind: "app surface", queryKey: queryKeys.appSurface("native-chat"), trigger: "foreground" },
   ])("cancels a pre-recovery $kind read on $trigger while preserving the same-instance draft", async ({ queryKey, trigger }) => {
     const queryClient = createKodexQueryClient();
     let finishOld!: (value: string) => void;

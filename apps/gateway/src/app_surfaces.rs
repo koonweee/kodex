@@ -4,7 +4,7 @@ use utoipa::ToSchema;
 
 use crate::{
     api::AppState,
-    app_server_api::{client as app_server_client, McpServerStatusDetail, ThreadTurnSnapshot},
+    app_server_api::{client as app_server_client, McpServerStatusDetail},
     error::{ApiError, ApiResult},
     store::{
         AppSurfaceCsp, AppSurfaceGrants, AppSurfacePermissions, AppSurfaceProvider,
@@ -14,6 +14,13 @@ use crate::{
 
 pub const MCP_APP_MIME_TYPE: &str = "text/html;profile=mcp-app";
 pub const APP_SURFACE_HTML_MAX_BYTES: usize = 4 * 1024 * 1024;
+
+mod candidate;
+pub(crate) mod scope;
+#[cfg(test)]
+mod scope_tests;
+
+use candidate::McpAppSurfaceCandidate;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -194,26 +201,8 @@ pub fn app_surface_csp(csp: &AppSurfaceCsp) -> String {
     let frame_src = csp_source_list(&csp.frame_domains, "'none'");
     let base_uri = csp_source_list(&csp.base_uri_domains, "'none'");
     format!(
-        "default-src 'none'; script-src 'self' 'unsafe-inline' {resource_src}; style-src 'self' 'unsafe-inline' {resource_src}; img-src {resource_src}; font-src {resource_src}; media-src {resource_src}; connect-src {connect_src}; object-src 'none'; navigate-to 'none'; form-action 'none'; frame-src {frame_src}; base-uri {base_uri}"
+        "default-src 'none'; script-src 'self' 'unsafe-inline' {resource_src}; style-src 'self' 'unsafe-inline' {resource_src}; img-src {resource_src}; font-src {resource_src}; media-src {resource_src}; connect-src {connect_src}; object-src 'none'; form-action 'none'; frame-src {frame_src}; base-uri {base_uri}"
     )
-}
-
-pub async fn sync_mcp_app_surfaces_for_turns(
-    state: &AppState,
-    thread_id: &str,
-    turns: &[ThreadTurnSnapshot],
-) -> ApiResult<Vec<AppSurfaceSession>> {
-    let mut sessions = Vec::new();
-    for turn in turns {
-        for item in &turn.items {
-            if let Some(session) =
-                sync_mcp_app_surface_for_item(state, thread_id, &turn.id, &item.raw_payload).await?
-            {
-                sessions.push(session);
-            }
-        }
-    }
-    Ok(sessions)
 }
 
 pub async fn sync_mcp_app_surface_for_item(
@@ -256,15 +245,35 @@ async fn upsert_mcp_app_surface_from_candidate(
         status,
         signature,
         title,
+        app_context,
+        mcp_app_ui,
     } = candidate;
     let client = app_server_client(&state.app_server);
     let resource = client
-        .mcp_resource_read(
-            server.clone(),
-            resource_uri.clone(),
-            Some(thread_id.to_string()),
-        )
+        .mcp_resource_read(crate::app_server_api::McpResourceReadRequest {
+            server: server.clone(),
+            uri: resource_uri.clone(),
+            thread_id: Some(thread_id.to_string()),
+            origin_call_id: Some(item_id.clone()),
+            connector_id: app_context
+                .get("connectorId")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            ..Default::default()
+        })
         .await?;
+    if server == "codex_apps" && resource.origin_call_id.as_deref() != Some(item_id.as_str()) {
+        return Err(ApiError::BadGateway(
+            "hosted MCP widget read did not validate its native origin".into(),
+        ));
+    }
+    let origin_call_id = resource.origin_call_id.clone();
+    let provenance_mcp = serde_json::json!({"itemId":item_id,"originCallId":origin_call_id,"appContext":app_context});
+    let scope = if server == "codex_apps" {
+        Some(scope::HostedAppScope::from_provenance(&provenance_mcp)?)
+    } else {
+        None
+    };
     let Some(content) = resource.contents.into_iter().find(|content| {
         content
             .get("uri")
@@ -290,7 +299,7 @@ async fn upsert_mcp_app_surface_from_candidate(
     let resource_metadata = AppSurfaceUiMetadata::from_resource_meta(
         content.get("_meta").or_else(|| content.get("meta")),
     );
-    let grants = mcp_app_surface_grants(state, &server).await?;
+    let grants = mcp_app_surface_grants(state, thread_id, &server, scope.as_ref()).await?;
     let title = validate_app_surface_title(title.unwrap_or_else(|| tool.clone()))?;
     let fallback_content = mcp_tool_result_content_text(result.as_ref())
         .filter(|text| !text.trim().is_empty())
@@ -315,6 +324,9 @@ async fn upsert_mcp_app_surface_from_candidate(
                     "tool": tool,
                     "turnId": turn_id,
                     "itemId": item_id,
+                    "originCallId": origin_call_id,
+                    "appContext": app_context,
+                    "mcpAppUi": mcp_app_ui,
                     "resourceUri": resource_uri,
                     "arguments": arguments,
                     "result": result,
@@ -372,10 +384,16 @@ fn app_surface_html_from_content(content: &Value) -> ApiResult<Option<String>> {
 
 async fn mcp_app_surface_grants(
     state: &AppState,
+    thread_id: &str,
     server_name: &str,
+    scope: Option<&scope::HostedAppScope>,
 ) -> ApiResult<AppSurfaceGrants> {
     let inventory = app_server_client(&state.app_server)
-        .mcp_server_status_list(McpServerStatusDetail::Full)
+        .mcp_server_status_list_scoped(
+            McpServerStatusDetail::Full,
+            Some(thread_id),
+            Some(server_name),
+        )
         .await?;
     let Some(server) = inventory
         .servers
@@ -388,6 +406,7 @@ async fn mcp_app_surface_grants(
         .tools
         .into_values()
         .filter(|tool| AppSurfaceUiMetadata::from_tool_meta(tool.meta.as_ref()).app_visible())
+        .filter(|tool| scope.is_none_or(|scope| scope.matches_descriptor(tool.meta.as_ref())))
         .map(|tool| AppSurfaceToolGrant {
             name: Some(tool.name.clone()),
             server: server_name.to_string(),
@@ -397,6 +416,9 @@ async fn mcp_app_surface_grants(
     let resources = server
         .resources
         .into_iter()
+        .filter(|resource| {
+            scope.is_none_or(|scope| scope.matches_descriptor(resource.meta.as_ref()))
+        })
         .map(|resource| AppSurfaceResourceGrant {
             server: Some(server_name.to_string()),
             uri: resource.uri,
@@ -409,82 +431,6 @@ async fn mcp_app_surface_grants(
         can_update_model_context: true,
         can_open_links: false,
     })
-}
-
-struct McpAppSurfaceCandidate {
-    turn_id: String,
-    item_id: String,
-    server: String,
-    tool: String,
-    resource_uri: String,
-    arguments: Option<Value>,
-    result: Option<Value>,
-    error: Option<Value>,
-    status: Option<String>,
-    signature: Value,
-    title: Option<String>,
-}
-
-impl McpAppSurfaceCandidate {
-    fn from_item(turn_id: &str, item: &Value) -> Option<Self> {
-        let item_type = string_field(item, "type")?;
-        if item_type != "mcpToolCall" {
-            return None;
-        }
-        let item_id = string_field(item, "id")?;
-        let server = string_field(item, "server")?;
-        let tool = string_field(item, "tool").or_else(|| string_field(item, "toolName"))?;
-        let resource_uri = mcp_app_resource_uri(item)?;
-        let arguments = item.get("arguments").cloned();
-        let result = item
-            .get("result")
-            .filter(|result| result.is_object())
-            .cloned();
-        let error = item.get("error").filter(|error| !error.is_null()).cloned();
-        let status = string_field(item, "status");
-        let title = item
-            .get("title")
-            .and_then(Value::as_str)
-            .or_else(|| item.get("name").and_then(Value::as_str))
-            .map(str::to_string);
-        let signature = serde_json::json!({
-            "turnId": turn_id,
-            "itemId": item_id,
-            "server": server,
-            "tool": tool,
-            "resourceUri": resource_uri,
-            "arguments": arguments,
-            "result": result,
-            "error": error,
-            "status": status
-        });
-        Some(Self {
-            turn_id: turn_id.to_string(),
-            item_id,
-            server,
-            tool,
-            resource_uri,
-            arguments,
-            result,
-            error,
-            status,
-            signature,
-            title,
-        })
-    }
-}
-
-fn mcp_app_resource_uri(item: &Value) -> Option<String> {
-    string_field(item, "mcpAppResourceUri")
-        .or_else(|| {
-            item.get("result")
-                .and_then(|result| result.get("_meta"))
-                .and_then(|meta| AppSurfaceUiMetadata::from_tool_meta(Some(meta)).resource_uri)
-        })
-        .or_else(|| {
-            item.get("_meta")
-                .and_then(|meta| AppSurfaceUiMetadata::from_tool_meta(Some(meta)).resource_uri)
-        })
 }
 
 fn mcp_tool_result_content_text(result: Option<&Value>) -> Option<String> {
@@ -501,14 +447,6 @@ fn mcp_tool_result_content_text(result: Option<&Value>) -> Option<String> {
     } else {
         Some(text)
     }
-}
-
-fn string_field(value: &Value, field: &str) -> Option<String> {
-    value
-        .get(field)
-        .and_then(Value::as_str)
-        .filter(|value| !value.trim().is_empty())
-        .map(str::to_string)
 }
 
 fn string_array(value: Option<&Value>) -> Vec<String> {

@@ -10,14 +10,16 @@ use tokio::time::{sleep, Duration, Instant};
 
 mod sections;
 mod subagents;
+#[cfg(test)]
+mod target_tests;
+#[cfg(test)]
+mod wait_tests;
 use crate::routes::thread_sections::ThreadSectionListQuery;
 use sections::{
     CreateSectionToolParams, DeleteSectionToolParams, MoveThreadToSectionToolParams,
     SectionThreadsToolParams, UpdateSectionToolParams,
 };
 use subagents::ListSubagentsToolParams;
-
-const MCP_TOOL_THREAD_ID_META_KEY: &str = "threadId";
 
 #[derive(Clone)]
 pub struct KodexControlMcp {
@@ -273,8 +275,8 @@ pub struct ThreadMutationToolParams {
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSurfaceToolParams {
-    #[serde(default, alias = "thread_id", skip_serializing_if = "Option::is_none")]
-    pub thread_id: Option<String>,
+    #[serde(alias = "thread_id")]
+    pub thread_id: String,
     pub title: String,
     pub html: String,
     pub fallback_content: String,
@@ -363,8 +365,8 @@ pub struct AppSurfaceToolGrants {
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSurfaceThreadToolParams {
-    #[serde(default, alias = "thread_id", skip_serializing_if = "Option::is_none")]
-    pub thread_id: Option<String>,
+    #[serde(alias = "thread_id")]
+    pub thread_id: String,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, schemars::JsonSchema)]
@@ -381,8 +383,8 @@ fn default_app_surface_presentation_action() -> AppSurfacePresentationAction {
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSurfacePresentationToolParams {
-    #[serde(default, alias = "thread_id", skip_serializing_if = "Option::is_none")]
-    pub thread_id: Option<String>,
+    #[serde(alias = "thread_id")]
+    pub thread_id: String,
     #[serde(default = "default_app_surface_presentation_action")]
     pub action: AppSurfacePresentationAction,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -394,8 +396,8 @@ pub struct AppSurfacePresentationToolParams {
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSurfaceMutationToolParams {
-    #[serde(default, alias = "thread_id", skip_serializing_if = "Option::is_none")]
-    pub thread_id: Option<String>,
+    #[serde(alias = "thread_id")]
+    pub thread_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<Value>,
 }
@@ -569,6 +571,7 @@ pub struct WaitForThreadIdleToolParams {
 pub struct WaitForThreadEventToolParams {
     #[serde(alias = "thread_id")]
     pub thread_id: String,
+    /// Event kind, such as threadViewPatch or queueChanged (turn_queue.changed).
     pub kind: String,
     pub timeout_ms: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -578,15 +581,14 @@ pub struct WaitForThreadEventToolParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WaitForAutomationRunToolParams {
     #[serde(alias = "automation_id")]
     pub automation_id: String,
     pub timeout_ms: u64,
+    /// Latest run ID already observed. Omit to accept the latest existing run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub after_last_run_at: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub after_last_native_queue_id: Option<String>,
+    pub after_run_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub poll_interval_ms: Option<u64>,
 }
@@ -773,42 +775,33 @@ impl KodexControlMcp {
     }
 
     #[tool(
-        description = "Open a generated app surface in the invoking Kodex thread by default, or an explicit threadId. App surfaces are host-originated MCP Apps: provide MCP App-compatible HTML as self-contained `text/html;profile=mcp-app`, meaningful fallbackContent for text-only hosts, declared CSP/permissions metadata, and declared grants for any JSON-RPC bridge access. Pass `csp`, `permissions`, and `grants` as JSON objects, never as serialized JSON strings or CSP header text. Inside the iframe use MCP Apps JSON-RPC over postMessage: `ui/message` with `{ role: \"user\", content: { type: \"text\", text } }`, `tools/call` with a granted app-local `{ name, arguments }`, and `resources/read` with `{ uri }`. If any control sends `ui/message`, declare `grants.canSendMessage: true`. Generated HTML using legacy generated UI submit events is rejected. The pane focuses by default when presentation is omitted; set presentation to \"open\" only when intentionally opening it quietly."
+        description = "Open a generated app surface in the explicitly selected Kodex-owned threadId. App surfaces are host-originated MCP Apps: provide MCP App-compatible HTML as self-contained `text/html;profile=mcp-app`, meaningful fallbackContent for text-only hosts, declared CSP/permissions metadata, and declared grants for any JSON-RPC bridge access. Pass `csp`, `permissions`, and `grants` as JSON objects, never as serialized JSON strings or CSP header text. Inside the iframe use MCP Apps JSON-RPC over postMessage: `ui/message` with `{ role: \"user\", content: { type: \"text\", text } }`, `tools/call` with a granted app-local `{ name, arguments }`, and `resources/read` with `{ uri }`. If any control sends `ui/message`, declare `grants.canSendMessage: true`. Generated HTML using legacy generated UI submit events is rejected. The pane focuses by default when presentation is omitted; set presentation to \"open\" only when intentionally opening it quietly."
     )]
     async fn open_app_surface(
         &self,
         Parameters(params): Parameters<AppSurfaceToolParams>,
-        meta: Meta,
     ) -> Result<CallToolResult, McpError> {
-        upsert_app_surface_tool(
-            self,
-            params,
-            meta,
-            Some(AppSurfacePresentationAction::Focus),
-        )
-        .await
+        upsert_app_surface_tool(self, params, Some(AppSurfacePresentationAction::Focus)).await
     }
 
     #[tool(
-        description = "Replace the latest generated app-surface revision for the invoking Kodex thread by default, or an explicit threadId. Keep the new revision MCP Apps-compatible: use JSON-RPC methods such as `ui/message`, `tools/call { name, arguments }`, and `resources/read { uri }`; declare CSP/permissions metadata and any tool grants with app-local names; provide meaningful fallbackContent. Pass `csp`, `permissions`, and `grants` as JSON objects, never as serialized JSON strings or CSP header text. Optional presentation controls whether the browser should open the pane without switching focus (\"open\") or switch focus to it (\"focus\") when this revision arrives."
+        description = "Replace the latest generated app-surface revision for the explicitly selected Kodex-owned threadId. Keep the new revision MCP Apps-compatible: use JSON-RPC methods such as `ui/message`, `tools/call { name, arguments }`, and `resources/read { uri }`; declare CSP/permissions metadata and any tool grants with app-local names; provide meaningful fallbackContent. Pass `csp`, `permissions`, and `grants` as JSON objects, never as serialized JSON strings or CSP header text. Optional presentation controls whether the browser should open the pane without switching focus (\"open\") or switch focus to it (\"focus\") when this revision arrives."
     )]
     async fn update_app_surface(
         &self,
         Parameters(params): Parameters<AppSurfaceToolParams>,
-        meta: Meta,
     ) -> Result<CallToolResult, McpError> {
-        upsert_app_surface_tool(self, params, meta, None).await
+        upsert_app_surface_tool(self, params, None).await
     }
 
     #[tool(
-        description = "Read the latest app-surface metadata for the invoking Kodex thread by default, or for an explicit threadId override"
+        description = "Read the latest app-surface metadata for the explicitly selected Kodex-owned threadId"
     )]
     async fn get_app_surface(
         &self,
         Parameters(params): Parameters<AppSurfaceThreadToolParams>,
-        meta: Meta,
     ) -> Result<CallToolResult, McpError> {
-        let thread_id = resolve_app_surface_thread_id(params.thread_id, &meta)?;
+        let thread_id = validate_app_surface_thread_id(params.thread_id)?;
         Ok(json_tool_result(
             self.get_json(&format!(
                 "/v1/self-control/threads/{}/app-surface",
@@ -819,25 +812,23 @@ impl KodexControlMcp {
     }
 
     #[tool(
-        description = "Open or focus the latest app-surface pane for the invoking Kodex thread by default, or an explicit threadId. Use action \"open\" to make the pane available without switching focus, or \"focus\" to switch the user's workspace to it. This preserves the server-side app-surface session/revision, but if the previous pane iframe was closed or unmounted, unsaved local UI state inside that iframe may reset."
+        description = "Open or focus the latest app-surface pane for the explicitly selected Kodex-owned threadId. Use action \"open\" to make the pane available without switching focus, or \"focus\" to switch the user's workspace to it. This preserves the server-side app-surface session/revision, but if the previous pane iframe was closed or unmounted, unsaved local UI state inside that iframe may reset."
     )]
     async fn show_app_surface(
         &self,
         Parameters(params): Parameters<AppSurfacePresentationToolParams>,
-        meta: Meta,
     ) -> Result<CallToolResult, McpError> {
-        show_app_surface_tool(self, params, meta).await
+        show_app_surface_tool(self, params).await
     }
 
     #[tool(
-        description = "Archive the latest app surface for the invoking Kodex thread by default, or for an explicit threadId override"
+        description = "Archive the latest app surface for the explicitly selected Kodex-owned threadId"
     )]
     async fn archive_app_surface(
         &self,
         Parameters(params): Parameters<AppSurfaceMutationToolParams>,
-        meta: Meta,
     ) -> Result<CallToolResult, McpError> {
-        let thread_id = resolve_app_surface_thread_id(params.thread_id.clone(), &meta)?;
+        let thread_id = validate_app_surface_thread_id(params.thread_id.clone())?;
         let mut body = json_object(params)?;
         body.remove("threadId");
         Ok(json_tool_result(
@@ -1406,7 +1397,9 @@ impl KodexControlMcp {
         }
     }
 
-    #[tool(description = "Wait with bounded polling until an automation records a new run")]
+    #[tool(
+        description = "Wait with bounded polling for the latest automation run record to differ from afterRunId. Includes scheduled and run-now records. A matched record describes admission state, not inference completion."
+    )]
     async fn wait_for_automation_run(
         &self,
         Parameters(params): Parameters<WaitForAutomationRunToolParams>,
@@ -1414,21 +1407,17 @@ impl KodexControlMcp {
         let deadline = wait_deadline(params.timeout_ms);
         let poll = poll_interval(params.poll_interval_ms);
         let path = format!(
-            "/v1/self-control/automations/{}",
+            "/v1/automations/{}/runs",
             path_segment(&params.automation_id)
         );
         loop {
             let response = self.get_json(&path).await?;
-            if automation_run_changed(
-                &response,
-                params.after_last_run_at.as_deref(),
-                params.after_last_native_queue_id.as_deref(),
-            ) {
+            if let Some(run) = newest_automation_run(&response, params.after_run_id.as_deref()) {
                 return Ok(json_tool_result(json!({
                     "status": "matched",
                     "condition": "automationRun",
                     "automationId": params.automation_id,
-                    "response": response,
+                    "run": run,
                 })));
             }
             if Instant::now() >= deadline {
@@ -1772,20 +1761,18 @@ fn spawn_thread_body(params: SpawnThreadToolParams) -> Result<Map<String, Value>
 async fn upsert_app_surface_tool(
     service: &KodexControlMcp,
     params: AppSurfaceToolParams,
-    meta: Meta,
     default_presentation: Option<AppSurfacePresentationAction>,
 ) -> Result<CallToolResult, McpError> {
     Ok(json_tool_result(
-        upsert_app_surface_value(service, params, meta, default_presentation).await?,
+        upsert_app_surface_value(service, params, default_presentation).await?,
     ))
 }
 
 async fn show_app_surface_tool(
     service: &KodexControlMcp,
     params: AppSurfacePresentationToolParams,
-    meta: Meta,
 ) -> Result<CallToolResult, McpError> {
-    let thread_id = resolve_app_surface_thread_id(params.thread_id.clone(), &meta)?;
+    let thread_id = validate_app_surface_thread_id(params.thread_id.clone())?;
     let mut body = json_object(params)?;
     body.remove("threadId");
     normalize_self_control_source_shorthand(&mut body)?;
@@ -1805,10 +1792,9 @@ async fn show_app_surface_tool(
 async fn upsert_app_surface_value(
     service: &KodexControlMcp,
     params: AppSurfaceToolParams,
-    meta: Meta,
     default_presentation: Option<AppSurfacePresentationAction>,
 ) -> Result<Value, McpError> {
-    let thread_id = resolve_app_surface_thread_id(params.thread_id.clone(), &meta)?;
+    let thread_id = validate_app_surface_thread_id(params.thread_id.clone())?;
     let mut body = json_object(params)?;
     body.remove("threadId");
     if !body.contains_key("presentation") {
@@ -1828,37 +1814,11 @@ async fn upsert_app_surface_value(
         .await
 }
 
-fn resolve_app_surface_thread_id(
-    explicit_thread_id: Option<String>,
-    meta: &Meta,
-) -> Result<String, McpError> {
-    if let Some(thread_id) = explicit_thread_id {
-        return validate_app_surface_thread_id(thread_id, "threadId");
-    }
-
-    match meta.0.get(MCP_TOOL_THREAD_ID_META_KEY) {
-        Some(Value::String(thread_id)) => {
-            validate_app_surface_thread_id(thread_id.clone(), "_meta.threadId")
-        }
-        Some(_) => Err(McpError::invalid_params(
-            "MCP _meta.threadId must be a string",
-            Some(json!({ "field": "_meta.threadId" })),
-        )),
-        None => Err(McpError::invalid_params(
-            "threadId is required when MCP _meta.threadId is unavailable",
-            Some(json!({ "field": "threadId" })),
-        )),
-    }
-}
-
-fn validate_app_surface_thread_id(
-    thread_id: String,
-    field: &'static str,
-) -> Result<String, McpError> {
+fn validate_app_surface_thread_id(thread_id: String) -> Result<String, McpError> {
     if thread_id.trim().is_empty() {
         return Err(McpError::invalid_params(
-            format!("{field} must not be empty"),
-            Some(json!({ "field": field })),
+            "threadId must not be empty",
+            Some(json!({ "field": "threadId" })),
         ));
     }
     Ok(thread_id)
@@ -2008,8 +1968,7 @@ fn allowed_wait_event_kind(kind: &str) -> Result<&'static str, McpError> {
         "threadViewRefreshRequired" | "thread_view.refresh_required" => {
             Ok("thread_view.refresh_required")
         }
-        "queueItemUpsert" | "turn_queue.item_upsert" => Ok("turn_queue.item_upsert"),
-        "queueItemDeleted" | "turn_queue.item_deleted" => Ok("turn_queue.item_deleted"),
+        "queueChanged" | "turn_queue.changed" => Ok("turn_queue.changed"),
         "approvalChanged" | "approval.changed" => Ok("approval.changed"),
         "automationUpserted" | "automation.item_upsert" => Ok("automation.item_upsert"),
         "automationDeleted" | "automation.item_deleted" => Ok("automation.item_deleted"),
@@ -2023,8 +1982,7 @@ fn allowed_wait_event_kind(kind: &str) -> Result<&'static str, McpError> {
                     "threadViewPatch",
                     "threadViewItemDelta",
                     "threadViewRefreshRequired",
-                    "queueItemUpsert",
-                    "queueItemDeleted",
+                    "queueChanged",
                     "approvalChanged",
                     "automationUpserted",
                     "automationDeleted"
@@ -2043,16 +2001,10 @@ fn max_event_seq(value: &Value) -> Option<i64> {
         .max()
 }
 
-fn automation_run_changed(
-    value: &Value,
-    after_last_run_at: Option<&str>,
-    after_last_native_queue_id: Option<&str>,
-) -> bool {
-    let automation = value.get("automation").unwrap_or(value);
-    let last_run_at = automation.get("lastRunAt").and_then(Value::as_str);
-    let last_native_queue_id = automation.get("lastNativeQueueId").and_then(Value::as_str);
-    last_run_at.is_some_and(|last| after_last_run_at != Some(last))
-        || last_native_queue_id.is_some_and(|last| after_last_native_queue_id != Some(last))
+fn newest_automation_run<'a>(value: &'a Value, after_run_id: Option<&str>) -> Option<&'a Value> {
+    let run = value.get("runs")?.as_array()?.first()?;
+    let id = run.get("id")?.as_str()?;
+    (after_run_id != Some(id)).then_some(run)
 }
 
 fn approval_matches(value: &Value, status: &str, single_approval: bool) -> bool {
@@ -2081,10 +2033,7 @@ fn queue_is_empty(value: &Value) -> bool {
 mod tests {
     use super::*;
     use crate::{
-        api::build_router,
-        app_server::{tests::RecordingAppServer, UnavailableAppServer},
-        config::Config,
-        store::Store,
+        api::build_router, app_server::tests::RecordingAppServer, config::Config, store::Store,
     };
     use serde_json::json;
     use std::sync::Arc;
@@ -2112,7 +2061,7 @@ mod tests {
         let state = crate::AppState::new(
             Config::default(),
             Store::in_memory().await?,
-            Arc::new(UnavailableAppServer),
+            Arc::new(RecordingAppServer::default()),
         );
         let router = build_router(state.clone());
         let server = tokio::spawn(async move { axum::serve(listener, router).await });
@@ -2141,9 +2090,8 @@ mod tests {
         assert_tool_requires(
             &tools,
             "open_app_surface",
-            &["title", "html", "fallbackContent"],
+            &["threadId", "title", "html", "fallbackContent"],
         );
-        assert_tool_does_not_require(&tools, "open_app_surface", "threadId");
         assert_tool_description_contains(
             &tools,
             "open_app_surface",
@@ -2186,6 +2134,7 @@ mod tests {
         assert!(text.contains("\"gatewayReady\":true"));
 
         let mut app_surface_args = JsonObject::new();
+        app_surface_args.insert("threadId".to_string(), json!("thread-1"));
         app_surface_args.insert("title".to_string(), json!("Mockups"));
         app_surface_args.insert("fallbackContent".to_string(), json!("Interactive fallback"));
         app_surface_args.insert("source".to_string(), json!("codex"));
@@ -2203,7 +2152,7 @@ mod tests {
             json!("<!doctype html><button>Choose</button><script>window.parent.postMessage({jsonrpc:'2.0', id:1, method:'ui/message', params:{role:'user', content:{type:'text', text:'Choose'}}}, '*')</script>"),
         );
         let mut app_surface_meta = JsonObject::new();
-        app_surface_meta.insert("threadId".to_string(), json!("thread-1"));
+        app_surface_meta.insert("threadId".to_string(), json!("foreign-desktop-chat"));
         let mut app_surface_call =
             CallToolRequestParams::new("open_app_surface").with_arguments(app_surface_args);
         app_surface_call.set_meta(Meta(app_surface_meta));
@@ -2238,9 +2187,10 @@ mod tests {
             "codex"
         );
 
-        let read_app_surface_args = JsonObject::new();
+        let mut read_app_surface_args = JsonObject::new();
+        read_app_surface_args.insert("threadId".to_string(), json!("thread-1"));
         let mut read_app_surface_meta = JsonObject::new();
-        read_app_surface_meta.insert("threadId".to_string(), json!("thread-1"));
+        read_app_surface_meta.insert("threadId".to_string(), json!("foreign-desktop-chat"));
         let mut read_app_surface_call =
             CallToolRequestParams::new("get_app_surface").with_arguments(read_app_surface_args);
         read_app_surface_call.set_meta(Meta(read_app_surface_meta));
@@ -2406,23 +2356,6 @@ mod tests {
                 tool.input_schema
             );
         }
-    }
-
-    fn assert_tool_does_not_require(tools: &[Tool], name: &str, field: &str) {
-        let tool = tools
-            .iter()
-            .find(|tool| tool.name == name)
-            .unwrap_or_else(|| panic!("missing tool {name}"));
-        let required = tool
-            .input_schema
-            .get("required")
-            .and_then(Value::as_array)
-            .unwrap_or_else(|| panic!("{name} tool schema missing required fields"));
-        assert!(
-            !required.iter().any(|value| value.as_str() == Some(field)),
-            "{name} tool schema should not require {field}; schema: {:?}",
-            tool.input_schema
-        );
     }
 
     fn assert_tool_description_contains(tools: &[Tool], name: &str, expected: &[&str]) {

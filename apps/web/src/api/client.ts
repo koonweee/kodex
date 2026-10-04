@@ -264,9 +264,9 @@ export async function listThreadSubagents(
   );
 }
 
-export async function getThreadAppSurface(threadId: string): Promise<AppSurfaceSession | null> {
+export async function getThreadAppSurface(threadId: string, signal?: AbortSignal): Promise<AppSurfaceSession | null> {
   const response = await unwrap(
-    api.GET("/v1/threads/{threadId}/app-surface", { params: { path: { threadId } } }),
+    api.GET("/v1/threads/{threadId}/app-surface", { params: { path: { threadId } }, signal, cache: "no-store" }),
   );
   return response.session ?? null;
 }

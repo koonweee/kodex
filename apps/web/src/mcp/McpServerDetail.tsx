@@ -108,7 +108,11 @@ export function McpServerDetail({
         <Text fw={650} size="xs">
           Tools
         </Text>
-        {toolNames.length ? (
+        {server?.toolsError ? (
+          <Alert color="red" variant="light">
+            Tool discovery failed: {server.toolsError}
+          </Alert>
+        ) : toolNames.length ? (
           <Text className="kodex-mcp-wrapping-text" c="dimmed" size="xs">
             {toolNames.join(", ")}
           </Text>

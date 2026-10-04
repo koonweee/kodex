@@ -54,6 +54,51 @@ describe("MCP runtime preferences", () => {
     expect(apiMocks.readMcpResource).toHaveBeenCalledWith("docs", "file:///docs/readme.md");
   });
 
+  it("shows native connection and tool-discovery failure without treating OAuth as a loaded runtime", async () => {
+    apiMocks.listMcpServers.mockResolvedValue({
+      servers: [{
+        authStatus: "oAuth",
+        name: "docs",
+        runtimeStatus: "failed",
+        toolsError: "Tool catalog unavailable",
+        resourceTemplates: [],
+        resources: [],
+        tools: {},
+      }],
+    });
+
+    renderPanel();
+
+    expect(await screen.findByText("Failed")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Tool catalog unavailable");
+    expect(screen.getAllByText("OAuth").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Loaded")).not.toBeInTheDocument();
+    expect(screen.queryByText("No tools reported")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^0 tools/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["starting", "Starting"],
+    [null, "Status unavailable"],
+  ] as const)("does not infer a loaded runtime from native status %s", async (runtimeStatus, label) => {
+    apiMocks.listMcpServers.mockResolvedValue({
+      servers: [{
+        authStatus: "notLoggedIn",
+        name: "docs",
+        runtimeStatus,
+        resourceTemplates: [],
+        resources: [],
+        tools: {},
+      }],
+    });
+
+    renderPanel();
+
+    expect(await screen.findByText(label)).toBeInTheDocument();
+    expect(screen.queryByText("Loaded")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /log in/i })).toBeInTheDocument();
+  });
+
   it("renders JSON-like resource content without arbitrary URI input", async () => {
     apiMocks.listMcpServers.mockResolvedValue({
       servers: [

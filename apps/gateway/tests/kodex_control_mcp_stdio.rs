@@ -74,9 +74,8 @@ async fn kodex_control_mcp_stdio_lists_tools() -> anyhow::Result<()> {
     assert_tool_requires(
         &tools,
         "open_app_surface",
-        &["title", "html", "fallbackContent"],
+        &["threadId", "title", "html", "fallbackContent"],
     );
-    assert_tool_does_not_require(&tools, "open_app_surface", "threadId");
     assert!(tools.iter().all(|tool| !tool.name.contains("generated_ui")));
     assert_tool_requires(&tools, "deny_approval", &["approvalId"]);
     assert_tool_requires(
@@ -246,11 +245,12 @@ async fn kodex_control_mcp_smokes_new_tools_against_fake_gateway() -> anyhow::Re
     );
 
     let mut app_surface_args = JsonObject::new();
+    app_surface_args.insert("threadId".to_string(), json!("thread-spawned"));
     app_surface_args.insert("title".to_string(), json!("Thread UI"));
     app_surface_args.insert("html".to_string(), json!("<!doctype html><main>UI</main>"));
     app_surface_args.insert("fallbackContent".to_string(), json!("Thread UI fallback"));
     let mut app_surface_meta = JsonObject::new();
-    app_surface_meta.insert("threadId".to_string(), json!("thread-spawned"));
+    app_surface_meta.insert("threadId".to_string(), json!("foreign-desktop-chat"));
     let mut app_surface_call =
         CallToolRequestParams::new("open_app_surface").with_arguments(app_surface_args);
     app_surface_call.set_meta(Meta(app_surface_meta));
@@ -388,23 +388,6 @@ fn assert_tool_requires(tools: &[Tool], name: &str, required_fields: &[&str]) {
             tool.input_schema
         );
     }
-}
-
-fn assert_tool_does_not_require(tools: &[Tool], name: &str, field: &str) {
-    let tool = tools
-        .iter()
-        .find(|tool| tool.name == name)
-        .unwrap_or_else(|| panic!("missing tool {name}"));
-    let required = tool
-        .input_schema
-        .get("required")
-        .and_then(Value::as_array)
-        .unwrap_or_else(|| panic!("{name} tool schema missing required fields"));
-    assert!(
-        !required.iter().any(|value| value.as_str() == Some(field)),
-        "{name} tool schema should not require {field}; schema: {:?}",
-        tool.input_schema
-    );
 }
 
 #[derive(Clone, Default)]
