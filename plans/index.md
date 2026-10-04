@@ -19,7 +19,7 @@ Focused subsystem replacements are encouraged wherever they reduce maintained co
 
 | Plan | Status | Scope | Notes |
 | --- | --- | --- | --- |
-| [Native app-server redesign](native-app-server-redesign.md) | Proposed | Dedicated fresh runtime, Codex 0.160.0 native ownership, subsystem replacement, retained extensions and obsolete-feature removal | Seven milestones with deletion targets, dependencies, two-client/failure acceptance gates and fresh-release readiness; no implementation started. |
+| [Native app-server redesign](native-app-server-redesign.md) | Proposed | Dedicated fresh runtime, Codex 0.160.0 native ownership, subsystem replacement, retained extensions and obsolete-feature removal | Seven milestones with deletion targets, dependencies, two-client/failure acceptance gates and fresh-release readiness. Native queue restart behavior selected; native semantics are the default for remaining design choices. No implementation started. |
 | [MVP backend implementation plan](mvp-backend.md) | Complete | Rust gateway, app-server supervisor, event store, API, approvals, account/models | MVP backend milestones are implemented, covered by gateway tests, and pushed. |
 | [MVP backend revision 1 plan](mvp-backend-rev-1.md) | Complete | Backend ownership cleanup before frontend implementation | Added app-server adapter ownership, typed frontend-critical response DTOs, event/static modules, and contract tests. |
 | [MVP frontend implementation plan](mvp-frontend.md) | Complete | React web client for projects, threads, timeline, composer, approvals, account/models | MVP frontend milestones are implemented with Vitest and Playwright coverage. |
