@@ -23,20 +23,25 @@ async fn real_native_descendants_paginate_and_remain_discoverable_when_unloaded(
         let project=api(&session.app,"POST","/v1/projects",Some(json!({"name":"Descendant proof","roots":[{"path":fixture.workspace}],"idempotencyKey":"native-descendant-proof"}))).await?;
         let created = api(&session.app, "POST", "/v1/threads", Some(json!({"projectId":project["id"]}))).await?;
         let root = created["thread"]["id"].as_str().context("missing root ID")?.to_owned();
-        fixture.enqueue([
-            ModelResponse::Items(["first", "second"].into_iter().map(|name| json!({
-                "type":"function_call", "call_id":format!("spawn-{name}"),
-                "namespace":"multi_agent_v1", "name":"spawn_agent",
-                "arguments":json!({"message":format!("Complete {name} descendant fixture")}).to_string(),
-            })).collect()),
-            ModelResponse::message("native descendant completed"),
-            ModelResponse::message("native descendant completed"),
-            ModelResponse::message("native descendant completed"),
-        ]);
+        let spawn = ModelResponse::Items(["first", "second"].into_iter().map(|name| json!({
+            "type":"function_call", "call_id":format!("spawn-{name}"),
+            "namespace":"multi_agent_v1", "name":"spawn_agent",
+            "arguments":json!({"message":format!("Complete {name} descendant fixture")}).to_string(),
+        })).collect());
+        // Each v1 child watcher injects one completion fragment. If it arrives
+        // during parent sampling, native can require another model response.
+        // Bound this fixture to spawn + two children + parent + two fragments;
+        // response exhaustion still rejects any unexpected further request.
+        fixture.enqueue(std::iter::once(spawn).chain((0..5).map(|index| {
+            ModelResponse::Items(vec![json!({
+                "type":"message", "role":"assistant", "id":format!("descendant-answer-{index}"),
+                "content":[{"type":"output_text", "text":"native descendant completed"}],
+            })])
+        })));
         start_turn(&session.app, &root, "Spawn two native descendants").await?;
         session.completed_turn(&root, "completed").await?;
         let mut child_ids = Vec::new();
-        for _ in 0..4 {
+        for _ in 0..6 {
             let request = fixture.next_model_request().await?;
             for name in ["first", "second"] {
                 if let Ok(output) = function_output(&request, &format!("spawn-{name}")) {
@@ -44,9 +49,12 @@ async fn real_native_descendants_paginate_and_remain_discoverable_when_unloaded(
                     child_ids.push(output["agent_id"].as_str().context("native spawn omitted child ID")?.to_owned());
                 }
             }
+            child_ids.sort();
+            child_ids.dedup();
+            if child_ids.len() == 2 {
+                break;
+            }
         }
-        child_ids.sort();
-        child_ids.dedup();
         anyhow::ensure!(child_ids.len() == 2, "native spawn did not produce two children");
         timeout(Duration::from_secs(15), async {
             loop {
