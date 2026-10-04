@@ -17,7 +17,7 @@ export async function nativeSettingsFixture(context: BrowserContext) {
   const clients = new Map<Page, string>();
   const streams = new Map<ServerResponse, string>();
   const connections = new Map<string, number>();
-  const requests: Array<{ client: string; key: string; body: unknown }> = [];
+  const requests: Array<{ client: string; key: string; body: unknown; failure: () => string | null }> = [];
   const pending: ThreadSettingsUpdateRequest[] = [];
   const queuedInputs: QueuedInput[] = [];
   const unexpected: string[] = [];
@@ -73,7 +73,7 @@ export async function nativeSettingsFixture(context: BrowserContext) {
     const key = `${request.method()} ${url.pathname}`;
     const client = clients.get(request.frame().page()) ?? "";
     const body = request.postData() ? request.postDataJSON() as unknown : null;
-    requests.push({ client, key, body });
+    requests.push({ client, key, body, failure: () => request.failure()?.errorText ?? null });
     if (key === "GET /v1/events") {
       url.searchParams.set("client", client);
       return route.continue({ url: `http://127.0.0.1:${address.port}${url.pathname}${url.search}` });
@@ -90,7 +90,7 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       "GET /v1/permission-profiles": { profiles: [] },
       "GET /v1/threads/settings-chat": detail,
       "POST /v1/threads/settings-chat/seen": { threadId: detail.thread.id, seenCompletedAgentTurnSeq: 0, updatedAt: "2026-10-05T00:00:00Z" },
-      "POST /v1/threads/settings-chat/attach": { disposition: "resumed", thread: detail.thread, rawPayload: {} },
+      "POST /v1/threads/settings-chat/attach": detail,
       "GET /v1/threads/settings-chat/app-surface": { session: null },
       "GET /v1/threads/settings-chat/subagents": { subagents: [] },
       "GET /v1/threads/settings-chat/queued-inputs": { queuedInputs },

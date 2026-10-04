@@ -36,8 +36,9 @@ for (const shape of [
           const offset = url.searchParams.has("cursor") ? 1 : 0;
           return route.fulfill({ json: { subagents: rows.slice(offset, offset + 1), nextCursor: offset === 0 && rows.length > 1 ? "native-next" : null } });
         }
-        const child = [scout, reviewer].find((row) => ["", "/subagents", "/app-surface", "/settings", "/queued-inputs"].some((suffix) => url.pathname === `/v1/threads/${row.id}${suffix}`));
-        if (child && method === "GET") {
+        const child = [scout, reviewer].find((row) => ["", "/attach", "/subagents", "/app-surface", "/settings", "/queued-inputs"].some((suffix) => url.pathname === `/v1/threads/${row.id}${suffix}`));
+        if (url.pathname.startsWith("/v1/threads/native-") && method !== "GET") mutations.push(`${method} ${url.pathname}`);
+        if (child && (method === "GET" || (method === "POST" && url.pathname.endsWith("/attach")))) {
           if (url.pathname.endsWith("/subagents")) return route.fulfill({ json: { subagents: [], nextCursor: null } });
           if (url.pathname.endsWith("/app-surface")) return route.fulfill({ json: { session: null } });
           if (url.pathname.endsWith("/settings")) return route.fulfill({ json: fixture.settings });
@@ -50,7 +51,6 @@ for (const shape of [
           };
           return route.fulfill({ json: detail });
         }
-        if (url.pathname.startsWith("/v1/threads/native-") && method !== "GET") mutations.push(`${method} ${url.pathname}`);
         return route.fallback();
       });
       try {
@@ -95,7 +95,8 @@ for (const shape of [
         fixture.subagentsChanged(undefined, reviewer.id);
         await expect(pane.getByLabel("Message composer", { exact: true })).toBeVisible();
         expect(childReads.filter((id) => id === reviewer.id).length).toBeGreaterThan(1);
-        expect(mutations).toEqual([]);
+        expect(mutations.length).toBeGreaterThan(0);
+        expect(mutations.every((request) => request === "POST /v1/threads/native-reviewer/attach")).toBe(true);
       } finally {
         await fixture.close();
       }

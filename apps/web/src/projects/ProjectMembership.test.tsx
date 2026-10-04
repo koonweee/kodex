@@ -19,7 +19,7 @@ it("refreshes canonical chat details after assignment without waiting for a nati
       projectThreads: { [project.id]: { threads: member.projectId === project.id ? [member] : [] }, [destination.id]: { threads: member.projectId === destination.id ? [member] : [] } },
       chatThreads: { threads: member.projectId === null ? [member] : [] }, sections: [], sectionThreads: {},
     }),
-    "GET /v1/threads/thread-1": (request: Request) => {
+    "POST /v1/threads/thread-1/attach": (request: Request) => {
       if (!holdNext) return threadDetail(member);
       holdNext = false;
       oldSignal = request.signal;
@@ -29,7 +29,7 @@ it("refreshes canonical chat details after assignment without waiting for a nati
   }));
   render(<App />);
   const chooser = await screen.findByRole("button", { name: "Chat project: Kodex" });
-  await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/thread-1").length).toBeGreaterThan(0));
+  await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach").length).toBeGreaterThan(0));
   holdNext = true;
   act(() => {
     FakeEventSource.instances.find((source) => !source.closed && source.url.includes("includeGlobal=true"))?.emitNamed("thread_view.refresh_required", {
@@ -37,10 +37,10 @@ it("refreshes canonical chat details after assignment without waiting for a nati
     });
   });
   await waitFor(() => expect(releaseOld).toBeDefined());
-  const readsBeforeAssignment = gateway.callsFor("GET", "/v1/threads/thread-1").length;
+  const readsBeforeAssignment = gateway.callsFor("POST", "/v1/threads/thread-1/attach").length;
   await userEvent.click(chooser);
   await userEvent.click(await screen.findByRole("menuitem", { name: "Research" }));
-  await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/thread-1").length).toBeGreaterThan(readsBeforeAssignment));
+  await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach").length).toBeGreaterThan(readsBeforeAssignment));
   expect(oldSignal?.aborted).toBe(true);
   await act(async () => { releaseOld(threadDetail(thread)); });
   expect(await screen.findByRole("button", { name: "Chat project: Research" })).toBeInTheDocument();
@@ -51,7 +51,7 @@ it("uses canonical membership for a deep link outside the current sidebar page",
   let member = { ...thread, projectId: project.id as string | null };
   const gateway = mockGateway(baseRoutes({
     "GET /v1/sidebar/threads": { projects: [project], projectThreads: { [project.id]: { threads: [] } }, chatThreads: { threads: [] }, sections: [], sectionThreads: {} },
-    "GET /v1/threads/thread-1": () => threadDetail(member),
+    "POST /v1/threads/thread-1/attach": () => threadDetail(member),
     "PATCH /v1/threads/thread-1/project": () => { member = { ...member, projectId: null }; return { thread: member, rawPayload: {} }; },
   }));
   render(<App />);

@@ -173,8 +173,6 @@ function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
     "GET /v1/threads/thread-2/settings": { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null },
     ...overrides,
   };
-  routes["POST /v1/threads/thread-1/attach"] ??= () => ({ disposition: "resumed", ...threadCommandFromList(routes, thread) });
-  routes["POST /v1/threads/thread-2/attach"] ??= () => ({ disposition: "resumed", ...threadCommandFromList(routes, secondThread) });
   routes["POST /v1/threads/thread-1/resume"] ??= () => threadCommandFromList(routes, thread);
   routes["POST /v1/threads/thread-2/resume"] ??= () => threadCommandFromList(routes, secondThread);
   routes["GET /v1/threads/thread-1/queued-inputs"] ??= { queuedInputs: [] };
@@ -195,11 +193,11 @@ function baseRoutes(overrides: GatewayRouteMap = {}): GatewayRouteMap {
     queuedInput: queuedInput("queue-1", "thread-1", "Add tests", "pendingCommit"),
   };
   routes["DELETE /v1/threads/thread-1/queued-inputs/queue-1"] ??= { id: "queue-1", threadId: "thread-1" };
-  routes["GET /v1/threads/thread-1"] ??= (request: Request) =>
+  routes["POST /v1/threads/thread-1/attach"] ??= (request: Request) =>
     threadDetailFromSnapshot(routes, request, thread, [
       snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "Hello from Codex" })]),
     ]);
-  routes["GET /v1/threads/thread-2"] ??= (request: Request) =>
+  routes["POST /v1/threads/thread-2/attach"] ??= (request: Request) =>
     threadDetailFromSnapshot(routes, request, secondThread);
   return routes;
 }

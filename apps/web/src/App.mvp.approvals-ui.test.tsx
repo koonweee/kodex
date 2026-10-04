@@ -67,7 +67,7 @@ describe("MVP approvals UI flows", () => {
             },
           ],
         },
-        "GET /v1/threads/thread-2": threadDetail(blockedThread, [
+        "POST /v1/threads/thread-2/attach": threadDetail(blockedThread, [
           snapshotTurn("turn-2", [
             snapshotItem("item-visible", "agentMessage", {
               phase: "commentary",

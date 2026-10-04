@@ -814,13 +814,13 @@ describe("MVP composer input flows", () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "GET /v1/threads/thread-1": () => {
+        "POST /v1/threads/thread-1/attach": () => {
           const detail = threadDetail(thread, firstThreadTurns);
           return firstThreadTurns.length === 0
             ? detail
             : { ...detail, timeline: { ...detail.timeline, viewRevision: 3 } };
         },
-        "GET /v1/threads/thread-2": threadDetail(secondThread, [
+        "POST /v1/threads/thread-2/attach": threadDetail(secondThread, [
           snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Second thread snapshot" })]),
         ]),
         "POST /v1/threads/thread-1/input": () =>
@@ -1222,7 +1222,7 @@ describe("MVP composer input flows", () => {
               resolve(value);
             };
           }),
-        "GET /v1/threads/thread-2": () => {
+        "POST /v1/threads/thread-2/attach": () => {
           if (!materialized) {
             throw new Error('APP-SERVER ERROR -32600 "thread thread-2 is not materialized yet"');
           }
@@ -1251,95 +1251,13 @@ describe("MVP composer input flows", () => {
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(1);
     });
-    expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(0);
     expect(screen.queryByText(/not materialized yet/i)).not.toBeInTheDocument();
 
     act(() => resolveTurn({ payload: {} }));
 
     expect(await screen.findByText("Materialized response")).toBeInTheDocument();
-    expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(1);
-    expect(within(timelineElement(container)).getAllByText("Materialize this")).toHaveLength(1);
-  });
-
-  it("retries transient draft thread snapshot reads after the first turn starts", async () => {
-    let detailReads = 0;
-    const draftThread = { ...thread, id: "thread-2", name: "New thread", preview: null };
-    const gateway = mockGateway(
-      baseRoutes({
-        "GET /v1/events": { events: [] },
-        "POST /v1/threads": { thread: draftThread, rawPayload: {} },
-        "POST /v1/threads/thread-2/input": { payload: {} },
-        "GET /v1/threads/thread-2": () => {
-          detailReads += 1;
-          if (detailReads === 1) {
-            throw new Error('APP-SERVER ERROR -32600 "thread thread-2 is not materialized yet"');
-          }
-          return threadDetail(
-            { ...draftThread, preview: "Materialize this" },
-            [
-              snapshotTurn("turn-1", [
-                snapshotItem("user-1", "userMessage", {
-                  content: [{ type: "text", text: "Materialize this" }],
-                }),
-                snapshotItem("agent-1", "agentMessage", { text: "Materialized response" }),
-              ]),
-            ],
-          );
-        },
-      }),
-    );
-
-    const { container } = render(<App />);
-
-    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /^new thread$/i }));
-    await userEvent.type(composerInActiveThreadPane(), "Materialize this");
-    await userEvent.click(sendButtonInActiveThreadPane());
-
-    expect(await screen.findByText("Materialized response")).toBeInTheDocument();
-    expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(2);
-    expect(screen.queryByText(/not materialized yet/i)).not.toBeInTheDocument();
-    expect(within(timelineElement(container)).getAllByText("Materialize this")).toHaveLength(1);
-  });
-
-  it("retries thread history load failures after a draft thread first turn starts", async () => {
-    let detailReads = 0;
-    const draftThread = { ...thread, id: "thread-2", name: "New thread", preview: null };
-    const gateway = mockGateway(
-      baseRoutes({
-        "GET /v1/events": { events: [] },
-        "POST /v1/threads": { thread: draftThread, rawPayload: {} },
-        "POST /v1/threads/thread-2/input": { payload: {} },
-        "GET /v1/threads/thread-2": () => {
-          detailReads += 1;
-          if (detailReads === 1) {
-            throw new Error('APP-SERVER ERROR -32603 "FAILED TO LOAD THREAD HISTORY"');
-          }
-          return threadDetail(
-            { ...draftThread, preview: "Materialize this" },
-            [
-              snapshotTurn("turn-1", [
-                snapshotItem("user-1", "userMessage", {
-                  content: [{ type: "text", text: "Materialize this" }],
-                }),
-                snapshotItem("agent-1", "agentMessage", { text: "Materialized response" }),
-              ]),
-            ],
-          );
-        },
-      }),
-    );
-
-    const { container } = render(<App />);
-
-    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /^new thread$/i }));
-    await userEvent.type(composerInActiveThreadPane(), "Materialize this");
-    await userEvent.click(sendButtonInActiveThreadPane());
-
-    expect(await screen.findByText("Materialized response")).toBeInTheDocument();
-    expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(2);
-    expect(screen.queryByText(/failed to load thread history/i)).not.toBeInTheDocument();
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
     expect(within(timelineElement(container)).getAllByText("Materialize this")).toHaveLength(1);
   });
 
@@ -1370,7 +1288,7 @@ describe("MVP composer input flows", () => {
           };
         },
         "POST /v1/threads/thread-2/input": { payload: {} },
-        "GET /v1/threads/thread-2": () => pendingDetail,
+        "POST /v1/threads/thread-2/attach": () => pendingDetail,
       }),
     );
 
@@ -1410,7 +1328,7 @@ describe("MVP composer input flows", () => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-2/input")).toHaveLength(1);
     }, { timeout: 2_000 });
     expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
-    await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/thread-2").length).toBeGreaterThan(0));
+    await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach").length).toBeGreaterThan(0));
     expect(within(timelineElement(container)).queryByText("Inspect this")).not.toBeInTheDocument();
     await act(async () => {
       resolveDetail(threadDetail(

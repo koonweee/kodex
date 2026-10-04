@@ -128,7 +128,7 @@ test.describe("narrow detail recovery", () => {
       expect(fixture.state.threads.every((entry) => entry.projectId === null && entry.cwd === executionCwd)).toBe(true);
 
       const beforeReconnect = fixture.connections.get("second") ?? 0;
-      const readsBeforeReconnect = fixture.requests.filter((entry) => entry.client === "second" && entry.key === "GET /v1/threads/unlisted").length;
+      const readsBeforeReconnect = fixture.requests.filter((entry) => entry.client === "second" && entry.key === "POST /v1/threads/unlisted/attach").length;
       fixture.state.projects[0].name = "Recovered Beta";
       fixture.state.threads.find((entry) => entry.id === "unlisted")!.projectId = "beta";
       fixture.emit("project.changed", { projectId: "beta", changeType: "updated" }, "first");
@@ -138,7 +138,7 @@ test.describe("narrow detail recovery", () => {
       await expect.poll(() => fixture.connections.get("second") ?? 0).toBeGreaterThan(beforeReconnect);
       await expect(second.getByRole("button", { name: "Chat project: Recovered Beta", exact: true })).toBeVisible();
       await expect(second.getByText(preservedHistory, { exact: true })).toBeVisible();
-      expect(fixture.requests.filter((entry) => entry.client === "second" && entry.key === "GET /v1/threads/unlisted").length).toBeGreaterThan(readsBeforeReconnect);
+      expect(fixture.requests.filter((entry) => entry.client === "second" && entry.key === "POST /v1/threads/unlisted/attach").length).toBeGreaterThan(readsBeforeReconnect);
       expect(fixture.state.threads.find((entry) => entry.id === "unlisted")?.cwd).toBe(executionCwd);
       expect(fixture.unexpected).toEqual([]);
       expect(fixture.errors).toEqual([]);

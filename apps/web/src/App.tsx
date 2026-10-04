@@ -96,7 +96,6 @@ import {
   upsertCachedQueuedInput,
 } from "./queuedInputs/cache";
 import { useThreadSubagents } from "./threads/useThreadSubagents";
-import { useSelectedThreadAttach } from "./threads/useSelectedThreadAttach";
 import { useSidebarThreadCaches } from "./threads/useSidebarThreadCaches";
 import { useSidebarThreadsSnapshot } from "./threads/useSidebarThreadsSnapshot";
 import { useThreadMetadata } from "./threads/useThreadMetadata";
@@ -220,7 +219,6 @@ function KodexShell({
   const [, setComposerResetToken] = useState(0);
   const [skillsInvalidationGeneration, setSkillsInvalidationGeneration] = useState(0);
   const approvalsRef = useRef<Approval[]>([]);
-  const attachingThreadIdsRef = useRef<Set<string>>(new Set());
   const chatThreadsRef = useRef<ThreadSummary[]>([]);
   const sectionThreadsRef = useRef<ThreadSummary[]>([]);
   const pendingTitleThreadIdsRef = useRef<Set<string>>(new Set());
@@ -423,17 +421,9 @@ function KodexShell({
   });
   const chatThreads = chatThreadsQuery.data ?? EMPTY_THREADS;
   const sectionThreads = nativeSections.threads;
-  const selectedProjectThreads = selectedProjectId ? threadsByProjectId[selectedProjectId] ?? EMPTY_THREADS : EMPTY_THREADS;
   const flatProjectThreads = useMemo(() => Object.values(threadsByProjectId).flat(), [threadsByProjectId]);
   const selectedProjectPane =
     selectedProjectPaneId ? orderedProjects.find((project) => project.id === selectedProjectPaneId) ?? null : null;
-  const selectedThread =
-    (routeSelectedThread?.id === selectedThreadId ? routeSelectedThread : null) ??
-    selectedProjectThreads.find((thread) => thread.id === selectedThreadId) ??
-    flatProjectThreads.find((thread) => thread.id === selectedThreadId) ??
-    chatThreads.find((thread) => thread.id === selectedThreadId) ??
-    sectionThreads.find((thread) => thread.id === selectedThreadId) ??
-    null;
   const threadSummariesById = useMemo(() => {
     const summaries: Record<string, ThreadSummary> = {};
     for (const thread of [...chatThreads, ...sectionThreads, ...flatProjectThreads]) {
@@ -664,14 +654,6 @@ function KodexShell({
     );
   });
 
-  useSelectedThreadAttach({
-    attachingThreadIdsRef,
-    isSelectedThreadSnapshotDeferred,
-    onAttachedThread: replaceThread,
-    onError: reportError,
-    selectedThread,
-  });
-
   function handleMoveProject(projectId: string, beforeProjectId: string | null) {
     void moveProject(projectId, beforeProjectId).then(() => refreshProjectState(queryClientForShell)).catch(reportError);
   }
@@ -749,7 +731,6 @@ function KodexShell({
     const shouldSelectDraftAfterArchive = threadId === archivedSelectedThreadId;
     const draftProjectId = selectedProjectIdRef.current;
     await archiveThreadMutation.mutateAsync(threadId);
-    attachingThreadIdsRef.current.delete(threadId);
     removeThreadEverywhere(queryClientForShell, threadId);
     if (
       shouldSelectDraftAfterArchive &&

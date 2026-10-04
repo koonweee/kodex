@@ -151,7 +151,7 @@ impl CodexClient {
                 json!({ "threadId": thread_id, "includeTurns": false }),
             )
             .await?;
-        let mut page = match self
+        let page = match self
             .thread_turns_list_page(
                 thread_id.clone(),
                 cursor,
@@ -167,7 +167,74 @@ impl CodexClient {
             }
             Err(error) => return Err(error),
         };
+        self.thread_detail_from_turns_page(thread_id, payload, page, limit)
+            .await
+    }
+
+    /// Rejoin native execution and receive its ordered recent history page in
+    /// the same response. History-only observers use thread_read_history_window.
+    pub async fn thread_resume_history_window(
+        &self,
+        thread_id: String,
+        limit: u32,
+    ) -> ApiResult<ThreadDetailResponse> {
+        let payload = match self.request(
+            "thread/resume",
+            json!({
+                "threadId": thread_id,
+                "excludeTurns": true,
+                "initialTurnsPage": {"limit": limit, "sortDirection": "desc", "itemsView": "full"},
+            }),
+        ).await {
+            Ok(payload) => payload,
+            // The pinned native runtime cannot resume a fresh loaded shell
+            // before persistence. A native read must independently prove that
+            // it exists; never fabricate an empty view from this rejection.
+            Err(ApiError::BadGateway(message)) if message.split("; data: ").next() == Some(
+                format!("app-server error -32600: no rollout found for thread id {thread_id}").as_str()
+            ) => return self.thread_read_history_window(thread_id, limit).await,
+            Err(error) => return Err(error),
+        };
+        let mut page = ThreadTurnsListPage::from_payload(
+            payload
+                .get("initialTurnsPage")
+                .cloned()
+                .ok_or_else(|| bad_gateway("thread/resume response missing initialTurnsPage"))?,
+        )?;
+        // The pinned runtime reconstructs active resume items with item-N IDs,
+        // unlike live receipts and durable full history. Read native persisted
+        // IDs for active rejoins rather than maintaining a second alias table.
+        if page.data.iter().any(|turn| turn.status == "inProgress") {
+            page = match self
+                .thread_turns_list_page(
+                    thread_id.clone(),
+                    None,
+                    SortDirection::Desc,
+                    ThreadTurnItemsView::Full,
+                    Some(limit),
+                )
+                .await
+            {
+                Ok(page) => page,
+                Err(error) if is_thread_history_not_materialized_error(&error) => {
+                    ThreadTurnsListPage::empty()
+                }
+                Err(error) => return Err(error),
+            };
+        }
+        self.thread_detail_from_turns_page(thread_id, payload, page, limit)
+            .await
+    }
+
+    async fn thread_detail_from_turns_page(
+        &self,
+        thread_id: String,
+        payload: Value,
+        mut page: ThreadTurnsListPage,
+        limit: u32,
+    ) -> ApiResult<ThreadDetailResponse> {
         page.data.reverse();
+        // Read markers still use the legacy count until their separate cutover.
         let last_completed_agent_turn_seq =
             self.thread_completed_turn_count_light(thread_id).await?;
         let history_page = ThreadTimelineWindowPage {

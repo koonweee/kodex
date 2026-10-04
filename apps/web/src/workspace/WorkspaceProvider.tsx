@@ -152,6 +152,7 @@ type WorkspaceThreadActions = ThreadSectionActions & {
 };
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
+const noopThreadSnapshot = () => undefined;
 const noopPublishThreadPaneTimelineAction = () => undefined;
 const noopSubscribeThreadPaneTimelineAction = () => () => undefined;
 
@@ -166,8 +167,8 @@ export function WorkspaceProvider({
   onLiveEvent,
   onMarkdownOpen = () => undefined,
   onShowMobileSidebar = () => undefined,
-  onThreadSnapshotLoadFailed = () => undefined,
-  onThreadSnapshotLoaded = () => undefined,
+  onThreadSnapshotLoadFailed = noopThreadSnapshot,
+  onThreadSnapshotLoaded = noopThreadSnapshot,
   onVisibleThreadIdsChange = () => undefined,
   paneStore: paneStoreOverride,
   publishThreadPaneTimelineAction = noopPublishThreadPaneTimelineAction,

@@ -13,7 +13,7 @@ it.each([{ roots: [] }, { roots: [{ path: "/first" }, { path: "/second" }] }])("
   const gateway = mockGateway(baseRoutes({
     "GET /v1/projects": { projects: [scoped] },
     "POST /v1/threads": { thread: created },
-    "GET /v1/threads/new-thread": threadDetail(created),
+    "POST /v1/threads/new-thread/attach": threadDetail(created),
   }));
   render(<App />);
   await userEvent.click(await screen.findByRole("button", { name: "Create thread in Kodex" }));

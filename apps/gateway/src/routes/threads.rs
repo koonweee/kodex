@@ -143,22 +143,6 @@ pub struct SidebarThreadSummary {
     pub notifications_enabled: bool,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ThreadAttachResponse {
-    pub disposition: ThreadAttachDisposition,
-    pub thread: Option<ThreadSummary>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub enum ThreadAttachDisposition {
-    AlreadyAttached,
-    AlreadyLoaded,
-    NotNeeded,
-    Resumed,
-}
-
 impl From<ThreadSummary> for SidebarThreadSummary {
     fn from(thread: ThreadSummary) -> Self {
         Self {
@@ -886,30 +870,23 @@ pub async fn get_thread_timeline_page(
     Ok(Json(ThreadViewResponse::from_detail(response)))
 }
 
-#[utoipa::path(post, path = "/v1/threads/{threadId}/attach", responses((status = 200, body = ThreadAttachResponse)))]
+#[utoipa::path(post, path = "/v1/threads/{threadId}/attach", responses((status = 200, body = ThreadViewResponse)))]
 pub async fn attach_thread(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
-) -> ApiResult<Json<ThreadAttachResponse>> {
-    let client = app_server_api::client(&state.app_server);
-    let loaded = client.thread_loaded_list().await?;
-    if loaded
-        .thread_ids
-        .iter()
-        .any(|loaded_id| loaded_id == &thread_id)
-    {
-        return Ok(Json(ThreadAttachResponse {
-            disposition: ThreadAttachDisposition::AlreadyLoaded,
-            thread: None,
-        }));
-    }
-
-    let mut response = client.thread_resume(thread_id, json!({})).await?;
-    apply_thread_command_response_state(&state, &mut response).await?;
-    Ok(Json(ThreadAttachResponse {
-        disposition: ThreadAttachDisposition::Resumed,
-        thread: Some(response.thread),
-    }))
+) -> ApiResult<Json<ThreadViewResponse>> {
+    let timeline_revision = state.store.latest_event_seq().await?;
+    let mut response = app_server_api::client(&state.app_server)
+        .thread_resume_history_window(thread_id, SELECTED_THREAD_HISTORY_PAGE_LIMIT)
+        .await?;
+    apply_thread_detail_response_state_with_merge(
+        &state,
+        &mut response,
+        timeline_revision,
+        ThreadTimelineMergeMode::ReplaceWindow,
+    )
+    .await?;
+    Ok(Json(ThreadViewResponse::from_detail(response)))
 }
 
 #[utoipa::path(patch, path = "/v1/threads/{threadId}/name", request_body = RenameThreadRequest, responses((status = 200, body = RenameThreadResponse)))]

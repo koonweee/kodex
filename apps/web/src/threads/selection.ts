@@ -5,10 +5,6 @@ export type KnownThreadSelection =
   | { kind: "chat" }
   | { kind: "project"; projectId: string };
 
-export function selectedThreadShouldAttachLive(thread: ThreadSummary): boolean {
-  return thread.status === "notLoaded" || thread.status === "active";
-}
-
 export function findKnownThreadSelection(
   threadId: string,
   threadsByProjectId: ThreadsByProjectId,

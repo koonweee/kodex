@@ -187,8 +187,8 @@ function fallbackThreadSubagents(request: Request) {
 
 async function fallbackThreadDetail(routes: GatewayRouteMap, request: Request) {
   const url = new URL(request.url);
-  const match = url.pathname.match(/^\/v1\/threads\/([^/]+)$/);
-  if (request.method !== "GET" || !match) {
+  const match = url.pathname.match(/^\/v1\/threads\/([^/]+)(\/attach)?$/);
+  if (!match || request.method !== (match[2] ? "POST" : "GET")) {
     return null;
   }
 

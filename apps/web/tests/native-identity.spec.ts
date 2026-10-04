@@ -57,11 +57,11 @@ for (const shape of [
         publish("first-native", firstId, "second");
         await expect(pane(first).getByText("Sending", { exact: true })).toHaveCount(1);
         await expect(pane(second).getByText("Sending", { exact: true })).toHaveCount(0);
-        const reads = fixture.requests.filter((request) => request.client === "first" && request.key === "GET /v1/threads/settings-chat").length;
+        const reads = fixture.requests.filter((request) => request.client === "first" && request.key === "POST /v1/threads/settings-chat/attach").length;
         const connections = fixture.connections.get("first") ?? 0;
         fixture.disconnect("first");
         await expect.poll(() => fixture.connections.get("first") ?? 0).toBeGreaterThan(connections);
-        await expect.poll(() => fixture.requests.filter((request) => request.client === "first" && request.key === "GET /v1/threads/settings-chat").length).toBeGreaterThan(reads);
+        await expect.poll(() => fixture.requests.filter((request) => request.client === "first" && request.key === "POST /v1/threads/settings-chat/attach").length).toBeGreaterThan(reads);
         await expect(pane(first).getByText("Sending", { exact: true })).toHaveCount(0);
         for (const page of [first, second]) await expect(messages(page)).toHaveCount(4);
         expect(held).toHaveLength(2);

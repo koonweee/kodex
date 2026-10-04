@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PwaLifecycle } from "../pwa/PwaLifecycle";
 import { createEventStreamClient } from "../events/stream";
-import { getCapabilities, getProject, getThreadDetail, type Capabilities, type EventEnvelope, type Project, type ThreadViewResponse } from "./client";
+import { attachThread, getCapabilities, getProject, getThreadDetail, type Capabilities, type EventEnvelope, type Project, type ThreadViewResponse } from "./client";
 import { GatewayInstanceBoundary, useGatewayInstanceStorage, useGatewayInstanceValidation, useGatewayStreamConnected } from "./GatewayInstanceBoundary";
 import { createInstanceStorage } from "./instanceStorage";
 import { createKodexQueryClient } from "./queryClient";
@@ -18,7 +18,7 @@ const pwa = vi.hoisted(() => ({
   update: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("./client", () => ({ getCapabilities: vi.fn(), getProject: vi.fn(), getThreadDetail: vi.fn() }));
+vi.mock("./client", () => ({ attachThread: vi.fn(), getCapabilities: vi.fn(), getProject: vi.fn(), getThreadDetail: vi.fn() }));
 vi.mock("../pwa/registerServiceWorker", () => ({
   getPwaUpdateState: () => ({ needRefresh: pwa.needRefresh, updateServiceWorker: pwa.update }),
   registerPwaServiceWorker: pwa.register,
@@ -213,7 +213,7 @@ describe("gateway instance bootstrap", () => {
     expect(queryClient.getQueryData(queryKeys.capabilities)).toEqual(capabilities("current"));
   });
 
-  it("does not mount a first-visit thread link until the authoritative read succeeds", async () => {
+  it("validates a first-visit link with history only before mounting the workspace", async () => {
     window.history.replaceState(null, "", "/threads/native-thread");
     vi.mocked(getCapabilities).mockResolvedValue(capabilities("first"));
     let resolve!: (value: ThreadViewResponse) => void;
@@ -226,6 +226,7 @@ describe("gateway instance bootstrap", () => {
 
     expect(await screen.findByRole("button", { name: "fresh draft" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/threads/native-thread");
+    expect(attachThread).not.toHaveBeenCalled();
   });
 
   it.each(["/threads/foreign", "/projects/foreign"])(

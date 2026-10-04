@@ -148,7 +148,7 @@ describe("MVP shell flows", () => {
             threads = [...threads, { ...created, preview: "Implement the next milestone for the web client" }];
             return { thread: created, rawPayload: {} };
           },
-          "GET /v1/threads/thread-2": threadDetail(
+          "POST /v1/threads/thread-2/attach": threadDetail(
             { ...thread, id: "thread-2", projectId: scratchProject.id, cwd: "/home/example/scratch", name: "New thread", preview: "Implement the next milestone for the web client" },
             [],
           ),
@@ -252,15 +252,11 @@ describe("MVP shell flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "POST /v1/threads/thread-1/attach": {
-          disposition: "resumed",
-          thread: {
-            ...thread,
-            model: "gpt-5.4",
-            activePermissionProfile: { id: "full-access" },
-          },
-          rawPayload: {},
-        },
+        "POST /v1/threads/thread-1/attach": threadDetail({
+          ...thread,
+          model: "gpt-5.4",
+          activePermissionProfile: { id: "full-access" },
+        }),
       }),
     );
 
@@ -470,7 +466,7 @@ describe("MVP shell flows", () => {
         },
         "GET /v1/threads/chat-thread-1/queued-inputs": { queuedInputs: [] },
         "POST /v1/threads/chat-thread-1/input": { payload: {} },
-        "GET /v1/threads/chat-thread-1": threadDetail(
+        "POST /v1/threads/chat-thread-1/attach": threadDetail(
           { ...chatThread, preview: "Plan the chat sidebar implementation" },
           [],
         ),
@@ -537,7 +533,7 @@ describe("MVP shell flows", () => {
         },
         "GET /v1/threads/chat-thread-1/queued-inputs": { queuedInputs: [] },
         "POST /v1/threads/chat-thread-1/input": { payload: {} },
-        "GET /v1/threads/chat-thread-1": threadDetail(
+        "POST /v1/threads/chat-thread-1/attach": threadDetail(
           { ...chatThread, preview: "Keep local chat" },
           [],
         ),
@@ -586,7 +582,7 @@ describe("MVP shell flows", () => {
         },
         "GET /v1/threads/project-thread-2/queued-inputs": { queuedInputs: [] },
         "POST /v1/threads/project-thread-2/input": { payload: {} },
-        "GET /v1/threads/project-thread-2": threadDetail(
+        "POST /v1/threads/project-thread-2/attach": threadDetail(
           { ...projectThread, preview: "Keep local project thread" },
           [],
         ),
@@ -1380,7 +1376,7 @@ describe("MVP shell flows", () => {
     mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [unnamedThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "GET /v1/threads/thread-1": threadDetail(unnamedThread, []),
+        "POST /v1/threads/thread-1/attach": threadDetail(unnamedThread, []),
       }),
     );
 
@@ -1481,7 +1477,7 @@ describe("MVP shell flows", () => {
       baseRoutes({
         "GET /v1/threads": { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         "GET /v1/chats/threads": { threads: [chatThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "GET /v1/threads/thread-1": threadDetail(chatThread, [
+        "POST /v1/threads/thread-1/attach": threadDetail(chatThread, [
           snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "Hello from chat" })]),
         ]),
         "POST /v1/threads/thread-1/archive": { payload: {} },
@@ -1545,12 +1541,7 @@ describe("MVP shell flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "POST /v1/threads/thread-2/attach": {
-          disposition: "resumed",
-          thread: { ...notLoadedThread, status: "idle" },
-          rawPayload: {},
-        },
-        "GET /v1/threads/thread-2": threadDetail({ ...notLoadedThread, status: "idle" }, [
+        "POST /v1/threads/thread-2/attach": threadDetail({ ...notLoadedThread, status: "idle" }, [
           snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Snapshot after attach" })]),
         ]),
       }),
@@ -1561,7 +1552,7 @@ describe("MVP shell flows", () => {
     expect(await screen.findByRole("button", { name: /^implement frontend$/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /resume thread/i })).not.toBeInTheDocument();
     expect(container.querySelector(".kodex-thread-status")).not.toBeInTheDocument();
-    expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach")).toHaveLength(1);
 
     await userEvent.click(within(screen.getByRole("navigation", { name: /workspace/i })).getByRole("button", { name: /^second thread$/i }));
 
@@ -1569,92 +1560,6 @@ describe("MVP shell flows", () => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
     });
     expect(await screen.findByText(/snapshot after attach/i)).toBeInTheDocument();
-  });
-
-  it("does not remember active thread attach no-op dispositions in the browser", async () => {
-    vi.stubGlobal("EventSource", FakeEventSource);
-    const runningThread = { ...secondThread, status: "active" };
-    window.history.replaceState(null, "", "/threads/thread-2");
-    const gateway = mockGateway(
-      baseRoutes({
-        "GET /v1/threads": {
-          threads: [thread, runningThread],
-          nextCursor: null,
-          backwardsCursor: null,
-          rawPayload: {},
-        },
-        "POST /v1/threads/thread-2/attach": {
-          disposition: "alreadyLoaded",
-          thread: null,
-        },
-        "GET /v1/threads/thread-2": threadDetail(runningThread, [
-          snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Loaded snapshot" })]),
-        ]),
-      }),
-    );
-
-    render(<App />);
-
-    expect(await screen.findByText(/loaded snapshot/i)).toBeInTheDocument();
-    await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
-    });
-    expect(gateway.callsFor("POST", "/v1/threads/thread-2/resume")).toHaveLength(0);
-
-    await userEvent.click(screen.getByRole("button", { name: /^implement frontend$/i }));
-    await screen.findByText(/hello from codex/i);
-    const workspaceNav = screen.getByRole("navigation", { name: /workspace/i });
-    await userEvent.click(within(workspaceNav).getByRole("button", { name: /^second thread$/i }));
-    await screen.findByText(/loaded snapshot/i);
-
-    await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(2);
-    });
-    expect(gateway.callsFor("POST", "/v1/threads/thread-2/resume")).toHaveLength(0);
-  });
-
-  it("dedupes only in-flight active thread attach requests when selection changes before attach resolves", async () => {
-    vi.stubGlobal("EventSource", FakeEventSource);
-    const runningThread = { ...secondThread, status: "active" };
-    const attachDeferred = deferred<{ disposition: "resumed"; thread: typeof runningThread; rawPayload: Record<string, never> }>();
-    window.history.replaceState(null, "", "/threads/thread-2");
-    const gateway = mockGateway(
-      baseRoutes({
-        "GET /v1/threads": {
-          threads: [thread, runningThread],
-          nextCursor: null,
-          backwardsCursor: null,
-          rawPayload: {},
-        },
-        "POST /v1/threads/thread-2/attach": () => attachDeferred.promise,
-        "GET /v1/threads/thread-2": threadDetail(runningThread, [
-          snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Running snapshot" })]),
-        ]),
-      }),
-    );
-
-    render(<App />);
-
-    expect(await screen.findByText(/running snapshot/i)).toBeInTheDocument();
-    await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
-    });
-
-    await userEvent.click(screen.getByRole("button", { name: /^implement frontend$/i }));
-    await screen.findByText(/hello from codex/i);
-
-    await act(async () => {
-      attachDeferred.resolve({ disposition: "resumed", thread: runningThread, rawPayload: {} });
-      await attachDeferred.promise;
-    });
-
-    const workspaceNav = screen.getByRole("navigation", { name: /workspace/i });
-    await userEvent.click(within(workspaceNav).getByRole("button", { name: /^second thread$/i }));
-    await screen.findByText(/running snapshot/i);
-
-    await waitFor(() => {
-      expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(2);
-    });
   });
 
   it("provides compact narrow viewport navigation without a panel switcher", async () => {
@@ -1681,7 +1586,7 @@ describe("MVP shell flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "GET /v1/threads/thread-2": threadDetail(secondThread, [
+        "POST /v1/threads/thread-2/attach": threadDetail(secondThread, [
           snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Second thread snapshot" })]),
         ]),
       }),
@@ -1716,7 +1621,7 @@ describe("MVP shell flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "GET /v1/threads/thread-2": threadDetail(secondThread, [
+        "POST /v1/threads/thread-2/attach": threadDetail(secondThread, [
           snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Active pane snapshot" })]),
         ]),
       }),
@@ -1863,7 +1768,7 @@ describe("MVP shell flows", () => {
         "GET /v1/chats/threads": { threads: [], nextCursor: null, backwardsCursor: null, rawPayload: {} },
         "POST /v1/chats/threads": { thread: chatThread, rawPayload: {} },
         "GET /v1/threads/chat-thread-1/queued-inputs": { queuedInputs: [] },
-        "GET /v1/threads/chat-thread-1": threadDetail(
+        "POST /v1/threads/chat-thread-1/attach": threadDetail(
           { ...chatThread, preview: "Start from mobile chats" },
           [],
         ),
@@ -1982,7 +1887,7 @@ describe("MVP shell flows", () => {
           }
           return { threads: [thread], nextCursor: null, backwardsCursor: null, rawPayload: {} };
         },
-        "GET /v1/threads/thread-2": threadDetail({ ...secondThread, projectId: "project-2" }, [
+        "POST /v1/threads/thread-2/attach": threadDetail({ ...secondThread, projectId: "project-2" }, [
           snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Second project snapshot" })]),
         ]),
       }),

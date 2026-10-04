@@ -13,7 +13,7 @@ it("shares native applied settings across clients while disjoint stale picker in
   const patches: ThreadSettingsUpdateRequest[] = [];
   const gateway = mockGateway(baseRoutes({
     "GET /v1/models": { models: [highReasoningModel], rawPayload: {} },
-    "GET /v1/threads/thread-1": threadDetail({ ...thread, model: highReasoningModel.id, reasoningEffort: "medium", serviceTier: null }),
+    "POST /v1/threads/thread-1/attach": threadDetail({ ...thread, model: highReasoningModel.id, reasoningEffort: "medium", serviceTier: null }),
     "GET /v1/threads/thread-1/settings": () => ({ ...nativeSettings }),
     "PATCH /v1/threads/thread-1/settings": async (request: Request) => {
       patches.push(await requestJson(request) as ThreadSettingsUpdateRequest);

@@ -93,6 +93,8 @@ Skills use native selection rules. Free-text `$name` goes directly to Codex. The
 
 Send delegates to native atomic start-or-steer. If native input is rejected, the draft stays available for an explicit retry or Queue; Kodex does not silently queue it. Each submission carries a native client-message ID so identical messages remain separate across live updates and history. These IDs correlate messages; they do not make retries idempotent. Explicit Queue and queued-row Steer still use the gateway implementation pending the native queue cutover.
 
+Opening or reconnecting an editable chat rejoins native execution and reads its recent history page through one canonical gateway command. Older history uses native cursors. The subagent observer reads history without activating the child; opening an unloaded internal child separately can encounter a native resume restriction. The recent window is bounded by turns, so one large turn can still contain many items.
+
 For prerequisites, tests, schema generation, and production-style static serving, see [Development](docs/development.md). For network binding, configuration and notifications, see [Deployment](docs/deployment.md).
 
 ## Repository map

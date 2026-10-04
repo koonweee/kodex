@@ -50,8 +50,8 @@ use crate::{
         threads::{
             apply_thread_command_response_state, broadcast_thread_upserted, create_thread_payload,
             MarkThreadSeenRequest, MarkThreadSeenResponse, RenameThreadRequest,
-            RenameThreadResponse, SidebarThreadsResponse, ThreadAttachResponse,
-            ThreadCreationOptions, ThreadListQuery, ThreadTimelinePageQuery, ThreadUpsertScope,
+            RenameThreadResponse, SidebarThreadsResponse, ThreadCreationOptions, ThreadListQuery,
+            ThreadTimelinePageQuery, ThreadUpsertScope,
         },
         turns::{
             start_turn, ThreadCompactResponse, ThreadInterruptCurrentResponse, TurnStartRequest,
@@ -885,13 +885,13 @@ pub struct SelfControlMarkThreadSeenRequest {
     path = "/v1/self-control/threads/{threadId}/attach",
     summary = "Attach or resume a thread through self-control",
     request_body = SelfControlMutationRequest,
-    responses((status = 200, body = ThreadAttachResponse))
+    responses((status = 200, body = ThreadViewResponse))
 )]
 pub async fn attach_self_control_thread(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
     request: Option<Json<SelfControlMutationRequest>>,
-) -> ApiResult<Json<ThreadAttachResponse>> {
+) -> ApiResult<Json<ThreadViewResponse>> {
     let source = optional_source(request);
     let response =
         crate::routes::threads::attach_thread(State(state.clone()), Path(thread_id.clone()))

@@ -140,7 +140,7 @@ test.describe("narrow section recovery", () => {
       await expectSectionOrder(first, "Research", ["History chat", "Unlisted history"]);
       await expectSectionOrder(second, "Pinned", ["Unlisted history"]);
       const beforeReconnect = fixture.connections.get("second") ?? 0;
-      const reads = () => fixture.requests.filter((entry) => entry.client === "second" && entry.key === "GET /v1/threads/unlisted").length;
+      const reads = () => fixture.requests.filter((entry) => entry.client === "second" && entry.key === "POST /v1/threads/unlisted/attach").length;
       const beforeReads = reads();
       fixture.disconnect("second");
       await expect.poll(() => fixture.connections.get("second") ?? 0).toBeGreaterThan(beforeReconnect);

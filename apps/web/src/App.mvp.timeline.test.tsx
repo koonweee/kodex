@@ -166,10 +166,10 @@ describe("MVP timeline flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "GET /v1/threads/thread-1": threadDetail(thread, [
+        "POST /v1/threads/thread-1/attach": threadDetail(thread, [
           snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "Initial snapshot" })]),
         ]),
-        "GET /v1/threads/thread-2": threadDetail(secondThread, [
+        "POST /v1/threads/thread-2/attach": threadDetail(secondThread, [
           snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Second snapshot" })]),
         ]),
       }),
@@ -243,14 +243,14 @@ describe("MVP timeline flows", () => {
     await waitFor(() => {
       expect(screen.getAllByRole("button", { name: /^thread actions$/i })).toHaveLength(3);
     });
-    const firstThreadDetailCalls = gateway.callsFor("GET", "/v1/threads/thread-1").length;
+    const firstThreadDetailCalls = gateway.callsFor("POST", "/v1/threads/thread-1/attach").length;
     await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /^implement frontend$/i }));
     await waitFor(() => {
       expect(document.querySelector('.kodex-thread-pane[data-workspace-pane-active="true"]')).toHaveTextContent(
         /initial snapshot/i,
       );
     });
-    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(firstThreadDetailCalls);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach")).toHaveLength(firstThreadDetailCalls);
 
     const expandedWorkspaceStream = await waitForWorkspaceStreamThreadIds([thread.id, secondThread.id]);
     expectWorkspaceStreamContract(expandedWorkspaceStream, [thread.id, secondThread.id]);
@@ -260,7 +260,7 @@ describe("MVP timeline flows", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     mockGateway(
       baseRoutes({
-        "GET /v1/threads/thread-1": threadDetail(thread, [
+        "POST /v1/threads/thread-1/attach": threadDetail(thread, [
           snapshotTurn("turn-1", [
             snapshotItem("answer-1", "agentMessage", { text: "Initial snapshot" }),
           ]),
@@ -307,38 +307,10 @@ describe("MVP timeline flows", () => {
     expect(await screen.findByText(/recovered live update/i)).toBeInTheDocument();
   });
 
-  it("retries empty rollout selected thread snapshot reads without reporting a hard load failure", async () => {
-    window.history.replaceState(null, "", "/threads/thread-1");
-    let detailReads = 0;
-    const gateway = mockGateway(
-      baseRoutes({
-        "GET /v1/threads/thread-1": () => {
-          detailReads += 1;
-          if (detailReads === 1) {
-            throw new Error(
-              "app-server error -32603: failed to read thread: thread-store internal error: failed to read thread /Users/example/.codex/sessions/2026/05/20/rollout-2026-05-20T22-32-32-thread-1.jsonl: rollout at /Users/example/.codex/sessions/2026/05/20/rollout-2026-05-20T22-32-32-thread-1.jsonl is empty",
-            );
-          }
-          return threadDetail(thread, [
-            snapshotTurn("turn-1", [
-              snapshotItem("answer-1", "agentMessage", { text: "Recovered from empty rollout" }),
-            ]),
-          ]);
-        },
-      }),
-    );
-
-    render(<App />);
-
-    expect(await screen.findByText(/recovered from empty rollout/i)).toBeInTheDocument();
-    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(2);
-    expect(screen.queryByText(/Selected thread load failed/i)).not.toBeInTheDocument();
-  });
-
   it("groups command and search activity into nested timeline collapsibles", async () => {
     mockGateway(
       baseRoutes({
-        "GET /v1/threads/thread-1": threadDetail(thread, [
+        "POST /v1/threads/thread-1/attach": threadDetail(thread, [
           snapshotTurn("turn-1", [
             snapshotItem("cmd-1", "commandExecution", {
               command: "pwd",
@@ -468,7 +440,7 @@ describe("MVP timeline flows", () => {
     });
     const gateway = mockGateway(
       baseRoutes({
-        "GET /v1/threads/thread-1": () => {
+        "POST /v1/threads/thread-1/attach": () => {
           detailCall += 1;
           if (detailCall > 1) {
             return recoveryDetail;
@@ -515,7 +487,7 @@ describe("MVP timeline flows", () => {
       ]),
     );
     expect(await screen.findByText(/recovered snapshot/i)).toBeInTheDocument();
-    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(2);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach")).toHaveLength(2);
     expect(gateway.callsFor("GET", "/v1/events")).toHaveLength(0);
   });
 
@@ -525,7 +497,7 @@ describe("MVP timeline flows", () => {
     const recoveryDetail = new Promise(() => undefined);
     const gateway = mockGateway(
       baseRoutes({
-        "GET /v1/threads/thread-1": () => {
+        "POST /v1/threads/thread-1/attach": () => {
           detailCall += 1;
           if (detailCall > 1) {
             return recoveryDetail;
@@ -549,7 +521,7 @@ describe("MVP timeline flows", () => {
     act(() => {
       workspaceStream.emitNamed("thread_view.item_delta", itemDeltaEvent({ seq: 2, delta: "First" }));
     });
-    await waitFor(() => expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(2));
+    await waitFor(() => expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach")).toHaveLength(2));
 
     act(() => {
       workspaceStream.emitNamed("thread_view.item_delta", itemDeltaEvent({ seq: 3, delta: "Second" }));
@@ -560,14 +532,14 @@ describe("MVP timeline flows", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(2);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach")).toHaveLength(2);
   });
 
   it("does not recover when a patch creates the delta target in the same selected batch", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const gateway = mockGateway(
       baseRoutes({
-        "GET /v1/threads/thread-1": threadDetail(thread, [
+        "POST /v1/threads/thread-1/attach": threadDetail(thread, [
           snapshotTurn("turn-1", [
             snapshotItem("item-1", "agentMessage", {
               text: "Initial snapshot",
@@ -604,7 +576,7 @@ describe("MVP timeline flows", () => {
     });
 
     expect(await screen.findByText(/live update continued/i)).toBeInTheDocument();
-    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(1);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach")).toHaveLength(1);
   });
 
   it("batches active Dockview pane workspace stream render events", async () => {
@@ -612,7 +584,7 @@ describe("MVP timeline flows", () => {
     window.history.pushState({}, "", "/threads/thread-1");
     const gateway = mockGateway(
       baseRoutes({
-        "GET /v1/threads/thread-1": threadDetail(thread, [
+        "POST /v1/threads/thread-1/attach": threadDetail(thread, [
           snapshotTurn("turn-1", [
             snapshotItem("item-1", "agentMessage", {
               text: "Initial snapshot",
@@ -665,7 +637,7 @@ describe("MVP timeline flows", () => {
         reducerEventCount: 3,
       });
     });
-    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(1);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach")).toHaveLength(1);
   });
 
   it("keeps applying later Dockview pane patches after an orphan delta in the same batch", async () => {
@@ -673,7 +645,7 @@ describe("MVP timeline flows", () => {
     window.history.pushState({}, "", "/threads/thread-1");
     mockGateway(
       baseRoutes({
-        "GET /v1/threads/thread-1": threadDetail(thread, [
+        "POST /v1/threads/thread-1/attach": threadDetail(thread, [
           snapshotTurn("turn-1", [
             snapshotItem("item-1", "agentMessage", {
               text: "Initial snapshot",
@@ -708,7 +680,7 @@ describe("MVP timeline flows", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const gateway = mockGateway(
       baseRoutes({
-        "GET /v1/threads/thread-1": threadDetail(thread, [
+        "POST /v1/threads/thread-1/attach": threadDetail(thread, [
           snapshotTurn("turn-1", [
             snapshotItem("item-1", "agentMessage", {
               text: "Initial snapshot",
@@ -749,7 +721,7 @@ describe("MVP timeline flows", () => {
     });
 
     expect(await screen.findByText(/first streamed token/i)).toBeInTheDocument();
-    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(1);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach")).toHaveLength(1);
   });
 
   it("applies active pane workspace stream patches", async () => {
@@ -783,7 +755,7 @@ describe("MVP timeline flows", () => {
     });
     mockGateway(
       baseRoutes({
-        "GET /v1/threads/thread-1": () => detail,
+        "POST /v1/threads/thread-1/attach": () => detail,
       }),
     );
 
@@ -813,7 +785,7 @@ describe("MVP timeline flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "GET /v1/threads/thread-1": threadDetail(markerThread, [
+        "POST /v1/threads/thread-1/attach": threadDetail(markerThread, [
           snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "High marker snapshot" })]),
         ]),
       }),
@@ -851,7 +823,7 @@ describe("MVP timeline flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "GET /v1/threads/thread-1": threadDetail(activeThread, [
+        "POST /v1/threads/thread-1/attach": threadDetail(activeThread, [
           snapshotTurn("turn-1", [
             snapshotItem("agent-1", "agentMessage", {
               text: "Working answer",
@@ -908,8 +880,7 @@ describe("MVP timeline flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "POST /v1/threads/thread-2/attach": { disposition: "resumed", thread: resumedThread, rawPayload: {} },
-        "GET /v1/threads/thread-2": () => {
+        "POST /v1/threads/thread-2/attach": () => {
           detailCall += 1;
           return threadDetail(resumedThread, [
             snapshotTurn("turn-2", [
@@ -1019,7 +990,7 @@ describe("MVP timeline flows", () => {
     const externalThreadRow = externalThreadButton!.closest(".kodex-thread-list-button");
     expect(externalThreadRow?.querySelector(".kodex-thread-progress-indicator")).not.toBeInTheDocument();
     expect(externalThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
-    expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(2);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(2);
   });
 
   it("does not persist read state from pane snapshot loads", async () => {
@@ -1032,7 +1003,7 @@ describe("MVP timeline flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "GET /v1/threads/thread-1": threadDetail(
+        "POST /v1/threads/thread-1/attach": threadDetail(
           { ...thread, lastCompletedAgentTurnSeq: 2, seenCompletedAgentTurnSeq: 0, unreadCompletedAgentTurn: true },
           [snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "Historical snapshot" })])],
         ),
@@ -1082,10 +1053,10 @@ describe("MVP timeline flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "GET /v1/threads/thread-1": threadDetail(thread, [
+        "POST /v1/threads/thread-1/attach": threadDetail(thread, [
           snapshotTurn("turn-1", [snapshotItem("item-1", "agentMessage", { text: "First thread snapshot" })]),
         ]),
-        "GET /v1/threads/thread-2": threadDetail(secondThread, [
+        "POST /v1/threads/thread-2/attach": threadDetail(secondThread, [
           snapshotTurn("turn-2", [snapshotItem("item-2", "agentMessage", { text: "Second thread snapshot" })]),
         ]),
       }),

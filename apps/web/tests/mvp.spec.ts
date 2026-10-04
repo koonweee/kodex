@@ -479,7 +479,7 @@ test("keeps long timeline content inside the thread viewer", async ({ page }) =>
       return;
     }
 
-    if (key !== "GET /v1/threads/thread-1") {
+    if (!["GET /v1/threads/thread-1", "POST /v1/threads/thread-1/attach"].includes(key)) {
       const response = await responseFor(key, route);
       await route.fulfill({
         status: response.status ?? 200,
@@ -657,11 +657,9 @@ test("keeps followed live output pinned to the scroll parent bottom", async ({ p
         return;
       }
       const response =
-        key === "GET /v1/threads/thread-1"
+        ["GET /v1/threads/thread-1", "POST /v1/threads/thread-1/attach"].includes(key)
           ? { body: currentDetail }
-          : key === "POST /v1/threads/thread-1/attach"
-            ? { body: { disposition: "resumed", thread: { ...thread, status: "active" }, rawPayload: {} } }
-            : key === "GET /v1/approvals"
+          : key === "GET /v1/approvals"
               ? { body: { approvals: [] } }
               : await responseFor(key, route);
       await route.fulfill({
@@ -866,7 +864,7 @@ test("keeps large file changes and following skill messages from overlapping", a
     }
 
     const response =
-      key === "GET /v1/threads/thread-1"
+      ["GET /v1/threads/thread-1", "POST /v1/threads/thread-1/attach"].includes(key)
         ? { body: threadBody(23) }
         : key === "GET /v1/approvals"
           ? { body: { approvals: [] } }
@@ -917,7 +915,7 @@ test("lets thread titles use the expanded sidebar width before truncating", asyn
               rawPayload: {},
             },
           }
-        : key === "GET /v1/threads/thread-1"
+        : ["GET /v1/threads/thread-1", "POST /v1/threads/thread-1/attach"].includes(key)
           ? {
               body: threadDetailBody({ ...thread, name: longTitle, status: "idle" }),
             }
@@ -1239,8 +1237,9 @@ test("restores selected thread model settings when switching threads", async ({ 
       return;
     }
 
-    if (key.startsWith("GET /v1/threads/") && !key.endsWith("/resume") && !key.endsWith("/queued-inputs")) {
-      const threadId = url.pathname.split("/").at(-1);
+    const detailMatch = /^(?:GET \/v1\/threads\/([^/]+)|POST \/v1\/threads\/([^/]+)\/attach)$/.exec(key);
+    if (detailMatch) {
+      const threadId = detailMatch[1] ?? detailMatch[2];
       const thread = threadId ? threadsById[threadId] : null;
       if (!thread) {
         await route.fulfill({ status: 404, headers: { "Content-Type": "application/json" }, body: "{}" });
@@ -1294,39 +1293,6 @@ test("restores selected thread model settings when switching threads", async ({ 
             seenCompletedAgentTurnSeq: 0,
             unreadCompletedAgentTurn: false,
             rawPayload: {},
-            createdAt: 1777500000,
-            updatedAt: 1777501000,
-          },
-          rawPayload: {},
-        }),
-      });
-      return;
-    }
-
-    if (key.startsWith("POST /v1/threads/") && key.endsWith("/attach")) {
-      const threadId = url.pathname.split("/").at(-2);
-      const thread = threadId ? threadsById[threadId] : null;
-      if (!thread) {
-        await route.fulfill({ status: 404, headers: { "Content-Type": "application/json" }, body: "{}" });
-        return;
-      }
-      await route.fulfill({
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          disposition: "resumed",
-          thread: {
-            id: thread.id,
-            projectId: null,
-            name: thread.name,
-            cwd: "/tmp",
-            status: "idle",
-            source: "local",
-            preview: `Thread ${thread.name}`,
-            lastCompletedAgentTurnSeq: null,
-            seenCompletedAgentTurnSeq: 0,
-            unreadCompletedAgentTurn: false,
-            rawPayload: { model: thread.model },
             createdAt: 1777500000,
             updatedAt: 1777501000,
           },
@@ -1401,7 +1367,7 @@ test("composer clears native fast service tier without replaying settings on sen
       });
       return;
     }
-    if (key === "GET /v1/threads/thread-1") {
+    if (["GET /v1/threads/thread-1", "POST /v1/threads/thread-1/attach"].includes(key)) {
       await route.fulfill({
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -1561,7 +1527,7 @@ async function responseFor(key: string, route: Route, projects = [project], thre
   if (key === "GET /v1/threads") {
     return { body: { threads, nextCursor: null, backwardsCursor: null, rawPayload: {} } };
   }
-  if (key === "GET /v1/threads/thread-1") {
+  if (["GET /v1/threads/thread-1", "POST /v1/threads/thread-1/attach"].includes(key)) {
     return {
       body: threadDetailBody(
         { ...thread, lastCompletedAgentTurnSeq: 1, seenCompletedAgentTurnSeq: 1, unreadCompletedAgentTurn: false },
@@ -1587,7 +1553,7 @@ async function responseFor(key: string, route: Route, projects = [project], thre
   if (key === "GET /v1/threads/thread-1/app-surface") {
     return { body: { session: null } };
   }
-  if (key === "GET /v1/threads/thread-2") {
+  if (["GET /v1/threads/thread-2", "POST /v1/threads/thread-2/attach"].includes(key)) {
     const created = threads.find((entry) => entry.id === "thread-2");
     if (created) return { body: threadDetailBody(created) };
   }

@@ -96,7 +96,7 @@ describe("subagent thread viewer", () => {
     const detailDeferred = deferred<ReturnType<typeof threadDetail>>();
     const gateway = mockGateway(
       baseRoutes({
-        "GET /v1/threads/thread-1": () => detailDeferred.promise,
+        "POST /v1/threads/thread-1/attach": () => detailDeferred.promise,
         "GET /v1/threads/thread-1/subagents": { subagents: [subagent], nextCursor: null },
       }),
     );

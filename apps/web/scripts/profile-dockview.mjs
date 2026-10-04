@@ -1010,8 +1010,8 @@ async function handleApi({ activeScenario, request, response, terminalSessions, 
     json(response, { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null });
     return;
   }
-  const threadDetailMatch = url.pathname.match(/^\/v1\/threads\/([^/]+)$/);
-  if (request.method === "GET" && threadDetailMatch) {
+  const threadDetailMatch = url.pathname.match(/^\/v1\/threads\/([^/]+)(\/attach)?$/);
+  if (threadDetailMatch && request.method === (threadDetailMatch[2] ? "POST" : "GET")) {
     const threadId = decodeURIComponent(threadDetailMatch[1]);
     const summary = threadSummaries.find((thread) => thread.id === threadId);
     if (!summary) {
@@ -1146,7 +1146,7 @@ async function handleApi({ activeScenario, request, response, terminalSessions, 
     json(response, { id: decodeURIComponent(terminalDeleteMatch[1]) });
     return;
   }
-  if (request.method === "POST" && url.pathname.match(/^\/v1\/threads\/[^/]+\/(attach|input|turns|seen|view-presence|interrupt-current)$/)) {
+  if (request.method === "POST" && url.pathname.match(/^\/v1\/threads\/[^/]+\/(input|turns|seen|view-presence|interrupt-current)$/)) {
     json(response, { payload: {}, rawPayload: {} });
     return;
   }

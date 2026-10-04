@@ -14,6 +14,8 @@ pub mod models;
 #[cfg(test)]
 mod native_config_tests;
 #[cfg(test)]
+mod native_history_tests;
+#[cfg(test)]
 mod native_identity_tests;
 #[cfg(test)]
 mod native_sections_tests;
@@ -2197,7 +2199,7 @@ mod tests {
 
     #[tokio::test]
     async fn self_control_thread_lifecycle_routes_append_audit_events() {
-        let (state, _) = test_state().await;
+        let (state, app_server) = test_state().await;
         let app = build_router(state.clone());
         let thread_id = "thread-1";
         let source_value = json!({
@@ -2237,6 +2239,16 @@ mod tests {
             ("POST", "compact", source.clone()),
             ("POST", "interrupt-current", source.clone()),
         ] {
+            if path == "attach" {
+                *app_server.next_response.lock().unwrap() = Some(json!({
+                    "thread": thread_summary(thread_id),
+                    "initialTurnsPage": {"data": [{
+                        "id": "native-control-turn", "status": "completed",
+                        "items": [{"id": "native-control-user", "type": "userMessage",
+                            "clientId": "control-client", "content": [{"type": "text", "text": "Control history"}]}]
+                    }], "nextCursor": null, "backwardsCursor": null}
+                }));
+            }
             let uri = format!("/v1/self-control/threads/{thread_id}/{path}");
             let request = match method {
                 "PATCH" => Request::patch(uri),
@@ -2258,6 +2270,29 @@ mod tests {
                 },
                 "{method} /{path} should succeed"
             );
+            if path == "attach" {
+                let body = response_json(response).await;
+                assert!(body.get("disposition").is_none());
+                assert_eq!(body["thread"]["id"], thread_id);
+                let items = serialized_timeline_items(&body["timeline"]);
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0]["itemId"], "native-control-user");
+                assert_eq!(
+                    items[0]["payload"]["itemSnapshot"]["clientId"],
+                    "control-client"
+                );
+                let requests = app_server.requests.lock().unwrap();
+                assert_eq!(
+                    requests[0],
+                    (
+                        "thread/resume".to_string(),
+                        json!({
+                            "threadId": thread_id, "excludeTurns": true,
+                            "initialTurnsPage": {"limit": 50, "sortDirection": "desc", "itemsView": "full"}
+                        })
+                    )
+                );
+            }
         }
 
         let event_kinds = state
@@ -3843,142 +3878,66 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thread_attach_resumes_when_gateway_thread_view_is_stale_live() {
-        let (state, app_server) = test_state().await;
-        thread_view::record_thread_live_state(
-            &state.thread_views,
-            "thread-1",
-            ThreadLiveState::Streaming,
-            1,
-        )
-        .await
-        .unwrap();
-        app_server.queued_responses.lock().unwrap().extend([
-            json!({"data": [], "nextCursor": null}),
-            json!({
+    async fn thread_attach_returns_native_canonical_view_despite_stale_gateway_state() {
+        for stale_live_view in [true, false] {
+            let (state, app_server) = test_state().await;
+            if stale_live_view {
+                thread_view::record_thread_live_state(
+                    &state.thread_views,
+                    "thread-1",
+                    ThreadLiveState::Streaming,
+                    1,
+                )
+                .await
+                .unwrap();
+            } else {
+                state
+                    .store
+                    .upsert_thread_runtime_state(ThreadRuntimeState {
+                        thread_id: "thread-1".to_string(),
+                        status: ThreadRuntimeStatus::Idle,
+                        active_turn_id: None,
+                        updated_at: chrono::Utc::now(),
+                        last_event_seq: None,
+                    })
+                    .await
+                    .unwrap();
+            }
+            *app_server.next_response.lock().unwrap() = Some(json!({
                 "thread": thread_summary("thread-1"),
-                "cwd": "/workspace",
-                "model": "gpt-5.4",
-                "modelProvider": "openai"
-            }),
-        ]);
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::post("/v1/threads/thread-1/attach")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["disposition"], "resumed");
-        assert_eq!(body["thread"]["id"], "thread-1");
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests[0].0, "thread/loaded/list");
-        assert_eq!(requests[1].0, "thread/resume");
-    }
-
-    #[tokio::test]
-    async fn thread_attach_resumes_despite_stale_idle_runtime() {
-        let (state, app_server) = test_state().await;
-        state
-            .store
-            .upsert_thread_runtime_state(ThreadRuntimeState {
-                thread_id: "thread-1".to_string(),
-                status: ThreadRuntimeStatus::Idle,
-                active_turn_id: None,
-                updated_at: chrono::Utc::now(),
-                last_event_seq: None,
-            })
-            .await
-            .unwrap();
-        app_server.queued_responses.lock().unwrap().extend([
-            json!({"data": [], "nextCursor": null}),
-            json!({
-                "thread": thread_summary("thread-1"),
-                "cwd": "/workspace",
-                "model": "gpt-5.4",
-                "modelProvider": "openai"
-            }),
-        ]);
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::post("/v1/threads/thread-1/attach")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["disposition"], "resumed");
-        assert_eq!(body["thread"]["id"], "thread-1");
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 2);
-        assert_eq!(requests[0].0, "thread/loaded/list");
-        assert_eq!(requests[1].0, "thread/resume");
-        assert_eq!(requests[1].1["threadId"], "thread-1");
-        assert!(requests[1].1.get("persistExtendedHistory").is_none());
-        assert_eq!(requests[1].1["excludeTurns"], true);
-    }
-
-    #[tokio::test]
-    async fn thread_attach_noops_when_app_server_session_is_loaded() {
-        let (state, app_server) = test_state().await;
-        *app_server.next_response.lock().unwrap() =
-            Some(json!({"data": ["thread-1"], "nextCursor": null}));
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::post("/v1/threads/thread-1/attach")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["disposition"], "alreadyLoaded");
-        assert!(body["thread"].is_null());
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0].0, "thread/loaded/list");
-    }
-
-    #[tokio::test]
-    async fn thread_attach_resumes_unknown_thread() {
-        let (state, app_server) = test_state().await;
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::post("/v1/threads/thread-1/attach")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["disposition"], "resumed");
-        assert_eq!(body["thread"]["id"], "thread-1");
-        let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 2);
-        assert_eq!(requests[0].0, "thread/loaded/list");
-        assert_eq!(requests[1].0, "thread/resume");
-        assert_eq!(requests[1].1["threadId"], "thread-1");
-        assert!(requests[1].1.get("persistExtendedHistory").is_none());
-        assert_eq!(requests[1].1["excludeTurns"], true);
+                "initialTurnsPage": {"data": [], "nextCursor": null, "backwardsCursor": null}
+            }));
+            let response = build_router(state)
+                .oneshot(
+                    Request::post("/v1/threads/thread-1/attach")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = response_json(response).await;
+            assert!(body.get("disposition").is_none());
+            assert_eq!(body["thread"]["id"], "thread-1");
+            assert_eq!(body["liveState"], "idle");
+            assert_eq!(body["timeline"]["rows"], json!([]));
+            assert!(body["timeline"]["activeTurnId"].is_null());
+            assert_eq!(body["historyPage"]["hasOlder"], false);
+            let requests = app_server.requests.lock().unwrap();
+            assert_eq!(requests.len(), 2);
+            assert_eq!(
+                requests[0],
+                (
+                    "thread/resume".to_string(),
+                    json!({
+                        "threadId": "thread-1", "excludeTurns": true,
+                        "initialTurnsPage": {"limit": 50, "sortDirection": "desc", "itemsView": "full"}
+                    })
+                )
+            );
+            assert_eq!(requests[1].0, "thread/turns/list");
+            assert_eq!(requests[1].1["itemsView"], "notLoaded");
+        }
     }
 
     #[tokio::test]

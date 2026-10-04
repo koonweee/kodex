@@ -541,7 +541,7 @@ describe("App shell", () => {
         backwardsCursor: null,
         rawPayload: {},
       },
-      "GET /v1/threads/thread-1": threadDetail(
+      "POST /v1/threads/thread-1/attach": threadDetail(
         {
           id: "thread-1",
           projectId: "project-1",
@@ -622,7 +622,7 @@ describe("App shell", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "GET /v1/threads/thread-1": threadDetail(
+        "POST /v1/threads/thread-1/attach": threadDetail(
           {
             id: "thread-1",
             projectId: "project-1",
@@ -707,7 +707,7 @@ describe("App shell", () => {
         backwardsCursor: null,
         rawPayload: {},
       },
-      "GET /v1/threads/thread-1": threadDetail(
+      "POST /v1/threads/thread-1/attach": threadDetail(
         {
           id: "thread-1",
           projectId: "project-1",
@@ -781,7 +781,7 @@ describe("App shell", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "GET /v1/threads/thread-1": threadDetail(
+        "POST /v1/threads/thread-1/attach": threadDetail(
           {
             id: "thread-1",
             projectId: "project-1",
@@ -858,7 +858,7 @@ describe("App shell", () => {
         backwardsCursor: null,
         rawPayload: {},
       },
-      "GET /v1/threads/thread-1": threadDetail(
+      "POST /v1/threads/thread-1/attach": threadDetail(
         {
           id: "thread-1",
           projectId: "project-1",
@@ -938,7 +938,7 @@ describe("App shell", () => {
         backwardsCursor: null,
         rawPayload: {},
       },
-      "GET /v1/threads/thread-1": threadDetail(
+      "POST /v1/threads/thread-1/attach": threadDetail(
         {
           id: "thread-1",
           projectId: "project-1",
@@ -1024,7 +1024,7 @@ describe("App shell", () => {
         backwardsCursor: null,
         rawPayload: {},
       },
-      "GET /v1/threads/thread-1": threadDetail(
+      "POST /v1/threads/thread-1/attach": threadDetail(
         {
           id: "thread-1",
           projectId: "project-1",
@@ -1103,7 +1103,7 @@ describe("App shell", () => {
         backwardsCursor: null,
         rawPayload: {},
       },
-      "GET /v1/threads/thread-1": threadDetail(
+      "POST /v1/threads/thread-1/attach": threadDetail(
         {
           id: "thread-1",
           projectId: "project-1",
@@ -1189,7 +1189,7 @@ describe("App shell", () => {
         backwardsCursor: null,
         rawPayload: {},
       },
-      "GET /v1/threads/thread-1": threadDetail(
+      "POST /v1/threads/thread-1/attach": threadDetail(
         {
           id: "thread-1",
           projectId: "project-1",

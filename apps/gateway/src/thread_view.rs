@@ -242,7 +242,7 @@ impl ThreadView {
             .enumerate()
             .map(|(index, item)| (scoped_item_key(&item.turn_id, &item.item_id), index))
             .collect::<HashMap<_, _>>();
-        let prior_item_orders = existing_items
+        let mut prior_item_orders = existing_items
             .iter()
             .map(|item| {
                 (
@@ -274,6 +274,27 @@ impl ThreadView {
             .filter(|turn| is_terminal_turn_status(&turn.status))
             .map(|turn| turn.id.clone())
             .collect::<HashSet<_>>();
+        // A complete native page owns item order. Keep the old interleaving
+        // only where a terminal snapshot has not yet materialized previously
+        // visible activity, so those retained rows keep their known anchors.
+        let partial_activity_turn_ids = existing_items
+            .iter()
+            .filter(|item| {
+                terminal_turn_ids.contains(&item.turn_id)
+                    && is_preservable_terminal_activity(item)
+                    && !base_item_indexes
+                        .contains_key(&scoped_item_key(&item.turn_id, &item.item_id))
+            })
+            .map(|item| item.turn_id.clone())
+            .collect::<HashSet<_>>();
+        for item in &base.items {
+            if !partial_activity_turn_ids.contains(&item.turn_id) {
+                prior_item_orders.insert(
+                    scoped_item_key(&item.turn_id, &item.item_id),
+                    item.display_order,
+                );
+            }
+        }
         let mut display_order = base
             .items
             .iter()
@@ -342,6 +363,9 @@ impl ThreadView {
                 item.display_order = display_order;
             }
             let inserted_key = scoped_item_key(&item.turn_id, &item.item_id);
+            if !partial_activity_turn_ids.contains(&item.turn_id) {
+                prior_item_orders.insert(inserted_key.clone(), item.display_order);
+            }
             base_item_indexes.insert(inserted_key, base.items.len());
             base.items.push(item);
         }

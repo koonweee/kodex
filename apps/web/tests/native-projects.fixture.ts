@@ -225,7 +225,7 @@ export async function nativeProjectsFixture(context: BrowserContext) {
         emit("thread.project_updated", { threadId: target.id, projectId: target.projectId });
         return respond(route, { thread: target, rawPayload: {} });
       }
-      if (target && action === "attach" && request.method() === "POST") return respond(route, { disposition: "resumed", thread: target });
+      if (target && action === "attach" && request.method() === "POST") return respond(route, detail(target), 200, `${client}:detail`);
       if (target && action === "app-surface" && request.method() === "GET") return respond(route, { session: null });
       if (target && action === "settings" && request.method() === "GET") return respond(route, { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null });
       if (target && action === "queued-inputs" && request.method() === "GET") return respond(route, { queuedInputs: [] });

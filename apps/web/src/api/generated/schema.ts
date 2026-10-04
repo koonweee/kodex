@@ -3131,12 +3131,6 @@ export interface components {
             byteRange: components["schemas"]["ByteRange"];
             placeholder?: string | null;
         };
-        /** @enum {string} */
-        ThreadAttachDisposition: "alreadyAttached" | "alreadyLoaded" | "notNeeded" | "resumed";
-        ThreadAttachResponse: {
-            disposition: components["schemas"]["ThreadAttachDisposition"];
-            thread?: null | components["schemas"]["ThreadSummary"];
-        };
         ThreadCommandResponse: {
             activePermissionProfile?: null | components["schemas"]["ActivePermissionProfile"];
             approvalPolicy?: string | null;
@@ -5446,7 +5440,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ThreadAttachResponse"];
+                    "application/json": components["schemas"]["ThreadViewResponse"];
                 };
             };
         };
@@ -6142,7 +6136,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ThreadAttachResponse"];
+                    "application/json": components["schemas"]["ThreadViewResponse"];
                 };
             };
         };

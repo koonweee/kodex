@@ -63,7 +63,7 @@ describe("deep link navigation", () => {
     expect(within(main).queryByText(/no thread selected/i)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
     expect(screen.getByRole("button", { name: /project: no project/i })).toBeInTheDocument();
-    expect(gateway.callsFor("GET", "/v1/threads/thread-1")).toHaveLength(0);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-1/attach")).toHaveLength(0);
   });
 
   it("opens a deep-linked thread instead of selecting the first sidebar thread", async () => {
@@ -71,7 +71,7 @@ describe("deep link navigation", () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "GET /v1/threads/thread-2": threadDetail(secondThread),
+        "POST /v1/threads/thread-2/attach": threadDetail(secondThread),
       }),
     );
 
@@ -84,7 +84,7 @@ describe("deep link navigation", () => {
         "true",
       );
     });
-    expect(gateway.callsFor("GET", "/v1/threads/thread-2")).toHaveLength(1);
+    expect(gateway.callsFor("POST", "/v1/threads/thread-2/attach")).toHaveLength(1);
   });
 
   it("opens a mobile deep-linked thread when the persisted workspace starts on a draft pane", async () => {
@@ -93,7 +93,7 @@ describe("deep link navigation", () => {
     mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "GET /v1/threads/thread-2": threadDetail(secondThread),
+        "POST /v1/threads/thread-2/attach": threadDetail(secondThread),
       }),
     );
     setInitialWorkspacePaneState({
@@ -126,7 +126,7 @@ describe("deep link navigation", () => {
     mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "GET /v1/threads/thread-2": () => detailDeferred.promise,
+        "POST /v1/threads/thread-2/attach": () => detailDeferred.promise,
       }),
     );
 
@@ -173,7 +173,7 @@ describe("deep link navigation", () => {
     mockGateway(
       baseRoutes({
         "GET /v1/threads": () => threadsDeferred.promise,
-        "GET /v1/threads/thread-2": () => detailDeferred.promise,
+        "POST /v1/threads/thread-2/attach": () => detailDeferred.promise,
       }),
     );
 
@@ -202,7 +202,7 @@ describe("deep link navigation", () => {
     mockGateway(
       baseRoutes({
         "GET /v1/threads": () => threadsDeferred.promise,
-        "GET /v1/threads/thread-2": threadDetail({ ...secondThread, name: "Fresh deep link title" }),
+        "POST /v1/threads/thread-2/attach": threadDetail({ ...secondThread, name: "Fresh deep link title" }),
       }),
     );
 
@@ -246,7 +246,7 @@ describe("deep link navigation", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "GET /v1/threads/thread-framework": threadDetail({
+        "POST /v1/threads/thread-framework/attach": threadDetail({
           ...frameworkThread,
           name: "Framework detail title",
           updatedAt: 100,
@@ -277,7 +277,7 @@ describe("deep link navigation", () => {
     mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [thread, secondThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "GET /v1/threads/thread-2": threadDetail(secondThread),
+        "POST /v1/threads/thread-2/attach": threadDetail(secondThread),
       }),
     );
 

@@ -447,7 +447,7 @@ describe("MVP composer settings flows", () => {
             : { model: null, effort: null, serviceTier: null, permissionProfileId: null };
         },
         "POST /v1/chats/threads": { thread: chatThread, rawPayload: {} },
-        "GET /v1/threads/chat-thread-1": threadDetail(chatThread),
+        "POST /v1/threads/chat-thread-1/attach": threadDetail(chatThread),
         "GET /v1/threads/chat-thread-1/settings": settingsFor("gpt-5.4"),
         "POST /v1/threads/chat-thread-1/input": { payload: {} },
       }),
@@ -497,7 +497,7 @@ describe("MVP composer settings flows", () => {
         "GET /v1/models": { models: [highReasoningModel], nextCursor: null, rawPayload: {} },
         "GET /v1/threads/chat-thread-1/settings": () => nativeSettings.promise,
         "GET /v1/chats/threads": { threads: [chatThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "GET /v1/threads/chat-thread-1": threadDetail(chatThread),
+        "POST /v1/threads/chat-thread-1/attach": threadDetail(chatThread),
         "POST /v1/threads/chat-thread-1/input": { payload: {} },
       }),
     );
@@ -540,17 +540,7 @@ describe("MVP composer settings flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         },
-        "POST /v1/threads/thread-1/attach": {
-          disposition: "resumed",
-          thread: {
-            ...thread,
-            reasoningEffort: "high",
-            serviceTier: "fast",
-            activePermissionProfile: { id: "auto-review" },
-          },
-          rawPayload: {},
-        },
-        "GET /v1/threads/thread-1": threadDetail({
+        "POST /v1/threads/thread-1/attach": threadDetail({
           ...thread,
           reasoningEffort: "high",
           serviceTier: "fast",
@@ -701,20 +691,10 @@ describe("MVP composer settings flows", () => {
           backwardsCursor: null,
           rawPayload: {},
         }),
-        "GET /v1/threads/thread-mini": () => threadDetail(createdThreads[0]),
-        "GET /v1/threads/thread-spark": () => threadDetail(createdThreads[1]),
+        "POST /v1/threads/thread-mini/attach": () => threadDetail(createdThreads[0]),
+        "POST /v1/threads/thread-spark/attach": () => threadDetail(createdThreads[1]),
         "GET /v1/threads/thread-mini/settings": settingsFor("gpt-5.4-mini"),
         "GET /v1/threads/thread-spark/settings": settingsFor("gpt-5.3-codex-spark"),
-        "POST /v1/threads/thread-mini/attach": () => ({
-          disposition: "resumed",
-          thread: createdThreads[0],
-          rawPayload: {},
-        }),
-        "POST /v1/threads/thread-spark/attach": () => ({
-          disposition: "resumed",
-          thread: createdThreads[1],
-          rawPayload: {},
-        }),
         "POST /v1/threads": () => {
           const createdThread = createdThreads[createThreadIndex++];
           serverThreads.unshift(createdThread);

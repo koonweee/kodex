@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getThreadDetail, type EventEnvelope, type ThreadViewResponse } from "../api/client";
+import { attachThread, getThreadDetail, type EventEnvelope, type ThreadViewResponse } from "../api/client";
 import type { TimelineState } from "./reducer";
 import { useReadonlyThreadTimeline } from "./useReadonlyThreadTimeline";
 
@@ -9,6 +9,7 @@ vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
   return {
     ...actual,
+    attachThread: vi.fn(),
     getThreadDetail: vi.fn(),
   };
 });
@@ -46,6 +47,26 @@ describe("useReadonlyThreadTimeline", () => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
     FakeEventSource.instances = [];
+  });
+
+  it("keeps two read-only observers on history reads when their streams reconnect", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let snapshot = threadDetail("Stored history", 1);
+    vi.mocked(getThreadDetail).mockReset().mockImplementation(async () => snapshot);
+    const first = renderHook(() => useReadonlyThreadTimeline({ onError: vi.fn(), threadId: "thread-1" }));
+    const second = renderHook(() => useReadonlyThreadTimeline({ onError: vi.fn(), threadId: "thread-1" }));
+    await waitFor(() => expect(timelineText(first.result.current.timeline)).toBe("Stored history"));
+    await waitFor(() => expect(timelineText(second.result.current.timeline)).toBe("Stored history"));
+    expect(getThreadDetail).toHaveBeenCalledTimes(2);
+    expect(attachThread).not.toHaveBeenCalled();
+
+    snapshot = threadDetail("Recovered stored history", 2);
+    act(() => FakeEventSource.instances.forEach((stream) => stream.onerror?.()));
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(4), { timeout: 2_000 });
+    await waitFor(() => expect(timelineText(first.result.current.timeline)).toBe("Recovered stored history"));
+    await waitFor(() => expect(timelineText(second.result.current.timeline)).toBe("Recovered stored history"));
+    expect(getThreadDetail).toHaveBeenCalledTimes(4);
+    expect(attachThread).not.toHaveBeenCalled();
   });
 
   it("drops delayed render events before applying a refresh-required snapshot", async () => {
