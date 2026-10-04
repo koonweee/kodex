@@ -30,20 +30,20 @@ use tokio::{
 };
 use tower::ServiceExt;
 
-pub enum ModelResponse {
+pub(super) enum ModelResponse {
     Items(Vec<Value>),
     Hold,
 }
 
 impl ModelResponse {
-    pub fn message(text: &str) -> Self {
+    pub(super) fn message(text: &str) -> Self {
         Self::Items(vec![json!({
             "type":"message", "role":"assistant", "id":"fixture-message",
             "content":[{"type":"output_text", "text":text}],
         })])
     }
 
-    pub fn command(call_id: &str, arguments: Value) -> Self {
+    pub(super) fn command(call_id: &str, arguments: Value) -> Self {
         Self::Items(vec![json!({
             "type":"function_call", "call_id":call_id, "name":"exec_command",
             "arguments":arguments.to_string(),
@@ -57,18 +57,18 @@ struct ProviderState {
     requests: mpsc::UnboundedSender<Value>,
 }
 
-pub struct Fixture {
+pub(super) struct Fixture {
     provider: JoinHandle<()>,
     responses: Arc<Mutex<VecDeque<ModelResponse>>>,
     requests: mpsc::UnboundedReceiver<Value>,
-    pub config: Config,
-    pub workspace: PathBuf,
+    pub(super) config: Config,
+    pub(super) workspace: PathBuf,
     _instance: PreparedInstance,
     _dir: tempfile::TempDir,
 }
 
 impl Fixture {
-    pub async fn new() -> anyhow::Result<Self> {
+    pub(super) async fn new() -> anyhow::Result<Self> {
         let dir = tempfile::tempdir()?;
         let workspace = dir.path().join("workspace");
         std::fs::create_dir(&workspace)?;
@@ -130,11 +130,11 @@ stream_max_retries = 0
         })
     }
 
-    pub fn enqueue(&self, responses: impl IntoIterator<Item = ModelResponse>) {
+    pub(super) fn enqueue(&self, responses: impl IntoIterator<Item = ModelResponse>) {
         self.responses.lock().unwrap().extend(responses);
     }
 
-    pub async fn next_model_request(&mut self) -> anyhow::Result<Value> {
+    pub(super) async fn next_model_request(&mut self) -> anyhow::Result<Value> {
         timeout(Duration::from_secs(15), self.requests.recv())
             .await
             .context("model fixture was not called")?
@@ -148,8 +148,8 @@ impl Drop for Fixture {
     }
 }
 
-pub struct NativeSession {
-    pub app: Router,
+pub(super) struct NativeSession {
+    pub(super) app: Router,
     server: Arc<JsonRpcAppServer>,
     relay: JoinHandle<()>,
     ingest: JoinHandle<()>,
@@ -157,7 +157,7 @@ pub struct NativeSession {
 }
 
 impl NativeSession {
-    pub async fn start(fixture: &Fixture) -> anyhow::Result<Self> {
+    pub(super) async fn start(fixture: &Fixture) -> anyhow::Result<Self> {
         let store = Store::connect(&fixture.config.database.path).await?;
         let (tx, mut native_rx) = mpsc::channel(1024);
         let server = JsonRpcAppServer::start(&fixture.config.codex, tx).await?;
@@ -185,7 +185,11 @@ impl NativeSession {
         })
     }
 
-    pub async fn completed_turn(&mut self, thread_id: &str, status: &str) -> anyhow::Result<Value> {
+    pub(super) async fn completed_turn(
+        &mut self,
+        thread_id: &str,
+        status: &str,
+    ) -> anyhow::Result<Value> {
         timeout(Duration::from_secs(20), async {
             while let Some((method, params)) = self.notifications.recv().await {
                 if method == "turn/completed" && params["threadId"] == thread_id {
@@ -202,7 +206,7 @@ impl NativeSession {
         .context("native turn did not finish")?
     }
 
-    pub async fn shutdown(&self) -> anyhow::Result<()> {
+    pub(super) async fn shutdown(&self) -> anyhow::Result<()> {
         self.server.shutdown().await?;
         self.ingest.abort();
         self.relay.abort();
@@ -262,7 +266,7 @@ fn event(value: Value) -> String {
     )
 }
 
-pub async fn api(
+pub(super) async fn api(
     app: &Router,
     method: &str,
     path: &str,
@@ -280,7 +284,7 @@ pub async fn api(
         .with_context(|| format!("{method} {path}"))
 }
 
-pub async fn request_json(app: &Router, request: Request<Body>) -> anyhow::Result<Value> {
+pub(super) async fn request_json(app: &Router, request: Request<Body>) -> anyhow::Result<Value> {
     let response = app.clone().oneshot(request).await?;
     let status = response.status();
     let payload = response.into_body().collect().await?.to_bytes();
@@ -292,7 +296,7 @@ pub async fn request_json(app: &Router, request: Request<Body>) -> anyhow::Resul
     Ok(serde_json::from_slice(&payload)?)
 }
 
-pub async fn upload(
+pub(super) async fn upload(
     app: &Router,
     path: &str,
     field: &str,
