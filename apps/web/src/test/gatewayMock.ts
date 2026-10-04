@@ -99,9 +99,7 @@ async function fallbackThreadInput(request: Request) {
     return null;
   }
   return {
-    disposition: "started",
-    queuedInput: null,
-    rawPayload: {},
+    payload: {},
   };
 }
 

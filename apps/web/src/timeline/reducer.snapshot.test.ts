@@ -82,7 +82,7 @@ describe("timeline canonical snapshots and patches", () => {
     expect(state.hiddenItems).toEqual([]);
   });
 
-  it("removes optimistic user rows covered by canonical full snapshot rows", () => {
+  it("removes optimistic user rows identified by canonical full snapshot rows", () => {
     let state = addOptimisticUserMessage(createTimelineState(), {
       clientRequestId: "request-1",
       skillMentions: [],
@@ -100,6 +100,7 @@ describe("timeline canonical snapshots and patches", () => {
           itemId: "user-1",
           itemType: "userMessage",
           text: "Queued follow-up",
+          clientId: "request-1",
           turnId: "turn-2",
         }),
         timelineItem({
@@ -117,7 +118,7 @@ describe("timeline canonical snapshots and patches", () => {
     expect(state.items.filter((item) => item.source === "optimistic")).toEqual([]);
   });
 
-  it("removes only one optimistic row per matching canonical user row", () => {
+  it("removes only the optimistic row with the matching native client ID", () => {
     let state = addOptimisticUserMessage(createTimelineState(), {
       clientRequestId: "request-1",
       skillMentions: [],
@@ -141,6 +142,7 @@ describe("timeline canonical snapshots and patches", () => {
           itemId: "user-1",
           itemType: "userMessage",
           text: "Repeat this",
+          clientId: "request-2",
           turnId: "turn-2",
         }),
       ],
@@ -1011,6 +1013,7 @@ function timelineItem({
   displayOrder = 1,
   status = "completed",
   turnId = "turn-1",
+  clientId,
 }: {
   id?: string;
   itemId?: string;
@@ -1019,6 +1022,7 @@ function timelineItem({
   displayOrder?: number;
   status?: string;
   turnId?: string;
+  clientId?: string;
 } = {}) {
   const rawPayload =
     itemType === "userMessage"
@@ -1042,6 +1046,7 @@ function timelineItem({
       itemSnapshot: {
         id: itemId,
         itemType,
+        clientId,
         text,
         rawPayload,
         skillMentions: [],

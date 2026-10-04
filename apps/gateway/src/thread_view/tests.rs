@@ -116,6 +116,7 @@ async fn session_reconciles_pending_user_input_when_snapshot_materializes_item()
         &sessions,
         "thread-1",
         "turn-1",
+        "client-1",
         &[UserInput::Text {
             text: "Hello".to_string(),
             text_elements: Vec::new(),
@@ -134,6 +135,7 @@ async fn session_reconciles_pending_user_input_when_snapshot_materializes_item()
         items: vec![ThreadItemSnapshot::from_payload(&json!({
             "id": "user-1",
             "type": "userMessage",
+            "clientId": "client-1",
             "content": [{"type": "text", "text": "Hello"}]
         }))
         .unwrap()],
@@ -155,6 +157,7 @@ async fn session_reconciles_pending_skill_mention_user_input() {
         &sessions,
         "thread-1",
         "turn-1",
+        "client-1",
         &[
             UserInput::Text {
                 text: "Run $review-fix".to_string(),
@@ -182,6 +185,7 @@ async fn session_reconciles_pending_skill_mention_user_input() {
         items: vec![ThreadItemSnapshot::from_payload(&json!({
             "id": "user-1",
             "type": "userMessage",
+            "clientId": "client-1",
             "content": [
                 {
                     "type": "text",
@@ -212,7 +216,7 @@ async fn session_reconciles_pending_skill_mention_user_input() {
 }
 
 #[tokio::test]
-async fn active_snapshot_reconciles_gateway_stream_user_input_with_skill_mention_by_visible_text() {
+async fn active_snapshot_preserves_distinct_native_user_items_with_matching_skill_text() {
     let sessions = ThreadViewStore::default();
     let live_item = json!({
         "id": "9fca8fd8-195e-4fe0-8af9-5e53dcf75638",
@@ -278,8 +282,12 @@ async fn active_snapshot_reconciles_gateway_stream_user_input_with_skill_mention
         .filter(|item| item.item_type == "userMessage")
         .collect::<Vec<_>>();
 
-    assert_eq!(user_items.len(), 1);
+    assert_eq!(user_items.len(), 2);
     assert_eq!(user_items[0].item_id, "item-1");
+    assert_eq!(
+        user_items[1].item_id,
+        "9fca8fd8-195e-4fe0-8af9-5e53dcf75638"
+    );
     assert_eq!(timeline.live_state, ThreadLiveState::Streaming);
 }
 
@@ -306,6 +314,7 @@ async fn pending_user_input_returns_turn_scoped_patch() {
         &sessions,
         "thread-1",
         "turn-new",
+        "client-new",
         &[UserInput::Text {
             text: "New prompt".to_string(),
             text_elements: Vec::new(),
@@ -680,9 +689,10 @@ async fn item_upsert_returns_row_delta_and_terminal_turn_status_returns_turn_pat
     assert_eq!(status_patch.scope, ThreadViewPatchScope::Turn);
     assert!(status_patch.validate_scope().is_ok());
     assert_eq!(status_patch.affected_turn_ids, vec!["turn-1"]);
-    assert!(status_patch.rows.as_ref().is_some_and(|rows| rows
-        .iter()
-        .all(|row| row.turn_id.as_deref() == Some("turn-1"))));
+    assert!(status_patch.rows.as_ref().is_some_and(|rows| {
+        rows.iter()
+            .all(|row| row.turn_id.as_deref() == Some("turn-1"))
+    }));
 }
 
 #[tokio::test]
@@ -1341,7 +1351,7 @@ async fn active_snapshot_collapses_duplicate_live_assistant_text() {
 }
 
 #[tokio::test]
-async fn active_snapshot_collapses_equivalent_gateway_stream_user_item() {
+async fn active_snapshot_preserves_distinct_native_user_items_with_identical_content() {
     let sessions = ThreadViewStore::default();
     let live_user = user_message_item("live-user", "Same prompt");
     let live_user_snapshot = ThreadItemSnapshot::from_payload(&live_user).unwrap();
@@ -1379,7 +1389,7 @@ async fn active_snapshot_collapses_equivalent_gateway_stream_user_item() {
             .iter()
             .map(|item| item.item_id.as_str())
             .collect::<Vec<_>>(),
-        vec!["snapshot-user"]
+        vec!["snapshot-user", "live-user"]
     );
     assert_eq!(
         timeline
@@ -1387,7 +1397,7 @@ async fn active_snapshot_collapses_equivalent_gateway_stream_user_item() {
             .iter()
             .filter(|row| row.kind == "user_message")
             .count(),
-        1
+        2
     );
 }
 

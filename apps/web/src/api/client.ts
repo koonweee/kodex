@@ -69,7 +69,6 @@ export type ThreadTimelineSnapshot = components["schemas"]["ThreadTimelineSnapsh
 export type ThreadTimelineSnapshotItem = components["schemas"]["ThreadTimelineSnapshotItem"];
 export type ThreadTimelineWorkDetailRow = components["schemas"]["ThreadTimelineWorkDetailRow"];
 export type ThreadTimelineWindowPage = components["schemas"]["ThreadTimelineWindowPage"];
-export type ThreadInputResponse = components["schemas"]["ThreadInputResponse"];
 export type ThreadInterruptCurrentResponse = components["schemas"]["ThreadInterruptCurrentResponse"];
 export type ThreadCompactResponse = components["schemas"]["ThreadCompactResponse"];
 export type TimelineSkillMention = components["schemas"]["TimelineSkillMention"];
@@ -427,11 +426,12 @@ export async function submitThreadInput(
   threadId: string,
   input: UserInput[],
   attachments: TimelineFileAttachment[] = [],
-): Promise<ThreadInputResponse> {
+  clientUserMessageId?: components["schemas"]["TurnStartRequest"]["clientUserMessageId"],
+): Promise<components["schemas"]["RawAppServerResponse"]> {
   return unwrap(
     api.POST("/v1/threads/{threadId}/input", {
       params: { path: { threadId } },
-      body: { input, ...(attachments.length > 0 ? { attachments } : {}) },
+      body: { input, ...(attachments.length > 0 ? { attachments } : {}), ...(clientUserMessageId !== undefined ? { clientUserMessageId } : {}) },
     }),
   );
 }

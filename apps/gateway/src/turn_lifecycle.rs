@@ -61,52 +61,6 @@ pub async fn current_active_turn_id(
     Ok(timeline.active_turn_id)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ThreadInputRoute {
-    Active { turn_id: String },
-    QueueBehindGatewayWork,
-    Idle,
-}
-
-pub async fn route_for_thread_input(
-    state: &AppState,
-    thread_id: &str,
-) -> ApiResult<ThreadInputRoute> {
-    if let Some(active_turn_id) = state.thread_views.active_turn_id(thread_id).await {
-        return Ok(ThreadInputRoute::Active {
-            turn_id: active_turn_id,
-        });
-    }
-
-    if let Some(runtime) = state.store.get_thread_runtime_state(thread_id).await? {
-        match runtime.status {
-            ThreadRuntimeStatus::Starting | ThreadRuntimeStatus::Draining => {
-                return Ok(ThreadInputRoute::QueueBehindGatewayWork);
-            }
-            ThreadRuntimeStatus::Syncing if runtime.active_turn_id.is_none() => {
-                return Ok(ThreadInputRoute::QueueBehindGatewayWork);
-            }
-            ThreadRuntimeStatus::Active
-            | ThreadRuntimeStatus::Streaming
-            | ThreadRuntimeStatus::Syncing => {
-                if let Some(active_turn_id) = runtime.active_turn_id {
-                    return Ok(ThreadInputRoute::Active {
-                        turn_id: active_turn_id,
-                    });
-                }
-            }
-            _ => {}
-        }
-    }
-
-    let active_turn_id = refreshed_active_turn_id(state, thread_id).await?;
-    Ok(
-        active_turn_id.map_or(ThreadInputRoute::Idle, |turn_id| ThreadInputRoute::Active {
-            turn_id,
-        }),
-    )
-}
-
 pub async fn refreshed_active_turn_id(
     state: &AppState,
     thread_id: &str,
@@ -154,19 +108,6 @@ pub async fn routed_active_turn_id(state: &AppState, thread_id: &str) -> ApiResu
         }
     }
     refreshed_active_turn_id(state, thread_id).await
-}
-
-pub async fn record_turn_starting(state: &AppState, thread_id: &str) -> ApiResult<()> {
-    state
-        .store
-        .upsert_thread_runtime_state(ThreadRuntimeState {
-            thread_id: thread_id.to_string(),
-            status: ThreadRuntimeStatus::Starting,
-            active_turn_id: None,
-            updated_at: chrono::Utc::now(),
-            last_event_seq: Some(state.store.latest_event_seq().await?),
-        })
-        .await
 }
 
 pub async fn record_turn_start_failed(state: &AppState, thread_id: &str) -> ApiResult<()> {
@@ -230,6 +171,7 @@ pub async fn record_pending_user_projection(
     state: &AppState,
     thread_id: &str,
     turn_id: &str,
+    client_id: &str,
     input: &[UserInput],
     attachments: &[TimelineFileAttachment],
 ) -> ApiResult<()> {
@@ -249,6 +191,7 @@ pub async fn record_pending_user_projection(
         &state.thread_views,
         thread_id,
         turn_id,
+        client_id,
         input,
         attachments,
         event.seq,
@@ -274,35 +217,6 @@ pub fn pending_projection_turn_id(payload: &serde_json::Value) -> Option<String>
         .map(str::to_string)
 }
 
-pub fn is_no_active_turn_error(error: &ApiError) -> bool {
-    let message = error.to_string().to_ascii_lowercase();
-    message.contains("no active turn")
-        || message.contains("active turn")
-            && (message.contains("missing") || message.contains("not found"))
-}
-
-pub fn expected_turn_mismatch_actual_turn_id(error: &ApiError) -> Option<String> {
-    let message = error.to_string();
-    if !is_expected_turn_mismatch_error(error) {
-        return None;
-    }
-    app_server_error_data(&message).and_then(|data| {
-        string_field(&data, "actualTurnId")
-            .or_else(|| string_field(&data, "activeTurnId"))
-            .or_else(|| string_field(&data, "currentTurnId"))
-            .or_else(|| string_field(&data, "turnId"))
-    })
-}
-
-pub fn is_expected_turn_mismatch_error(error: &ApiError) -> bool {
-    let message = error.to_string();
-    let normalized = message.to_ascii_lowercase();
-    normalized.contains("expectedturnid")
-        || normalized.contains("expected turn")
-        || normalized.contains("turn id mismatch")
-        || normalized.contains("active turn mismatch")
-}
-
 pub fn is_non_steerable_error(error: &ApiError) -> bool {
     let message = error.to_string().to_ascii_lowercase();
     message.contains("not steerable")
@@ -311,17 +225,4 @@ pub fn is_non_steerable_error(error: &ApiError) -> bool {
         || message.contains("no active turn")
         || message.contains("expectedturnid")
         || message.contains("expected turn")
-}
-
-fn app_server_error_data(message: &str) -> Option<serde_json::Value> {
-    let (_, data) = message.split_once("data: ")?;
-    serde_json::from_str(data).ok()
-}
-
-fn string_field(value: &serde_json::Value, key: &str) -> Option<String> {
-    value
-        .get(key)
-        .and_then(serde_json::Value::as_str)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
 }

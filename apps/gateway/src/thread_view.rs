@@ -252,15 +252,16 @@ impl ThreadView {
             })
             .collect::<HashMap<_, _>>();
         let prior_turn_tail_orders = turn_max_display_orders(existing_items.iter());
-        let base_pending_user_text_keys = base
+        let base_user_client_ids = base
             .items
             .iter()
-            .filter_map(materialized_user_text_key)
+            .filter(|item| !is_pending_user_item(item))
+            .filter_map(user_message_identity)
             .collect::<HashSet<_>>();
-        let base_message_content_keys = base
+        let base_assistant_text_keys = base
             .items
             .iter()
-            .filter_map(snapshot_message_content_key)
+            .filter_map(snapshot_assistant_text_key)
             .collect::<HashSet<_>>();
         let base_activity_content_keys = base
             .items
@@ -290,18 +291,14 @@ impl ThreadView {
                 }
                 continue;
             }
-            if pending_user_text_key(&item)
-                .is_some_and(|key| base_pending_user_text_keys.contains(&key))
+            if is_pending_user_item(&item)
+                && user_message_identity(&item)
+                    .is_some_and(|key| base_user_client_ids.contains(&key))
             {
                 continue;
             }
-            if gateway_stream_user_text_key(&item)
-                .is_some_and(|key| base_pending_user_text_keys.contains(&key))
-            {
-                continue;
-            }
-            if gateway_stream_message_content_key(&item)
-                .is_some_and(|key| base_message_content_keys.contains(&key))
+            if gateway_stream_assistant_text_key(&item)
+                .is_some_and(|key| base_assistant_text_keys.contains(&key))
             {
                 continue;
             }
@@ -985,6 +982,7 @@ pub async fn record_pending_user_input(
     sessions: &ThreadViewStore,
     thread_id: &str,
     turn_id: &str,
+    client_id: &str,
     input: &[UserInput],
     attachments: &[TimelineFileAttachment],
     updated_seq: i64,
@@ -995,10 +993,11 @@ pub async fn record_pending_user_input(
     let Ok(content) = serde_json::to_value(input) else {
         return Ok(None);
     };
-    let item_id = format!("pending-user-{updated_seq}");
+    let item_id = format!("pending-user-{client_id}");
     let item = json!({
         "id": item_id,
         "type": "userMessage",
+        "clientId": client_id,
         "content": content,
         "fileAttachments": attachments,
     });
@@ -1006,6 +1005,16 @@ pub async fn record_pending_user_input(
     item_snapshot.raw_payload = item.clone();
     let patch = sessions
         .with_thread_view(thread_id, updated_seq, |view| {
+            // Native events can materialize the input before its submission ACK.
+            // Check and insert under the same view lock so late ACKs cannot
+            // recreate a synthetic row after the native receipt.
+            if view.items.iter().any(|item| {
+                !is_pending_user_item(item)
+                    && item.turn_id == turn_id
+                    && user_message_client_id(item) == Some(client_id)
+            }) {
+                return None;
+            }
             view.upsert_item(
                 thread_id,
                 turn_id,
@@ -1014,10 +1023,10 @@ pub async fn record_pending_user_input(
                 Some("running"),
                 Some(Utc::now().timestamp_millis()),
             );
-            view.turn_patch(turn_id)
+            Some(view.turn_patch(turn_id))
         })
         .await;
-    Ok(Some(patch))
+    Ok(patch)
 }
 
 fn replace_or_push(
@@ -1041,25 +1050,18 @@ fn remove_materialized_pending_match(
     item_snapshot: &ThreadItemSnapshot,
     raw_item: &Value,
 ) {
-    if !item_snapshot.item_type.eq_ignore_ascii_case("userMessage") {
+    if !item_snapshot.item_type.eq_ignore_ascii_case("userMessage")
+        || item_snapshot.id.starts_with("pending-user-")
+    {
         return;
     }
-    let key = visible_text_from_thread_item(raw_item)
-        .map(|text| scoped_text_key(turn_id, &item_snapshot.item_type, &text))
-        .or_else(|| {
-            file_attachment_match_key(
-                turn_id,
-                &item_snapshot.item_type,
-                &item_snapshot.file_attachments,
-            )
-        });
-    let Some(key) = key else {
+    let Some(client_id) = raw_item.get("clientId").and_then(Value::as_str) else {
         return;
     };
     items.retain(|item| {
-        pending_user_text_key(item)
-            .or_else(|| gateway_stream_user_text_key(item))
-            .is_none_or(|pending_key| pending_key != key)
+        !is_pending_user_item(item)
+            || item.turn_id != turn_id
+            || user_message_client_id(item) != Some(client_id)
     });
 }
 
@@ -1083,69 +1085,40 @@ fn should_preserve_live_item_over_snapshot(
     false
 }
 
-fn pending_user_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
-    if !item.item_id.starts_with("pending-user-")
-        || !item.item_type.eq_ignore_ascii_case("userMessage")
-    {
-        return None;
-    }
-    text_for_pending_user_match(item)
-        .map(|text| scoped_text_key(&item.turn_id, &item.item_type, &text))
-        .or_else(|| {
-            file_attachment_match_key(
-                &item.turn_id,
-                &item.item_type,
-                &item.payload.item_snapshot.file_attachments,
-            )
-        })
+fn is_pending_user_item(item: &ThreadTimelineSnapshotItem) -> bool {
+    item.item_id.starts_with("pending-user-") && item.item_type.eq_ignore_ascii_case("userMessage")
 }
 
-fn gateway_stream_user_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
-    if item.payload.source != TimelineUpdateSource::GatewayStream
-        || !item.item_type.eq_ignore_ascii_case("userMessage")
-    {
-        return None;
-    }
-    materialized_item_text_key(item)
+fn user_message_identity(item: &ThreadTimelineSnapshotItem) -> Option<(String, String)> {
+    user_message_client_id(item).map(|client_id| (item.turn_id.clone(), client_id.to_string()))
 }
 
-fn materialized_user_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+fn user_message_client_id(item: &ThreadTimelineSnapshotItem) -> Option<&str> {
     if !item.item_type.eq_ignore_ascii_case("userMessage") {
         return None;
     }
-    materialized_item_text_key(item)
+    item.payload.item.client_id.as_deref()
 }
 
-fn materialized_item_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
-    text_for_pending_user_match(item)
-        .map(|text| scoped_text_key(&item.turn_id, &item.item_type, &text))
-        .or_else(|| {
-            file_attachment_match_key(
-                &item.turn_id,
-                &item.item_type,
-                &item.payload.item_snapshot.file_attachments,
-            )
-        })
-}
-
-fn snapshot_message_content_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+fn snapshot_assistant_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
     if item.payload.source != TimelineUpdateSource::AppServerSnapshot {
         return None;
     }
-    message_content_key(item)
+    assistant_text_key(item)
 }
 
-fn gateway_stream_message_content_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+fn gateway_stream_assistant_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
     if item.payload.source != TimelineUpdateSource::GatewayStream {
         return None;
     }
-    message_content_key(item)
+    assistant_text_key(item)
 }
 
-fn message_content_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
-    let kind = normalized_message_item_kind(&item.item_type)?;
-    let content = message_content_signature(item, kind)?;
-    Some(scoped_text_key(&item.turn_id, kind, &content))
+fn assistant_text_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+    if normalized_message_item_kind(&item.item_type) != Some("assistant_message") {
+        return None;
+    }
+    timeline_item_text(item).map(|text| scoped_text_key(&item.turn_id, "assistant_message", &text))
 }
 
 fn normalized_message_item_kind(item_type: &str) -> Option<&'static str> {
@@ -1156,23 +1129,6 @@ fn normalized_message_item_kind(item_type: &str) -> Option<&'static str> {
         }
         _ => None,
     }
-}
-
-fn message_content_signature(item: &ThreadTimelineSnapshotItem, kind: &str) -> Option<String> {
-    if kind == "user_message" {
-        return user_message_content_signature(item).or_else(|| text_for_pending_user_match(item));
-    }
-    text_for_pending_user_match(item)
-}
-
-fn user_message_content_signature(item: &ThreadTimelineSnapshotItem) -> Option<String> {
-    item.payload
-        .item_snapshot
-        .raw_payload
-        .get("content")
-        .or(item.payload.item.content.as_ref())
-        .and_then(|content| serde_json::to_string(content).ok())
-        .filter(|content| !content.trim().is_empty())
 }
 
 fn snapshot_activity_content_key(item: &ThreadTimelineSnapshotItem) -> Option<String> {
@@ -1321,7 +1277,7 @@ fn activity_content_signature(item: &ThreadTimelineSnapshotItem) -> Option<Strin
         .filter(|signature| !signature.trim().is_empty() && signature != "null")
 }
 
-fn text_for_pending_user_match(item: &ThreadTimelineSnapshotItem) -> Option<String> {
+fn timeline_item_text(item: &ThreadTimelineSnapshotItem) -> Option<String> {
     visible_text_from_thread_item(&item.payload.item_snapshot.raw_payload).or_else(|| {
         item.payload
             .item
@@ -1342,25 +1298,6 @@ fn scoped_text_key(turn_id: &str, item_type: &str, text: &str) -> String {
         item_type.to_ascii_lowercase(),
         text.trim()
     )
-}
-
-fn file_attachment_match_key(
-    turn_id: &str,
-    item_type: &str,
-    attachments: &[crate::app_server_api::TimelineFileAttachment],
-) -> Option<String> {
-    if attachments.is_empty() {
-        return None;
-    }
-    let paths = attachments
-        .iter()
-        .map(|attachment| attachment.relative_path.as_str())
-        .collect::<Vec<_>>()
-        .join("\0");
-    Some(format!(
-        "{turn_id}\0{}\0files\0{paths}",
-        item_type.to_ascii_lowercase()
-    ))
 }
 
 fn next_display_order(items: &[ThreadTimelineSnapshotItem]) -> i64 {
@@ -1435,3 +1372,7 @@ impl Default for ThreadLiveState {
 #[cfg(test)]
 #[path = "thread_view/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "thread_view/identity_tests.rs"]
+mod identity_tests;

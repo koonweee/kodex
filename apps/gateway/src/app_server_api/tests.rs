@@ -131,6 +131,7 @@ async fn adapter_maps_thread_and_turn_methods() {
                 text: "continue".to_string(),
                 text_elements: Vec::new(),
             }],
+            None,
         )
         .await
         .unwrap();
@@ -261,6 +262,7 @@ async fn adapter_maps_thread_list_read_archive_and_turn_start_interrupt_methods(
                 text_elements: Vec::new(),
             }],
             TurnStartOptions::default(),
+            None,
         )
         .await
         .unwrap();
@@ -580,6 +582,27 @@ async fn unsupported_native_history_is_not_misreported_as_an_empty_thread() {
         matches!(error, ApiError::BadGateway(message) if message.contains("list_turns is not supported yet"))
     );
     assert_eq!(server.requests.lock().unwrap().len(), 2);
+}
+
+#[test]
+fn native_client_identity_is_opaque_and_untruncated_in_snapshot_and_display() {
+    let client_id = "  客户端 opaque ID  ".repeat(3000);
+    let raw = json!({"id":"native-item","type":"userMessage","clientId":client_id,"content":[{"type":"text","text":"same"}]});
+    let snapshot = ThreadItemSnapshot::from_payload(&raw).unwrap();
+    assert_eq!(snapshot.client_id.as_deref(), Some(client_id.as_str()));
+    assert_eq!(
+        serde_json::to_value(&snapshot).unwrap()["clientId"],
+        client_id
+    );
+    assert_eq!(
+        compact_timeline_item_payload(&raw).client_id.as_deref(),
+        Some(client_id.as_str())
+    );
+    let missing = ThreadItemSnapshot::from_payload(
+        &json!({"id":"foreign","type":"userMessage","content":[]}),
+    )
+    .unwrap();
+    assert!(missing.client_id.is_none());
 }
 
 #[test]

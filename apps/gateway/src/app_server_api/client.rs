@@ -378,13 +378,15 @@ impl CodexClient {
         thread_id: String,
         input: Vec<UserInput>,
         options: TurnStartOptions,
+        client_id: Option<String>,
     ) -> ApiResult<RawAppServerResponse> {
         options.validate()?;
         let mut payload = json!({ "threadId": thread_id, "input": input });
         options.apply_to_payload(&mut payload);
-        let payload = self
-            .request_retrying_rollout_load("turn/start", payload)
-            .await?;
+        if let Some(client_id) = client_id {
+            payload["clientUserMessageId"] = json!(client_id);
+        }
+        let payload = self.request("turn/start", payload).await?;
         Ok(RawAppServerResponse { payload })
     }
 
@@ -393,6 +395,7 @@ impl CodexClient {
         thread_id: String,
         expected_turn_id: String,
         input: Vec<UserInput>,
+        client_id: Option<String>,
     ) -> ApiResult<RawAppServerResponse> {
         self.raw_request(
             "turn/steer",
@@ -400,6 +403,7 @@ impl CodexClient {
                 "threadId": thread_id,
                 "expectedTurnId": expected_turn_id,
                 "input": input,
+                "clientUserMessageId": client_id,
             }),
         )
         .await

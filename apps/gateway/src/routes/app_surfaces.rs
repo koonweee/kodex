@@ -343,6 +343,7 @@ async fn bridge_message(
         State(state.clone()),
         Path(session.thread_id.clone()),
         Json(TurnStartRequest {
+            client_user_message_id: None,
             input: vec![UserInput::Text {
                 text: message.clone(),
                 text_elements: Vec::new(),

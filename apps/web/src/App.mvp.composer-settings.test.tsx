@@ -150,6 +150,7 @@ describe("MVP composer settings flows", () => {
 
     const turnBody = await requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0]);
     expect(turnBody).toEqual({
+      clientUserMessageId: expect.any(String),
       input: [{ text: "Use the selected controls", type: "text" }],
     });
     // Theme and presence identity are browser-local; shared choices stay native.
@@ -188,6 +189,7 @@ describe("MVP composer settings flows", () => {
 
     const turnBody = await requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0]);
     expect(turnBody).toEqual({
+      clientUserMessageId: expect.any(String),
       input: [{ text: "Use app-server thread defaults", type: "text" }],
     });
   }, 20_000);
@@ -418,6 +420,7 @@ describe("MVP composer settings flows", () => {
     });
     const inputBody = await requestJson(gateway.callsFor("POST", "/v1/threads/thread-2/input")[0]);
     expect(inputBody).toEqual({
+      clientUserMessageId: expect.any(String),
       input: [{ type: "text", text: "Start with toolbar settings" }],
     });
     expect(createThreadBody).not.toHaveProperty("permissions");
@@ -513,7 +516,7 @@ describe("MVP composer settings flows", () => {
       expect(gateway.callsFor("POST", "/v1/threads/chat-thread-1/input")).toHaveLength(1);
     });
     const turnBody = await requestJson(gateway.callsFor("POST", "/v1/threads/chat-thread-1/input")[0]);
-    expect(turnBody).toEqual({ input: [{ type: "text", text: "Send before native settings load" }] });
+    expect(turnBody).toEqual({ clientUserMessageId: expect.any(String), input: [{ type: "text", text: "Send before native settings load" }] });
     expect(gateway.callsFor("GET", "/v1/threads/chat-thread-1/settings")).toHaveLength(1);
     await act(async () => nativeSettings.resolve(settingsFor("gpt-5.4", "high", "fast")));
     expect(await within(activeThreadPane()).findByRole("button", { name: /model: gpt-5\.4, high/i })).toBeInTheDocument();

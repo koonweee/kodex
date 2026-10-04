@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { EventEnvelope } from "./api/client";
+import type { EventEnvelope, ThreadTimelineSnapshotItem } from "./api/client";
 import { getLiveDiagnosticsSnapshot, resetLiveDiagnosticsForTest } from "./events/liveDiagnostics";
 import {
   App,
@@ -1136,6 +1136,29 @@ function terminalProjectionEvent({
   threadId: string;
   turnId: string;
 }): EventEnvelope {
+  const rawItem = { id: itemId, type: "agentMessage", phase: "final_answer", text };
+  const item = {
+    id: `projection-${turnId}-${itemId}`,
+    threadId,
+    turnId,
+    itemId,
+    itemType: "agentMessage",
+    status: "completed",
+    displayOrder: seq,
+    codexMethod: "item/completed",
+    timestampMs: seq,
+    payload: {
+      source: "gatewayStream",
+      turnId,
+      itemId,
+      item: rawItem,
+      itemSnapshot: {
+        id: itemId,
+        itemType: "agentMessage",
+        skillMentions: [],
+      },
+    },
+  } satisfies ThreadTimelineSnapshotItem;
   return {
     id: `terminal-projection-${seq}`,
     seq,
@@ -1155,47 +1178,8 @@ function terminalProjectionEvent({
       pendingApprovalRequests: [],
       pendingUserInputRequests: [],
       affectedTurnIds: [turnId],
-      rows: canonicalRowsFromSnapshotItems([
-        {
-          id: `projection-${turnId}-${itemId}`,
-          threadId,
-          turnId,
-          itemId,
-          itemType: "agentMessage",
-          status: "completed",
-          displayOrder: seq,
-          timestampMs: seq,
-          payload: {
-            item: { id: itemId, type: "agentMessage", phase: "final_answer", text },
-          },
-        },
-      ]),
-      items: [
-        {
-          id: `projection-${turnId}-${itemId}`,
-          threadId,
-          turnId,
-          itemId,
-          itemType: "agentMessage",
-          status: "completed",
-          displayOrder: seq,
-          codexMethod: "item/completed",
-          timestampMs: seq,
-          payload: {
-            source: "gatewayStream",
-            turnId,
-            itemId,
-            item: { id: itemId, type: "agentMessage", phase: "final_answer", text },
-            itemSnapshot: {
-              id: itemId,
-              itemType: "agentMessage",
-              text,
-              rawPayload: { id: itemId, type: "agentMessage", phase: "final_answer", text },
-              skillMentions: [],
-            },
-          },
-        },
-      ],
+      rows: canonicalRowsFromSnapshotItems([item]),
+      items: [item],
     },
     receivedAt: "2026-04-30T00:00:03Z",
   };

@@ -38,6 +38,8 @@ pub fn router() -> Router<AppState> {
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnStartRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_user_message_id: Option<String>,
     pub input: Vec<UserInput>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<TimelineFileAttachment>,
@@ -48,26 +50,14 @@ pub struct TurnStartRequest {
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnSteerRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_user_message_id: Option<String>,
     pub input: Vec<UserInput>,
 }
 
 pub type ThreadInputRequest = TurnStartRequest;
 
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ThreadInputResponse {
-    pub disposition: ThreadInputDisposition,
-    pub queued_input: Option<crate::store::QueuedInput>,
-    pub raw_payload: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub enum ThreadInputDisposition {
-    Started,
-    Steered,
-    Queued,
-}
+pub type ThreadInputResponse = RawAppServerResponse;
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -103,183 +93,11 @@ pub async fn submit_thread_input(
     Path(thread_id): Path<String>,
     Json(request): Json<ThreadInputRequest>,
 ) -> ApiResult<Json<ThreadInputResponse>> {
-    request.options.validate()?;
-    let attachments =
-        app_server_api::validate_file_attachments_for_thread(&thread_id, request.attachments)?;
-    let input = app_server_api::append_file_attachment_envelope(request.input, &attachments);
-    let options = request.options;
-
-    let submit_guard = state.thread_input_locks.lock(&thread_id).await;
-    match turn_lifecycle::route_for_thread_input(&state, &thread_id).await? {
-        turn_lifecycle::ThreadInputRoute::QueueBehindGatewayWork => {
-            let queued_input = queue::create_queued_input_with_source_and_attachments(
-                &state,
-                &thread_id,
-                input,
-                attachments,
-                options,
-                None,
-                None,
-            )
-            .await?;
-            return Ok(Json(ThreadInputResponse {
-                disposition: ThreadInputDisposition::Queued,
-                queued_input: Some(queued_input),
-                raw_payload: None,
-            }));
-        }
-        turn_lifecycle::ThreadInputRoute::Active { turn_id } => {
-            match submit_thread_input_as_steer(&state, &thread_id, &turn_id, &input, &attachments)
-                .await
-            {
-                Ok(Some(response)) => return Ok(response),
-                Ok(None) => {}
-                Err(error) if turn_lifecycle::is_expected_turn_mismatch_error(&error) => {
-                    return Err(error);
-                }
-                Err(error) if turn_lifecycle::is_non_steerable_error(&error) => {
-                    return queue_rejected_steer_input(
-                        &state,
-                        &thread_id,
-                        input,
-                        attachments,
-                        options,
-                        error,
-                    )
-                    .await;
-                }
-                Err(error) => return Err(error),
-            }
-        }
-        turn_lifecycle::ThreadInputRoute::Idle => {}
-    }
-
-    turn_lifecycle::record_turn_starting(&state, &thread_id).await?;
-    drop(submit_guard);
-    let response =
-        match turn_start_resuming_missing_thread_once(&state, &thread_id, input.clone(), options)
-            .await
-        {
-            Ok(response) => response,
-            Err(error) => {
-                turn_lifecycle::record_turn_start_failed(&state, &thread_id).await?;
-                queue::trigger_queue_drain(state.clone(), thread_id.clone());
-                return Err(error);
-            }
-        };
-    let projection_turn_id = turn_lifecycle::pending_projection_turn_id(&response.payload);
-    turn_lifecycle::record_turn_started(&state, &thread_id, projection_turn_id.as_deref()).await?;
-    if let Some(turn_id) = projection_turn_id {
-        turn_lifecycle::record_pending_user_projection(
-            &state,
-            &thread_id,
-            &turn_id,
-            &input,
-            &attachments,
-        )
-        .await?;
-    }
-    Ok(Json(ThreadInputResponse {
-        disposition: ThreadInputDisposition::Started,
-        queued_input: None,
-        raw_payload: Some(response.payload),
-    }))
+    // turn/start atomically chooses native start or steering. Browser/gateway
+    // caches cannot decide that shared lifecycle boundary reliably.
+    start_turn(State(state), Path(thread_id), Json(request)).await
 }
 
-async fn submit_thread_input_as_steer(
-    state: &AppState,
-    thread_id: &str,
-    expected_turn_id: &str,
-    input: &[UserInput],
-    attachments: &[TimelineFileAttachment],
-) -> ApiResult<Option<Json<ThreadInputResponse>>> {
-    match steer_thread_input_with_one_retry(state, thread_id, expected_turn_id, input).await {
-        Ok((response, accepted_turn_id)) => {
-            let projection_turn_id = turn_lifecycle::pending_projection_turn_id(&response.payload)
-                .unwrap_or(accepted_turn_id);
-            turn_lifecycle::record_pending_user_projection(
-                state,
-                thread_id,
-                &projection_turn_id,
-                input,
-                attachments,
-            )
-            .await?;
-            return Ok(Some(Json(ThreadInputResponse {
-                disposition: ThreadInputDisposition::Steered,
-                queued_input: None,
-                raw_payload: Some(response.payload),
-            })));
-        }
-        Err(error) if turn_lifecycle::is_no_active_turn_error(&error) => {
-            turn_lifecycle::record_idle_after_missing_active_turn(state, thread_id).await?;
-            Ok(None)
-        }
-        Err(error) => Err(error),
-    }
-}
-
-async fn steer_thread_input_with_one_retry(
-    state: &AppState,
-    thread_id: &str,
-    expected_turn_id: &str,
-    input: &[UserInput],
-) -> ApiResult<(RawAppServerResponse, String)> {
-    let client = app_server_api::client(&state.app_server);
-    match client
-        .turn_steer(
-            thread_id.to_string(),
-            expected_turn_id.to_string(),
-            input.to_vec(),
-        )
-        .await
-    {
-        Ok(response) => Ok((response, expected_turn_id.to_string())),
-        Err(error) if turn_lifecycle::is_no_active_turn_error(&error) => Err(error),
-        Err(error) => {
-            let Some(actual_turn_id) =
-                turn_lifecycle::expected_turn_mismatch_actual_turn_id(&error)
-            else {
-                return Err(error);
-            };
-            turn_lifecycle::record_turn_started(state, thread_id, Some(&actual_turn_id)).await?;
-            client
-                .turn_steer(
-                    thread_id.to_string(),
-                    actual_turn_id.clone(),
-                    input.to_vec(),
-                )
-                .await
-                .map(|response| (response, actual_turn_id))
-        }
-    }
-}
-
-async fn queue_rejected_steer_input(
-    state: &AppState,
-    thread_id: &str,
-    input: Vec<UserInput>,
-    attachments: Vec<TimelineFileAttachment>,
-    options: TurnStartOptions,
-    error: ApiError,
-) -> ApiResult<Json<ThreadInputResponse>> {
-    let queued_input = queue::create_rejected_steer_input_with_source_and_attachments(
-        state,
-        thread_id,
-        input,
-        attachments,
-        options,
-        error.to_string(),
-        None,
-        None,
-    )
-    .await?;
-    Ok(Json(ThreadInputResponse {
-        disposition: ThreadInputDisposition::Queued,
-        queued_input: Some(queued_input),
-        raw_payload: None,
-    }))
-}
 #[utoipa::path(
     post,
     path = "/v1/threads/{threadId}/compact",
@@ -344,17 +162,23 @@ async fn turn_start_resuming_missing_thread_once(
     thread_id: &str,
     input: Vec<UserInput>,
     options: TurnStartOptions,
+    client_id: String,
 ) -> ApiResult<RawAppServerResponse> {
     let client = app_server_api::client(&state.app_server);
     match client
-        .turn_start(thread_id.to_string(), input.clone(), options.clone())
+        .turn_start(
+            thread_id.to_string(),
+            input.clone(),
+            options.clone(),
+            Some(client_id.clone()),
+        )
         .await
     {
         Ok(response) => Ok(response),
         Err(error) if app_server_error_mentions_missing_thread(&error) => {
             resume_thread_for_turn_start(state, &client, thread_id).await?;
             client
-                .turn_start(thread_id.to_string(), input, options)
+                .turn_start(thread_id.to_string(), input, options, Some(client_id))
                 .await
         }
         Err(error) => Err(error),
@@ -400,6 +224,9 @@ pub async fn start_turn(
     Json(request): Json<TurnStartRequest>,
 ) -> ApiResult<Json<RawAppServerResponse>> {
     request.options.validate()?;
+    let client_id = request
+        .client_user_message_id
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let attachments =
         app_server_api::validate_file_attachments_for_thread(&thread_id, request.attachments)?;
     let input = app_server_api::append_file_attachment_envelope(request.input, &attachments);
@@ -408,6 +235,7 @@ pub async fn start_turn(
         &thread_id,
         input.clone(),
         request.options.clone(),
+        client_id.clone(),
     )
     .await?;
     if let Some(turn_id) = turn_lifecycle::pending_projection_turn_id(&response.payload) {
@@ -415,6 +243,7 @@ pub async fn start_turn(
             &state,
             &thread_id,
             &turn_id,
+            &client_id,
             &input,
             &attachments,
         )
@@ -430,11 +259,26 @@ pub async fn steer_turn(
     Json(request): Json<TurnSteerRequest>,
 ) -> ApiResult<Json<RawAppServerResponse>> {
     let input = request.input;
+    let client_id = request
+        .client_user_message_id
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let response = app_server_api::client(&state.app_server)
-        .turn_steer(thread_id.clone(), turn_id.clone(), input.clone())
+        .turn_steer(
+            thread_id.clone(),
+            turn_id.clone(),
+            input.clone(),
+            Some(client_id.clone()),
+        )
         .await?;
-    turn_lifecycle::record_pending_user_projection(&state, &thread_id, &turn_id, &input, &[])
-        .await?;
+    turn_lifecycle::record_pending_user_projection(
+        &state,
+        &thread_id,
+        &turn_id,
+        &client_id,
+        &input,
+        &[],
+    )
+    .await?;
     Ok(Json(response))
 }
 

@@ -894,7 +894,10 @@ pub(crate) fn compact_timeline_item_payload(item: &Value) -> TimelineDisplayItem
     };
     TimelineDisplayItemPayload {
         id: display_string(object, "id"),
-        client_id: display_string(object, "clientId"),
+        client_id: object
+            .get("clientId")
+            .and_then(Value::as_str)
+            .map(str::to_string),
         item_type: display_string(object, "type"),
         kind: display_string(object, "kind"),
         agent_thread_id: display_string(object, "agentThreadId"),

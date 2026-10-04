@@ -60,7 +60,7 @@ export type TimelineItem = {
   fileAttachments?: TimelineFileAttachment[];
   skillMentions?: TimelineSkillMention[];
   source?: TimelineItemSource;
-  clientRequestId?: string;
+  clientId?: string;
   confirmationState?: TimelineConfirmationState;
   error?: string;
   collab?: TimelineCollabAgentPresentation;
@@ -154,7 +154,6 @@ export type TimelineIndexes = {
   rowByKey: Map<string, TimelineRow>;
   rowKeysByItemId: Map<string, Set<string>>;
   rowKeysByTurnId: Map<string, Set<string>>;
-  optimisticUserRowKeysByText: Map<string, Set<string>>;
   turnIds: string[];
   turnById: Map<string, TimelineTurn>;
   turnUpdatesById: Map<string, TimelineTurn>;
@@ -251,7 +250,6 @@ export function createEmptyTimelineIndexes(): TimelineIndexes {
     rowByKey: new Map(),
     rowKeysByItemId: new Map(),
     rowKeysByTurnId: new Map(),
-    optimisticUserRowKeysByText: new Map(),
     turnIds: [],
     turnById: new Map(),
     turnUpdatesById: new Map(),
@@ -271,7 +269,6 @@ export function prepareTimelineIndexesForUpdate(indexes: TimelineIndexes): Timel
     rowByKey: new Map(indexes.rowByKey),
     rowKeysByItemId: cloneRowKeySetMap(indexes.rowKeysByItemId),
     rowKeysByTurnId: cloneRowKeySetMap(indexes.rowKeysByTurnId),
-    optimisticUserRowKeysByText: cloneRowKeySetMap(indexes.optimisticUserRowKeysByText),
     turnUpdatesById: new Map(indexes.turnUpdatesById),
   };
 }
@@ -373,7 +370,6 @@ function syncRowsToIndexes(indexes: TimelineIndexes, rows: TimelineRow[]) {
   indexes.rowByKey = new Map(rows.map((row) => [row.key, row]));
   indexes.rowKeysByItemId = new Map();
   indexes.rowKeysByTurnId = new Map();
-  indexes.optimisticUserRowKeysByText = new Map();
   for (const row of rows) {
     indexTimelineRow(indexes, row);
   }
@@ -387,9 +383,6 @@ function indexTimelineRow(indexes: TimelineIndexes, row: TimelineRow) {
     addSetValue(indexes.rowKeysByItemId, item.id, row.key);
     if (item.serverItemId) {
       addSetValue(indexes.rowKeysByItemId, item.serverItemId, row.key);
-    }
-    if (item.source === "optimistic" && item.kind === "user_message" && item.text) {
-      addSetValue(indexes.optimisticUserRowKeysByText, item.text, row.key);
     }
   }
 }

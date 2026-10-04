@@ -3157,13 +3157,6 @@ export interface components {
             rawPayload?: unknown;
         };
         /** @enum {string} */
-        ThreadInputDisposition: "started" | "steered" | "queued";
-        ThreadInputResponse: {
-            disposition: components["schemas"]["ThreadInputDisposition"];
-            queuedInput?: null | components["schemas"]["QueuedInput"];
-            rawPayload?: unknown;
-        };
-        /** @enum {string} */
         ThreadInterruptCurrentDisposition: "interrupted" | "idle";
         ThreadInterruptCurrentResponse: {
             disposition: components["schemas"]["ThreadInterruptCurrentDisposition"];
@@ -3171,6 +3164,7 @@ export interface components {
             rawPayload?: unknown;
         };
         ThreadItemSnapshot: {
+            clientId?: string | null;
             fileAttachments?: components["schemas"]["TimelineFileAttachment"][];
             id: string;
             itemType: string;
@@ -3607,9 +3601,11 @@ export interface components {
         };
         TurnStartRequest: components["schemas"]["TurnStartOptions"] & {
             attachments?: components["schemas"]["TimelineFileAttachment"][];
+            clientUserMessageId?: string | null;
             input: components["schemas"]["UserInput"][];
         };
         TurnSteerRequest: {
+            clientUserMessageId?: string | null;
             input: components["schemas"]["UserInput"][];
         };
         UpdateProjectRequest: {
@@ -6262,7 +6258,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ThreadInputResponse"];
+                    "application/json": components["schemas"]["RawAppServerResponse"];
                 };
             };
         };

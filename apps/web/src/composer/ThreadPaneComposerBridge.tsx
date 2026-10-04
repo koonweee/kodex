@@ -7,7 +7,6 @@ import { queryKeys } from "../api/queryKeys";
 import type { ComposerSettings, ComposerSettingsChange, ContextUsage } from "../ComposerFooterControls";
 import type { ImageLightboxImage } from "../images/types";
 import { mergeQueuedInputData } from "../queuedInputs/cache";
-import { createClientRequestId } from "../shared/id";
 import { singleProjectRoot } from "../projects/roots";
 import { useWorkspace, type ThreadComposerState } from "../workspace/WorkspaceProvider";
 import { paneTargetRecord, type WorkspacePane } from "../workspace/paneTypes";
@@ -160,8 +159,7 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
     onOptimisticUserMessageSent: (clientRequestId) => {
       publishThreadPaneTimelineAction({ clientRequestId, kind: "optimistic_user_sent" });
     },
-    onOptimisticUserMessageStarted: ({ skillMentions, text, threadId }) => {
-      const clientRequestId = createClientRequestId();
+    onOptimisticUserMessageStarted: ({ clientRequestId, skillMentions, text, threadId }) => {
       publishThreadPaneTimelineAction({
         clientRequestId,
         kind: "optimistic_user_started",
@@ -169,7 +167,6 @@ export const ThreadPaneComposerBridge = memo(function ThreadPaneComposerBridge({
         text,
         threadId,
       });
-      return clientRequestId;
     },
     onQueuedInputDeleted,
     onQueuedInputUpsert,

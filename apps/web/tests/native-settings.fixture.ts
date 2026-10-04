@@ -110,7 +110,7 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       detail.timeline = { ...detail.timeline, activeTurnId: "turn-1", liveState: "streaming", turns: [{ id: "turn-1", status: "inProgress" }], viewRevision: 2 };
       const patch: ThreadViewPatch = { ...detail.timeline, scope: "lifecycle", threadId: detail.thread.id, affectedTurnIds: ["turn-1"] };
       emit("thread_view.patch", patch);
-      return respond(route, { disposition: "started", queuedInput: null, rawPayload: {} });
+      return respond(route, { payload: {turn: {id:"turn-1",status:"inProgress"}} });
     }
     if (key === "POST /v1/threads/settings-chat/queued-inputs") {
       const queued: QueuedInput = { id: "queued-1", threadId: detail.thread.id, input: (body as { input: UserInput[] }).input, options: {}, priority: "normal", status: "queued", attemptCount: 0, createdAt: "2026-10-04T00:00:00Z", updatedAt: "2026-10-04T00:00:00Z" };

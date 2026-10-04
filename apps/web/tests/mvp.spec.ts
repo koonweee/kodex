@@ -380,7 +380,7 @@ test("renders app surface as a workspace pane and submits from the frame", async
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: "submit-1",
-          result: { input: { disposition: "started", queuedInput: null, rawPayload: { turnId: "turn-app-surface" } } },
+          result: { input: { payload: { turnId: "turn-app-surface" } } },
         }),
       });
       return;
@@ -1340,7 +1340,7 @@ test("restores selected thread model settings when switching threads", async ({ 
       await route.fulfill({
         status: 200,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ disposition: "started", queuedInput: null, rawPayload: {} }),
+        body: JSON.stringify({ payload: {} }),
       });
       return;
     }
@@ -1433,7 +1433,7 @@ test("composer clears native fast service tier without replaying settings on sen
       await route.fulfill({
         status: 200,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ disposition: "started", queuedInput: null, rawPayload: {} }),
+        body: JSON.stringify({ payload: {} }),
       });
       return;
     }
@@ -1465,6 +1465,7 @@ test("composer clears native fast service tier without replaying settings on sen
 
   await expect.poll(() => submittedBody).toEqual({
     input: [{ type: "text", text: "Use normal speed" }],
+    clientUserMessageId: expect.any(String),
   });
 });
 
@@ -1617,7 +1618,7 @@ async function responseFor(key: string, route: Route, projects = [project], thre
     key === "POST /v1/threads/thread-1/input" ||
     key === "POST /v1/threads/thread-1/turns"
   ) {
-    return { body: { disposition: "started", queuedInput: null, rawPayload: {} } };
+    return { body: { payload: {} } };
   }
   if (key === "POST /v1/threads/thread-1/seen") {
     return {

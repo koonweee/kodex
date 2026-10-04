@@ -144,6 +144,7 @@ pub async fn steer_queued_input(
             thread_id.clone(),
             active_turn_id.clone(),
             queued_input.input.clone(),
+            Some(format!("kodex-queue:{}", queued_input.id)),
         )
         .await;
     match result {
@@ -152,6 +153,7 @@ pub async fn steer_queued_input(
                 &state,
                 &thread_id,
                 &active_turn_id,
+                &format!("kodex-queue:{}", queued_input.id),
                 &queued_input.input,
                 &queued_input.attachments,
             )
@@ -252,61 +254,6 @@ pub async fn create_queued_input_with_source_and_attachments(
             source_type,
             source_id,
         )
-        .await?;
-    broadcast_queue_upsert(state, &queued_input).await?;
-    trigger_queue_drain(state.clone(), thread_id.to_string());
-    Ok(queued_input)
-}
-
-pub async fn create_rejected_steer_input_with_source(
-    state: &AppState,
-    thread_id: &str,
-    input: Vec<UserInput>,
-    options: TurnStartOptions,
-    error: String,
-    source_type: Option<&str>,
-    source_id: Option<&str>,
-) -> ApiResult<QueuedInput> {
-    create_rejected_steer_input_with_source_and_attachments(
-        state,
-        thread_id,
-        input,
-        Vec::new(),
-        options,
-        error,
-        source_type,
-        source_id,
-    )
-    .await
-}
-
-pub async fn create_rejected_steer_input_with_source_and_attachments(
-    state: &AppState,
-    thread_id: &str,
-    input: Vec<UserInput>,
-    attachments: Vec<TimelineFileAttachment>,
-    options: TurnStartOptions,
-    error: String,
-    source_type: Option<&str>,
-    source_id: Option<&str>,
-) -> ApiResult<QueuedInput> {
-    app_server_api::client(&state.app_server)
-        .check_direct_input_capability(thread_id)
-        .await?;
-    let queued_input = state
-        .store
-        .create_queued_input_with_source_and_attachments(
-            thread_id,
-            input,
-            attachments,
-            options,
-            source_type,
-            source_id,
-        )
-        .await?;
-    let queued_input = state
-        .store
-        .mark_queued_input_rejected_steer(thread_id, &queued_input.id, error)
         .await?;
     broadcast_queue_upsert(state, &queued_input).await?;
     trigger_queue_drain(state.clone(), thread_id.to_string());
@@ -440,6 +387,7 @@ async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<
             thread_id.to_string(),
             queued_input.input.clone(),
             queued_input.options.clone(),
+            Some(format!("kodex-queue:{}", queued_input.id)),
         )
         .await;
     match result {
@@ -449,6 +397,7 @@ async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<
                     state,
                     thread_id,
                     &turn_id,
+                    &format!("kodex-queue:{}", queued_input.id),
                     &queued_input.input,
                     &queued_input.attachments,
                 )

@@ -1209,6 +1209,8 @@ impl ThreadTurnSnapshot {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadItemSnapshot {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
     pub item_type: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skill_mentions: Vec<TimelineSkillMention>,
@@ -1223,6 +1225,10 @@ impl ThreadItemSnapshot {
     pub(crate) fn from_payload(payload: &Value) -> ApiResult<Self> {
         Ok(Self {
             id: required_string(payload, "id")?,
+            client_id: payload
+                .get("clientId")
+                .and_then(Value::as_str)
+                .map(str::to_string),
             item_type: required_string(payload, "type")?,
             skill_mentions: skill_mentions_from_thread_item(payload),
             file_attachments: file_attachments_from_thread_item(payload),

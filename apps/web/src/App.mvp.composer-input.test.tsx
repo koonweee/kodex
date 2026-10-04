@@ -95,10 +95,9 @@ function deferred<T>() {
   return { promise, reject, resolve };
 }
 
-async function queuedThreadInputResponse(request: Request, queueId: string, threadId = "thread-1") {
+async function queuedInputResponse(request: Request, queueId: string, threadId = "thread-1") {
   const body = (await request.json()) as { input?: Array<{ type: string; text?: string }> };
   return {
-    disposition: "queued",
     queuedInput: {
       id: queueId,
       threadId,
@@ -111,7 +110,6 @@ async function queuedThreadInputResponse(request: Request, queueId: string, thre
       createdAt: "2026-05-05T00:00:00Z",
       updatedAt: "2026-05-05T00:00:00Z",
     },
-    rawPayload: null,
   };
 }
 
@@ -195,7 +193,7 @@ describe("MVP composer input flows", () => {
     expect(sendingButton).toHaveAttribute("data-action-state", "submitting");
 
     await act(async () => {
-      turnStart.resolve({ disposition: "started", rawPayload: { turnId: "turn-2" } });
+      turnStart.resolve({ payload: { turnId: "turn-2" } });
       await turnStart.promise;
     });
     await waitFor(() => {
@@ -331,6 +329,7 @@ describe("MVP composer input flows", () => {
     });
     expect(gateway.callsFor("POST", "/v1/threads/thread-1/compact")).toHaveLength(0);
     await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({
+      clientUserMessageId: expect.any(String),
       input: [{ type: "text", text: "Please run /compact later" }],
     });
   });
@@ -742,7 +741,7 @@ describe("MVP composer input flows", () => {
     const gateway = mockGateway(
       baseRoutes({
         "GET /v1/threads": { threads: [activeThread], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-        "POST /v1/threads/thread-1/input": (request: Request) => queuedThreadInputResponse(request, "queue-1"),
+        "POST /v1/threads/thread-1/queued-inputs": (request: Request) => queuedInputResponse(request, "queue-1"),
       }),
     );
 
@@ -1062,6 +1061,7 @@ describe("MVP composer input flows", () => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
     });
     await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({
+      clientUserMessageId: expect.any(String),
       input: [
         { type: "text", text: "Inspect this" },
         { type: "localImage", path: "/tmp/diagram.png" },
@@ -1106,6 +1106,7 @@ describe("MVP composer input flows", () => {
     });
     expect(gateway.callsFor("POST", "/v1/uploads/images")).toHaveLength(0);
     await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[0])).resolves.toEqual({
+      clientUserMessageId: expect.any(String),
       input: [{ type: "text", text: "Review this" }],
       attachments: [fileAttachment],
     });
@@ -1509,6 +1510,7 @@ describe("MVP composer input flows", () => {
       expect(screen.queryByRole("button", { name: /remove diagram.png/i })).not.toBeInTheDocument();
     });
     await expect(requestJson(gateway.callsFor("POST", "/v1/threads/thread-1/input")[1])).resolves.toEqual({
+      clientUserMessageId: expect.any(String),
       input: [
         { type: "text", text: "Inspect this" },
         { type: "localImage", path: "/tmp/diagram.png" },
@@ -1647,9 +1649,9 @@ describe("MVP composer input flows", () => {
           const url = new URL(request.url);
           return url.searchParams.get("threadId") === "thread-2" ? { events: [] } : baseRoutes()["GET /v1/events"];
         },
-        "POST /v1/threads/thread-1/input": (request: Request) => {
+        "POST /v1/threads/thread-1/queued-inputs": (request: Request) => {
           queuedInputIndex += 1;
-          return queuedThreadInputResponse(request, `queue-${queuedInputIndex}`);
+          return queuedInputResponse(request, `queue-${queuedInputIndex}`);
         },
       }),
     );

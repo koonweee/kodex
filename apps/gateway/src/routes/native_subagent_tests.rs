@@ -244,47 +244,92 @@ fn native_subagent_input_capability_and_parent_survive_canonical_summary_project
 
 #[tokio::test]
 async fn native_subagent_explicit_input_denial_prevents_legacy_queue_acceptance() {
-    for endpoint in ["/input", "/queued-inputs"] {
-        let (state, native) = state().await;
-        state
-            .store
-            .upsert_thread_runtime_state(crate::store::ThreadRuntimeState {
-                thread_id: "child".into(),
-                status: crate::store::ThreadRuntimeStatus::Starting,
-                active_turn_id: None,
-                updated_at: chrono::Utc::now(),
-                last_event_seq: None,
+    let (state, native) = state().await;
+    state
+        .store
+        .upsert_thread_runtime_state(crate::store::ThreadRuntimeState {
+            thread_id: "child".into(),
+            status: crate::store::ThreadRuntimeStatus::Starting,
+            active_turn_id: None,
+            updated_at: chrono::Utc::now(),
+            last_event_seq: None,
+        })
+        .await
+        .unwrap();
+    *native.next_response.lock().unwrap() =
+        Some(json!({"thread":child("child","root","active",json!(false))}));
+    let response = build_router(state.clone())
+        .oneshot(
+            Request::post("/v1/threads/child/queued-inputs")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"input":[{"type":"text","text":"Do more"}]}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(state
+        .store
+        .list_queued_inputs("child")
+        .await
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        *native.requests.lock().unwrap(),
+        vec![(
+            "thread/read".into(),
+            json!({"threadId":"child","includeTurns":false})
+        )]
+    );
+}
+
+#[tokio::test]
+async fn native_subagent_atomic_input_forwards_native_denial_without_queuing() {
+    let (state, native) = state().await;
+    let error = "app-server error -32600: direct app-server input is not allowed for multi-agent v2 sub-agents";
+    native
+        .queued_errors
+        .lock()
+        .unwrap()
+        .push(crate::error::ApiError::BadGateway(error.into()));
+    let response = build_router(state.clone())
+        .oneshot(
+            Request::post("/v1/threads/child/input")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "input": [{"type": "text", "text": "Do more"}],
+                        "clientUserMessageId": "child-message"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let body: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap();
+    assert_eq!(body["message"], error);
+    assert!(state
+        .store
+        .list_queued_inputs("child")
+        .await
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        *native.requests.lock().unwrap(),
+        vec![(
+            "turn/start".into(),
+            json!({
+                "threadId": "child",
+                "input": [{"type": "text", "text": "Do more"}],
+                "clientUserMessageId": "child-message"
             })
-            .await
-            .unwrap();
-        *native.next_response.lock().unwrap() =
-            Some(json!({"thread":child("child","root","active",json!(false))}));
-        let response = build_router(state.clone())
-            .oneshot(
-                Request::post(format!("/v1/threads/child{endpoint}"))
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({"input":[{"type":"text","text":"Do more"}]}).to_string(),
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{endpoint}");
-        assert!(state
-            .store
-            .list_queued_inputs("child")
-            .await
-            .unwrap()
-            .is_empty());
-        assert_eq!(
-            *native.requests.lock().unwrap(),
-            vec![(
-                "thread/read".into(),
-                json!({"threadId":"child","includeTurns":false})
-            )]
-        );
-    }
+        )]
+    );
 }
 
 #[tokio::test]

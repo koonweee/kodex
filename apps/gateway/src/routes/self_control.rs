@@ -812,6 +812,7 @@ pub async fn send_self_control_thread_input(
         State(state.clone()),
         Path(thread_id.clone()),
         Json(TurnStartRequest {
+            client_user_message_id: None,
             input: request.input,
             attachments: Vec::new(),
             options: request.options,

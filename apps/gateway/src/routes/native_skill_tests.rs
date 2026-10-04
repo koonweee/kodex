@@ -99,7 +99,8 @@ async fn native_skill_input_routes_active_steering_without_rewriting_selections(
     )
     .await
     .unwrap();
-    *native.next_response.lock().unwrap() = Some(json!({"turnId":"native-turn"}));
+    *native.next_response.lock().unwrap() =
+        Some(json!({"turn":{"id":"native-turn","status":"inProgress"}}));
     let input = selected_and_raw_input();
 
     let (status, body) = request(
@@ -111,7 +112,7 @@ async fn native_skill_input_routes_active_steering_without_rewriting_selections(
     .await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["disposition"], "steered");
+    assert!(body.get("payload").is_some());
     assert!(body["queuedInput"].is_null());
     assert!(state
         .store
@@ -121,8 +122,8 @@ async fn native_skill_input_routes_active_steering_without_rewriting_selections(
         .is_empty());
     let requests = native.requests.lock().unwrap();
     assert_eq!(requests.len(), 1, "unexpected native calls: {requests:?}");
-    assert_eq!(requests[0].0, "turn/steer");
-    assert_eq!(requests[0].1["expectedTurnId"], "native-turn");
+    assert_eq!(requests[0].0, "turn/start");
+
     assert_eq!(requests[0].1["input"], input);
 }
 

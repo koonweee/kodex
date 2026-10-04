@@ -20,11 +20,12 @@ use kodex_gateway::{
     events::ingest_inbound,
     native_runtime::{prepare_instance, PreparedInstance},
     store::Store,
+    thread_view::ThreadViewStore,
     AppState,
 };
 use serde_json::{json, Value};
 use tokio::{
-    sync::mpsc,
+    sync::{mpsc, oneshot},
     task::JoinHandle,
     time::{timeout, Duration},
 };
@@ -32,6 +33,7 @@ use tower::ServiceExt;
 
 pub(super) enum ModelResponse {
     Items(Vec<Value>),
+    GatedItems(Vec<Value>, oneshot::Receiver<()>),
     Hold,
 }
 
@@ -48,6 +50,14 @@ impl ModelResponse {
             "type":"function_call", "call_id":call_id, "name":"exec_command",
             "arguments":arguments.to_string(),
         })])
+    }
+
+    pub(super) fn gated_message(text: &str) -> (Self, oneshot::Sender<()>) {
+        let (release, wait) = oneshot::channel();
+        let Self::Items(items) = Self::message(text) else {
+            unreachable!("message constructs model response items")
+        };
+        (Self::GatedItems(items, wait), release)
     }
 }
 
@@ -150,6 +160,7 @@ impl Drop for Fixture {
 
 pub(super) struct NativeSession {
     pub(super) app: Router,
+    thread_views: ThreadViewStore,
     server: Arc<JsonRpcAppServer>,
     relay: JoinHandle<()>,
     notifications: mpsc::UnboundedReceiver<(String, Value)>,
@@ -157,6 +168,13 @@ pub(super) struct NativeSession {
 }
 
 impl NativeSession {
+    pub(super) async fn canonical_view(&self, thread_id: &str) -> anyhow::Result<Value> {
+        // Read the live projection without a history request repairing it first.
+        Ok(serde_json::to_value(
+            self.thread_views.patch_for_thread(thread_id).await,
+        )?)
+    }
+
     pub(super) async fn native_config_read(&self) -> anyhow::Result<Value> {
         Ok(self
             .server
@@ -178,6 +196,7 @@ impl NativeSession {
             return Err(error.into());
         }
         let app = build_router(state.clone());
+        let thread_views = state.thread_views.clone();
         let relay = tokio::spawn(async move {
             while let Some(message) = native_rx.recv().await {
                 let notification = match &message {
@@ -207,6 +226,7 @@ impl NativeSession {
         });
         Ok(Self {
             app,
+            thread_views,
             server,
             relay,
             notifications,
@@ -313,18 +333,14 @@ async fn model_response(
     let response = state.responses.lock().unwrap().pop_front();
     let created = event(json!({"type":"response.created", "response":{"id":"fixture-response"}}));
     let body = match response {
-        Some(ModelResponse::Items(items)) => {
-            let mut events = created;
-            for item in items {
-                events.push_str(&event(
-                    json!({"type":"response.output_item.done", "item":item}),
-                ));
-            }
-            events.push_str(&event(json!({"type":"response.completed", "response":{
-                "id":"fixture-response", "usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2,
-                    "input_tokens_details":null,"output_tokens_details":null}
-            }})));
-            Body::from(events)
+        Some(ModelResponse::Items(items)) => Body::from(created + &completed_events(items)),
+        Some(ModelResponse::GatedItems(items, release)) => {
+            Body::from_stream(async_stream::stream! {
+                yield Ok::<_, std::io::Error>(created);
+                if release.await.is_ok() {
+                    yield Ok(completed_events(items));
+                }
+            })
         }
         Some(ModelResponse::Hold) => Body::from_stream(async_stream::stream! {
             yield Ok::<_, std::io::Error>(created);
@@ -341,6 +357,20 @@ async fn model_response(
         .header("content-type", "text/event-stream")
         .body(body)
         .unwrap()
+}
+
+fn completed_events(items: Vec<Value>) -> String {
+    let mut events = String::new();
+    for item in items {
+        events.push_str(&event(
+            json!({"type":"response.output_item.done", "item":item}),
+        ));
+    }
+    events.push_str(&event(json!({"type":"response.completed", "response":{
+        "id":"fixture-response", "usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2,
+            "input_tokens_details":null,"output_tokens_details":null}
+    }})));
+    events
 }
 
 fn event(value: Value) -> String {

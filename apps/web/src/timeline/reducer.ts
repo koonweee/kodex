@@ -168,7 +168,7 @@ export function addOptimisticUserMessage(
   const displayOrder = optimisticDisplayOrder(state);
   const item: TimelineItem = {
     id,
-    clientRequestId: input.clientRequestId,
+    clientId: input.clientRequestId,
     confirmationState: "sending",
     debugEvents: [],
     displayOrder,
@@ -199,8 +199,7 @@ export function markOptimisticUserMessageSent(state: TimelineState, clientReques
 }
 
 export function removeOptimisticUserMessage(state: TimelineState, clientRequestId: string): TimelineState {
-  const id = optimisticUserMessageId(clientRequestId);
-  const rows = state.rows.filter((row) => row.type !== "item" || row.item.id !== id);
+  const rows = state.rows.filter((row) => row.type !== "item" || row.item.source !== "optimistic" || row.item.clientId !== clientRequestId);
   return rows.length === state.rows.length ? state : rebuildTimelineRows(state, rows);
 }
 
@@ -212,7 +211,7 @@ export function applyTimelineHistoryWindow(state: TimelineState, snapshot: Threa
   const indexes = createEmptyTimelineIndexes();
   const mapped = canonicalTimelineRowsToViewRows(snapshot.thread.id, snapshot.timeline.rows ?? [], indexes);
   const existingKeys = new Set(state.rows.map((row) => row.key));
-  const rows = [...mapped.rows.filter((row) => !existingKeys.has(row.key)), ...state.rows].sort(
+  const rows = [...mapped.rows.filter((row) => !existingKeys.has(row.key)), ...removeMatchedOptimisticUserRows(state.rows, mapped.rows)].sort(
     (left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right),
   );
   const mergedIndexes = createEmptyTimelineIndexes();
@@ -248,12 +247,16 @@ function applyCanonicalTimelineSnapshot(
     return state;
   }
   const indexes = createEmptyTimelineIndexes();
-  const { rows, hiddenItems } = canonicalTimelineRowsToViewRows(
+  const mapped = canonicalTimelineRowsToViewRows(
     snapshot.thread.id,
     canonicalTimeline.rows ?? [],
     indexes,
   );
-  indexes.hiddenItems.push(...hiddenItems);
+  const rows = preserveUnconfirmedOptimisticUserRows(state.rows, mapped.rows);
+  for (const row of rows) {
+    if (row.type === "item" && row.item.source === "optimistic") addTimelineRowItemsToIndexes(row, indexes);
+  }
+  indexes.hiddenItems.push(...mapped.hiddenItems);
   const next = createTimelineStateFromDraft({
     activeTurnId: canonicalTimeline.activeTurnId ?? null,
     indexes,
@@ -438,6 +441,7 @@ function canonicalPresentationItem(
     item: {
       ...compactItem,
       id: item.id,
+      clientId: item.payload.itemSnapshot.clientId ?? undefined,
       serverItemId: item.itemId,
       source: "app_server",
       displayOrder: item.displayOrder,
@@ -646,10 +650,7 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
   if (patch.scope === "full_snapshot" && Array.isArray(fullRows)) {
     const currentIndexes = createEmptyTimelineIndexes();
     const mapped = canonicalTimelineRowsToViewRows(threadId, fullRows, currentIndexes);
-    const rows = preserveUnconfirmedOptimisticUserRows(
-      removeOptimisticUserRowsCoveredByCanonicalRows(state.rows, mapped.rows),
-      mapped.rows,
-    );
+    const rows = preserveUnconfirmedOptimisticUserRows(state.rows, mapped.rows);
     const indexes = createEmptyTimelineIndexes();
     for (const row of rows) {
       addTimelineRowItemsToIndexes(row, indexes);
@@ -664,7 +665,7 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
 
   const affectedTurnIds = new Set(patch.affectedTurnIds ?? []);
   const mappedPatchRows = canonicalTimelineRowsToViewRows(threadId, patch.rows ?? [], createEmptyTimelineIndexes());
-  const retainedRows = removeOptimisticUserRowsCoveredByCanonicalRows(
+  const retainedRows = removeMatchedOptimisticUserRows(
     state.rows.filter((row) => !row.turnId || !affectedTurnIds.has(row.turnId)),
     mappedPatchRows.rows,
   );
@@ -688,33 +689,19 @@ function applyCanonicalRowsPatch(state: TimelineState, threadId: string, patch: 
   });
 }
 
-function removeOptimisticUserRowsCoveredByCanonicalRows(currentRows: TimelineRow[], canonicalRows: TimelineRow[]): TimelineRow[] {
-  const canonicalUserTextCounts = new Map<string, number>();
+function removeMatchedOptimisticUserRows(currentRows: TimelineRow[], canonicalRows: TimelineRow[]): TimelineRow[] {
+  const canonicalClientIds = new Set<string>();
   for (const row of canonicalRows) {
     for (const item of timelineItemsForRow(row)) {
-      if (item.source !== "optimistic" && item.kind === "user_message" && item.text) {
-        canonicalUserTextCounts.set(item.text, (canonicalUserTextCounts.get(item.text) ?? 0) + 1);
+      if (item.source !== "optimistic" && item.kind === "user_message" && item.clientId) {
+        canonicalClientIds.add(item.clientId);
       }
     }
   }
-  if (canonicalUserTextCounts.size === 0) {
+  if (canonicalClientIds.size === 0) {
     return currentRows;
   }
-  return currentRows.filter((row) => {
-    if (row.type !== "item" || row.item.source !== "optimistic" || row.item.kind !== "user_message" || !row.item.text) {
-      return true;
-    }
-    const canonicalCount = canonicalUserTextCounts.get(row.item.text) ?? 0;
-    if (canonicalCount === 0) {
-      return true;
-    }
-    if (canonicalCount === 1) {
-      canonicalUserTextCounts.delete(row.item.text);
-    } else {
-      canonicalUserTextCounts.set(row.item.text, canonicalCount - 1);
-    }
-    return false;
-  });
+  return currentRows.filter((row) => row.type !== "item" || row.item.source !== "optimistic" || !row.item.clientId || !canonicalClientIds.has(row.item.clientId));
 }
 
 function timelineItemsForRow(row: TimelineRow): TimelineItem[] {
@@ -765,7 +752,7 @@ function applyCanonicalRowDeltaPatch(
 
   const mappedPatchRows = canonicalTimelineRowsToViewRows(threadId, rows, createEmptyTimelineIndexes());
   const mergedRows = [
-    ...state.rows.filter((row) => !removedRowIds.has(row.key) && !changedRowIds.has(row.key)),
+    ...removeMatchedOptimisticUserRows(state.rows, mappedPatchRows.rows).filter((row) => !removedRowIds.has(row.key) && !changedRowIds.has(row.key)),
     ...mappedPatchRows.rows,
   ].sort((left, right) => timelineRowDisplayOrder(left) - timelineRowDisplayOrder(right));
 
@@ -919,7 +906,7 @@ function rebuildTimelineRows(state: TimelineState, rows: TimelineRow[]): Timelin
 function preserveUnconfirmedOptimisticUserRows(currentRows: TimelineRow[], canonicalRows: TimelineRow[]): TimelineRow[] {
   return [
     ...canonicalRows,
-    ...currentRows.filter((row) => row.type === "item" && row.item.source === "optimistic" && row.item.confirmationState === "sending"),
+    ...removeMatchedOptimisticUserRows(currentRows, canonicalRows).filter((row) => row.type === "item" && row.item.source === "optimistic" && row.item.confirmationState === "sending"),
   ];
 }
 

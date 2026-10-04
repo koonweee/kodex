@@ -38,6 +38,7 @@ import {
 } from "./attachmentUtils";
 import type { ComposerDraftControls } from "./ComposerPanel";
 import { isTouchInputDevice } from "../shared/inputCapabilities";
+import { createClientRequestId } from "../shared/id";
 import type { PendingAttachment, QueuedSteerRow } from "./types";
 
 type DraftThreadCreateRequest = { composerSettings?: ComposerSettings; firstMessageText: string; projectId?: string; cwd?: string };
@@ -63,10 +64,11 @@ type UseComposerOrchestrationParams = {
   onOptimisticUserMessageRemoved?: (clientRequestId: string) => void;
   onOptimisticUserMessageSent?: (clientRequestId: string) => void;
   onOptimisticUserMessageStarted?: (message: {
+    clientRequestId: string;
     skillMentions: TimelineSkillMention[];
     text: string;
     threadId: string;
-  }) => string | null;
+  }) => void;
   onImagePreviewUrlsChanged?: (previewUrls: Record<string, string>) => void;
   onThreadMaterialized: (threadId: string) => void;
   onThreadTurnStartFailed: (threadId: string) => void;
@@ -208,6 +210,7 @@ export function useComposerOrchestration({
       return;
     }
 
+    const clientUserMessageId = createClientRequestId();
     const attachments = pendingAttachments;
     let startedThreadId: string | null = null;
     let optimisticClientRequestId: string | null = null;
@@ -234,22 +237,15 @@ export function useComposerOrchestration({
         startedThreadId = selectedThreadId;
         onThreadTurnStarted(selectedThreadId);
         if (text && attachments.length === 0) {
-          optimisticClientRequestId = onOptimisticUserMessageStarted?.({
+          optimisticClientRequestId = clientUserMessageId;
+          onOptimisticUserMessageStarted?.({
+            clientRequestId: clientUserMessageId,
             skillMentions,
             text,
             threadId: selectedThreadId,
-          }) ?? null;
+          });
         }
-        const response = await submitThreadInput(selectedThreadId, payload.input, payload.attachments);
-        if (response.queuedInput) {
-          if (optimisticClientRequestId) {
-            onOptimisticUserMessageRemoved?.(optimisticClientRequestId);
-          }
-          onQueuedInputUpsert(response.queuedInput);
-          clearPendingAttachments();
-          setIsComposerSubmitting(false);
-          return;
-        }
+        await submitThreadInput(selectedThreadId, payload.input, payload.attachments, clientUserMessageId);
         if (optimisticClientRequestId) {
           onOptimisticUserMessageSent?.(optimisticClientRequestId);
         }
@@ -283,17 +279,12 @@ export function useComposerOrchestration({
       onThreadTurnStarted(threadId);
       draftControls.clearText();
       const payload = await buildTurnPayload(threadId, text, attachments, skillInputs, skillTextElements);
-      const response = await submitThreadInput(
+      await submitThreadInput(
         threadId,
         payload.input,
         payload.attachments,
+        clientUserMessageId,
       );
-      if (response.queuedInput) {
-        onQueuedInputUpsert(response.queuedInput);
-        clearPendingAttachments();
-        setIsComposerSubmitting(false);
-        return;
-      }
       onThreadMaterialized(threadId);
       clearPendingAttachments();
       setIsComposerSubmitting(false);

@@ -21,7 +21,7 @@ const selectedSkill: SkillMetadata = {
 
 function renderComposer(activeTurnId: string | null) {
   const onError = vi.fn();
-  const onOptimisticUserMessageStarted = vi.fn(() => "local-pending");
+  const onOptimisticUserMessageStarted = vi.fn();
   const settings = { model: "native-model", fast: false };
   function RetryComposer() {
     const orchestration = useComposerOrchestration({
@@ -95,7 +95,7 @@ describe("explicit skill retry", () => {
           });
         }
         return endpoint === "input"
-          ? { disposition: "started", queuedInput: null, rawPayload: {} }
+          ? { payload: {} }
           : { queuedInput: { id: "queue-1", threadId: "thread-1", input: [], options: {}, status: "queued", priority: "normal", attemptCount: 0, lastError: null, createdAt: "2026-10-05T00:00:00Z", updatedAt: "2026-10-05T00:00:00Z" } };
       },
     });
@@ -116,13 +116,15 @@ describe("explicit skill retry", () => {
       { type: "text", text: "请 $review-fix", text_elements: [{ byteRange: { start: 4, end: 15 }, placeholder: "$review-fix" }] },
       { type: "skill", name: "review-fix", path: "/skills/review-fix/SKILL.md" },
     ] };
-    for (const request of gateway.callsFor("POST", `/v1/threads/thread-1/${endpoint}`)) {
-      await expect(requestJson(request)).resolves.toEqual(expectedBody);
-    }
+    const bodies = await Promise.all(gateway.callsFor("POST", `/v1/threads/thread-1/${endpoint}`).map(requestJson));
     if (endpoint === "input") {
+      for (const body of bodies) expect(body).toEqual({ ...expectedBody, clientUserMessageId: expect.any(String) });
+      expect(bodies[0].clientUserMessageId).not.toBe(bodies[1].clientUserMessageId);
       expect(onOptimisticUserMessageStarted).toHaveBeenCalledTimes(2);
-      expect(onOptimisticUserMessageStarted.mock.calls[1]).toEqual(onOptimisticUserMessageStarted.mock.calls[0]);
-    }
+      for (const [index, body] of bodies.entries()) expect(onOptimisticUserMessageStarted.mock.calls[index]).toEqual([
+        expect.objectContaining({ clientRequestId: body.clientUserMessageId, text: "请 $review-fix", skillMentions: expect.arrayContaining([expect.objectContaining({ name: "review-fix", path: "/skills/review-fix/SKILL.md" })]) }),
+      ]);
+    } else for (const body of bodies) expect(body).toEqual(expectedBody);
     expect(composer).toHaveValue("");
     expect(gateway.callsFor("POST", "/v1/threads")).toHaveLength(0);
   });

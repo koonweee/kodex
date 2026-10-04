@@ -4,6 +4,8 @@
 mod config;
 #[path = "native_app_server/fixture.rs"]
 mod fixture;
+#[path = "native_app_server/identity.rs"]
+mod identity;
 #[path = "native_app_server/projects.rs"]
 mod projects;
 #[path = "native_app_server/sections.rs"]

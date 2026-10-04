@@ -42,7 +42,7 @@ for (const shape of [
           }
           return route.fulfill({ json: queued
             ? { queuedInput: { id: "skill-queue", threadId: "settings-chat", input, options: {}, status: "queued", priority: "normal", attemptCount: 0, createdAt: "2026-10-05T00:00:00Z", updatedAt: "2026-10-05T00:00:00Z" } }
-            : { disposition: "started", queuedInput: null, rawPayload: {} } });
+            : { payload: {} } });
         });
         try {
           const first = await fixture.page("first");
@@ -68,7 +68,11 @@ for (const shape of [
           if (shape.hasTouch) await send.tap();
           else await send.click();
           await expect.poll(() => attempts.length).toBe(2);
-          expect(attempts).toEqual([{ input }, { input }]);
+          expect(attempts).toEqual(queued ? [{ input }, { input }] : [
+            { input, clientUserMessageId: expect.any(String) },
+            { input, clientUserMessageId: expect.any(String) },
+          ]);
+          if (!queued) expect((attempts[0] as {clientUserMessageId:string}).clientUserMessageId).not.toBe((attempts[1] as {clientUserMessageId:string}).clientUserMessageId);
 
           const pickerCatalogReads = catalogReads;
           // A native item supplies its own structured input. Only the first tab
