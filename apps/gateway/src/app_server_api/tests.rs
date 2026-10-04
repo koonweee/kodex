@@ -781,9 +781,8 @@ async fn adapter_maps_account_login_rate_limit_and_model_methods() {
     let client = CodexClient::new(server.clone());
 
     client.account_read(true).await.unwrap();
-    *server.response.lock().unwrap() =
-        json!({"type": "chatgpt", "loginId": "login-1", "authUrl": "https://example.test"});
-    client.login_start(Some(false)).await.unwrap();
+    *server.response.lock().unwrap() = json!({"type": "chatgptDeviceCode", "loginId": "login-1", "verificationUrl": "https://example.test/device", "userCode": "CODE-1234"});
+    client.login_start().await.unwrap();
     client.login_cancel("login-1".to_string()).await.unwrap();
     client.logout().await.unwrap();
     *server.response.lock().unwrap() = json!({"rateLimits": null, "rateLimitsByLimitId": null});
@@ -800,7 +799,7 @@ async fn adapter_maps_account_login_rate_limit_and_model_methods() {
         requests[1],
         (
             "account/login/start".to_string(),
-            json!({"type": "chatgpt", "codexStreamlinedLogin": false})
+            json!({"type": "chatgptDeviceCode"})
         )
     );
     assert_eq!(
@@ -1230,13 +1229,34 @@ fn rate_limit_normalization_accepts_optional_fields_and_rejects_drift() {
 }
 
 #[test]
-fn login_start_normalization_accepts_optional_fields_and_rejects_drift() {
-    let response = LoginStartResponse::from_payload(json!({"type": "chatgpt"})).unwrap();
-
-    assert_eq!(response.login_type, "chatgpt");
-    assert_eq!(response.login_id, None);
-    assert_eq!(response.auth_url, None);
-    assert!(LoginStartResponse::from_payload(json!({"loginId": "login-1"})).is_err());
+fn login_start_normalization_requires_a_complete_native_device_code() {
+    let payload = json!({
+        "type": "chatgptDeviceCode", "loginId": "login-1",
+        "verificationUrl": "https://example.test/device", "userCode": "CODE-1234"
+    });
+    let response =
+        serde_json::to_value(LoginStartResponse::from_payload(payload.clone()).unwrap()).unwrap();
+    assert_eq!(response["loginId"], "login-1");
+    assert_eq!(response["verificationUrl"], "https://example.test/device");
+    assert_eq!(response["userCode"], "CODE-1234");
+    for field in ["type", "loginId", "verificationUrl", "userCode"] {
+        let mut incomplete = payload.clone();
+        incomplete.as_object_mut().unwrap().remove(field);
+        assert!(
+            LoginStartResponse::from_payload(incomplete).is_err(),
+            "missing {field}"
+        );
+        let mut invalid = payload.clone();
+        invalid[field] = Value::Null;
+        assert!(
+            LoginStartResponse::from_payload(invalid).is_err(),
+            "null {field}"
+        );
+    }
+    assert!(LoginStartResponse::from_payload(json!({
+        "type": "chatgpt", "loginId": "login-1", "authUrl": "https://example.test/login"
+    }))
+    .is_err());
 }
 
 fn thread_command_payload(id: &str) -> Value {

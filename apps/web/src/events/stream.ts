@@ -4,6 +4,7 @@ type EventSourceLike = {
   addEventListener?: (type: string, listener: (event: MessageEvent<string>) => void) => void;
   close: () => void;
   onerror: (() => void) | null;
+  onopen?: (() => void) | null;
   onmessage: ((event: MessageEvent<string>) => void) | null;
 };
 
@@ -11,6 +12,7 @@ type EventSourceCtor = new (url: string) => EventSourceLike;
 
 type EventStreamClientOptions = {
   EventSourceCtor?: EventSourceCtor;
+  beforeConnect?: () => Promise<boolean>;
   cursor?: number;
   excludeThreadId?: string | null;
   includeGlobal?: boolean;
@@ -22,6 +24,8 @@ type EventStreamClientOptions = {
 };
 
 const GATEWAY_SSE_EVENT_TYPES = [
+  "account.login_completed",
+  "account.updated",
   "approval.created",
   "approval.resolved",
   "account.rate_limits_updated",
@@ -62,6 +66,7 @@ const GATEWAY_SSE_EVENT_TYPES = [
 
 export function createEventStreamClient({
   EventSourceCtor = globalThis.EventSource as EventSourceCtor | undefined,
+  beforeConnect,
   cursor,
   excludeThreadId,
   includeGlobal,
@@ -75,36 +80,74 @@ export function createEventStreamClient({
   let eventSource: EventSourceLike | null = null;
   let lastSeq = cursor;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let connectionAttempt = 0;
+  let hasStarted = false;
+
+  function scheduleReconnect() {
+    if (closed) return;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connect();
+    }, reconnectDelayMs);
+  }
 
   function connect() {
     if (closed || !EventSourceCtor) {
       return;
     }
 
-    eventSource = new EventSourceCtor(
-      eventStreamUrl({ cursor: lastSeq, excludeThreadId, includeGlobal, threadId, threadIds }),
-    );
-    onStatusChange?.("connected");
+    const attempt = ++connectionAttempt;
+    const isCurrent = () => !closed && connectionAttempt === attempt;
+    function openStream() {
+      if (!isCurrent() || !EventSourceCtor) return;
+      // Snapshot recovery callbacks must also wait until the instance is confirmed.
+      if (hasStarted) onStatusChange?.("reconnecting");
+      if (!isCurrent()) return;
+      eventSource?.close();
+      const source = new EventSourceCtor(
+        eventStreamUrl({ cursor: lastSeq, excludeThreadId, includeGlobal, threadId, threadIds }),
+      );
+      eventSource = source;
+      hasStarted = true;
+      source.onopen = () => {
+        if (isCurrent() && eventSource === source) onStatusChange?.("connected");
+      };
 
-    const handleMessage = (message: MessageEvent<string>) => {
-      const event = JSON.parse(message.data) as EventEnvelope;
-      lastSeq = Math.max(lastSeq ?? 0, event.seq);
-      onEvent(event);
-    };
+      const handleMessage = (message: MessageEvent<string>) => {
+        if (!isCurrent() || eventSource !== source) return;
+        const event = JSON.parse(message.data) as EventEnvelope;
+        lastSeq = Math.max(lastSeq ?? 0, event.seq);
+        onEvent(event);
+      };
 
-    eventSource.onmessage = handleMessage;
-    for (const type of GATEWAY_SSE_EVENT_TYPES) {
-      eventSource.addEventListener?.(type, handleMessage);
+      source.onmessage = handleMessage;
+      for (const type of GATEWAY_SSE_EVENT_TYPES) {
+        source.addEventListener?.(type, handleMessage);
+      }
+
+      source.onerror = () => {
+        if (!isCurrent() || eventSource !== source) return;
+        source.close();
+        eventSource = null;
+        scheduleReconnect();
+      };
     }
 
-    eventSource.onerror = () => {
-      if (closed) {
-        return;
+    if (!beforeConnect) {
+      openStream();
+      return;
+    }
+    void (async () => {
+      try {
+        const allowed = await beforeConnect();
+        if (!isCurrent()) return;
+        if (allowed) openStream();
+        else scheduleReconnect();
+      } catch {
+        if (isCurrent()) scheduleReconnect();
       }
-      eventSource?.close();
-      onStatusChange?.("reconnecting");
-      reconnectTimer = setTimeout(connect, reconnectDelayMs);
-    };
+    })();
   }
 
   function close() {
@@ -113,6 +156,7 @@ export function createEventStreamClient({
       clearTimeout(reconnectTimer);
     }
     eventSource?.close();
+    eventSource = null;
     onStatusChange?.("closed");
   }
 

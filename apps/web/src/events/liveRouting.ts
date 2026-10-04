@@ -11,6 +11,7 @@ import {
 } from "../threads/events";
 
 export type LiveEventRouteHandlers = {
+  applyAccountEvent: (event: EventEnvelope) => void;
   applyAutomationStreamEvent: (event: EventEnvelope) => void;
   applyQueuedInputUpsert: (row: QueuedInput) => void;
   applyQueuedInputDeleted: (threadId: string, id: string) => void;
@@ -31,11 +32,14 @@ export type LiveEventRouteHandlers = {
 
 export type SelectedThreadLiveEventRouteHandlers = Omit<
   LiveEventRouteHandlers,
-  "applyUsageLimitSnapshot" | "applyApprovalEvent" | "applySkillsChangedEvent" | "applyMcpLifecycleEvent"
+  "applyAccountEvent" | "applyUsageLimitSnapshot" | "applyApprovalEvent" | "applySkillsChangedEvent" | "applyMcpLifecycleEvent"
 >;
 
 export function routeGlobalLiveEvent(event: EventEnvelope, handlers: LiveEventRouteHandlers) {
   routeSharedLiveEvent(event, handlers);
+  if (event.kind === "account.updated" || event.kind === "account.login_completed") {
+    handlers.applyAccountEvent(event);
+  }
   const usageLimitSnapshot = usageLimitSnapshotFromEvent(event);
   if (usageLimitSnapshot) {
     handlers.applyUsageLimitSnapshot(usageLimitSnapshot);

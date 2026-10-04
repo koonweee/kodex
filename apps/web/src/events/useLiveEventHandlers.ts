@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
+import { applyAccountEvent } from "../account/cache";
 import type { Approval, EventEnvelope, QueuedInput, RateLimitSnapshot } from "../api/client";
 import { applyMcpLifecycleEvent } from "../api/mcpCache";
 import { queryKeys } from "../api/queryKeys";
@@ -8,8 +9,6 @@ import { applyAppSurfaceEvent } from "../appSurfaces/cache";
 import { applyCachedAutomationEvent } from "../automations/cache";
 import type { ThreadSubagentDiscoveryEvent, ThreadUpsert } from "../threads/events";
 import { routeSelectedThreadLiveEvent, type LiveEventRouteHandlers } from "./liveRouting";
-
-type CurrentRef<T> = { current: T };
 
 export function useLiveEventHandlers({
   applyApprovalEventWithTombstone,
@@ -23,7 +22,6 @@ export function useLiveEventHandlers({
   applyThreadReadStateEvent,
   applyThreadUpsert,
   applyUsageLimitSnapshot,
-  liveUsageLimitSnapshotReceivedRef,
   queryClient,
   refreshSidebarThreadsForLiveEvent,
   setApprovals,
@@ -39,8 +37,7 @@ export function useLiveEventHandlers({
   applyThreadPinState: (threadId: string, pinnedAt: string | null) => void;
   applyThreadReadStateEvent: (event: EventEnvelope) => void;
   applyThreadUpsert: (update: ThreadUpsert) => void;
-  applyUsageLimitSnapshot?: (snapshot: RateLimitSnapshot) => void;
-  liveUsageLimitSnapshotReceivedRef: CurrentRef<boolean>;
+  applyUsageLimitSnapshot: (snapshot: RateLimitSnapshot) => void;
   queryClient: QueryClient;
   refreshSidebarThreadsForLiveEvent: (event: EventEnvelope) => void;
   setApprovals: (updater: (current: Approval[]) => Approval[]) => void;
@@ -74,16 +71,8 @@ export function useLiveEventHandlers({
       applyAppSurfaceEvent(queryClient, event);
     }
 
-    function applyLiveUsageLimitSnapshot(nextUsageLimitSnapshot: RateLimitSnapshot) {
-      liveUsageLimitSnapshotReceivedRef.current = true;
-      if (applyUsageLimitSnapshot) {
-        applyUsageLimitSnapshot(nextUsageLimitSnapshot);
-        return;
-      }
-      queryClient.setQueryData(queryKeys.rateLimits, nextUsageLimitSnapshot);
-    }
-
     const liveRouteHandlers: LiveEventRouteHandlers = {
+      applyAccountEvent: (event) => applyAccountEvent(queryClient, event),
       applyAutomationStreamEvent,
       applyQueuedInputUpsert,
       applyQueuedInputDeleted,
@@ -95,7 +84,7 @@ export function useLiveEventHandlers({
       applyThreadNotificationsState,
       refreshSidebarThreadsForLiveEvent,
       applySubagentDiscoveryEvent,
-      applyUsageLimitSnapshot: applyLiveUsageLimitSnapshot,
+      applyUsageLimitSnapshot,
       applyApprovalEvent,
       applyAppSurfaceEvent: applyAppSurfaceStreamEvent,
       applySkillsChangedEvent,
@@ -118,7 +107,6 @@ export function useLiveEventHandlers({
     applyThreadReadStateEvent,
     applyThreadUpsert,
     applyUsageLimitSnapshot,
-    liveUsageLimitSnapshotReceivedRef,
     queryClient,
     refreshSidebarThreadsForLiveEvent,
     setApprovals,

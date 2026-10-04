@@ -57,6 +57,8 @@ pub const MCP_CONFIG_CHANGED_EVENT: &str = "mcp.config_changed";
 pub const MCP_SERVER_STATUS_UPDATED_EVENT: &str = "mcp.server_status_updated";
 pub const MCP_OAUTH_LOGIN_COMPLETED_EVENT: &str = "mcp.oauth_login_completed";
 pub const ACCOUNT_RATE_LIMITS_UPDATED_EVENT: &str = "account.rate_limits_updated";
+pub const ACCOUNT_UPDATED_EVENT: &str = "account.updated";
+pub const ACCOUNT_LOGIN_COMPLETED_EVENT: &str = "account.login_completed";
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -192,9 +194,7 @@ pub async fn ingest_inbound(message: InboundMessage, state: &AppState) -> ApiRes
                 let _ = state.events.send(event);
                 emitted = true;
             }
-            if let Some(event) =
-                normalized_account_event(state, &method, &params, &metadata).await?
-            {
+            if let Some(event) = normalized_account_event(state, &method, &params).await? {
                 let _ = state.events.send(event);
                 emitted = true;
             }
@@ -1201,21 +1201,28 @@ async fn normalized_account_event(
     state: &AppState,
     method: &str,
     params: &Value,
-    metadata: &EventMetadata,
 ) -> ApiResult<Option<EventEnvelope>> {
-    if !method.eq_ignore_ascii_case("account/rateLimits/updated") {
-        return Ok(None);
-    }
+    let (kind, payload) = match method {
+        "account/rateLimits/updated" => (ACCOUNT_RATE_LIMITS_UPDATED_EVENT, params.clone()),
+        "account/updated" => (ACCOUNT_UPDATED_EVENT, params.clone()),
+        "account/login/completed" => (
+            ACCOUNT_LOGIN_COMPLETED_EVENT,
+            serde_json::to_value(serde_json::from_value::<
+                app_server_api::AccountLoginCompleted,
+            >(params.clone())?)?,
+        ),
+        _ => return Ok(None),
+    };
     state
         .store
         .append_event(NewEvent {
-            project_id: metadata.project_id.clone(),
-            thread_id: metadata.thread_id.clone(),
-            turn_id: metadata.turn_id.clone(),
-            item_id: metadata.item_id.clone(),
-            kind: ACCOUNT_RATE_LIMITS_UPDATED_EVENT.to_string(),
+            project_id: None,
+            thread_id: None,
+            turn_id: None,
+            item_id: None,
+            kind: kind.to_string(),
             codex_method: Some(method.to_string()),
-            payload: params.clone(),
+            payload,
         })
         .await
         .map(Some)

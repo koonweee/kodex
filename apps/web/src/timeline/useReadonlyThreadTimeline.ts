@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { EventEnvelope, ThreadSummary } from "../api/client";
 import { getThreadDetail } from "../api/client";
+import { useGatewayInstanceValidation, useGatewayStreamConnected } from "../api/GatewayInstanceBoundary";
 import { isApprovalEvent } from "../approvals/state";
 import { createEventStreamClient } from "../events/stream";
 import { applyTimelineEventBatch } from "./batch";
@@ -25,6 +26,8 @@ export function useReadonlyThreadTimeline({
   onSnapshotThread?: (thread: ThreadSummary) => void;
   threadId: string | null;
 }) {
+  const validateInstance = useGatewayInstanceValidation();
+  const handleStreamConnected = useGatewayStreamConnected();
   const [timeline, setTimeline] = useState<TimelineState>(() => createTimelineState());
   const [timelineEntry, setTimelineEntry] = useState<TimelineEntry>(idleTimelineEntry);
   const [scrollParentElement, setScrollParentElement] = useState<HTMLDivElement | null>(null);
@@ -120,9 +123,11 @@ export function useReadonlyThreadTimeline({
 
     const connectStream = (cursor: number) => {
       const client = createEventStreamClient({
+        beforeConnect: validateInstance,
         cursor,
         threadId: currentThreadId,
         onStatusChange: (status) => {
+          if (status === "connected") handleStreamConnected?.();
           if (status === "reconnecting" && streamToken.current === currentToken) {
             refetchSnapshot();
           }
@@ -174,7 +179,7 @@ export function useReadonlyThreadTimeline({
       cancelQueuedTimelineEvents();
       requestTimelineRefresh.current = null;
     };
-  }, [cancelQueuedTimelineEvents, enqueueTimelineEvent, threadId]);
+  }, [cancelQueuedTimelineEvents, enqueueTimelineEvent, handleStreamConnected, threadId, validateInstance]);
 
   return {
     isLoading: timelineEntry.phase === "loadingSnapshot",

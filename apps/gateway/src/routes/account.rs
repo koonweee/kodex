@@ -3,7 +3,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{
@@ -30,13 +30,6 @@ pub struct AccountQuery {
     pub refresh_token: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct LoginRequest {
-    #[serde(default)]
-    pub codex_streamlined_login: Option<bool>,
-}
-
 #[utoipa::path(get, path = "/v1/account", params(AccountQuery), responses((status = 200, body = AccountResponse)))]
 pub async fn read_account(
     State(state): State<AppState>,
@@ -49,14 +42,11 @@ pub async fn read_account(
     ))
 }
 
-#[utoipa::path(post, path = "/v1/account/login", request_body = LoginRequest, responses((status = 200, body = LoginStartResponse)))]
-pub async fn start_login(
-    State(state): State<AppState>,
-    Json(request): Json<LoginRequest>,
-) -> ApiResult<Json<LoginStartResponse>> {
+#[utoipa::path(post, path = "/v1/account/login", responses((status = 200, body = LoginStartResponse)))]
+pub async fn start_login(State(state): State<AppState>) -> ApiResult<Json<LoginStartResponse>> {
     Ok(Json(
         app_server_api::client(&state.app_server)
-            .login_start(request.codex_streamlined_login)
+            .login_start()
             .await?,
     ))
 }

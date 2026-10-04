@@ -1,4 +1,5 @@
 import { AppShell, MantineProvider } from "@mantine/core";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -654,6 +655,7 @@ describe("WorkspaceSidebar project reorder", () => {
 });
 
 function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar>> = {}) {
+  const queryClient = new QueryClient();
   return render(
     <MantineProvider>
       <AppShell>
@@ -699,6 +701,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof WorkspaceSidebar
         />
       </AppShell>
     </MantineProvider>,
+    { wrapper: ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider> },
   );
 }
 

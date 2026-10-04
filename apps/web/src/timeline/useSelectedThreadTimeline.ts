@@ -2,6 +2,7 @@ import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef } fr
 
 import type { Approval, EventEnvelope, ThreadSummary } from "../api/client";
 import { getThreadDetail, getThreadTimelinePage } from "../api/client";
+import { useGatewayInstanceValidation, useGatewayStreamConnected } from "../api/GatewayInstanceBoundary";
 import { isApprovalEvent } from "../approvals/state";
 import {
   recordLiveEvent,
@@ -71,6 +72,8 @@ export function useSelectedThreadTimeline({
   setTimeline: Dispatch<SetStateAction<TimelineState>>;
   setTimelineEntry: Dispatch<SetStateAction<TimelineEntry>>;
 }) {
+  const validateInstance = useGatewayInstanceValidation();
+  const handleStreamConnected = useGatewayStreamConnected();
   const selectedThreadStreamToken = useRef(0);
   const olderHistoryRequest = useRef<{ threadId: string; cursor: string } | null>(null);
   const requestTimelineRefresh = useRef<((reason: SelectedThreadSnapshotRefreshReason) => void) | null>(null);
@@ -293,9 +296,11 @@ export function useSelectedThreadTimeline({
         return;
       }
       const client = createEventStreamClient({
+        beforeConnect: validateInstance,
         cursor,
         threadId,
         onStatusChange: (status) => {
+          if (status === "connected") handleStreamConnected?.();
           if (status === "reconnecting" && selectedThreadStreamToken.current === streamToken) {
             refetchSnapshot("streamReconnect");
           }
@@ -385,11 +390,13 @@ export function useSelectedThreadTimeline({
   }, [
     cancelQueuedTimelineEvents,
     enqueueTimelineEvent,
+    handleStreamConnected,
     isSelectedThreadSnapshotDeferred,
     selectedThreadId,
     setApprovals,
     setTimeline,
     setTimelineEntry,
+    validateInstance,
   ]);
 
   return { loadOlderHistory };

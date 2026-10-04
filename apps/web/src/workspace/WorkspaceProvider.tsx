@@ -9,7 +9,7 @@ import {
   type ThreadSummary,
   type TimelineSkillMention,
 } from "../api/client";
-import { useGatewayInstanceStorage } from "../api/GatewayInstanceBoundary";
+import { useGatewayInstanceStorage, useGatewayInstanceValidation, useGatewayStreamConnected } from "../api/GatewayInstanceBoundary";
 import type { MarkdownPreviewRequest } from "../files/types";
 import type { ImageLightboxImage } from "../images/types";
 import { recordLiveEvent } from "../events/liveDiagnostics";
@@ -177,6 +177,8 @@ export function WorkspaceProvider({
   threadActions = {},
 }: WorkspaceProviderProps) {
   const instanceStorage = useGatewayInstanceStorage();
+  const validateInstance = useGatewayInstanceValidation();
+  const handleStreamConnected = useGatewayStreamConnected();
   const paneStore = useMemo(
     () => paneStoreOverride ?? createBrowserWorkspacePaneStore(instanceStorage),
     [instanceStorage, paneStoreOverride],
@@ -309,9 +311,11 @@ export function WorkspaceProvider({
 
   useEffect(() => {
     const client = createEventStreamClient({
+      beforeConnect: validateInstance,
       cursor: liveEventCursorRef.current,
       includeGlobal: true,
       threadIds: subscribedThreadIds,
+      onStatusChange: (status) => { if (status === "connected") handleStreamConnected?.(); },
       onEvent: (event) => {
         recordLiveEvent("global", event);
         liveEventCursorRef.current = Math.max(liveEventCursorRef.current ?? 0, event.seq);
@@ -324,7 +328,7 @@ export function WorkspaceProvider({
     });
     client.connect();
     return client.close;
-  }, [subscribedThreadIdsKey]);
+  }, [handleStreamConnected, subscribedThreadIdsKey, validateInstance]);
 
   const subscribeLiveEvent = useCallback((handler: WorkspaceLiveEventHandler) => {
     liveEventHandlersRef.current.add(handler);

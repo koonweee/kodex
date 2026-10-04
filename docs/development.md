@@ -41,6 +41,10 @@ To proxy to another local gateway, set `VITE_KODEX_PROXY_TARGET`. To call anothe
 
 App surfaces require a sandbox document on a different browser origin. Loopback development swaps `localhost` and `127.0.0.1` automatically. Remote browsers and HTTPS or non-loopback deployments must set `VITE_KODEX_APP_SURFACE_SANDBOX_URL` to the sandbox HTML on a distinct origin.
 
+Sign in from **Account settings → Sign in with ChatGPT**. Kodex displays the native device code and verification link; app-server owns polling, expiry and authentication. This avoids the browser-login callback listener shared with Codex desktop. Cancellation targets the displayed native login ID, so cancelling an old attempt cannot cancel a newer attempt from another tab. Login remains global to this Kodex runtime.
+
+Account state is reread after native account events, browser foreground checks and SSE reconnection. If a client misses a failed login's completion before receiving its first event cursor, the displayed attempt can remain waiting; cancel it and request a new code. Kodex does not add a durable login-status store or its own authentication poller.
+
 ## Validation commands
 
 Backend:

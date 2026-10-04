@@ -2,6 +2,8 @@ import createClient from "openapi-fetch";
 
 import type { components, paths } from "./generated/schema";
 
+export type AccountLoginCompleted = components["schemas"]["AccountLoginCompleted"];
+export type LoginStartResponse = components["schemas"]["LoginStartResponse"];
 export type AccountResponse = components["schemas"]["AccountResponse"];
 export type Approval = components["schemas"]["Approval"];
 export type ApprovalResponse = Record<string, unknown>;
@@ -156,6 +158,10 @@ export async function listProjects(): Promise<Project[]> {
   return response.projects;
 }
 
+export async function getProject(projectId: string, signal?: AbortSignal): Promise<Project> {
+  return unwrap(api.GET("/v1/projects/{projectId}", { params: { path: { projectId } }, cache: "no-store", signal }));
+}
+
 export async function createProject(input: { createDirectory?: boolean; cwd: string }): Promise<Project> {
   return unwrap(api.POST("/v1/projects", { body: input }));
 }
@@ -295,8 +301,8 @@ export async function attachThread(threadId: string): Promise<ThreadAttachRespon
   return unwrap(api.POST("/v1/threads/{threadId}/attach", { params: { path: { threadId } } }));
 }
 
-export async function getThreadDetail(threadId: string): Promise<ThreadViewResponse> {
-  return unwrap(api.GET("/v1/threads/{threadId}", { params: { path: { threadId } } }));
+export async function getThreadDetail(threadId: string, signal?: AbortSignal): Promise<ThreadViewResponse> {
+  return unwrap(api.GET("/v1/threads/{threadId}", { params: { path: { threadId } }, cache: "no-store", signal }));
 }
 
 export async function getThreadTimelinePage(
@@ -634,12 +640,12 @@ export async function decideApproval(approvalId: string, decision: ApprovalRespo
   );
 }
 
-export async function getAccount(): Promise<AccountResponse> {
-  return unwrap(api.GET("/v1/account"));
+export async function getAccount(signal?: AbortSignal): Promise<AccountResponse> {
+  return unwrap(api.GET("/v1/account", { signal, cache: "no-store" }));
 }
 
 export async function startLogin() {
-  return unwrap(api.POST("/v1/account/login", { body: { codexStreamlinedLogin: true } }));
+  return unwrap(api.POST("/v1/account/login"));
 }
 
 export async function cancelLogin(loginId: string): Promise<void> {
@@ -650,8 +656,8 @@ export async function logout(): Promise<void> {
   await unwrap(api.POST("/v1/account/logout"));
 }
 
-export async function getRateLimits(): Promise<RateLimitsResponse> {
-  return unwrap(api.GET("/v1/account/rate-limits"));
+export async function getRateLimits(signal?: AbortSignal): Promise<RateLimitsResponse> {
+  return unwrap(api.GET("/v1/account/rate-limits", { signal, cache: "no-store" }));
 }
 
 export async function listModels(): Promise<ModelSummary[]> {

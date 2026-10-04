@@ -2266,24 +2266,34 @@ impl AccountSummary {
 #[serde(rename_all = "camelCase")]
 pub struct LoginStartResponse {
     pub login_type: String,
-    pub login_id: Option<String>,
-    pub auth_url: Option<String>,
-    pub user_code: Option<String>,
-    pub verification_url: Option<String>,
-    pub raw_payload: Value,
+    pub login_id: String,
+    pub user_code: String,
+    pub verification_url: String,
 }
 
 impl LoginStartResponse {
     fn from_payload(payload: Value) -> ApiResult<Self> {
+        let login_type = required_string(&payload, "type")?;
+        if login_type != "chatgptDeviceCode" {
+            return Err(bad_gateway(
+                "account/login/start returned an unexpected login type",
+            ));
+        }
         Ok(Self {
-            login_type: required_string(&payload, "type")?,
-            login_id: optional_string(&payload, "loginId"),
-            auth_url: optional_string(&payload, "authUrl"),
-            user_code: optional_string(&payload, "userCode"),
-            verification_url: optional_string(&payload, "verificationUrl"),
-            raw_payload: payload,
+            login_type,
+            login_id: required_string(&payload, "loginId")?,
+            user_code: required_string(&payload, "userCode")?,
+            verification_url: required_string(&payload, "verificationUrl")?,
         })
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountLoginCompleted {
+    pub login_id: Option<String>,
+    pub success: bool,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

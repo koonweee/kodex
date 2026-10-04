@@ -1,16 +1,13 @@
 import { Box, Menu } from "@mantine/core";
-import { Bug, Check, CircleUserRound, Clock, LogOut, Palette } from "lucide-react";
+import { Bug, Check, CircleUserRound, Clock, LogIn, LogOut, Palette } from "lucide-react";
 import { useState } from "react";
 
 import type { AccountResponse } from "../api/client";
 import { AdaptiveIconButton } from "../ui/AdaptiveIconButton";
 import { CheckboxMenuItem } from "../ui/CheckboxMenuItem";
 import type { UsageLimitLines } from "./rateLimits";
-
-export type LoginState = {
-  authUrl?: string | null;
-  loginId?: string | null;
-};
+import { DeviceCodeLoginDialog } from "./DeviceCodeLoginDialog";
+import { useDeviceCodeLogin } from "./useDeviceCodeLogin";
 
 const ACCOUNT_TEXT = {
   debugEvents: "Show debug events",
@@ -37,22 +34,28 @@ export function SidebarAccountMenu({
   showDebugEvents: boolean;
   usageLimitLines?: UsageLimitLines | null;
 }) {
+  const loginFlow = useDeviceCodeLogin(account);
   return (
-    <SettingsMenu
-      accountEmail={account?.account?.email ?? null}
-      isAuthenticated={Boolean(account?.account)}
-      onLogout={onLogout}
-      onSelectAutomations={onSelectAutomations}
-      onOpenPreferences={onOpenPreferences}
-      onShowDebugEventsChange={onShowDebugEventsChange}
-      showDebugEvents={showDebugEvents}
-      usageLimitLines={usageLimitLines}
-    />
+    <>
+      <SettingsMenu
+        accountEmail={account?.account?.email ?? null}
+        isAuthenticated={Boolean(account?.account)}
+        onLogin={loginFlow.start}
+        onLogout={onLogout}
+        onSelectAutomations={onSelectAutomations}
+        onOpenPreferences={onOpenPreferences}
+        onShowDebugEventsChange={onShowDebugEventsChange}
+        showDebugEvents={showDebugEvents}
+        usageLimitLines={usageLimitLines}
+      />
+      <DeviceCodeLoginDialog flow={loginFlow} />
+    </>
   );
 }
 
 function SettingsMenu({
   accountEmail,
+  onLogin,
   isAuthenticated,
   onLogout,
   onSelectAutomations,
@@ -62,6 +65,7 @@ function SettingsMenu({
   usageLimitLines,
 }: {
   accountEmail: string | null;
+  onLogin: () => void;
   isAuthenticated: boolean;
   onLogout: () => void;
   onSelectAutomations: () => void;
@@ -132,7 +136,18 @@ function SettingsMenu({
           >
             {ACCOUNT_TEXT.logout}
           </Menu.Item>
-        ) : null}
+        ) : (
+          <Menu.Item
+            className="kodex-settings-menu-item"
+            leftSection={<LogIn size={14} />}
+            onClick={() => {
+              setOpened(false);
+              onLogin();
+            }}
+          >
+            Sign in with ChatGPT
+          </Menu.Item>
+        )}
         <CheckboxMenuItem
           checked={showDebugEvents}
           className="kodex-debug-toggle"

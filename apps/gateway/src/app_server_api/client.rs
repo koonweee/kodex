@@ -446,15 +446,13 @@ impl CodexClient {
         AccountResponse::from_payload(payload)
     }
 
-    pub async fn login_start(
-        &self,
-        codex_streamlined_login: Option<bool>,
-    ) -> ApiResult<LoginStartResponse> {
-        let mut payload = json!({ "type": "chatgpt" });
-        if let Some(codex_streamlined_login) = codex_streamlined_login {
-            payload["codexStreamlinedLogin"] = Value::Bool(codex_streamlined_login);
-        }
-        let payload = self.request("account/login/start", payload).await?;
+    pub async fn login_start(&self) -> ApiResult<LoginStartResponse> {
+        let payload = self
+            .request(
+                "account/login/start",
+                json!({ "type": "chatgptDeviceCode" }),
+            )
+            .await?;
         LoginStartResponse::from_payload(payload)
     }
 

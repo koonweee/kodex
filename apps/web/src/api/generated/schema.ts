@@ -1957,6 +1957,11 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AccountLoginCompleted: {
+            error?: string | null;
+            loginId?: string | null;
+            success: boolean;
+        };
         AccountQuery: {
             refreshToken?: boolean;
         };
@@ -2450,16 +2455,11 @@ export interface components {
             skills: string[];
             status: components["schemas"]["KodexControlPluginStatusKind"];
         };
-        LoginRequest: {
-            codexStreamlinedLogin?: boolean | null;
-        };
         LoginStartResponse: {
-            authUrl?: string | null;
-            loginId?: string | null;
+            loginId: string;
             loginType: string;
-            rawPayload: unknown;
-            userCode?: string | null;
-            verificationUrl?: string | null;
+            userCode: string;
+            verificationUrl: string;
         };
         MarkThreadSeenRequest: {
             /** Format: int64 */
@@ -3813,11 +3813,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LoginRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             200: {
                 headers: {

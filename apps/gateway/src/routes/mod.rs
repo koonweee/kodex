@@ -12686,8 +12686,7 @@ mod tests {
             app.clone()
                 .oneshot(
                     Request::post("/v1/account/login")
-                        .header("content-type", "application/json")
-                        .body(Body::from(r#"{}"#))
+                        .body(Body::empty())
                         .unwrap(),
                 )
                 .await
@@ -12737,7 +12736,7 @@ mod tests {
         assert_eq!(requests[0].0, "account/read");
         assert_eq!(requests[0].1, json!({"refreshToken": true}));
         assert_eq!(requests[1].0, "account/login/start");
-        assert_eq!(requests[1].1, json!({"type": "chatgpt"}));
+        assert_eq!(requests[1].1, json!({"type": "chatgptDeviceCode"}));
         assert_eq!(requests[2].0, "account/login/cancel");
         assert_eq!(requests[2].1, json!({"loginId": "login-1"}));
         assert_eq!(requests[3].0, "account/logout");
@@ -12867,24 +12866,25 @@ mod tests {
         assert_eq!(rate_limits["rateLimits"]["primary"]["usedPercent"], 15);
 
         *app_server.next_response.lock().unwrap() = Some(json!({
-            "type": "chatgpt",
+            "type": "chatgptDeviceCode",
             "loginId": "login-1",
-            "authUrl": "https://example.test/login"
+            "verificationUrl": "https://example.test/device",
+            "userCode": "CODE-1234"
         }));
         let login = app
             .oneshot(
                 Request::post("/v1/account/login")
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{}"#))
+                    .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
         assert_eq!(login.status(), StatusCode::OK);
         let login = response_json(login).await;
-        assert_eq!(login["loginType"], "chatgpt");
+        assert_eq!(login["loginType"], "chatgptDeviceCode");
         assert_eq!(login["loginId"], "login-1");
-        assert_eq!(login["authUrl"], "https://example.test/login");
+        assert_eq!(login["verificationUrl"], "https://example.test/device");
+        assert_eq!(login["userCode"], "CODE-1234");
     }
 
     #[tokio::test]
@@ -12905,31 +12905,68 @@ mod tests {
     #[tokio::test]
     async fn account_notifications_flow_through_event_stream() {
         let (state, _) = test_state().await;
-        for method in [
-            "account/login/completed",
-            "account/updated",
-            "account/rateLimits/updated",
+        let app = build_router(state.clone());
+        let mut live_clients = Vec::new();
+        for _ in 0..2 {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::get("/v1/events?includeGlobal=true&threadIds=thread-1")
+                        .header("accept", "text/event-stream")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            live_clients.push(response.into_body());
+        }
+        for (method, params) in [
+            (
+                "account/login/completed",
+                json!({"loginId": "login-1", "success": false, "error": "device auth timed out after 15 minutes"}),
+            ),
+            (
+                "account/updated",
+                json!({"authMode": "chatgpt", "planType": "plus"}),
+            ),
+            ("account/rateLimits/updated", json!({"rateLimits": null})),
         ] {
             ingest_inbound(
                 InboundMessage::Notification {
                     method: method.to_string(),
-                    params: json!({"accountId": "acct-1"}),
+                    params,
                 },
                 &state,
             )
             .await
             .unwrap();
         }
-
-        let methods = state
-            .store
-            .replay_events(None, None, None)
+        let response = app
+            .oneshot(
+                Request::get("/v1/events?includeGlobal=true&threadIds=thread-1&cursor=0")
+                    .header("accept", "text/event-stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
-            .unwrap()
-            .into_iter()
-            .map(|event| event.codex_method.unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(methods, vec!["account/rateLimits/updated"]);
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        live_clients.push(response.into_body());
+        for mut body in live_clients {
+            for kind in [
+                "account.login_completed",
+                "account.updated",
+                "account.rate_limits_updated",
+            ] {
+                let chunk = next_sse_chunk(&mut body).await;
+                assert!(chunk.contains(&format!("event: {kind}")), "{chunk}");
+                if kind == "account.login_completed" {
+                    assert!(chunk.contains("login-1"));
+                    assert!(chunk.contains("device auth timed out after 15 minutes"));
+                }
+            }
+        }
     }
 
     #[tokio::test]

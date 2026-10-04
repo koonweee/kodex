@@ -1,5 +1,6 @@
 export const queryKeys = {
   account: ["account"] as const,
+  accountLoginCompletion: (loginId: string | null) => ["account-login-completion", loginId] as const,
   automations: ["automations"] as const,
   automationTombstones: ["automations", "tombstones"] as const,
   capabilities: ["capabilities"] as const,

@@ -15,11 +15,9 @@ import {
 } from "react";
 
 import { useApprovalsState } from "./approvals/useApprovalsState";
-import {
-  formatUsageLimitLines,
-  usageLimitSnapshotFromResponse,
-} from "./account/rateLimits";
+import { formatUsageLimitLines } from "./account/rateLimits";
 import { useAccountSession } from "./account/useAccountSession";
+import { useUsageLimits } from "./account/useUsageLimits";
 import {
   archiveThread,
   createAutomation,
@@ -28,7 +26,6 @@ import {
   createThread,
   deleteAutomation,
   getCapabilities,
-  getRateLimits,
   listAutomations,
   listChatThreadsPage,
   listQueuedInputs,
@@ -546,7 +543,6 @@ function KodexShell({
   const activeDraftComposerThreadIdRef = useRef<string | null>(null);
   const threadPaneTimelineActionHandlersRef = useRef(new Set<ThreadPaneTimelineActionHandler>());
   const draftComposerTransitionOriginRef = useRef<DOMRect | null>(null);
-  const liveUsageLimitSnapshotReceivedRef = useRef(false);
   const [draftComposerTransitionToken, setDraftComposerTransitionToken] = useState(0);
   const [isDraftComposerTransitioning, setIsDraftComposerTransitioning] = useState(false);
   const [pinnedStateTrusted, setPinnedStateTrusted] = useState(false);
@@ -728,16 +724,7 @@ function KodexShell({
       );
     },
   });
-  const rateLimitsQuery = useQuery({
-    queryKey: queryKeys.rateLimits,
-    queryFn: async () => {
-      const nextSnapshot = usageLimitSnapshotFromResponse(await getRateLimits());
-      if (liveUsageLimitSnapshotReceivedRef.current) {
-        return queryClientForShell.getQueryData<ReturnType<typeof usageLimitSnapshotFromResponse>>(queryKeys.rateLimits) ?? nextSnapshot;
-      }
-      return nextSnapshot;
-    },
-  });
+  const { usageLimitSnapshot, applyUsageLimitSnapshot } = useUsageLimits();
   const createAutomationMutation = useMutation({
     mutationFn: createAutomation,
     onSuccess: (automation) => upsertCachedAutomation(queryClientForShell, automation),
@@ -823,7 +810,6 @@ function KodexShell({
   });
   const selectedThreadSubagents = selectedThreadSubagentsQuery.data ?? EMPTY_SUBAGENTS;
   const automations = automationsQuery.data ?? EMPTY_AUTOMATIONS;
-  const usageLimitSnapshot = rateLimitsQuery.data ?? null;
   const automationTargetThreadOptions = useMemo(
     () =>
       automationThreadOptions({
@@ -1046,7 +1032,7 @@ function KodexShell({
     applyThreadPinState,
     applyThreadReadStateEvent,
     applyThreadUpsert,
-    liveUsageLimitSnapshotReceivedRef,
+    applyUsageLimitSnapshot,
     queryClient: queryClientForShell,
     refreshSidebarThreadsForLiveEvent,
     setApprovals,

@@ -7,6 +7,7 @@ class FakeEventSource {
 
   private listeners = new Map<string, Array<(event: MessageEvent<string>) => void>>();
   onerror: (() => void) | null = null;
+  onopen: (() => void) | null = null;
   onmessage: ((event: MessageEvent<string>) => void) | null = null;
   closed = false;
 
@@ -35,6 +36,10 @@ class FakeEventSource {
   fail() {
     this.onerror?.();
   }
+
+  open() {
+    this.onopen?.();
+  }
 }
 
 describe("event stream client", () => {
@@ -54,6 +59,93 @@ describe("event stream client", () => {
 
     expect(FakeEventSource.instances[0].url).toContain("/v1/events?threadId=thread-1");
     expect(FakeEventSource.instances[0].url).not.toContain("cursor=");
+    client.close();
+  });
+
+  it("waits for identity validation before connecting and cannot reopen after close", async () => {
+    let resolve!: (allowed: boolean) => void;
+    const beforeConnect = vi.fn(() => new Promise<boolean>((done) => { resolve = done; }));
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      beforeConnect,
+      cursor: 70,
+      threadId: "old-thread",
+      onEvent: vi.fn(),
+    });
+
+    client.connect();
+    expect(beforeConnect).toHaveBeenCalledTimes(1);
+    expect(FakeEventSource.instances).toHaveLength(0);
+    client.close();
+    resolve(true);
+    await Promise.resolve();
+
+    expect(FakeEventSource.instances).toHaveLength(0);
+  });
+
+  it("gates replay and snapshot recovery on identity validation and ignores the disconnected source", async () => {
+    vi.useFakeTimers();
+    let resolve!: (allowed: boolean) => void;
+    const beforeConnect = vi.fn()
+      .mockResolvedValueOnce(true)
+      .mockImplementationOnce(() => new Promise<boolean>((done) => { resolve = done; }));
+    const onEvent = vi.fn();
+    const onStatusChange = vi.fn();
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      beforeConnect,
+      cursor: 5,
+      onEvent,
+      onStatusChange,
+      reconnectDelayMs: 250,
+      threadId: "thread-1",
+    });
+    client.connect();
+    await Promise.resolve();
+    const first = FakeEventSource.instances[0];
+    expect(onStatusChange).not.toHaveBeenCalled();
+    first.open();
+    first.emit({ seq: 6 });
+    first.fail();
+    first.emit({ seq: 100 });
+    first.open();
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    expect(onStatusChange.mock.calls).toEqual([["connected"]]);
+    expect(FakeEventSource.instances).toHaveLength(1);
+    resolve(true);
+    await Promise.resolve();
+
+    expect(onStatusChange.mock.calls).toEqual([["connected"], ["reconnecting"]]);
+    expect(FakeEventSource.instances).toHaveLength(2);
+    FakeEventSource.instances[1].open();
+    expect(onStatusChange.mock.calls).toEqual([["connected"], ["reconnecting"], ["connected"]]);
+    expect(new URL(FakeEventSource.instances[1].url, window.location.origin).searchParams.get("cursor")).toBe("6");
+    client.close();
+  });
+
+  it("retries a failed identity check without connecting or starting snapshot recovery", async () => {
+    vi.useFakeTimers();
+    const beforeConnect = vi.fn().mockRejectedValueOnce(new Error("Offline")).mockResolvedValueOnce(true);
+    const onStatusChange = vi.fn();
+    const client = createEventStreamClient({
+      EventSourceCtor: FakeEventSource,
+      beforeConnect,
+      cursor: 5,
+      onEvent: vi.fn(),
+      onStatusChange,
+      reconnectDelayMs: 250,
+    });
+    client.connect();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(FakeEventSource.instances).toHaveLength(0);
+    expect(onStatusChange).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(beforeConnect).toHaveBeenCalledTimes(2);
+    expect(FakeEventSource.instances).toHaveLength(1);
     client.close();
   });
 

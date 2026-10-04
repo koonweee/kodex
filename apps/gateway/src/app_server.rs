@@ -1017,9 +1017,10 @@ done
             }),
             "account/read" => json!({"requiresOpenaiAuth": true, "account": null}),
             "account/login/start" => json!({
-                "type": "chatgpt",
+                "type": "chatgptDeviceCode",
                 "loginId": "login-1",
-                "authUrl": "https://example.test/login"
+                "verificationUrl": "https://example.test/device",
+                "userCode": "CODE-1234"
             }),
             "account/rateLimits/read" => json!({
                 "rateLimits": null,
