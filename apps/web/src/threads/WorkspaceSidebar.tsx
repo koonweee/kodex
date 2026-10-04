@@ -1,16 +1,15 @@
+import { ThreadList } from "./ThreadSidebarRows";
+import { NativeSectionsSidebar } from "../sections/NativeSectionsSidebar";
+import type { ThreadSectionActions } from "../sections/SectionMenuItems";
 import {
   AppShell,
-  Badge,
   Box,
-  Group,
   Menu,
   Stack,
   Text,
-  Tooltip,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import {
-  Archive,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -18,8 +17,6 @@ import {
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
-  Pin,
-  PinOff,
   Search,
   Settings,
   SquarePen,
@@ -34,7 +31,6 @@ import {
   useRef,
   useState,
   type DragEvent as ReactDragEvent,
-  type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
 
@@ -49,10 +45,6 @@ import { EmptyPanel } from "../ui/EmptyPanel";
 import {
   threadDisplayTitle,
   threadInProgress,
-  threadNeedsApproval,
-  sortPinnedThreadsForSidebar,
-  sortProjectThreadsForSidebar,
-  sortThreadsForSidebar,
   type ThreadsByProjectId,
 } from "./helpers";
 import { moveProjectInSidebarOrderAt } from "../projects/dragOrder";
@@ -64,7 +56,6 @@ import {
 } from "./sidebarDisclosureState";
 import {
   SidebarActionDisclosureRow,
-  SidebarRowFrame,
   SidebarSectionDisclosureRow,
   SidebarTextActionRow,
   SidebarTextInputRow,
@@ -73,8 +64,6 @@ import {
 const SIDEBAR_TEXT = {
   chats: "Chats",
   collapseSidebar: "Collapse workspace sidebar",
-  createProject: "Add project",
-  cwd: "Directory",
   expandSidebarHandle: "Expand workspace sidebar",
   newChat: "New chat",
   newProject: "Add project",
@@ -82,39 +71,28 @@ const SIDEBAR_TEXT = {
   noProjectsText: "Create a project to begin.",
   noProjectsTitle: "No projects",
   openTerminal: "Open terminal",
-  pinned: "Pinned",
-  pinThread: "Pin thread",
   projects: "Projects",
-  resizeSidebarLabel: "Resize workspace sidebar",
   recentThreads: "Recent threads",
   recents: "Recents",
   search: "Search",
   showThread: "Show thread",
-  showLessThreads: "Show less",
-  showMoreError: "Could not load more threads",
-  showMoreLoading: "Loading more",
-  showMoreThreads: "Show more",
-  threadInProgress: "Thread in progress",
-  unreadAgentTurn: "Unread completed agent turn",
-  unpinThread: "Unpin thread",
   workspaceLabel: "Workspace",
 };
 
-const VISIBLE_THREAD_LIMIT = 5;
 type SidebarScope = "projects" | "chats";
 type SidebarDataLoadState = "error" | "loaded" | "loading" | "refetching";
 type SidebarPaginationState = "idle" | "loading" | "error";
 
 export type WorkspaceSidebarDataState = {
   chatThreads: SidebarDataLoadState;
-  pinnedThreads: SidebarDataLoadState;
+  sections: SidebarDataLoadState;
   projects: SidebarDataLoadState;
   projectThreadsById: Record<string, SidebarDataLoadState>;
 };
 
 const DEFAULT_DATA_STATE: WorkspaceSidebarDataState = {
   chatThreads: "loaded",
-  pinnedThreads: "loaded",
+  sections: "loaded",
   projects: "loaded",
   projectThreadsById: {},
 };
@@ -140,7 +118,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onMoveProject,
   onSelectAutomations,
   onSelectChatThread,
-  onSelectPinnedThread,
+  onSelectSectionThread,
   onSelectProjectSettings,
   onSelectThread,
   onShowThread = () => undefined,
@@ -149,7 +127,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onSidebarExpandClick,
   onThreadActionHoverChange,
   onUnpinThread,
-  pinnedThreads,
+  onSectionsChanged, sectionThreads, sections = [], sectionThreadsById = {}, sectionThreadHasMoreById = {}, sectionThreadPaginationStateById = {}, onLoadMoreSectionThreads, onMoveThreadToSection, sectionMovePending,
   pendingTitleThreadIds,
   projectThreadHasMoreById = {},
   projectThreadPaginationStateById = {},
@@ -162,7 +140,12 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   sidebarWidth,
   threadsByProjectId,
   usageLimitLines,
-}: {
+}: ThreadSectionActions & {
+  onSectionsChanged?: () => void;
+  sectionThreadsById?: Record<string, ThreadSummary[]>;
+  sectionThreadHasMoreById?: Record<string, boolean>;
+  sectionThreadPaginationStateById?: Record<string, SidebarPaginationState>;
+  onLoadMoreSectionThreads?: (sectionId: string) => void;
   account: AccountResponse | null;
   approvals: Approval[];
   chatThreads: ThreadSummary[];
@@ -183,7 +166,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onMoveProject: (projectId: string, beforeProjectId: string | null) => void;
   onSelectAutomations: () => void;
   onSelectChatThread: (threadId: string) => void;
-  onSelectPinnedThread: (threadId: string) => void;
+  onSelectSectionThread: (threadId: string) => void;
   onSelectProjectSettings: (projectId: string) => void;
   onSelectThread: (projectId: string, threadId: string) => void;
   onShowThread?: () => void;
@@ -193,7 +176,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   onThreadActionHoverChange: (threadId: string | null) => void;
   onUnpinThread: (threadId: string) => void;
   pendingTitleThreadIds: Set<string>;
-  pinnedThreads: ThreadSummary[];
+  sectionThreads: ThreadSummary[];
   projectThreadHasMoreById?: Record<string, boolean>;
   projectThreadPaginationStateById?: Record<string, SidebarPaginationState>;
   projects: Project[];
@@ -228,39 +211,25 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     () => projectsFromPreviewOrder(projects, previewProjectIds),
     [previewProjectIds, projects],
   );
-  const sortedChatThreads = useMemo(
-    () => sortThreadsForSidebar(chatThreads, approvals, pendingTitleThreadIds),
-    [approvals, chatThreads, pendingTitleThreadIds],
-  );
-  const sortedPinnedThreads = useMemo(
-    () => sortPinnedThreadsForSidebar(pinnedThreads, approvals, pendingTitleThreadIds),
-    [approvals, pendingTitleThreadIds, pinnedThreads],
-  );
-  const projectScopeLookup = useMemo(() => sidebarProjectScopeLookup(projects), [projects]);
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
-  const scopedPinnedThreads =
-    sidebarScope === "chats" ? sortedPinnedThreads.filter((thread) => !threadBelongsToProjectScope(thread, projectScopeLookup)) : [];
-  const visiblePinnedThreads = normalizedSearchQuery
-    ? scopedPinnedThreads.filter((thread) => threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds))
-    : scopedPinnedThreads;
   const visibleChatThreads = normalizedSearchQuery
-    ? sortedChatThreads.filter((thread) => threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds))
-    : sortedChatThreads;
+    ? chatThreads.filter((thread) => threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds))
+    : chatThreads;
   const {
     chatsSectionCollapsed,
     collapsedProjectIds,
-    pinnedSectionCollapsed,
+    collapsedSectionIds,
     projectsSectionCollapsed,
   } = sidebarDisclosureState;
   const recentThreads = useMemo(
     () =>
       recentSidebarThreads({
         chatThreads,
-        pinnedThreads,
+        sectionThreads,
         projects,
         threadsByProjectId,
       }),
-    [chatThreads, pinnedThreads, projects, threadsByProjectId],
+    [chatThreads, sectionThreads, projects, threadsByProjectId],
   );
 
   useEffect(() => {
@@ -411,7 +380,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   }
 
   function handleSectionCollapseToggle(
-    section: "chatsSectionCollapsed" | "pinnedSectionCollapsed" | "projectsSectionCollapsed",
+    section: "chatsSectionCollapsed" | "projectsSectionCollapsed",
   ) {
     updateSidebarDisclosureState((current) => ({
       ...current,
@@ -448,7 +417,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
     } else if (thread.location.kind === "chat") {
       onSelectChatThread(thread.thread.id);
     } else {
-      onSelectPinnedThread(thread.thread.id);
+      onSelectSectionThread(thread.thread.id);
     }
   }
 
@@ -525,37 +494,25 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
               <Box
                 className="kodex-sidebar-scroll"
                 data-chats-state={dataState.chatThreads}
-                data-pinned-state={dataState.pinnedThreads}
+                data-sections-state={dataState.sections}
                 data-projects-state={dataState.projects}
                 ref={sidebarScrollRef}
               >
-                {visiblePinnedThreads.length > 0 ? (
-                  <Box className="kodex-pinned-section">
-                    <SidebarSectionDisclosureRow
-                      className="kodex-pinned-section-row"
-                      collapsed={pinnedSectionCollapsed}
-                      label={SIDEBAR_TEXT.pinned}
-                      onToggle={() => handleSectionCollapseToggle("pinnedSectionCollapsed")}
-                    />
-                    {!pinnedSectionCollapsed ? (
-                      <ThreadList
-                        approvals={approvals}
-                        className="kodex-pinned-thread-list"
-                        expanded
-                        hoveredThreadActionId={hoveredThreadActionId}
-                        onArchiveThread={onArchiveThread}
-                        onPinThread={onPinThread}
-                        onSelectThread={onSelectPinnedThread}
-                        onThreadActionHoverChange={onThreadActionHoverChange}
-                        onToggleExpanded={() => undefined}
-                        onUnpinThread={onUnpinThread}
-                        pendingTitleThreadIds={pendingTitleThreadIds}
-                        selectedThreadId={selectedThreadId}
-                        threads={visiblePinnedThreads}
-                      />
-                    ) : null}
-                  </Box>
-                ) : null}
+                <NativeSectionsSidebar
+                  onSectionsChanged={onSectionsChanged}
+                  sections={sections} threadsBySectionId={sectionThreadsById} collapsedSectionIds={collapsedSectionIds}
+                  onToggleSection={(id) => updateSidebarDisclosureState((current) => {
+                    const next = new Set(current.collapsedSectionIds);
+                    if (next.has(id)) next.delete(id); else next.add(id);
+                    return { ...current, collapsedSectionIds: next };
+                  })}
+                  searchQuery={normalizedSearchQuery} hasMoreById={sectionThreadHasMoreById} paginationStates={sectionThreadPaginationStateById}
+                  onLoadMore={onLoadMoreSectionThreads} approvals={approvals} hoveredThreadActionId={hoveredThreadActionId}
+                  onArchiveThread={onArchiveThread} onPinThread={onPinThread} onUnpinThread={onUnpinThread}
+                  onMoveThreadToSection={onMoveThreadToSection} sectionMovePending={sectionMovePending}
+                  onSelectThread={onSelectSectionThread} onThreadActionHoverChange={onThreadActionHoverChange}
+                  pendingTitleThreadIds={pendingTitleThreadIds} selectedThreadId={selectedThreadId}
+                />
                 {sidebarScope === "projects" ? (
                   <>
                     <SidebarSectionDisclosureRow
@@ -581,11 +538,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                           />
                         ) : projects.length > 0 ? (
                           displayedProjects.map((project) => {
-                            const projectThreads = sortProjectThreadsForSidebar(
-                              threadsByProjectId[project.id] ?? [],
-                              approvals,
-                              pendingTitleThreadIds,
-                            );
+                            const projectThreads = threadsByProjectId[project.id] ?? [];
                             const visibleProjectThreads = normalizedSearchQuery
                               ? projectThreads.filter((thread) =>
                                   threadMatchesSearch(thread, normalizedSearchQuery, pendingTitleThreadIds),
@@ -661,6 +614,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                                 />
                                 {renderedProjectThreads.length > 0 ? (
                                   <ThreadList
+                                sections={sections} onMoveThreadToSection={onMoveThreadToSection} sectionMovePending={sectionMovePending}
                                     approvals={approvals}
                                     className="kodex-project-thread-list"
                                     expanded={projectCollapsed || showAllProjectThreads}
@@ -713,6 +667,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
                   />
                   {!chatsSectionCollapsed && visibleChatThreads.length > 0 ? (
                     <ThreadList
+                                sections={sections} onMoveThreadToSection={onMoveThreadToSection} sectionMovePending={sectionMovePending}
                       approvals={approvals}
                       className="kodex-chat-thread-list"
                       expanded={chatThreadsExpanded}
@@ -858,27 +813,19 @@ function CollapsedSidebarRail({
   );
 }
 
-function sidebarProjectScopeLookup(projects: Project[]): Set<string> {
-  return new Set(projects.map((project) => project.id));
-}
-
-function threadBelongsToProjectScope(thread: ThreadSummary, projectIds: Set<string>): boolean {
-  return typeof thread.projectId === "string" && projectIds.has(thread.projectId);
-}
-
 type RecentSidebarThread = {
-  location: { kind: "chat" } | { kind: "pinned" } | { kind: "project"; projectId: string };
+  location: { kind: "chat" } | { kind: "section" } | { kind: "project"; projectId: string };
   thread: ThreadSummary;
 };
 
 function recentSidebarThreads({
   chatThreads,
-  pinnedThreads,
+  sectionThreads,
   projects,
   threadsByProjectId,
 }: {
   chatThreads: ThreadSummary[];
-  pinnedThreads: ThreadSummary[];
+  sectionThreads: ThreadSummary[];
   projects: Project[];
   threadsByProjectId: ThreadsByProjectId;
 }): RecentSidebarThread[] {
@@ -894,13 +841,13 @@ function recentSidebarThreads({
     }
   }
   const projectIds = new Set(projects.map((project) => project.id));
-  for (const thread of pinnedThreads) {
+  for (const thread of sectionThreads) {
     if (byThreadId.has(thread.id)) {
       continue;
     }
     const projectId = thread.projectId && projectIds.has(thread.projectId) ? thread.projectId : null;
     byThreadId.set(thread.id, {
-      location: projectId ? { kind: "project", projectId } : { kind: "pinned" },
+      location: projectId ? { kind: "project", projectId } : { kind: "section" },
       thread,
     });
   }
@@ -945,268 +892,9 @@ function threadMatchesSearch(thread: ThreadSummary, query: string, pendingTitleT
 }
 
 function threadSurfacesWhenProjectCollapsed(thread: ThreadSummary, selectedThreadId: string | null): boolean {
-  return Boolean(thread.pinnedAt) || thread.id === selectedThreadId || thread.unreadCompletedAgentTurn === true || threadInProgress(thread);
+  return thread.id === selectedThreadId || thread.unreadCompletedAgentTurn === true || threadInProgress(thread);
 }
 
 function threadDisplayTitleWithPending(thread: ThreadSummary, pendingTitleThreadIds: Set<string>): string {
   return pendingTitleThreadIds.has(thread.id) ? SIDEBAR_TEXT.newThread : threadDisplayTitle(thread);
-}
-
-export type ThreadListRowProps = {
-  approvals: Approval[];
-  isSelected: boolean;
-  onArchiveThread: (threadId: string) => void;
-  onPinThread: (threadId: string) => void;
-  onSelectThread: (threadId: string) => void;
-  onThreadActionHoverChange: (threadId: string | null) => void;
-  onUnpinThread: (threadId: string) => void;
-  pendingTitleThreadIds: Set<string>;
-  showThreadArchiveAction: boolean;
-  thread: ThreadSummary;
-};
-
-export const ThreadListRow = memo(function ThreadListRow({
-  approvals,
-  isSelected,
-  onArchiveThread,
-  onPinThread,
-  onSelectThread,
-  onThreadActionHoverChange,
-  onUnpinThread,
-  pendingTitleThreadIds,
-  showThreadArchiveAction,
-  thread,
-}: ThreadListRowProps) {
-  const needsApproval = threadNeedsApproval(thread, approvals);
-  const isThreadInProgress = threadInProgress(thread);
-  const hasUnreadAgentTurn = thread.unreadCompletedAgentTurn === true;
-  const displayTitle = threadDisplayTitleWithPending(thread, pendingTitleThreadIds);
-  const pinnedAt = thread.pinnedAt ?? null;
-  const isPinned = Boolean(pinnedAt);
-  const pinLabel = isPinned ? SIDEBAR_TEXT.unpinThread : SIDEBAR_TEXT.pinThread;
-  const focusPointerType = useRef<string | null>(null);
-
-  function handleHoverPointerDown(event: ReactPointerEvent<HTMLElement>) {
-    focusPointerType.current = event.pointerType;
-  }
-
-  function handleHoverPointerEnter(event: ReactPointerEvent<HTMLElement>) {
-    if (event.pointerType === "mouse") {
-      onThreadActionHoverChange(thread.id);
-    }
-  }
-
-  function handleHoverPointerLeave(event: ReactPointerEvent<HTMLElement>) {
-    if (event.pointerType === "mouse") {
-      onThreadActionHoverChange(null);
-    }
-  }
-
-  return (
-    <SidebarRowFrame
-      className="kodex-ui-selectable kodex-list-button kodex-thread-list-button"
-      leadingContent={
-        <SidebarIconButton
-          className="kodex-thread-pin-button"
-          data-pinned={isPinned ? "true" : undefined}
-          density="compact"
-          label={pinLabel}
-          onClick={(event) => {
-            event.stopPropagation();
-            if (isPinned) {
-              onUnpinThread(thread.id);
-            } else {
-              onPinThread(thread.id);
-            }
-          }}
-        >
-          {isPinned ? (
-            <>
-              <Pin className="kodex-thread-pin-state-icon" />
-              <PinOff className="kodex-thread-pin-action-icon" />
-            </>
-          ) : (
-            <Pin />
-          )}
-        </SidebarIconButton>
-      }
-      rootProps={{
-        "data-active": isSelected ? "true" : undefined,
-        "data-pinned": isPinned ? "true" : undefined,
-        onBlur: (event) => {
-          focusPointerType.current = null;
-          if (!event.currentTarget.contains(event.relatedTarget)) {
-            onThreadActionHoverChange(null);
-          }
-        },
-        onFocus: () => {
-          if (focusPointerType.current !== "touch" && focusPointerType.current !== "pen") {
-            onThreadActionHoverChange(thread.id);
-          }
-        },
-        onPointerDown: handleHoverPointerDown,
-        onPointerEnter: handleHoverPointerEnter,
-        onPointerLeave: handleHoverPointerLeave,
-      }}
-      trailingContent={
-        <>
-          {isThreadInProgress && !showThreadArchiveAction ? (
-            <Tooltip label={SIDEBAR_TEXT.threadInProgress}>
-              <Box
-                aria-label={SIDEBAR_TEXT.threadInProgress}
-                className="kodex-thread-status-slot"
-                component="span"
-                role="status"
-              >
-                <span className="kodex-thread-progress-indicator" />
-              </Box>
-            </Tooltip>
-          ) : null}
-          {hasUnreadAgentTurn && !isThreadInProgress && !showThreadArchiveAction ? (
-            <Tooltip label={SIDEBAR_TEXT.unreadAgentTurn}>
-              <Box
-                aria-label={SIDEBAR_TEXT.unreadAgentTurn}
-                className="kodex-thread-status-slot"
-                component="span"
-                role="img"
-              >
-                <span className="kodex-thread-unread-agent-turn-indicator" />
-              </Box>
-            </Tooltip>
-          ) : null}
-          {showThreadArchiveAction ? (
-            <SidebarIconButton
-              className="kodex-thread-archive-button"
-              density="compact"
-              label={`Archive ${displayTitle}`}
-              tooltip="Archive thread"
-              onClick={() => onArchiveThread(thread.id)}
-            >
-              <Archive />
-            </SidebarIconButton>
-          ) : null}
-        </>
-      }
-    >
-      <button className="kodex-ui-button kodex-thread-select-button" onClick={() => onSelectThread(thread.id)} type="button">
-        <Group
-          align="flex-start"
-          className="kodex-thread-list-row"
-          data-has-sidecar={needsApproval ? "true" : undefined}
-          gap="xs"
-          justify="space-between"
-          wrap="nowrap"
-        >
-          <Text
-            className="kodex-thread-list-title"
-            c={pendingTitleThreadIds.has(thread.id) ? "dimmed" : undefined}
-            data-placeholder-title={pendingTitleThreadIds.has(thread.id) ? "true" : undefined}
-            fw={400}
-            size="xs"
-            lineClamp={1}
-          >
-            {displayTitle}
-          </Text>
-          {needsApproval ? (
-            <Badge className="kodex-thread-approval-badge" data-tone="warning" size="xs" variant="light">
-              Needs approval
-            </Badge>
-          ) : null}
-        </Group>
-      </button>
-    </SidebarRowFrame>
-  );
-}, areThreadListRowPropsEqual);
-
-export function areThreadListRowPropsEqual(previous: ThreadListRowProps, next: ThreadListRowProps) {
-  return (
-    previous.approvals === next.approvals &&
-    previous.isSelected === next.isSelected &&
-    previous.onArchiveThread === next.onArchiveThread &&
-    previous.onPinThread === next.onPinThread &&
-    previous.onSelectThread === next.onSelectThread &&
-    previous.onThreadActionHoverChange === next.onThreadActionHoverChange &&
-    previous.onUnpinThread === next.onUnpinThread &&
-    previous.pendingTitleThreadIds === next.pendingTitleThreadIds &&
-    previous.showThreadArchiveAction === next.showThreadArchiveAction &&
-    previous.thread === next.thread
-  );
-}
-
-function ThreadList({
-  approvals,
-  className,
-  expanded,
-  hasMore = false,
-  hoveredThreadActionId,
-  onArchiveThread,
-  onPinThread,
-  onSelectThread,
-  onThreadActionHoverChange,
-  onToggleExpanded,
-  onUnpinThread,
-  pendingTitleThreadIds,
-  paginationState = "idle",
-  selectedThreadId,
-  threads,
-}: {
-  approvals: Approval[];
-  className: string;
-  expanded: boolean;
-  hasMore?: boolean;
-  hoveredThreadActionId: string | null;
-  onArchiveThread: (threadId: string) => void;
-  onPinThread: (threadId: string) => void;
-  onSelectThread: (threadId: string) => void;
-  onThreadActionHoverChange: (threadId: string | null) => void;
-  onToggleExpanded: () => void;
-  onUnpinThread: (threadId: string) => void;
-  pendingTitleThreadIds: Set<string>;
-  paginationState?: SidebarPaginationState;
-  selectedThreadId: string | null;
-  threads: ThreadSummary[];
-}) {
-  const visibleThreads = expanded ? threads : threads.slice(0, VISIBLE_THREAD_LIMIT);
-  const hasHiddenThreads = threads.length > VISIBLE_THREAD_LIMIT || hasMore;
-  const toggleLabel =
-    paginationState === "loading"
-      ? SIDEBAR_TEXT.showMoreLoading
-      : expanded && !hasMore
-        ? SIDEBAR_TEXT.showLessThreads
-        : SIDEBAR_TEXT.showMoreThreads;
-
-  return (
-    <Stack className={className} gap={6}>
-      {visibleThreads.map((thread) => (
-        <ThreadListRow
-          approvals={approvals}
-          isSelected={thread.id === selectedThreadId}
-          key={thread.id}
-          onArchiveThread={onArchiveThread}
-          onPinThread={onPinThread}
-          onSelectThread={onSelectThread}
-          onThreadActionHoverChange={onThreadActionHoverChange}
-          onUnpinThread={onUnpinThread}
-          pendingTitleThreadIds={pendingTitleThreadIds}
-          showThreadArchiveAction={hoveredThreadActionId === thread.id}
-          thread={thread}
-        />
-      ))}
-      {hasHiddenThreads ? (
-        <button
-          className="kodex-ui-button kodex-thread-list-more-button"
-          disabled={paginationState === "loading"}
-          onClick={onToggleExpanded}
-          type="button"
-        >
-          {toggleLabel}
-        </button>
-      ) : null}
-      {paginationState === "error" ? (
-        <Text c="red" role="alert" size="xs">
-          {SIDEBAR_TEXT.showMoreError}
-        </Text>
-      ) : null}
-    </Stack>
-  );
 }

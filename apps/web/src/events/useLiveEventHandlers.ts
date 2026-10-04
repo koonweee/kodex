@@ -6,6 +6,7 @@ import { applyThreadSettingsEvent } from "../composer/threadSettingsCache";
 import type { EventEnvelope, QueuedInput, RateLimitSnapshot } from "../api/client";
 import { applyMcpLifecycleEvent } from "../api/mcpCache";
 import { queryKeys } from "../api/queryKeys";
+import { applyThreadSectionsEvent } from "../sections/cache";
 import { applyProjectEvent } from "../projects/cache";
 import { applyAppSurfaceEvent } from "../appSurfaces/cache";
 import { applyApprovalInvalidation } from "../approvals/cache";
@@ -20,7 +21,6 @@ export function useLiveEventHandlers({
   applySubagentDiscoveryEvent,
   applyThreadMetadataEvent,
   applyThreadNotificationsState,
-  applyThreadPinState,
   applyThreadReadStateEvent,
   applyThreadUpsert,
   applyUsageLimitSnapshot,
@@ -34,7 +34,6 @@ export function useLiveEventHandlers({
   applySubagentDiscoveryEvent: (event: ThreadSubagentDiscoveryEvent) => void;
   applyThreadMetadataEvent: (event: EventEnvelope) => void;
   applyThreadNotificationsState: (threadId: string, notificationsEnabled: boolean) => void;
-  applyThreadPinState: (threadId: string, pinnedAt: string | null) => void;
   applyThreadReadStateEvent: (event: EventEnvelope) => void;
   applyThreadUpsert: (update: ThreadUpsert) => void;
   applyUsageLimitSnapshot: (snapshot: RateLimitSnapshot) => void;
@@ -68,12 +67,12 @@ export function useLiveEventHandlers({
 
     const liveRouteHandlers: LiveEventRouteHandlers = {
       applyAccountEvent: (event) => applyAccountEvent(queryClient, event),
+      applyThreadSectionsEvent: (event) => applyThreadSectionsEvent(queryClient, event),
       applyProjectEvent: (event) => applyProjectEvent(queryClient, event),
       applyThreadSettingsEvent: (event) => applyThreadSettingsEvent(queryClient, event),
       applyAutomationStreamEvent,
       applyQueuedInputUpsert,
       applyQueuedInputDeleted,
-      applyThreadPinState,
       applyThreadUpsert,
       applyThreadMetadataEvent,
       applyCompletedAgentTurnEvent,
@@ -98,8 +97,7 @@ export function useLiveEventHandlers({
     applySubagentDiscoveryEvent,
     applyThreadMetadataEvent,
     applyThreadNotificationsState,
-    applyThreadPinState,
-    applyThreadReadStateEvent,
+      applyThreadReadStateEvent,
     applyThreadUpsert,
     applyUsageLimitSnapshot,
     queryClient,

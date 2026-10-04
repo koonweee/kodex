@@ -3,7 +3,6 @@ import type { ThreadsByProjectId } from "./helpers";
 
 export type KnownThreadSelection =
   | { kind: "chat" }
-  | { kind: "pinned" }
   | { kind: "project"; projectId: string };
 
 export function selectedThreadShouldAttachLive(thread: ThreadSummary): boolean {
@@ -22,7 +21,7 @@ export function findKnownThreadSelection(
   threadId: string,
   threadsByProjectId: ThreadsByProjectId,
   chatThreads: ThreadSummary[],
-  pinnedThreads: ThreadSummary[],
+  sectionThreads: ThreadSummary[],
 ): KnownThreadSelection | null {
   for (const [projectId, threads] of Object.entries(threadsByProjectId)) {
     if (threads.some((thread) => thread.id === threadId)) {
@@ -32,9 +31,8 @@ export function findKnownThreadSelection(
   if (chatThreads.some((thread) => thread.id === threadId)) {
     return { kind: "chat" };
   }
-  if (pinnedThreads.some((thread) => thread.id === threadId)) {
-    return { kind: "pinned" };
-  }
+  const sectionThread = sectionThreads.find((thread) => thread.id === threadId);
+  if (sectionThread) return sectionThread.projectId ? { kind: "project", projectId: sectionThread.projectId } : { kind: "chat" };
   return null;
 }
 
@@ -42,7 +40,7 @@ export function findKnownThread(
   threadId: string,
   threadsByProjectId: ThreadsByProjectId,
   chatThreads: ThreadSummary[],
-  pinnedThreads: ThreadSummary[],
+  sectionThreads: ThreadSummary[],
   routeSelectedThread: ThreadSummary | null,
 ): ThreadSummary | null {
   for (const threads of Object.values(threadsByProjectId)) {
@@ -53,13 +51,9 @@ export function findKnownThread(
   }
   return (
     chatThreads.find((thread) => thread.id === threadId) ??
-    pinnedThreads.find((thread) => thread.id === threadId) ??
+    sectionThreads.find((thread) => thread.id === threadId) ??
     (routeSelectedThread?.id === threadId ? routeSelectedThread : null)
   );
-}
-
-export function withThreadPinnedAt(thread: ThreadSummary, pinnedAt: string | null): ThreadSummary {
-  return { ...thread, pinnedAt };
 }
 
 export function withThreadNotificationsEnabled(thread: ThreadSummary, notificationsEnabled: boolean): ThreadSummary {

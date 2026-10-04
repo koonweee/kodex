@@ -205,7 +205,7 @@
   margin-top: 18px;
 }
 
-.kodex-pinned-section {
+.kodex-native-section {
   display: grid;
   gap: 6px;
 }
@@ -347,6 +347,7 @@
 
 .kodex-thread-list-button {
   --kodex-sidebar-leading-rail-size: var(--kodex-sidebar-action-size);
+  --kodex-sidebar-trailing-rail: max-content;
 
   position: relative;
   border: 0;
@@ -626,14 +627,14 @@
     gap: 4px;
   }
 
-  .kodex-pinned-section,
+  .kodex-native-section,
   .kodex-sidebar-section {
     gap: 4px;
   }
 
   .kodex-project-tree,
   .kodex-project-thread-list,
-  .kodex-pinned-thread-list,
+  .kodex-section-thread-list,
   .kodex-chat-thread-list {
     gap: 4px !important;
   }

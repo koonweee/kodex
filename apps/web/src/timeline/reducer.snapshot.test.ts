@@ -840,7 +840,7 @@ function snapshot({
       sandbox: null,
       gitInfo: null,
       notificationsEnabled: true,
-      pinnedAt: null,
+      section: null,
       preview: null,
       lastCompletedAgentTurnSeq: null,
       seenCompletedAgentTurnSeq: 0,

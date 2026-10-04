@@ -14,7 +14,7 @@ it("renames sparsely, uses native relative ordering and deletes only the project
     "GET /v1/sidebar/threads": () => ({
       projects,
       projectThreads: Object.fromEntries(projects.map((entry) => [entry.id, { threads: entry.id === projectId ? [{ ...thread, projectId }] : [] }])),
-      chatThreads: { threads: projectId ? [] : [{ ...thread, projectId }] }, pinnedThreads: { threads: [] },
+      chatThreads: { threads: projectId ? [] : [{ ...thread, projectId }] }, sections: [], sectionThreads: {},
     }),
     "PATCH /v1/projects/project-1": async (request: Request) => {
       const patch = await request.json();

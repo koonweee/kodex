@@ -42,7 +42,7 @@ describe("app surface pane integration", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     expect(document.querySelector(".kodex-workspace-dock")).not.toBeInTheDocument();
     await userEvent.click(await screen.findByRole("button", { name: /open app surface/i }));
 
@@ -56,7 +56,7 @@ describe("app surface pane integration", () => {
     await userEvent.click(within(paneManager).getByRole("button", { name: /^implement frontend$/i }));
 
     expect(screen.queryByRole("dialog", { name: /active panes/i })).not.toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toBeInTheDocument();
 
     await userEvent.click(await screen.findByRole("button", { name: /open app surface/i }));

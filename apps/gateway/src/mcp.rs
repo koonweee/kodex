@@ -8,6 +8,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use tokio::time::{sleep, Duration, Instant};
 
+mod sections;
+use crate::routes::thread_sections::ThreadSectionListQuery;
+use sections::{
+    CreateSectionToolParams, DeleteSectionToolParams, MoveThreadToSectionToolParams,
+    SectionThreadsToolParams, UpdateSectionToolParams,
+};
+
 const MCP_TOOL_THREAD_ID_META_KEY: &str = "threadId";
 
 #[derive(Clone)]
@@ -80,6 +87,9 @@ impl KodexControlMcp {
                 "gateway returned an error",
                 Some(json!({ "status": status.as_u16(), "body": body })),
             ));
+        }
+        if status == reqwest::StatusCode::NO_CONTENT {
+            return Ok(Value::Null);
         }
         let value = serde_json::from_str::<Value>(&body).map_err(|error| {
             McpError::internal_error(
@@ -943,28 +953,104 @@ impl KodexControlMcp {
         self.thread_post_tool(params, "archive").await
     }
 
-    #[tool(description = "Pin a Kodex thread through self-control lifecycle handling")]
-    async fn pin_thread(
+    #[tool(description = "List native thread sections, including the built-in Pinned section")]
+    async fn list_thread_sections(
         &self,
-        Parameters(params): Parameters<ThreadMutationToolParams>,
+        Parameters(params): Parameters<ThreadSectionListQuery>,
     ) -> Result<CallToolResult, McpError> {
-        self.thread_post_tool(params, "pin").await
+        let path = append_query(
+            "/v1/thread-sections",
+            [
+                ("cursor", params.cursor),
+                ("limit", params.limit.map(|v| v.to_string())),
+            ],
+        );
+        Ok(json_tool_result(self.get_json(&path).await?))
     }
 
-    #[tool(description = "Unpin a Kodex thread through self-control lifecycle handling")]
-    async fn unpin_thread(
+    #[tool(description = "List a native section's threads in native position order")]
+    async fn list_section_threads(
         &self,
-        Parameters(params): Parameters<ThreadMutationToolParams>,
+        Parameters(params): Parameters<SectionThreadsToolParams>,
     ) -> Result<CallToolResult, McpError> {
-        let thread_id = params.thread_id.clone();
+        let path = append_query(
+            &format!(
+                "/v1/thread-sections/{}/threads",
+                path_segment(&params.section_id)
+            ),
+            [
+                ("cursor", params.cursor),
+                ("limit", params.limit.map(|v| v.to_string())),
+            ],
+        );
+        Ok(json_tool_result(self.get_json(&path).await?))
+    }
+
+    #[tool(description = "Create a native thread section with optional icon and color")]
+    async fn create_thread_section(
+        &self,
+        Parameters(params): Parameters<CreateSectionToolParams>,
+    ) -> Result<CallToolResult, McpError> {
+        Ok(json_tool_result(
+            self.post_json(
+                "/v1/self-control/thread-sections",
+                Value::Object(json_object(params)?),
+            )
+            .await?,
+        ))
+    }
+
+    #[tool(
+        description = "Update a native custom section. Name is required; omitted appearance is preserved and null clears it. Pinned cannot be edited"
+    )]
+    async fn update_thread_section(
+        &self,
+        Parameters(params): Parameters<UpdateSectionToolParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let path = format!(
+            "/v1/self-control/thread-sections/{}",
+            path_segment(&params.section_id)
+        );
+        let mut body = json_object(params)?;
+        body.remove("sectionId");
+        Ok(json_tool_result(
+            self.patch_json(&path, Value::Object(body)).await?,
+        ))
+    }
+
+    #[tool(
+        description = "Delete a native custom section, leaving its threads unsectioned. Pinned cannot be deleted"
+    )]
+    async fn delete_thread_section(
+        &self,
+        Parameters(params): Parameters<DeleteSectionToolParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let path = format!(
+            "/v1/self-control/thread-sections/{}",
+            path_segment(&params.section_id)
+        );
+        let mut body = json_object(params)?;
+        body.remove("sectionId");
+        Ok(json_tool_result(
+            self.delete_json(&path, Some(Value::Object(body))).await?,
+        ))
+    }
+
+    #[tool(
+        description = "Move a thread to one native section or null to remove section membership. Use 01984de2-8f74-7c91-a3b2-5c5e937cf318 for Pinned. beforeThreadId places it before another member; omitted or null appends. Project membership is unchanged"
+    )]
+    async fn move_thread_to_section(
+        &self,
+        Parameters(params): Parameters<MoveThreadToSectionToolParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let path = format!(
+            "/v1/self-control/threads/{}/section",
+            path_segment(&params.thread_id)
+        );
         let mut body = json_object(params)?;
         body.remove("threadId");
         Ok(json_tool_result(
-            self.delete_json(
-                &format!("/v1/self-control/threads/{}/pin", path_segment(&thread_id)),
-                Some(Value::Object(body)),
-            )
-            .await?,
+            self.post_json(&path, Value::Object(body)).await?,
         ))
     }
 

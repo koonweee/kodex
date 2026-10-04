@@ -50,7 +50,7 @@ const GATEWAY_SSE_EVENT_TYPES = [
   "thread_view.patch",
   "thread_view.refresh_required",
   "thread.notifications_updated",
-  "thread.pin_updated",
+  "thread.sections_updated",
   "thread.read_updated",
   "thread.subagent_started",
   "thread.subagent_stopped",

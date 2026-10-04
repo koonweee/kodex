@@ -426,6 +426,17 @@ pub async fn requeue_unmatched_pending_commit_input_events_for_thread(
 }
 
 async fn drain_one_queued_input(state: &AppState, thread_id: &str) -> ApiResult<()> {
+    // A full native history read can persist a newly loaded thread. Avoid that
+    // side effect without queued work; enqueue and retry schedule their own drain.
+    if !state
+        .store
+        .list_queued_inputs(thread_id)
+        .await?
+        .iter()
+        .any(|input| input.status == QueuedInputStatus::Queued)
+    {
+        return Ok(());
+    }
     if !thread_is_idle_for_queue(state, thread_id).await? {
         return Ok(());
     }
@@ -750,3 +761,6 @@ pub fn queued_input_priority_schema_values() -> [QueuedInputPriority; 2] {
         QueuedInputPriority::Normal,
     ]
 }
+
+#[cfg(test)]
+mod tests;

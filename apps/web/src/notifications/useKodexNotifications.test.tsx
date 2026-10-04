@@ -30,7 +30,7 @@ function thread(id: string, unreadCompletedAgentTurn = false): ThreadSummary {
     sandbox: null,
     gitInfo: null,
     notificationsEnabled: true,
-    pinnedAt: null,
+    section: null,
     preview: null,
     lastCompletedAgentTurnSeq: unreadCompletedAgentTurn ? 1 : null,
     seenCompletedAgentTurnSeq: 0,
@@ -52,7 +52,7 @@ describe("useKodexNotifications", () => {
     renderHook(() =>
       useKodexNotifications({
         chatThreads: [unread],
-        pinnedThreads: [unread],
+        sectionThreads: [unread],
         routeSelectedThread: null,
         threadsByProjectId: {},
       }),

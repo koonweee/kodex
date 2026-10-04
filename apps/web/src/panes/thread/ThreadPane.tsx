@@ -1,7 +1,9 @@
-import { Badge, Box, Button, Group, Loader, Menu, Modal, Skeleton, Switch, TextInput, Title } from "@mantine/core";
+import { mergeThreadSummaryMetadata } from "../../threads/summaryMetadata";
+import { ThreadActionsMenu } from "./ThreadActionsMenu";
+import { Badge, Box, Button, Group, Loader, Modal, Skeleton, TextInput, Title } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, Archive, Copy, CopyPlus, MoreHorizontal, Pencil, Pin, PinOff, Sparkles } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
+import { AlertCircle, Sparkles } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import type { EventEnvelope, ThreadSummary } from "../../api/client";
 import { getThreadAppSurface, getThreadDetail, getThreadTimelinePage } from "../../api/client";
@@ -35,7 +37,6 @@ import { paneTargetRecord } from "../../workspace/paneTypes";
 import { useWorkspace } from "../../workspace/WorkspaceProvider";
 import { AdaptiveIconButton } from "../../ui/AdaptiveIconButton";
 import { EmptyPanel } from "../../ui/EmptyPanel";
-import { copyTextToClipboard } from "../../shared/clipboard";
 
 const TimelineView = lazy(() =>
   import("../../timeline/TimelineView").then((module) => ({ default: module.TimelineView })),
@@ -277,7 +278,7 @@ function ExistingThreadPane({
 
   useEffect(() => {
     return subscribeLiveEvent((event) => {
-      if (projectEventInvalidatesThread(event, threadId)) {
+      if (event.kind === "thread.sections_updated" || projectEventInvalidatesThread(event, threadId)) {
         cancelQueuedTimelineEvents();
         void refreshSnapshot(true);
         return;
@@ -299,14 +300,7 @@ function ExistingThreadPane({
         );
         return;
       }
-      if (event.kind === "thread.pin_updated") {
-        const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
-          ? event.payload as Record<string, unknown>
-          : {};
-        const pinnedAt = typeof payload.pinnedAt === "string" ? payload.pinnedAt : null;
-        setThread((current) => (current ? { ...current, pinnedAt } : current));
-        return;
-      }
+
       if (event.kind === "timeline.thread_metadata") {
         const payload = event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
           ? event.payload as Record<string, unknown>
@@ -315,7 +309,7 @@ function ExistingThreadPane({
           ? payload.thread as ThreadSummary
           : null;
         if (metadataThread?.id === threadId) {
-          setThread(metadataThread);
+          setThread((current) => current ? mergeThreadSummaryMetadata(current, metadataThread) : current);
           void updatePane(pane.id, { title: threadDisplayTitle(metadataThread) }).catch((error: unknown) => {
             console.error("Failed to update workspace thread pane title", error);
           });
@@ -433,6 +427,7 @@ function ExistingThreadPane({
                 </AdaptiveIconButton>
               ) : null}
               <ThreadActionsMenu
+                sections={threadActions.sections} onMoveThreadToSection={threadActions.onMoveThreadToSection} sectionMovePending={threadActions.sectionMovePending}
                 onDuplicatePane={() =>
                   void openThreadPane(threadId, title, {
                     duplicate: true,
@@ -462,7 +457,10 @@ function ExistingThreadPane({
       pane,
       renderThreadPaneHeaderActions,
       thread,
+      threadActions.sections,
+      threadActions.sectionMovePending,
       threadActions.onArchiveThread,
+      threadActions.onMoveThreadToSection,
       threadActions.onPinThread,
       threadActions.onSetThreadNotificationsEnabled,
       threadActions.onUnpinThread,
@@ -651,104 +649,6 @@ function mergeGitInfoPatch(current: ThreadSummary["gitInfo"], patch: unknown): T
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function ThreadActionsMenu({
-  onDuplicatePane,
-  onArchiveThread,
-  onPinThread,
-  onRenameThread,
-  onSetThread,
-  onSetThreadNotificationsEnabled,
-  onUnpinThread,
-  thread,
-  threadId,
-}: {
-  onDuplicatePane: () => void;
-  onArchiveThread?: (threadId: string) => void;
-  onPinThread?: (threadId: string) => void;
-  onRenameThread: () => void;
-  onSetThread: Dispatch<SetStateAction<ThreadSummary | null>>;
-  onSetThreadNotificationsEnabled?: (threadId: string, enabled: boolean) => void;
-  onUnpinThread?: (threadId: string) => void;
-  thread: ThreadSummary | null;
-  threadId: string;
-}) {
-  const notificationsEnabled = thread?.notificationsEnabled !== false;
-  return (
-    <Menu position="bottom-end" withinPortal>
-      <Menu.Target>
-        <AdaptiveIconButton label="Thread actions" tooltip={false}>
-          <MoreHorizontal />
-        </AdaptiveIconButton>
-      </Menu.Target>
-      <Menu.Dropdown aria-label="Thread actions">
-        <Menu.Item leftSection={<CopyPlus size={14} />} onClick={onDuplicatePane}>
-          Duplicate pane
-        </Menu.Item>
-        {thread ? (
-          <>
-            <Menu.Item
-              leftSection={thread.pinnedAt ? <PinOff size={14} /> : <Pin size={14} />}
-              onClick={() => {
-                if (thread.pinnedAt) {
-                  onUnpinThread?.(thread.id);
-                  onSetThread((current) => (current ? { ...current, pinnedAt: null } : current));
-                  return;
-                }
-                onPinThread?.(thread.id);
-                onSetThread((current) =>
-                  current ? { ...current, pinnedAt: new Date().toISOString() } : current,
-                );
-              }}
-            >
-              {thread.pinnedAt ? "Unpin thread" : "Pin thread"}
-            </Menu.Item>
-            <Menu.Item leftSection={<Pencil size={14} />} onClick={onRenameThread}>
-              Rename thread
-            </Menu.Item>
-            <Menu.Item
-              aria-checked={notificationsEnabled}
-              closeMenuOnClick={false}
-              onClick={() => {
-                const nextEnabled = !notificationsEnabled;
-                onSetThreadNotificationsEnabled?.(thread.id, nextEnabled);
-                onSetThread((current) =>
-                  current ? { ...current, notificationsEnabled: nextEnabled } : current,
-                );
-              }}
-              rightSection={
-                <Switch
-                  aria-hidden="true"
-                  checked={notificationsEnabled}
-                  readOnly
-                  size="xs"
-                  style={{ pointerEvents: "none" }}
-                  tabIndex={-1}
-                />
-              }
-              role="menuitemcheckbox"
-            >
-              Notifications
-            </Menu.Item>
-            {onArchiveThread ? (
-              <Menu.Item
-                leftSection={<Archive size={14} />}
-                onClick={() => {
-                  onArchiveThread(thread.id);
-                }}
-              >
-                Archive thread
-              </Menu.Item>
-            ) : null}
-          </>
-        ) : null}
-        <Menu.Item leftSection={<Copy size={14} />} onClick={() => void copyTextToClipboard(threadId)}>
-          Copy thread ID
-        </Menu.Item>
-      </Menu.Dropdown>
-    </Menu>
-  );
 }
 
 function ThreadUnavailablePane({ onBrowseThreads }: { onBrowseThreads: () => void }) {

@@ -1,3 +1,4 @@
+import { mergeThreadSummaryMetadata } from "./summaryMetadata";
 import type { QueryClient } from "@tanstack/react-query";
 
 import type { ThreadRead, ThreadReadStateUpdate, ThreadSummary } from "../api/client";
@@ -17,15 +18,6 @@ export function upsertChatThread(queryClient: QueryClient, thread: ThreadSummary
   queryClient.setQueryData<ThreadSummary[]>(queryKeys.chatThreads, (current) => upsertThreadInList(current ?? [], thread));
 }
 
-export function upsertPinnedThread(queryClient: QueryClient, thread: ThreadSummary) {
-  if (!thread.pinnedAt) {
-    removeThreadEverywhere(queryClient, thread.id, { pinnedOnly: true });
-    return;
-  }
-  clearPinnedThreadTombstone(queryClient, thread.id);
-  queryClient.setQueryData<ThreadSummary[]>(queryKeys.pinnedThreads, (current) => upsertThreadInList(current ?? [], thread));
-}
-
 export function updateThreadEverywhere(
   queryClient: QueryClient,
   threadId: string,
@@ -37,42 +29,14 @@ export function updateThreadEverywhere(
   queryClient.setQueryData<ThreadSummary[]>(queryKeys.chatThreads, (current) =>
     updateThreadList(current, threadId, patcher),
   );
-  queryClient.setQueryData<ThreadSummary[]>(queryKeys.pinnedThreads, (current) =>
+  queryClient.setQueriesData<ThreadSummary[]>({ queryKey: queryKeys.sectionThreadsRoot }, (current) =>
     updateThreadList(current, threadId, patcher),
   );
 }
 
-export function removeThreadEverywhere(
-  queryClient: QueryClient,
-  threadId: string,
-  options: { pinnedOnly?: boolean } = {},
-) {
-  if (!options.pinnedOnly) {
-    queryClient.setQueriesData<ThreadSummary[]>({ queryKey: queryKeys.projectThreadsRoot }, (current) =>
-      removeThreadFromList(current, threadId),
-    );
-    queryClient.setQueryData<ThreadSummary[]>(queryKeys.chatThreads, (current) => removeThreadFromList(current, threadId));
-  }
-  queryClient.setQueryData<ThreadSummary[]>(queryKeys.pinnedThreads, (current) => removeThreadFromList(current, threadId));
-}
-
-export function applyThreadPinState(
-  queryClient: QueryClient,
-  threadId: string,
-  pinnedAt: string | null,
-  knownThread?: ThreadSummary | null,
-) {
-  updateThreadEverywhere(queryClient, threadId, (thread) => ({ ...thread, pinnedAt }));
-  if (!pinnedAt) {
-    addPinnedThreadTombstone(queryClient, threadId);
-    removeThreadEverywhere(queryClient, threadId, { pinnedOnly: true });
-    return;
-  }
-
-  clearPinnedThreadTombstone(queryClient, threadId);
-  const thread = knownThread ?? findCachedThread(queryClient, threadId);
-  if (thread) {
-    upsertPinnedThread(queryClient, { ...thread, pinnedAt });
+export function removeThreadEverywhere(queryClient: QueryClient, threadId: string) {
+  for (const queryKey of [queryKeys.projectThreadsRoot, queryKeys.sectionThreadsRoot, queryKeys.chatThreads]) {
+    queryClient.setQueriesData<ThreadSummary[]>({ queryKey }, (current) => removeThreadFromList(current, threadId));
   }
 }
 
@@ -200,56 +164,13 @@ export function mergeChatThreadData(
   return mergedLoadedThreads.map((thread) => ({
     ...thread,
     projectId: loadedThreads.find((loaded) => loaded.id === thread.id)?.projectId ?? null,
+    section: loadedThreads.find((loaded) => loaded.id === thread.id)?.section ?? null,
+    sectionEnteredAt: loadedThreads.find((loaded) => loaded.id === thread.id)?.sectionEnteredAt ?? null,
   }));
 }
 
-export function mergePinnedThreadData(
-  beforeSnapshot: ThreadSummary[] | undefined,
-  current: ThreadSummary[] | undefined,
-  loadedThreads: ThreadSummary[],
-  deletedIds: string[] = [],
-): ThreadSummary[] {
-  const deletedIdSet = new Set(deletedIds);
-  const filteredLoadedThreads = loadedThreads.filter((thread) => !deletedIdSet.has(thread.id));
-  if (!current) {
-    return filteredLoadedThreads;
-  }
-
-  const beforeById = threadsById(beforeSnapshot ?? []);
-  const currentById = threadsById(current);
-  const loadedIds = new Set(filteredLoadedThreads.map((thread) => thread.id));
-  const merged: ThreadSummary[] = [];
-
-  for (const loadedThread of filteredLoadedThreads) {
-    const currentThread = currentById.get(loadedThread.id);
-    const beforeThread = beforeById.get(loadedThread.id);
-    if (beforeThread && !currentThread) {
-      continue;
-    }
-    merged.push(currentThread && threadChangedDuringSnapshot(beforeThread, currentThread)
-      ? { ...currentThread, projectId: loadedThread.projectId ?? null }
-      : loadedThread);
-  }
-
-  for (const currentThread of current) {
-    if (!loadedIds.has(currentThread.id) && threadChangedDuringSnapshot(beforeById.get(currentThread.id), currentThread)) {
-      merged.push(currentThread);
-    }
-  }
-
-  return merged;
-}
-
-export function pinnedTombstonesAddedDuringSnapshot(
-  beforeSnapshot: string[] | undefined,
-  current: string[] | undefined,
-): string[] {
-  const beforeIds = new Set(beforeSnapshot ?? []);
-  return (current ?? []).filter((threadId) => !beforeIds.has(threadId));
-}
-
 export function findCachedThread(queryClient: QueryClient, threadId: string): ThreadSummary | null {
-  for (const [, threads] of queryClient.getQueriesData<ThreadSummary[]>({ queryKey: queryKeys.projectThreadsRoot })) {
+  for (const [, threads] of [...queryClient.getQueriesData<ThreadSummary[]>({ queryKey: queryKeys.projectThreadsRoot }), ...queryClient.getQueriesData<ThreadSummary[]>({ queryKey: queryKeys.sectionThreadsRoot })]) {
     const thread = threads?.find((item) => item.id === threadId);
     if (thread) {
       return thread;
@@ -257,7 +178,6 @@ export function findCachedThread(queryClient: QueryClient, threadId: string): Th
   }
   return (
     queryClient.getQueryData<ThreadSummary[]>(queryKeys.chatThreads)?.find((thread) => thread.id === threadId) ??
-    queryClient.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads)?.find((thread) => thread.id === threadId) ??
     null
   );
 }
@@ -290,6 +210,8 @@ function mergeProjectThreads(
   return mergedHydratedThreads.map((thread) => ({
     ...thread,
     projectId: loadedThreads.find((loaded) => loaded.id === thread.id)?.projectId ?? null,
+    section: loadedThreads.find((loaded) => loaded.id === thread.id)?.section ?? null,
+    sectionEnteredAt: loadedThreads.find((loaded) => loaded.id === thread.id)?.sectionEnteredAt ?? null,
   }));
 }
 
@@ -412,7 +334,7 @@ function updateThreadList(
     if (patched !== thread) {
       changed = true;
     }
-    return patched;
+    return patched === thread ? thread : mergeThreadSummaryMetadata(thread, patched);
   });
   return changed ? next : current;
 }
@@ -427,29 +349,4 @@ function removeThreadFromList(current: ThreadSummary[] | undefined, threadId: st
 
 function threadsById(threads: ThreadSummary[]): Map<string, ThreadSummary> {
   return new Map(threads.map((thread) => [thread.id, thread]));
-}
-
-function threadChangedDuringSnapshot(before: ThreadSummary | undefined, current: ThreadSummary): boolean {
-  return (
-    !before ||
-    before.pinnedAt !== current.pinnedAt ||
-    before.updatedAt !== current.updatedAt ||
-    before.name !== current.name ||
-    before.notificationsEnabled !== current.notificationsEnabled ||
-    before.lastCompletedAgentTurnSeq !== current.lastCompletedAgentTurnSeq ||
-    before.seenCompletedAgentTurnSeq !== current.seenCompletedAgentTurnSeq ||
-    before.unreadCompletedAgentTurn !== current.unreadCompletedAgentTurn
-  );
-}
-
-function addPinnedThreadTombstone(queryClient: QueryClient, threadId: string) {
-  queryClient.setQueryData<string[]>(queryKeys.pinnedThreadTombstones, (current) =>
-    current?.includes(threadId) ? current : [...(current ?? []), threadId],
-  );
-}
-
-function clearPinnedThreadTombstone(queryClient: QueryClient, threadId: string) {
-  queryClient.setQueryData<string[]>(queryKeys.pinnedThreadTombstones, (current) =>
-    current?.filter((id) => id !== threadId) ?? [],
-  );
 }

@@ -5,21 +5,21 @@ export const SIDEBAR_DISCLOSURE_STORAGE_KEY = "kodex.sidebar.disclosureState";
 export type SidebarDisclosureState = {
   chatsSectionCollapsed: boolean;
   collapsedProjectIds: Set<string>;
-  pinnedSectionCollapsed: boolean;
+  collapsedSectionIds: Set<string>;
   projectsSectionCollapsed: boolean;
 };
 
 const DEFAULT_SIDEBAR_DISCLOSURE_STATE: SidebarDisclosureState = {
   chatsSectionCollapsed: false,
   collapsedProjectIds: new Set(),
-  pinnedSectionCollapsed: false,
+  collapsedSectionIds: new Set(),
   projectsSectionCollapsed: false,
 };
 
 type SidebarDisclosureStorageValue = {
   chatsSectionCollapsed?: unknown;
   collapsedProjectIds?: unknown;
-  pinnedSectionCollapsed?: unknown;
+  collapsedSectionIds?: unknown;
   projectsSectionCollapsed?: unknown;
 };
 
@@ -44,8 +44,8 @@ export function loadSidebarDisclosureState(storage: InstanceStorage | null = nul
       collapsedProjectIds: Array.isArray(parsed.collapsedProjectIds)
         ? new Set(parsed.collapsedProjectIds.filter((item): item is string => typeof item === "string" && item.length > 0))
         : new Set(),
-      pinnedSectionCollapsed:
-        typeof parsed.pinnedSectionCollapsed === "boolean" ? parsed.pinnedSectionCollapsed : false,
+      collapsedSectionIds: Array.isArray(parsed.collapsedSectionIds)
+        ? new Set(parsed.collapsedSectionIds.filter((item): item is string => typeof item === "string" && item.length > 0)) : new Set(),
       projectsSectionCollapsed:
         typeof parsed.projectsSectionCollapsed === "boolean" ? parsed.projectsSectionCollapsed : false,
     };
@@ -68,7 +68,7 @@ export function saveSidebarDisclosureState(
       JSON.stringify({
         chatsSectionCollapsed: state.chatsSectionCollapsed,
         collapsedProjectIds: Array.from(state.collapsedProjectIds),
-        pinnedSectionCollapsed: state.pinnedSectionCollapsed,
+        collapsedSectionIds: Array.from(state.collapsedSectionIds),
         projectsSectionCollapsed: state.projectsSectionCollapsed,
       }),
     );
@@ -81,5 +81,6 @@ function cloneDefaultState(): SidebarDisclosureState {
   return {
     ...DEFAULT_SIDEBAR_DISCLOSURE_STATE,
     collapsedProjectIds: new Set(DEFAULT_SIDEBAR_DISCLOSURE_STATE.collapsedProjectIds),
+    collapsedSectionIds: new Set(DEFAULT_SIDEBAR_DISCLOSURE_STATE.collapsedSectionIds),
   };
 }

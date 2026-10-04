@@ -87,7 +87,7 @@ describe("subagent thread viewer", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^implement frontend$/i })).toBeInTheDocument();
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
@@ -131,7 +131,7 @@ describe("subagent thread viewer", () => {
     expect(within(viewer).getByText(/scout \[explorer\]/i)).toBeInTheDocument();
     expect(await within(viewer).findByText(/subagent snapshot/i)).toBeInTheDocument();
     expect(screen.getByText(/hello from codex/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /thread actions/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^thread actions$/i })).toBeInTheDocument();
     expect(gateway.callsFor("GET", "/v1/threads/subagent-1")).toHaveLength(1);
     expect(gateway.callsFor("POST", "/v1/threads/subagent-1/resume")).toHaveLength(0);
     expect(within(viewer).queryByRole("button", { name: /approve|deny|allow/i })).not.toBeInTheDocument();

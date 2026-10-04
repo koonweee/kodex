@@ -21,7 +21,7 @@ use crate::{
         self, enrich_timeline_skill_mentions, timeline_skill_mentions_from_text,
         visible_text_from_thread_item, GitInfo, RawAppServerResponse, ThreadCommandResponse,
         ThreadDetailResponse, ThreadItemSnapshot, ThreadListResponse, ThreadLiveState,
-        ThreadStatus, ThreadSummary, ThreadViewResponse, TimelineSkillMention,
+        ThreadSection, ThreadStatus, ThreadSummary, ThreadViewResponse, TimelineSkillMention,
     },
     app_surfaces,
     error::{ApiError, ApiResult},
@@ -33,7 +33,6 @@ use crate::{
     thread_view,
 };
 
-pub const THREAD_PIN_UPDATED_EVENT: &str = "thread.pin_updated";
 pub const THREAD_READ_UPDATED_EVENT: &str = "thread.read_updated";
 pub const THREAD_NOTIFICATIONS_UPDATED_EVENT: &str = "thread.notifications_updated";
 pub const THREAD_UPSERTED_EVENT: &str = "thread.upserted";
@@ -46,7 +45,6 @@ pub fn router() -> Router<AppState> {
             "/v1/chats/threads",
             get(list_chat_threads).post(create_chat_thread),
         )
-        .route("/v1/threads/pinned", get(list_pinned_threads))
         .route("/v1/threads/{thread_id}/subagents", get(list_subagents))
         .route(
             "/v1/threads/{thread_id}/timeline/pages",
@@ -66,10 +64,6 @@ pub fn router() -> Router<AppState> {
         .route("/v1/threads/{thread_id}/resume", post(resume_thread))
         .route("/v1/threads/{thread_id}/fork", post(fork_thread))
         .route("/v1/threads/{thread_id}/archive", post(archive_thread))
-        .route(
-            "/v1/threads/{thread_id}/pin",
-            post(pin_thread).delete(unpin_thread),
-        )
         .route("/v1/threads/{thread_id}/seen", post(mark_thread_seen))
 }
 
@@ -92,7 +86,7 @@ const DEFAULT_THREAD_LIST_LIMIT: u32 = 100;
 const SIDEBAR_INITIAL_THREAD_LIST_LIMIT: u32 = 10;
 const SELECTED_THREAD_HISTORY_PAGE_LIMIT: u32 = 50;
 const MAX_SELECTED_THREAD_HISTORY_PAGE_LIMIT: u32 = 200;
-const SIDEBAR_PROJECT_FETCH_CONCURRENCY: usize = 8;
+const SIDEBAR_GROUP_FETCH_CONCURRENCY: usize = 8;
 
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -107,7 +101,8 @@ pub struct SidebarThreadsResponse {
     pub projects: Vec<Project>,
     pub project_threads: BTreeMap<String, SidebarThreadListResponse>,
     pub chat_threads: SidebarThreadListResponse,
-    pub pinned_threads: SidebarThreadListResponse,
+    pub sections: Vec<ThreadSection>,
+    pub section_threads: BTreeMap<String, SidebarThreadListResponse>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -138,7 +133,8 @@ pub struct SidebarThreadSummary {
     pub agent_role: Option<String>,
     pub sandbox: Option<Value>,
     pub git_info: Option<GitInfo>,
-    pub pinned_at: Option<DateTime<Utc>>,
+    pub section: Option<ThreadSection>,
+    pub section_entered_at: Option<i64>,
     pub preview: Option<Value>,
     pub last_completed_agent_turn_seq: Option<i64>,
     pub seen_completed_agent_turn_seq: i64,
@@ -182,7 +178,8 @@ impl From<ThreadSummary> for SidebarThreadSummary {
             agent_role: thread.agent_role,
             sandbox: thread.sandbox,
             git_info: thread.git_info,
-            pinned_at: thread.pinned_at,
+            section: thread.section,
+            section_entered_at: thread.section_entered_at,
             preview: thread.preview,
             last_completed_agent_turn_seq: thread.last_completed_agent_turn_seq,
             seen_completed_agent_turn_seq: thread.seen_completed_agent_turn_seq,
@@ -290,13 +287,6 @@ pub struct RenameThreadResponse {
     pub thread: ThreadSummary,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ThreadPinResponse {
-    pub thread_id: String,
-    pub pinned_at: Option<DateTime<Utc>>,
-}
-
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadNotificationSettingsUpdateRequest {
@@ -359,58 +349,95 @@ pub async fn list_threads(
 pub async fn get_sidebar_threads(
     State(state): State<AppState>,
 ) -> ApiResult<Json<SidebarThreadsResponse>> {
-    let projects = super::projects::list_project_records(&state).await?;
-    let (project_threads, chat_threads, pinned_threads) = tokio::try_join!(
-        sidebar_project_threads(&state, &projects),
+    let (projects, sections) = tokio::try_join!(
+        super::projects::list_project_records(&state),
+        super::thread_sections::all_thread_sections(&state),
+    )?;
+    let ((project_threads, section_threads), chat_threads) = tokio::try_join!(
+        sidebar_group_threads(&state, &projects, &sections),
         chat_thread_list_response(&state, None, Some(SIDEBAR_INITIAL_THREAD_LIST_LIMIT)),
-        pinned_thread_list_response(&state),
     )?;
 
     Ok(Json(SidebarThreadsResponse {
         projects,
         project_threads,
         chat_threads: SidebarThreadListResponse::from(chat_threads),
-        pinned_threads: SidebarThreadListResponse::from(pinned_threads),
+        sections,
+        section_threads,
     }))
 }
 
-async fn sidebar_project_threads(
+enum SidebarGroup {
+    Project(String),
+    Section(String),
+}
+
+async fn sidebar_group_threads(
     state: &AppState,
     projects: &[Project],
-) -> ApiResult<BTreeMap<String, SidebarThreadListResponse>> {
+    sections: &[ThreadSection],
+) -> ApiResult<(
+    BTreeMap<String, SidebarThreadListResponse>,
+    BTreeMap<String, SidebarThreadListResponse>,
+)> {
     let mut project_threads = BTreeMap::new();
+    let mut section_threads = BTreeMap::new();
     let mut pending = JoinSet::new();
-    let mut iter = projects.iter();
+    let mut iter = projects
+        .iter()
+        .map(|project| SidebarGroup::Project(project.id.clone()))
+        .chain(
+            sections
+                .iter()
+                .map(|section| SidebarGroup::Section(section.id.clone())),
+        );
 
     loop {
-        while pending.len() < SIDEBAR_PROJECT_FETCH_CONCURRENCY {
-            let Some(project) = iter.next() else {
+        while pending.len() < SIDEBAR_GROUP_FETCH_CONCURRENCY {
+            let Some(group) = iter.next() else {
                 break;
             };
             let state = state.clone();
-            let project_id = project.id.clone();
             pending.spawn(async move {
-                let response = list_project_threads(
-                    &state,
-                    project_id.clone(),
-                    None,
-                    Some(SIDEBAR_INITIAL_THREAD_LIST_LIMIT),
-                )
-                .await?;
-                Ok::<_, ApiError>((project_id, SidebarThreadListResponse::from(response)))
+                let response = match &group {
+                    SidebarGroup::Project(id) => {
+                        list_project_threads(
+                            &state,
+                            id.clone(),
+                            None,
+                            Some(SIDEBAR_INITIAL_THREAD_LIST_LIMIT),
+                        )
+                        .await?
+                    }
+                    SidebarGroup::Section(id) => {
+                        super::thread_sections::section_threads_response(
+                            &state,
+                            id.clone(),
+                            None,
+                            Some(SIDEBAR_INITIAL_THREAD_LIST_LIMIT),
+                        )
+                        .await?
+                    }
+                };
+                Ok::<_, ApiError>((group, SidebarThreadListResponse::from(response)))
             });
         }
-
         let Some(result) = pending.join_next().await else {
             break;
         };
-        let (project_id, response) = result.map_err(|error| {
-            ApiError::Other(anyhow::anyhow!("sidebar project task failed: {error}"))
+        let (group, response) = result.map_err(|error| {
+            ApiError::Other(anyhow::anyhow!("sidebar group task failed: {error}"))
         })??;
-        project_threads.insert(project_id, response);
+        match group {
+            SidebarGroup::Project(id) => {
+                project_threads.insert(id, response);
+            }
+            SidebarGroup::Section(id) => {
+                section_threads.insert(id, response);
+            }
+        }
     }
-
-    Ok(project_threads)
+    Ok((project_threads, section_threads))
 }
 
 async fn list_project_threads(
@@ -533,72 +560,6 @@ async fn chat_thread_list_response(
         .retain(|thread| !thread_is_archived(thread));
     apply_thread_list_response_state(&state, &mut response).await?;
     Ok(response)
-}
-
-#[utoipa::path(get, path = "/v1/threads/pinned", responses((status = 200, body = ThreadListResponse)))]
-pub async fn list_pinned_threads(
-    State(state): State<AppState>,
-) -> ApiResult<Json<ThreadListResponse>> {
-    Ok(Json(pinned_thread_list_response(&state).await?))
-}
-
-async fn pinned_thread_list_response(state: &AppState) -> ApiResult<ThreadListResponse> {
-    let client = app_server_api::client(&state.app_server);
-    let mut threads = Vec::new();
-    for pin in state.store.list_thread_pins().await? {
-        let thread = match client.thread_read_summary(pin.thread_id.clone()).await {
-            Ok(thread) => thread,
-            Err(ApiError::NotFound(_)) => continue,
-            Err(error) if app_server_error_mentions_missing_thread(&error) => {
-                state.store.unpin_thread(&pin.thread_id).await?;
-                broadcast_thread_pin_update(&state, &pin.thread_id, None).await?;
-                continue;
-            }
-            Err(error) => return Err(error),
-        };
-        if thread_is_archived(&thread) {
-            continue;
-        }
-        threads.push(thread);
-    }
-    let mut response = ThreadListResponse {
-        raw_payload: json!({
-            "data": threads.iter().map(|thread| thread.raw_payload.clone()).collect::<Vec<_>>(),
-            "nextCursor": null,
-            "backwardsCursor": null,
-        }),
-        threads,
-        next_cursor: None,
-        backwards_cursor: None,
-    };
-    apply_thread_list_response_state(&state, &mut response).await?;
-    Ok(response)
-}
-
-#[utoipa::path(post, path = "/v1/threads/{threadId}/pin", responses((status = 200, body = ThreadPinResponse)))]
-pub async fn pin_thread(
-    State(state): State<AppState>,
-    Path(thread_id): Path<String>,
-) -> ApiResult<Json<ThreadPinResponse>> {
-    let pin = state.store.pin_thread(&thread_id).await?;
-    broadcast_thread_pin_update(&state, &thread_id, Some(pin.pinned_at)).await?;
-    Ok(Json(ThreadPinResponse {
-        thread_id,
-        pinned_at: Some(pin.pinned_at),
-    }))
-}
-
-#[utoipa::path(delete, path = "/v1/threads/{threadId}/pin", responses((status = 200, body = ThreadPinResponse)))]
-pub async fn unpin_thread(
-    State(state): State<AppState>,
-    Path(thread_id): Path<String>,
-) -> ApiResult<Json<ThreadPinResponse>> {
-    state.store.unpin_thread(&thread_id).await?;
-    broadcast_thread_pin_update(&state, &thread_id, None).await?;
-    Ok(Json(ThreadPinResponse {
-        thread_id,
-        pinned_at: None,
-    }))
 }
 
 #[utoipa::path(post, path = "/v1/chats/threads", request_body = CreateChatThreadRequest, responses((status = 200, body = ThreadCommandResponse)))]
@@ -1076,24 +1037,11 @@ pub async fn archive_thread(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
 ) -> ApiResult<Json<RawAppServerResponse>> {
-    match app_server_api::client(&state.app_server)
-        .thread_archive(thread_id.clone())
-        .await
-    {
-        Ok(response) => Ok(Json(response)),
-        Err(error) if app_server_error_mentions_missing_thread(&error) => {
-            state.store.unpin_thread(&thread_id).await?;
-            broadcast_thread_pin_update(&state, &thread_id, None).await?;
-            Ok(Json(RawAppServerResponse {
-                payload: json!({
-                    "threadId": thread_id,
-                    "archived": true,
-                    "stale": true,
-                }),
-            }))
-        }
-        Err(error) => Err(error),
-    }
+    Ok(Json(
+        app_server_api::client(&state.app_server)
+            .thread_archive(thread_id)
+            .await?,
+    ))
 }
 
 #[utoipa::path(post, path = "/v1/threads/{threadId}/seen", request_body = MarkThreadSeenRequest, responses((status = 200, body = MarkThreadSeenResponse)))]
@@ -1134,7 +1082,7 @@ pub async fn mark_thread_seen(
     Ok(Json(read))
 }
 
-async fn apply_thread_list_response_state(
+pub(crate) async fn apply_thread_list_response_state(
     state: &AppState,
     response: &mut ThreadListResponse,
 ) -> ApiResult<()> {
@@ -1313,7 +1261,6 @@ pub(crate) async fn apply_thread_summary_state(
     state: &AppState,
     threads: &mut [ThreadSummary],
 ) -> ApiResult<()> {
-    apply_thread_pin_state(state, threads).await?;
     apply_thread_notification_settings(state, threads).await?;
     apply_thread_read_state(state, threads).await?;
     for thread in threads {
@@ -1372,38 +1319,6 @@ fn sync_raw_response_thread(raw_payload: &mut Value, thread: &ThreadSummary) {
     raw_payload.insert("thread".to_string(), thread.raw_payload.clone());
 }
 
-async fn apply_thread_pin_state(state: &AppState, threads: &mut [ThreadSummary]) -> ApiResult<()> {
-    if threads.is_empty() {
-        return Ok(());
-    }
-
-    let thread_ids = threads
-        .iter()
-        .map(|thread| thread.id.clone())
-        .collect::<Vec<_>>();
-    let pins = state.store.pinned_at_for_thread_ids(&thread_ids).await?;
-    for thread in threads {
-        thread.pinned_at = pins.get(&thread.id).copied();
-        sync_raw_thread_pin_state(&mut thread.raw_payload, thread.pinned_at);
-    }
-
-    Ok(())
-}
-
-fn sync_raw_thread_pin_state(raw_payload: &mut Value, pinned_at: Option<DateTime<Utc>>) {
-    let Some(raw_payload) = raw_payload.as_object_mut() else {
-        return;
-    };
-    match pinned_at {
-        Some(pinned_at) => {
-            raw_payload.insert("pinnedAt".to_string(), json!(pinned_at));
-        }
-        None => {
-            raw_payload.insert("pinnedAt".to_string(), Value::Null);
-        }
-    }
-}
-
 async fn apply_thread_notification_settings(
     state: &AppState,
     threads: &mut [ThreadSummary],
@@ -1434,30 +1349,6 @@ fn sync_raw_thread_notifications_enabled(raw_payload: &mut Value, enabled: bool)
         return;
     };
     raw_payload.insert("notificationsEnabled".to_string(), json!(enabled));
-}
-
-async fn broadcast_thread_pin_update(
-    state: &AppState,
-    thread_id: &str,
-    pinned_at: Option<DateTime<Utc>>,
-) -> ApiResult<EventEnvelope> {
-    let event = state
-        .store
-        .append_event(NewEvent {
-            project_id: None,
-            thread_id: Some(thread_id.to_string()),
-            turn_id: None,
-            item_id: None,
-            kind: THREAD_PIN_UPDATED_EVENT.to_string(),
-            codex_method: None,
-            payload: json!({
-                "threadId": thread_id,
-                "pinnedAt": pinned_at,
-            }),
-        })
-        .await?;
-    let _ = state.events.send(event.clone());
-    Ok(event)
 }
 
 async fn broadcast_thread_read_update(
@@ -1547,23 +1438,6 @@ fn thread_is_archived(thread: &ThreadSummary) -> bool {
         .get("archived")
         .and_then(Value::as_bool)
         .unwrap_or(false)
-}
-
-fn app_server_error_mentions_missing_thread(error: &ApiError) -> bool {
-    match error {
-        ApiError::BadGateway(message) => message_mentions_missing_thread(message),
-        _ => false,
-    }
-}
-
-fn message_mentions_missing_thread(message: &str) -> bool {
-    let message = message.to_ascii_lowercase();
-    (message.contains("thread")
-        && (message.contains("not found")
-            || message.contains("no such")
-            || message.contains("does not exist")
-            || message.contains("unknown")))
-        || message.contains("no rollout found for thread id")
 }
 
 async fn apply_thread_read_state(state: &AppState, threads: &mut [ThreadSummary]) -> ApiResult<()> {

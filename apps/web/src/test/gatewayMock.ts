@@ -46,7 +46,9 @@ export function mockGateway(routes: GatewayRouteMap) {
     }
     if (
       (request.method === "DELETE" && /^\/v1\/projects\/[^/]+$/.test(url.pathname)) ||
-      (request.method === "POST" && /^\/v1\/projects\/[^/]+\/move$/.test(url.pathname))
+      (request.method === "POST" && /^\/v1\/projects\/[^/]+\/move$/.test(url.pathname)) ||
+      (request.method === "POST" && /^\/v1\/threads\/[^/]+\/section$/.test(url.pathname)) ||
+      (request.method === "DELETE" && /^\/v1\/thread-sections\/[^/]+$/.test(url.pathname))
     ) {
       return new Response(null, { status: 204 });
     }
@@ -73,18 +75,20 @@ async function fallbackSidebarThreads(routes: GatewayRouteMap, request: Request)
     const url = new URL(path, "http://localhost");
     const route = routes[`GET ${url.pathname}`];
     const body = typeof route === "function" ? await route(new Request(url)) : route;
-    return body as { projects?: Array<{ id: string }>; threads?: Array<{ projectId?: string | null }> } | undefined;
+    return body as { projects?: Array<{ id: string }>; sections?: Array<{ id: string }>; threads?: Array<{ projectId?: string | null; section?: { id: string } | null }> } | undefined;
   }
   const projects = (await readRoute("/v1/projects"))?.projects ?? [];
   const projectThreads = Object.fromEntries(await Promise.all(projects.map(async (project) => {
     const response = await readRoute(`/v1/threads?projectId=${encodeURIComponent(project.id)}`);
-    return [project.id, { ...response, threads: (response?.threads ?? []).filter((thread) => thread.projectId === project.id) }];
+    return [project.id, { ...response, threads: (response?.threads ?? []).filter((thread) => thread.projectId === project.id && !thread.section) }];
   })));
+  const sections = (await readRoute("/v1/thread-sections"))?.sections ?? [];
+  const sectionThreads = Object.fromEntries(await Promise.all(sections.map(async (section) => [section.id, await readRoute(`/v1/thread-sections/${section.id}/threads`) ?? { threads: [] }])));
   return {
     projects,
     projectThreads,
+    sections, sectionThreads,
     chatThreads: await readRoute("/v1/chats/threads") ?? { threads: [] },
-    pinnedThreads: await readRoute("/v1/threads/pinned") ?? { threads: [] },
   };
 }
 

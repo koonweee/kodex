@@ -11,6 +11,8 @@ pub mod kodex_control_plugin;
 pub mod mcp;
 pub mod models;
 #[cfg(test)]
+mod native_sections_tests;
+#[cfg(test)]
 mod native_thread_settings_tests;
 pub mod notifications;
 pub mod permission_profiles;
@@ -18,9 +20,11 @@ pub mod projects;
 #[cfg(test)]
 mod removed_previews_tests;
 pub mod self_control;
+pub mod self_control_sections;
 pub mod skills;
 pub mod terminals;
 pub mod thread_presence;
+pub mod thread_sections;
 pub mod thread_settings;
 pub mod threads;
 pub mod turns;
@@ -538,7 +542,6 @@ mod tests {
             .await
             .unwrap();
         app_server.queued_responses.lock().unwrap().extend([
-            thread_read_response("thread-1", 1),
             thread_read_response_with_agent_message(
                 "thread-1",
                 "Octopus Heart Facts With An Overly Long Thread Title That Should Not Fill The Banner",
@@ -580,6 +583,16 @@ mod tests {
         );
         assert_eq!(payloads[0].route, "/threads/thread-1");
         assert_eq!(payloads[0].badge_count, 1);
+        assert_eq!(
+            app_server
+                .requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(method, _)| method == "thread/read")
+                .count(),
+            1
+        );
 
         let events = state
             .store
@@ -891,18 +904,15 @@ mod tests {
                 })
                 .await
                 .unwrap();
-            app_server.queued_responses.lock().unwrap().extend([
-                thread_read_response("thread-subagent", 1),
-                thread_read_response_with_agent_message_source(
+            *app_server.next_response.lock().unwrap() =
+                Some(thread_read_response_with_agent_message_source(
                     "thread-subagent",
                     "Subagent",
                     "Tool output should stay hidden.",
                     "Subagent final answer.",
                     source,
                     thread_source,
-                ),
-                json!({"data": [], "nextCursor": null, "backwardsCursor": null}),
-            ]);
+                ));
 
             ingest_inbound(
                 InboundMessage::Notification {
@@ -923,6 +933,18 @@ mod tests {
 
             process_due_deliveries(state.clone()).await.unwrap();
             assert!(sender.payloads.lock().unwrap().is_empty());
+            let deliveries = state.store.list_notification_deliveries().await.unwrap();
+            assert_eq!(deliveries.len(), 1);
+            assert_eq!(deliveries[0].status, NotificationDeliveryStatus::Sent);
+            assert!(deliveries[0].last_error.is_none());
+            assert!(deliveries[0].delivered_subscription_ids.is_empty());
+            assert_eq!(
+                app_server.requests.lock().unwrap().as_slice(),
+                &[(
+                    "thread/read".to_string(),
+                    json!({"threadId":"thread-subagent","includeTurns":true}),
+                )]
+            );
         }
     }
 
@@ -1425,7 +1447,9 @@ mod tests {
             "/v1/threads",
             "/v1/sidebar/threads",
             "/v1/chats/threads",
-            "/v1/threads/pinned",
+            "/v1/thread-sections",
+            "/v1/thread-sections/{sectionId}",
+            "/v1/thread-sections/{sectionId}/threads",
             "/v1/threads/{threadId}",
             "/v1/threads/{threadId}/timeline/pages",
             "/v1/threads/{threadId}/subagents",
@@ -1436,7 +1460,7 @@ mod tests {
             "/v1/threads/{threadId}/resume",
             "/v1/threads/{threadId}/fork",
             "/v1/threads/{threadId}/archive",
-            "/v1/threads/{threadId}/pin",
+            "/v1/threads/{threadId}/section",
             "/v1/threads/{threadId}/turns",
             "/v1/threads/{threadId}/compact",
             "/v1/threads/{threadId}/turns/{turnId}/steer",
@@ -1493,7 +1517,9 @@ mod tests {
             "/v1/self-control/threads/{threadId}/name",
             "/v1/self-control/threads/{threadId}/settings",
             "/v1/self-control/threads/{threadId}/archive",
-            "/v1/self-control/threads/{threadId}/pin",
+            "/v1/self-control/threads/{threadId}/section",
+            "/v1/self-control/thread-sections",
+            "/v1/self-control/thread-sections/{sectionId}",
             "/v1/self-control/threads/{threadId}/seen",
             "/v1/self-control/threads/{threadId}/compact",
             "/v1/self-control/threads/{threadId}/interrupt-current",
@@ -2189,8 +2215,11 @@ mod tests {
                 json!({"model": "gpt-test", "source": source_value.clone()}),
             ),
             ("POST", "archive", source.clone()),
-            ("POST", "pin", source.clone()),
-            ("DELETE", "pin", source.clone()),
+            (
+                "POST",
+                "section",
+                json!({"sectionId":null,"source":source_value.clone()}),
+            ),
             (
                 "POST",
                 "seen",
@@ -2213,6 +2242,8 @@ mod tests {
                 response.status(),
                 if path == "settings" {
                     StatusCode::ACCEPTED
+                } else if path == "section" {
+                    StatusCode::NO_CONTENT
                 } else {
                     StatusCode::OK
                 },
@@ -2235,8 +2266,7 @@ mod tests {
             "self_control.thread_renamed",
             "self_control.thread_settings_update_queued",
             "self_control.thread_archived",
-            "self_control.thread_pinned",
-            "self_control.thread_unpinned",
+            "self_control.thread_section_moved",
             "self_control.thread_seen",
             "self_control.thread_compacted",
             "self_control.thread_interrupted_current",
@@ -3215,7 +3245,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sidebar_threads_snapshot_groups_project_chat_and_pinned_threads() {
+    async fn sidebar_threads_snapshot_groups_native_projects_chats_and_sections() {
         let (mut state, app_server) = test_state().await;
         let home = tempdir().unwrap();
         Arc::make_mut(&mut state.config).projects.home_dir = home.path().to_path_buf();
@@ -3233,7 +3263,6 @@ mod tests {
             "Two".to_string(),
             project_two_cwd.to_string_lossy().to_string(),
         );
-        let pinned_thread = state.store.pin_thread("pinned-thread").await.unwrap();
         state
             .store
             .mark_thread_seen_completed_agent_turns("project-one-thread", 3)
@@ -3293,7 +3322,20 @@ mod tests {
         queued.push(
             json!({"data": [chat_thread], "nextCursor": "chat-next", "backwardsCursor": null}),
         );
-        queued.push(json!({"thread": thread_summary("pinned-thread")}));
+        let section = json!({"id":"section-native","name":"Native section","appearance":null});
+        *app_server.native_sections.lock().unwrap() = Some(vec![section.clone()]);
+        let mut section_thread = thread_summary("section-thread");
+        section_thread["projectId"] = json!(project_one.id);
+        section_thread["section"] = section.clone();
+        section_thread["sectionEnteredAt"] = json!(123);
+        app_server
+            .thread_list_responses_by_section_id
+            .lock()
+            .unwrap()
+            .insert(
+                "section-native".into(),
+                json!({"data":[section_thread],"nextCursor":"section-next","backwardsCursor":null}),
+            );
         app_server.queued_responses.lock().unwrap().extend(queued);
         let app = build_router(state);
 
@@ -3365,13 +3407,16 @@ mod tests {
         assert_eq!(body["chatThreads"]["nextCursor"], "chat-next");
         assert!(body["chatThreads"]["rawPayload"].is_null());
         assert!(body["chatThreads"]["threads"][0]["rawPayload"].is_null());
-        assert_eq!(body["pinnedThreads"]["threads"][0]["id"], "pinned-thread");
-        assert_eq!(
-            body["pinnedThreads"]["threads"][0]["pinnedAt"],
-            json!(pinned_thread.pinned_at)
-        );
-        assert!(body["pinnedThreads"]["rawPayload"].is_null());
-        assert!(body["pinnedThreads"]["threads"][0]["rawPayload"].is_null());
+        assert_eq!(body["sections"], json!([section]));
+        let section_page = &body["sectionThreads"]["section-native"];
+        assert_eq!(section_page["threads"][0]["id"], "section-thread");
+        assert_eq!(section_page["threads"][0]["section"], section);
+        assert_eq!(section_page["threads"][0]["sectionEnteredAt"], 123);
+        assert_eq!(section_page["threads"][0]["projectId"], project_one.id);
+        assert_eq!(section_page["nextCursor"], "section-next");
+        assert!(section_page["rawPayload"].is_null());
+        assert!(section_page["threads"][0]["rawPayload"].is_null());
+        assert!(section_page["threads"][0].get("pinnedAt").is_none());
 
         app_server
             .queued_responses
@@ -3402,7 +3447,7 @@ mod tests {
         );
 
         let requests = app_server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 6);
+        assert_eq!(requests.len(), 7);
         assert_eq!(requests[0].0, "project/list");
         for project in &listed_projects {
             let request = requests
@@ -3426,13 +3471,18 @@ mod tests {
                 && params.get("projectId") == Some(&Value::Null)
                 && params.get("cwd").is_none()
         }));
-        assert!(requests.iter().any(|(method, params)| {
-            method == "thread/read"
-                && *params == json!({"threadId": "pinned-thread", "includeTurns": false})
-        }));
-        assert_eq!(requests[5].0, "thread/list");
-        assert_eq!(requests[5].1["projectId"], project_two.id);
-        assert_eq!(requests[5].1["limit"], 100);
+        assert!(!requests.iter().any(|(method, _)| method == "thread/read"));
+        let section_request = requests
+            .iter()
+            .find(|(method, params)| {
+                method == "thread/list" && params["sectionId"] == "section-native"
+            })
+            .unwrap();
+        assert_eq!(section_request.1["sortKey"], "section_position");
+        assert_eq!(section_request.1["sortDirection"], "asc");
+        assert_eq!(section_request.1["limit"], 10);
+        assert_eq!(requests.last().unwrap().1["projectId"], project_two.id);
+        assert_eq!(requests.last().unwrap().1["limit"], 100);
     }
 
     #[tokio::test]
@@ -5739,18 +5789,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thread_list_and_detail_overlay_gateway_owned_pin_state() {
+    async fn thread_list_and_detail_preserve_native_sections_and_notification_preferences() {
         let (state, app_server) = test_state().await;
-        let pin = state.store.pin_thread("thread-1").await.unwrap();
         state
             .store
             .set_thread_notifications_enabled("thread-2", false)
             .await
             .unwrap();
+        let section =
+            json!({"id":"native-section","name":"Research","appearance":{"icon":"opaque"}});
+        let mut section_thread = thread_summary("thread-1");
+        section_thread["section"] = section.clone();
+        section_thread["sectionEnteredAt"] = json!(99);
         let app = build_router(state);
 
         *app_server.next_response.lock().unwrap() = Some(json!({
-            "data": [thread_summary("thread-1"), thread_summary("thread-2")],
+            "data": [section_thread.clone(), thread_summary("thread-2")],
             "nextCursor": null,
             "backwardsCursor": null
         }));
@@ -5761,21 +5815,20 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["threads"][0]["pinnedAt"], json!(pin.pinned_at));
-        assert_eq!(body["threads"][1]["pinnedAt"], Value::Null);
+        assert_eq!(body["threads"][0]["section"], section);
+        assert_eq!(body["threads"][0]["sectionEnteredAt"], 99);
+        assert!(body["threads"][0].get("pinnedAt").is_none());
+        assert_eq!(body["threads"][1]["section"], Value::Null);
         assert_eq!(body["threads"][0]["notificationsEnabled"], json!(true));
         assert_eq!(body["threads"][1]["notificationsEnabled"], json!(false));
-        assert_eq!(
-            body["rawPayload"]["data"][0]["pinnedAt"],
-            json!(pin.pinned_at)
-        );
+        assert_eq!(body["rawPayload"]["data"][0]["section"], section);
         assert_eq!(
             body["rawPayload"]["data"][1]["notificationsEnabled"],
             json!(false)
         );
 
         *app_server.next_response.lock().unwrap() = Some(json!({
-            "thread": thread_summary("thread-1")
+            "thread": section_thread
         }));
         let response = app
             .oneshot(
@@ -5787,97 +5840,10 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_json(response).await;
-        assert_eq!(body["thread"]["pinnedAt"], json!(pin.pinned_at));
+        assert_eq!(body["thread"]["section"], section);
+        assert_eq!(body["thread"]["sectionEnteredAt"], 99);
+        assert!(body["thread"].get("pinnedAt").is_none());
         assert_eq!(body["thread"]["notificationsEnabled"], json!(true));
-    }
-
-    #[tokio::test]
-    async fn pin_routes_persist_broadcast_and_list_pinned_threads() {
-        let (state, app_server) = test_state().await;
-        let mut receiver = state.events.subscribe();
-        let app = build_router(state);
-
-        let response = app
-            .clone()
-            .oneshot(
-                Request::post("/v1/threads/thread-1/pin")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["threadId"], "thread-1");
-        assert!(body["pinnedAt"].is_string());
-        let pinned_at = body["pinnedAt"].clone();
-
-        let event = receiver.recv().await.unwrap();
-        assert_eq!(event.kind, "thread.pin_updated");
-        assert_eq!(event.thread_id.as_deref(), Some("thread-1"));
-        assert_eq!(event.payload["threadId"], "thread-1");
-        assert_eq!(event.payload["pinnedAt"], pinned_at);
-
-        *app_server.next_response.lock().unwrap() = Some(json!({
-            "thread": thread_summary("thread-1")
-        }));
-        let response = app
-            .clone()
-            .oneshot(
-                Request::get("/v1/threads/pinned")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["threads"].as_array().unwrap().len(), 1);
-        assert_eq!(body["threads"][0]["id"], "thread-1");
-        assert_eq!(body["threads"][0]["pinnedAt"], pinned_at);
-        {
-            let requests = app_server.requests.lock().unwrap();
-            assert_eq!(requests.last().unwrap().0, "thread/read");
-            assert_eq!(
-                requests.last().unwrap().1,
-                json!({"threadId": "thread-1", "includeTurns": false})
-            );
-        }
-
-        let mut archived_thread = thread_summary("thread-1");
-        archived_thread["archived"] = json!(true);
-        *app_server.next_response.lock().unwrap() = Some(json!({
-            "thread": archived_thread
-        }));
-        let response = app
-            .clone()
-            .oneshot(
-                Request::get("/v1/threads/pinned")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["threads"].as_array().unwrap().len(), 0);
-
-        let response = app
-            .oneshot(
-                Request::delete("/v1/threads/thread-1/pin")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["threadId"], "thread-1");
-        assert_eq!(body["pinnedAt"], Value::Null);
-
-        let event = receiver.recv().await.unwrap();
-        assert_eq!(event.kind, "thread.pin_updated");
-        assert_eq!(event.payload["pinnedAt"], Value::Null);
     }
 
     #[tokio::test]
@@ -5930,35 +5896,6 @@ mod tests {
             .thread_notifications_enabled("thread-1")
             .await
             .unwrap());
-    }
-
-    #[tokio::test]
-    async fn archive_missing_rollout_thread_clears_stale_pin() {
-        let store = Store::in_memory().await.unwrap();
-        store.pin_thread("thread-missing").await.unwrap();
-        let app_server = Arc::new(MissingRolloutAppServer);
-        let state = AppState::new(Config::default(), store.clone(), app_server);
-        let mut receiver = state.events.subscribe();
-        let app = build_router(state);
-
-        let response = app
-            .oneshot(
-                Request::post("/v1/threads/thread-missing/archive")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_json(response).await;
-        assert_eq!(body["payload"]["threadId"], "thread-missing");
-        assert_eq!(body["payload"]["stale"], true);
-        assert!(store.get_thread_pin("thread-missing").await.is_err());
-        let event = receiver.recv().await.unwrap();
-        assert_eq!(event.kind, "thread.pin_updated");
-        assert_eq!(event.thread_id.as_deref(), Some("thread-missing"));
-        assert_eq!(event.payload["pinnedAt"], Value::Null);
     }
 
     #[tokio::test]
@@ -13156,6 +13093,7 @@ mod tests {
             if method != "thread/list" || !params["projectId"].is_string() {
                 return Ok(match method {
                     "thread/read" => json!({"thread": thread_summary("thread-1")}),
+                    "threadSection/list" => json!({"data":[],"nextCursor":null}),
                     "thread/list" => {
                         json!({"data": [], "nextCursor": null, "backwardsCursor": null})
                     }

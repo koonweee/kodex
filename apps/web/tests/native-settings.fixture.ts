@@ -83,7 +83,7 @@ export async function nativeSettingsFixture(context: BrowserContext) {
       "GET /v1/account": { account: null, requiresOpenaiAuth: false, rawPayload: {} },
       "GET /v1/account/rate-limits": { rateLimits: null, rawPayload: {} },
       "GET /v1/approvals": { runtimeId: "native-settings-runtime", revision: 0, approvals: [] },
-      "GET /v1/sidebar/threads": { projects: [], projectThreads: {}, chatThreads: { threads: [detail.thread] }, pinnedThreads: { threads: [] } },
+      "GET /v1/sidebar/threads": { projects: [], projectThreads: {}, chatThreads: { threads: [detail.thread] }, sections: [], sectionThreads: {} },
       "GET /v1/projects": { projects: [] },
       "GET /v1/models": { models: [{ id: "gpt-5.4", model: "gpt-5.4", displayName: "GPT-5.4", description: "Test model", defaultReasoningEffort: "medium", isDefault: true, hidden: false, inputModalities: ["text"], supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced" }, { reasoningEffort: "high", description: "Deeper reasoning" }], rawPayload: {} }], rawPayload: {} },
       "GET /v1/composer-settings": {},

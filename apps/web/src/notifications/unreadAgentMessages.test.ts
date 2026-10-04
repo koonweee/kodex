@@ -22,7 +22,7 @@ function thread(id: string, unreadCompletedAgentTurn: boolean): ThreadSummary {
     sandbox: null,
     gitInfo: null,
     notificationsEnabled: true,
-    pinnedAt: null,
+    section: null,
     preview: null,
     lastCompletedAgentTurnSeq: unreadCompletedAgentTurn ? 1 : null,
     seenCompletedAgentTurnSeq: 0,

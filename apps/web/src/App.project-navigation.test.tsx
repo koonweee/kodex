@@ -24,7 +24,7 @@ describe("project navigation", () => {
     expect(gateway.callsFor("GET", "/v1/projects/project-1/previews")).toHaveLength(0);
 
     const workspace = screen.getByRole("navigation", { name: "Workspace" });
-    await userEvent.click(within(workspace).getByRole("button", { name: /implement frontend/i }));
+    await userEvent.click(within(workspace).getByRole("button", { name: /^implement frontend$/i }));
     const threadPane = await screen.findByRole("main", { name: "Thread workspace" });
     expect(await within(threadPane).findByText("Hello from Codex")).toBeInTheDocument();
     expect(within(workspace).getByRole("button", { name: "Terminal" })).toBeEnabled();

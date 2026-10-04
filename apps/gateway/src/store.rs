@@ -258,14 +258,6 @@ pub struct ThreadRead {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ThreadPin {
-    pub thread_id: String,
-    pub pinned_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct PushSubscription {
     pub id: String,
     pub endpoint: String,
@@ -751,14 +743,6 @@ fn row_to_thread_notification_setting(
     Ok(ThreadNotificationSetting {
         thread_id: row.try_get("thread_id")?,
         notifications_enabled: row.try_get::<i64, _>("notifications_enabled")? != 0,
-        updated_at: row.try_get("updated_at")?,
-    })
-}
-
-fn row_to_thread_pin(row: sqlx::sqlite::SqliteRow) -> ApiResult<ThreadPin> {
-    Ok(ThreadPin {
-        thread_id: row.try_get("thread_id")?,
-        pinned_at: row.try_get("pinned_at")?,
         updated_at: row.try_get("updated_at")?,
     })
 }

@@ -24,7 +24,7 @@ describe("useThreadReadState", () => {
       useThreadReadState({
         chatThreads: [],
         onError: vi.fn(),
-        pinnedThreads: [],
+        sectionThreads: [],
         selectedThreadIdRef: { current: "thread-1" },
         threadsByProjectId: {},
         updateThreadEverywhere,

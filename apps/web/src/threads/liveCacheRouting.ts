@@ -3,7 +3,8 @@ import { threadHasDisplayTitle } from "./helpers";
 
 export type SidebarThreadLocation =
   | { scope: "project"; projectId: string; thread: ThreadSummary }
-  | { scope: "chat"; thread: ThreadSummary };
+  | { scope: "chat"; thread: ThreadSummary }
+  | { scope: "section"; sectionId: string; thread: ThreadSummary };
 
 export type SidebarLiveCacheRoute =
   | { kind: "ignore" }

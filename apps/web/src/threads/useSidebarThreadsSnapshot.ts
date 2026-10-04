@@ -5,9 +5,7 @@ import { getSidebarThreads, type Project, type SidebarThreadSummary, type Thread
 import { queryKeys } from "../api/queryKeys";
 import {
   mergeChatThreadData,
-  mergePinnedThreadData,
   mergeProjectThreadSnapshot,
-  pinnedTombstonesAddedDuringSnapshot,
 } from "./cache";
 
 type SidebarThreadsSnapshotArgs = {
@@ -15,7 +13,6 @@ type SidebarThreadsSnapshotArgs = {
   routeSelectedThreadRef: RefObject<ThreadSummary | null>;
   selectedThreadIdRef: RefObject<string | null>;
   onChatThreadsCursorChange: (cursor: string | null) => void;
-  onPinnedStateTrusted: () => void;
   onProjectThreadCursorsChange: (cursors: Record<string, string | null>) => void;
 };
 
@@ -24,7 +21,6 @@ export function useSidebarThreadsSnapshot({
   routeSelectedThreadRef,
   selectedThreadIdRef,
   onChatThreadsCursorChange,
-  onPinnedStateTrusted,
   onProjectThreadCursorsChange,
 }: SidebarThreadsSnapshotArgs) {
   const sidebarThreadsQuery = useQuery({
@@ -39,8 +35,10 @@ export function useSidebarThreadsSnapshot({
           .map(([queryKey, data]) => [typeof queryKey[2] === "string" ? queryKey[2] : "", data] as const)
           .filter(([projectId]) => projectId.length > 0),
       );
-      const beforePinnedSnapshot = queryClient.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads);
-      const tombstonesBeforeSnapshot = queryClient.getQueryData<string[]>(queryKeys.pinnedThreadTombstones);
+      const beforeSectionSnapshots = new Map(
+        queryClient.getQueriesData<ThreadSummary[]>({ queryKey: queryKeys.sectionThreadsRoot })
+          .map(([key, data]) => [String(key[2]), data]),
+      );
       const snapshot = await getSidebarThreads(signal);
       signal.throwIfAborted();
       queryClient.setQueryData<Project[]>(queryKeys.projects, snapshot.projects);
@@ -69,22 +67,16 @@ export function useSidebarThreadsSnapshot({
       );
       onChatThreadsCursorChange(snapshot.chatThreads.nextCursor ?? null);
 
-      const currentPinned = queryClient.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads);
-      const tombstones = queryClient.getQueryData<string[]>(queryKeys.pinnedThreadTombstones);
-      const tombstonesForSnapshot = pinnedTombstonesAddedDuringSnapshot(tombstonesBeforeSnapshot, tombstones);
-      if (tombstones && tombstones.length > 0) {
-        queryClient.setQueryData<string[]>(queryKeys.pinnedThreadTombstones, []);
+      for (const sectionId of beforeSectionSnapshots.keys()) {
+        if (!(sectionId in snapshot.sectionThreads)) {
+          queryClient.setQueryData<ThreadSummary[]>(queryKeys.sectionThreads(sectionId), []);
+        }
       }
-      queryClient.setQueryData<ThreadSummary[]>(
-        queryKeys.pinnedThreads,
-        mergePinnedThreadData(
-          beforePinnedSnapshot,
-          currentPinned,
-          snapshot.pinnedThreads.threads.map(sidebarThreadToThreadSummary),
-          tombstonesForSnapshot,
-        ),
-      );
-      onPinnedStateTrusted();
+      for (const [sectionId, response] of Object.entries(snapshot.sectionThreads)) {
+        queryClient.setQueryData<ThreadSummary[]>(queryKeys.sectionThreads(sectionId), (current) =>
+          mergeChatThreadData(current, response.threads.map(sidebarThreadToThreadSummary), beforeSectionSnapshots.get(sectionId)),
+        );
+      }
       return snapshot;
     },
   });

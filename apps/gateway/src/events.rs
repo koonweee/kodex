@@ -1181,8 +1181,15 @@ async fn timeline_thread_metadata_event(
 
     let thread = params.get("thread").filter(|thread| thread.is_object());
     let thread = match thread {
-        Some(thread) => match thread_summary_from_value(thread) {
-            Ok(thread) => Some(thread),
+        Some(thread) => match ThreadSummary::from_payload(thread) {
+            Ok(mut thread) => {
+                crate::routes::threads::apply_thread_summary_state(
+                    state,
+                    std::slice::from_mut(&mut thread),
+                )
+                .await?;
+                Some(thread)
+            }
             Err(_) => return Ok(None),
         },
         None => None,
@@ -1300,7 +1307,7 @@ async fn normalized_subagent_events(
         let Some(thread) = params
             .get("thread")
             .filter(|thread| thread.is_object())
-            .and_then(|thread| thread_summary_from_value(thread).ok())
+            .and_then(|thread| ThreadSummary::from_payload(thread).ok())
         else {
             return Ok(Vec::new());
         };
@@ -1315,7 +1322,7 @@ async fn normalized_subagent_events(
     if let Some(thread) = params
         .get("thread")
         .filter(|thread| thread.is_object())
-        .and_then(|thread| thread_summary_from_value(thread).ok())
+        .and_then(|thread| ThreadSummary::from_payload(thread).ok())
     {
         if let Some(change) = state.subagents.upsert_from_thread_summary(&thread).await {
             return Ok(vec![
@@ -1636,58 +1643,6 @@ fn item_snapshot_from_value(item: &Value) -> ApiResult<ThreadItemSnapshot> {
     ThreadItemSnapshot::from_payload(item)
 }
 
-fn thread_summary_from_value(thread: &Value) -> ApiResult<ThreadSummary> {
-    let status = thread
-        .get("status")
-        .and_then(thread_status_from_value)
-        .ok_or_else(|| missing_payload_field("status.type"))?;
-    Ok(ThreadSummary {
-        id: required_payload_string(thread, "id")?,
-        project_id: string_field(thread, &["projectId"]),
-        name: string_field(thread, &["name"]),
-        cwd: required_payload_string(thread, "cwd")?,
-        status,
-        created_at: required_payload_i64(thread, "createdAt")?,
-        updated_at: required_payload_i64(thread, "updatedAt")?,
-        source: string_field(thread, &["source"]),
-        model: string_field(thread, &["model"]),
-        reasoning_effort: string_field(thread, &["reasoningEffort"]),
-        service_tier: string_field(thread, &["serviceTier"]),
-        approval_policy: string_field(thread, &["approvalPolicy"]),
-        approvals_reviewer: string_field(thread, &["approvalsReviewer"]),
-        active_permission_profile: active_permission_profile_from_value(thread)?,
-        agent_nickname: string_field(thread, &["agentNickname"]),
-        agent_role: string_field(thread, &["agentRole"]),
-        sandbox: thread
-            .get("sandbox")
-            .filter(|value| !value.is_null())
-            .cloned(),
-        git_info: app_server_api::optional_git_info(thread)?,
-        pinned_at: None,
-        preview: thread.get("preview").cloned(),
-        last_completed_agent_turn_seq: None,
-        seen_completed_agent_turn_seq: 0,
-        unread_completed_agent_turn: false,
-        notifications_enabled: true,
-        raw_payload: thread.clone(),
-    })
-}
-
-fn active_permission_profile_from_value(
-    thread: &Value,
-) -> ApiResult<Option<app_server_api::ActivePermissionProfile>> {
-    let Some(profile) = thread
-        .get("activePermissionProfile")
-        .filter(|value| !value.is_null())
-    else {
-        return Ok(None);
-    };
-    Ok(Some(app_server_api::ActivePermissionProfile {
-        id: required_payload_string(profile, "id")?,
-        extends: string_field(profile, &["extends"]),
-    }))
-}
-
 fn thread_status_from_value(status: &Value) -> Option<ThreadStatus> {
     match status_type(Some(status)).as_deref() {
         Some("notLoaded") => Some(ThreadStatus::NotLoaded),
@@ -1732,13 +1687,6 @@ fn required_payload_string(payload: &Value, field: &str) -> ApiResult<String> {
         .ok_or_else(|| missing_payload_field(field))
 }
 
-fn required_payload_i64(payload: &Value, field: &str) -> ApiResult<i64> {
-    payload
-        .get(field)
-        .and_then(Value::as_i64)
-        .ok_or_else(|| missing_payload_field(field))
-}
-
 fn missing_payload_field(field: &str) -> ApiError {
     ApiError::BadGateway(format!(
         "unexpected app-server payload: missing timeline field {field}"
@@ -1764,7 +1712,8 @@ impl EventMetadata {
     fn from_payload(payload: &Value) -> Self {
         Self {
             project_id: string_field(payload, &["projectId", "project_id"]),
-            thread_id: string_field(payload, &["threadId", "thread_id"]),
+            thread_id: string_field(payload, &["threadId", "thread_id"])
+                .or_else(|| nested_string_field(payload, "thread", &["id"])),
             turn_id: string_field(payload, &["turnId", "turn_id"])
                 .or_else(|| nested_string_field(payload, "turn", &["id", "turnId", "turn_id"])),
             item_id: string_field(payload, &["itemId", "item_id"])

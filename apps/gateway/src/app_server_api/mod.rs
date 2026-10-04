@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
 
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 use utoipa::ToSchema;
@@ -9,11 +8,15 @@ use crate::error::{ApiError, ApiResult};
 
 mod client;
 mod projects;
+mod sections;
 
 mod timeline;
 pub(crate) use client::is_thread_not_materialized_before_first_user_message;
 pub use client::{client, CodexClient};
 pub use projects::{Project, ProjectPage, ProjectRoot};
+pub use sections::{
+    ThreadSection, ThreadSectionAppearance, ThreadSectionPage, PINNED_THREAD_SECTION_ID,
+};
 #[cfg(test)]
 pub(crate) use timeline::TIMELINE_PREVIEW_STRING_LIMIT;
 pub(crate) use timeline::{
@@ -1159,7 +1162,8 @@ pub struct ThreadSummary {
     pub agent_role: Option<String>,
     pub sandbox: Option<Value>,
     pub git_info: Option<GitInfo>,
-    pub pinned_at: Option<DateTime<Utc>>,
+    pub section: Option<ThreadSection>,
+    pub section_entered_at: Option<i64>,
     pub preview: Option<Value>,
     pub last_completed_agent_turn_seq: Option<i64>,
     pub seen_completed_agent_turn_seq: i64,
@@ -1208,7 +1212,15 @@ impl ThreadSummary {
             agent_role: optional_string(payload, "agentRole"),
             sandbox: optional_value(payload, "sandbox"),
             git_info: optional_git_info(payload)?,
-            pinned_at: None,
+            section: payload
+                .get("section")
+                .filter(|value| !value.is_null())
+                .map(|value| {
+                    serde_json::from_value(value.clone())
+                        .map_err(|error| bad_gateway(format!("thread section: {error}")))
+                })
+                .transpose()?,
+            section_entered_at: optional_i64(payload, "sectionEnteredAt"),
             preview: payload.get("preview").cloned(),
             last_completed_agent_turn_seq: None,
             seen_completed_agent_turn_seq: 0,
@@ -1351,7 +1363,8 @@ pub struct ThreadViewThreadSummary {
     pub agent_role: Option<String>,
     pub sandbox: Option<Value>,
     pub git_info: Option<GitInfo>,
-    pub pinned_at: Option<DateTime<Utc>>,
+    pub section: Option<ThreadSection>,
+    pub section_entered_at: Option<i64>,
     pub preview: Option<Value>,
     pub last_completed_agent_turn_seq: Option<i64>,
     pub seen_completed_agent_turn_seq: i64,
@@ -1380,7 +1393,8 @@ impl From<ThreadSummary> for ThreadViewThreadSummary {
             agent_role: thread.agent_role,
             sandbox: thread.sandbox,
             git_info: thread.git_info,
-            pinned_at: thread.pinned_at,
+            section: thread.section,
+            section_entered_at: thread.section_entered_at,
             preview: thread.preview,
             last_completed_agent_turn_seq: thread.last_completed_agent_turn_seq,
             seen_completed_agent_turn_seq: thread.seen_completed_agent_turn_seq,

@@ -131,7 +131,7 @@ async function selectModelInActiveThreadPane(page: Page, modelName: string) {
 
 async function openFrontendMvpThread(page: Page) {
   await page.goto("/");
-  await page.getByRole("button", { name: /frontend mvp/i }).click();
+  await page.getByRole("button", { name: /^frontend mvp$/i }).click();
   await expect(activeThreadPane(page).getByRole("heading", { name: /frontend mvp/i })).toBeVisible();
 }
 
@@ -966,7 +966,7 @@ test("lets thread titles use the expanded sidebar width before truncating", asyn
   expect(metrics.text).toBe(longTitle);
   expect(metrics.titleRight).toBeLessThanOrEqual(metrics.actionLeft);
   expect(metrics.actionWidth).toBeGreaterThanOrEqual(18);
-  expect(metrics.buttonRight - metrics.titleRight).toBeLessThanOrEqual(48);
+  expect(metrics.buttonRight - metrics.titleRight).toBeLessThanOrEqual(metrics.actionWidth + 24);
 });
 
 test("resolves a pending approval", async ({ page }) => {
@@ -1015,7 +1015,7 @@ test("resolves a pending approval", async ({ page }) => {
 
   await page.goto("/threads/thread-1");
 
-  const threadCard = page.getByRole("button", { name: /frontend mvp/i });
+  const threadCard = page.getByRole("button", { name: /^frontend mvp(?: needs approval)?$/i });
   await expect(threadCard.getByText(/needs approval/i)).toBeVisible();
 
   const thread = page.getByRole("main", { name: /thread/i });
@@ -1181,7 +1181,7 @@ test("restores selected thread model settings when switching threads", async ({ 
         projects: [{ ...project, roots: [{ path: "/tmp" }] }],
         projectThreads: { [project.id]: { threads: [] } },
         chatThreads: { threads: Object.values(threadsById).map((thread) => ({ ...thread, projectId: null, cwd: "/tmp", status: "idle", rawPayload: { model: thread.model }, createdAt: 1777500000, updatedAt: 1777501000 })) },
-        pinnedThreads: { threads: [] },
+        sections: [], sectionThreads: {},
       } });
       return;
     }
@@ -1210,7 +1210,7 @@ test("restores selected thread model settings when switching threads", async ({ 
       return;
     }
 
-    if (key === "GET /v1/chats/threads" || key === "GET /v1/threads/pinned") {
+    if (key === "GET /v1/chats/threads") {
       await route.fulfill({
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -1545,7 +1545,7 @@ async function responseFor(key: string, route: Route, projects = [project], thre
       projects,
       projectThreads: Object.fromEntries(projects.map((project) => [project.id, { threads: threads.filter((entry) => entry.projectId === project.id) }])),
       chatThreads: { threads: [] },
-      pinnedThreads: { threads: [] },
+      sections: [], sectionThreads: {},
     } };
   }
   if (key === "GET /v1/projects") {

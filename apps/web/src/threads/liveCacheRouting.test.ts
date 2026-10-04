@@ -64,7 +64,7 @@ function threadSummary(id: string, overrides: Partial<ThreadSummary> = {}): Thre
     lastCompletedAgentTurnSeq: null,
     name: "Live thread",
     notificationsEnabled: true,
-    pinnedAt: null,
+    section: null,
     preview: null,
     rawPayload: {},
     seenCompletedAgentTurnSeq: 0,

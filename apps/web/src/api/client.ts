@@ -55,6 +55,7 @@ export type ThreadViewResponse = components["schemas"]["ThreadViewResponse"];
 export type ThreadViewThreadSummary = components["schemas"]["ThreadViewThreadSummary"];
 export type ThreadSubagentSummary = components["schemas"]["ThreadSubagentSummary"];
 export type TextElement = components["schemas"]["TextElement"];
+export type ThreadSection = components["schemas"]["ThreadSection"];
 export type ThreadSummary = components["schemas"]["ThreadSummary"];
 export type ThreadTimelineFileChangeEntry = components["schemas"]["ThreadTimelineFileChangeEntry"];
 export type ThreadTimelineRow = components["schemas"]["ThreadTimelineRow"];
@@ -204,11 +205,6 @@ export async function listChatThreadsPage(
   );
 }
 
-export async function listPinnedThreads(signal?: AbortSignal): Promise<ThreadSummary[]> {
-  const response = await unwrap(api.GET("/v1/threads/pinned", { signal, cache: "no-store" }));
-  return response.threads;
-}
-
 export async function createThread(projectId: string, options: CreateThreadOptions = {}): Promise<ThreadSummary> {
   const response = await unwrap(api.POST("/v1/threads", { body: { projectId, ...options } }));
   return response.thread;
@@ -311,14 +307,30 @@ export async function updateThreadSettings(
   );
 }
 
-export async function pinThread(threadId: string): Promise<string | null> {
-  const response = await unwrap(api.POST("/v1/threads/{threadId}/pin", { params: { path: { threadId } } }));
-  return response.pinnedAt ?? null;
+export async function createThreadSection(name: string): Promise<ThreadSection> {
+  const response = await unwrap(api.POST("/v1/thread-sections", { body: { name } }));
+  return response.section;
 }
 
-export async function unpinThread(threadId: string): Promise<string | null> {
-  const response = await unwrap(api.DELETE("/v1/threads/{threadId}/pin", { params: { path: { threadId } } }));
-  return response.pinnedAt ?? null;
+export async function renameThreadSection(sectionId: string, name: string): Promise<ThreadSection> {
+  const response = await unwrap(api.PATCH("/v1/thread-sections/{sectionId}", { params: { path: { sectionId } }, body: { name } }));
+  return response.section;
+}
+
+export async function deleteThreadSection(sectionId: string): Promise<void> {
+  await unwrapNoContent(api.DELETE("/v1/thread-sections/{sectionId}", { params: { path: { sectionId } } }));
+}
+
+export async function moveThreadToSection(threadId: string, sectionId: string | null, beforeThreadId?: string | null): Promise<void> {
+  await unwrapNoContent(api.POST("/v1/threads/{threadId}/section", {
+    params: { path: { threadId } }, body: { sectionId, ...(beforeThreadId !== undefined ? { beforeThreadId } : {}) },
+  }));
+}
+
+export async function listSectionThreads(sectionId: string, { cursor, signal }: { cursor?: string | null; signal?: AbortSignal } = {}): Promise<ThreadListResponse> {
+  return unwrap(api.GET("/v1/thread-sections/{sectionId}/threads", {
+    params: { path: { sectionId }, query: { ...(cursor ? { cursor } : {}), limit: 100 } }, signal, cache: "no-store",
+  }));
 }
 
 export async function markThreadSeen(threadId: string, seenCompletedAgentTurnSeq?: number): Promise<ThreadRead> {

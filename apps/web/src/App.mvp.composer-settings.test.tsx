@@ -388,7 +388,7 @@ describe("MVP composer settings flows", () => {
     render(<App />);
 
     await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i });
-    await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^new thread$/i }));
     await userEvent.click(getActiveModelButton(/model: gpt-5\.4, medium/i));
     await clickMenuItem(/^gpt-5\.4$/i);
     await userEvent.click(getActiveModelButton(/model: gpt-5\.4, medium/i));
@@ -504,7 +504,7 @@ describe("MVP composer settings flows", () => {
     expect(await screen.findByRole("button", { name: /model: gpt-5\.4, medium/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /permissions:/i })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /^chats$/i }));
-    await userEvent.click(await screen.findByRole("button", { name: /chat without settings/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /^chat without settings$/i }));
     expect(await within(activeThreadPane()).findByRole("button", { name: "Loading chat settings" })).toBeDisabled();
     await userEvent.type(getActiveComposer(), "Send before native settings load");
     await userEvent.click(getActiveSendButton());
@@ -734,7 +734,7 @@ describe("MVP composer settings flows", () => {
     await userEvent.click(getActiveSendButton());
     expect(await screen.findByRole("heading", { name: /^mini$/i })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^new thread$/i }));
     await userEvent.click(getActiveModelButton(/model: gpt-5\.4, medium/i));
     await clickMenuItem(/^gpt-5\.3-codex-spark$/i);
     expect(await screen.findByRole("button", { name: /model: gpt-5\.3-codex-spark, medium/i })).toBeInTheDocument();

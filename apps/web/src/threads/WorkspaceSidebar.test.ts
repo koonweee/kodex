@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Approval, ThreadSummary } from "../api/client";
-import { areThreadListRowPropsEqual, ThreadListRow, type ThreadListRowProps } from "./WorkspaceSidebar";
+import { areThreadListRowPropsEqual, ThreadListRow, type ThreadListRowProps } from "./ThreadSidebarRows";
 
 const approvals: Approval[] = [];
 const pendingTitleThreadIds = new Set<string>();
@@ -51,7 +51,7 @@ describe("ThreadListRow memo comparison", () => {
     const unchangedRow = rowProps();
     const previouslySelectedRow = rowProps({ isSelected: true });
     const newlyHoveredRow = rowProps({ showThreadArchiveAction: true });
-    const newlyPinnedRow = rowProps({ thread: { ...thread, pinnedAt: "2026-05-06T00:00:00Z" } });
+    const newlyPinnedRow = rowProps({ thread: { ...thread, section: { id: "01984de2-8f74-7c91-a3b2-5c5e937cf318", name: "Pinned" } } });
 
     expect(areThreadListRowPropsEqual(unchangedRow, { ...unchangedRow })).toBe(true);
     expect(areThreadListRowPropsEqual(unchangedRow, previouslySelectedRow)).toBe(false);

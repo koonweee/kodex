@@ -1,3 +1,5 @@
+import { useThreadSections } from "./sections/useThreadSections";
+import { PINNED_SECTION_ID } from "./sections/cache";
 import { Group, MantineProvider } from "@mantine/core";
 import { QueryClientProvider, isCancelledError, useMutation, useQueries, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { Bot } from "lucide-react";
@@ -26,16 +28,13 @@ import {
   getCapabilities,
   listAutomations,
   listChatThreadsPage,
-  listPinnedThreads,
   listProjects,
   listThreadSubagents,
   listThreadsPage,
   pauseAutomation,
-  pinThread,
   renameThread,
   resumeAutomation,
   setThreadNotificationsEnabled,
-  unpinThread,
   updateAutomation,
   type Approval,
   type Automation,
@@ -84,16 +83,12 @@ import {
   clearAvailableThreadTitles,
   markThreadTitlePending,
   optimisticThreadSummary,
-  withPinnedProjectThreads,
-  withoutPinnedThreads,
   type ThreadsByProjectId,
 } from "./threads/helpers";
 import {
   mergeChatThreadData,
-  mergePinnedThreadData,
   mergeProjectThreadData,
   appendThreadPage,
-  pinnedTombstonesAddedDuringSnapshot,
   removeThreadEverywhere,
   upsertChatThread,
   upsertProjectThread,
@@ -236,7 +231,7 @@ function KodexShell({
   const approvalsRef = useRef<Approval[]>([]);
   const attachingThreadIdsRef = useRef<Set<string>>(new Set());
   const chatThreadsRef = useRef<ThreadSummary[]>([]);
-  const pinnedThreadsRef = useRef<ThreadSummary[]>([]);
+  const sectionThreadsRef = useRef<ThreadSummary[]>([]);
   const pendingTitleThreadIdsRef = useRef<Set<string>>(new Set());
   const threadsByProjectIdRef = useRef<ThreadsByProjectId>({});
   const chatThreadsLoadingCursorRef = useRef<string | null>(null);
@@ -249,7 +244,6 @@ function KodexShell({
   const draftComposerTransitionOriginRef = useRef<DOMRect | null>(null);
   const [draftComposerTransitionToken, setDraftComposerTransitionToken] = useState(0);
   const [isDraftComposerTransitioning, setIsDraftComposerTransitioning] = useState(false);
-  const [pinnedStateTrusted, setPinnedStateTrusted] = useState(false);
   const [chatThreadsNextCursor, setChatThreadsNextCursor] = useState<string | null>(null);
   const [projectThreadNextCursors, setProjectThreadNextCursors] = useState<Record<string, string | null>>({});
   const [chatThreadsPaginationState, setChatThreadsPaginationState] = useState<SidebarPaginationState>("idle");
@@ -267,7 +261,7 @@ function KodexShell({
     handleShowWorkspace,
     handleSelectAutomations,
     handleSelectChatThread,
-    handleSelectPinnedThread,
+    handleSelectSectionThread,
     handleSelectProjectSettings,
     handleSelectThread,
     mobilePanel,
@@ -290,7 +284,7 @@ function KodexShell({
     onSelectThread: handleThreadSelectionRead,
     chatThreadsRef,
     initialRoute,
-    pinnedThreadsRef,
+    sectionThreadsRef,
     resetComposerDraft,
     threadsByProjectIdRef,
   });
@@ -299,14 +293,12 @@ function KodexShell({
     cachedSidebarSnapshotData,
     scopedSidebarQueriesEnabled,
     scopedSidebarSnapshotStaleTime,
-    sidebarSnapshotReady,
     sidebarThreadsQuery,
   } = useSidebarThreadsSnapshot({
     queryClient: queryClientForShell,
     routeSelectedThreadRef,
     selectedThreadIdRef,
     onChatThreadsCursorChange: setChatThreadsNextCursor,
-    onPinnedStateTrusted: () => setPinnedStateTrusted(true),
     onProjectThreadCursorsChange: setProjectThreadNextCursors,
   });
   const projectsQuery = useQuery({
@@ -382,34 +374,10 @@ function KodexShell({
       );
     },
   });
-  const pinnedThreadsQuery = useQuery({
-    enabled: scopedSidebarQueriesEnabled,
-    queryKey: queryKeys.pinnedThreads,
-    refetchOnMount: false,
-    staleTime: sidebarSnapshotReady || pinnedStateTrusted ? Infinity : 0,
-    queryFn: async ({ signal }) => {
-      const seededThreads = cachedSidebarSnapshotData<ThreadSummary[]>(queryKeys.pinnedThreads);
-      if (seededThreads) {
-        return seededThreads;
-      }
-      const beforeSnapshot = queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads);
-      const tombstonesBeforeSnapshot = queryClientForShell.getQueryData<string[]>(queryKeys.pinnedThreadTombstones);
-      const threads = await listPinnedThreads(signal);
-      signal.throwIfAborted();
-      const current = queryClientForShell.getQueryData<ThreadSummary[]>(queryKeys.pinnedThreads);
-      const tombstones = queryClientForShell.getQueryData<string[]>(queryKeys.pinnedThreadTombstones);
-      const tombstonesForSnapshot = pinnedTombstonesAddedDuringSnapshot(tombstonesBeforeSnapshot, tombstones);
-      if (tombstones && tombstones.length > 0) {
-        queryClientForShell.setQueryData<string[]>(queryKeys.pinnedThreadTombstones, []);
-      }
-      setPinnedStateTrusted(true);
-      return mergePinnedThreadData(
-        beforeSnapshot,
-        current,
-        threads,
-        tombstonesForSnapshot,
-      );
-    },
+  const nativeSections = useThreadSections(sidebarThreadsQuery.data, {
+    snapshotUpdatedAt: sidebarThreadsQuery.dataUpdatedAt,
+    onChanged: () => publishThreadPaneTimelineAction({ kind: "refresh_snapshot" }),
+    onError: reportError,
   });
   const automationsQuery = useQuery({
     enabled: selectedMainPane === "automations",
@@ -458,14 +426,12 @@ function KodexShell({
     mutationFn: ({ threadId, name }: { threadId: string; name: string }) => renameThread(threadId, name),
     onSuccess: (thread) => replaceThread(thread),
   });
-  const pinThreadMutation = useMutation({ mutationFn: pinThread });
-  const unpinThreadMutation = useMutation({ mutationFn: unpinThread });
   const threadNotificationsMutation = useMutation({
     mutationFn: ({ threadId, enabled }: { threadId: string; enabled: boolean }) =>
       setThreadNotificationsEnabled(threadId, enabled),
   });
   const chatThreads = chatThreadsQuery.data ?? EMPTY_THREADS;
-  const pinnedThreads = pinnedThreadsQuery.data ?? EMPTY_THREADS;
+  const sectionThreads = nativeSections.threads;
   const selectedProjectThreads = selectedProjectId ? threadsByProjectId[selectedProjectId] ?? EMPTY_THREADS : EMPTY_THREADS;
   const flatProjectThreads = useMemo(() => Object.values(threadsByProjectId).flat(), [threadsByProjectId]);
   const selectedProjectPane =
@@ -475,11 +441,11 @@ function KodexShell({
     selectedProjectThreads.find((thread) => thread.id === selectedThreadId) ??
     flatProjectThreads.find((thread) => thread.id === selectedThreadId) ??
     chatThreads.find((thread) => thread.id === selectedThreadId) ??
-    pinnedThreads.find((thread) => thread.id === selectedThreadId) ??
+    sectionThreads.find((thread) => thread.id === selectedThreadId) ??
     null;
   const threadSummariesById = useMemo(() => {
     const summaries: Record<string, ThreadSummary> = {};
-    for (const thread of [...chatThreads, ...pinnedThreads, ...flatProjectThreads]) {
+    for (const thread of [...chatThreads, ...sectionThreads, ...flatProjectThreads]) {
       summaries[thread.id] = thread;
     }
     if (routeSelectedThread) {
@@ -489,7 +455,7 @@ function KodexShell({
         : routeSelectedThread;
     }
     return summaries;
-  }, [chatThreads, flatProjectThreads, pinnedThreads, routeSelectedThread]);
+  }, [chatThreads, flatProjectThreads, sectionThreads, routeSelectedThread]);
   const threadProjectIdsById = useMemo(() => {
     const projectIds: Record<string, string> = {};
     for (const thread of Object.values(threadSummariesById)) {
@@ -518,10 +484,10 @@ function KodexShell({
     () =>
       automationThreadOptions({
         chatThreads,
-        pinnedThreads,
+        sectionThreads,
         projectThreads: flatProjectThreads,
       }),
-    [chatThreads, flatProjectThreads, pinnedThreads],
+    [chatThreads, flatProjectThreads, sectionThreads],
   );
   const {
     approvals,
@@ -529,21 +495,19 @@ function KodexShell({
   } = useApprovalsState({ onError: reportError });
   approvalsRef.current = approvals;
   chatThreadsRef.current = chatThreads;
-  pinnedThreadsRef.current = pinnedThreads;
+  sectionThreadsRef.current = sectionThreads;
   pendingTitleThreadIdsRef.current = pendingTitleThreadIds;
   threadsByProjectIdRef.current = threadsByProjectId;
   const { account, handleLogout } = useAccountSession({ onError: reportError });
   const {
     applyThreadNotificationsState,
-    applyThreadPinState,
     applyThreadUpsert,
     patchThreadEverywhere,
     refreshSidebarThreadsForLiveEvent,
     replaceThread,
   } = useSidebarThreadCaches({
     chatThreadsRef,
-    onPinnedStateTrusted: () => setPinnedStateTrusted(true),
-    pinnedThreadsRef,
+    sectionThreadsRef,
     queryClient: queryClientForShell,
     routeSelectedThreadRef,
     selectedThreadIdRef,
@@ -572,7 +536,7 @@ function KodexShell({
     selectedThreadIdRef,
     viewedThreadIdsRef: visibleThreadIdsRef,
     threadsByProjectId,
-    pinnedThreads,
+    sectionThreads,
     updateThreadEverywhere: patchThreadEverywhere,
   });
   useThreadViewPresence({
@@ -581,7 +545,7 @@ function KodexShell({
   });
   useKodexNotifications({
     chatThreads,
-    pinnedThreads,
+    sectionThreads,
     routeSelectedThread,
     threadsByProjectId,
   });
@@ -614,11 +578,11 @@ function KodexShell({
   useEffect(() => {
     const loadedThreads = [
       ...chatThreads,
-      ...pinnedThreads,
+      ...sectionThreads,
       ...Object.values(threadsByProjectId).flat(),
     ];
     setPendingTitleThreadIds((current) => clearAvailableThreadTitles(current, loadedThreads));
-  }, [chatThreads, pinnedThreads, threadsByProjectId]);
+  }, [chatThreads, sectionThreads, threadsByProjectId]);
 
   useEffect(() => {
     const selectedId = selectedThreadIdRef.current;
@@ -719,7 +683,6 @@ function KodexShell({
     applySubagentDiscoveryEvent,
     applyThreadMetadataEvent,
     applyThreadNotificationsState,
-    applyThreadPinState,
     applyThreadReadStateEvent,
     applyThreadUpsert,
     applyUsageLimitSnapshot,
@@ -877,24 +840,6 @@ function KodexShell({
     setUnavailableThreadId(threadId);
   }
 
-  async function handlePinThread(threadId: string) {
-    try {
-      const pinnedAt = await pinThreadMutation.mutateAsync(threadId);
-      applyThreadPinState(threadId, pinnedAt);
-    } catch (error) {
-      reportError(error);
-    }
-  }
-
-  async function handleUnpinThread(threadId: string) {
-    try {
-      const pinnedAt = await unpinThreadMutation.mutateAsync(threadId);
-      applyThreadPinState(threadId, pinnedAt);
-    } catch (error) {
-      reportError(error);
-    }
-  }
-
   async function handleRenameThread(threadId: string, name: string) {
     await renameThreadMutation.mutateAsync({ threadId, name });
   }
@@ -984,7 +929,7 @@ function KodexShell({
   const handleOpenPreferences = useEventCallback(() => setPreferencesOpen(true));
   const stableHandleCreateChat = useEventCallback(handleCreateChat);
   const stableHandleCreateThread = useEventCallback(handleCreateThread);
-  const stableHandlePinThread = useEventCallback((threadId: string) => void handlePinThread(threadId));
+  const stableHandlePinThread = useEventCallback((threadId: string) => nativeSections.moveThread(threadId, PINNED_SECTION_ID));
   const stableHandleRenameThread = useEventCallback((threadId: string, name: string) =>
     handleRenameThread(threadId, name),
   );
@@ -994,9 +939,9 @@ function KodexShell({
   const stableHandleSelectAutomations = useEventCallback(handleSelectAutomations);
   const stableHandleSelectProjectSettings = useEventCallback(handleSelectProjectSettings);
   const stableHandleSelectChatThread = useEventCallback(handleSelectChatThread);
-  const stableHandleSelectPinnedThread = useEventCallback(handleSelectPinnedThread);
+  const stableHandleSelectSectionThread = useEventCallback(handleSelectSectionThread);
   const stableHandleSelectThread = useEventCallback(handleSelectThread);
-  const stableHandleUnpinThread = useEventCallback((threadId: string) => void handleUnpinThread(threadId));
+  const stableHandleUnpinThread = useEventCallback((threadId: string) => nativeSections.moveThread(threadId, null));
   const workspaceThreadActions = useMemo(
     () => ({
       onArchiveThread: handleArchiveThreadById,
@@ -1004,9 +949,15 @@ function KodexShell({
       onRenameThread: stableHandleRenameThread,
       onSetThreadNotificationsEnabled: stableHandleSetThreadNotificationsEnabled,
       onUnpinThread: stableHandleUnpinThread,
+      sections: nativeSections.sections,
+      onMoveThreadToSection: nativeSections.moveThread,
+      sectionMovePending: nativeSections.isMoving,
     }),
     [
       handleArchiveThreadById,
+      nativeSections.sections,
+      nativeSections.moveThread,
+      nativeSections.isMoving,
       stableHandlePinThread,
       stableHandleRenameThread,
       stableHandleSetThreadNotificationsEnabled,
@@ -1086,20 +1037,10 @@ function KodexShell({
       }
     }
   });
-  const pinnedStateIsTrusted = pinnedStateTrusted;
-  const sidebarPinnedThreads = pinnedStateIsTrusted ? pinnedThreads : [];
-  const sidebarChatThreads = useMemo(
-    () => (pinnedStateIsTrusted ? withoutPinnedThreads(chatThreads) : chatThreads),
-    [chatThreads, pinnedStateIsTrusted],
-  );
-  const sidebarThreadsByProjectId = useMemo(
-    () => withPinnedProjectThreads(threadsByProjectId, sidebarPinnedThreads, orderedProjects),
-    [orderedProjects, sidebarPinnedThreads, threadsByProjectId],
-  );
   const sidebarDataState = useMemo(
     () => ({
       chatThreads: scopedSidebarQueriesEnabled ? queryResultLoadState(chatThreadsQuery) : queryResultLoadState(sidebarThreadsQuery),
-      pinnedThreads: pinnedStateIsTrusted && scopedSidebarQueriesEnabled ? queryResultLoadState(pinnedThreadsQuery) : "loading",
+      sections: queryResultLoadState(sidebarThreadsQuery),
       projects: scopedSidebarQueriesEnabled ? queryResultLoadState(projectsQuery) : queryResultLoadState(sidebarThreadsQuery),
       projectThreadsById: Object.fromEntries(
         orderedProjects.map((project, index) => [
@@ -1111,8 +1052,6 @@ function KodexShell({
     [
       chatThreadsQuery,
       orderedProjects,
-      pinnedStateIsTrusted,
-      pinnedThreadsQuery,
       projectThreadQueries,
       projectsQuery,
       scopedSidebarQueriesEnabled,
@@ -1282,7 +1221,7 @@ function KodexShell({
           sidebarCollapsed={sidebarCollapsed}
           useSingleThreadWorkspace={useSingleThreadWorkspace}
           workspaceSidebarProps={{
-          account, approvals, chatThreads: sidebarChatThreads, dataState: sidebarDataState, hoveredThreadActionId,
+          account, approvals, chatThreads, dataState: sidebarDataState, hoveredThreadActionId,
           chatThreadsHasMore: chatThreadsNextCursor !== null,
           chatThreadsPaginationState,
           onArchiveThread: handleArchiveThreadById,
@@ -1291,15 +1230,19 @@ function KodexShell({
           onPinThread: stableHandlePinThread,
           onOpenPreferences: handleOpenPreferences, onOpenTerminal: gatewayTerminalAvailable ? handleShowWorkspace : undefined,
           onMoveProject: handleMoveProject, onSelectChatThread: stableHandleSelectChatThread,
-          onSelectAutomations: stableHandleSelectAutomations, onSelectPinnedThread: stableHandleSelectPinnedThread, onSelectProjectSettings: stableHandleSelectProjectSettings, onSelectThread: stableHandleSelectThread, onUnpinThread: stableHandleUnpinThread,
+          onSelectAutomations: stableHandleSelectAutomations, onSelectSectionThread: stableHandleSelectSectionThread, onSelectProjectSettings: stableHandleSelectProjectSettings, onSelectThread: stableHandleSelectThread, onUnpinThread: stableHandleUnpinThread,
           onShowThread: handleShowMobileThread, onShowDebugEventsChange: setShowDebugEvents, onSidebarCollapseClick: handleSidebarCollapseClick,
           onSidebarExpandClick: handleSidebarExpandClick, onThreadActionHoverChange: setHoveredThreadActionId,
-          pinnedThreads: sidebarPinnedThreads,
+          sectionThreads,
+          onSectionsChanged: () => publishThreadPaneTimelineAction({ kind: "refresh_snapshot" }),
+          sections: nativeSections.sections, sectionThreadsById: nativeSections.threadsBySectionId,
+          sectionThreadHasMoreById: nativeSections.hasMoreById, sectionThreadPaginationStateById: nativeSections.paginationStates,
+          onLoadMoreSectionThreads: nativeSections.loadMore, onMoveThreadToSection: nativeSections.moveThread, sectionMovePending: nativeSections.isMoving,
           pendingTitleThreadIds,
           projectThreadHasMoreById: Object.fromEntries(Object.entries(projectThreadNextCursors).map(([projectId, cursor]) => [projectId, cursor !== null])),
           projectThreadPaginationStateById,
           projects: orderedProjects, selectedMainPane, selectedProjectId, selectedThreadId: selectedMainPane === "thread" ? selectedThreadId : null,
-          showDebugEvents, sidebarWidth, threadsByProjectId: sidebarThreadsByProjectId, usageLimitLines,
+          showDebugEvents, sidebarWidth, threadsByProjectId, usageLimitLines,
         }}
         workspaceSelectedThreadPaneId={
           selectedMainPane === "thread" && !isSelectedThreadSnapshotDeferred ? routeThreadPaneId ?? unavailableThreadId : null

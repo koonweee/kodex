@@ -53,9 +53,9 @@ function activeSendButton() {
 }
 
 async function openSecondThreadInAdditionalPane() {
-  await userEvent.click(screen.getByRole("button", { name: /thread actions/i }));
+  await userEvent.click(screen.getByRole("button", { name: /^thread actions$/i }));
   await userEvent.click(await screen.findByRole("menuitem", { hidden: true, name: /duplicate pane/i }));
-  await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /second thread/i }));
+  await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /^second thread$/i }));
 }
 
 function openWorkspaceStreams() {
@@ -149,7 +149,7 @@ describe("MVP timeline flows", () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     const timeline = timelineElement(container);
     expect(within(timeline).queryByText("No events")).not.toBeInTheDocument();
     expect(within(timeline).queryByText("Thread activity will stream into this timeline.")).not.toBeInTheDocument();
@@ -241,10 +241,10 @@ describe("MVP timeline flows", () => {
     await openSecondThreadInAdditionalPane();
     expect(await screen.findByText(/second snapshot/i)).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: /thread actions/i })).toHaveLength(3);
+      expect(screen.getAllByRole("button", { name: /^thread actions$/i })).toHaveLength(3);
     });
     const firstThreadDetailCalls = gateway.callsFor("GET", "/v1/threads/thread-1").length;
-    await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /implement frontend/i }));
+    await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /^implement frontend$/i }));
     await waitFor(() => {
       expect(document.querySelector('.kodex-thread-pane[data-workspace-pane-active="true"]')).toHaveTextContent(
         /initial snapshot/i,
@@ -355,7 +355,7 @@ describe("MVP timeline flows", () => {
 
     render(<App />);
 
-    await screen.findByRole("heading", { name: /implement frontend/i });
+    await screen.findByRole("heading", { name: /^implement frontend$/i });
     const timeline = await screen.findByRole("main", { name: /thread/i });
     expect(await within(timeline).findByText("Searched web, ran 1 command")).toBeInTheDocument();
     expect(within(timeline).getByText("Ran pwd")).toBeInTheDocument();
@@ -383,12 +383,12 @@ describe("MVP timeline flows", () => {
 
     render(<App />);
 
-    const runningThreadButton = await screen.findByRole("button", { name: /running thread/i });
+    const runningThreadButton = await screen.findByRole("button", { name: /^running thread$/i });
     const runningThreadRow = runningThreadButton.closest(".kodex-thread-list-button");
     expect(runningThreadRow).toBeInTheDocument();
     expect(runningThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument();
     expect(runningThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /implement frontend/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^implement frontend$/i }));
     const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
 
     act(() => {
@@ -408,7 +408,7 @@ describe("MVP timeline flows", () => {
 
     await waitFor(() => {
       const updatedRunningThreadRow = screen
-        .getByRole("button", { name: /running thread/i })
+        .getByRole("button", { name: /^running thread$/i })
         .closest(".kodex-thread-list-button");
       expect(updatedRunningThreadRow?.querySelector(".kodex-thread-progress-indicator")).not.toBeInTheDocument();
       expect(updatedRunningThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
@@ -438,7 +438,7 @@ describe("MVP timeline flows", () => {
 
     render(<App />);
 
-    const secondThreadButton = await screen.findByRole("button", { name: /second thread/i });
+    const secondThreadButton = await screen.findByRole("button", { name: /^second thread$/i });
     const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
 
     act(() => {
@@ -789,7 +789,7 @@ describe("MVP timeline flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^implement frontend$/i })).toBeInTheDocument();
     const workspaceStream = await waitForWorkspaceStreamThreadIds([thread.id]);
     expectWorkspaceStreamContract(workspaceStream, [thread.id]);
 
@@ -1013,7 +1013,7 @@ describe("MVP timeline flows", () => {
     });
     expect(activeSendButton()).toBeInTheDocument();
     const externalThreadButton = screen
-      .getAllByRole("button", { name: /second thread/i })
+      .getAllByRole("button", { name: /^second thread$/i })
       .find((button) => button.classList.contains("kodex-thread-select-button"));
     expect(externalThreadButton).toBeDefined();
     const externalThreadRow = externalThreadButton!.closest(".kodex-thread-list-button");

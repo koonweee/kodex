@@ -3,7 +3,6 @@ import type { EventEnvelope, QueuedInput, RateLimitSnapshot } from "../api/clien
 import { isApprovalEvent } from "../approvals/state";
 import {
   threadNotificationsUpdateFromEvent,
-  threadPinUpdateFromEvent,
   threadSubagentDiscoveryEventFromEvent,
   threadUpsertFromEvent,
   type ThreadSubagentDiscoveryEvent,
@@ -17,7 +16,7 @@ export type LiveEventRouteHandlers = {
   applyAutomationStreamEvent: (event: EventEnvelope) => void;
   applyQueuedInputUpsert: (row: QueuedInput) => void;
   applyQueuedInputDeleted: (threadId: string, id: string) => void;
-  applyThreadPinState: (threadId: string, pinnedAt: string | null) => void;
+  applyThreadSectionsEvent: (event: EventEnvelope) => void;
   applyThreadUpsert: (update: ThreadUpsert) => void;
   applyThreadMetadataEvent: (event: EventEnvelope) => void;
   applyCompletedAgentTurnEvent: (event: EventEnvelope) => void;
@@ -34,6 +33,7 @@ export type LiveEventRouteHandlers = {
 
 export function routeGlobalLiveEvent(event: EventEnvelope, handlers: LiveEventRouteHandlers) {
   routeSharedLiveEvent(event, handlers);
+  if (event.kind === "thread.sections_updated") handlers.applyThreadSectionsEvent(event);
   if (event.kind === "project.changed" || event.kind === "thread.project_updated") {
     handlers.applyProjectEvent(event);
   }
@@ -72,10 +72,6 @@ function routeSharedLiveEvent(event: EventEnvelope, handlers: LiveEventRouteHand
   const queueDelete = queuedInputDeleteFromEvent(event);
   if (queueDelete) {
     handlers.applyQueuedInputDeleted(queueDelete.threadId, queueDelete.id);
-  }
-  const pinUpdate = threadPinUpdateFromEvent(event);
-  if (pinUpdate) {
-    handlers.applyThreadPinState(pinUpdate.threadId, pinUpdate.pinnedAt);
   }
   const threadUpsert = threadUpsertFromEvent(event);
   if (threadUpsert) {
@@ -134,7 +130,6 @@ function isThreadMetadataEvent(event: EventEnvelope): boolean {
     event.kind === "timeline.thread_metadata" ||
     event.kind === "thread_view.patch" ||
     event.kind === "thread.upserted" ||
-    event.kind === "thread.pin_updated" ||
     event.kind === "thread.notifications_updated" ||
     event.kind === "thread.read_updated" ||
     event.codexMethod === "thread/name/updated"

@@ -37,7 +37,7 @@ for (const shape of [
             appServer: { ready: true, experimentalApi: true, schemaVersion: "0.160.0", detectedVersion: "0.160.0", detectedVersionMatchesSchema: true },
           },
           "GET /v1/projects/project-1": project,
-          "GET /v1/sidebar/threads": { projects: [project], projectThreads: { [project.id]: { threads: [thread] } }, chatThreads: { threads: [] }, pinnedThreads: { threads: [] } },
+          "GET /v1/sidebar/threads": { projects: [project], projectThreads: { [project.id]: { threads: [thread] } }, chatThreads: { threads: [] }, sections: [], sectionThreads: {} },
           "GET /v1/threads/thread-1": detail,
           "GET /v1/threads/thread-1/settings": { model: "gpt-5.4", effort: "medium", serviceTier: null, activePermissionProfile: null },
           "POST /v1/threads/thread-1/attach": { disposition: "resumed", thread },
@@ -68,7 +68,9 @@ for (const shape of [
 
       if (shape.width < 700) await main.getByRole("button", { name: "Projects", exact: true }).click();
       const workspace = page.getByRole("navigation", { name: "Workspace" });
-      await workspace.getByRole("button", { name: /project chat/i }).click();
+      const chat = workspace.getByRole("button", { name: "Project chat", exact: true });
+      if (shape.hasTouch) await chat.tap();
+      else await chat.click();
       await expect(page.getByRole("heading", { name: "Project chat", exact: true })).toBeVisible();
 
       if (shape.width < 700) await page.getByRole("button", { name: /show sidebar/i }).click();

@@ -49,7 +49,7 @@ use crate::{
             apply_thread_command_response_state, broadcast_thread_upserted, create_thread_payload,
             MarkThreadSeenRequest, MarkThreadSeenResponse, RenameThreadRequest,
             RenameThreadResponse, SidebarThreadsResponse, ThreadAttachResponse,
-            ThreadCreationOptions, ThreadListQuery, ThreadPinResponse, ThreadSubagentListResponse,
+            ThreadCreationOptions, ThreadListQuery, ThreadSubagentListResponse,
             ThreadTimelinePageQuery, ThreadUpsertScope,
         },
         turns::{
@@ -130,10 +130,6 @@ pub fn router() -> Router<AppState> {
         .route(
             "/v1/self-control/threads/{thread_id}/archive",
             post(archive_self_control_thread),
-        )
-        .route(
-            "/v1/self-control/threads/{thread_id}/pin",
-            post(pin_self_control_thread).delete(unpin_self_control_thread),
         )
         .route(
             "/v1/self-control/threads/{thread_id}/seen",
@@ -245,7 +241,7 @@ impl SelfControlSource {
             .or(self.source_thread_id.as_deref())
     }
 
-    fn to_value(&self) -> Value {
+    pub(super) fn to_value(&self) -> Value {
         let mut value = serde_json::Map::new();
         value.insert("sourceType".to_string(), json!("kodex_control"));
         if let Some(source_thread_id) = &self.source_thread_id {
@@ -1044,44 +1040,6 @@ pub async fn archive_self_control_thread(
         crate::routes::threads::archive_thread(State(state.clone()), Path(thread_id.clone()))
             .await?;
     audit_thread_mutation(&state, &thread_id, "self_control.thread_archived", source).await?;
-    Ok(response)
-}
-
-#[utoipa::path(
-    post,
-    path = "/v1/self-control/threads/{threadId}/pin",
-    summary = "Pin a thread through self-control",
-    request_body = SelfControlMutationRequest,
-    responses((status = 200, body = ThreadPinResponse))
-)]
-pub async fn pin_self_control_thread(
-    State(state): State<AppState>,
-    Path(thread_id): Path<String>,
-    request: Option<Json<SelfControlMutationRequest>>,
-) -> ApiResult<Json<ThreadPinResponse>> {
-    let source = optional_source(request);
-    let response =
-        crate::routes::threads::pin_thread(State(state.clone()), Path(thread_id.clone())).await?;
-    audit_thread_mutation(&state, &thread_id, "self_control.thread_pinned", source).await?;
-    Ok(response)
-}
-
-#[utoipa::path(
-    delete,
-    path = "/v1/self-control/threads/{threadId}/pin",
-    summary = "Unpin a thread through self-control",
-    request_body = SelfControlMutationRequest,
-    responses((status = 200, body = ThreadPinResponse))
-)]
-pub async fn unpin_self_control_thread(
-    State(state): State<AppState>,
-    Path(thread_id): Path<String>,
-    request: Option<Json<SelfControlMutationRequest>>,
-) -> ApiResult<Json<ThreadPinResponse>> {
-    let source = optional_source(request);
-    let response =
-        crate::routes::threads::unpin_thread(State(state.clone()), Path(thread_id.clone())).await?;
-    audit_thread_mutation(&state, &thread_id, "self_control.thread_unpinned", source).await?;
     Ok(response)
 }
 
@@ -2078,7 +2036,7 @@ fn is_denial_decision(decision: &Value) -> bool {
     }
 }
 
-async fn audit_self_control(
+pub(super) async fn audit_self_control(
     state: &AppState,
     project_id: Option<&str>,
     thread_id: Option<&str>,

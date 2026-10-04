@@ -730,7 +730,7 @@ async fn thread_status_changed_updates_known_subagent_under_parent() {
     let _ = state
         .subagents
         .upsert_from_thread_summary(
-            &thread_summary_from_value(&subagent_thread_summary(
+            &ThreadSummary::from_payload(&subagent_thread_summary(
                 "subagent-1",
                 "thread-parent",
                 10,
@@ -775,7 +775,7 @@ async fn thread_closed_removes_known_subagent_without_fabricating_unknown_parent
     let _ = state
         .subagents
         .upsert_from_thread_summary(
-            &thread_summary_from_value(&subagent_thread_summary(
+            &ThreadSummary::from_payload(&subagent_thread_summary(
                 "subagent-1",
                 "thread-parent",
                 10,
@@ -1115,7 +1115,7 @@ fn thread_view_refresh_required_uses_current_cursor_without_advancing_high_water
 
 #[test]
 fn thread_metadata_summary_preserves_git_branch() {
-    let thread = thread_summary_from_value(&json!({
+    let thread = ThreadSummary::from_payload(&json!({
         "id": "thread-1",
         "cliVersion": "0.130.0",
         "cwd": "/workspace",

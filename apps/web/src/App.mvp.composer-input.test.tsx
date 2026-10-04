@@ -169,7 +169,7 @@ describe("MVP composer input flows", () => {
     const { container } = render(<App />);
 
     await waitFor(() => {
-      expect(within(activeThreadPane()).getByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+      expect(within(activeThreadPane()).getByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     });
     const sendButton = screen.getByRole("button", { name: /send message/i });
     expect(sendButton).toBeDisabled();
@@ -244,7 +244,7 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     const composer = screen.getByLabelText(/message composer/i);
     await userEvent.type(composer, "/compact");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
@@ -272,7 +272,7 @@ describe("MVP composer input flows", () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     const input = container.querySelector<HTMLInputElement>('input[type="file"]');
     expect(input).not.toBeNull();
     await userEvent.upload(input!, new File(["fake"], "diagram.png", { type: "image/png" }));
@@ -300,7 +300,7 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     const composer = screen.getByLabelText(/message composer/i);
     await userEvent.type(composer, "/nope please");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
@@ -322,7 +322,7 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/message composer/i), "Please run /compact later");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
@@ -351,7 +351,7 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     const composer = screen.getByLabelText(/message composer/i);
     await userEvent.type(composer, "Start pending turn");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
@@ -400,27 +400,27 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
-    await userEvent.type(composerInThreadPane(/implement frontend/i), "Draft for first thread");
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
+    await userEvent.type(composerInThreadPane(/^implement frontend$/i), "Draft for first thread");
 
-    await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /second thread/i }));
+    await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /^second thread$/i }));
     await waitFor(() => {
-      expect(within(activeThreadPane()).getByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+      expect(within(activeThreadPane()).getByRole("heading", { name: /^second thread$/i })).toBeInTheDocument();
     });
-    expect(composerInThreadPane(/second thread/i)).toHaveValue("");
+    expect(composerInThreadPane(/^second thread$/i)).toHaveValue("");
 
-    await userEvent.type(composerInThreadPane(/second thread/i), "Draft for second thread");
-    await userEvent.click(screen.getByRole("button", { name: /implement frontend/i }));
+    await userEvent.type(composerInThreadPane(/^second thread$/i), "Draft for second thread");
+    await userEvent.click(screen.getByRole("button", { name: /^implement frontend$/i }));
     await waitFor(() => {
-      expect(within(activeThreadPane()).getByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+      expect(within(activeThreadPane()).getByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     });
-    expect(composerInThreadPane(/implement frontend/i)).toHaveValue("Draft for first thread");
+    expect(composerInThreadPane(/^implement frontend$/i)).toHaveValue("Draft for first thread");
 
-    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^second thread$/i }));
     await waitFor(() => {
-      expect(within(activeThreadPane()).getByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+      expect(within(activeThreadPane()).getByRole("heading", { name: /^second thread$/i })).toBeInTheDocument();
     });
-    expect(composerInThreadPane(/second thread/i)).toHaveValue("Draft for second thread");
+    expect(composerInThreadPane(/^second thread$/i)).toHaveValue("Draft for second thread");
   }, 20_000);
 
   it("sends selected skill metadata and renders the skill row only from gateway patches", async () => {
@@ -458,7 +458,7 @@ describe("MVP composer input flows", () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/message composer/i), "$doc");
     expect(await screen.findByRole("option", { name: /documents/i })).toBeInTheDocument();
     await userEvent.keyboard("{Enter}");
@@ -778,7 +778,7 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/message composer/i), "Ship it");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
@@ -852,23 +852,23 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    const firstThreadButton = await within(workspaceNavigation()).findByRole("button", { name: /implement frontend/i });
+    const firstThreadButton = await within(workspaceNavigation()).findByRole("button", { name: /^implement frontend$/i });
     const firstThreadRow = firstThreadButton.closest(".kodex-thread-list-button");
     expect(firstThreadRow).toBeInTheDocument();
-    await userEvent.type(composerInThreadPane(/implement frontend/i), "sleep 5s, then send hello");
-    await userEvent.click(sendButtonInThreadPane(/implement frontend/i));
+    await userEvent.type(composerInThreadPane(/^implement frontend$/i), "sleep 5s, then send hello");
+    await userEvent.click(sendButtonInThreadPane(/^implement frontend$/i));
 
     await waitFor(() => {
       expect(gateway.callsFor("POST", "/v1/threads/thread-1/input")).toHaveLength(1);
       expect(firstThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument();
     });
 
-    await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /second thread/i }));
+    await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /^second thread$/i }));
     await waitFor(() => {
       expect(within(activeThreadPane()).getByText(/second thread snapshot/i)).toBeInTheDocument();
     });
     const currentFirstThreadRow = within(workspaceNavigation())
-      .getByRole("button", { name: /implement frontend/i })
+      .getByRole("button", { name: /^implement frontend$/i })
       .closest(".kodex-thread-list-button");
     expect(currentFirstThreadRow?.querySelector(".kodex-thread-progress-indicator")).toBeInTheDocument();
 
@@ -917,13 +917,13 @@ describe("MVP composer input flows", () => {
 
     await waitFor(() => {
       const currentFirstThreadRow = within(workspaceNavigation())
-        .getByRole("button", { name: /implement frontend/i })
+        .getByRole("button", { name: /^implement frontend$/i })
         .closest(".kodex-thread-list-button");
       expect(currentFirstThreadRow?.querySelector(".kodex-thread-progress-indicator")).not.toBeInTheDocument();
       expect(currentFirstThreadRow?.querySelector(".kodex-thread-unread-agent-turn-indicator")).toBeInTheDocument();
     });
 
-    await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /implement frontend/i }));
+    await userEvent.click(within(workspaceNavigation()).getByRole("button", { name: /^implement frontend$/i }));
     await waitFor(() => {
       expect(within(activeThreadPane()).getByText("hello")).toBeInTheDocument();
     });
@@ -947,7 +947,7 @@ describe("MVP composer input flows", () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/message composer/i), "Retry text");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
 
@@ -984,7 +984,7 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     const composer = screen.getByLabelText(/message composer/i);
     await userEvent.type(composer, "Retry text");
     await userEvent.click(screen.getByRole("button", { name: /send message/i }));
@@ -1017,13 +1017,13 @@ describe("MVP composer input flows", () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     await userEvent.type(composerInActiveThreadPane(), "Retry in first thread");
     await userEvent.click(sendButtonInActiveThreadPane());
     await waitFor(() => expect(composerInActiveThreadPane()).toHaveValue(""));
 
-    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
-    expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^second thread$/i }));
+    expect(await screen.findByRole("heading", { name: /^second thread$/i })).toBeInTheDocument();
 
     await act(async () => {
       rejectTurn(new Error("start turn failed"));
@@ -1046,7 +1046,7 @@ describe("MVP composer input flows", () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     const input = container.querySelector<HTMLInputElement>('input[type="file"]');
     expect(input).not.toBeNull();
 
@@ -1089,7 +1089,7 @@ describe("MVP composer input flows", () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     const input = container.querySelector<HTMLInputElement>('input[type="file"]');
     expect(input).not.toBeNull();
 
@@ -1127,7 +1127,7 @@ describe("MVP composer input flows", () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     const input = container.querySelector<HTMLInputElement>('input[type="file"]');
     expect(input).not.toBeNull();
     await userEvent.upload(input!, new File(["fake"], "diagram.png", { type: "image/png" }));
@@ -1177,9 +1177,9 @@ describe("MVP composer input flows", () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
-    expect(within(screen.getByRole("main", { name: /thread/i })).queryByRole("heading", { name: /new thread/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^new thread$/i }));
+    expect(within(screen.getByRole("main", { name: /thread/i })).queryByRole("heading", { name: /^new thread$/i })).not.toBeInTheDocument();
 
     await userEvent.upload(attachmentInputInActiveThreadPane(), new File(["fake"], "diagram.png", { type: "image/png" }));
     expect(createObjectUrl).toHaveBeenCalled();
@@ -1242,8 +1242,8 @@ describe("MVP composer input flows", () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^new thread$/i }));
     await userEvent.type(composerInActiveThreadPane(), "Materialize this");
     await userEvent.click(sendButtonInActiveThreadPane());
 
@@ -1290,8 +1290,8 @@ describe("MVP composer input flows", () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^new thread$/i }));
     await userEvent.type(composerInActiveThreadPane(), "Materialize this");
     await userEvent.click(sendButtonInActiveThreadPane());
 
@@ -1331,8 +1331,8 @@ describe("MVP composer input flows", () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^new thread$/i }));
     await userEvent.type(composerInActiveThreadPane(), "Materialize this");
     await userEvent.click(sendButtonInActiveThreadPane());
 
@@ -1375,8 +1375,8 @@ describe("MVP composer input flows", () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /new thread/i }));
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^new thread$/i }));
     await userEvent.upload(attachmentInputInActiveThreadPane(), new File(["fake"], "diagram.png", { type: "image/png" }));
     expect(createObjectUrl).toHaveBeenCalled();
 
@@ -1441,7 +1441,7 @@ describe("MVP composer input flows", () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     const input = container.querySelector<HTMLInputElement>('input[type="file"]');
     expect(input).not.toBeNull();
     await userEvent.upload(input!, new File(["fake"], "diagram.png", { type: "image/png" }));
@@ -1450,8 +1450,8 @@ describe("MVP composer input flows", () => {
     await userEvent.click(sendButtonInActiveThreadPane());
     await waitFor(() => expect(composerInActiveThreadPane()).toHaveValue(""));
 
-    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
-    expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^second thread$/i }));
+    expect(await screen.findByRole("heading", { name: /^second thread$/i })).toBeInTheDocument();
 
     await act(async () => {
       rejectUpload(new Error("Upload unavailable"));
@@ -1484,7 +1484,7 @@ describe("MVP composer input flows", () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     const input = container.querySelector<HTMLInputElement>('input[type="file"]');
     expect(input).not.toBeNull();
     await userEvent.upload(input!, new File(["fake"], "diagram.png", { type: "image/png" }));
@@ -1534,7 +1534,7 @@ describe("MVP composer input flows", () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     const input = container.querySelector<HTMLInputElement>('input[type="file"]');
     expect(input).not.toBeNull();
     await userEvent.upload(input!, new File(["fake"], "diagram.png", { type: "image/png" }));
@@ -1585,7 +1585,7 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     const composerShell = screen.getByLabelText(/message composer/i).closest(".kodex-composer-shell");
     expect(composerShell).not.toBeNull();
     const file = new File(["fake"], "dropped.png", { type: "image/png" });
@@ -1611,7 +1611,7 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     const composer = screen.getByLabelText(/message composer/i);
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:pasted-preview");
     const file = new File(["fake"], "pasted.png", { type: "image/png" });
@@ -1713,7 +1713,7 @@ describe("MVP composer input flows", () => {
     await userEvent.type(composer, "Switch clear{Enter}");
     expect(screen.getByText("Switch clear")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^second thread$/i }));
     await waitFor(() => {
       expect(within(activeThreadPane()).queryByRole("region", { name: /queued steer messages/i })).not.toBeInTheDocument();
     });
@@ -1773,7 +1773,7 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     const composer = screen.getByLabelText(/message composer/i);
     await userEvent.type(composer, "Line one");
     await userEvent.keyboard("{Shift>}{Enter}{/Shift}");
@@ -1808,7 +1808,7 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     const composer = screen.getByLabelText(/message composer/i);
     await userEvent.type(composer, "Narrow hardware keyboard");
     await userEvent.keyboard("{Enter}");
@@ -1838,7 +1838,7 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     await userEvent.click(screen.getByLabelText(/message composer/i));
     const composer = screen.getByLabelText(/message composer/i);
     await userEvent.type(composer, "Line one");
@@ -1874,7 +1874,7 @@ describe("MVP composer input flows", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^implement frontend$/i })).toBeInTheDocument();
     const composer = screen.getByLabelText(/message composer/i);
     await userEvent.type(composer, "Hardware keyboard submit");
     await userEvent.keyboard("{Meta>}{Enter}{/Meta}");

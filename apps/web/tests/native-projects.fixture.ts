@@ -1,7 +1,9 @@
 import type { BrowserContext, Page, Route } from "@playwright/test";
 import { createServer, type ServerResponse } from "node:http";
 
-import type { Capabilities, CreateProjectRequest, EventEnvelope, Project, ThreadSummary, ThreadTimelineSnapshotItem, ThreadViewResponse, UpdateProjectRequest } from "../src/api/client";
+import type { Capabilities, CreateProjectRequest, EventEnvelope, Project, ThreadSection, ThreadSummary, ThreadTimelineSnapshotItem, ThreadViewResponse, UpdateProjectRequest } from "../src/api/client";
+
+export const pinnedSectionId = "01984de2-8f74-7c91-a3b2-5c5e937cf318";
 
 export const executionCwd = "/execution/original-chat";
 export const preservedHistory = "History remains intact after changing project membership.";
@@ -14,6 +16,8 @@ export async function nativeProjectsFixture(context: BrowserContext) {
   const state = {
     projects: [project("alpha", "Alpha", 0), project("beta", "Beta", 1)],
     threads: [thread("history", "History chat"), thread("unlisted", "Unlisted history")],
+    sections: [{ id: pinnedSectionId, name: "Pinned", appearance: null }] as ThreadSection[],
+    sectionThreadIds: {} as Record<string, string[]>,
   };
   const clients = new Map<Page, string>();
   const streams = new Map<ServerResponse, string>();
@@ -26,6 +30,7 @@ export async function nativeProjectsFixture(context: BrowserContext) {
   const aborted = new Map<string, () => boolean>();
   const holds = new Set<string>();
   const createIntents = new Map<string, string>();
+  let sectionCounter = 0;
   let failFirstCreate = false;
   let seq = 0;
   const capabilities: Capabilities = {
@@ -68,10 +73,32 @@ export async function nativeProjectsFixture(context: BrowserContext) {
     const visibleThreads = state.threads.filter((entry) => entry.id !== "unlisted");
     return {
       projects: state.projects,
-      projectThreads: Object.fromEntries(state.projects.map((entry) => [entry.id, { threads: visibleThreads.filter((member) => member.projectId === entry.id) }])),
-      chatThreads: { threads: visibleThreads.filter((entry) => entry.projectId === null) },
-      pinnedThreads: { threads: [] },
+      projectThreads: Object.fromEntries(state.projects.map((entry) => [entry.id, { threads: visibleThreads.filter((member) => member.projectId === entry.id && !member.section) }])),
+      chatThreads: { threads: visibleThreads.filter((entry) => entry.projectId === null && !entry.section) },
+      sections: state.sections,
+      sectionThreads: Object.fromEntries(state.sections.map((section) => [section.id, sectionMembers(section.id)])),
     };
+  }
+  function sectionMembers(sectionId: string, cursor = 0, limit = 10) {
+    const members = (state.sectionThreadIds[sectionId] ?? []).map((id) => state.threads.find((member) => member.id === id)!).filter(Boolean);
+    const end = cursor + limit;
+    return { threads: members.slice(cursor, end), nextCursor: end < members.length ? String(end) : null };
+  }
+  function moveThread(threadId: string, sectionId: string | null, beforeThreadId?: string | null) {
+    const target = state.threads.find((member) => member.id === threadId);
+    if (!target) throw new Error(`No thread ${threadId}`);
+    const section = sectionId === null ? null : state.sections.find((entry) => entry.id === sectionId);
+    if (sectionId && !section) throw new Error(`No section ${sectionId}`);
+    const members = sectionId ? (state.sectionThreadIds[sectionId] ?? []).filter((id) => id !== threadId) : [];
+    const before = beforeThreadId ? members.indexOf(beforeThreadId) : members.length;
+    if (beforeThreadId && before < 0) throw new Error(`No target ${beforeThreadId} in ${sectionId}`);
+    for (const id of Object.keys(state.sectionThreadIds)) state.sectionThreadIds[id] = state.sectionThreadIds[id].filter((id) => id !== threadId);
+    if (sectionId) {
+      members.splice(before, 0, threadId);
+      state.sectionThreadIds[sectionId] = members;
+    }
+    target.section = section ? { ...section } : null;
+    target.sectionEnteredAt = section ? 1791072000 : null;
   }
   async function respond(route: Route, body: unknown, status = 200, holdKey?: string) {
     const captured = structuredClone(body);
@@ -110,7 +137,7 @@ export async function nativeProjectsFixture(context: BrowserContext) {
       "PUT /v1/thread-view-presence": { ok: true },
       "POST /v1/thread-view-presence": { ok: true },
       "GET /v1/projects": { projects: state.projects },
-      "GET /v1/threads/pinned": { threads: [] },
+      "GET /v1/thread-sections": { sections: state.sections, nextCursor: null },
     };
     if (key in fixed) return respond(route, fixed[key]);
     if (key === "GET /v1/sidebar/threads") return respond(route, snapshot(), 200, `${client}:sidebar`);
@@ -128,6 +155,32 @@ export async function nativeProjectsFixture(context: BrowserContext) {
         return respond(route, { code: "unavailable", message: "Create reply lost; retry this intent.", retryable: true }, 503);
       }
       return respond(route, created, 201);
+    }
+    if (key === "POST /v1/thread-sections") {
+      const input = body as { name: string; appearance?: ThreadSection["appearance"] };
+      const section: ThreadSection = { id: `section-${++sectionCounter}`, name: input.name, appearance: input.appearance ?? null };
+      state.sections.push(section);
+      emit("thread.sections_updated", {});
+      return respond(route, { section }, 201);
+    }
+    const sectionMatch = url.pathname.match(/^\/v1\/thread-sections\/([^/]+)(?:\/(threads))?$/);
+    if (sectionMatch) {
+      const id = decodeURIComponent(sectionMatch[1]);
+      const target = state.sections.find((entry) => entry.id === id);
+      if (target && sectionMatch[2] && request.method() === "GET") return respond(route, sectionMembers(id, Number(url.searchParams.get("cursor") ?? 0), Number(url.searchParams.get("limit") ?? 10)));
+      if (target && id !== pinnedSectionId && !sectionMatch[2] && request.method() === "PATCH") {
+        Object.assign(target, body as { name: string; appearance?: ThreadSection["appearance"] });
+        for (const member of state.threads) if (member.section?.id === id) member.section = { ...target };
+        emit("thread.sections_updated", {});
+        return respond(route, { section: target });
+      }
+      if (target && id !== pinnedSectionId && !sectionMatch[2] && request.method() === "DELETE") {
+        state.sections = state.sections.filter((entry) => entry.id !== id);
+        delete state.sectionThreadIds[id];
+        for (const member of state.threads) if (member.section?.id === id) { member.section = null; member.sectionEnteredAt = null; }
+        emit("thread.sections_updated", {});
+        return route.fulfill({ status: 204 });
+      }
     }
     const projectMatch = url.pathname.match(/^\/v1\/projects\/([^/]+)(\/move)?$/);
     if (projectMatch) {
@@ -161,6 +214,12 @@ export async function nativeProjectsFixture(context: BrowserContext) {
       const target = state.threads.find((entry) => entry.id === threadMatch[1]);
       const action = threadMatch[2];
       if (target && !action && request.method() === "GET") return respond(route, detail(target), 200, `${client}:detail`);
+      if (target && action === "section" && request.method() === "POST") {
+        const input = body as { sectionId: string | null; beforeThreadId?: string | null };
+        moveThread(target.id, input.sectionId, input.beforeThreadId);
+        emit("thread.sections_updated", {});
+        return route.fulfill({ status: 204 });
+      }
       if (target && action === "project" && request.method() === "PATCH") {
         target.projectId = (body as { projectId: string | null }).projectId;
         emit("thread.project_updated", { threadId: target.id, projectId: target.projectId });
@@ -178,7 +237,7 @@ export async function nativeProjectsFixture(context: BrowserContext) {
   await context.route("**/v1/**", handle);
 
   return {
-    state, requests, unexpected, errors, expectedCreateErrors, held, connections, emit,
+    state, requests, unexpected, errors, expectedCreateErrors, held, connections, emit, moveThread,
     wasAborted(client: string, kind: "sidebar" | "detail") { return aborted.get(`${client}:${kind}`)?.() ?? false; },
     failNextCreateReply() { failFirstCreate = true; },
     holdNext(client: string, kind: "sidebar" | "detail") { holds.add(`${client}:${kind}`); },

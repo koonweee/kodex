@@ -511,7 +511,7 @@ describe("event stream client", () => {
     client.close();
   });
 
-  it("receives gateway thread pin update events", () => {
+  it("receives native section invalidation events", () => {
     const received: string[] = [];
     const client = createEventStreamClient({
       EventSourceCtor: FakeEventSource,
@@ -520,20 +520,20 @@ describe("event stream client", () => {
     });
 
     client.connect();
-    FakeEventSource.instances[0].emitNamed("thread.pin_updated", {
+    FakeEventSource.instances[0].emitNamed("thread.sections_updated", {
       id: "event-9",
       seq: 9,
-      kind: "thread.pin_updated",
+      kind: "thread.sections_updated",
       codexMethod: null,
       itemId: null,
       threadId: "thread-1",
       turnId: null,
       projectId: null,
-      payload: { threadId: "thread-1", pinnedAt: "2026-05-06T12:00:00Z" },
+      payload: {},
       receivedAt: "2026-04-30T00:00:00Z",
     });
 
-    expect(received).toEqual(["thread.pin_updated"]);
+    expect(received).toEqual(["thread.sections_updated"]);
     client.close();
   });
 

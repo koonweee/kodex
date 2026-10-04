@@ -993,15 +993,11 @@ async function handleApi({ activeScenario, request, response, terminalSessions, 
     json(response, { threads: [threadSummaries[0], threadSummaries[4], threadSummaries[5]], nextCursor: null, backwardsCursor: null, rawPayload: {} });
     return;
   }
-  if (key === "GET /v1/threads/pinned") {
-    json(response, { threads: [threadSummaries[1]], nextCursor: null, backwardsCursor: null, rawPayload: {} });
-    return;
-  }
   if (key === "GET /v1/sidebar/threads") {
     json(response, {
       projects: [project],
       chatThreads: { threads: [threadSummaries[0], threadSummaries[4], threadSummaries[5]], nextCursor: null, backwardsCursor: null, rawPayload: {} },
-      pinnedThreads: { threads: [threadSummaries[1]], nextCursor: null, backwardsCursor: null, rawPayload: {} },
+      sections: [], sectionThreads: {},
       projectThreads: {
         [project.id]: { threads: threadSummaries.filter((thread) => thread.projectId === project.id), nextCursor: null, backwardsCursor: null, rawPayload: {} },
       },

@@ -7,21 +7,21 @@ import { unreadAgentMessageBadgeCount } from "./unreadAgentMessages";
 
 type UseKodexNotificationsParams = {
   chatThreads: ThreadSummary[];
-  pinnedThreads: ThreadSummary[];
+  sectionThreads: ThreadSummary[];
   routeSelectedThread: ThreadSummary | null;
   threadsByProjectId: ThreadsByProjectId;
 };
 
 export function useKodexNotifications({
   chatThreads,
-  pinnedThreads,
+  sectionThreads,
   routeSelectedThread,
   threadsByProjectId,
 }: UseKodexNotificationsParams) {
   const threadGroups = useMemo(() => {
-    const groups = [...Object.values(threadsByProjectId), chatThreads, pinnedThreads];
+    const groups = [...Object.values(threadsByProjectId), chatThreads, sectionThreads];
     return routeSelectedThread ? [...groups, [routeSelectedThread]] : groups;
-  }, [chatThreads, pinnedThreads, routeSelectedThread, threadsByProjectId]);
+  }, [chatThreads, sectionThreads, routeSelectedThread, threadsByProjectId]);
 
   useEffect(() => {
     void setKodexAppBadge(unreadAgentMessageBadgeCount(threadGroups));

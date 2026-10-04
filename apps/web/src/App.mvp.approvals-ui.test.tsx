@@ -80,7 +80,7 @@ describe("MVP approvals UI flows", () => {
 
     render(<App />);
 
-    const blockedThreadButton = await screen.findByRole("button", { name: /second thread/i });
+    const blockedThreadButton = await screen.findByRole("button", { name: /^second thread needs approval$/i });
     expect(within(blockedThreadButton).getByText(/needs approval/i)).toBeInTheDocument();
     expect(screen.queryByRole("complementary", { name: /approvals/i })).not.toBeInTheDocument();
 
@@ -93,7 +93,7 @@ describe("MVP approvals UI flows", () => {
     expect(within(threadView).getByText(/reason: verify changes/i)).toBeInTheDocument();
   });
 
-  it("keeps the route-selected thread when initial pending approvals reorder loaded threads", async () => {
+  it("keeps native sidebar order and selection when initial pending approvals arrive", async () => {
     let resolveApprovals: (value: unknown) => void = () => undefined;
     const delayedApprovals = new Promise((resolve) => {
       resolveApprovals = resolve;
@@ -137,7 +137,7 @@ describe("MVP approvals UI flows", () => {
       }),
     );
 
-    const { container } = render(<App />);
+    render(<App />);
 
     const threadView = await screen.findByRole("main", { name: /thread/i });
     expect(await within(threadView).findByRole("heading", { name: /recent idle thread/i })).toBeInTheDocument();
@@ -147,11 +147,12 @@ describe("MVP approvals UI flows", () => {
       await Promise.resolve();
     });
 
-    await waitFor(() => {
-      const threadButtons = Array.from(container.querySelectorAll<HTMLElement>(".kodex-thread-select-button"));
-      expect(threadButtons[0]).toHaveTextContent(/older approval thread/i);
-      expect(threadButtons[0].closest(".kodex-list-button")).not.toHaveAttribute("data-active", "true");
-    });
+    const olderApprovalButton = await screen.findByRole("button", { name: /^older approval thread needs approval$/i });
+    const recentIdleButton = screen.getByRole("button", { name: /^recent idle thread$/i });
+    expect(within(olderApprovalButton).getByText(/needs approval/i)).toBeInTheDocument();
+    expect(recentIdleButton.compareDocumentPosition(olderApprovalButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(recentIdleButton.closest(".kodex-list-button")).toHaveAttribute("data-active", "true");
+    expect(olderApprovalButton.closest(".kodex-list-button")).not.toHaveAttribute("data-active", "true");
     expect(await within(threadView).findByRole("heading", { name: /recent idle thread/i })).toBeInTheDocument();
   });
 
@@ -218,7 +219,7 @@ describe("MVP approvals UI flows", () => {
 
     render(<App />);
 
-    await screen.findByRole("heading", { name: /implement frontend/i });
+    await screen.findByRole("heading", { name: /^implement frontend$/i });
     const timeline = await screen.findByRole("main", { name: /thread/i });
     expect(within(timeline).getByText(/would you like to run the following command/i)).toBeInTheDocument();
     expect(within(timeline).getByText(/\$ cargo test/i)).toBeInTheDocument();
@@ -301,7 +302,7 @@ describe("MVP approvals UI flows", () => {
 
     render(<App />);
 
-    await screen.findByRole("heading", { name: /implement frontend/i });
+    await screen.findByRole("heading", { name: /^implement frontend$/i });
     const timeline = await screen.findByRole("main", { name: /thread/i });
     await userEvent.click(
       within(timeline).getByRole("button", { name: /yes, grant for this turn with strict auto review/i }),
@@ -346,7 +347,7 @@ describe("MVP approvals UI flows", () => {
 
     render(<App />);
 
-    await screen.findByRole("heading", { name: /implement frontend/i });
+    await screen.findByRole("heading", { name: /^implement frontend$/i });
     const timeline = await screen.findByRole("main", { name: /thread/i });
     expect(await within(timeline).findByText(/would you like to run the following command/i)).toBeInTheDocument();
     expect(within(timeline).getByText(/reason: verify production ui/i)).toBeInTheDocument();
@@ -411,7 +412,7 @@ describe("MVP approvals UI flows", () => {
 
     render(<App />);
 
-    await screen.findByRole("heading", { name: /implement frontend/i });
+    await screen.findByRole("heading", { name: /^implement frontend$/i });
     const timeline = await screen.findByRole("main", { name: /thread/i });
     expect(await within(timeline).findByText(/search todo in apps\/web/i)).toBeInTheDocument();
     expect(within(timeline).getAllByText(/curl https:\/\/api\.example\.com/i).length).toBeGreaterThan(0);

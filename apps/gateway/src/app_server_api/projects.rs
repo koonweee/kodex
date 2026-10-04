@@ -141,6 +141,7 @@ impl CodexClient {
                 "thread/list",
                 json!({
                     "projectId": project_id,
+                    "sectionId": null,
                     "cursor": cursor,
                     "limit": limit,
                     "sortKey": "updated_at",

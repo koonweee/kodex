@@ -10,7 +10,7 @@ export async function refreshProjectState(queryClient: QueryClient) {
     queryKeys.threadPages,
     queryKeys.projectThreadsRoot,
     queryKeys.chatThreads,
-    queryKeys.pinnedThreads,
+    queryKeys.sectionThreadsRoot,
   ].map((queryKey) => queryClient.cancelQueries({ queryKey })));
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.sidebarThreads }, { cancelRefetch: false }),

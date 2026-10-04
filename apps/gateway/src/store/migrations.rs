@@ -177,17 +177,6 @@ impl Store {
         .await?;
         sqlx::query(
             r#"
-            create table if not exists thread_pins (
-                thread_id text primary key,
-                pinned_at text not null,
-                updated_at text not null
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-        sqlx::query(
-            r#"
             create table if not exists pending_timeline_skill_mentions (
                 id text primary key,
                 thread_id text not null,
@@ -339,11 +328,6 @@ impl Store {
         .execute(&self.pool)
         .await?;
         sqlx::query(
-            "create index if not exists thread_pins_pinned_at_idx on thread_pins (pinned_at desc, thread_id)",
-        )
-        .execute(&self.pool)
-        .await?;
-        sqlx::query(
             "create index if not exists pending_timeline_skill_mentions_match_idx on pending_timeline_skill_mentions (thread_id, text, created_at)",
         )
         .execute(&self.pool)
@@ -457,6 +441,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fresh_database_has_no_sidebar_organization_authority() {
+        let store = Store::in_memory().await.unwrap();
+        let tables: Vec<String> = sqlx::query_scalar(
+            "select name from sqlite_master where type = 'table' and name in ('thread_pins', 'thread_sections', 'thread_section_order') order by name",
+        )
+        .fetch_all(store.pool())
+        .await
+        .unwrap();
+
+        assert!(tables.is_empty(), "superseded sidebar tables: {tables:?}");
+    }
+
+    #[tokio::test]
     async fn file_database_migration_creates_tables_and_enables_wal() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("gateway.db");
@@ -464,7 +461,7 @@ mod tests {
 
         store.assert_wal().await.unwrap();
         let tables: Vec<String> = sqlx::query_scalar(
-            "select name from sqlite_master where type = 'table' and name in ('events', 'app_surface_sessions', 'app_surface_resources', 'approvals', 'thread_reads', 'push_subscriptions', 'notification_deliveries', 'thread_notification_settings', 'thread_pins', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
+            "select name from sqlite_master where type = 'table' and name in ('events', 'app_surface_sessions', 'app_surface_resources', 'approvals', 'thread_reads', 'push_subscriptions', 'notification_deliveries', 'thread_notification_settings', 'queued_turn_inputs', 'thread_runtime_state', 'automations', 'automation_runs', 'pending_timeline_skill_mentions', 'timeline_skill_mentions') order by name",
         )
         .fetch_all(store.pool())
         .await
@@ -483,7 +480,6 @@ mod tests {
                 "push_subscriptions",
                 "queued_turn_inputs",
                 "thread_notification_settings",
-                "thread_pins",
                 "thread_reads",
                 "thread_runtime_state",
                 "timeline_skill_mentions"

@@ -1,3 +1,4 @@
+import type { ThreadSectionActions } from "../sections/SectionMenuItems";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
@@ -142,7 +143,7 @@ type WorkspaceContextValue = {
   workspaceError: Error | null;
 };
 
-type WorkspaceThreadActions = {
+type WorkspaceThreadActions = ThreadSectionActions & {
   onArchiveThread?: (threadId: string) => void;
   onPinThread?: (threadId: string) => void;
   onRenameThread?: (threadId: string, name: string) => Promise<void>;

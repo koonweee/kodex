@@ -58,7 +58,7 @@ describe("deep link navigation", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("button", { name: /implement frontend/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^implement frontend$/i })).toBeInTheDocument();
     const main = screen.getByRole("main", { name: /thread/i });
     expect(within(main).queryByText(/no thread selected/i)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/message composer/i)).toBeEnabled();
@@ -77,7 +77,7 @@ describe("deep link navigation", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^second thread$/i })).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByLabelText(/message composer/i).closest(".kodex-composer-shell")).toHaveAttribute(
         "data-entry-ready",
@@ -115,7 +115,7 @@ describe("deep link navigation", () => {
     render(<App />);
 
     const main = screen.getByRole("main", { name: /thread/i });
-    expect(await within(main).findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+    expect(await within(main).findByRole("heading", { name: /^second thread$/i })).toBeInTheDocument();
     expect(main.querySelector(".kodex-workspace-dock")).not.toBeInTheDocument();
     expect(main.querySelector(".kodex-workspace-single-pane-shell")).toBeInTheDocument();
   });
@@ -132,7 +132,7 @@ describe("deep link navigation", () => {
 
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /^second thread$/i })).toBeInTheDocument();
     const loadingState = screen.getByRole("status", { name: /loading thread timeline/i });
     expect(loadingState).toHaveAttribute("aria-busy", "true");
     expect(container.querySelector(".kodex-timeline-skeleton-user")).toBeInTheDocument();
@@ -257,8 +257,8 @@ describe("deep link navigation", () => {
 
     render(<App />);
 
-    const frameworkButton = await screen.findByRole("button", { name: /framework thread/i });
-    const middleButton = screen.getByRole("button", { name: /middle thread/i });
+    const frameworkButton = await screen.findByRole("button", { name: /^framework thread$/i });
+    const middleButton = screen.getByRole("button", { name: /^middle thread$/i });
     expect(frameworkButton.compareDocumentPosition(middleButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     await userEvent.click(frameworkButton);
@@ -287,8 +287,8 @@ describe("deep link navigation", () => {
     expect(window.location.pathname + window.location.search).toBe("/?panel=threads");
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "threads");
 
-    await userEvent.click(screen.getByRole("button", { name: /second thread/i }));
-    expect(await screen.findByRole("heading", { name: /second thread/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^second thread$/i }));
+    expect(await screen.findByRole("heading", { name: /^second thread$/i })).toBeInTheDocument();
     expect(window.location.pathname + window.location.search).toBe("/");
     expect(document.querySelector(".kodex-shell")).toHaveAttribute("data-mobile-panel", "chat");
 

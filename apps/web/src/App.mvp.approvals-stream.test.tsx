@@ -40,7 +40,7 @@ describe("authoritative approval stream flows", () => {
       "POST /v1/approvals/native-approval/decision": () => { current = snapshot(2, [responding]); return responding; },
     }));
     const { container } = render(<App />);
-    await screen.findByRole("heading", { name: /implement frontend/i });
+    await screen.findByRole("heading", { name: /^implement frontend$/i });
     const timeline = timelineElement(container);
     const proceed = await within(timeline).findByRole("button", { name: "Yes, proceed" });
     await userEvent.click(proceed);
@@ -65,7 +65,7 @@ describe("authoritative approval stream flows", () => {
       "GET /v1/approvals": () => current,
     }));
     render(<App />);
-    const secondThreadButton = await screen.findByRole("button", { name: /second thread/i });
+    const secondThreadButton = await screen.findByRole("button", { name: /^second thread$/i });
     await waitFor(() => expect(activeWorkspaceStream(thread.id)).toBeDefined());
     current = snapshot(2, [otherApproval]);
     act(() => changed(activeWorkspaceStream(thread.id), 2));

@@ -17,7 +17,7 @@ function snapshot(assigned: boolean, deleted = false): SidebarThreadsResponse {
     projects: deleted ? [] : [project],
     projectThreads: deleted ? {} : { [project.id]: { threads: assigned ? [thread] : [] } },
     chatThreads: { threads: assigned ? [] : [{ ...thread, projectId: null }] },
-    pinnedThreads: { threads: [] },
+    sections: [], sectionThreads: {},
   };
 }
 
@@ -28,7 +28,6 @@ function mountClient() {
     routeSelectedThreadRef: { current: null },
     selectedThreadIdRef: { current: null },
     onChatThreadsCursorChange: vi.fn(),
-    onPinnedStateTrusted: vi.fn(),
     onProjectThreadCursorsChange: vi.fn(),
   }), {
     wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
@@ -39,6 +38,44 @@ function mountClient() {
 afterEach(() => vi.clearAllMocks());
 
 describe("native sidebar membership snapshots", () => {
+  it("replaces native section order and membership in two clients after cancelling an older snapshot", async () => {
+    const section = { id: "native-section", name: "Research" };
+    const secondThread = { ...thread, id: "second-chat", name: "Second chat", section };
+    const sectionSnapshot = (rows: SidebarThreadSummary[]): SidebarThreadsResponse => ({
+      ...snapshot(false),
+      sections: [section],
+      sectionThreads: { [section.id]: { threads: rows } },
+    });
+    const oldSnapshot = sectionSnapshot([{ ...thread, section }, secondThread]);
+    let latest = oldSnapshot;
+    let calls = 0;
+    let releaseOld!: (value: SidebarThreadsResponse) => void;
+    let oldSignal: AbortSignal | undefined;
+    vi.mocked(getSidebarThreads).mockImplementation(async (signal) => {
+      calls += 1;
+      if (calls === 2) {
+        oldSignal = signal;
+        return new Promise((resolve) => { releaseOld = resolve; });
+      }
+      return latest;
+    });
+    const first = mountClient();
+    await waitFor(() => expect(first.result.current.sidebarSnapshotReady).toBe(true));
+    expect(first.client.getQueryData<ThreadSummary[]>(["threads", "section", section.id])?.map((row) => row.id))
+      .toEqual([thread.id, secondThread.id]);
+    const second = mountClient();
+    await waitFor(() => expect(releaseOld).toBeDefined());
+    latest = sectionSnapshot([secondThread]);
+    await act(async () => {
+      await Promise.all([refreshProjectState(first.client), refreshProjectState(second.client)]);
+    });
+    expect(oldSignal?.aborted).toBe(true);
+    await act(async () => { releaseOld(oldSnapshot); });
+    for (const browser of [first, second]) {
+      expect(browser.client.getQueryData<ThreadSummary[]>(["threads", "section", section.id])?.map((row) => row.id))
+        .toEqual([secondThread.id]);
+    }
+  });
   it("removes old memberships in both clients after an assignment change or missed delete", async () => {
     let latest = snapshot(true);
     vi.mocked(getSidebarThreads).mockImplementation(async () => latest);

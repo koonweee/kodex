@@ -190,7 +190,7 @@ function WorkspaceSidebarWithPaneActions({
 
   useEffect(() => {
     titleLookupPropsRef.current = props;
-  }, [props.chatThreads, props.pinnedThreads, props.threadsByProjectId]);
+  }, [props.chatThreads, props.sectionThreads, props.threadsByProjectId]);
 
   function openThread(threadId: string) {
     void openThreadPane(threadId, titleForThread(props, threadId)).catch((error: unknown) => {
@@ -248,9 +248,9 @@ function WorkspaceSidebarWithPaneActions({
         openThread(threadId);
         props.onSelectChatThread(threadId);
       }}
-      onSelectPinnedThread={(threadId) => {
+      onSelectSectionThread={(threadId) => {
         openThread(threadId);
-        props.onSelectPinnedThread(threadId);
+        props.onSelectSectionThread(threadId);
       }}
       onSelectThread={(projectId, threadId) => {
         openThread(threadId);
@@ -265,7 +265,7 @@ function WorkspaceSidebarWithPaneActions({
 function titleForThread(props: ComponentProps<typeof WorkspaceSidebar>, threadId: string): string | null {
   const thread =
     findThread(props.chatThreads, threadId) ??
-    findThread(props.pinnedThreads, threadId) ??
+    findThread(props.sectionThreads, threadId) ??
     findThread(Object.values(props.threadsByProjectId).flat(), threadId);
   return stringOrNull(thread?.name) ?? stringOrNull(thread?.preview);
 }

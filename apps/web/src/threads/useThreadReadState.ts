@@ -8,7 +8,7 @@ import { threadById, type ThreadsByProjectId } from "./helpers";
 type UseThreadReadStateParams = {
   onError: (error: unknown) => void;
   chatThreads: ThreadSummary[];
-  pinnedThreads: ThreadSummary[];
+  sectionThreads: ThreadSummary[];
   selectedThreadIdRef: MutableRefObject<string | null>;
   viewedThreadIdsRef: MutableRefObject<Set<string>>;
   threadsByProjectId: ThreadsByProjectId;
@@ -21,7 +21,7 @@ type UseThreadReadStateParams = {
 export function useThreadReadState({
   chatThreads,
   onError,
-  pinnedThreads,
+  sectionThreads,
   selectedThreadIdRef,
   viewedThreadIdsRef,
   threadsByProjectId,
@@ -29,13 +29,13 @@ export function useThreadReadState({
 }: UseThreadReadStateParams) {
   const threadsByProjectIdRef = useRef<ThreadsByProjectId>({});
   const chatThreadsRef = useRef<ThreadSummary[]>([]);
-  const pinnedThreadsRef = useRef<ThreadSummary[]>([]);
+  const sectionThreadsRef = useRef<ThreadSummary[]>([]);
   const pendingSeenByThreadIdRef = useRef<Map<string, number>>(new Map());
   const confirmedSeenByThreadIdRef = useRef<Map<string, number>>(new Map());
 
   threadsByProjectIdRef.current = threadsByProjectId;
   chatThreadsRef.current = chatThreads;
-  pinnedThreadsRef.current = pinnedThreads;
+  sectionThreadsRef.current = sectionThreads;
 
   function applyCompletedAgentTurnEvent(event: EventEnvelope) {
     const completedTurn = completedAgentTurnEvent(event);
@@ -75,7 +75,7 @@ export function useThreadReadState({
     const thread =
       threadById(threadsByProjectIdRef.current, threadId) ??
       chatThreadsRef.current.find((thread) => thread.id === threadId) ??
-      pinnedThreadsRef.current.find((thread) => thread.id === threadId) ??
+      sectionThreadsRef.current.find((thread) => thread.id === threadId) ??
       null;
     const seenCompletedAgentTurnSeq = lastCompletedAgentTurnSeq ?? thread?.lastCompletedAgentTurnSeq ?? 0;
     const knownSeenCompletedAgentTurnSeq = Math.max(

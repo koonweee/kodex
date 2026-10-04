@@ -1,0 +1,294 @@
+import { Badge, Box, Group, Menu, Stack, Text, Tooltip } from "@mantine/core";
+import { Archive, MoreHorizontal, Pin, PinOff } from "lucide-react";
+import { memo, useRef, type PointerEvent as ReactPointerEvent } from "react";
+import type { Approval, ThreadSummary } from "../api/client";
+import { PINNED_SECTION_ID } from "../sections/cache";
+import { SectionMenuItems, type ThreadSectionActions } from "../sections/SectionMenuItems";
+import { threadDisplayTitle, threadInProgress, threadNeedsApproval } from "./helpers";
+import { SidebarIconButton } from "./SidebarIconButton";
+import { SidebarRowFrame } from "./sidebarRows";
+
+const SIDEBAR_TEXT = { newThread: "New thread", pinThread: "Pin thread", unpinThread: "Unpin thread", threadInProgress: "Thread in progress", unreadAgentTurn: "Unread completed agent turn", showMoreLoading: "Loading more", showLessThreads: "Show less", showMoreThreads: "Show more", showMoreError: "Could not load more threads" };
+const VISIBLE_THREAD_LIMIT = 5;
+type SidebarPaginationState = "idle" | "loading" | "error";
+function threadDisplayTitleWithPending(thread: ThreadSummary, pending: Set<string>) { return pending.has(thread.id) ? SIDEBAR_TEXT.newThread : threadDisplayTitle(thread); }
+
+export type ThreadListRowProps = ThreadSectionActions & {
+  previousThreadId?: string;
+  followingThreadId?: string | null;
+  canMoveDown?: boolean;
+  approvals: Approval[];
+  isSelected: boolean;
+  onArchiveThread: (threadId: string) => void;
+  onPinThread: (threadId: string) => void;
+  onSelectThread: (threadId: string) => void;
+  onThreadActionHoverChange: (threadId: string | null) => void;
+  onUnpinThread: (threadId: string) => void;
+  pendingTitleThreadIds: Set<string>;
+  showThreadArchiveAction: boolean;
+  thread: ThreadSummary;
+};
+
+export const ThreadListRow = memo(function ThreadListRow({
+  approvals,
+  isSelected,
+  onArchiveThread,
+  onPinThread,
+  onSelectThread,
+  onThreadActionHoverChange,
+  onUnpinThread,
+  pendingTitleThreadIds,
+  showThreadArchiveAction,
+  thread, sections, onMoveThreadToSection, sectionMovePending, previousThreadId, followingThreadId, canMoveDown,
+}: ThreadListRowProps) {
+  const needsApproval = threadNeedsApproval(thread, approvals);
+  const isThreadInProgress = threadInProgress(thread);
+  const hasUnreadAgentTurn = thread.unreadCompletedAgentTurn === true;
+  const displayTitle = threadDisplayTitleWithPending(thread, pendingTitleThreadIds);
+  const isPinned = thread.section?.id === PINNED_SECTION_ID;
+  const pinLabel = isPinned ? SIDEBAR_TEXT.unpinThread : SIDEBAR_TEXT.pinThread;
+  const focusPointerType = useRef<string | null>(null);
+
+  function handleHoverPointerDown(event: ReactPointerEvent<HTMLElement>) {
+    focusPointerType.current = event.pointerType;
+  }
+
+  function handleHoverPointerEnter(event: ReactPointerEvent<HTMLElement>) {
+    if (event.pointerType === "mouse") {
+      onThreadActionHoverChange(thread.id);
+    }
+  }
+
+  function handleHoverPointerLeave(event: ReactPointerEvent<HTMLElement>) {
+    if (event.pointerType === "mouse") {
+      onThreadActionHoverChange(null);
+    }
+  }
+
+  return (
+    <SidebarRowFrame
+      className="kodex-ui-selectable kodex-list-button kodex-thread-list-button"
+      leadingContent={
+        <SidebarIconButton
+          className="kodex-thread-pin-button"
+          data-pinned={isPinned ? "true" : undefined}
+          density="compact"
+          label={pinLabel}
+          disabled={sectionMovePending}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (isPinned) {
+              onUnpinThread(thread.id);
+            } else {
+              onPinThread(thread.id);
+            }
+          }}
+        >
+          {isPinned ? (
+            <>
+              <Pin className="kodex-thread-pin-state-icon" />
+              <PinOff className="kodex-thread-pin-action-icon" />
+            </>
+          ) : (
+            <Pin />
+          )}
+        </SidebarIconButton>
+      }
+      rootProps={{
+        "data-active": isSelected ? "true" : undefined,
+        "data-pinned": isPinned ? "true" : undefined,
+        onBlur: (event) => {
+          focusPointerType.current = null;
+          if (!event.currentTarget.contains(event.relatedTarget)) {
+            onThreadActionHoverChange(null);
+          }
+        },
+        onFocus: () => {
+          if (focusPointerType.current !== "touch" && focusPointerType.current !== "pen") {
+            onThreadActionHoverChange(thread.id);
+          }
+        },
+        onPointerDown: handleHoverPointerDown,
+        onPointerEnter: handleHoverPointerEnter,
+        onPointerLeave: handleHoverPointerLeave,
+      }}
+      trailingContent={
+        <>
+          {isThreadInProgress && !showThreadArchiveAction ? (
+            <Tooltip label={SIDEBAR_TEXT.threadInProgress}>
+              <Box
+                aria-label={SIDEBAR_TEXT.threadInProgress}
+                className="kodex-thread-status-slot"
+                component="span"
+                role="status"
+              >
+                <span className="kodex-thread-progress-indicator" />
+              </Box>
+            </Tooltip>
+          ) : null}
+          {hasUnreadAgentTurn && !isThreadInProgress && !showThreadArchiveAction ? (
+            <Tooltip label={SIDEBAR_TEXT.unreadAgentTurn}>
+              <Box
+                aria-label={SIDEBAR_TEXT.unreadAgentTurn}
+                className="kodex-thread-status-slot"
+                component="span"
+                role="img"
+              >
+                <span className="kodex-thread-unread-agent-turn-indicator" />
+              </Box>
+            </Tooltip>
+          ) : null}
+          {onMoveThreadToSection ? <Menu position="bottom-end" withinPortal>
+            <Menu.Target><SidebarIconButton density="compact" label={`Thread actions for ${displayTitle}`} tooltip={false}><MoreHorizontal /></SidebarIconButton></Menu.Target>
+            <Menu.Dropdown>
+              <SectionMenuItems thread={thread} sections={sections} onMoveThreadToSection={onMoveThreadToSection} sectionMovePending={sectionMovePending} previousThreadId={previousThreadId} followingThreadId={followingThreadId} canMoveDown={canMoveDown} />
+              <Menu.Item onClick={() => onArchiveThread(thread.id)}>Archive thread</Menu.Item>
+            </Menu.Dropdown>
+          </Menu> : null}
+          {showThreadArchiveAction ? (
+            <SidebarIconButton
+              className="kodex-thread-archive-button"
+              density="compact"
+              label={`Archive ${displayTitle}`}
+              tooltip="Archive thread"
+              onClick={() => onArchiveThread(thread.id)}
+            >
+              <Archive />
+            </SidebarIconButton>
+          ) : null}
+        </>
+      }
+    >
+      <button className="kodex-ui-button kodex-thread-select-button" onClick={() => onSelectThread(thread.id)} type="button">
+        <Group
+          align="flex-start"
+          className="kodex-thread-list-row"
+          data-has-sidecar={needsApproval ? "true" : undefined}
+          gap="xs"
+          justify="space-between"
+          wrap="nowrap"
+        >
+          <Text
+            className="kodex-thread-list-title"
+            c={pendingTitleThreadIds.has(thread.id) ? "dimmed" : undefined}
+            data-placeholder-title={pendingTitleThreadIds.has(thread.id) ? "true" : undefined}
+            fw={400}
+            size="xs"
+            lineClamp={1}
+          >
+            {displayTitle}
+          </Text>
+          {needsApproval ? (
+            <Badge className="kodex-thread-approval-badge" data-tone="warning" size="xs" variant="light">
+              Needs approval
+            </Badge>
+          ) : null}
+        </Group>
+      </button>
+    </SidebarRowFrame>
+  );
+}, areThreadListRowPropsEqual);
+
+export function areThreadListRowPropsEqual(previous: ThreadListRowProps, next: ThreadListRowProps) {
+  return (
+    previous.sections === next.sections &&
+    previous.onMoveThreadToSection === next.onMoveThreadToSection &&
+    previous.sectionMovePending === next.sectionMovePending &&
+    previous.previousThreadId === next.previousThreadId &&
+    previous.followingThreadId === next.followingThreadId &&
+    previous.canMoveDown === next.canMoveDown &&
+    previous.approvals === next.approvals &&
+    previous.isSelected === next.isSelected &&
+    previous.onArchiveThread === next.onArchiveThread &&
+    previous.onPinThread === next.onPinThread &&
+    previous.onSelectThread === next.onSelectThread &&
+    previous.onThreadActionHoverChange === next.onThreadActionHoverChange &&
+    previous.onUnpinThread === next.onUnpinThread &&
+    previous.pendingTitleThreadIds === next.pendingTitleThreadIds &&
+    previous.showThreadArchiveAction === next.showThreadArchiveAction &&
+    previous.thread === next.thread
+  );
+}
+
+export function ThreadList({
+  approvals,
+  className,
+  expanded,
+  hasMore = false,
+  hoveredThreadActionId,
+  onArchiveThread,
+  onPinThread,
+  onSelectThread,
+  onThreadActionHoverChange,
+  onToggleExpanded,
+  onUnpinThread,
+  pendingTitleThreadIds,
+  paginationState = "idle",
+  selectedThreadId,
+  threads, sections, onMoveThreadToSection, sectionMovePending, sectionOrder,
+}: ThreadSectionActions & {
+  sectionOrder?: ThreadSummary[];
+  approvals: Approval[];
+  className: string;
+  expanded: boolean;
+  hasMore?: boolean;
+  hoveredThreadActionId: string | null;
+  onArchiveThread: (threadId: string) => void;
+  onPinThread: (threadId: string) => void;
+  onSelectThread: (threadId: string) => void;
+  onThreadActionHoverChange: (threadId: string | null) => void;
+  onToggleExpanded: () => void;
+  onUnpinThread: (threadId: string) => void;
+  pendingTitleThreadIds: Set<string>;
+  paginationState?: SidebarPaginationState;
+  selectedThreadId: string | null;
+  threads: ThreadSummary[];
+}) {
+  const visibleThreads = expanded ? threads : threads.slice(0, VISIBLE_THREAD_LIMIT);
+  const hasHiddenThreads = threads.length > VISIBLE_THREAD_LIMIT || hasMore;
+  const toggleLabel =
+    paginationState === "loading"
+      ? SIDEBAR_TEXT.showMoreLoading
+      : expanded && !hasMore
+        ? SIDEBAR_TEXT.showLessThreads
+        : SIDEBAR_TEXT.showMoreThreads;
+
+  return (
+    <Stack className={className} gap={6}>
+      {visibleThreads.map((thread) => (
+        <ThreadListRow
+          sections={sections} onMoveThreadToSection={onMoveThreadToSection} sectionMovePending={sectionMovePending}
+          previousThreadId={sectionOrder?.[sectionOrder.findIndex((row) => row.id === thread.id) - 1]?.id}
+          followingThreadId={sectionOrder ? sectionOrder[sectionOrder.findIndex((row) => row.id === thread.id) + 2]?.id ?? (hasMore ? undefined : null) : undefined}
+          canMoveDown={sectionOrder ? sectionOrder.findIndex((row) => row.id === thread.id) < sectionOrder.length - 1 && (sectionOrder.findIndex((row) => row.id === thread.id) + 2 < sectionOrder.length || !hasMore) : undefined}
+          approvals={approvals}
+          isSelected={thread.id === selectedThreadId}
+          key={thread.id}
+          onArchiveThread={onArchiveThread}
+          onPinThread={onPinThread}
+          onSelectThread={onSelectThread}
+          onThreadActionHoverChange={onThreadActionHoverChange}
+          onUnpinThread={onUnpinThread}
+          pendingTitleThreadIds={pendingTitleThreadIds}
+          showThreadArchiveAction={hoveredThreadActionId === thread.id}
+          thread={thread}
+        />
+      ))}
+      {hasHiddenThreads ? (
+        <button
+          className="kodex-ui-button kodex-thread-list-more-button"
+          disabled={paginationState === "loading"}
+          onClick={onToggleExpanded}
+          type="button"
+        >
+          {toggleLabel}
+        </button>
+      ) : null}
+      {paginationState === "error" ? (
+        <Text c="red" role="alert" size="xs">
+          {SIDEBAR_TEXT.showMoreError}
+        </Text>
+      ) : null}
+    </Stack>
+  );
+}

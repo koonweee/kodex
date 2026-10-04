@@ -16,19 +16,6 @@ export type ThreadUpsert =
   | { scope: "project"; projectId: string; thread: ThreadSummary }
   | { scope: "chat"; thread: ThreadSummary };
 
-export function threadPinUpdateFromEvent(event: EventEnvelope): { threadId: string; pinnedAt: string | null } | null {
-  if (event.kind !== "thread.pin_updated") {
-    return null;
-  }
-  const payload = asRecord(event.payload);
-  const threadId = event.threadId ?? stringValue(payload.threadId) ?? stringValue(payload.thread_id);
-  if (!threadId) {
-    return null;
-  }
-  const pinnedAt = stringValue(payload.pinnedAt) ?? stringValue(payload.pinned_at);
-  return { threadId, pinnedAt };
-}
-
 export function threadUpsertFromEvent(event: EventEnvelope): ThreadUpsert | null {
   if (event.kind !== "thread.upserted") {
     return null;

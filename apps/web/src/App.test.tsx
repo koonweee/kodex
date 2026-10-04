@@ -575,7 +575,7 @@ describe("App shell", () => {
     expect(within(thread).queryByText(/event stream/i)).not.toBeInTheDocument();
     expect(within(thread).queryByText(/turn\/started/i)).not.toBeInTheDocument();
 
-    const threadActionsButton = screen.getByRole("button", { name: /thread actions/i });
+    const threadActionsButton = screen.getByRole("button", { name: /^thread actions$/i });
     await userEvent.click(threadActionsButton);
     expect(threadActionsButton).toHaveAttribute("aria-expanded", "true");
     expect(await screen.findByRole("menuitem", { hidden: true, name: /rename thread/i })).toBeInTheDocument();

@@ -12,7 +12,7 @@ it("registers a rootless native project and reuses its idempotency key after an 
   let calls = 0;
   let projects = [project];
   const gateway = mockGateway(baseRoutes({
-    "GET /v1/sidebar/threads": () => ({ projects, projectThreads: {}, chatThreads: { threads: [] }, pinnedThreads: { threads: [] } }),
+    "GET /v1/sidebar/threads": () => ({ projects, projectThreads: {}, chatThreads: { threads: [] }, sections: [], sectionThreads: {} }),
     "POST /v1/projects": () => {
       calls += 1;
       if (calls === 1) return new Response(JSON.stringify({ code: "bad_gateway", message: "Reply lost", retryable: true }), { status: 502 });
